@@ -1,0 +1,40 @@
+{
+  "format": "tesota-m31a-live-evidence",
+  "version": 4,
+  "provenance": "machine_generated",
+  "timestamp": "2026-09-09T22:38:52.207Z",
+  "implementation": {
+    "binding": "sha256_of_source_and_executed_javascript",
+    "sourceSha256": {
+      "src/live-codex.ts": "42f2a3248eb8be2cbc48bd763b13641519190bf9201652a72ffe0a94d9e5f817",
+      "src/integrations/pi-live.ts": "ef019385e3c78707d61588d20756d6679a528503c645b2e00b93bbe0963597bc",
+      "src/integrations/pi-live-evidence.ts": "62209aa76f9c3d1b5e6c592b3cb36de2e265aabdec1f7471d036c8ee4747fefe",
+      "dist/live-codex.js": "aba4808103697407e1ad29e5f36264917b98e7bc3d448d9abb15acceb1f13667",
+      "dist/integrations/pi-live.js": "6bc1bbf067f039aa8f78f1dd92c40f9445ac8f814eeecdaa08e7e5b3348c6fcb",
+      "dist/integrations/pi-live-evidence.js": "d5803cb09da337dda42516985e6634a946992c536ab017c687f45d6988ff2f89",
+      "package.json": "f73214d25d975b44a8229e68fd8a4ec3705bf082bf7c0ec6b73e449b0d5f77db",
+      "bun.lock": "c67f9c6655f84181d379a51b3e3adcfec212cabc8230d03f59ee94e31bbfb816",
+      "tsconfig.json": "151a229b66c7c69ecc471f95d292dd2bad96dbea3adfdb3c07acb6a2a4559ccd",
+      "tsconfig.build.json": "36a8e8030a0369cff3c25ebf999f39412998367acf8ebe4860504bf53df342b8"
+    }
+  },
+  "provider": "openai-codex",
+  "api": "openai-codex-responses",
+  "model": "gpt-5.3-codex-spark",
+  "authType": "oauth",
+  "authenticationMethod": "device_code",
+  "mode": "auth_only",
+  "authenticationOutcome": "succeeded",
+  "inferenceAttempted": false,
+  "limits": {
+    "modelInvocationsPerProbe": 1,
+    "turnMs": 30000,
+    "settlementMs": 2000,
+    "loginMs": 180000
+  },
+  "oauthFailureCategory": null,
+  "modelInvocationCount": 0,
+  "turn": null,
+  "abortProbe": null,
+  "disposition": "succeeded"
+}
