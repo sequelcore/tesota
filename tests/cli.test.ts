@@ -28,8 +28,9 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
   expect(result.status).toBe(0);
   expect(result.stderr).toBe("");
   expect(result.stdout).toBe(
-    "Tesota (provisional)\nUsage: tesota [--help | -h | help]\n\n" +
-    "M1 development scaffold. Agent execution is not implemented.\n",
+    "Tesota (provisional)\nUsage: tesota [--help | -h | help]\n" +
+    "       tesota verify <file.ts|file.js>\n\n" +
+    "Runs one fixed Oxlint check. Agent execution is not implemented.\n",
   );
 });
 

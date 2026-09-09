@@ -1,7 +1,8 @@
 # Tesota
 
-This private package is the M1 bootstrap: compiled CLI help and development
-checks. It is not yet an agent. Keep changes scoped to the active increment.
+This private package provides compiled CLI help, development checks and the
+M2.1 fixed Oxlint executor. It is not yet an agent. Keep changes scoped to the
+active increment; candidate binding, durable evidence and staleness remain M2 work.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;
   it is not a verified functional baseline.
