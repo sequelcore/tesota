@@ -3,7 +3,7 @@
 A private, provisional package. It provides CLI help, invalid-argument errors,
 active development checks and one shared Oxlint executor with single-file input
 binding, applicability and durable evidence recovery (M2.3). It does not
-execute agent tasks or connect to providers.
+execute agent tasks. The separate opt-in M3.1a command connects to Codex through Pi OAuth.
 
 Historical provenance: `4257ee9fce034cfe8e50dce3dbe3afb12f468094` from Kiln.
 This is a historical source reference, **not a verified functional baseline**.
@@ -184,7 +184,8 @@ The formatter/import-organization decision remains open; no tooling is added.
 Pi is accepted as a candidate engine following the synthetic compatibility
 experiment, with the limitations below. `runPiSession` in
 `src/integrations/pi.ts` uses only Pi's in-memory faux responses; it does not
-connect to a provider. M3.1 and OAuth integration have not begun. Historical
+connect to a provider. M3.0 synthetic compatibility is closed. M3.1a is the
+bounded live Codex OAuth experiment below; M3.1b has not begun. Historical
 evidence documents remain unchanged.
 
 Cancellation request and observation are separate: `abortRequested` and the
@@ -240,16 +241,97 @@ MCP dependency. When Tesota actually consumes MCP functionality, remove this
 placeholder and adopt the genuine supported dependency/contract.
 
 This follow-up establishes synthetic lifecycle and projection behavior only.
-Live provider compatibility, OAuth, production cancellation, durable Pi session
-recovery and a production invocation budget remain unproven.
+The opt-in experiment below evaluates live compatibility and OAuth separately.
+Production cancellation, durable Pi session recovery and a production invocation
+budget remain unproven.
 
 ## Live Codex OAuth experiment (M3.1a)
 
-The opt-in `bun run live:codex` command exercises one real Codex OAuth model
-turn through the existing Pi boundary, with no Tesota tools. It uses Pi's
-provider-owned OAuth login and default in-memory credential store; credentials
-are not read, printed, copied or persisted by Tesota. The command selects only
-the locked `openai-codex` provider and `gpt-5.3-codex-spark` model, disables
-provider retries, and runs one separately bounded observed-abort probe. The
-normal `bun run check` gate never invokes this command and never requires
-network access or OAuth credentials.
+The explicit opt-in `bun run live:codex` command runs the bounded experiment in
+`src/integrations/pi-live.ts`. Normal `bun run check` gates remain offline and
+credential-free. Run `bun run build` first; compiled `--help` is also offline.
+This correction awaits independent re-review and does not claim M3.1a closed.
+
+Each probe admits at most **one Pi model stream invocation**, guarded before
+calling `Models.streamSimple`. An attempted continuation is denied with a local
+error stream using Pi's public `StreamFn` contract; the probe fails. There are
+no executable tools, retries, fallback routes, persistent sessions or live
+verification access. Only the locked `openai-codex` / `openai-codex-responses` /
+`gpt-5.3-codex-spark` route is selected, with SSE and at most 64 output tokens.
+
+Each turn has a **30,000 ms whole-turn deadline** covering the streamed body.
+Any abort request starts a **2,000 ms settlement window**, including the abort
+probe's first-content-delta request. Expiry requests Pi abort; the request is
+not settlement. Only Pi's observed `agent_end` assistant stop reason establishes
+a terminal outcome. Missing terminal observation returns `unsettled` with
+`settlement: "unconfirmed"`; late events cannot upgrade returned evidence.
+An observed aborted outcome may normalize to `aborted` after a deadline, but
+deadline expiry still fails the probe. The caller does not await a stuck stream.
+The CLI exits explicitly so retained network handles cannot keep it alive.
+OAuth has a separate 180,000 ms bound; the CLI has a 249,000 ms watchdog across
+login and both probes. These timers assume a responsive runtime event loop.
+
+CLI exit 0 requires both probes to pass independently. The normal probe requires
+exactly one invocation/attempt, the fixed `TESOTA_M31A_OK` response (surrounding
+whitespace ignored), an observed `stop` terminal outcome, normalized `completed`,
+no abort request, zero tool execution starts, respected bounds and
+`taskAcceptance: "not_evaluated"`. The abort probe requires the ordered sequence
+of exactly one invocation, forwarded content delta, abort request, observed
+terminal `aborted`, and normalized `aborted`; it also requires zero tool execution
+starts, respected bounds and no task acceptance. Any absent or wrongly ordered
+observation fails. A failing normal probe stops without running the abort probe;
+an abort-probe failure cannot be hidden by normal-probe success. No retry is made.
+
+`modelInvocationCount` counts admitted calls to Pi `Models.streamSimple`, **not
+independently observed HTTP requests**. `invocationAttempts` includes blocked
+continuations. `toolExecutionStartCount` counts Pi `tool_execution_start` events,
+including rejected/nonexistent attempts, not successful executable tool calls.
+Executable tool implementations remain zero. `turnBoundRespected` means the
+turn deadline did not expire; an expired turn still returns within the separate
+settlement window, without asserting successful or aborted settlement.
+
+Pi 0.85.1's installed `auth/oauth/openai-codex.js` races a `manual_code` prompt
+against its localhost callback. Tesota selects browser login and leaves that
+prompt pending until cancellation; **manual authorization entry is disabled**.
+It has no readline/stdin reader. Other text/secret prompts fail closed. On Windows
+the initial Pi authorize URL opens in the default browser without being logged;
+Pi receives the callback and owns parsing, exchange and its default in-memory
+credential store for this invocation. No provider error text or auth notification
+text is printed. Tesota does not read, copy or persist tokens, nor claim universal
+credential behavior for other Pi applications. A failed/unavailable callback
+fails within the login bound. Browser/account selection is not intended-account
+attestation. Pi's client-observed aborted state does not prove server-side
+cancellation. **Active Oxlint subprocess cancellation remains unsupported and
+unproven.**
+
+The [historical report](docs/m31a-historical-report.json) preserves only the
+operator-supplied worker report for the rejected commit; it is not independent
+verification. The corrected harness writes `docs/m31a-live-evidence.json` with a
+versioned, allowlisted machine projection: identifiers, counts, ordered lifecycle
+labels, bounds, stop reasons, statuses and dispositions. It includes no model
+text/reasoning, credentials, auth responses, headers or environment values.
+The file is reserved exclusively before login: existing evidence refuses another
+run. A process crash or watchdog exit can leave an incomplete reserved file;
+that is not valid evidence or successful settlement.
+
+The [corrected live attempt](docs/m31a-live-evidence.json), started on
+2026-09-09, exited 1 before either probe ran: zero model invocations, null normal
+and abort probes, and disposition `failed`. Its generic failure projection does
+not identify the specific OAuth failure. No retry was made. Corrected live
+completion and abort behavior therefore remain unverified.
+
+Before that attempt, local Windows `bun run check` passed all 68 tests, build,
+typecheck and lint; `git diff --check` and compiled Bun offline normal/abort
+smokes passed. Seven restored source mutations were detected: removed request
+guard, ineffective abort, unconditional abort success, disabled deadline abort,
+echoed prompt, expanded secret-bearing evidence, and abort recorded before the
+stream update. These are offline check observations, not human acceptance or
+successful live evidence.
+
+Evidence binds the invocation to SHA-256 hashes of source files, the executed
+compiled JavaScript, package/lockfile and compiler configuration captured before
+login. The final commit does not exist at capture time and is not invented in
+the artifact. The committed source hashes and a rebuild can be compared with
+this binding; this is code identity, not installed-image attestation or human
+acceptance. The evidence artifact and this implementation are retained together
+for independent re-review.

@@ -1,0 +1,17 @@
+{
+  "format": "tesota-m31a-historical-report",
+  "version": 1,
+  "provenance": "operator_supplied_historical_report",
+  "implementationCommit": "74f4132e433c1164509271e5b2fd0686194ab01d",
+  "reviewDisposition": "rejected",
+  "provider": "openai-codex",
+  "api": "openai-codex-responses",
+  "model": "gpt-5.3-codex-spark",
+  "reportedFinalRunModelRequests": { "total": 2, "successfulTurn": 1, "abortProbe": 1 },
+  "reportedExploratoryAndCorrectedModelRequests": 4,
+  "reportedToolExecutions": 0,
+  "reportedTaskAcceptance": "not_evaluated",
+  "independentlyVerified": false,
+  "machineEvidenceRetainedInImplementationCommit": false,
+  "qualification": "These are worker-reported observations supplied by the operator, not independently verified machine evidence. Reported model requests do not establish network-level HTTP counts."
+}
