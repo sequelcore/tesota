@@ -6,22 +6,24 @@ import { liveSourceIdentity, serializeLiveEvidence } from "./integrations/pi-liv
 
 const args = process.argv.slice(2);
 const mode = args[0] === "--auth-only" ? "auth_only" : args[0] === "--full-probe" ? "full_probe" : null;
-const validMode = mode === "auth_only" ? args[1] === "--device-code" : mode === "full_probe";
-const modeArgs = mode === "auth_only" ? 2 : 1;
+const authenticationMethod = args[1] === "--device-code" ? "device_code" : "browser";
+const validMode = mode === "auth_only" ? authenticationMethod === "device_code" : mode === "full_probe";
+const modeArgs = authenticationMethod === "device_code" ? 2 : 1;
 if ((args.length === 1 && args[0] === "--help") ||
     (validMode && args.length === modeArgs + 1 && args[modeArgs] === "--help")) {
-  console.log("Opt-in network authentication. --auth-only --device-code: device-code login in an interactive, unrecorded terminal; ZERO model inference calls; no M3.1a probes. --full-probe: browser OAuth callback only, at most two model invocations. No retries. --help is offline.");
+  console.log("Opt-in network authentication. --auth-only --device-code: device-code login in an interactive, unrecorded terminal; ZERO model inference calls; no M3.1a probes. --full-probe --device-code: device-code authentication AND up to two model invocations in an interactive, unrecorded terminal. --full-probe: browser OAuth callback only, at most two model invocations. No retries. --help is offline.");
 } else if (args.length !== modeArgs || !validMode || mode === null || process.platform !== "win32") {
-  console.error("Select --auth-only --device-code or --full-probe on Windows, or --help offline.");
+  console.error("Select --auth-only --device-code or --full-probe [--device-code] on Windows, or --help offline.");
   process.exitCode = 2;
-} else if (mode === "auth_only" &&
+} else if (authenticationMethod === "device_code" &&
     (process.stdin.isTTY !== true || process.stdout.isTTY !== true || process.stderr.isTTY !== true)) {
   console.error("Device-code login requires an interactive, unrecorded terminal; captured execution is disabled.");
   process.exitCode = 2;
 } else {
   const identity = liveSourceIdentity();
   // Reserve evidence before any login/inference. Existing evidence refuses another run.
-  const evidenceFile = openSync(mode === "auth_only" ? "docs/m31a-auth-only-device-code-evidence.json" : "docs/m31a-live-evidence.json", "wx");
+  const evidenceFile = openSync(mode === "auth_only" ? "docs/m31a-auth-only-device-code-evidence.json" :
+    authenticationMethod === "device_code" ? "docs/m31a-live-device-code-evidence.json" : "docs/m31a-live-evidence.json", "wx");
   const timestamp = new Date().toISOString();
   const cancellation = new AbortController();
   let result: LiveCodexRunResult;
@@ -33,8 +35,10 @@ if ((args.length === 1 && args[0] === "--help") ||
   try {
     console.log(mode === "auth_only" ?
       "AUTH-ONLY: device-code OAuth/network authentication; ZERO model inference calls; no M3.1a probes. Use an unrecorded terminal; enter the code only on the official website, never into Tesota or an agent." :
+      authenticationMethod === "device_code" ?
+      "FULL-PROBE: device-code OAuth/network authentication AND up to two model invocations. Use an unrecorded terminal; enter the code only on the official website, never into Tesota or an agent." :
       "FULL-PROBE: OAuth/network authentication followed by M3.1a model probes. Complete OAuth in the browser.");
-    const interaction = mode === "auth_only" ?
+    const interaction = authenticationMethod === "device_code" ?
       deviceCodeAuth(deviceCodeTerminalRenderer(), cancellation.signal) : browserOnlyAuth((url) => {
       // Pi supplies the initial authorize URL, never a callback/code. No shell interpolation.
       const target = new URL(url);
@@ -51,7 +55,7 @@ if ((args.length === 1 && args[0] === "--help") ||
     result = await runLiveCodex(mode, interaction);
     exitCode = result.disposition === "failed" ? 1 : 0;
   } catch {
-    result = { mode, authenticationMethod: mode === "auth_only" ? "device_code" : "browser", authentication: { outcome: "failed", oauthFailureCategory: "unknown" },
+    result = { mode, authenticationMethod, authentication: { outcome: "failed", oauthFailureCategory: "unknown" },
       experiment: null, inferenceAttempted: false, disposition: "failed" };
     console.error("Live experiment failed; secret-bearing error details suppressed.");
   } finally {

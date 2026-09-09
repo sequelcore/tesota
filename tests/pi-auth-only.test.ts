@@ -219,7 +219,7 @@ it("selects device_code and projects only official URI/user code to the private 
   expect(error.mock.calls.length).toBe(0);
 });
 
-it("uses the real public Pi Models.login selection, notification, polling and exchange with synthetic fetch", async () => {
+it.each(["auth_only", "full_probe"] as const)("uses public Pi login selection, polling and exchange before %s with synthetic fetch", async (mode) => {
   const f = await fixture();
   f.login.mockRestore();
   const render = vi.fn();
@@ -241,8 +241,9 @@ it("uses the real public Pi Models.login selection, notification, polling and ex
     }
     throw new Error("Unexpected offline route");
   }));
-  const result = await runLiveCodex("auth_only", auth);
-  expect(result).toMatchObject({ authenticationMethod: "device_code", disposition: "succeeded", experiment: null });
+  const result = await runLiveCodex(mode, auth);
+  expect(result).toMatchObject({ authenticationMethod: "device_code", disposition: mode === "auth_only" ? "succeeded" : "passed" });
+  if (mode === "auth_only") expect(result.experiment).toBeNull();
   expect(prompt).toHaveBeenCalledOnce();
   expect(prompt.mock.calls[0]?.[0]).toMatchObject({ type: "select", options: expect.arrayContaining([
     expect.objectContaining({ id: "device_code" }),
@@ -251,7 +252,7 @@ it("uses the real public Pi Models.login selection, notification, polling and ex
   expect(routes).toEqual(["https://auth.openai.com/api/accounts/deviceauth/usercode",
     "https://auth.openai.com/api/accounts/deviceauth/token", "https://auth.openai.com/oauth/token"]);
   expect(render).toHaveBeenCalledOnce();
-  expect(f.stream).not.toHaveBeenCalled();
+  expect(f.stream).toHaveBeenCalledTimes(mode === "auth_only" ? 0 : 2);
   expect(JSON.stringify(evidence(result)).includes(deviceNotification.userCode)).toBe(false);
 });
 
@@ -377,11 +378,96 @@ it("late device notifications cannot display a code after the application deadli
   expect(render).not.toHaveBeenCalled();
 });
 
-it.each([["--auth-only"], ["--full-probe", "--device-code"], ["--device-code"], []].map((args) => ({ args })))(
+it.each([["--auth-only"], ["--full-probe", "--unknown"], ["--full-probe", "--device-code", "extra"], ["--device-code"], []].map((args) => ({ args })))(
   "compiled CLI requires the exact explicit mode/method combination (%#)", ({ args }) => {
     const result = spawnSync("bun", ["--no-env-file", "--preload", resolve("tests/fixtures/auth-only-smoke.mjs"),
-      resolve("dist/live-codex.js"), ...args], { encoding: "utf8", timeout: 5_000, windowsHide: true });
+      resolve("dist/live-codex.js"), ...args], { encoding: "utf8", timeout: 5_000, windowsHide: true,
+      env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"], TESOTA_TEST_SCENARIO: "forbid_login" } });
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("Select --auth-only --device-code or --full-probe");
+    expect(result.stdout + result.stderr).not.toContain("LOGIN_MUST_NOT_START");
   },
 );
+
+it.skipIf(process.platform !== "win32").each([
+  ["success", 0, 2], ["login_failure", 1, 0], ["login_timeout", 1, 0],
+  ["normal_failure", 1, 1], ["abort_failure", 1, 2], ["normal_tool", 1, 1], ["abort_tool", 1, 2],
+] as const)("compiled full-probe/device-code composition: %s", (scenario, exit, count) => {
+  const directory = mkdtempSync(join(tmpdir(), "tesota-full-device-"));
+  try {
+    mkdirSync(join(directory, "docs"));
+    const result = spawnSync("bun", ["--no-env-file", "--preload", resolve("tests/fixtures/auth-only-smoke.mjs"),
+      resolve("dist/live-codex.js"), "--full-probe", "--device-code"], {
+      cwd: directory, encoding: "utf8", timeout: 5_000, windowsHide: true,
+      env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"], TESOTA_TEST_SCENARIO: scenario },
+    });
+    expect(result.status).toBe(exit);
+    expect(result.stdout).toContain("device-code OAuth/network authentication AND up to two model invocations");
+    const serialized = readFileSync(join(directory, "docs/m31a-live-device-code-evidence.json"), "utf8");
+    const record = JSON.parse(serialized);
+    expect(record).toMatchObject({ version: 4, mode: "full_probe", authenticationMethod: "device_code",
+      authenticationOutcome: scenario === "login_failure" ? "failed" : scenario === "login_timeout" ? "unconfirmed" : "succeeded",
+      modelInvocationCount: count, disposition: exit === 0 ? "passed" : "failed" });
+    for (const secret of ["TEST-ONLY", "SYNTHETIC_PRIVATE"]) {
+      expect(serialized + result.stdout + result.stderr).not.toContain(secret);
+    }
+    if (count === 0) expect([record.turn, record.abortProbe]).toEqual([null, null]);
+    else {
+      expect(record.turn.modelInvocationCount).toBe(1);
+      expect(record.turn.taskAcceptance).toBe("not_evaluated");
+      if (count === 1) expect(record.abortProbe).toBeNull();
+      else {
+        expect(record.turn.disposition).toBe("passed");
+        expect(record.abortProbe.modelInvocationCount).toBe(1);
+        expect(record.abortProbe.taskAcceptance).toBe("not_evaluated");
+        expect(record.abortProbe.disposition).toBe(exit === 0 ? "passed" : "failed");
+      }
+      if (scenario.endsWith("_tool")) {
+        expect(scenario === "normal_tool" ? record.turn : record.abortProbe).toMatchObject({
+          invocationAttempts: 2, requestBudgetExceeded: true, toolExecutionStartCount: 1, disposition: "failed",
+        });
+      }
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+it.skipIf(process.platform !== "win32")("compiled device full-probe checks terminal and reservation before login, preserving prior evidence", () => {
+  const directory = mkdtempSync(join(tmpdir(), "tesota-full-reserve-"));
+  const historical = ["m31a-live-evidence.json", "m31a-auth-only-evidence.json", "m31a-auth-only-device-code-evidence.json"]
+    .map((name) => ({ name, bytes: readFileSync(join("docs", name)) }));
+  try {
+    mkdirSync(join(directory, "docs"));
+    for (const file of historical) writeFileSync(join(directory, "docs", file.name), file.bytes);
+    const destination = join(directory, "docs/m31a-live-device-code-evidence.json");
+    const invoke = (captured: boolean) => spawnSync("bun", ["--no-env-file", "--preload",
+      resolve("tests/fixtures/auth-only-smoke.mjs"), resolve("dist/live-codex.js"), "--full-probe", "--device-code"], {
+      cwd: directory, encoding: "utf8", timeout: 5_000, windowsHide: true,
+      env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"],
+        TESOTA_TEST_CAPTURED: captured ? "1" : "0", TESOTA_TEST_SCENARIO: "forbid_login" },
+    });
+    const captured = invoke(true);
+    expect(captured.status).toBe(2);
+    expect(captured.stderr).toContain("captured execution is disabled");
+    expect(() => readFileSync(destination)).toThrow();
+    const reserved = Buffer.from("existing reservation\n");
+    writeFileSync(destination, reserved);
+    const occupied = invoke(false);
+    expect(occupied.status).toBe(1);
+    expect(occupied.stderr).toContain("EEXIST");
+    for (const result of [captured, occupied]) expect(result.stdout + result.stderr).not.toContain("LOGIN_MUST_NOT_START");
+    expect(readFileSync(destination)).toEqual(reserved);
+    for (const file of historical) {
+      expect(readFileSync(join(directory, "docs", file.name))).toEqual(file.bytes);
+      expect(readFileSync(join("docs", file.name))).toEqual(file.bytes);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+it("new package command exposes explicit device full-probe selection and offline help", () => {
+  const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+  expect(manifest.scripts["live:codex:device-code"]).toBe("bun --no-env-file dist/live-codex.js --full-probe --device-code");
+  const output = execFileSync("bun", ["run", "live:codex:device-code", "--help"], {
+    encoding: "utf8", timeout: 5_000, windowsHide: true,
+  });
+  expect(output).toContain("--full-probe --device-code: device-code authentication AND up to two model invocations");
+});

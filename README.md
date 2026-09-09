@@ -251,8 +251,10 @@ The explicit opt-in `bun run live:codex` command runs the bounded experiment in
 `src/integrations/pi-live.ts`. Normal `bun run check` gates remain offline and
 credential-free. Run `bun run build` first; compiled `--help` is also offline.
 The M3.1a implementation harness is technically accepted with follow-up; its
-live inference proof remains incomplete. This AUTH-ONLY correction awaits
-independent review and does not close M3.1a or begin M3.1b.
+live inference proof remains incomplete. Device-code AUTH-ONLY has passed independent
+review and an operator-run login with independently validated evidence. The full-probe
+device-code wiring still requires independent review and live exercise; M3.1a remains
+open and M3.1b has not begun.
 
 `bun run auth:codex` explicitly selects `--auth-only --device-code`: device-code
 OAuth/network authentication with **ZERO model inference calls and no M3.1a probes**.
@@ -262,6 +264,29 @@ exclusively reserves `docs/m31a-auth-only-device-code-evidence.json`. The occupi
 `bun run live:codex` explicitly selects `--full-probe`; neither mode runs from normal checks. Both support offline
 `--help` (`bun run auth:codex --help` and `bun run live:codex --help`); calling the
 compiled entry without an explicit mode is rejected.
+
+For the future full-probe device-code run, build first and then manually run:
+
+```sh
+bun run live:codex:device-code
+```
+
+This expands to `bun --no-env-file dist/live-codex.js --full-probe --device-code`.
+It explicitly performs device-code authentication **and up to two model invocations**.
+Use an unrecorded interactive Windows terminal; all three standard streams must be
+TTY. Reusing the AUTH-ONLY device renderer, it displays the official website and
+temporary code for manual entry on that website. It does not launch a browser or
+read authorization input. It exclusively reserves
+`docs/m31a-live-device-code-evidence.json` before authentication; an occupied file
+refuses the run. All historical evidence destinations remain unchanged.
+
+The existing `runLiveCodex` authenticates and runs the existing normal and abort
+probes on the same Pi Models instance in one process. No earlier credentials or
+AUTH-ONLY evidence are read. Failed or unconfirmed login starts neither probe.
+The existing full-probe limits and 249,000 ms watchdog apply, and schema v4 records
+`mode: "full_probe"` with `authenticationMethod: "device_code"`. AUTH-ONLY retains
+its early return, inference guards, null probes and shorter watchdog. This command
+completes wiring only; it has not been exercised live.
 
 AUTH-ONLY disables the invocation's Pi Models and provider inference entry points
 before login, then returns immediately after the bounded public `Models.login`
@@ -314,7 +339,7 @@ turn deadline did not expire; an expired turn still returns within the separate
 settlement window, without asserting successful or aborted settlement.
 
 Pi 0.85.1's tagged `packages/ai/src/auth/oauth/openai-codex.ts` races a `manual_code` prompt
-against its localhost callback. Tesota selects browser login and leaves that
+against its localhost callback. The legacy `--full-probe` browser path selects browser login and leaves that
 prompt pending until cancellation; **manual authorization entry is disabled**.
 It has no readline/stdin reader. Other text/secret prompts fail closed. On Windows
 the initial Pi authorize URL opens in the default browser without being logged;
@@ -329,7 +354,7 @@ unproven.**
 
 The [historical report](docs/m31a-historical-report.json) preserves only the
 operator-supplied worker report for the rejected commit; it is not independent
-verification. The corrected harness writes `docs/m31a-live-evidence.json` with a
+verification. The browser harness targets `docs/m31a-live-evidence.json` with a
 versioned, allowlisted machine projection: identifiers, counts, ordered lifecycle
 labels, bounds, stop reasons, statuses and dispositions. It includes no model
 text/reasoning, credentials, auth responses, headers or environment values.

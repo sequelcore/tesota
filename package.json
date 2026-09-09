@@ -18,6 +18,7 @@
     "check": "bun run build && bun run typecheck && bun run test && bun run lint",
     "start": "bun --no-env-file dist/cli.js",
     "live:codex": "bun --no-env-file dist/live-codex.js --full-probe",
+    "live:codex:device-code": "bun --no-env-file dist/live-codex.js --full-probe --device-code",
     "auth:codex": "bun --no-env-file dist/live-codex.js --auth-only --device-code"
   },
   "devDependencies": {
