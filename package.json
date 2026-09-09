@@ -1,64 +1,27 @@
 {
-  "name": "kiln",
-  "description": "Kiln control-plane monorepo",
+  "name": "tesota-bootstrap",
+  "version": "0.0.0",
   "private": true,
+  "description": "Provisional Tesota M1 development scaffold",
   "license": "Apache-2.0",
   "type": "module",
   "packageManager": "bun@1.4.0",
-  "workspaces": [
-    "packages/*"
-  ],
+  "engines": {
+    "node": "24.15.0"
+  },
+  "trustedDependencies": [],
   "scripts": {
-    "research:references": "bun run scripts/repository-analysis/query.ts",
-    "research:references:local": "bun run scripts/repository-analysis/local-reference-workflow.ts",
-    "research:references:evaluate": "bun run scripts/repository-analysis/evaluate.ts",
-    "research:references:project:evaluate": "bun run scripts/repository-analysis/evaluate-project.ts",
-    "build": "bun run scripts/release/cli.ts build",
-    "compile": "tsc -b packages/operator-appearance packages/gateway-contracts packages/tools packages/core packages/runtime packages/sdk packages/cli packages/tui",
-    "docs:check": "bun run scripts/validate-docs.ts",
-    "typecheck": "bun run compile && tsc -p packages/widget/tsconfig.json --noEmit && tsc -p packages/gui/tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit && bun run typecheck:tests",
-    "typecheck:tests": "tsc -p packages/operator-appearance/tsconfig.test.json && tsc -p packages/tools/tsconfig.test.json && tsc -p packages/gateway-contracts/tsconfig.test.json && tsc -p packages/sdk/tsconfig.test.json && tsc -p packages/tui/tsconfig.test.json && tsc -p packages/core/tsconfig.test.json && tsc -p packages/runtime/tsconfig.test.json && tsc -p packages/cli/tsconfig.test.json && tsc -p packages/gui/tsconfig.test.json",
-    "test": "bun run test:scripts && bun run test:source-stability-recovery && bun run test:foundation && bun run test:runtime && bun run test:cli && bun run test:surfaces",
-    "test:foundation": "bun run --parallel --filter @kilnai/operator-appearance --filter @kilnai/gateway-contracts --filter @kilnai/tools --filter @kilnai/core test",
-    "test:runtime": "bun run --filter @kilnai/runtime test",
-    "test:cli": "bun run --filter @kilnai/cli test",
-    "test:surfaces": "bun run --parallel --filter @kilnai/react --filter @kilnai/widget --filter @kilnai/tui --filter @kilnai/gui test",
-    "test:e2e": "bun run --cwd packages/gui test:e2e",
-    "test:benchmark-verifiers:live": "bun run --cwd packages/cli test:live",
-    "report:architecture-baseline": "bun run scripts/report-architecture-baseline.ts",
-    "profile:startup": "bun run scripts/profile-startup.ts",
-    "test:harness": "bun run scripts/run-managed-agent-harness-tests.ts",
-    "test:managed-agents:live": "bun run scripts/run-managed-agent-live-tests.ts",
-    "test:source-stability-recovery": "bun run scripts/run-source-stability-recovery-tests.ts",
-    "test:model-gateway-harnesses:live": "bun run scripts/run-model-gateway-harness-live-probe.ts",
-    "test:mutation:runtime": "stryker run stryker.runtime.conf.mjs",
-    "vendor:tools": "bun run scripts/vendor-tools.ts",
-    "test:scripts": "vitest run --config scripts/vitest.config.ts --exclude scripts/profile-startup.test.ts",
-    "test:startup-profile": "vitest run --config scripts/vitest.config.ts scripts/profile-startup.test.ts",
-    "release:validate": "bun run scripts/release/cli.ts validate",
-    "release:pack": "bun run scripts/release/cli.ts pack",
-    "release:smoke": "bun run scripts/release/cli.ts smoke",
-    "release:preflight": "bun run scripts/release/cli.ts preflight",
-    "release:publish": "bun run scripts/release/cli.ts publish"
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun run build && vitest run tests --maxWorkers=1 --no-file-parallelism --testTimeout=10000",
+    "lint": "oxlint --deny-warnings src tests",
+    "check": "bun run build && bun run typecheck && bun run test && bun run lint",
+    "start": "bun --no-env-file dist/cli.js"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.6",
-    "@modelcontextprotocol/server": "2.0.0",
-    "@playwright/test": "^1.52.0",
-    "@stryker-mutator/core": "10.0.0",
-    "@stryker-mutator/vitest-runner": "10.0.0",
-    "@types/better-sqlite3": "^7.6.13",
-    "@types/bun": "^1.4.0",
-    "@types/react": "^19.0.0",
-    "@vitest/coverage-v8": "^4.1.10",
-    "better-sqlite3": "^12.6.2",
-    "react": "^19.0.0",
-    "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
-  },
-  "dependencies": {
-    "@kilnai/tui": "workspace:*",
-    "@opentui/core": "0.1.92",
-    "@opentui/react": "0.1.92"
+    "@types/node": "24.10.0",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11",
+    "oxlint": "1.82.0"
   }
 }

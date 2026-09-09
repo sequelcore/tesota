@@ -1,8 +1,0 @@
-{
-  "schemaVersion": "kiln-generated-tool-result-fixture-v1",
-  "shardCount": 8,
-  "linesPerShard": 512,
-  "lineTemplate": "shard-{shard:02}:line-{line:04}:kiln-context-efficiency-diagnostic-v1\\n",
-  "orderedConcatenationSha256": "sha256:8f3247c8a7a04c15e559e7379374d89e325c56cce80a059b91e660046a25b417",
-  "orderedConcatenationBytes": 233472
-}

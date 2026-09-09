@@ -1,8 +1,0 @@
-{
-  "fixture": "synthetic-claude-agent-sdk-messages/v1",
-  "messages": [
-    { "type": "system", "subtype": "init", "session_id": "fixture-session", "tools": ["Read", "mcp__example__lookup"], "plugins": [{ "name": "fixture-plugin", "path": "plugin-fixture" }] },
-    { "type": "assistant", "session_id": "fixture-session", "message": { "role": "assistant", "content": [{ "type": "tool_use", "id": "toolu_fixture", "name": "mcp__example__lookup", "input": { "key": "synthetic" } }] } },
-    { "type": "user", "session_id": "fixture-session", "message": { "role": "user", "content": [{ "type": "tool_result", "tool_use_id": "toolu_fixture", "content": "synthetic-result" }] }, "tool_use_result": { "content": [{ "type": "text", "text": "synthetic-result" }], "_meta": { "fixture": true } } }
-  ]
-}

@@ -1,110 +1,26 @@
-name: CI
-
+name: M1 checks
 on:
   push:
-    branches: [main, dev]
+    branches: [tesota/bootstrap]
   pull_request:
-    branches: [main, dev, codex/cross-harness-gateway]
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+permissions:
+  contents: read
 jobs:
-  # Package tests import workspace packages through their exports map, which
-  # resolves to dist. Compiling once and sharing the output keeps that
-  # dependency explicit instead of relying on typecheck emitting as a side
-  # effect.
-  compile:
-    name: Compile packages
-    timeout-minutes: 15
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/workspace
-
-      - name: Compile packages
-        run: bun run compile
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: compiled-packages
-          path: packages/*/dist
-          retention-days: 1
-
-  validate:
-    timeout-minutes: 15
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/workspace
-
-      - name: Validate release cohort
-        run: bun run release:validate
-
-      - name: Validate documentation
-        run: bun run docs:check
-
-      - name: Typecheck
-        run: bun run typecheck
-
-  test:
-    needs: [compile]
-    timeout-minutes: 20
+  check:
     strategy:
       fail-fast: false
       matrix:
-        lane: [scripts, foundation, runtime, cli, surfaces]
-    name: Test (${{ matrix.lane }})
-    runs-on: ubuntu-latest
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/workspace
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          compiled: "true"
-
-      - run: bun run test:${{ matrix.lane }}
-
-  startup_profile:
-    needs: [compile]
-    timeout-minutes: 15
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/workspace
+          node-version-file: package.json
+      - uses: oven-sh/setup-bun@v2
         with:
-          compiled: "true"
-          playwright: "true"
-
-      - name: Install Chromium for startup profile
-        run: bunx playwright install --with-deps chromium
-
-      - name: Test GUI startup profile
-        run: bun run test:startup-profile
-
-  build:
-    timeout-minutes: 20
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/workspace
-
-      - name: Build
-        run: bun run build
-
-  check:
-    if: ${{ always() }}
-    needs: [compile, validate, test, startup_profile, build]
-    timeout-minutes: 2
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require every CI lane
-        if: ${{ needs.compile.result != 'success' || needs.validate.result != 'success' || needs.test.result != 'success' || needs.startup_profile.result != 'success' || needs.build.result != 'success' }}
-        run: exit 1
-
-      - run: echo "All CI lanes passed."
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun --no-env-file run check
+      - run: bun --no-env-file dist/cli.js --help

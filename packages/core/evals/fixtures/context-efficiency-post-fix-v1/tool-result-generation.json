@@ -1,7 +1,0 @@
-{
-  "schemaVersion": "kiln-post-fix-tool-generation-v1",
-  "shardCount": 8,
-  "linesPerShard": 512,
-  "lineTemplate": "shard-{shard:02}:line-{line:04}:{frozenToolFixtureSeed}\\n",
-  "checksumAlgorithm": "SHA-256 of UTF-8 shard contents concatenated in ascending filename order"
-}

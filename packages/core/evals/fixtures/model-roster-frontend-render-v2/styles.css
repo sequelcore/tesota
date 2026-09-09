@@ -1,7 +1,0 @@
-:root { font-family: system-ui, sans-serif; color: #111827; background: #f8fafc; }
-body { margin: 0; } main { max-width: 52rem; margin: 3rem auto; padding: 2rem; background: white; }
-button, input, select { font: inherit; padding: .5rem .75rem; } button:focus-visible, input:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
-.backdrop { position: fixed; inset: 0; display: grid; place-items: center; background: rgb(15 23 42 / .55); }
-[role="dialog"] { background: white; padding: 1.5rem; min-width: 20rem; } .actions { display: flex; gap: .5rem; }
-table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #cbd5e1; padding: .5rem; text-align: left; }
-.error { color: #b91c1c; } nav, [role="tablist"] { display: flex; gap: .5rem; }

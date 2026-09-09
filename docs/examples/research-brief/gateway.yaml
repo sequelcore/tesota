@@ -1,9 +1,0 @@
-port: 3000
-
-apps:
-  - name: research-brief
-    config: app.yaml
-    channels:
-      - type: web
-      - type: api
-        path: /api/research-brief

@@ -1,8 +1,0 @@
-{
-  "name": "context-efficiency-bounded-implementation-fixture",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "bun test verification/normalize.fixture.ts"
-  }
-}
