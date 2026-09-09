@@ -3,12 +3,16 @@ import {
   Type,
   type Static,
   type AssistantMessage,
+  type AssistantMessageEvent,
+  type AuthInteraction,
   type Context,
   type FauxResponseStep,
+  createModels,
   fauxAssistantMessage,
   fauxProvider,
   fauxToolCall,
 } from "@earendil-works/pi-ai";
+import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import {
   isIssuedOxlintResult,
   runOxlint,
@@ -56,6 +60,62 @@ export interface PiSessionResult {
   readonly events: readonly PiSessionEvent[];
   readonly verification?: OxlintResult;
   readonly issuedEvidence?: CompletedOxlintResult;
+}
+
+export type LiveCodexSessionStatus = "completed" | "aborted" | "failed";
+
+export type LiveCodexEvent =
+  | { readonly type: "session_started" }
+  | { readonly type: "turn_started" }
+  | { readonly type: "stream_event"; readonly event: AssistantMessageEvent["type"] }
+  | { readonly type: "turn_completed" }
+  | { readonly type: "session_completed" }
+  | { readonly type: "abort_requested" }
+  | { readonly type: "session_aborted" }
+  | { readonly type: "session_failed" };
+
+export interface LiveCodexTurnResult {
+  readonly status: LiveCodexSessionStatus;
+  readonly provider: "openai-codex";
+  readonly api: "openai-codex-responses";
+  readonly model: string;
+  readonly authType: "oauth";
+  readonly providerRequestCount: number;
+  readonly streamEventCount: number;
+  readonly streamEventTypes: readonly AssistantMessageEvent["type"][];
+  readonly terminalStopReason: AssistantMessage["stopReason"] | undefined;
+  readonly abortRequested: boolean;
+  readonly taskAcceptance: "not_evaluated";
+  readonly toolCallCount: number;
+  readonly toolExecutionCount: number;
+  readonly responseMatchesExpectedToken: boolean;
+  readonly events: readonly LiveCodexEvent[];
+}
+
+export interface LiveCodexExperimentOptions {
+  /** Pi's provider-owned OAuth interaction; credentials remain in Pi's memory store. */
+  readonly authInteraction?: AuthInteraction;
+  readonly modelId?: string;
+  readonly includeAbortProbe?: boolean;
+}
+
+export interface LiveCodexExperimentResult {
+  readonly turn: LiveCodexTurnResult;
+  readonly abortProbe?: LiveCodexTurnResult;
+}
+
+export const LIVE_CODEX_MODEL_ID = "gpt-5.3-codex-spark";
+export const LIVE_CODEX_EXPECTED_TOKEN = "TESOTA_M31A_OK";
+
+/** Normalize Pi's observed terminal outcome without inferring from a request. */
+export function normalizeLiveCodexStatus(
+  terminalStopReason: AssistantMessage["stopReason"] | undefined,
+  agentErrorObserved: boolean,
+): LiveCodexSessionStatus {
+  if (terminalStopReason === "aborted") return "aborted";
+  if (terminalStopReason === undefined || terminalStopReason === "pending" ||
+      terminalStopReason === "error" || agentErrorObserved) return "failed";
+  return "completed";
 }
 
 interface VerificationToolDetails {
@@ -261,4 +321,157 @@ export async function runPiSession(options: PiSessionOptions): Promise<PiSession
   } finally {
     unsubscribe();
   }
+}
+
+function assistantResponseText(messages: readonly AgentMessage[]): string {
+  let response = "";
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    for (const block of message.content) {
+      if (block.type === "text") response += block.text;
+    }
+  }
+  return response;
+}
+
+async function runLiveCodexTurn(
+  models: ReturnType<typeof createModels>,
+  model: NonNullable<ReturnType<ReturnType<typeof createModels>["getModel"]>>,
+  abortOnFirstStreamEvent: boolean,
+): Promise<LiveCodexTurnResult> {
+  const events: LiveCodexEvent[] = [];
+  const streamEventTypes: AssistantMessageEvent["type"][] = [];
+  let providerRequestCount = 0;
+  let abortRequested = false;
+  let terminalStopReason: AssistantMessage["stopReason"] | undefined;
+  let toolCallCount = 0;
+  let toolExecutionCount = 0;
+  let agentErrorObserved = false;
+  let abortIssued = false;
+
+  const agent = new Agent({
+    streamFn: (requestModel, context, streamOptions) => {
+      providerRequestCount += 1;
+      return models.streamSimple(requestModel, context, {
+        ...streamOptions,
+        cacheRetention: "none",
+        maxRetries: 0,
+        timeoutMs: 30_000,
+        transport: "sse",
+      });
+    },
+    initialState: {
+      systemPrompt: "Return only the requested fixed token. Do not use tools.",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+    },
+  });
+
+  const unsubscribe = agent.subscribe((event) => {
+    switch (event.type) {
+      case "agent_start":
+        events.push({ type: "session_started" });
+        break;
+      case "turn_start":
+        events.push({ type: "turn_started" });
+        break;
+      case "message_update":
+        streamEventTypes.push(event.assistantMessageEvent.type);
+        events.push({ type: "stream_event", event: event.assistantMessageEvent.type });
+        if (abortOnFirstStreamEvent && streamEventTypes.length === 1 && !abortIssued) {
+          abortIssued = true;
+          abortRequested = true;
+          events.push({ type: "abort_requested" });
+          agent.abort();
+        }
+        break;
+      case "tool_execution_start":
+        toolExecutionCount += 1;
+        break;
+      case "turn_end":
+        events.push({ type: "turn_completed" });
+        break;
+      case "agent_end":
+        terminalStopReason = event.messages.findLast((message) => message.role === "assistant")?.stopReason;
+        toolCallCount = event.messages.reduce((count, message) => {
+          if (message.role !== "assistant") return count;
+          return count + message.content.filter((block) => block.type === "toolCall").length;
+        }, 0);
+        agentErrorObserved = agent.state.errorMessage !== undefined;
+        if (terminalStopReason === "aborted") events.push({ type: "session_aborted" });
+        else if (normalizeLiveCodexStatus(terminalStopReason, agentErrorObserved) === "failed") {
+          events.push({ type: "session_failed" });
+        } else {
+          events.push({ type: "session_completed" });
+        }
+        break;
+      default:
+        break;
+    }
+  });
+
+  try {
+    await agent.prompt(`Reply with exactly ${LIVE_CODEX_EXPECTED_TOKEN} and no other text.`);
+  } catch {
+    agentErrorObserved = true;
+  } finally {
+    unsubscribe();
+  }
+
+  const status = normalizeLiveCodexStatus(terminalStopReason, agentErrorObserved);
+  return {
+    status,
+    provider: "openai-codex",
+    api: "openai-codex-responses",
+    model: model.id,
+    authType: "oauth",
+    providerRequestCount,
+    streamEventCount: streamEventTypes.length,
+    streamEventTypes,
+    terminalStopReason,
+    abortRequested,
+    taskAcceptance: "not_evaluated",
+    toolCallCount,
+    toolExecutionCount,
+    responseMatchesExpectedToken: status === "completed" &&
+      assistantResponseText(agent.state.messages).trim() === LIVE_CODEX_EXPECTED_TOKEN,
+    events,
+  };
+}
+
+/** Run the opt-in live Codex OAuth experiment with no Tesota-owned tools. */
+export async function runLiveCodexExperiment(
+  options: LiveCodexExperimentOptions,
+): Promise<LiveCodexExperimentResult> {
+  const models = createModels();
+  const provider = openaiCodexProvider();
+  models.setProvider(provider);
+
+  const providers = models.getProviders();
+  if (providers.length !== 1 || providers[0]?.id !== "openai-codex" ||
+      providers[0]?.auth.apiKey !== undefined || providers[0]?.auth.oauth === undefined) {
+    throw new Error("Live Codex route was not isolated to Pi OAuth");
+  }
+
+  const modelId = options.modelId ?? LIVE_CODEX_MODEL_ID;
+  const model = models.getModel("openai-codex", modelId);
+  if (model === undefined || model.api !== "openai-codex-responses") {
+    throw new Error("Requested Codex model is not in the locked Pi catalog");
+  }
+
+  const authBeforeLogin = await models.checkAuth("openai-codex");
+  if (authBeforeLogin === undefined) {
+    if (options.authInteraction === undefined) {
+      throw new Error("Pi Codex OAuth requires an explicit authentication interaction");
+    }
+    await models.login("openai-codex", "oauth", options.authInteraction);
+  }
+  const auth = await models.checkAuth("openai-codex");
+  if (auth?.type !== "oauth") throw new Error("Pi Codex OAuth was not configured");
+
+  const turn = await runLiveCodexTurn(models, model, false);
+  if (!options.includeAbortProbe) return { turn };
+  const abortProbe = await runLiveCodexTurn(models, model, true);
+  return { turn, abortProbe };
 }

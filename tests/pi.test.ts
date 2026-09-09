@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Agent } from "@earendil-works/pi-agent-core";
 import * as piAi from "@earendil-works/pi-ai";
 import type { Context } from "@earendil-works/pi-ai";
-import { runPiSession } from "../src/integrations/pi.js";
+import { normalizeLiveCodexStatus, runPiSession } from "../src/integrations/pi.js";
 import { DurableVerificationEvidenceStore } from "../src/verification/evidence.js";
 import { configuredOxlint, runOxlint } from "../src/verification/oxlint.js";
 
@@ -20,6 +20,16 @@ const bun = execFileSync("bun", ["--no-env-file", "-p", "process.execPath"], {
   encoding: "utf8", windowsHide: true, timeout: 5_000,
 }).trim();
 const roots: string[] = [];
+
+it.each([
+  ["stop", false, "completed"],
+  ["aborted", false, "aborted"],
+  ["error", false, "failed"],
+  [undefined, false, "failed"],
+  ["stop", true, "failed"],
+] as const)("normalizes live Pi terminal outcome %s/%s", (reason, agentError, expected) => {
+  expect(normalizeLiveCodexStatus(reason, agentError)).toBe(expected);
+});
 
 afterEach(async () => {
   vi.restoreAllMocks();

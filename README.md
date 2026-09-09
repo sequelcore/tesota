@@ -242,3 +242,14 @@ placeholder and adopt the genuine supported dependency/contract.
 This follow-up establishes synthetic lifecycle and projection behavior only.
 Live provider compatibility, OAuth, production cancellation, durable Pi session
 recovery and a production invocation budget remain unproven.
+
+## Live Codex OAuth experiment (M3.1a)
+
+The opt-in `bun run live:codex` command exercises one real Codex OAuth model
+turn through the existing Pi boundary, with no Tesota tools. It uses Pi's
+provider-owned OAuth login and default in-memory credential store; credentials
+are not read, printed, copied or persisted by Tesota. The command selects only
+the locked `openai-codex` provider and `gpt-5.3-codex-spark` model, disables
+provider retries, and runs one separately bounded observed-abort probe. The
+normal `bun run check` gate never invokes this command and never requires
+network access or OAuth credentials.

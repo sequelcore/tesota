@@ -16,7 +16,8 @@
     "test": "bun run build && vitest run tests --maxWorkers=1 --no-file-parallelism --testTimeout=10000",
     "lint": "oxlint --deny-warnings src tests",
     "check": "bun run build && bun run typecheck && bun run test && bun run lint",
-    "start": "bun --no-env-file dist/cli.js"
+    "start": "bun --no-env-file dist/cli.js",
+    "live:codex": "bun --no-env-file dist/live-codex.js"
   },
   "devDependencies": {
     "@types/node": "24.10.0",
