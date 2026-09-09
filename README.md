@@ -17,7 +17,7 @@ clearance.
 
 ## Development
 
-Use Bun 1.4.0 (the installed M0 toolchain retained without a global upgrade) and
+Use Bun 1.4.2 (see the [bounded upgrade evidence](docs/bun-1.4.2-evidence.md)) and
 Node 24.15.0. Exact tool selections are owned by package.json and bun.lock:
 TypeScript 7.0.2, Vitest 4.1.11, Oxlint 1.82.0, and Node types 24.10.0.
 Node runs development tools; Bun runs the compiled CLI. The private scaffold
