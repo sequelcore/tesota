@@ -314,10 +314,30 @@ The file is reserved exclusively before login: existing evidence refuses another
 run. A process crash or watchdog exit can leave an incomplete reserved file;
 that is not valid evidence or successful settlement.
 
+New records use version 2 and add `oauthFailureCategory`: `oauth_timeout` when
+Tesota's 180,000 ms login deadline fires, `browser_launch_failed` when the local
+launcher throws or emits an error, and `unknown` for every other pre-probe failure.
+The category is null when login proceeds to model probes. Launcher success does
+not prove that a browser opened or a callback arrived. Invalid authorize routes
+remain `unknown`; route validation precedes the launcher observation.
+Classification recognizes only Tesota's local failure type, never error text,
+stacks, provider response bodies or auth material. It is diagnostic evidence only;
+an OAuth-stage failure still has zero model invocations, null probes and failed
+disposition, with no task acceptance or verification meaning.
+
+The inspected Pi 0.85.1 public `Models.login` forwards login rejection and abort
+reasons. Its `AuthInteraction` offers prompts and notifications but no typed
+callback-observed, login-rejected or internal-failure outcome. The installed
+`auth/oauth/openai-codex.js` keeps callback parsing and token exchange internal;
+its exceptions can contain response bodies. Prompt cancellation also occurs during
+callback cleanup, so it cannot prove callback absence. These cases stay `unknown`.
+
 The [corrected live attempt](docs/m31a-live-evidence.json), started on
 2026-09-09, exited 1 before either probe ran: zero model invocations, null normal
 and abort probes, and disposition `failed`. Its generic failure projection does
-not identify the specific OAuth failure. No retry was made. Corrected live
+not identify the specific OAuth failure. That version 1 record is preserved
+byte-for-byte; its missing category means `unknown` retrospectively because no
+retained evidence proves a more specific cause. No retry was made. Corrected live
 completion and abort behavior therefore remain unverified.
 
 Before that attempt, local Windows `bun run check` passed all 68 tests, build,

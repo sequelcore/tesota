@@ -43,6 +43,32 @@ export interface LiveCodexExperimentResult {
   readonly abortProbe: LiveCodexTurnResult | null;
 }
 
+export type LiveOAuthFailureCategory = "oauth_timeout" | "browser_launch_failed" | "unknown";
+
+/** Local diagnostic only. Never attach the original exception or authorization data. */
+class LiveOAuthFailure extends Error {
+  readonly category: Exclude<LiveOAuthFailureCategory, "unknown">;
+  constructor(category: Exclude<LiveOAuthFailureCategory, "unknown">) {
+    super("Live OAuth failed");
+    this.category = category;
+  }
+}
+
+/** Observe launcher exceptions/error events without retaining their payloads. */
+export function observeLiveBrowserLaunch(
+  launch: (onError: () => void) => void, cancellation: AbortController,
+): void {
+  const failed = (): void => cancellation.abort(new LiveOAuthFailure("browser_launch_failed"));
+  try { launch(failed); } catch { failed(); }
+}
+
+export function classifyLiveOAuthFailure(error: unknown): LiveOAuthFailureCategory {
+  if (error instanceof LiveOAuthFailure) {
+    if (error.category === "oauth_timeout" || error.category === "browser_launch_failed") return error.category;
+  }
+  return "unknown";
+}
+
 /** Protocol failure stream: the public StreamFn contract forbids throwing. */
 function deniedStream(model: Model<Api>): ReturnType<typeof createAssistantMessageEventStream> {
   const stream = createAssistantMessageEventStream();
@@ -202,26 +228,33 @@ export async function runLiveCodexExperiment(authInteraction: AuthInteraction): 
   }
   const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
   if (model?.api !== "openai-codex-responses") throw new Error("Locked model unavailable");
-  const cancellation = new AbortController();
-  let rejectTimeout: (error: Error) => void = () => {};
-  const timeout = new Promise<never>((_resolve, reject) => { rejectTimeout = reject; });
-  const timer = setTimeout(() => {
-    cancellation.abort();
-    rejectTimeout(new Error("OAuth deadline expired"));
-  }, LIVE_LIMITS.loginMs);
-  try {
-    await Promise.race([
-      models.login("openai-codex", "oauth", { ...authInteraction,
-        signal: authInteraction.signal === undefined ? cancellation.signal :
-          AbortSignal.any([authInteraction.signal, cancellation.signal]) }),
-      timeout,
-    ]);
-  } finally { clearTimeout(timer); }
+  await runLiveOAuthLogin((interaction) => models.login("openai-codex", "oauth", interaction), authInteraction);
   const stream: StreamFn = (requestModel, context, options) => models.streamSimple(requestModel, context, options);
   const turn = await runLiveCodexTurn(stream, model, false);
   if (!liveProbePasses(turn, false)) return { turn, abortProbe: null };
   const abortProbe = await runLiveCodexTurn(stream, model, true);
   return { turn, abortProbe };
+}
+
+/** The injected public login boundary is exercised offline; credentials are ignored. */
+export async function runLiveOAuthLogin(
+  login: (interaction: AuthInteraction) => Promise<unknown>, authInteraction: AuthInteraction,
+): Promise<void> {
+  const cancellation = new AbortController();
+  let rejectTimeout: (error: Error) => void = () => {};
+  const timeout = new Promise<never>((_resolve, reject) => { rejectTimeout = reject; });
+  const timer = setTimeout(() => {
+    rejectTimeout(new LiveOAuthFailure("oauth_timeout"));
+    cancellation.abort();
+  }, LIVE_LIMITS.loginMs);
+  try {
+    await Promise.race([
+      login({ ...authInteraction,
+        signal: authInteraction.signal === undefined ? cancellation.signal :
+          AbortSignal.any([authInteraction.signal, cancellation.signal]) }),
+      timeout,
+    ]);
+  } finally { clearTimeout(timer); }
 }
 
 /** Pi races manual_code with its callback server. Never read terminal authorization input. */

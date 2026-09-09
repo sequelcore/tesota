@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { closeSync, openSync, writeFileSync } from "node:fs";
-import { browserOnlyAuth, LIVE_LIMITS, liveProbePasses, runLiveCodexExperiment,
+import { browserOnlyAuth, LIVE_LIMITS, liveProbePasses, observeLiveBrowserLaunch, runLiveCodexExperiment,
   type LiveCodexExperimentResult } from "./integrations/pi-live.js";
 import { liveSourceIdentity, serializeLiveEvidence } from "./integrations/pi-live-evidence.js";
 
@@ -16,6 +16,7 @@ if (process.argv.length === 3 && process.argv[2] === "--help") {
   const timestamp = new Date().toISOString();
   const cancellation = new AbortController();
   let result: LiveCodexExperimentResult | null = null;
+  let failure: unknown;
   let exitCode = 1;
   const watchdog = setTimeout(() => {
     console.error("Live CLI watchdog expired; experiment unconfirmed.");
@@ -30,20 +31,23 @@ if (process.argv.length === 3 && process.argv[2] === "--help") {
           target.searchParams.has("code") || target.searchParams.has("access_token")) {
         throw new Error("Unexpected OAuth browser route");
       }
-      const browser = spawn("explorer.exe", [url], { windowsHide: true, stdio: "ignore" });
-      browser.on("error", () => cancellation.abort());
-      browser.unref();
+      observeLiveBrowserLaunch((onError) => {
+        const browser = spawn("explorer.exe", [url], { windowsHide: true, stdio: "ignore" });
+        browser.on("error", onError);
+        browser.unref();
+      }, cancellation);
     }, cancellation.signal);
     result = await runLiveCodexExperiment(interaction);
     exitCode = liveProbePasses(result.turn, false) && result.abortProbe !== null &&
       liveProbePasses(result.abortProbe, true) ? 0 : 1;
-  } catch {
+  } catch (error) {
+    failure = error;
     console.error("Live experiment failed; secret-bearing error details suppressed.");
   } finally {
     cancellation.abort();
     clearTimeout(watchdog);
   }
-  const evidence = serializeLiveEvidence(identity, timestamp, result);
+  const evidence = serializeLiveEvidence(identity, timestamp, result, failure);
   writeFileSync(evidenceFile, evidence, { encoding: "utf8" });
   closeSync(evidenceFile);
   console.log(evidence);

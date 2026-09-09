@@ -3,7 +3,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { browserOnlyAuth, LIVE_CODEX_EXPECTED_TOKEN, LIVE_LIMITS, liveProbePasses,
-  runLiveCodexTurn, type LiveCodexTurnResult } from "../src/integrations/pi-live.js";
+  observeLiveBrowserLaunch, runLiveOAuthLogin, runLiveCodexTurn,
+  type LiveCodexTurnResult } from "../src/integrations/pi-live.js";
 import { serializeLiveEvidence } from "../src/integrations/pi-live-evidence.js";
 
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
@@ -203,7 +204,9 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   const evidence = JSON.parse(serialized);
   expect(Object.keys(evidence).sort()).toEqual(["format", "version", "provenance", "timestamp", "implementation",
-    "provider", "api", "model", "authType", "limits", "modelInvocationCount", "turn", "abortProbe", "disposition"].sort());
+    "provider", "api", "model", "authType", "limits", "oauthFailureCategory", "modelInvocationCount", "turn", "abortProbe", "disposition"].sort());
+  expect(evidence.version).toBe(2);
+  expect(evidence.oauthFailureCategory).toBeNull();
   expect(Object.keys(evidence.abortProbe).sort()).toEqual(["status", "modelInvocationCount", "invocationAttempts",
     "toolExecutionStartCount", "streamUpdateCount", "terminalStopReason", "terminalObserved", "abortRequested",
     "taskAcceptance", "responseMatchesExpectedToken", "requestBudgetExceeded", "deadlineExpired", "settlement",
@@ -214,6 +217,69 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
     { turn: normal, abortProbe: { ...abortProbe, terminalObserved: false } },
     { turn: normal, abortProbe: null },
   ]) expect(JSON.parse(serializeLiveEvidence({}, "2026-01-01T00:00:00.000Z", result)).disposition).toBe("failed");
+});
+
+function oauthFailureEvidence(error: unknown, category: string) {
+  const serialized = serializeLiveEvidence({}, "2026-01-01T00:00:00.000Z", null, error);
+  const evidence = JSON.parse(serialized);
+  expect(evidence).toMatchObject({ version: 2, oauthFailureCategory: category,
+    modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "failed" });
+  expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
+  expect(serialized).not.toContain("stack");
+  expect(serialized).not.toContain("taskAcceptance");
+  return evidence;
+}
+
+it("classifies the local OAuth deadline even when cancellation rejects login immediately", async () => {
+  vi.useFakeTimers();
+  const auth = browserOnlyAuth(vi.fn(), new AbortController().signal);
+  let signal: AbortSignal | undefined;
+  const running = runLiveOAuthLogin((interaction) => new Promise((_resolve, reject) => {
+    signal = interaction.signal;
+    signal?.addEventListener("abort", () => reject(new Error("SYNTHETIC_PRIVATE cancellation")), { once: true });
+  }), auth).catch((error: unknown) => error);
+  await vi.advanceTimersByTimeAsync(LIVE_LIMITS.loginMs);
+  oauthFailureEvidence(await running, "oauth_timeout");
+  expect(signal?.aborted).toBe(true);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each(["throw", "error_event"])("classifies local browser launch %s without serializing its payload", async (mode) => {
+  const cancellation = new AbortController();
+  const auth = browserOnlyAuth(vi.fn(), cancellation.signal);
+  const running = runLiveOAuthLogin((interaction) => new Promise((_resolve, reject) => {
+    interaction.signal?.addEventListener("abort", () => reject(interaction.signal?.reason), { once: true });
+  }), auth).catch((error: unknown) => error);
+  observeLiveBrowserLaunch((onError) => {
+    if (mode === "throw") throw new Error("SYNTHETIC_PRIVATE launcher details");
+    queueMicrotask(onError);
+  }, cancellation);
+  oauthFailureEvidence(await running, "browser_launch_failed");
+});
+
+it.each([
+  new Error("oauth_timeout: SYNTHETIC_PRIVATE authorization_code=code redirect_uri=https://example.invalid/callback access_token=token"),
+  { category: "browser_launch_failed", stack: "SYNTHETIC_PRIVATE stack",
+    authorization: "SYNTHETIC_PRIVATE code", redirectUrl: "https://example.invalid/SYNTHETIC_PRIVATE",
+    tokens: "SYNTHETIC_PRIVATE token", cookies: "SYNTHETIC_PRIVATE cookie",
+    headers: "SYNTHETIC_PRIVATE header", env: "SYNTHETIC_PRIVATE env", body: "SYNTHETIC_PRIVATE body" },
+  "login_rejected", undefined,
+])("maps unrecognized login failures to unknown without inspecting raw details (%#)", async (error: unknown) => {
+  const auth = browserOnlyAuth(vi.fn(), new AbortController().signal);
+  const failure = await runLiveOAuthLogin(() => Promise.reject(error), auth).catch((caught: unknown) => caught);
+  oauthFailureEvidence(failure, "unknown");
+});
+
+it("does not infer a callback failure from prompt cancellation and clears a successful login deadline", async () => {
+  vi.useFakeTimers();
+  const auth = browserOnlyAuth(vi.fn(), new AbortController().signal);
+  const callback = new AbortController();
+  const pending = auth.prompt({ type: "manual_code", message: "offline", signal: callback.signal })
+    .catch((error: unknown) => error);
+  callback.abort();
+  oauthFailureEvidence(await pending, "unknown");
+  await runLiveOAuthLogin(() => Promise.resolve({ access: "SYNTHETIC_PRIVATE", refresh: "SYNTHETIC_PRIVATE" }), auth);
+  expect(vi.getTimerCount()).toBe(0);
 });
 
 it("compiled live help is offline and never opens an authorization input path", () => {
