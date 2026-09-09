@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, extname, isAbsolute, join, resolve } from "node:path";
+import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { interpretOxlint, type OxlintResult } from "./oxlint-result.js";
+import { interpretOxlint, type OxlintReport, type OxlintResult } from "./oxlint-result.js";
+import { digest, fixedConfiguration, observeVerifier, semanticArguments, sourceBytes, type InputBinding } from "./oxlint-input.js";
 
 /** Trusted application configuration, never CLI-supplied executable or argv. */
 export interface OxlintCheck {
@@ -13,6 +14,7 @@ export interface OxlintCheck {
   readonly timeoutMs: number;
   readonly maxOutputBytes: number;
   readonly terminationWaitMs: number;
+  readonly configuration: string;
 }
 
 export function configuredOxlint(cwd: string, executable: string): OxlintCheck {
@@ -20,20 +22,52 @@ export function configuredOxlint(cwd: string, executable: string): OxlintCheck {
     executable, cwd: resolve(cwd),
     entry: fileURLToPath(new URL("../../node_modules/oxlint/bin/oxlint", import.meta.url)),
     timeoutMs: 10_000, maxOutputBytes: 256 * 1024, terminationWaitMs: 2_000,
+    configuration: fixedConfiguration,
   };
 }
 
-const profile = JSON.stringify({
-  plugins: [], categories: { correctness: "off" },
-  rules: { "no-debugger": "error", "no-unused-vars": "error" },
-});
+const issued = new WeakMap<OxlintResult, InputBinding>();
 
-export async function runOxlint(check: OxlintCheck, input: string): Promise<OxlintResult> {
+function effectiveCheck(check: OxlintCheck, file: string): InputBinding["check"] {
+  return { profile: "oxlint-basic/v1", configuration: check.configuration,
+    arguments: ["--no-env-file", "<oxlint-entry>", ...semanticArguments(file)],
+    limits: { timeoutMs: check.timeoutMs, maxOutputBytes: check.maxOutputBytes,
+      terminationWaitMs: check.terminationWaitMs } };
+}
+
+export interface Applicability {
+  readonly status: "applicable" | "stale" | "unavailable";
+  readonly comparedAt: string;
+}
+
+/** Only an outcome issued here can be compared; JSON is not trusted evidence. */
+export async function assessApplicability(result: OxlintResult, current: OxlintCheck): Promise<Applicability> {
+  const check = { ...current };
+  const binding = issued.get(result);
+  let status: Applicability["status"] = "unavailable";
+  if (binding !== undefined) {
+    try {
+      const file = binding.source.file;
+      const bytes = await sourceBytes(file);
+      const verifier = await observeVerifier(check.executable, check.entry);
+      if (verifier.executableSha256 !== null) {
+        const observed: InputBinding = { source: { file, sha256: digest(bytes) },
+          check: effectiveCheck(check, file), verifier };
+        status = JSON.stringify(observed) === JSON.stringify(binding) ? "applicable" : "stale";
+      }
+    } catch { /* Unavailable inputs cannot establish applicability. */ }
+  }
+  return { status, comparedAt: new Date().toISOString() };
+}
+
+export async function runOxlint(configuration: OxlintCheck, input: string): Promise<OxlintResult> {
+  const check = { ...configuration };
   const file = resolve(check.cwd, input);
   let directory: string | undefined;
-  let result: OxlintResult;
+  let result: OxlintReport & { readonly binding?: InputBinding };
+  let binding: InputBinding | undefined;
   try {
-    if (![check.executable, check.entry, check.cwd].every(isAbsolute) ||
+    if (check.configuration !== fixedConfiguration || ![check.executable, check.entry, check.cwd].every(isAbsolute) ||
         ![check.timeoutMs, check.maxOutputBytes, check.terminationWaitMs]
           .every((value) => Number.isSafeInteger(value) && value > 0)) {
       return { status: "execution_failed", reason: "invalid_configuration", process: "not_started" };
@@ -43,37 +77,53 @@ export async function runOxlint(check: OxlintCheck, input: string): Promise<Oxli
       return { status: "execution_failed", reason: "unsupported_input", process: "not_started" };
     }
     // Inline suppressions could silently weaken this fixed profile.
-    if (/(?:oxlint|eslint)-disable/u.test(await readFile(file, "utf8"))) {
+    const bytes = await sourceBytes(file);
+    if (/(?:oxlint|eslint)-disable/u.test(bytes.toString("utf8"))) {
       return { status: "execution_failed", reason: "inline_suppression", process: "not_started" };
     }
-    const metadata: unknown = JSON.parse(await readFile(join(dirname(check.entry), "../package.json"), "utf8"));
-    if (typeof metadata !== "object" || metadata === null ||
-        !("version" in metadata) || metadata.version !== "1.82.0") {
+    const verifier = await observeVerifier(check.executable, check.entry);
+    if (verifier.packageVersion !== "1.82.0") {
       return { status: "execution_failed", reason: "unsupported_oxlint_version", process: "not_started" };
     }
     directory = await mkdtemp(join(tmpdir(), "tesota-oxlint-"));
     const config = join(directory, "profile.json");
-    await writeFile(config, profile, "utf8");
-    result = await execute(check, directory, [
-      "--no-env-file", check.entry, "--config", config, "--disable-nested-config",
-      "--no-ignore", "--threads", "1", "--format", "json", "--deny-warnings", "--", file,
-    ], file);
+    const snapshot = join(directory, basename(file));
+    binding = { source: { file, sha256: digest(bytes) }, check: effectiveCheck(check, file), verifier };
+    await writeFile(config, check.configuration, { encoding: "utf8", flag: "wx", mode: 0o600 });
+    await writeFile(snapshot, bytes, { flag: "wx", mode: 0o600 });
+    result = await execute(check, directory,
+      ["--no-env-file", check.entry, ...semanticArguments(file)], snapshot);
+    if (result.status !== "execution_failed") result = { ...result, file };
   } catch {
     result = { status: "execution_failed", reason: "input_or_installation_unavailable", process: "not_started" };
   }
+  if (binding !== undefined) result = { ...result, binding };
   if (directory !== undefined) {
     if (result.status === "execution_failed" && result.process === "unconfirmed") {
       return { ...result, retainedDirectory: directory };
     }
     try { await rm(directory, { recursive: true }); } catch {
       return { status: "execution_failed", reason: "temporary_cleanup_failed", process: result.process,
-        retainedDirectory: directory };
+        retainedDirectory: directory, ...(binding === undefined ? {} : { binding }) };
     }
   }
-  return result;
+  if (result.status === "execution_failed") return result;
+  if (binding === undefined) return { status: "execution_failed", reason: "missing_binding", process: result.process };
+  // Keep public evidence immutable as well as retaining the private issued copy.
+  Object.freeze(binding.source);
+  Object.freeze(binding.check.arguments);
+  Object.freeze(binding.check.limits);
+  Object.freeze(binding.check);
+  Object.freeze(binding.verifier);
+  Object.freeze(binding);
+  for (const diagnostic of result.diagnostics) Object.freeze(diagnostic);
+  Object.freeze(result.diagnostics);
+  const completed: OxlintResult = Object.freeze({ ...result, binding });
+  issued.set(completed, structuredClone(binding));
+  return completed;
 }
 
-function execute(check: OxlintCheck, cwd: string, args: readonly string[], file: string): Promise<OxlintResult> {
+function execute(check: OxlintCheck, cwd: string, args: readonly string[], file: string): Promise<OxlintReport> {
   return new Promise((settle) => {
     const env: NodeJS.ProcessEnv = {};
     for (const key of ["SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"]) {
@@ -91,7 +141,7 @@ function execute(check: OxlintCheck, cwd: string, args: readonly string[], file:
     let exited = false;
     let failure: string | undefined;
     let deadline: ReturnType<typeof setTimeout> | undefined;
-    const finish = (result: OxlintResult): void => {
+    const finish = (result: OxlintReport): void => {
       if (done) return;
       done = true;
       clearTimeout(timeout);
@@ -139,7 +189,7 @@ function execute(check: OxlintCheck, cwd: string, args: readonly string[], file:
       } else {
         try {
           const decoder = new TextDecoder("utf-8", { fatal: true });
-          finish(interpretOxlint(decoder.decode(Buffer.concat(output)), decoder.decode(Buffer.concat(errors)), code, file));
+          finish(interpretOxlint(decoder.decode(Buffer.concat(output)), decoder.decode(Buffer.concat(errors)), code, file, cwd));
         } catch {
           finish({ status: "execution_failed", reason: "invalid_verifier_result", process: "exited" });
         }

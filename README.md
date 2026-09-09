@@ -1,7 +1,8 @@
 # Tesota bootstrap
 
 A private, provisional package. It provides CLI help, invalid-argument errors,
-active development checks and one shared Oxlint executor (M2.1). It does not
+active development checks and one shared Oxlint executor with single-file input
+binding and applicability (M2.2). It does not
 execute agent tasks or connect to providers.
 
 Historical provenance: `4257ee9fce034cfe8e50dce3dbe3afb12f468094` from Kiln.
@@ -40,7 +41,7 @@ No arguments, `help`, `--help`, or `-h` print help on stdout and exit 0.
 `verify <file.ts|file.js>` runs the check below. Other argument combinations
 print a diagnostic on stderr and exit 2.
 
-## One local check (M2.1)
+## One local check (M2.2)
 
 ```sh
 bun --no-env-file dist/cli.js verify src/cli.ts
@@ -55,8 +56,8 @@ flags. The fixed `oxlint-basic/v1` profile checks only `no-debugger` and
 
 The verifier runs in a private temporary directory with an explicit JSON config,
 one thread, no external plugins, nested config, type-aware execution or fixes.
-Inline disable directives are rejected. It reads the selected source without
-executing it. Input is limited to 1 MiB, captured stdout and stderr together to
+Inline disable directives are rejected. It reads a byte-exact snapshot of the
+selected source without executing it. Input is limited to 1 MiB, captured stdout and stderr together to
 256 KiB, process runtime to 10 seconds, and termination observation to another
 2 seconds. The execution timeout starts at spawn, not during input preparation.
 
@@ -83,14 +84,62 @@ request alone never produces `exited`. An unconfirmed process includes its PID
 and retains its temporary directory for operator reconciliation. This closed
 native-rule profile runs one process; it is not a sandbox or a general process-tree
 executor. Arbitrary subprocesses, external plugins and untrusted installations
-are not admitted. Installed package version is checked; binary integrity and
-candidate binding are not established by that version check.
+are not admitted.
+
+### Input binding and applicability
+
+Every completed result includes `binding`:
+
+- `source`: the original absolute logical filename and SHA-256 of the captured
+  bytes, including BOM and line endings. No Git revision substitutes for bytes.
+- `check`: the fixed profile label, exact JSON configuration text, semantic
+  argument vector and execution limits. The entry placeholder is resolved from
+  `verifier.entry`; random temporary paths are not part of identity. Configuration
+  contents are compared even when the profile label is unchanged. Execution
+  continues to admit only the existing fixed configuration.
+- `verifier`: the observed installed package version, selected runtime executable
+  path and SHA-256, entry path, and an installation content digest covering Oxlint
+  and its resolvable installed native binding packages. `packageVersion` is read
+  from installed metadata, not asserted to be a runtime self-reported version.
+
+The executor reads at most 1 MiB plus one overflow byte, then hashes and writes
+the same captured buffer to a private temporary file. It preserves the original
+basename and extension, writes the recorded configuration, and directs Oxlint
+only to those snapshot inputs. Diagnostics are validated against the snapshot
+and attributed to the original logical filename. This preserves the two native,
+file-local rules; project configuration and import-aware analysis remain excluded.
+Unconfirmed termination retains both source and configuration snapshots. Failures
+include binding when preparation established it; absence never implies success.
+
+`assessApplicability(result, currentCheck)` returns `status` and `comparedAt`
+separately from the original execution outcome. Matching observed inputs are
+`applicable`; changed source, configuration, semantic arguments, limits or
+installation identity are `stale`; unreadable/missing inputs and results not
+issued by this executor instance are `unavailable`. A check failure can still
+be applicable. The comparison accepts only issued completed result objects,
+not copied or deserialized JSON. Completed results are immutable.
+
+Applicability describes the inputs observed during that comparison, not a
+permanent flag or an atomic view across mutable files. Installed tools are
+trusted and expected to remain stable during execution: their digest is an
+observation of installation contents, not loaded-image attestation. Digests do
+not authenticate an asserted pass. There is no persisted evidence or recovery
+protocol yet, and this is not whole-repository verification.
+
+Behavior tests exercise real Oxlint and the compiled CLI, including exact-byte
+binding, same-filename edits, same-label configuration changes and unavailable
+inputs. A deterministic process-start barrier changes the original after snapshot
+creation; the real verifier must still report the captured violation. Bypassing
+the snapshot was tested as a controlled defect: that test failed on an incorrect
+`passed` outcome, then passed after restoring snapshot execution. Existing output,
+timeout and simulated unconfirmed-settlement regression tests remain in place.
 
 The CI workflow declares Windows and Linux checks without provider credentials.
 Its presence does not mean GitHub Actions has run. See the
 [M1 evidence](docs/m1-evidence.md) for actual local results and limitations.
 
-M2.1 supplies the shared runner only. The next bounded task is binding each
-result to the exact source and profile inputs, with a test that an edit
-invalidates applicability. Durable evidence and full staleness handling remain
-required before M2 closes. Pi and Codex OAuth integration remain M3 work.
+M2.2 supplies file-local binding and in-process applicability only. The next
+bounded task is durable evidence storage and recovery, preserving outcome and
+binding together while distinguishing recovered data from trusted evidence.
+M2 is not complete. Pi and Codex OAuth integration remain M3 work.
+The formatter/import-organization decision remains open; no tooling is added.

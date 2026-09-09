@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import type { InputBinding } from "./oxlint-input.js";
 
 export interface LintDiagnostic {
   readonly rule: string;
@@ -7,7 +8,7 @@ export interface LintDiagnostic {
   readonly column: number;
 }
 
-export type OxlintResult =
+export type OxlintReport =
   | {
       readonly status: "passed" | "check_failed";
       readonly file: string;
@@ -23,6 +24,10 @@ export type OxlintResult =
       readonly retainedDirectory?: string;
     };
 
+export type OxlintResult =
+  | (Exclude<OxlintReport, { readonly status: "execution_failed" }> & { readonly binding: InputBinding })
+  | (Extract<OxlintReport, { readonly status: "execution_failed" }> & { readonly binding?: InputBinding });
+
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -33,8 +38,9 @@ export function interpretOxlint(
   stderr: string,
   exitCode: number | null,
   file: string,
-): OxlintResult {
-  const invalid: OxlintResult = {
+  cwd: string = process.cwd(),
+): OxlintReport {
+  const invalid: OxlintReport = {
     status: "execution_failed", reason: "invalid_verifier_result", process: "exited",
   };
   if (stderr.trim() !== "" || (exitCode !== 0 && exitCode !== 1)) return invalid;
@@ -52,7 +58,7 @@ export function interpretOxlint(
         (value["code"] !== "eslint(no-debugger)" && value["code"] !== "eslint(no-unused-vars)") ||
         value["severity"] !== "error" || typeof value["message"] !== "string" ||
         value["message"].length === 0 || typeof value["filename"] !== "string" ||
-        resolve(value["filename"]) !== file || !Array.isArray(value["labels"]) ||
+        resolve(cwd, value["filename"]) !== file || !Array.isArray(value["labels"]) ||
         value["labels"].length === 0) return invalid;
     const label: unknown = value["labels"][0];
     if (!record(label) || !record(label["span"])) return invalid;
