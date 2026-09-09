@@ -132,16 +132,28 @@ only this implemented version is read. A save accepts only an issued, completed
 result, so a copied result object cannot be persisted as if it came from the
 executor.
 
-The store writes a unique temporary file beside the destination and renames it
-into place after the write. A process interruption before rename leaves the
-previous record or no record; the temporary file is never the record read by
-recovery. Reads are size-bounded and require the complete exact record shape.
+The store serializes and enforces the 512 KiB UTF-8 record bound before any
+filesystem write, preserving an existing record on size rejection. It writes a
+unique temporary file beside the destination and renames it into place after
+the write. Callers must coordinate access to each destination; the store assumes
+a single writer and supplies no locking or concurrent-operation ordering.
+A process interruption before rename leaves the previous record or no record;
+recovery never reads the temporary file. Failed writes or renames attempt
+best-effort temporary cleanup; abrupt process termination can leave orphaned
+temporary files. Replacement relies on the filesystem's rename semantics;
+interruption during rename is not independently proven here. There is no fsync
+protocol or power-loss durability guarantee.
+Reads are size-bounded, reject malformed UTF-8 before JSON parsing, and require
+the complete exact record shape. Diagnostic text is never repaired on recovery.
 Missing data is `missing`; malformed, truncated, oversized or unsupported data
 is `invalid`; other read failures are `unavailable`.
 
 A valid reload returns a recovered historical result with
 `structuralValidity: "valid"` and `provenance: "recovered_untrusted"`. It is
 not an issued in-process result and gains no authority from its storage path.
+Only the store's successful structural parse can register a recovered object;
+there is no public registration function. Binding comparison ignores object-key
+order while preserving exact configuration text and argument order.
 `assessApplicability` can compare its binding with current source, profile and
 verifier inputs, returning `applicable`, `stale` or `unavailable` while keeping
 that recovered provenance visible. A recovered `passed` result remains
@@ -162,6 +174,6 @@ Its presence does not mean GitHub Actions has run. See the
 
 M2.3 supplies durable evidence storage and recovery while preserving the
 distinction between historical outcome, current applicability, structural
-validity and recovered provenance. M2 is complete for the bounded Oxlint
-verification scope. Pi and Codex OAuth integration remain M3 work.
+validity and recovered provenance. M2 closure remains subject to independent
+re-review of the bounded correction. Pi and Codex OAuth integration remain M3 work.
 The formatter/import-organization decision remains open; no tooling is added.

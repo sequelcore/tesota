@@ -5,10 +5,10 @@ import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   interpretOxlint,
-  isRecoveredOxlintEvidence,
   type OxlintReport,
   type OxlintResult,
 } from "./oxlint-result.js";
+import { isRecoveredOxlintEvidence } from "./evidence.js";
 import { digest, fixedConfiguration, observeVerifier, semanticArguments, sourceBytes, type InputBinding } from "./oxlint-input.js";
 
 /** Trusted application configuration, never CLI-supplied executable or argv. */
@@ -66,11 +66,26 @@ export async function assessApplicability(result: unknown, current: OxlintCheck)
       if (verifier.executableSha256 !== null) {
         const observed: InputBinding = { source: { file, sha256: digest(bytes) },
           check: effectiveCheck(check, file), verifier };
-        status = JSON.stringify(observed) === JSON.stringify(binding) ? "applicable" : "stale";
+        status = sameBinding(observed, binding) ? "applicable" : "stale";
       }
     } catch { /* Unavailable inputs cannot establish applicability. */ }
   }
   return { status, provenance, comparedAt: new Date().toISOString() };
+}
+
+function sameBinding(a: InputBinding, b: InputBinding): boolean {
+  return a.source.file === b.source.file && a.source.sha256 === b.source.sha256 &&
+    a.check.profile === b.check.profile && a.check.configuration === b.check.configuration &&
+    a.check.arguments.length === b.check.arguments.length &&
+    a.check.arguments.every((argument, index) => argument === b.check.arguments[index]) &&
+    a.check.limits.timeoutMs === b.check.limits.timeoutMs &&
+    a.check.limits.maxOutputBytes === b.check.limits.maxOutputBytes &&
+    a.check.limits.terminationWaitMs === b.check.limits.terminationWaitMs &&
+    a.verifier.packageVersion === b.verifier.packageVersion &&
+    a.verifier.executable === b.verifier.executable &&
+    a.verifier.executableSha256 === b.verifier.executableSha256 &&
+    a.verifier.entry === b.verifier.entry &&
+    a.verifier.installationSha256 === b.verifier.installationSha256;
 }
 
 export async function runOxlint(configuration: OxlintCheck, input: string): Promise<OxlintResult> {

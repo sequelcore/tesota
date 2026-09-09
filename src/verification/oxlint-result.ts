@@ -39,17 +39,6 @@ export interface RecoveredOxlintEvidence {
   readonly historical: CompletedOxlintResult;
 }
 
-const recovered = new WeakSet<object>();
-
-/** Register only records that passed the durable store's structural parser. */
-export function registerRecoveredEvidence(evidence: RecoveredOxlintEvidence): void {
-  recovered.add(evidence);
-}
-
-export function isRecoveredOxlintEvidence(value: unknown): value is RecoveredOxlintEvidence {
-  return typeof value === "object" && value !== null && recovered.has(value);
-}
-
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

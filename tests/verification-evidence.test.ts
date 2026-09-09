@@ -120,3 +120,95 @@ it("leaves no valid passing record when commit is interrupted", async () => {
   expect(await interrupted.load()).toEqual({ status: "missing" });
   await expect(readFile(path)).rejects.toThrow();
 });
+
+it("rejects oversized saves without changing existing recoverable bytes", async () => {
+  const { root, file, check, store } = await fixture();
+  const previous = await runOxlint(check, file);
+  await store.save(previous);
+  const path = join(root, "evidence.json");
+  const before = await readFile(path);
+  await writeFile(file, "debugger;\n".repeat(8000));
+  const oversized = await runOxlint({ ...check, maxOutputBytes: 8 * 1024 * 1024 }, file);
+  expect(oversized.status).toBe("check_failed");
+  expect(Buffer.byteLength(JSON.stringify(oversized))).toBeGreaterThan(512 * 1024);
+  await expect(store.save(oversized)).rejects.toThrow("512 KiB");
+  expect(await readFile(path)).toEqual(before);
+  expect(await store.load()).toMatchObject({ status: "recovered", evidence: { historical: previous } });
+});
+
+it("compares recovered binding properties independently of object key order", async () => {
+  const { root, file, check, store } = await fixture();
+  const result = await runOxlint(check, file);
+  await store.save(result);
+  const path = join(root, "evidence.json");
+  const reordered = JSON.stringify(JSON.parse(await readFile(path, "utf8")), (_key, value: unknown) => {
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      return Object.fromEntries(Object.entries(value).reverse());
+    }
+    return value;
+  });
+  await writeFile(path, reordered);
+  const loaded = await store.load();
+  if (loaded.status !== "recovered") throw new Error("Expected recovered evidence");
+  expect(await assessApplicability(loaded.evidence, check)).toMatchObject({ status: "applicable" });
+  expect(await assessApplicability(loaded.evidence, { ...check, configuration: `${check.configuration}\n` }))
+    .toMatchObject({ status: "stale" });
+  const historical = loaded.evidence.historical;
+  await writeFile(path, JSON.stringify({ format: "tesota-verification-evidence", version: 1,
+    result: { ...historical, binding: { ...historical.binding, check: { ...historical.binding.check,
+      arguments: [...historical.binding.check.arguments].reverse() } } } }));
+  const reorderedArguments = await store.load();
+  if (reorderedArguments.status !== "recovered") throw new Error("Expected recovered evidence");
+  expect(await assessApplicability(reorderedArguments.evidence, check)).toMatchObject({ status: "stale" });
+});
+
+it("rejects malformed UTF-8 within historical diagnostic text", async () => {
+  const { root, file, check, store } = await fixture("debugger;\n");
+  const result = await runOxlint(check, file);
+  expect(result.status).toBe("check_failed");
+  await store.save(result);
+  const path = join(root, "evidence.json");
+  const bytes = await readFile(path);
+  const marker = Buffer.from('"message":"');
+  const offset = bytes.indexOf(marker);
+  expect(offset).toBeGreaterThan(-1);
+  bytes[offset + marker.length] = 0xff;
+  await writeFile(path, bytes);
+  expect(await store.load()).toEqual({ status: "invalid", reason: "malformed_or_truncated" });
+  const child = spawnSync(bun, ["--no-env-file", "-e", `
+    const {DurableVerificationEvidenceStore} = await import(${JSON.stringify(evidenceModule)});
+    process.stdout.write(JSON.stringify(await new DurableVerificationEvidenceStore(${JSON.stringify(path)}).load()));
+  `], { encoding: "utf8", windowsHide: true, shell: false, timeout: 5000, maxBuffer: 64 * 1024 });
+  expect(child.error).toBeUndefined();
+  expect(child.status).toBe(0);
+  expect(child.stderr).toBe("");
+  expect(JSON.parse(child.stdout)).toEqual({ status: "invalid", reason: "malformed_or_truncated" });
+});
+
+it("preserves existing recoverable bytes when replacement rename fails", async () => {
+  const { root, file, check, store } = await fixture("debugger;\n");
+  const previous = await runOxlint(check, file);
+  await store.save(previous);
+  const path = join(root, "evidence.json");
+  const before = await readFile(path);
+  await writeFile(file, "export const value = 1;\n");
+  const replacement = await runOxlint(check, file);
+  expect(replacement.status).toBe("passed");
+  renameMock.mockRejectedValueOnce(new Error("replacement interrupted"));
+  await expect(store.save(replacement)).rejects.toThrow("replacement interrupted");
+  expect(await readFile(path)).toEqual(before);
+  expect(await store.load()).toMatchObject({ status: "recovered", evidence: { historical: previous } });
+});
+
+it("recognizes only parser-created recovered evidence and never promotes it to issued", async () => {
+  const { file, check, store } = await fixture();
+  const result = await runOxlint(check, file);
+  await store.save(result);
+  const loaded = await store.load();
+  if (loaded.status !== "recovered") throw new Error("Expected recovered evidence");
+  expect(await assessApplicability(structuredClone(loaded.evidence), check))
+    .toMatchObject({ status: "unavailable", provenance: "unavailable" });
+  await expect(store.save(loaded.evidence.historical)).rejects.toThrow("issued completed");
+  const exports = await import("../src/verification/oxlint-result.js");
+  expect(exports).not.toHaveProperty("registerRecoveredEvidence");
+});

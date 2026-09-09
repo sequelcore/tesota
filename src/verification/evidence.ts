@@ -4,7 +4,6 @@ import { isAbsolute } from "node:path";
 import { fixedConfiguration, type InputBinding } from "./oxlint-input.js";
 import { isIssuedOxlintResult } from "./oxlint.js";
 import {
-  registerRecoveredEvidence,
   type CompletedOxlintResult,
   type OxlintResult,
   type RecoveredOxlintEvidence,
@@ -15,6 +14,11 @@ const recordVersion = 1 as const;
 const maxRecordBytes = 512 * 1024;
 const hash = /^[a-f0-9]{64}$/u;
 const rules = new Set(["eslint(no-debugger)", "eslint(no-unused-vars)"]);
+const recovered = new WeakSet<object>();
+
+export function isRecoveredOxlintEvidence(value: unknown): value is RecoveredOxlintEvidence {
+  return typeof value === "object" && value !== null && recovered.has(value);
+}
 
 export type EvidenceRecovery =
   | { readonly status: "missing" }
@@ -139,6 +143,9 @@ export class DurableVerificationEvidenceStore {
       result,
     };
     const serialized = JSON.stringify(durable);
+    if (Buffer.byteLength(serialized, "utf8") > maxRecordBytes) {
+      throw new Error("Durable evidence exceeds 512 KiB");
+    }
     const temporary = `${this.#path}.${randomUUID()}.tmp`;
     let committed = false;
     try {
@@ -161,7 +168,7 @@ export class DurableVerificationEvidenceStore {
     if (bytes.length > maxRecordBytes) return { status: "invalid", reason: "too_large" };
     let parsed: unknown;
     try {
-      parsed = JSON.parse(bytes.toString("utf8"));
+      parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
     } catch {
       return { status: "invalid", reason: "malformed_or_truncated" };
     }
@@ -175,7 +182,7 @@ export class DurableVerificationEvidenceStore {
       provenance: "recovered_untrusted",
       historical: freezeResult(parsed.result),
     });
-    registerRecoveredEvidence(evidence);
+    recovered.add(evidence);
     return { status: "recovered", evidence };
   }
 }
