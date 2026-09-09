@@ -9,12 +9,9 @@ Historical provenance: `4257ee9fce034cfe8e50dce3dbe3afb12f468094` from Kiln.
 This is a historical source reference, **not a verified functional baseline**.
 The [file inventory](docs/bootstrap-inventory.json) records every inherited
 file's disposition and original Git blob. No Kiln implementation package is
-ported. Root LICENSE and NOTICE remain unchanged. The notices in
-[licenses/legacy-kiln](licenses/legacy-kiln/) preserve historical Kiln
-attribution with their original contents. They do not describe components
-currently bundled by Tesota and do not replace the license information of
-Tesota's actual dependencies. Their retention is not distribution-license
-clearance.
+ported. Root LICENSE and NOTICE remain unchanged. License information for
+current dependencies remains in their installed packages. Historical Kiln
+assets and tool binaries are not included in Tesota.
 
 ## Development
 
