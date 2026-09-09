@@ -3,7 +3,12 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { interpretOxlint, type OxlintReport, type OxlintResult } from "./oxlint-result.js";
+import {
+  interpretOxlint,
+  isRecoveredOxlintEvidence,
+  type OxlintReport,
+  type OxlintResult,
+} from "./oxlint-result.js";
 import { digest, fixedConfiguration, observeVerifier, semanticArguments, sourceBytes, type InputBinding } from "./oxlint-input.js";
 
 /** Trusted application configuration, never CLI-supplied executable or argv. */
@@ -26,7 +31,11 @@ export function configuredOxlint(cwd: string, executable: string): OxlintCheck {
   };
 }
 
-const issued = new WeakMap<OxlintResult, InputBinding>();
+const issued = new WeakMap<object, InputBinding>();
+
+export function isIssuedOxlintResult(value: unknown): value is OxlintResult {
+  return typeof value === "object" && value !== null && issued.has(value);
+}
 
 function effectiveCheck(check: OxlintCheck, file: string): InputBinding["check"] {
   return { profile: "oxlint-basic/v1", configuration: check.configuration,
@@ -37,13 +46,17 @@ function effectiveCheck(check: OxlintCheck, file: string): InputBinding["check"]
 
 export interface Applicability {
   readonly status: "applicable" | "stale" | "unavailable";
+  readonly provenance: "issued" | "recovered_untrusted" | "unavailable";
   readonly comparedAt: string;
 }
 
-/** Only an outcome issued here can be compared; JSON is not trusted evidence. */
-export async function assessApplicability(result: OxlintResult, current: OxlintCheck): Promise<Applicability> {
+/** Recovered data can be compared, but its provenance remains explicitly untrusted. */
+export async function assessApplicability(result: unknown, current: OxlintCheck): Promise<Applicability> {
   const check = { ...current };
-  const binding = issued.get(result);
+  const isRecovered = isRecoveredOxlintEvidence(result);
+  const isIssued = isIssuedOxlintResult(result);
+  const binding = isRecovered ? result.historical.binding : isIssued ? issued.get(result) : undefined;
+  const provenance: Applicability["provenance"] = isRecovered ? "recovered_untrusted" : isIssued ? "issued" : "unavailable";
   let status: Applicability["status"] = "unavailable";
   if (binding !== undefined) {
     try {
@@ -57,7 +70,7 @@ export async function assessApplicability(result: OxlintResult, current: OxlintC
       }
     } catch { /* Unavailable inputs cannot establish applicability. */ }
   }
-  return { status, comparedAt: new Date().toISOString() };
+  return { status, provenance, comparedAt: new Date().toISOString() };
 }
 
 export async function runOxlint(configuration: OxlintCheck, input: string): Promise<OxlintResult> {

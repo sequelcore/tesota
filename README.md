@@ -2,7 +2,7 @@
 
 A private, provisional package. It provides CLI help, invalid-argument errors,
 active development checks and one shared Oxlint executor with single-file input
-binding and applicability (M2.2). It does not
+binding, applicability and durable evidence recovery (M2.3). It does not
 execute agent tasks or connect to providers.
 
 Historical provenance: `4257ee9fce034cfe8e50dce3dbe3afb12f468094` from Kiln.
@@ -108,20 +108,45 @@ file-local rules; project configuration and import-aware analysis remain exclude
 Unconfirmed termination retains both source and configuration snapshots. Failures
 include binding when preparation established it; absence never implies success.
 
-`assessApplicability(result, currentCheck)` returns `status` and `comparedAt`
-separately from the original execution outcome. Matching observed inputs are
+`assessApplicability(result, currentCheck)` returns `status`, `provenance` and
+`comparedAt` separately from the original execution outcome. Matching observed inputs are
 `applicable`; changed source, configuration, semantic arguments, limits or
 installation identity are `stale`; unreadable/missing inputs and results not
 issued by this executor instance are `unavailable`. A check failure can still
-be applicable. The comparison accepts only issued completed result objects,
-not copied or deserialized JSON. Completed results are immutable.
+be applicable. In-process comparison accepts only issued completed result
+objects, not copied or deserialized JSON. Completed results are immutable.
 
 Applicability describes the inputs observed during that comparison, not a
 permanent flag or an atomic view across mutable files. Installed tools are
 trusted and expected to remain stable during execution: their digest is an
 observation of installation contents, not loaded-image attestation. Digests do
-not authenticate an asserted pass. There is no persisted evidence or recovery
-protocol yet, and this is not whole-repository verification.
+not authenticate an asserted pass. This is not whole-repository verification.
+
+### Durable evidence and recovery (M2.3)
+
+`DurableVerificationEvidenceStore` in `src/verification/evidence.ts` is the
+single owner of persisted verification evidence. It writes one JSON record
+containing the completed historical outcome and its exact M2.2 binding. The
+record format is identified by `tesota-verification-evidence` and version `1`;
+only this implemented version is read. A save accepts only an issued, completed
+result, so a copied result object cannot be persisted as if it came from the
+executor.
+
+The store writes a unique temporary file beside the destination and renames it
+into place after the write. A process interruption before rename leaves the
+previous record or no record; the temporary file is never the record read by
+recovery. Reads are size-bounded and require the complete exact record shape.
+Missing data is `missing`; malformed, truncated, oversized or unsupported data
+is `invalid`; other read failures are `unavailable`.
+
+A valid reload returns a recovered historical result with
+`structuralValidity: "valid"` and `provenance: "recovered_untrusted"`. It is
+not an issued in-process result and gains no authority from its storage path.
+`assessApplicability` can compare its binding with current source, profile and
+verifier inputs, returning `applicable`, `stale` or `unavailable` while keeping
+that recovered provenance visible. A recovered `passed` result remains
+historically passed when current inputs make it stale. The storage API is
+explicit; the current CLI output and command line remain M2.2 behavior.
 
 Behavior tests exercise real Oxlint and the compiled CLI, including exact-byte
 binding, same-filename edits, same-label configuration changes and unavailable
@@ -135,8 +160,8 @@ The CI workflow declares Windows and Linux checks without provider credentials.
 Its presence does not mean GitHub Actions has run. See the
 [M1 evidence](docs/m1-evidence.md) for actual local results and limitations.
 
-M2.2 supplies file-local binding and in-process applicability only. The next
-bounded task is durable evidence storage and recovery, preserving outcome and
-binding together while distinguishing recovered data from trusted evidence.
-M2 is not complete. Pi and Codex OAuth integration remain M3 work.
+M2.3 supplies durable evidence storage and recovery while preserving the
+distinction between historical outcome, current applicability, structural
+validity and recovered provenance. M2 is complete for the bounded Oxlint
+verification scope. Pi and Codex OAuth integration remain M3 work.
 The formatter/import-organization decision remains open; no tooling is added.

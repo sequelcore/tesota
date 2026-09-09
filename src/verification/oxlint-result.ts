@@ -24,9 +24,31 @@ export type OxlintReport =
       readonly retainedDirectory?: string;
     };
 
+export type CompletedOxlintReport = Exclude<OxlintReport, { readonly status: "execution_failed" }>;
+
 export type OxlintResult =
-  | (Exclude<OxlintReport, { readonly status: "execution_failed" }> & { readonly binding: InputBinding })
+  | (CompletedOxlintReport & { readonly binding: InputBinding })
   | (Extract<OxlintReport, { readonly status: "execution_failed" }> & { readonly binding?: InputBinding });
+
+export type CompletedOxlintResult = CompletedOxlintReport & { readonly binding: InputBinding };
+
+export interface RecoveredOxlintEvidence {
+  readonly kind: "recovered";
+  readonly structuralValidity: "valid";
+  readonly provenance: "recovered_untrusted";
+  readonly historical: CompletedOxlintResult;
+}
+
+const recovered = new WeakSet<object>();
+
+/** Register only records that passed the durable store's structural parser. */
+export function registerRecoveredEvidence(evidence: RecoveredOxlintEvidence): void {
+  recovered.add(evidence);
+}
+
+export function isRecoveredOxlintEvidence(value: unknown): value is RecoveredOxlintEvidence {
+  return typeof value === "object" && value !== null && recovered.has(value);
+}
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
