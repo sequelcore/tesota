@@ -3,9 +3,16 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { browserOnlyAuth, LIVE_CODEX_EXPECTED_TOKEN, LIVE_LIMITS, liveProbePasses,
-  observeLiveBrowserLaunch, runLiveOAuthLogin, runLiveCodexTurn,
-  type LiveCodexTurnResult } from "../src/integrations/pi-live.js";
-import { serializeLiveEvidence } from "../src/integrations/pi-live-evidence.js";
+  classifyLiveOAuthFailure, observeLiveBrowserLaunch, runLiveOAuthLogin, runLiveCodexTurn,
+  type LiveCodexExperimentResult, type LiveCodexTurnResult } from "../src/integrations/pi-live.js";
+import { liveSourceIdentity, serializeLiveEvidence } from "../src/integrations/pi-live-evidence.js";
+
+function experimentEvidence(result: LiveCodexExperimentResult): string {
+  return serializeLiveEvidence(liveSourceIdentity(), "2026-01-01T00:00:00.000Z", {
+    mode: "full_probe", authentication: { outcome: "succeeded", oauthFailureCategory: null },
+    experiment: result, inferenceAttempted: false, disposition: "failed",
+  });
+}
 
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
@@ -200,12 +207,12 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
   const normal = await turn.running;
   const extra = { ...abortProbe, headers: "SYNTHETIC_PRIVATE", response: "SYNTHETIC_PRIVATE",
     tokens: "SYNTHETIC_PRIVATE", error: "SYNTHETIC_PRIVATE" };
-  const serialized = serializeLiveEvidence({}, "2026-01-01T00:00:00.000Z", { turn: normal, abortProbe: extra });
+  const serialized = experimentEvidence({ turn: normal, abortProbe: extra });
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   const evidence = JSON.parse(serialized);
   expect(Object.keys(evidence).sort()).toEqual(["format", "version", "provenance", "timestamp", "implementation",
-    "provider", "api", "model", "authType", "limits", "oauthFailureCategory", "modelInvocationCount", "turn", "abortProbe", "disposition"].sort());
-  expect(evidence.version).toBe(2);
+    "provider", "api", "model", "authType", "mode", "authenticationOutcome", "inferenceAttempted", "limits", "oauthFailureCategory", "modelInvocationCount", "turn", "abortProbe", "disposition"].sort());
+  expect(evidence.version).toBe(3);
   expect(evidence.oauthFailureCategory).toBeNull();
   expect(Object.keys(evidence.abortProbe).sort()).toEqual(["status", "modelInvocationCount", "invocationAttempts",
     "toolExecutionStartCount", "streamUpdateCount", "terminalStopReason", "terminalObserved", "abortRequested",
@@ -216,13 +223,19 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
     { turn: { ...normal, responseMatchesExpectedToken: false }, abortProbe },
     { turn: normal, abortProbe: { ...abortProbe, terminalObserved: false } },
     { turn: normal, abortProbe: null },
-  ]) expect(JSON.parse(serializeLiveEvidence({}, "2026-01-01T00:00:00.000Z", result)).disposition).toBe("failed");
+  ]) expect(JSON.parse(experimentEvidence(result)).disposition).toBe("failed");
 });
 
 function oauthFailureEvidence(error: unknown, category: string) {
-  const serialized = serializeLiveEvidence({}, "2026-01-01T00:00:00.000Z", null, error);
+  const failureCategory = classifyLiveOAuthFailure(error);
+  const serialized = serializeLiveEvidence(liveSourceIdentity(), "2026-01-01T00:00:00.000Z", {
+    mode: "auth_only", authentication: failureCategory === "oauth_timeout" ?
+      { outcome: "unconfirmed", oauthFailureCategory: failureCategory } :
+      { outcome: "failed", oauthFailureCategory: failureCategory },
+    experiment: null, inferenceAttempted: false, disposition: "failed",
+  });
   const evidence = JSON.parse(serialized);
-  expect(evidence).toMatchObject({ version: 2, oauthFailureCategory: category,
+  expect(evidence).toMatchObject({ version: 3, oauthFailureCategory: category,
     modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "failed" });
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   expect(serialized).not.toContain("stack");

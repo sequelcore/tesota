@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { classifyLiveOAuthFailure, LIVE_CODEX_MODEL_ID, LIVE_LIMITS, liveProbePasses,
-  type LiveCodexExperimentResult, type LiveCodexTurnResult } from "./pi-live.js";
+import { LIVE_CODEX_MODEL_ID, LIVE_LIMITS, liveProbePasses,
+  type LiveCodexRunResult, type LiveCodexTurnResult } from "./pi-live.js";
 
 const implementationFiles = [
   "src/live-codex.ts", "src/integrations/pi-live.ts", "src/integrations/pi-live-evidence.ts",
@@ -9,9 +9,17 @@ const implementationFiles = [
   "package.json", "bun.lock", "tsconfig.json", "tsconfig.build.json",
 ] as const;
 
-export function liveSourceIdentity(): Readonly<Record<string, string>> {
-  return Object.fromEntries(implementationFiles.map((file) =>
-    [file, createHash("sha256").update(readFileSync(file)).digest("hex")]));
+declare const sourceIdentityBrand: unique symbol;
+export type LiveSourceIdentity = Readonly<Record<(typeof implementationFiles)[number], string>> & {
+  readonly [sourceIdentityBrand]: true;
+};
+const capturedIdentities = new WeakSet<object>();
+
+export function liveSourceIdentity(): LiveSourceIdentity {
+  const identity = Object.freeze(Object.fromEntries(implementationFiles.map((file) =>
+    [file, createHash("sha256").update(readFileSync(new URL(`../../${file}`, import.meta.url))).digest("hex")]))) as LiveSourceIdentity;
+  capturedIdentities.add(identity);
+  return identity;
 }
 
 /** Explicit allowlist; never spread a provider/session/result object into evidence. */
@@ -37,24 +45,28 @@ function probeEvidence(probe: LiveCodexTurnResult, abort: boolean) {
   };
 }
 
-/** A fixed M3.1a artifact, not a general evidence store. Null means no model probe ran. */
+/** Only this module's immutable, fixed-file captures can become source identity. */
 export function serializeLiveEvidence(
-  sourceSha256: Readonly<Record<string, string>>, timestamp: string,
-  result: LiveCodexExperimentResult | null,
-  failure?: unknown,
+  sourceSha256: LiveSourceIdentity, timestamp: string,
+  run: LiveCodexRunResult,
 ): string {
+  if (!capturedIdentities.has(sourceSha256)) throw new Error("Unrecognized live source identity");
+  const result = run.experiment;
   const passed = result !== null && liveProbePasses(result.turn, false) &&
     result.abortProbe !== null && liveProbePasses(result.abortProbe, true);
   return JSON.stringify({
-    format: "tesota-m31a-live-evidence", version: 2,
+    format: "tesota-m31a-live-evidence", version: 3,
     provenance: "machine_generated", timestamp,
     implementation: { binding: "sha256_of_source_and_executed_javascript", sourceSha256 },
     provider: "openai-codex", api: "openai-codex-responses", model: LIVE_CODEX_MODEL_ID,
-    authType: "oauth", limits: LIVE_LIMITS,
-    oauthFailureCategory: result === null ? classifyLiveOAuthFailure(failure) : null,
+    authType: "oauth", mode: run.mode, authenticationOutcome: run.authentication.outcome,
+    inferenceAttempted: run.inferenceAttempted, limits: LIVE_LIMITS,
+    oauthFailureCategory: run.authentication.oauthFailureCategory,
     modelInvocationCount: result === null ? 0 : result.turn.modelInvocationCount + (result.abortProbe?.modelInvocationCount ?? 0),
     turn: result === null ? null : probeEvidence(result.turn, false),
     abortProbe: result?.abortProbe == null ? null : probeEvidence(result.abortProbe, true),
-    disposition: passed ? "passed" : "failed",
+    disposition: run.mode === "auth_only" ?
+      run.authentication.outcome === "succeeded" && !run.inferenceAttempted ? "succeeded" : "failed" :
+      passed ? "passed" : "failed",
   }, null, 2) + "\n";
 }

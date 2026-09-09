@@ -250,7 +250,27 @@ budget remain unproven.
 The explicit opt-in `bun run live:codex` command runs the bounded experiment in
 `src/integrations/pi-live.ts`. Normal `bun run check` gates remain offline and
 credential-free. Run `bun run build` first; compiled `--help` is also offline.
-This correction awaits independent re-review and does not claim M3.1a closed.
+The M3.1a implementation harness is technically accepted with follow-up; its
+live inference proof remains incomplete. This AUTH-ONLY correction awaits
+independent review and does not close M3.1a or begin M3.1b.
+
+`bun run auth:codex` explicitly selects `--auth-only`: OAuth/network authentication
+with **ZERO model inference calls and no M3.1a probes**. It reserves the separate
+`docs/m31a-auth-only-evidence.json` file before login. `bun run live:codex` explicitly
+selects `--full-probe`; neither mode runs from normal checks. Both support offline
+`--help`; calling the compiled entry without an explicit mode is rejected.
+
+AUTH-ONLY disables the invocation's Pi Models and provider inference entry points
+before login, then returns immediately after the bounded public `Models.login`
+operation. Any attempted inference is denied before dispatch and latches a failed
+diagnostic, even if the caller catches the denial. No Agent, probe, executable tool
+or verifier is entered. Successful login proves OAuth/login only: no model route,
+intended-account attestation, task acceptance, repository or verification proof.
+It is a diagnostic prerequisite, not M3.1a completion. Pi retains credentials only
+in its default in-memory store for this invocation; Tesota adds no credential store.
+The 180,000 ms login bound and 185,000 ms AUTH-ONLY watchdog assume a responsive
+event loop. Explicit process exit bounds retained handles; it does not prove
+server-side cancellation. A watchdog/crash may leave an incomplete reservation.
 
 Each probe admits at most **one Pi model stream invocation**, guarded before
 calling `Models.streamSimple`. An attempted continuation is denied with a local
@@ -290,7 +310,7 @@ Executable tool implementations remain zero. `turnBoundRespected` means the
 turn deadline did not expire; an expired turn still returns within the separate
 settlement window, without asserting successful or aborted settlement.
 
-Pi 0.85.1's installed `auth/oauth/openai-codex.js` races a `manual_code` prompt
+Pi 0.85.1's tagged `packages/ai/src/auth/oauth/openai-codex.ts` races a `manual_code` prompt
 against its localhost callback. Tesota selects browser login and leaves that
 prompt pending until cancellation; **manual authorization entry is disabled**.
 It has no readline/stdin reader. Other text/secret prompts fail closed. On Windows
@@ -314,16 +334,27 @@ The file is reserved exclusively before login: existing evidence refuses another
 run. A process crash or watchdog exit can leave an incomplete reserved file;
 that is not valid evidence or successful settlement.
 
-New records use version 2 and add `oauthFailureCategory`: `oauth_timeout` when
+Version 2 introduced `oauthFailureCategory`: `oauth_timeout` when
 Tesota's 180,000 ms login deadline fires, `browser_launch_failed` when the local
 launcher throws or emits an error, and `unknown` for every other pre-probe failure.
-The category is null when login proceeds to model probes. Launcher success does
+Version 3 records `mode`, `authenticationOutcome` (`succeeded`, `failed`, or
+`unconfirmed` for the local timeout), and `inferenceAttempted` separately.
+AUTH-ONLY success has null OAuth failure category, zero invocations, null probes
+and disposition `succeeded`; full-probe success retains disposition `passed`.
+An attempted inference always fails AUTH-ONLY even if login succeeded. Neither
+auth result grants task acceptance or verification meaning. Historical v1/v2
+artifacts are not rewritten or upgraded. No evidence reader/compatibility layer
+is added. The category is null after successful login. Launcher success does
 not prove that a browser opened or a callback arrived. Invalid authorize routes
 remain `unknown`; route validation precedes the launcher observation.
 Classification recognizes only Tesota's local failure type, never error text,
 stacks, provider response bodies or auth material. It is diagnostic evidence only;
 an OAuth-stage failure still has zero model invocations, null probes and failed
 disposition, with no task acceptance or verification meaning.
+The first authoritative local observation wins: browser-launch cancellation is
+observed synchronously; the deadline records timeout before requesting cancellation;
+login success/rejection is observed by its promise handler. Later observations
+cannot replace the result. Callback cleanup alone still means `unknown`.
 
 The inspected Pi 0.85.1 public `Models.login` forwards login rejection and abort
 reasons. Its `AuthInteraction` offers prompts and notifications but no typed
@@ -348,6 +379,14 @@ echoed prompt, expanded secret-bearing evidence, and abort recorded before the
 stream update. These are offline check observations, not human acceptance or
 successful live evidence.
 
+The evidence module alone captures immutable SHA-256 identities from ten fixed,
+module-relative implementation/build/config paths. Its serializer accepts only
+those in-process captures, rejecting copied or caller-created records, even with
+valid-looking digests. Missing/unreadable source files prevent capture before login.
+Environment strings, token/URL-like input, malformed hashes, and missing/extra
+identity entries cannot enter this field. These hashes bind local contents;
+they do not cryptographically authenticate the machine or operator.
+
 Evidence binds the invocation to SHA-256 hashes of source files, the executed
 compiled JavaScript, package/lockfile and compiler configuration captured before
 login. The final commit does not exist at capture time and is not invented in
@@ -355,3 +394,44 @@ the artifact. The committed source hashes and a rebuild can be compared with
 this binding; this is code identity, not installed-image attestation or human
 acceptance. The evidence artifact and this implementation are retained together
 for independent re-review.
+
+### AUTH-ONLY source scouting and offline verification
+
+Public reference clones were inspected without moving their clean `main` checkouts.
+Pi (`https://github.com/earendil-works/pi.git`) started at
+`1dd2354052f7dd9fcdcc3097b87cf4b377853a74`; fetch resolved `origin/main` to
+`ce5ec9ca355a852fb1f25c088cf409df47a95213` (764 commits behind, no divergence).
+The lockfile and installed package metadata both select `@earendil-works/pi-ai`
+and `pi-agent-core` 0.85.1; matching tag `v0.85.1` resolves to
+`d981de1229ef899957bbe968bc8dcda02a21f477`. The lockfile retains each registry
+artifact's SHA-512 integrity. Tagged `packages/ai/src/models.ts`, `auth/helpers.ts`,
+`providers/openai-codex.ts`, and `auth/oauth/openai-codex.ts` establish public
+login -> token exchange -> default in-memory credential storage -> return, without
+streaming. These auth sources are unchanged in fetched current Pi. Current Pi's
+EventStream queue optimization and capped agent retry backoff are separate changes;
+neither is adopted, and Tesota still disables retries.
+
+Codex (`https://github.com/openai/codex.git`) started at
+`32329b289d05eb6a3f8e35c267ceb25ba46716a2`. The initial tag fetch failed on a
+conflicting `rusty-v8-v147.4.0` tag; it was not overwritten. The authorized retry
+used `ls-remote` and `fetch --no-tags` for `main` only, resolving `origin/main` to
+`885113aa1d68ccbc567b83698feac3cd42163088` (1,940 commits behind, no divergence).
+This is a descendant of the operator's `f71543813fc0fbf652a6efd86f65c8d723eef7db`
+observation. Its `codex-rs/cli/src/login.rs` waits for the login server and exits;
+`codex-rs/login/src/server.rs` separates callback settlement from cancellation.
+Its persistence and allowlisted callback metadata are different from locked Pi's
+API. Codex is a reference only, not a Tesota runtime dependency.
+
+Deterministic offline tests cover AUTH-ONLY success/failure, all seven locked Models
+inference entry points, both timeout/browser observation orders without sleeps,
+the four provider inference entry points, fixed-file source identity rejection,
+and preservation of both full probes.
+A compiled Bun child uses a synthetic login preload and denied fetch, writes
+AUTH-ONLY success evidence in an isolated temporary directory, and exits within
+five seconds. Restored mutations removing the early return, admitting streamSimple,
+and removing the identity provenance check each failed their focused regression.
+After restoration, the 38 focused tests and Windows `bun run check` passed
+(95 tests, build, typecheck and lint), as did `git diff --check` and compiled
+offline AUTH-ONLY help. Runtime versions were Bun 1.4.2 and Node 24.15.0.
+No live authentication or inference was performed; later two-inference live proof
+and independent review remain outstanding.

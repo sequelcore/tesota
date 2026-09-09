@@ -1,29 +1,33 @@
 import { spawn } from "node:child_process";
 import { closeSync, openSync, writeFileSync } from "node:fs";
-import { browserOnlyAuth, LIVE_LIMITS, liveProbePasses, observeLiveBrowserLaunch, runLiveCodexExperiment,
-  type LiveCodexExperimentResult } from "./integrations/pi-live.js";
+import { browserOnlyAuth, LIVE_LIMITS, observeLiveBrowserLaunch, runLiveCodex,
+  type LiveCodexRunResult } from "./integrations/pi-live.js";
 import { liveSourceIdentity, serializeLiveEvidence } from "./integrations/pi-live-evidence.js";
 
-if (process.argv.length === 3 && process.argv[2] === "--help") {
-  console.log("Opt-in M3.1a: browser OAuth callback only; at most two model invocations. Writes docs/m31a-live-evidence.json. No retries.");
-} else if (process.argv.length !== 2 || process.platform !== "win32") {
-  console.error("Use live:codex without arguments on Windows, or --help offline.");
+const args = process.argv.slice(2);
+const mode = args[0] === "--auth-only" ? "auth_only" : args[0] === "--full-probe" ? "full_probe" : null;
+if ((args.length === 1 && args[0] === "--help") ||
+    (args.length === 2 && mode !== null && args[1] === "--help")) {
+  console.log("Opt-in network authentication: browser OAuth callback only. --auth-only: ZERO model inference calls; no M3.1a probes. --full-probe: at most two model invocations. No retries. --help is offline.");
+} else if (args.length !== 1 || mode === null || process.platform !== "win32") {
+  console.error("Select --auth-only or --full-probe on Windows, or --help offline.");
   process.exitCode = 2;
 } else {
   const identity = liveSourceIdentity();
   // Reserve evidence before any login/inference. Existing evidence refuses another run.
-  const evidenceFile = openSync("docs/m31a-live-evidence.json", "wx");
+  const evidenceFile = openSync(mode === "auth_only" ? "docs/m31a-auth-only-evidence.json" : "docs/m31a-live-evidence.json", "wx");
   const timestamp = new Date().toISOString();
   const cancellation = new AbortController();
-  let result: LiveCodexExperimentResult | null = null;
-  let failure: unknown;
+  let result: LiveCodexRunResult;
   let exitCode = 1;
   const watchdog = setTimeout(() => {
     console.error("Live CLI watchdog expired; experiment unconfirmed.");
     process.exit(1);
-  }, LIVE_LIMITS.loginMs + 2 * (LIVE_LIMITS.turnMs + LIVE_LIMITS.settlementMs) + 5_000);
+  }, LIVE_LIMITS.loginMs + (mode === "auth_only" ? 0 : 2 * (LIVE_LIMITS.turnMs + LIVE_LIMITS.settlementMs)) + 5_000);
   try {
-    console.log("Complete OAuth in the browser. Manual authorization input is disabled.");
+    console.log(mode === "auth_only" ?
+      "AUTH-ONLY: OAuth/network authentication; ZERO model inference calls; no M3.1a probes. Complete OAuth in the browser." :
+      "FULL-PROBE: OAuth/network authentication followed by M3.1a model probes. Complete OAuth in the browser.");
     const interaction = browserOnlyAuth((url) => {
       // Pi supplies the initial authorize URL, never a callback/code. No shell interpolation.
       const target = new URL(url);
@@ -37,17 +41,17 @@ if (process.argv.length === 3 && process.argv[2] === "--help") {
         browser.unref();
       }, cancellation);
     }, cancellation.signal);
-    result = await runLiveCodexExperiment(interaction);
-    exitCode = liveProbePasses(result.turn, false) && result.abortProbe !== null &&
-      liveProbePasses(result.abortProbe, true) ? 0 : 1;
-  } catch (error) {
-    failure = error;
+    result = await runLiveCodex(mode, interaction);
+    exitCode = result.disposition === "failed" ? 1 : 0;
+  } catch {
+    result = { mode, authentication: { outcome: "failed", oauthFailureCategory: "unknown" },
+      experiment: null, inferenceAttempted: false, disposition: "failed" };
     console.error("Live experiment failed; secret-bearing error details suppressed.");
   } finally {
     cancellation.abort();
     clearTimeout(watchdog);
   }
-  const evidence = serializeLiveEvidence(identity, timestamp, result, failure);
+  const evidence = serializeLiveEvidence(identity, timestamp, result);
   writeFileSync(evidenceFile, evidence, { encoding: "utf8" });
   closeSync(evidenceFile);
   console.log(evidence);

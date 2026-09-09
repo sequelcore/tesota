@@ -1,7 +1,7 @@
 import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream, createModels,
-  type Api, type AssistantMessage, type AuthInteraction, type Model,
+  type Api, type AssistantMessage, type AuthInteraction, type Model, type Models,
 } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 
@@ -44,6 +44,21 @@ export interface LiveCodexExperimentResult {
 }
 
 export type LiveOAuthFailureCategory = "oauth_timeout" | "browser_launch_failed" | "unknown";
+
+export type LiveCodexMode = "auth_only" | "full_probe";
+export type LiveAuthenticationResult =
+  | { readonly outcome: "succeeded"; readonly oauthFailureCategory: null }
+  | { readonly outcome: "failed"; readonly oauthFailureCategory: LiveOAuthFailureCategory }
+  | { readonly outcome: "unconfirmed"; readonly oauthFailureCategory: "oauth_timeout" };
+
+export type LiveCodexRunResult = {
+  readonly authentication: LiveAuthenticationResult;
+} & (
+  | { readonly mode: "auth_only"; readonly experiment: null; readonly inferenceAttempted: boolean;
+      readonly disposition: "succeeded" | "failed" }
+  | { readonly mode: "full_probe"; readonly experiment: LiveCodexExperimentResult | null;
+      readonly inferenceAttempted: false; readonly disposition: "passed" | "failed" }
+);
 
 /** Local diagnostic only. Never attach the original exception or authorization data. */
 class LiveOAuthFailure extends Error {
@@ -217,18 +232,61 @@ export function liveProbePasses(probe: LiveCodexTurnResult, abort: boolean): boo
     ordered(["model_invocation_started", "terminal_stop", "normalized_completed"]);
 }
 
-/** No retries: a failed normal probe stops the experiment before its abort probe. */
-export async function runLiveCodexExperiment(authInteraction: AuthInteraction): Promise<LiveCodexExperimentResult> {
-  const models = createModels();
-  const provider = openaiCodexProvider();
-  models.setProvider(provider);
-  if (models.getProviders().length !== 1 || provider.id !== "openai-codex" ||
-      provider.auth.apiKey !== undefined || provider.auth.oauth === undefined) {
-    throw new Error("Live Codex route is not isolated to OAuth");
+/** AUTH-ONLY has no probe/Agent path. A denied attempt remains a failure even if caught. */
+export async function runLiveCodex(
+  mode: LiveCodexMode, authInteraction: AuthInteraction,
+): Promise<LiveCodexRunResult> {
+  let authentication: LiveAuthenticationResult = { outcome: "failed", oauthFailureCategory: "unknown" };
+  let experiment: LiveCodexExperimentResult | null = null;
+  let inferenceAttempted = false;
+  const authOnlyResult = (): LiveCodexRunResult => ({ mode: "auth_only", authentication,
+    experiment: null, inferenceAttempted,
+    disposition: authentication.outcome === "succeeded" && !inferenceAttempted ? "succeeded" : "failed" });
+  try {
+    const models = createModels();
+    const provider = openaiCodexProvider();
+    if (mode === "auth_only") {
+      const deny = (): never => {
+        inferenceAttempted = true;
+        throw new Error("Tesota AUTH-ONLY inference denied");
+      };
+      // Locked Pi Models API. Deny synchronously before lazy auth/provider dispatch,
+      // including unawaited calls and the completion/deferred convenience methods.
+      for (const method of ["stream", "streamSimple", "complete", "completeSimple",
+        "streamDeferred", "fetchDeferred", "cancelDeferred"] as const satisfies readonly (keyof Models)[]) {
+        Object.defineProperty(models, method, { value: deny, writable: false, configurable: false });
+      }
+      for (const method of ["stream", "streamSimple", "fetchDeferred", "cancelDeferred"] as const) {
+        Object.defineProperty(provider, method, { value: deny, writable: false, configurable: false });
+      }
+    }
+    models.setProvider(provider);
+    if (models.getProviders().length !== 1 || provider.id !== "openai-codex" ||
+        provider.auth.apiKey !== undefined || provider.auth.oauth === undefined) {
+      throw new Error("Live Codex route is not isolated to OAuth");
+    }
+    await runLiveOAuthLogin((interaction) => models.login("openai-codex", "oauth", interaction), authInteraction);
+    authentication = { outcome: "succeeded", oauthFailureCategory: null };
+    if (mode === "auth_only") return authOnlyResult();
+
+    experiment = await runLiveCodexExperiment(models);
+  } catch (error) {
+    if (authentication.outcome !== "succeeded") {
+      const category = classifyLiveOAuthFailure(error);
+      authentication = category === "oauth_timeout" ? { outcome: "unconfirmed", oauthFailureCategory: category } :
+        { outcome: "failed", oauthFailureCategory: category };
+    }
   }
+  if (mode === "auth_only") return authOnlyResult();
+  return { mode, authentication, experiment, inferenceAttempted: false,
+    disposition: experiment !== null && liveProbePasses(experiment.turn, false) && experiment.abortProbe !== null &&
+      liveProbePasses(experiment.abortProbe, true) ? "passed" : "failed" };
+}
+
+/** No retries: a failed normal probe stops the experiment before its abort probe. */
+async function runLiveCodexExperiment(models: Models): Promise<LiveCodexExperimentResult> {
   const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
   if (model?.api !== "openai-codex-responses") throw new Error("Locked model unavailable");
-  await runLiveOAuthLogin((interaction) => models.login("openai-codex", "oauth", interaction), authInteraction);
   const stream: StreamFn = (requestModel, context, options) => models.streamSimple(requestModel, context, options);
   const turn = await runLiveCodexTurn(stream, model, false);
   if (!liveProbePasses(turn, false)) return { turn, abortProbe: null };
@@ -241,20 +299,35 @@ export async function runLiveOAuthLogin(
   login: (interaction: AuthInteraction) => Promise<unknown>, authInteraction: AuthInteraction,
 ): Promise<void> {
   const cancellation = new AbortController();
-  let rejectTimeout: (error: Error) => void = () => {};
-  const timeout = new Promise<never>((_resolve, reject) => { rejectTimeout = reject; });
-  const timer = setTimeout(() => {
-    rejectTimeout(new LiveOAuthFailure("oauth_timeout"));
-    cancellation.abort();
-  }, LIVE_LIMITS.loginMs);
-  try {
-    await Promise.race([
-      login({ ...authInteraction,
-        signal: authInteraction.signal === undefined ? cancellation.signal :
-          AbortSignal.any([authInteraction.signal, cancellation.signal]) }),
-      timeout,
-    ]);
-  } finally { clearTimeout(timer); }
+  const signal = authInteraction.signal === undefined ? cancellation.signal :
+    AbortSignal.any([authInteraction.signal, cancellation.signal]);
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (outcome: "succeeded" | "failed", error?: unknown): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener("abort", aborted);
+      if (outcome === "succeeded") resolve();
+      else reject(error);
+    };
+    const aborted = (): void => finish("failed", signal.reason);
+    // First authoritative local observation wins, before downstream promise cleanup.
+    // Abort listeners observe browser failure synchronously; the deadline observes
+    // timeout before requesting cancellation. Late failures cannot replace either.
+    const timer = setTimeout(() => {
+      const failure = new LiveOAuthFailure("oauth_timeout");
+      finish("failed", failure);
+      cancellation.abort(failure);
+    }, LIVE_LIMITS.loginMs);
+    signal.addEventListener("abort", aborted, { once: true });
+    if (signal.aborted) { aborted(); return; }
+    try {
+      void login({ ...authInteraction, signal }).then(
+        () => finish("succeeded"), (error: unknown) => finish("failed", error),
+      );
+    } catch (error) { finish("failed", error); }
+  });
 }
 
 /** Pi races manual_code with its callback server. Never read terminal authorization input. */
