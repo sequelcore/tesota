@@ -55,11 +55,11 @@ export function serializeLiveEvidence(
   const passed = result !== null && liveProbePasses(result.turn, false) &&
     result.abortProbe !== null && liveProbePasses(result.abortProbe, true);
   return JSON.stringify({
-    format: "tesota-m31a-live-evidence", version: 3,
+    format: "tesota-m31a-live-evidence", version: 4,
     provenance: "machine_generated", timestamp,
     implementation: { binding: "sha256_of_source_and_executed_javascript", sourceSha256 },
     provider: "openai-codex", api: "openai-codex-responses", model: LIVE_CODEX_MODEL_ID,
-    authType: "oauth", mode: run.mode, authenticationOutcome: run.authentication.outcome,
+    authType: "oauth", authenticationMethod: run.authenticationMethod, mode: run.mode, authenticationOutcome: run.authentication.outcome,
     inferenceAttempted: run.inferenceAttempted, limits: LIVE_LIMITS,
     oauthFailureCategory: run.authentication.oauthFailureCategory,
     modelInvocationCount: result === null ? 0 : result.turn.modelInvocationCount + (result.abortProbe?.modelInvocationCount ?? 0),

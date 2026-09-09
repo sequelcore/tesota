@@ -254,11 +254,14 @@ The M3.1a implementation harness is technically accepted with follow-up; its
 live inference proof remains incomplete. This AUTH-ONLY correction awaits
 independent review and does not close M3.1a or begin M3.1b.
 
-`bun run auth:codex` explicitly selects `--auth-only`: OAuth/network authentication
-with **ZERO model inference calls and no M3.1a probes**. It reserves the separate
-`docs/m31a-auth-only-evidence.json` file before login. `bun run live:codex` explicitly
-selects `--full-probe`; neither mode runs from normal checks. Both support offline
-`--help`; calling the compiled entry without an explicit mode is rejected.
+`bun run auth:codex` explicitly selects `--auth-only --device-code`: device-code
+OAuth/network authentication with **ZERO model inference calls and no M3.1a probes**.
+It requires interactive stdin, stdout and stderr before login or reservation, then
+exclusively reserves `docs/m31a-auth-only-device-code-evidence.json`. The occupied
+`docs/m31a-auth-only-evidence.json` browser failure remains unchanged.
+`bun run live:codex` explicitly selects `--full-probe`; neither mode runs from normal checks. Both support offline
+`--help` (`bun run auth:codex --help` and `bun run live:codex --help`); calling the
+compiled entry without an explicit mode is rejected.
 
 AUTH-ONLY disables the invocation's Pi Models and provider inference entry points
 before login, then returns immediately after the bounded public `Models.login`
@@ -339,6 +342,8 @@ Tesota's 180,000 ms login deadline fires, `browser_launch_failed` when the local
 launcher throws or emits an error, and `unknown` for every other pre-probe failure.
 Version 3 records `mode`, `authenticationOutcome` (`succeeded`, `failed`, or
 `unconfirmed` for the local timeout), and `inferenceAttempted` separately.
+Version 4 adds `authenticationMethod` (`device_code` or `browser`) separately
+from execution `mode`. Historical v3 evidence is also preserved unchanged.
 AUTH-ONLY success has null OAuth failure category, zero invocations, null probes
 and disposition `succeeded`; full-probe success retains disposition `passed`.
 An attempted inference always fails AUTH-ONLY even if login succeeded. Neither
@@ -435,3 +440,64 @@ After restoration, the 38 focused tests and Windows `bun run check` passed
 offline AUTH-ONLY help. Runtime versions were Bun 1.4.2 and Node 24.15.0.
 No live authentication or inference was performed; later two-inference live proof
 and independent review remain outstanding.
+
+### Device-code AUTH-ONLY (offline implementation)
+
+The next proposed operator command, after building, is:
+
+```sh
+bun run auth:codex
+```
+
+This expands to `bun --no-env-file dist/live-codex.js --auth-only --device-code`.
+Run it manually in an **unrecorded interactive terminal**, never through an agent,
+CI, redirected output, or a tool-call transcript. All three standard streams must
+report TTY before device authorization can begin. A TTY check cannot detect terminal
+recording or screen capture. The narrow renderer writes only the validated official
+`https://auth.openai.com/codex/device` URI and temporary user code to the terminal.
+Open that URI manually and enter the code only on the official website, never into
+Tesota, an agent prompt, or a tool call. Tesota does not read a code or launch a browser
+on this path. It rejects unexpected URLs, terminal control characters, browser/manual
+input, repeated selection and repeated device notifications. Provider free text is
+suppressed. Codes, timing notifications, auth identifiers, credentials and response
+objects do not enter evidence or normal logs.
+
+The existing scouting clone was inspected with `git show` at matching Pi commit
+`d981de1229ef899957bbe968bc8dcda02a21f477`, specifically
+`packages/ai/src/auth/oauth/openai-codex.ts`; its working-tree main was not treated
+as current upstream. Dependencies remain 0.85.1. Tesota calls the public
+`Models.login("openai-codex", "oauth", interaction)`, returns `device_code` from
+the offered `select` prompt, and projects only `verificationUri` and `userCode`
+from the public `device_code` notification. Pi owns authorization requests,
+polling, credential exchange and the default in-memory credential store.
+
+The existing 180-second application login deadline and 185-second AUTH-ONLY
+watchdog remain. Pi's polling is authentication traffic within that deadline;
+it permits neither inference nor another login attempt. Timeout is `unconfirmed`,
+ordinary cancellation and unavailable device login remain `failed`/`unknown`.
+Late interactions cannot display a code after settlement. There is no fallback.
+Every inference entry point remains blocked, and a caught denial still fails the
+run. `--full-probe` remains a separate browser-based command with its original
+probe assertions; it was not executed live.
+
+The fresh device evidence destination uses the existing exclusive-create (`wx`)
+reservation before login. An occupied destination refuses another attempt; no
+historical file is replaced. No reservation or successful live artifact was created
+by this offline increment. New v4 evidence retains immutable content binding,
+zero model invocations and null probes for AUTH-ONLY, without task-acceptance or
+verification meaning.
+
+Synthetic tests exercise the installed public Pi login interaction through
+fixture-only fetch responses, plus projection, captured-terminal refusal,
+unavailable device login, cancellation, timeout, late notification rejection,
+caught inference denial and exclusive reservation. Compiled offline CLI fixtures
+simulate a terminal and discard private presentation; they do not establish real
+terminal or provider behavior. This implementation does not establish successful
+device authentication or live M3.1a validation. M3.1b remains outside scope.
+
+Offline verification on Windows used Bun 1.4.2 and Node 24.15.0: 57 focused tests
+and `bun run check` (114 tests, build, typecheck and lint) passed. Compiled offline
+CLI smokes and `git diff --check` passed. Three restored mutations were detected:
+removing the inference guard, logging the temporary user code, and spreading
+user-code data into evidence. These are check results, not human acceptance or
+live authentication evidence.

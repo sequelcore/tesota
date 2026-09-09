@@ -9,7 +9,7 @@ import { liveSourceIdentity, serializeLiveEvidence } from "../src/integrations/p
 
 function experimentEvidence(result: LiveCodexExperimentResult): string {
   return serializeLiveEvidence(liveSourceIdentity(), "2026-01-01T00:00:00.000Z", {
-    mode: "full_probe", authentication: { outcome: "succeeded", oauthFailureCategory: null },
+    mode: "full_probe", authenticationMethod: "browser", authentication: { outcome: "succeeded", oauthFailureCategory: null },
     experiment: result, inferenceAttempted: false, disposition: "failed",
   });
 }
@@ -211,8 +211,8 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   const evidence = JSON.parse(serialized);
   expect(Object.keys(evidence).sort()).toEqual(["format", "version", "provenance", "timestamp", "implementation",
-    "provider", "api", "model", "authType", "mode", "authenticationOutcome", "inferenceAttempted", "limits", "oauthFailureCategory", "modelInvocationCount", "turn", "abortProbe", "disposition"].sort());
-  expect(evidence.version).toBe(3);
+    "provider", "api", "model", "authType", "authenticationMethod", "mode", "authenticationOutcome", "inferenceAttempted", "limits", "oauthFailureCategory", "modelInvocationCount", "turn", "abortProbe", "disposition"].sort());
+  expect(evidence.version).toBe(4);
   expect(evidence.oauthFailureCategory).toBeNull();
   expect(Object.keys(evidence.abortProbe).sort()).toEqual(["status", "modelInvocationCount", "invocationAttempts",
     "toolExecutionStartCount", "streamUpdateCount", "terminalStopReason", "terminalObserved", "abortRequested",
@@ -229,13 +229,13 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
 function oauthFailureEvidence(error: unknown, category: string) {
   const failureCategory = classifyLiveOAuthFailure(error);
   const serialized = serializeLiveEvidence(liveSourceIdentity(), "2026-01-01T00:00:00.000Z", {
-    mode: "auth_only", authentication: failureCategory === "oauth_timeout" ?
+    mode: "auth_only", authenticationMethod: "browser", authentication: failureCategory === "oauth_timeout" ?
       { outcome: "unconfirmed", oauthFailureCategory: failureCategory } :
       { outcome: "failed", oauthFailureCategory: failureCategory },
     experiment: null, inferenceAttempted: false, disposition: "failed",
   });
   const evidence = JSON.parse(serialized);
-  expect(evidence).toMatchObject({ version: 3, oauthFailureCategory: category,
+  expect(evidence).toMatchObject({ version: 4, oauthFailureCategory: category,
     modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "failed" });
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   expect(serialized).not.toContain("stack");
@@ -296,7 +296,7 @@ it("does not infer a callback failure from prompt cancellation and clears a succ
 });
 
 it("compiled live help is offline and never opens an authorization input path", () => {
-  const output = execFileSync("bun", ["--no-env-file", "dist/live-codex.js", "--help"], {
+  const output = execFileSync("bun", ["--no-env-file", "dist/live-codex.js", "--full-probe", "--help"], {
     encoding: "utf8", timeout: 5_000, windowsHide: true,
   });
   expect(output).toContain("browser OAuth callback only");

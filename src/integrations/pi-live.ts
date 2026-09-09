@@ -45,6 +45,11 @@ export interface LiveCodexExperimentResult {
 
 export type LiveOAuthFailureCategory = "oauth_timeout" | "browser_launch_failed" | "unknown";
 
+export type LiveAuthenticationMethod = "browser" | "device_code";
+export interface LiveAuthInteraction extends AuthInteraction {
+  readonly authenticationMethod: LiveAuthenticationMethod;
+}
+
 export type LiveCodexMode = "auth_only" | "full_probe";
 export type LiveAuthenticationResult =
   | { readonly outcome: "succeeded"; readonly oauthFailureCategory: null }
@@ -53,6 +58,7 @@ export type LiveAuthenticationResult =
 
 export type LiveCodexRunResult = {
   readonly authentication: LiveAuthenticationResult;
+  readonly authenticationMethod: LiveAuthenticationMethod;
 } & (
   | { readonly mode: "auth_only"; readonly experiment: null; readonly inferenceAttempted: boolean;
       readonly disposition: "succeeded" | "failed" }
@@ -234,12 +240,12 @@ export function liveProbePasses(probe: LiveCodexTurnResult, abort: boolean): boo
 
 /** AUTH-ONLY has no probe/Agent path. A denied attempt remains a failure even if caught. */
 export async function runLiveCodex(
-  mode: LiveCodexMode, authInteraction: AuthInteraction,
+  mode: LiveCodexMode, authInteraction: LiveAuthInteraction,
 ): Promise<LiveCodexRunResult> {
   let authentication: LiveAuthenticationResult = { outcome: "failed", oauthFailureCategory: "unknown" };
   let experiment: LiveCodexExperimentResult | null = null;
   let inferenceAttempted = false;
-  const authOnlyResult = (): LiveCodexRunResult => ({ mode: "auth_only", authentication,
+  const authOnlyResult = (): LiveCodexRunResult => ({ mode: "auth_only", authenticationMethod: authInteraction.authenticationMethod, authentication,
     experiment: null, inferenceAttempted,
     disposition: authentication.outcome === "succeeded" && !inferenceAttempted ? "succeeded" : "failed" });
   try {
@@ -278,7 +284,7 @@ export async function runLiveCodex(
     }
   }
   if (mode === "auth_only") return authOnlyResult();
-  return { mode, authentication, experiment, inferenceAttempted: false,
+  return { mode, authenticationMethod: authInteraction.authenticationMethod, authentication, experiment, inferenceAttempted: false,
     disposition: experiment !== null && liveProbePasses(experiment.turn, false) && experiment.abortProbe !== null &&
       liveProbePasses(experiment.abortProbe, true) ? "passed" : "failed" };
 }
@@ -323,7 +329,17 @@ export async function runLiveOAuthLogin(
     signal.addEventListener("abort", aborted, { once: true });
     if (signal.aborted) { aborted(); return; }
     try {
-      void login({ ...authInteraction, signal }).then(
+      void login({
+        signal,
+        prompt: (prompt) => {
+          if (settled || signal.aborted) return Promise.reject(new Error("Login interaction closed"));
+          return authInteraction.prompt(prompt);
+        },
+        notify: (event) => {
+          if (settled || signal.aborted) throw new Error("Login interaction closed");
+          authInteraction.notify(event);
+        },
+      }).then(
         () => finish("succeeded"), (error: unknown) => finish("failed", error),
       );
     } catch (error) { finish("failed", error); }
@@ -331,9 +347,9 @@ export async function runLiveOAuthLogin(
 }
 
 /** Pi races manual_code with its callback server. Never read terminal authorization input. */
-export function browserOnlyAuth(openBrowser: (url: string) => void, signal: AbortSignal): AuthInteraction {
+export function browserOnlyAuth(openBrowser: (url: string) => void, signal: AbortSignal): LiveAuthInteraction {
   return {
-    signal,
+    authenticationMethod: "browser", signal,
     prompt: async (prompt) => {
       if (prompt.type === "select" && prompt.options.some((option) => option.id === "browser")) return "browser";
       if (prompt.type !== "manual_code" || prompt.signal === undefined) {
@@ -356,6 +372,67 @@ export function browserOnlyAuth(openBrowser: (url: string) => void, signal: Abor
       // Do not print provider-owned free text or authorization URLs.
       if (event.type === "auth_url") openBrowser(event.url);
       else if (event.type === "device_code") throw new Error("Device login is disabled");
+    },
+  };
+}
+
+/** The only presentation data admitted from Pi's device notification. */
+export interface DeviceCodePresentation {
+  readonly verificationUri: string;
+  readonly userCode: string;
+}
+
+/** Requires all standard streams to be interactive; never use console/log output for codes. */
+export function deviceCodeTerminalRenderer(
+  terminal: {
+    readonly stdin: { readonly isTTY?: boolean };
+    readonly stdout: { readonly isTTY?: boolean };
+    readonly stderr: { readonly isTTY?: boolean; write(text: string): unknown };
+  } = { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr },
+): (presentation: DeviceCodePresentation) => void {
+  const requireTerminal = (): void => {
+    if (terminal.stdin.isTTY !== true || terminal.stdout.isTTY !== true || terminal.stderr.isTTY !== true) {
+      throw new Error("Device-code login requires an interactive, unrecorded terminal; captured execution is disabled.");
+    }
+  };
+  requireTerminal();
+  return ({ verificationUri, userCode }) => {
+    requireTerminal();
+    terminal.stderr.write(`Open ${verificationUri} manually. Enter this temporary code only on that website: ${userCode}\n`);
+  };
+}
+
+/** Locked public Pi selection and notification only. No browser/manual input or retry. */
+export function deviceCodeAuth(
+  render: (presentation: DeviceCodePresentation) => void, signal: AbortSignal,
+): LiveAuthInteraction {
+  const cancellation = new AbortController();
+  const combined = AbortSignal.any([signal, cancellation.signal]);
+  let selected = false;
+  let presented = false;
+  const rejectInteraction = (): never => {
+    const error = new Error("Device-code interaction unavailable or unexpected");
+    cancellation.abort(error);
+    throw error;
+  };
+  return {
+    authenticationMethod: "device_code", signal: combined,
+    prompt: async (prompt) => {
+      if (combined.aborted || selected || prompt.signal?.aborted || prompt.type !== "select" ||
+          !prompt.options.some((option) => option.id === "device_code")) return rejectInteraction();
+      selected = true;
+      return "device_code";
+    },
+    notify: (event) => {
+      if (combined.aborted) return rejectInteraction();
+      if (event.type === "info" || event.type === "progress") return;
+      if (event.type !== "device_code" || !selected || presented ||
+          event.verificationUri !== "https://auth.openai.com/codex/device" ||
+          typeof event.userCode !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(event.userCode)) return rejectInteraction();
+      presented = true;
+      // Explicit two-field projection. Never forward, serialize or spread the notification.
+      try { render({ verificationUri: event.verificationUri, userCode: event.userCode }); }
+      catch { rejectInteraction(); }
     },
   };
 }
