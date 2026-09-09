@@ -43,11 +43,14 @@ export type PiSessionEvent =
   | { readonly type: "verification_completed"; readonly status: OxlintResult["status"] }
   | { readonly type: "turn_completed" }
   | { readonly type: "session_completed"; readonly taskAcceptance: "not_evaluated" }
+  | { readonly type: "abort_requested" }
   | { readonly type: "session_aborted"; readonly reason: "aborted" }
   | { readonly type: "session_failed"; readonly reason: string };
 
 export interface PiSessionResult {
   readonly status: "completed" | "aborted" | "failed";
+  readonly abortRequested: boolean;
+  readonly terminalStopReason: AssistantMessage["stopReason"] | undefined;
   readonly taskAcceptance: "not_evaluated";
   readonly response: string;
   readonly events: readonly PiSessionEvent[];
@@ -88,7 +91,7 @@ function unissuedResult(): OxlintResult {
 
 function boundedVerificationText(result: OxlintResult): string {
   if (result.status === "execution_failed") {
-    return `Tesota verification execution_failed: ${result.reason}`;
+    return "Tesota verification execution_failed";
   }
   return `Tesota verification ${result.status}; diagnostics=${result.diagnostics.length}`;
 }
@@ -113,8 +116,22 @@ function continuationResponse(context: Context): AssistantMessage {
     : "Synthetic Pi turn did not receive the bounded Tesota result.");
 }
 
-function syntheticResponse(options: PiSessionOptions): FauxResponseStep[] {
-  if (options.scenario === "successful_turn" || options.scenario === "abort") {
+function syntheticResponse(options: PiSessionOptions, requestAbort: () => void): FauxResponseStep[] {
+  if (options.scenario === "abort") {
+    return [async (_context, streamOptions) => {
+      const signal = streamOptions?.signal;
+      if (signal === undefined) throw new Error("Synthetic abort requires Pi's signal");
+      // Keep the faux response active until Pi processes the request. The faux
+      // streamer, not this factory, produces the terminal aborted message.
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+        requestAbort();
+      });
+      return fauxAssistantMessage("Synthetic Pi turn completed.");
+    }];
+  }
+  if (options.scenario === "successful_turn") {
     return [fauxAssistantMessage("Synthetic Pi turn completed.")];
   }
   const input = options.requestedInput ?? options.input;
@@ -129,7 +146,9 @@ export async function runPiSession(options: PiSessionOptions): Promise<PiSession
   const events: PiSessionEvent[] = [];
   let verification: OxlintResult | undefined;
   let issuedEvidence: CompletedOxlintResult | undefined;
-  let aborted = false;
+  let abortRequested = false;
+  let terminalStopReason: AssistantMessage["stopReason"] | undefined;
+  let status: PiSessionResult["status"] = "failed";
   const executeVerification = options.verificationExecutor ?? runOxlint;
   const faux = fauxProvider({
     api: "tesota-synthetic-api",
@@ -137,7 +156,6 @@ export async function runPiSession(options: PiSessionOptions): Promise<PiSession
     models: [{ id: "tesota-synthetic-model", name: "Tesota synthetic model" }],
     tokensPerSecond: 1_000,
   });
-  faux.setResponses(syntheticResponse(options));
 
   const verificationTool: AgentTool<typeof verificationParameters, VerificationToolDetails> = {
     name: "tesota_verify",
@@ -196,10 +214,6 @@ export async function runPiSession(options: PiSessionOptions): Promise<PiSession
     switch (event.type) {
       case "agent_start":
         events.push({ type: "session_started" });
-        if (options.scenario === "abort") {
-          aborted = true;
-          agent.abort();
-        }
         break;
       case "turn_start":
         events.push({ type: "turn_started" });
@@ -208,10 +222,16 @@ export async function runPiSession(options: PiSessionOptions): Promise<PiSession
         events.push({ type: "turn_completed" });
         break;
       case "agent_end":
-        if (aborted) events.push({ type: "session_aborted", reason: "aborted" });
-        else if (agent.state.errorMessage !== undefined) {
-          events.push({ type: "session_failed", reason: agent.state.errorMessage });
+        terminalStopReason = event.messages.findLast((message) => message.role === "assistant")?.stopReason;
+        if (terminalStopReason === "aborted") {
+          status = "aborted";
+          events.push({ type: "session_aborted", reason: "aborted" });
+        } else if (terminalStopReason === undefined || terminalStopReason === "pending" ||
+                   terminalStopReason === "error" || agent.state.errorMessage !== undefined) {
+          status = "failed";
+          events.push({ type: "session_failed", reason: agent.state.errorMessage ?? "missing_terminal_outcome" });
         } else {
+          status = "completed";
           events.push({ type: "session_completed", taskAcceptance: "not_evaluated" });
         }
         break;
@@ -220,13 +240,18 @@ export async function runPiSession(options: PiSessionOptions): Promise<PiSession
     }
   });
 
+  faux.setResponses(syntheticResponse(options, () => {
+    abortRequested = true;
+    events.push({ type: "abort_requested" });
+    agent.abort();
+  }));
+
   try {
     await agent.prompt("Run the bounded synthetic turn.");
-    const status: PiSessionResult["status"] = aborted
-      ? "aborted"
-      : agent.state.errorMessage === undefined ? "completed" : "failed";
     return {
       status,
+      abortRequested,
+      terminalStopReason,
       taskAcceptance: "not_evaluated",
       response: assistantText(agent.state.messages),
       events,
