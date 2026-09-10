@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
-import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall, type AssistantMessage } from "@earendil-works/pi-ai";
 import { browserOnlyAuth, LIVE_CODEX_EXPECTED_TOKEN, LIVE_LIMITS, liveProbePasses,
   classifyLiveOAuthFailure, observeLiveBrowserLaunch, runLiveOAuthLogin, runLiveCodexTurn,
   type LiveCodexExperimentResult, type LiveCodexTurnResult } from "../src/integrations/pi-live.js";
@@ -85,6 +85,44 @@ it("ignores invalid HTTP status values without reading headers or changing compl
   expect(result.providerDiagnostic.httpStatus).toBeNull();
 });
 
+it.each<{ content: AssistantMessage["content"]; textCount: number; nonTextCount: number; textMatches: boolean; passes: boolean }>([
+  { content: [{ type: "text", text: LIVE_CODEX_EXPECTED_TOKEN }], textCount: 1, nonTextCount: 0, textMatches: true, passes: true },
+  { content: [{ type: "text", text: " TESOTA_" }, { type: "text", text: "CODEX_OK\n" }], textCount: 2, nonTextCount: 0, textMatches: true, passes: true },
+  { content: [{ type: "text", text: "SYNTHETIC_PRIVATE" }], textCount: 1, nonTextCount: 0, textMatches: false, passes: false },
+  { content: [{ type: "thinking", thinking: "SYNTHETIC_PRIVATE" }, { type: "text", text: LIVE_CODEX_EXPECTED_TOKEN }], textCount: 1, nonTextCount: 1, textMatches: true, passes: true },
+  { content: [{ type: "thinking", thinking: "", thinkingSignature: "SYNTHETIC_PRIVATE" }, { type: "text", text: LIVE_CODEX_EXPECTED_TOKEN }], textCount: 1, nonTextCount: 1, textMatches: true, passes: true },
+  { content: [{ type: "thinking", thinking: LIVE_CODEX_EXPECTED_TOKEN }, { type: "text", text: "SYNTHETIC_PRIVATE" }], textCount: 1, nonTextCount: 1, textMatches: false, passes: false },
+  { content: [{ type: "thinking", thinking: "SYNTHETIC_PRIVATE" }], textCount: 0, nonTextCount: 1, textMatches: false, passes: false },
+  { content: [], textCount: 0, nonTextCount: 0, textMatches: false, passes: false },
+])("diagnoses response structure without retaining content: $textCount text, $nonTextCount other, match $textMatches", async ({ content, textCount, nonTextCount, textMatches, passes }) => {
+  const turn = controlled();
+  await turn.started;
+  const message = { ...fauxAssistantMessage(""), content };
+  turn.stream.push({ type: "done", reason: "stop", message });
+  turn.stream.end(message);
+  const result = await turn.running;
+  expect(result.responseDiagnostic).toEqual({ messageObserved: true, textBlockCount: textCount,
+    nonTextBlockCount: nonTextCount, thinkingBlockCount: nonTextCount, textMatchesExpectedToken: textMatches });
+  expect(liveProbePasses(result, false)).toBe(passes);
+  expect(experimentEvidence({ turn: result, abortProbe: null })).not.toContain("SYNTHETIC_PRIVATE");
+});
+
+it.each(["toolCall", "future_content"])("rejects %s alongside the expected text even with terminal stop", async (type) => {
+  const turn = controlled();
+  await turn.started;
+  const message = fauxAssistantMessage(LIVE_CODEX_EXPECTED_TOKEN);
+  const block = type === "toolCall" ? fauxToolCall("nonexistent", {}) :
+    { type: "thinking" as const, thinking: "SYNTHETIC_PRIVATE" };
+  if (type === "future_content") Reflect.set(block, "type", type);
+  message.content.push(block);
+  turn.stream.push({ type: "done", reason: "stop", message });
+  turn.stream.end(message);
+  const result = await turn.running;
+  expect(result.responseMatchesExpectedToken).toBe(false);
+  expect(liveProbePasses(result, false)).toBe(false);
+  expect(experimentEvidence({ turn: result, abortProbe: null })).not.toContain("SYNTHETIC_PRIVATE");
+});
+
 it("prevents Pi's nonexistent-tool continuation before a second provider invocation", async () => {
   const turn = controlled();
   await turn.started;
@@ -111,6 +149,8 @@ it("bounds a never-settling streamed body and leaves abort without settlement un
   const result = await turn.running;
   expect(result).toMatchObject({ status: "unsettled", settlement: "unconfirmed",
     terminalObserved: false, terminalStopReason: null, abortRequested: true, deadlineExpired: true });
+  expect(result.responseDiagnostic).toEqual({ messageObserved: false, textBlockCount: 0,
+    nonTextBlockCount: 0, thinkingBlockCount: 0, textMatchesExpectedToken: false });
   expect(result.events.slice(-3)).toEqual(["deadline_expired", "abort_requested", "settlement_unconfirmed"]);
   expect(liveProbePasses(result, false)).toBe(false);
   turn.finish("aborted");
@@ -226,17 +266,18 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
   const normal = await turn.running;
   const extra = { ...abortProbe, headers: "SYNTHETIC_PRIVATE", response: "SYNTHETIC_PRIVATE",
     tokens: "SYNTHETIC_PRIVATE", error: "SYNTHETIC_PRIVATE",
-    providerDiagnostic: { ...abortProbe.providerDiagnostic, headers: "SYNTHETIC_PRIVATE", body: "SYNTHETIC_PRIVATE" } };
+    providerDiagnostic: { ...abortProbe.providerDiagnostic, headers: "SYNTHETIC_PRIVATE", body: "SYNTHETIC_PRIVATE" },
+    responseDiagnostic: { ...abortProbe.responseDiagnostic, text: "SYNTHETIC_PRIVATE" } };
   const serialized = experimentEvidence({ turn: normal, abortProbe: extra });
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   const evidence = JSON.parse(serialized);
   expect(Object.keys(evidence).sort()).toEqual(["format", "version", "provenance", "timestamp", "implementation",
     "provider", "api", "model", "authType", "authenticationMethod", "mode", "authenticationOutcome", "inferenceAttempted", "limits", "oauthFailureCategory", "modelInvocationCount", "turn", "abortProbe", "disposition"].sort());
-  expect(evidence).toMatchObject({ format: "tesota-codex-evidence", version: 7 });
+  expect(evidence).toMatchObject({ format: "tesota-codex-evidence", version: 9 });
   expect(evidence.oauthFailureCategory).toBeNull();
   expect(Object.keys(evidence.abortProbe).sort()).toEqual(["status", "modelInvocationCount", "invocationAttempts",
     "toolExecutionStartCount", "streamUpdateCount", "terminalStopReason", "terminalObserved", "abortRequested",
-    "taskAcceptance", "responseMatchesExpectedToken", "requestBudgetExceeded", "deadlineExpired", "settlement",
+    "taskAcceptance", "responseMatchesExpectedToken", "responseDiagnostic", "requestBudgetExceeded", "deadlineExpired", "settlement",
     "events", "providerDiagnostic", "requestBoundRespected", "turnBoundRespected", "disposition"].sort());
   expect(evidence.disposition).toBe("passed");
   for (const result of [
@@ -255,7 +296,7 @@ function oauthFailureEvidence(error: unknown, category: string) {
     experiment: null, inferenceAttempted: false, disposition: "failed",
   });
   const evidence = JSON.parse(serialized);
-  expect(evidence).toMatchObject({ version: 7, oauthFailureCategory: category,
+  expect(evidence).toMatchObject({ version: 9, oauthFailureCategory: category,
     modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "failed" });
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   expect(serialized).not.toContain("stack");

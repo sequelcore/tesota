@@ -172,7 +172,7 @@ it("auth success returns without model lookup, Agent, probes, tools or acceptanc
   expect(lookup).not.toHaveBeenCalled();
   expect(prompt).not.toHaveBeenCalled();
   const record = evidence(result);
-  expect(record).toMatchObject({ version: 7, mode: "auth_only", authenticationOutcome: "succeeded",
+  expect(record).toMatchObject({ version: 9, mode: "auth_only", authenticationOutcome: "succeeded",
     oauthFailureCategory: null, modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "succeeded" });
   expect(record).not.toHaveProperty("taskAcceptance");
   expect(record).not.toHaveProperty("verification");
@@ -517,7 +517,7 @@ it.skipIf(process.platform !== "win32").each([
     expect(result.stdout).toContain("device-code OAuth/network authentication AND up to two model invocations");
     const serialized = readFileSync(join(directory, "experiments/codex/runs", readdirSync(join(directory, "experiments/codex/runs"))[0]!), "utf8");
     const record = JSON.parse(serialized);
-    expect(record).toMatchObject({ format: "tesota-codex-evidence", version: 7, mode: "full_probe", authenticationMethod: "device_code",
+    expect(record).toMatchObject({ format: "tesota-codex-evidence", version: 9, mode: "full_probe", authenticationMethod: "device_code",
       authenticationOutcome: scenario === "login_failure" ? "failed" : scenario === "login_timeout" ? "unconfirmed" : "succeeded",
       modelInvocationCount: count, disposition: exit === 0 ? "passed" : "failed" });
     for (const secret of ["TEST-ONLY", "SYNTHETIC_PRIVATE"]) {

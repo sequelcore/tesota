@@ -35,6 +35,13 @@ function probeEvidence(probe: LiveCodexTurnResult, abort: boolean) {
     abortRequested: probe.abortRequested,
     taskAcceptance: probe.taskAcceptance,
     responseMatchesExpectedToken: probe.responseMatchesExpectedToken,
+    responseDiagnostic: {
+      messageObserved: probe.responseDiagnostic.messageObserved,
+      textBlockCount: probe.responseDiagnostic.textBlockCount,
+      nonTextBlockCount: probe.responseDiagnostic.nonTextBlockCount,
+      thinkingBlockCount: probe.responseDiagnostic.thinkingBlockCount,
+      textMatchesExpectedToken: probe.responseDiagnostic.textMatchesExpectedToken,
+    },
     requestBudgetExceeded: probe.requestBudgetExceeded,
     deadlineExpired: probe.deadlineExpired,
     settlement: probe.settlement,
@@ -60,7 +67,7 @@ export function serializeLiveEvidence(
   const passed = result !== null && liveProbePasses(result.turn, false) &&
     result.abortProbe !== null && liveProbePasses(result.abortProbe, true);
   return JSON.stringify({
-    format: "tesota-codex-evidence", version: 7,
+    format: "tesota-codex-evidence", version: 9,
     provenance: "machine_generated", timestamp,
     implementation: { binding: "sha256_of_source_and_executed_javascript", sourceSha256 },
     provider: "openai-codex", api: "openai-codex-responses", model: LIVE_CODEX_MODEL_ID,

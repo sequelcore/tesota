@@ -13,8 +13,8 @@ specification. [Architecture](architecture.md) describes what is implemented.
 
 ## Milestones
 
-Status below reflects the repository at implementation commit `1ae392f8` and
-retained reports. Historical review acceptance is not a new review or a live
+Status below combines implementation records and retained live evidence through
+2026-09-10 UTC. Historical review acceptance is not a new review or a live
 validation of the current checkout.
 
 | Increment | Status | Outcome or remaining condition |
@@ -23,16 +23,16 @@ validation of the current checkout.
 | Minimal package | Complete for scaffold scope | CLI, build, types, tests and lint; [recorded evidence](history/scaffold-validation.md) |
 | Shared verification | Reported independently accepted for bounded Oxlint scope | Single-file execution, binding, applicability and durable recovery |
 | Synthetic Pi compatibility | Reported independently accepted | [Synthetic behavior and limitations](../experiments/pi/README.md) |
-| Live login and turn probes | Open | Device-code login succeeded; the retained full probe failed before cancellation probing |
-| Reusable authentication | Implemented; live reuse unverified | Private storage, Pi-owned refresh, login/status/logout and automatic experiment output paths |
+| Live login and turn probes | Passed for bounded Windows probe | Saved login, exact answer with Pi thinking, and observed abort; two invocations, no tools or exceeded limits |
+| Reusable authentication | Live reuse verified; live refresh unverified | Saved credentials resolved without another login; refresh and logout have synthetic coverage |
 | Live verification tool | Not started | Real model requests the existing bounded verifier through Tesota admission |
 | First verified self-development cycle | Not started | Candidate edit, failure correction, applicable evidence and human acceptance |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
-The next missing live evidence is a successful normal turn and an observed abort
-through the bounded live path. The failed run proves neither model availability
-nor a specific historical cause. Diagnostic support was added afterward; no
-successful second full-probe result is retained here. See the [experiment index](../experiments/README.md).
+The next increment is a live model request for the existing bounded verifier
+through Tesota's tool admission. Saved-login normal and abort probes now pass;
+this does not establish server-side cancellation or agent task execution.
+See the [experiment index](../experiments/README.md).
 
 ## First useful cycle
 

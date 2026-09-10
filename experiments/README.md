@@ -15,6 +15,9 @@ recorded scope. [Project status](../docs/roadmap.md) owns progress interpretatio
 | [Browser AUTH-ONLY](codex/evidence/browser-auth.json) | Authentication unconfirmed at the local timeout; zero model invocations |
 | [Device-code AUTH-ONLY](codex/evidence/device-auth.json) | Successful authentication; zero model invocations and no turn probes |
 | [Device-code full probe](codex/evidence/device-probe.json) | Login succeeded; first model invocation failed; abort probe absent |
+| [Saved-login probe](codex/evidence/stored-probe.json) | Stored authentication resolved; HTTP 200 and completed turn; exact-response assertion failed, abort probe absent |
+| [Response diagnostic](codex/evidence/response-diagnostic.json) | Expected text matched; one additional non-text block caused rejection; abort probe absent |
+| [Passing saved-login probe](codex/evidence/stored-probe-passed.json) | Exact answer plus Pi thinking accepted; normal and observed-abort probes passed |
 | [Codex history](codex/history.md) | Source scouting, historical checks and diagnostic findings |
 
 Verification and synthetic Pi review closure was reported in the development conversation and
@@ -35,7 +38,7 @@ upgrading historical records to a newer schema.
 
 Retained JSON files were relocated without changing their bytes. Their internal
 milestone identifiers and source hashes describe the original implementation.
-New records use `tesota-codex-evidence` version 7 and unique filenames under
+New records use `tesota-codex-evidence` version 9 and unique filenames under
 `codex/runs/`. The CLI reserves output exclusively before inference. There is no
 legacy-path fallback. Keep additional evidence only for a concrete experiment with a clear
 interpretation; incomplete reservations and failed attempts must remain visibly

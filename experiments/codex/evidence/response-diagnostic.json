@@ -1,0 +1,79 @@
+{
+  "format": "tesota-codex-evidence",
+  "version": 8,
+  "provenance": "machine_generated",
+  "timestamp": "2026-09-10T05:30:29.820Z",
+  "implementation": {
+    "binding": "sha256_of_source_and_executed_javascript",
+    "sourceSha256": {
+      "src/live-codex.ts": "a16e5a6fe6e38fdf381b36c172090e4dc2262028a9b770343b5967319a4ce838",
+      "src/integrations/pi-live.ts": "469d5c31d35196523ead80c1098b76ddd5498820be8280c8a5d54eb0b214509a",
+      "src/integrations/pi-live-evidence.ts": "ed1dc267e03334272c64b7f117ef811da0e734bd8a077f65263627ff2b48de3b",
+      "src/integrations/codex-credentials.ts": "f920be0e8c621b445c13073c31b58bf5cb2baf24f978f5fcfbe63c65605a0891",
+      "dist/live-codex.js": "32c30affa32684c80f16449b2171f2a3e2c9141e82f146c6798bbd55fb3e63c6",
+      "dist/integrations/pi-live.js": "09b10273961b5fae48ecf8e2116a6a6aacf778d0fe3dd7768ab0e8aca1de9c1f",
+      "dist/integrations/pi-live-evidence.js": "87c5b797fc1f3afeb22e90d39a5f55c97722aa1466cb3e64d6ad48b574f4e930",
+      "dist/integrations/codex-credentials.js": "390b09cd539da9bb89e3bdac1d72d642ecd1ff35547c2fe3feeea8cb0bfaf045",
+      "package.json": "81e2dfa6c731a32a6cd1b8928b06251815556a9e7ab513e56a06c90fb94e9408",
+      "bun.lock": "1db8e48317aff5a17826f247b413e28066100d2617c4c9d98a30508b3de0d278",
+      "tsconfig.json": "151a229b66c7c69ecc471f95d292dd2bad96dbea3adfdb3c07acb6a2a4559ccd",
+      "tsconfig.build.json": "36a8e8030a0369cff3c25ebf999f39412998367acf8ebe4860504bf53df342b8"
+    }
+  },
+  "provider": "openai-codex",
+  "api": "openai-codex-responses",
+  "model": "gpt-5.3-codex-spark",
+  "authType": "oauth",
+  "authenticationMethod": "stored",
+  "mode": "full_probe",
+  "authenticationOutcome": "succeeded",
+  "inferenceAttempted": false,
+  "limits": {
+    "modelInvocationsPerProbe": 1,
+    "turnMs": 30000,
+    "settlementMs": 2000,
+    "loginMs": 180000
+  },
+  "oauthFailureCategory": null,
+  "modelInvocationCount": 1,
+  "turn": {
+    "status": "completed",
+    "modelInvocationCount": 1,
+    "invocationAttempts": 1,
+    "toolExecutionStartCount": 0,
+    "streamUpdateCount": 1,
+    "terminalStopReason": "stop",
+    "terminalObserved": true,
+    "abortRequested": false,
+    "taskAcceptance": "not_evaluated",
+    "responseMatchesExpectedToken": false,
+    "responseDiagnostic": {
+      "messageObserved": true,
+      "textBlockCount": 1,
+      "nonTextBlockCount": 1,
+      "textMatchesExpectedToken": true
+    },
+    "requestBudgetExceeded": false,
+    "deadlineExpired": false,
+    "settlement": "observed",
+    "events": [
+      "session_started",
+      "turn_started",
+      "model_invocation_started",
+      "stream_update",
+      "turn_completed",
+      "terminal_stop",
+      "normalized_completed"
+    ],
+    "providerDiagnostic": {
+      "httpStatus": 200,
+      "failureStage": null,
+      "providerErrorCode": null
+    },
+    "requestBoundRespected": true,
+    "turnBoundRespected": true,
+    "disposition": "failed"
+  },
+  "abortProbe": null,
+  "disposition": "failed"
+}

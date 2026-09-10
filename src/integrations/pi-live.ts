@@ -32,6 +32,13 @@ export interface LiveCodexTurnResult {
   readonly abortRequested: boolean;
   readonly taskAcceptance: "not_evaluated";
   readonly responseMatchesExpectedToken: boolean;
+  readonly responseDiagnostic: {
+    readonly messageObserved: boolean;
+    readonly textBlockCount: number;
+    readonly nonTextBlockCount: number;
+    readonly thinkingBlockCount: number;
+    readonly textMatchesExpectedToken: boolean;
+  };
   readonly requestBudgetExceeded: boolean;
   readonly deadlineExpired: boolean;
   readonly settlement: "observed" | "unconfirmed";
@@ -131,6 +138,9 @@ export async function runLiveCodexTurn(
   let closed = false;
   let agentErrorObserved = false;
   let responseMatchesExpectedToken = false;
+  let responseDiagnostic: LiveCodexTurnResult["responseDiagnostic"] = {
+    messageObserved: false, textBlockCount: 0, nonTextBlockCount: 0, thinkingBlockCount: 0, textMatchesExpectedToken: false,
+  };
   let httpStatus: number | null = null;
   let resolveFinished: () => void = () => {};
   const finished = new Promise<void>((resolve) => { resolveFinished = resolve; });
@@ -192,8 +202,18 @@ export async function runLiveCodexTurn(
         terminalStopReason = message?.stopReason ?? null;
         agentErrorObserved = agent.state.errorMessage !== undefined;
         const content = message?.content;
-        responseMatchesExpectedToken = content?.every((block) => block.type === "text") === true &&
-          content.map((block) => block.type === "text" ? block.text : "").join("").trim() === LIVE_CODEX_EXPECTED_TOKEN;
+        const textBlocks = content?.filter((block) => block.type === "text") ?? [];
+        responseDiagnostic = {
+          messageObserved: message !== undefined,
+          textBlockCount: textBlocks.length,
+          nonTextBlockCount: (content?.length ?? 0) - textBlocks.length,
+          thinkingBlockCount: content?.filter((block) => block.type === "thinking").length ?? 0,
+          textMatchesExpectedToken: textBlocks.map((block) => block.text).join("").trim() === LIVE_CODEX_EXPECTED_TOKEN,
+        };
+        // Pi represents provider reasoning separately from answer text, even without a summary.
+        // Only text and thinking are permitted; tool calls and future block types fail closed.
+        responseMatchesExpectedToken = responseDiagnostic.nonTextBlockCount === responseDiagnostic.thinkingBlockCount &&
+          responseDiagnostic.textMatchesExpectedToken;
         events.push(terminalStopReason === "stop" ? "terminal_stop" :
           terminalStopReason === "aborted" ? "terminal_aborted" : "terminal_other");
         resolveFinished();
@@ -223,7 +243,7 @@ export async function runLiveCodexTurn(
     status === "completed" ? "normalized_completed" : "normalized_failed");
   return { status, modelInvocationCount, invocationAttempts, toolExecutionStartCount,
     streamUpdateCount, terminalStopReason, terminalObserved, abortRequested,
-    taskAcceptance: "not_evaluated", responseMatchesExpectedToken, requestBudgetExceeded,
+    taskAcceptance: "not_evaluated", responseMatchesExpectedToken, responseDiagnostic, requestBudgetExceeded,
     deadlineExpired, settlement: terminalObserved ? "observed" : "unconfirmed", events,
     providerDiagnostic: {
       httpStatus,

@@ -34,7 +34,7 @@ it("compiled login persists across processes, status is sanitized, and logout re
         expect(experiment.stdout + experiment.stderr).not.toMatch(/SYNTHETIC_ACCESS|SYNTHETIC_REFRESH|LOGIN_FORBIDDEN|NETWORK_FORBIDDEN/);
         const runs = join(root, "experiments/codex/runs");
         const record = JSON.parse(await readFile(join(runs, (await readdir(runs))[0]!), "utf8"));
-        expect(record).toMatchObject({ version: 7, authenticationMethod: "stored", disposition: "passed", modelInvocationCount: 2 });
+        expect(record).toMatchObject({ version: 9, authenticationMethod: "stored", disposition: "passed", modelInvocationCount: 2 });
       }
     }
   } finally { await rm(root, { recursive: true, force: true }); }

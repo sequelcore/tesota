@@ -63,7 +63,9 @@ Authentication/resolution has a 180-second application deadline. Each turn has a
 process watchdog is 249 seconds; login-only diagnostics use 185 seconds. These
 timers assume a responsive event loop. Process exit does not prove remote cancellation.
 
-The normal probe must return `TESOTA_CODEX_OK` with an observed `stop` terminal,
+The normal probe's concatenated, trimmed text must equal `TESOTA_CODEX_OK`.
+Pi `thinking` blocks are allowed alongside that text; tool calls and all other
+block types are rejected. It also requires an observed `stop` terminal,
 no abort, one admitted invocation/attempt and no exceeded limits. The abort probe
 must observe content, request cancellation, then observe an `aborted` terminal.
 An abort request alone is insufficient. Missing settlement remains unconfirmed;
@@ -72,7 +74,9 @@ abort probe from running. Exit 0 requires both probes to pass independently.
 
 ## Evidence and diagnostics
 
-New records use `tesota-codex-evidence` version 7. It adds `stored` authentication
+New records use `tesota-codex-evidence` version 9. It adds `thinkingBlockCount`
+and allows Pi reasoning alongside the exact answer text. Version 8 added response
+diagnostics without changing probe acceptance. Version 7 added `stored` authentication
 and source/build identity for the credential adapter. For that method,
 `authenticationOutcome: succeeded` means Pi resolved request authentication,
 including any required refresh; it does not mean a new browser login occurred.
@@ -88,6 +92,15 @@ credential contents, headers, raw exceptions or provider bodies enter evidence.
 | `httpStatus` | Integer 100–599 observed through Pi's public `onResponse`, otherwise null |
 | `failureStage` | `response_not_observed`, `http_rejection`, `after_response`, or null |
 | `providerErrorCode` | Null; no validated structured code is available through this boundary |
+
+`responseDiagnostic` records whether a final assistant message was observed,
+the counts of text, non-text and thinking blocks, and whether concatenated, trimmed text
+matches the fixed token. This distinguishes text mismatch from extra non-text
+content without retaining either. Thinking blocks are included in the non-text
+count. Pi's locked Responses adapter maps provider reasoning items to `thinking`,
+including empty summaries with opaque signatures. These are separate from answer
+text. The comparator permits only text and thinking; reasoning cannot substitute
+for a missing or incorrect answer, and no reasoning content or signature is saved.
 
 An HTTP 403 does not prove missing entitlement; 429 does not identify a quota;
 null does not prove no request; 200 does not prove successful stream completion.

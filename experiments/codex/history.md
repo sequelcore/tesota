@@ -1,10 +1,70 @@
 # Codex experiment history
 
-This record consolidates useful source tracing and validation observations from
-the bootstrap README and operator reports. Test counts describe their original
-increments, not fresh checks. Historical artifacts remain unchanged; use the
-[live guide](README.md) for current behavior and the [roadmap](../../docs/roadmap.md)
-for milestone status.
+This page consolidates source tracing and validation observations from the
+bootstrap README, operator reports and retained runs. Test counts describe their
+original increments, not fresh checks. Historical artifacts remain unchanged;
+use the [live guide](README.md) for current behavior and the
+[roadmap](../../docs/roadmap.md) for milestone status.
+
+## Response diagnostic
+
+The [version 8 run](evidence/response-diagnostic.json) on 2026-09-10 UTC
+resolved saved authentication and completed one invocation with HTTP 200 and
+terminal `stop`. Its final message contained one text block and one non-text
+block. The concatenated, trimmed text matched `TESOTA_CODEX_OK`; the exclusive
+text-block requirement caused the assertion failure. The diagnostic does not
+identify the non-text block's type or content, and does not establish why the
+earlier version 7 run failed.
+
+The process exited 1 and did not start the abort probe. All twelve captured
+implementation hashes matched the executed checkout. Before this single live
+attempt, `bun run check` passed build, typecheck, 142 tests and lint on Windows.
+Acceptance criteria were unchanged in that run. The next step was to establish which
+non-text content Pi produces and define the normal-response contract accordingly;
+the observation alone does not justify accepting arbitrary non-text blocks.
+
+## Response contract correction and passing probe
+
+The locked Pi 0.85.1 Codex adapter uses `processResponsesStream` in
+`openai-responses-shared.js`. That parser creates a `thinking` block for each
+provider reasoning item, including items without a visible summary. Reasoning
+is separate from the answer text, so requiring exclusively text blocks rejected
+an otherwise valid answer. Version 9 permits text and thinking blocks only;
+joined, trimmed text must still match the token. Tool calls and unknown block
+types remain rejected. Thinking cannot satisfy the text assertion.
+
+The [passing saved-login run](evidence/stored-probe-passed.json) on
+2026-09-10 UTC confirmed one text block matching the token and one thinking
+block. The normal probe passed. The second probe observed a content update,
+requested abort and observed Pi's `aborted` terminal. Both returned HTTP 200,
+with one invocation each, no tool executions and no exceeded limits. The CLI
+exited 0; all twelve captured source/build/config hashes matched the checkout.
+
+`bun run check` passed build, typecheck, 146 tests and lint on Windows. The
+focused response tests and typecheck were repeated after strengthening the
+tool-call fixture. Coverage includes empty reasoning with an opaque signature,
+incorrect or absent answer text, unknown blocks and tool-call rejection.
+No response text or reasoning signatures entered retained evidence. This proves
+the bounded local probe contract, not server-side cancellation, live refresh,
+agent task execution or human acceptance.
+
+## Saved-login probe
+
+On 2026-09-10 UTC, an operator-authorized run on `3a6eff6e` reused saved login
+without another browser interaction. The [record](evidence/stored-probe.json)
+resolved authentication successfully and admitted one model invocation. It
+observed HTTP 200, a content update, terminal `stop`, and normalized `completed`.
+No tool execution, timeout or invocation-budget violation occurred.
+
+The exact-response assertion failed, so the abort probe was not started and
+the process exited 1. All twelve captured implementation hashes matched before
+any changes. This verifies stored credential use and a completed live model turn,
+not successful completion of the full experiment or a token refresh.
+
+The record does not retain response text or content-block types. The comparator
+requires every content block to be text and the joined text to equal the expected
+token. This result therefore cannot distinguish unexpected text from an additional
+non-text block. No retry was performed and acceptance criteria were not changed.
 
 ## Reference source
 
