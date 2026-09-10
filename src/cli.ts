@@ -1,6 +1,6 @@
 import { configuredOxlint, runOxlint } from "./verification/oxlint.js";
 
-const help = `Tesota (provisional)
+const help = `Tesota
 Usage: tesota [--help | -h | help]
        tesota verify <file.ts|file.js>
 

@@ -6,7 +6,7 @@ import {
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 
 export const LIVE_CODEX_MODEL_ID = "gpt-5.3-codex-spark";
-export const LIVE_CODEX_EXPECTED_TOKEN = "TESOTA_M31A_OK";
+export const LIVE_CODEX_EXPECTED_TOKEN = "TESOTA_CODEX_OK";
 export const LIVE_LIMITS: Readonly<{
   modelInvocationsPerProbe: number; turnMs: number; settlementMs: number; loginMs: number;
 }> = Object.freeze({ modelInvocationsPerProbe: 1, turnMs: 30_000, settlementMs: 2_000, loginMs: 180_000 });

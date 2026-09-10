@@ -60,7 +60,7 @@ export function serializeLiveEvidence(
   const passed = result !== null && liveProbePasses(result.turn, false) &&
     result.abortProbe !== null && liveProbePasses(result.abortProbe, true);
   return JSON.stringify({
-    format: "tesota-m31a-live-evidence", version: 5,
+    format: "tesota-codex-evidence", version: 6,
     provenance: "machine_generated", timestamp,
     implementation: { binding: "sha256_of_source_and_executed_javascript", sourceSha256 },
     provider: "openai-codex", api: "openai-codex-responses", model: LIVE_CODEX_MODEL_ID,

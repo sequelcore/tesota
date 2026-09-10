@@ -1,4 +1,4 @@
-name: M1 checks
+name: Tesota checks
 on:
   push:
     branches: [tesota/bootstrap]

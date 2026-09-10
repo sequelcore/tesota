@@ -232,7 +232,7 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
   const evidence = JSON.parse(serialized);
   expect(Object.keys(evidence).sort()).toEqual(["format", "version", "provenance", "timestamp", "implementation",
     "provider", "api", "model", "authType", "authenticationMethod", "mode", "authenticationOutcome", "inferenceAttempted", "limits", "oauthFailureCategory", "modelInvocationCount", "turn", "abortProbe", "disposition"].sort());
-  expect(evidence.version).toBe(5);
+  expect(evidence).toMatchObject({ format: "tesota-codex-evidence", version: 6 });
   expect(evidence.oauthFailureCategory).toBeNull();
   expect(Object.keys(evidence.abortProbe).sort()).toEqual(["status", "modelInvocationCount", "invocationAttempts",
     "toolExecutionStartCount", "streamUpdateCount", "terminalStopReason", "terminalObserved", "abortRequested",
@@ -255,7 +255,7 @@ function oauthFailureEvidence(error: unknown, category: string) {
     experiment: null, inferenceAttempted: false, disposition: "failed",
   });
   const evidence = JSON.parse(serialized);
-  expect(evidence).toMatchObject({ version: 5, oauthFailureCategory: category,
+  expect(evidence).toMatchObject({ version: 6, oauthFailureCategory: category,
     modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "failed" });
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   expect(serialized).not.toContain("stack");

@@ -1,8 +1,8 @@
 {
-  "name": "tesota-bootstrap",
+  "name": "tesota",
   "version": "0.0.0",
   "private": true,
-  "description": "Provisional Tesota M1 development scaffold",
+  "description": "Tesota: bounded verification and incremental agent development",
   "license": "Apache-2.0",
   "type": "module",
   "packageManager": "bun@1.4.2",

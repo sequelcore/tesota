@@ -152,7 +152,7 @@ it("auth success returns without model lookup, Agent, probes, tools or acceptanc
   expect(lookup).not.toHaveBeenCalled();
   expect(prompt).not.toHaveBeenCalled();
   const record = evidence(result);
-  expect(record).toMatchObject({ version: 5, mode: "auth_only", authenticationOutcome: "succeeded",
+  expect(record).toMatchObject({ version: 6, mode: "auth_only", authenticationOutcome: "succeeded",
     oauthFailureCategory: null, modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "succeeded" });
   expect(record).not.toHaveProperty("taskAcceptance");
   expect(record).not.toHaveProperty("verification");
@@ -250,21 +250,21 @@ it("compiled auth-only dispatch help is offline and explicit", () => {
   const output = execFileSync("bun", ["--no-env-file", "dist/live-codex.js", "--auth-only", "--device-code", "--help"], {
     encoding: "utf8", timeout: 5_000, windowsHide: true,
   });
-  expect(output).toContain("ZERO model inference calls; no M3.1a probes");
+  expect(output).toContain("ZERO model inference calls; no model probes");
   expect(output).toContain("network authentication");
 });
 
 it.skipIf(process.platform !== "win32")("compiled AUTH-ONLY exits with sanitized durable success using offline login", () => {
   const directory = mkdtempSync(join(tmpdir(), "tesota-auth-smoke-"));
   try {
-    mkdirSync(join(directory, "docs"));
+    mkdirSync(join(directory, "experiments/codex/evidence"), { recursive: true });
     const output = execFileSync("bun", ["--no-env-file", "--preload", resolve("tests/fixtures/auth-only-smoke.mjs"),
       resolve("dist/live-codex.js"), "--auth-only", "--device-code"], {
       cwd: directory, encoding: "utf8", timeout: 5_000, windowsHide: true,
       env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"] },
     });
     expect(output).toContain("ZERO model inference calls");
-    const record = JSON.parse(readFileSync(join(directory, "docs/m31a-auth-only-device-code-evidence.json"), "utf8"));
+    const record = JSON.parse(readFileSync(join(directory, "experiments/codex/evidence/device-auth.json"), "utf8"));
     expect(record).toMatchObject({ mode: "auth_only", authenticationOutcome: "succeeded",
       modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "succeeded" });
   } finally { rmSync(directory, { recursive: true, force: true }); }
@@ -409,10 +409,10 @@ it.each(["timeout", "cancel", "pre_cancel"])("retains device login deadline/canc
 it.skipIf(process.platform !== "win32")("compiled captured mode refuses login and exclusive reservation preserves browser and device evidence", () => {
   const directory = mkdtempSync(join(tmpdir(), "tesota-device-reserve-"));
   try {
-    mkdirSync(join(directory, "docs"));
-    const browserPath = join(directory, "docs/m31a-auth-only-evidence.json");
-    const devicePath = join(directory, "docs/m31a-auth-only-device-code-evidence.json");
-    const historical = readFileSync("docs/m31a-auth-only-evidence.json");
+    mkdirSync(join(directory, "experiments/codex/evidence"), { recursive: true });
+    const browserPath = join(directory, "experiments/codex/evidence/browser-auth.json");
+    const devicePath = join(directory, "experiments/codex/evidence/device-auth.json");
+    const historical = readFileSync("experiments/codex/evidence/browser-auth.json");
     writeFileSync(browserPath, historical);
     const invoke = (captured: boolean) => spawnSync("bun", ["--no-env-file", "--preload",
       resolve("tests/fixtures/auth-only-smoke.mjs"), resolve("dist/live-codex.js"), "--auth-only", "--device-code"], {
@@ -484,7 +484,7 @@ it.skipIf(process.platform !== "win32").each([
 ] as const)("compiled full-probe/device-code composition: %s", (scenario, exit, count) => {
   const directory = mkdtempSync(join(tmpdir(), "tesota-full-device-"));
   try {
-    mkdirSync(join(directory, "docs"));
+    mkdirSync(join(directory, "experiments/codex/evidence"), { recursive: true });
     const result = spawnSync("bun", ["--no-env-file", "--preload", resolve("tests/fixtures/auth-only-smoke.mjs"),
       resolve("dist/live-codex.js"), "--full-probe", "--device-code"], {
       cwd: directory, encoding: "utf8", timeout: 5_000, windowsHide: true,
@@ -492,9 +492,9 @@ it.skipIf(process.platform !== "win32").each([
     });
     expect(result.status).toBe(exit);
     expect(result.stdout).toContain("device-code OAuth/network authentication AND up to two model invocations");
-    const serialized = readFileSync(join(directory, "docs/m31a-live-device-code-evidence.json"), "utf8");
+    const serialized = readFileSync(join(directory, "experiments/codex/evidence/device-probe.json"), "utf8");
     const record = JSON.parse(serialized);
-    expect(record).toMatchObject({ version: 5, mode: "full_probe", authenticationMethod: "device_code",
+    expect(record).toMatchObject({ format: "tesota-codex-evidence", version: 6, mode: "full_probe", authenticationMethod: "device_code",
       authenticationOutcome: scenario === "login_failure" ? "failed" : scenario === "login_timeout" ? "unconfirmed" : "succeeded",
       modelInvocationCount: count, disposition: exit === 0 ? "passed" : "failed" });
     for (const secret of ["TEST-ONLY", "SYNTHETIC_PRIVATE"]) {
@@ -522,12 +522,12 @@ it.skipIf(process.platform !== "win32").each([
 
 it.skipIf(process.platform !== "win32")("compiled device full-probe checks terminal and reservation before login, preserving prior evidence", () => {
   const directory = mkdtempSync(join(tmpdir(), "tesota-full-reserve-"));
-  const historical = ["m31a-live-evidence.json", "m31a-auth-only-evidence.json", "m31a-auth-only-device-code-evidence.json"]
-    .map((name) => ({ name, bytes: readFileSync(join("docs", name)) }));
+  const historical = ["browser-probe.json", "browser-auth.json", "device-auth.json"]
+    .map((name) => ({ name, bytes: readFileSync(join("experiments/codex/evidence", name)) }));
   try {
-    mkdirSync(join(directory, "docs"));
-    for (const file of historical) writeFileSync(join(directory, "docs", file.name), file.bytes);
-    const destination = join(directory, "docs/m31a-live-device-code-evidence.json");
+    mkdirSync(join(directory, "experiments/codex/evidence"), { recursive: true });
+    for (const file of historical) writeFileSync(join(directory, "experiments/codex/evidence", file.name), file.bytes);
+    const destination = join(directory, "experiments/codex/evidence/device-probe.json");
     const invoke = (captured: boolean) => spawnSync("bun", ["--no-env-file", "--preload",
       resolve("tests/fixtures/auth-only-smoke.mjs"), resolve("dist/live-codex.js"), "--full-probe", "--device-code"], {
       cwd: directory, encoding: "utf8", timeout: 5_000, windowsHide: true,
@@ -546,8 +546,8 @@ it.skipIf(process.platform !== "win32")("compiled device full-probe checks termi
     for (const result of [captured, occupied]) expect(result.stdout + result.stderr).not.toContain("LOGIN_MUST_NOT_START");
     expect(readFileSync(destination)).toEqual(reserved);
     for (const file of historical) {
-      expect(readFileSync(join(directory, "docs", file.name))).toEqual(file.bytes);
-      expect(readFileSync(join("docs", file.name))).toEqual(file.bytes);
+      expect(readFileSync(join(directory, "experiments/codex/evidence", file.name))).toEqual(file.bytes);
+      expect(readFileSync(join("experiments/codex/evidence", file.name))).toEqual(file.bytes);
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });

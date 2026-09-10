@@ -49,7 +49,7 @@ mock.module("@earendil-works/pi-ai", () => ({
       const events = pi.createAssistantMessageEventStream();
       const tool = scenario === (calls === 1 ? "normal_tool" : "abort_tool");
       const message = pi.fauxAssistantMessage(tool ? pi.fauxToolCall("unavailable", {}) :
-        scenario === "normal_failure" ? "SYNTHETIC_PRIVATE" : "TESOTA_M31A_OK");
+        scenario === "normal_failure" ? "SYNTHETIC_PRIVATE" : "TESOTA_CODEX_OK");
       if (calls === 1 || tool || scenario === "abort_failure") {
         events.push({ type: "done", reason: tool ? "toolUse" : "stop", message });
         events.end(message);

@@ -11,7 +11,7 @@ const validMode = mode === "auth_only" ? authenticationMethod === "device_code" 
 const modeArgs = authenticationMethod === "device_code" ? 2 : 1;
 if ((args.length === 1 && args[0] === "--help") ||
     (validMode && args.length === modeArgs + 1 && args[modeArgs] === "--help")) {
-  console.log("Opt-in network authentication. --auth-only --device-code: device-code login in an interactive, unrecorded terminal; ZERO model inference calls; no M3.1a probes. --full-probe --device-code: device-code authentication AND up to two model invocations in an interactive, unrecorded terminal. --full-probe: browser OAuth callback only, at most two model invocations. No retries. --help is offline.");
+  console.log("Tesota Codex experiment. Opt-in network authentication. --auth-only --device-code: device-code login in an interactive, unrecorded terminal; ZERO model inference calls; no model probes. --full-probe --device-code: device-code authentication AND up to two model invocations in an interactive, unrecorded terminal. --full-probe: browser OAuth callback only, at most two model invocations. No retries. --help is offline.");
 } else if (args.length !== modeArgs || !validMode || mode === null || process.platform !== "win32") {
   console.error("Select --auth-only --device-code or --full-probe [--device-code] on Windows, or --help offline.");
   process.exitCode = 2;
@@ -22,8 +22,8 @@ if ((args.length === 1 && args[0] === "--help") ||
 } else {
   const identity = liveSourceIdentity();
   // Reserve evidence before any login/inference. Existing evidence refuses another run.
-  const evidenceFile = openSync(mode === "auth_only" ? "docs/m31a-auth-only-device-code-evidence.json" :
-    authenticationMethod === "device_code" ? "docs/m31a-live-device-code-evidence.json" : "docs/m31a-live-evidence.json", "wx");
+  const evidenceFile = openSync(mode === "auth_only" ? "experiments/codex/evidence/device-auth.json" :
+    authenticationMethod === "device_code" ? "experiments/codex/evidence/device-probe.json" : "experiments/codex/evidence/browser-probe.json", "wx");
   const timestamp = new Date().toISOString();
   const cancellation = new AbortController();
   let result: LiveCodexRunResult;
@@ -34,10 +34,10 @@ if ((args.length === 1 && args[0] === "--help") ||
   }, LIVE_LIMITS.loginMs + (mode === "auth_only" ? 0 : 2 * (LIVE_LIMITS.turnMs + LIVE_LIMITS.settlementMs)) + 5_000);
   try {
     console.log(mode === "auth_only" ?
-      "AUTH-ONLY: device-code OAuth/network authentication; ZERO model inference calls; no M3.1a probes. Use an unrecorded terminal; enter the code only on the official website, never into Tesota or an agent." :
+      "AUTH-ONLY: device-code OAuth/network authentication; ZERO model inference calls; no model probes. Use an unrecorded terminal; enter the code only on the official website, never into Tesota or an agent." :
       authenticationMethod === "device_code" ?
       "FULL-PROBE: device-code OAuth/network authentication AND up to two model invocations. Use an unrecorded terminal; enter the code only on the official website, never into Tesota or an agent." :
-      "FULL-PROBE: OAuth/network authentication followed by M3.1a model probes. Complete OAuth in the browser.");
+      "FULL-PROBE: OAuth/network authentication followed by model probes. Complete OAuth in the browser.");
     const interaction = authenticationMethod === "device_code" ?
       deviceCodeAuth(deviceCodeTerminalRenderer(), cancellation.signal) : browserOnlyAuth((url) => {
       // Pi supplies the initial authorize URL, never a callback/code. No shell interpolation.
