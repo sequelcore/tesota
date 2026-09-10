@@ -9,7 +9,9 @@ The [roadmap](roadmap.md) describes those intended capabilities separately.
 
 | Owner | Responsibility |
 | --- | --- |
-| [src/cli.ts](../src/cli.ts) | Parse the fixed CLI, select trusted verifier configuration and render results |
+| [src/cli.ts](../src/cli.ts) | Dispatch verification and authentication commands |
+| [src/auth.ts](../src/auth.ts) | Login, offline status and local logout |
+| [integrations/codex-credentials.ts](../src/integrations/codex-credentials.ts) | Private Codex credential persistence and serialized mutation |
 | [verification/oxlint.ts](../src/verification/oxlint.ts) | Run Oxlint, issue result identity and assess applicability |
 | [verification/oxlint-input.ts](../src/verification/oxlint-input.ts) | Capture source, fixed configuration and observed verifier identity |
 | [verification/oxlint-result.ts](../src/verification/oxlint-result.ts) | Interpret the bounded result contract |
@@ -32,10 +34,11 @@ the adapters instead of defining Tesota's verification contract. Experiment guid
 and evidence live under [experiments/](../experiments/README.md).
 
 For live authentication, Tesota calls `Models.login` and handles its public
-interaction. Pi owns authorization requests, polling, exchange and its default
-in-memory credential store. Tesota selects the interaction, limits its lifetime
-and controls what is displayed or retained. It does not implement a second OAuth
-protocol or persist credentials. See the [Pi decision](decisions/002-use-pi.md).
+interaction. Pi owns authorization requests, polling, exchange and refresh.
+Tesota supplies a private persistent `CredentialStore`, selects the interaction,
+limits its lifetime and controls what is displayed or retained. It does not
+implement a second OAuth protocol. See [authentication](authentication.md) for
+storage and concurrency, and the [Pi decision](decisions/002-use-pi.md) for rationale.
 
 ## Verification and authority
 

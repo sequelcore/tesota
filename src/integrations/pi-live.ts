@@ -1,7 +1,7 @@
 import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream, createModels,
-  type Api, type AssistantMessage, type AuthInteraction, type Model, type Models,
+  type Api, type AssistantMessage, type AuthInteraction, type CredentialStore, type Model, type Models,
 } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 
@@ -53,7 +53,7 @@ export interface LiveCodexExperimentResult {
 
 export type LiveOAuthFailureCategory = "oauth_timeout" | "browser_launch_failed" | "unknown";
 
-export type LiveAuthenticationMethod = "browser" | "device_code";
+export type LiveAuthenticationMethod = "browser" | "device_code" | "stored";
 export interface LiveAuthInteraction extends AuthInteraction {
   readonly authenticationMethod: LiveAuthenticationMethod;
 }
@@ -262,6 +262,7 @@ export function liveProbePasses(probe: LiveCodexTurnResult, abort: boolean): boo
 /** AUTH-ONLY has no probe/Agent path. A denied attempt remains a failure even if caught. */
 export async function runLiveCodex(
   mode: LiveCodexMode, authInteraction: LiveAuthInteraction,
+  credentials?: CredentialStore,
 ): Promise<LiveCodexRunResult> {
   let authentication: LiveAuthenticationResult = { outcome: "failed", oauthFailureCategory: "unknown" };
   let experiment: LiveCodexExperimentResult | null = null;
@@ -270,7 +271,7 @@ export async function runLiveCodex(
     experiment: null, inferenceAttempted,
     disposition: authentication.outcome === "succeeded" && !inferenceAttempted ? "succeeded" : "failed" });
   try {
-    const models = createModels();
+    const models = createModels(credentials === undefined ? {} : { credentials });
     const provider = openaiCodexProvider();
     if (mode === "auth_only") {
       const deny = (): never => {
@@ -292,7 +293,19 @@ export async function runLiveCodex(
         provider.auth.apiKey !== undefined || provider.auth.oauth === undefined) {
       throw new Error("Live Codex route is not isolated to OAuth");
     }
-    await runLiveOAuthLogin((interaction) => models.login("openai-codex", "oauth", interaction), authInteraction);
+    if (authInteraction.authenticationMethod === "stored") {
+      if (mode !== "full_probe" || credentials === undefined ||
+          (await credentials.read("openai-codex"))?.type !== "oauth") {
+        throw new Error("Run tesota auth login first");
+      }
+      await runLiveOAuthLogin(async (interaction) => {
+        if (await models.getAuth("openai-codex", interaction.signal === undefined ? {} : { signal: interaction.signal }) === undefined) {
+          throw new Error("Saved Codex login unavailable");
+        }
+      }, authInteraction);
+    } else {
+      await runLiveOAuthLogin((interaction) => models.login("openai-codex", "oauth", interaction), authInteraction);
+    }
     authentication = { outcome: "succeeded", oauthFailureCategory: null };
     if (mode === "auth_only") return authOnlyResult();
 

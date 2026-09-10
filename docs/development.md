@@ -52,6 +52,7 @@ copying its explanation into another file.
 | Implemented structure and boundaries | [Architecture](architecture.md) |
 | Product direction and milestone status | [Roadmap](roadmap.md) |
 | Stable behavioral contracts and usage | [Verification](verification.md) |
+| Authentication and private credential lifecycle | [Authentication](authentication.md) |
 | Experimental guides and records | [experiments/](../experiments/README.md), grouped by capability |
 | Consequential decisions and rationale | `docs/decisions/`, linked from the relevant guide |
 | Selected upstream source and reuse | `docs/references/` |

@@ -35,8 +35,8 @@ upgrading historical records to a newer schema.
 
 Retained JSON files were relocated without changing their bytes. Their internal
 milestone identifiers and source hashes describe the original implementation.
-New records use `tesota-codex-evidence` version 6 and functional filenames.
-The CLI still refuses occupied destinations before authentication. There is no
+New records use `tesota-codex-evidence` version 7 and unique filenames under
+`codex/runs/`. The CLI reserves output exclusively before inference. There is no
 legacy-path fallback. Keep additional evidence only for a concrete experiment with a clear
 interpretation; incomplete reservations and failed attempts must remain visibly
 different from successful records.

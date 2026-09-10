@@ -88,7 +88,7 @@ independently attest the provider exchange.
 
 Correction `1ae392f8` added numeric HTTP status and fixed observation categories
 through Pi's public `onResponse` boundary. Headers, bodies and raw error strings
-remain excluded. See the [diagnostic contract](README.md#provider-diagnostics).
+remain excluded. See the [diagnostic contract](README.md#evidence-and-diagnostics).
 
 Tracing confirmed that the authenticated Models instance reaches SSE and that
 AUTH-ONLY inference guards are installed only in that mode. The historical

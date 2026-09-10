@@ -232,7 +232,7 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
   const evidence = JSON.parse(serialized);
   expect(Object.keys(evidence).sort()).toEqual(["format", "version", "provenance", "timestamp", "implementation",
     "provider", "api", "model", "authType", "authenticationMethod", "mode", "authenticationOutcome", "inferenceAttempted", "limits", "oauthFailureCategory", "modelInvocationCount", "turn", "abortProbe", "disposition"].sort());
-  expect(evidence).toMatchObject({ format: "tesota-codex-evidence", version: 6 });
+  expect(evidence).toMatchObject({ format: "tesota-codex-evidence", version: 7 });
   expect(evidence.oauthFailureCategory).toBeNull();
   expect(Object.keys(evidence.abortProbe).sort()).toEqual(["status", "modelInvocationCount", "invocationAttempts",
     "toolExecutionStartCount", "streamUpdateCount", "terminalStopReason", "terminalObserved", "abortRequested",
@@ -255,7 +255,7 @@ function oauthFailureEvidence(error: unknown, category: string) {
     experiment: null, inferenceAttempted: false, disposition: "failed",
   });
   const evidence = JSON.parse(serialized);
-  expect(evidence).toMatchObject({ version: 6, oauthFailureCategory: category,
+  expect(evidence).toMatchObject({ version: 7, oauthFailureCategory: category,
     modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "failed" });
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   expect(serialized).not.toContain("stack");
@@ -316,8 +316,8 @@ it("does not infer a callback failure from prompt cancellation and clears a succ
 });
 
 it("compiled live help is offline and never opens an authorization input path", () => {
-  const output = execFileSync("bun", ["--no-env-file", "dist/live-codex.js", "--full-probe", "--help"], {
+  const output = execFileSync("bun", ["--no-env-file", "dist/live-codex.js", "--full-probe", "--stored", "--help"], {
     encoding: "utf8", timeout: 5_000, windowsHide: true,
   });
-  expect(output).toContain("browser OAuth callback only");
+  expect(output).toContain("--full-probe --stored reuses saved login");
 });

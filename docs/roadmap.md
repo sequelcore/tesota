@@ -24,6 +24,7 @@ validation of the current checkout.
 | Shared verification | Reported independently accepted for bounded Oxlint scope | Single-file execution, binding, applicability and durable recovery |
 | Synthetic Pi compatibility | Reported independently accepted | [Synthetic behavior and limitations](../experiments/pi/README.md) |
 | Live login and turn probes | Open | Device-code login succeeded; the retained full probe failed before cancellation probing |
+| Reusable authentication | Implemented; live reuse unverified | Private storage, Pi-owned refresh, login/status/logout and automatic experiment output paths |
 | Live verification tool | Not started | Real model requests the existing bounded verifier through Tesota admission |
 | First verified self-development cycle | Not started | Candidate edit, failure correction, applicable evidence and human acceptance |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |

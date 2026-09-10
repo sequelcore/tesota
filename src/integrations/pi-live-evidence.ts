@@ -4,8 +4,8 @@ import { LIVE_CODEX_MODEL_ID, LIVE_LIMITS, liveProbePasses,
   type LiveCodexRunResult, type LiveCodexTurnResult } from "./pi-live.js";
 
 const implementationFiles = [
-  "src/live-codex.ts", "src/integrations/pi-live.ts", "src/integrations/pi-live-evidence.ts",
-  "dist/live-codex.js", "dist/integrations/pi-live.js", "dist/integrations/pi-live-evidence.js",
+  "src/live-codex.ts", "src/integrations/pi-live.ts", "src/integrations/pi-live-evidence.ts", "src/integrations/codex-credentials.ts",
+  "dist/live-codex.js", "dist/integrations/pi-live.js", "dist/integrations/pi-live-evidence.js", "dist/integrations/codex-credentials.js",
   "package.json", "bun.lock", "tsconfig.json", "tsconfig.build.json",
 ] as const;
 
@@ -60,7 +60,7 @@ export function serializeLiveEvidence(
   const passed = result !== null && liveProbePasses(result.turn, false) &&
     result.abortProbe !== null && liveProbePasses(result.abortProbe, true);
   return JSON.stringify({
-    format: "tesota-codex-evidence", version: 6,
+    format: "tesota-codex-evidence", version: 7,
     provenance: "machine_generated", timestamp,
     implementation: { binding: "sha256_of_source_and_executed_javascript", sourceSha256 },
     provider: "openai-codex", api: "openai-codex-responses", model: LIVE_CODEX_MODEL_ID,

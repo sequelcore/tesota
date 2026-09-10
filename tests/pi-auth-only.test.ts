@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -50,6 +50,26 @@ async function fixture() {
 function evidence(run: LiveCodexRunResult, identity = liveSourceIdentity()) {
   return JSON.parse(serializeLiveEvidence(identity, "2026-01-01T00:00:00.000Z", run));
 }
+
+it("stored authentication runs probes without login prompts and rejects missing credentials", async () => {
+  const f = await fixture();
+  const actual = await vi.importActual<typeof import("@earendil-works/pi-ai")>("@earendil-works/pi-ai");
+  const credentials = new actual.InMemoryCredentialStore();
+  const prompt = vi.fn(async (): Promise<string> => { throw new Error("Unexpected login"); });
+  const interaction = { authenticationMethod: "stored" as const, prompt, notify: vi.fn(), signal: f.cancellation.signal };
+  const auth = vi.spyOn(f.models, "getAuth").mockResolvedValue({ auth: { apiKey: "SYNTHETIC_PRIVATE" } });
+  expect((await runLiveCodex("full_probe", interaction, credentials)).disposition).toBe("failed");
+  expect(auth).not.toHaveBeenCalled();
+  expect(f.stream).not.toHaveBeenCalled();
+  await credentials.modify("openai-codex", async () => ({ type: "oauth", access: "SYNTHETIC_PRIVATE",
+    refresh: "SYNTHETIC_PRIVATE", expires: Date.now() + 3_600_000 }));
+  const result = await runLiveCodex("full_probe", interaction, credentials);
+  expect(result).toMatchObject({ disposition: "passed", authenticationMethod: "stored" });
+  expect(f.login).not.toHaveBeenCalled();
+  expect(prompt).not.toHaveBeenCalled();
+  expect(f.stream).toHaveBeenCalledTimes(2);
+  expect(JSON.stringify(evidence(result))).not.toContain("SYNTHETIC_PRIVATE");
+});
 
 // Exercise actual Models auth application, lazy provider and SSE streamSimple.
 // Only public OAuth login and per-request fetch are synthetic; no global fetch patch.
@@ -152,7 +172,7 @@ it("auth success returns without model lookup, Agent, probes, tools or acceptanc
   expect(lookup).not.toHaveBeenCalled();
   expect(prompt).not.toHaveBeenCalled();
   const record = evidence(result);
-  expect(record).toMatchObject({ version: 6, mode: "auth_only", authenticationOutcome: "succeeded",
+  expect(record).toMatchObject({ version: 7, mode: "auth_only", authenticationOutcome: "succeeded",
     oauthFailureCategory: null, modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "succeeded" });
   expect(record).not.toHaveProperty("taskAcceptance");
   expect(record).not.toHaveProperty("verification");
@@ -229,7 +249,7 @@ it("unknown OAuth failure is distinct from success and never retains its payload
 it("source identity accepts only immutable fixed-file captures, rejecting arbitrary and copied data", () => {
   const identity = liveSourceIdentity();
   expect(Object.isFrozen(identity)).toBe(true);
-  expect(Object.keys(identity)).toHaveLength(10);
+  expect(Object.keys(identity)).toHaveLength(12);
   for (const [file, digest] of Object.entries(identity)) {
     expect(digest).toMatch(/^[a-f0-9]{64}$/);
     expect(digest).toBe(createHash("sha256").update(readFileSync(file)).digest("hex"));
@@ -264,7 +284,7 @@ it.skipIf(process.platform !== "win32")("compiled AUTH-ONLY exits with sanitized
       env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"] },
     });
     expect(output).toContain("ZERO model inference calls");
-    const record = JSON.parse(readFileSync(join(directory, "experiments/codex/evidence/device-auth.json"), "utf8"));
+    const record = JSON.parse(readFileSync(join(directory, "experiments/codex/runs", readdirSync(join(directory, "experiments/codex/runs"))[0]!), "utf8"));
     expect(record).toMatchObject({ mode: "auth_only", authenticationOutcome: "succeeded",
       modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "succeeded" });
   } finally { rmSync(directory, { recursive: true, force: true }); }
@@ -426,10 +446,13 @@ it.skipIf(process.platform !== "win32")("compiled captured mode refuses login an
     const first = invoke(false);
     expect(first.status).toBe(0);
     expect((first.stdout + first.stderr).includes(deviceNotification.userCode)).toBe(false);
-    const record = readFileSync(devicePath);
+    const runs = join(directory, "experiments/codex/runs");
+    const firstPath = join(runs, readdirSync(runs)[0]!);
+    const record = readFileSync(firstPath);
     expect(JSON.parse(record.toString())).toMatchObject({ authenticationMethod: "device_code", modelInvocationCount: 0 });
-    expect(invoke(false).status).not.toBe(0);
-    expect(readFileSync(devicePath).equals(record)).toBe(true);
+    expect(invoke(false).status).toBe(0);
+    expect(readdirSync(runs)).toHaveLength(2);
+    expect(readFileSync(firstPath).equals(record)).toBe(true);
     expect(readFileSync(browserPath).equals(historical)).toBe(true);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
@@ -492,9 +515,9 @@ it.skipIf(process.platform !== "win32").each([
     });
     expect(result.status).toBe(exit);
     expect(result.stdout).toContain("device-code OAuth/network authentication AND up to two model invocations");
-    const serialized = readFileSync(join(directory, "experiments/codex/evidence/device-probe.json"), "utf8");
+    const serialized = readFileSync(join(directory, "experiments/codex/runs", readdirSync(join(directory, "experiments/codex/runs"))[0]!), "utf8");
     const record = JSON.parse(serialized);
-    expect(record).toMatchObject({ format: "tesota-codex-evidence", version: 6, mode: "full_probe", authenticationMethod: "device_code",
+    expect(record).toMatchObject({ format: "tesota-codex-evidence", version: 7, mode: "full_probe", authenticationMethod: "device_code",
       authenticationOutcome: scenario === "login_failure" ? "failed" : scenario === "login_timeout" ? "unconfirmed" : "succeeded",
       modelInvocationCount: count, disposition: exit === 0 ? "passed" : "failed" });
     for (const secret of ["TEST-ONLY", "SYNTHETIC_PRIVATE"]) {
@@ -540,9 +563,11 @@ it.skipIf(process.platform !== "win32")("compiled device full-probe checks termi
     expect(() => readFileSync(destination)).toThrow();
     const reserved = Buffer.from("existing reservation\n");
     writeFileSync(destination, reserved);
+    // A non-directory runs path prevents exclusive output reservation before login.
+    writeFileSync(join(directory, "experiments/codex/runs"), "blocked");
     const occupied = invoke(false);
     expect(occupied.status).toBe(1);
-    expect(occupied.stderr).toContain("EEXIST");
+    expect(occupied.stderr).toContain("Codex experiment failed");
     for (const result of [captured, occupied]) expect(result.stdout + result.stderr).not.toContain("LOGIN_MUST_NOT_START");
     expect(readFileSync(destination)).toEqual(reserved);
     for (const file of historical) {
@@ -558,5 +583,5 @@ it("new package command exposes explicit device full-probe selection and offline
   const output = execFileSync("bun", ["run", "live:codex:device-code", "--help"], {
     encoding: "utf8", timeout: 5_000, windowsHide: true,
   });
-  expect(output).toContain("--full-probe --device-code: device-code authentication AND up to two model invocations");
+  expect(output).toContain("--full-probe --device-code performs network authentication AND up to two model invocations");
 });

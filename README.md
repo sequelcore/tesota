@@ -45,6 +45,7 @@ rules; it does not establish general correctness or task acceptance.
 | [Architecture](docs/architecture.md) | Implemented modules, responsibilities and boundaries |
 | [Roadmap](docs/roadmap.md) | Product goal, current status and open requirements |
 | [Verification](docs/verification.md) | CLI outcomes, input binding and evidence recovery |
+| [Authentication](docs/authentication.md) | One-time Codex login, saved credentials and logout |
 | [Experiments](experiments/README.md) | Pi and Codex guides, recorded outcomes and limitations |
 | [Project history](docs/history/README.md) | Bootstrap provenance and toolchain validation |
 

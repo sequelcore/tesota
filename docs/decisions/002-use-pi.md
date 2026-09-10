@@ -8,7 +8,8 @@ accepted; successful live model-turn and verification-tool integration remain op
 Use the public APIs of pinned Pi packages for agent mechanics, authentication and
 provider transport. Keep Tesota's verification, admission, evidence and acceptance
 responsibilities in Tesota. Avoid duplicating an engine loop or introducing a
-second credential system.
+second OAuth protocol implementation. Tesota supplies the app-owned storage
+adapter required by Pi's public credential contract.
 
 The bootstrap selected `@earendil-works/pi-agent-core` and
 `@earendil-works/pi-ai` at 0.85.1. The current selections are owned by
@@ -28,7 +29,9 @@ maintaining the extracted protocol implementation.
 Pi already supplies the authentication operation needed by the current experiment.
 Tesota calls `Models.login`, selects the public interaction and adds presentation,
 deadlines and evidence. The custom experiment harness is integration code, not a
-new implementation of authorization polling or token exchange.
+new implementation of authorization polling or token exchange. The subsequent
+[persistent login](../authentication.md) uses Pi's `CredentialStore` seam so
+normal runs can reuse authentication and Pi can refresh tokens under a storage lock.
 
 This rationale is not proof that Pi minimizes total implementation effort.
 Kiln's regression cases remain useful reference material. Revisit extraction or
