@@ -16,6 +16,10 @@ Run commands from the repository root.
 | `bun run check` | Run the complete repository gate |
 
 The main CLI accepts no arguments, `help`, `--help` or `-h` for help (exit 0).
+`candidate create` and `candidate inspect <directory>` prepare and inspect
+[independent checkouts](candidates.md); they do not invoke a model.
+`task prepare <directory>` and `task check <directory>` expose the first
+[scoped documentation task](tasks.md), also without model inference.
 `verify <file.ts|file.js>` runs the [bounded check](verification.md); unsupported
 arguments print a diagnostic on stderr and exit 2.
 
@@ -53,6 +57,8 @@ copying its explanation into another file.
 | Product direction and milestone status | [Roadmap](roadmap.md) |
 | Stable behavioral contracts and usage | [Verification](verification.md) |
 | Authentication and private credential lifecycle | [Authentication](authentication.md) |
+| Candidate checkout creation and inspection | [Candidate checkouts](candidates.md) |
+| Task scope and documentation check | [Scoped candidate task](tasks.md) |
 | Experimental guides and records | [experiments/](../experiments/README.md), grouped by capability |
 | Consequential decisions and rationale | `docs/decisions/`, linked from the relevant guide |
 | Selected upstream source and reuse | `docs/references/` |

@@ -1,7 +1,8 @@
 # Tesota
 
 This private package provides a CLI, development checks, bounded Oxlint
-verification and durable evidence recovery. Separate Pi compatibility and live
+verification, durable evidence recovery, independent candidate checkouts and
+one scoped documentation task. Separate Pi compatibility and live
 authentication, fixed verification-tool and isolated candidate-correction experiments
 exist; it does not yet execute general repository tasks.
 Keep changes scoped to the active increment.

@@ -17,7 +17,8 @@ Today it provides a CLI with one bounded Oxlint check, input binding, and durabl
 verification evidence recovery. Separate Pi experiments exercise synthetic agent
 behavior, live Codex authentication, one fixed verification action, and an
 isolated candidate correction with a review diff. **Tesota does not yet execute
-general repository tasks.**
+general repository tasks.** It can also [create and inspect independent candidate
+checkouts](docs/candidates.md) from committed source revisions.
 See the [roadmap](docs/roadmap.md) for demonstrated progress and remaining work.
 
 ## Get started
@@ -48,6 +49,8 @@ rules; it does not establish general correctness or task acceptance.
 | [Roadmap](docs/roadmap.md) | Product goal, current status and open requirements |
 | [Verification](docs/verification.md) | CLI outcomes, input binding and evidence recovery |
 | [Authentication](docs/authentication.md) | One-time Codex login, saved credentials and logout |
+| [Candidate checkouts](docs/candidates.md) | Separate committed working copies, inspection and incomplete state |
+| [Scoped task](docs/tasks.md) | Permitted file operations and the first repository task's checks |
 | [Experiments](experiments/README.md) | Pi and Codex guides, recorded outcomes and limitations |
 | [Project history](docs/history/README.md) | Bootstrap provenance and toolchain validation |
 

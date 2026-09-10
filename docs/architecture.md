@@ -9,7 +9,9 @@ The [roadmap](roadmap.md) describes those intended capabilities separately.
 
 | Owner | Responsibility |
 | --- | --- |
-| [src/cli.ts](../src/cli.ts) | Dispatch verification and authentication commands |
+| [src/cli.ts](../src/cli.ts) | Dispatch verification, authentication and candidate commands |
+| [src/candidate-checkout.ts](../src/candidate-checkout.ts) | Create independent committed checkouts and inspect changes against their baselines |
+| [src/candidate-task.ts](../src/candidate-task.ts) | Application-owned documentation task, bounded file operations and exact task check |
 | [src/auth.ts](../src/auth.ts) | Login, offline status and local logout |
 | [integrations/codex-credentials.ts](../src/integrations/codex-credentials.ts) | Private Codex credential persistence and serialized mutation |
 | [verification/oxlint.ts](../src/verification/oxlint.ts) | Run Oxlint, issue result identity and assess applicability |

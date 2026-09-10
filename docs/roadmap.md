@@ -27,14 +27,31 @@ validation of the current checkout.
 | Reusable authentication | Live reuse verified; live refresh unverified | Saved credentials resolved without another login; refresh and logout have synthetic coverage |
 | Live verification tool | Passed for fixed Windows fixture | Real model requested the admitted check, received the bounded result in continuation, and completed; issued evidence saved locally |
 | Candidate correction exercise | Passed for isolated one-file scope | Live model corrected the seeded defect, both checks were saved, earlier evidence became stale and final evidence remained applicable; review diff retained |
+| Independent candidate checkout | Locally verified on Windows | Create a detached committed copy with independent Git storage; inspect baseline changes while preserving source state |
+| Scoped repository task | Locally verified for the Pi decision documentation task | Fixed read/write scope, bounded operations, stale-write rejection and an exact documentation check; no live model execution yet |
 | First verified self-development cycle | Not started | Candidate edit, failure correction, applicable evidence and human acceptance |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
-The next increment is a real Tesota change in a separate candidate checkout,
-with explicit file scope and checks appropriate to that change. The isolated
+The next increment connects a bounded live model attempt to the implemented
+[scoped documentation task](tasks.md) in an independent candidate checkout.
+Preparation, permitted operations and checks are implemented; a model cannot yet
+act on that checkout. The isolated
 one-file correction exercise now passes, but it does not establish general
 editing permissions, task recovery, server-side cancellation or promotion.
 See the [experiment index](../experiments/README.md).
+See [candidate checkouts](candidates.md) for the new preparation commands.
+
+Checkout validation passed 183 tests, build, typecheck and lint on Windows. A real
+candidate was created from `662c3726775baffe27afcd0f82758ac41c3a70f6` and inspected
+with no candidate changes. Source status, refs, index and HEAD remained unchanged;
+uncommitted source work was excluded. No candidate task or candidate build ran
+during checkout validation.
+
+Task-scope validation passed 194 tests, build, typecheck and lint on Windows.
+The real candidate was prepared for `pi-decision-status`; its initial documentation
+check failed as expected because the stale paragraph remained unchanged.
+Candidate inspection still reported no changes, and source status was unchanged.
+No live model attempt or candidate edit ran during this validation.
 
 ## First useful cycle
 

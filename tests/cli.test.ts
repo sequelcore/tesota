@@ -30,7 +30,11 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
   expect(result.stdout).toBe(
     "Tesota\nUsage: tesota [--help | -h | help]\n" +
     "       tesota verify <file.ts|file.js>\n" +
-    "       tesota auth <login|status|logout>\n\n" +
+    "       tesota auth <login|status|logout>\n" +
+    "       tesota candidate create\n" +
+    "       tesota candidate inspect <candidate-directory>\n" +
+    "       tesota task prepare <candidate-directory>\n" +
+    "       tesota task check <candidate-directory>\n\n" +
     "Runs one fixed Oxlint check. Agent execution is not implemented.\n",
   );
 });
