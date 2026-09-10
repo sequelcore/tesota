@@ -6,9 +6,45 @@ integrations remain open, while retained evidence records successful bounded
 experiments. The correction must preserve the rest of the decision and must not
 claim a complete repository task cycle.
 
-This increment implements preparation, operation admission and a deterministic
-documentation check. It does not yet connect a live model to the task or promote
-the result.
+Tesota implements preparation, operation admission, a deterministic documentation
+check and one bounded live model attempt. It does not promote the result.
+
+## Run the task
+
+After the [one-time login](authentication.md), build the current executor and run:
+
+```sh
+bun run build
+bun start task run
+```
+
+This Windows command reuses saved authentication and creates a fresh independent
+candidate from committed HEAD. Uncommitted source changes are excluded. It issues
+a new in-memory task handle; it does not reopen a previously prepared task.
+The model can use only the task's read, replace and check operations. The adapter
+allows at most eight model invocations, thirteen tool calls and 4,096 output tokens
+per invocation, with no retries and a two-minute session deadline. These are
+admitted SDK calls, not independently counted HTTP requests.
+
+The printed candidate directory retains `attempt.jsonl`, `candidate.diff`, the
+task plan and the checkout. The attempt records executor file hashes, limits,
+observed calls, issued checks and a final read-only applicability check. It does
+not retain credentials, raw model responses or provider error text. The diff
+contains model-authored document content and must be treated as untrusted.
+
+Exit 0 requires model completion, an initial failed check, an edit, a passing
+final check supplied to the model, and a matching current check with a saved diff.
+Other attempt outcomes exit 1; unsupported platforms or arguments exit 2. A model
+claiming success cannot satisfy these conditions. Human acceptance remains separate.
+
+Interruption closes task authority and requests cancellation. An unresponsive
+session gets a two-second settlement window; missing settlement is reported as
+`unsettled`. A six-minute outer watchdog requests process exit if the attempt
+has not returned. Timers cannot preempt synchronous Git calls; each Git command
+has its own 60-second timeout, so filesystem or Git stalls can delay timer handling.
+A start record without a finish record is incomplete. A finish record reports the
+local runner's outcome and may still contain an unsettled session; it does not
+prove server-side cancellation. No automatic retry, resume or promotion occurs.
 
 ## Prepare and inspect
 
@@ -65,8 +101,8 @@ their own appropriate checks; an Oxlint pass would not verify these prose claims
 `PiDecisionTask.prepare` creates an in-memory editing handle selected by trusted
 application code. The preparation CLI closes that handle after printing the
 plan. Loading `task.json` supports read-only checking; it does not recreate the
-handle or reset an execution budget. A future live-task entry point must make
-its authorization and attempt lifecycle explicit.
+handle or reset an execution budget. `task run` creates a new candidate and handle
+for each explicit invocation instead of interpreting a saved plan as authorization.
 
 These are task-tool boundaries in a trusted single-writer workspace. They do not
 sandbox a hostile same-user process, authenticate stored metadata, or guarantee

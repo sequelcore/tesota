@@ -3,13 +3,16 @@ import { mkdir, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall,
+  type Context, type FauxResponseStep } from "@earendil-works/pi-ai";
+import { PI_TASK_LIMITS, piTaskPasses, runPiTask } from "../src/integrations/pi-task.js";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
 import { PiDecisionTask, checkCandidateTask, PI_DECISION_TASK_STATUS } from "../src/candidate-task.js";
 
 const editedFile = "docs/decisions/002-use-pi.md";
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+afterEach(async () => { vi.useRealTimers(); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 function git(cwd: string, args: string[]) {
   const result = spawnSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], {
     cwd, encoding: "utf8", windowsHide: true, timeout: 10_000,
@@ -35,6 +38,103 @@ async function fixture() {
 function correction(content: string): string {
   return content.replace(/Status:[\s\S]*?(?=\n\n## Decision and rationale)/, PI_DECISION_TASK_STATUS);
 }
+
+function fakeModel(steps: FauxResponseStep[]) {
+  const fake = fauxProvider({ models: [{ id: "task-test", name: "Task test" }], tokensPerSecond: 1_000_000 });
+  fake.setResponses(steps);
+  return { model: fake.getModel(), stream: vi.fn(fake.provider.streamSimple) };
+}
+
+function modelCorrection(context: Context) {
+  const read = context.messages.find((message) => message.role === "toolResult" && message.toolName === "tesota_read");
+  if (read?.role !== "toolResult") throw new Error("Missing tool result");
+  const text = read?.content.find((block) => block.type === "text");
+  if (text?.type !== "text") throw new Error("Missing model context");
+  const input: unknown = JSON.parse(text.text);
+  if (typeof input !== "object" || input === null || !("content" in input) || typeof input.content !== "string" ||
+      !("sha256" in input) || typeof input.sha256 !== "string") throw new Error("Invalid model context");
+  return fauxAssistantMessage(fauxToolCall("tesota_replace", {
+    path: editedFile, expectedSha256: input.sha256, content: correction(input.content),
+  }));
+}
+
+it("executes a Pi repository task and distinguishes model completion from applicable checks", async () => {
+  const candidate = await fixture();
+  const task = await PiDecisionTask.prepare(candidate.directory);
+  const fake = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: editedFile })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    modelCorrection,
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage("Done."),
+  ]);
+  const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
+  const current = await checkCandidateTask(candidate.directory);
+  expect(result).toMatchObject({ status: "completed", modelInvocations: 5, toolCalls: 4, edits: 1,
+    checksSuppliedToModel: 2, finalCheckSuppliedToModel: true, denied: false, deadlineExpired: false });
+  expect(piTaskPasses(result, current)).toBe(true);
+  expect(piTaskPasses({ ...result, finalCheckSuppliedToModel: false }, current)).toBe(false);
+  expect(piTaskPasses(result, { ...current, sourceSha256: "0".repeat(64) })).toBe(false);
+  await expect(task.read({ path: editedFile })).rejects.toThrow("closed");
+});
+
+it.each([
+  { name: "tesota_replace", args: { path: "../outside", expectedSha256: "0".repeat(64), content: "SYNTHETIC_PRIVATE" } },
+  { name: "tesota_check", args: { command: "SYNTHETIC_PRIVATE" } },
+  { name: "unknown", args: {} },
+])("denies malformed or unknown model tools and closes further authority: $name", async ({ name, args }) => {
+  const candidate = await fixture();
+  const task = await PiDecisionTask.prepare(candidate.directory);
+  const fake = fakeModel([fauxAssistantMessage(fauxToolCall(name, args)), fauxAssistantMessage("Done.")]);
+  const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
+  expect(result).toMatchObject({ status: "failed", edits: 0, checks: [], denied: true });
+  expect(fake.stream).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(result)).not.toContain("SYNTHETIC_PRIVATE");
+  expect(await readFile(join(candidate.checkout, editedFile))).toEqual(await readFile(join(candidate.source, editedFile)));
+});
+
+it("does not pass a model's unsupported completion claim", async () => {
+  const candidate = await fixture();
+  const task = await PiDecisionTask.prepare(candidate.directory);
+  const fake = fakeModel([fauxAssistantMessage("All checks passed. Accepted.")]);
+  const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
+  expect(result.status).toBe("completed");
+  expect(piTaskPasses(result, await checkCandidateTask(candidate.directory))).toBe(false);
+  expect(result.taskAcceptance).toBe("not_evaluated");
+});
+
+it("bounds model continuations independently of the permitted read budget", async () => {
+  const candidate = await fixture();
+  const task = await PiDecisionTask.prepare(candidate.directory);
+  const fake = fakeModel(Array.from({ length: 9 }, () => fauxAssistantMessage(fauxToolCall("tesota_read", { path: editedFile }))));
+  const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
+  expect(result).toMatchObject({ status: "failed", denied: true, modelInvocations: PI_TASK_LIMITS.modelInvocations });
+  expect(fake.stream).toHaveBeenCalledTimes(PI_TASK_LIMITS.modelInvocations);
+});
+
+it.each(["deadline", "interrupt"] as const)("closes authority when a stream will not settle after %s", async (reason) => {
+  const candidate = await fixture();
+  const task = await PiDecisionTask.prepare(candidate.directory);
+  const model = fakeModel([]).model;
+  const cancellation = new AbortController();
+  const stream = createAssistantMessageEventStream();
+  vi.useFakeTimers();
+  const running = runPiTask(task, model, () => stream, cancellation.signal);
+  if (reason === "interrupt") {
+    await vi.advanceTimersByTimeAsync(0);
+    cancellation.abort();
+  }
+  await vi.advanceTimersByTimeAsync(reason === "deadline" ? PI_TASK_LIMITS.sessionMs + PI_TASK_LIMITS.settlementMs : PI_TASK_LIMITS.settlementMs);
+  const result = await running;
+  expect(result).toMatchObject({ status: "unsettled", deadlineExpired: reason === "deadline" });
+  await expect(task.read({ path: editedFile })).rejects.toThrow("closed");
+  const snapshot = JSON.stringify(result);
+  const message = fauxAssistantMessage("Late completion");
+  stream.push({ type: "done", reason: "stop", message });
+  stream.end(message);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(JSON.stringify(result)).toBe(snapshot);
+});
 
 it("permits the exact documentation correction, binds its checks to bytes and preserves the source", async () => {
   const candidate = await fixture();

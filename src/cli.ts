@@ -8,8 +8,9 @@ Usage: tesota [--help | -h | help]
        tesota candidate inspect <candidate-directory>
        tesota task prepare <candidate-directory>
        tesota task check <candidate-directory>
+       tesota task run
 
-Runs one fixed Oxlint check. Agent execution is not implemented.
+Runs bounded verification and one scoped documentation task.
 `;
 
 const args = process.argv.slice(2);
@@ -21,6 +22,9 @@ if (
 } else if (args.length === 2 && args[0] === "auth" && args[1] !== undefined) {
   const { runAuthCommand } = await import("./auth.js");
   process.exit(await runAuthCommand(args[1]));
+} else if (args.length === 2 && args[0] === "task" && args[1] === "run") {
+  const { runTaskCommand } = await import("./task-run.js");
+  process.exit(await runTaskCommand());
 } else if (args.length === 3 && args[0] === "task" && (args[1] === "prepare" || args[1] === "check") && args[2] !== undefined) {
   const { PiDecisionTask, checkCandidateTask } = await import("./candidate-task.js");
   try {

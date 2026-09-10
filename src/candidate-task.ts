@@ -19,10 +19,15 @@ const planSchema = z.strictObject({
   inputs: z.record(z.enum(readFiles), hashSchema),
 });
 type TaskPlan = z.infer<typeof planSchema>;
-const readSchema = z.strictObject({ path: z.enum(readFiles) });
-const editSchema = z.strictObject({ path: z.literal(editedFile), expectedSha256: hashSchema,
+const taskReadSchema = z.strictObject({ path: z.enum(readFiles) });
+const taskCheckSchema = z.strictObject({});
+const taskEditSchema = z.strictObject({ path: z.literal(editedFile), expectedSha256: hashSchema,
   content: z.string().max(PI_DECISION_TASK_LIMITS.fileBytes).refine((text) =>
     Buffer.byteLength(text) <= PI_DECISION_TASK_LIMITS.fileBytes && !text.includes("\0") && Buffer.from(text).toString("utf8") === text) });
+
+export function taskRequestSchemas(): { read: z.ZodType; replace: z.ZodType; check: z.ZodType } {
+  return { read: taskReadSchema, replace: taskEditSchema, check: taskCheckSchema };
+}
 
 export interface CandidateTaskCheck {
   readonly task: typeof taskId;
@@ -141,7 +146,7 @@ export class PiDecisionTask {
 
   async read(request: unknown): Promise<{ content: string; sha256: string }> {
     return this.#operation(async ({ checkout }) => {
-      const args = readSchema.parse(request);
+      const args = taskReadSchema.parse(request);
       if (this.#reads >= PI_DECISION_TASK_LIMITS.reads) throw new Error("Read budget exceeded");
       this.#reads += 1;
       const content = await readText(join(checkout, args.path));
@@ -151,7 +156,7 @@ export class PiDecisionTask {
 
   async replace(request: unknown): Promise<void> {
     return this.#operation(async ({ checkout, content }) => {
-      const args = editSchema.parse(request);
+      const args = taskEditSchema.parse(request);
       if (this.#checks === 0 || this.#edits >= PI_DECISION_TASK_LIMITS.edits || args.expectedSha256 !== hash(content)) throw new Error("Edit denied");
       const target = join(checkout, editedFile);
       const temporary = join(this.#directory, ".tesota-" + randomUUID() + ".tmp");

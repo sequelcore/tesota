@@ -19,6 +19,8 @@ behavior, live Codex authentication, one fixed verification action, and an
 isolated candidate correction with a review diff. **Tesota does not yet execute
 general repository tasks.** It can also [create and inspect independent candidate
 checkouts](docs/candidates.md) from committed source revisions.
+The first [scoped repository task](docs/tasks.md) can correct one documentation
+paragraph through a bounded model attempt and retain its checks and diff.
 See the [roadmap](docs/roadmap.md) for demonstrated progress and remaining work.
 
 ## Get started

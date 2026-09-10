@@ -92,7 +92,7 @@ candidate code. It is shallow and does not provide the full source history.
 Record replacement is not a power-loss durability guarantee.
 
 The first [scoped task](tasks.md) defines allowed files, replacement limits and a
-fixed documentation check. Connecting a model to that authority is still a
-separate step. See the [roadmap](roadmap.md). The earlier
+fixed documentation check. Its live command creates a new candidate for each
+attempt. See the [roadmap](roadmap.md). The earlier
 [one-file correction exercise](../experiments/codex/candidate.md) remains a
 separate, deliberately narrow experiment.

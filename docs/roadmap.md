@@ -28,16 +28,16 @@ validation of the current checkout.
 | Live verification tool | Passed for fixed Windows fixture | Real model requested the admitted check, received the bounded result in continuation, and completed; issued evidence saved locally |
 | Candidate correction exercise | Passed for isolated one-file scope | Live model corrected the seeded defect, both checks were saved, earlier evidence became stale and final evidence remained applicable; review diff retained |
 | Independent candidate checkout | Locally verified on Windows | Create a detached committed copy with independent Git storage; inspect baseline changes while preserving source state |
-| Scoped repository task | Locally verified for the Pi decision documentation task | Fixed read/write scope, bounded operations, stale-write rejection and an exact documentation check; no live model execution yet |
-| First verified self-development cycle | Not started | Candidate edit, failure correction, applicable evidence and human acceptance |
+| Scoped repository task | Live Windows attempt passed for the Pi decision documentation task | Saved login, bounded model operations, one scoped edit, failed then passing checks and retained review diff |
+| First verified self-development cycle | In progress | Bounded documentation task demonstrated; human acceptance, promotion and broader code-task verification remain open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
-The next increment connects a bounded live model attempt to the implemented
-[scoped documentation task](tasks.md) in an independent candidate checkout.
-Preparation, permitted operations and checks are implemented; a model cannot yet
-act on that checkout. The isolated
-one-file correction exercise now passes, but it does not establish general
-editing permissions, task recovery, server-side cancellation or promotion.
+The next increment defines the review and human acceptance boundary for a retained
+candidate result: present its diff, recheck applicability and record an explicit
+decision without equating model completion with acceptance. The
+[scoped documentation task](tasks.md) now runs through a bounded live model attempt.
+It does not establish general editing permissions, task recovery, server-side
+cancellation or promotion.
 See the [experiment index](../experiments/README.md).
 See [candidate checkouts](candidates.md) for the new preparation commands.
 
@@ -52,6 +52,16 @@ The real candidate was prepared for `pi-decision-status`; its initial documentat
 check failed as expected because the stale paragraph remained unchanged.
 Candidate inspection still reported no changes, and source status was unchanged.
 No live model attempt or candidate edit ran during this validation.
+
+The subsequent live-task increment passed 202 tests, build, typecheck and lint.
+On 2026-09-10 UTC, one live attempt against baseline
+`0a4308055f55218882fdd972eb321f2c52a65f24` completed with five model invocations,
+six tool calls, one edit and two checks. The initial check failed, the final check
+passed, and both results were supplied to the model. A later read-only check
+matched the final source hash; inspection found only the permitted decision-file
+change. Source status, refs and index remained unchanged. The private candidate
+retains its diff and attempt record, including executor hashes for the uncommitted
+implementation used. Human acceptance was not evaluated and nothing was promoted.
 
 ## First useful cycle
 

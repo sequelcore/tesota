@@ -34,8 +34,9 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota candidate create\n" +
     "       tesota candidate inspect <candidate-directory>\n" +
     "       tesota task prepare <candidate-directory>\n" +
-    "       tesota task check <candidate-directory>\n\n" +
-    "Runs one fixed Oxlint check. Agent execution is not implemented.\n",
+    "       tesota task check <candidate-directory>\n" +
+    "       tesota task run\n\n" +
+    "Runs bounded verification and one scoped documentation task.\n",
   );
 });
 

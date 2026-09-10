@@ -187,6 +187,12 @@ export async function inspectCandidateCheckout(path: string): Promise<CheckoutIn
     provenance: "recorded_untrusted", head, headChanged: head !== record.baseline, changes };
 }
 
+/** Review the tracked diff with the same isolated Git configuration as inspection. */
+export async function candidateDiff(directory: string): Promise<string> {
+  const inspection = await inspectCandidateCheckout(directory);
+  return git(inspection.checkout, ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", inspection.baseline, "--"]);
+}
+
 /** Fixed-path task consumers can bind their inputs to the recorded commit. */
 export async function readCandidateBaselineFiles(directory: string, paths: readonly string[]): Promise<{
   baseline: string; files: Readonly<Record<string, string>>;

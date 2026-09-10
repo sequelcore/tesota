@@ -20,6 +20,8 @@ The main CLI accepts no arguments, `help`, `--help` or `-h` for help (exit 0).
 [independent checkouts](candidates.md); they do not invoke a model.
 `task prepare <directory>` and `task check <directory>` expose the first
 [scoped documentation task](tasks.md), also without model inference.
+`task run` creates a fresh candidate and runs that fixed task with the saved login;
+it is a separate live command and is never invoked by the normal check suite.
 `verify <file.ts|file.js>` runs the [bounded check](verification.md); unsupported
 arguments print a diagnostic on stderr and exit 2.
 
