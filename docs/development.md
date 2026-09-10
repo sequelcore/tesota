@@ -48,6 +48,7 @@ copying its explanation into another file.
 | Content | Owner |
 | --- | --- |
 | Orientation and navigation | [README](../README.md) |
+| Product identity, name and purpose | [Identity](identity.md) |
 | Implemented structure and boundaries | [Architecture](architecture.md) |
 | Product direction and milestone status | [Roadmap](roadmap.md) |
 | Stable behavioral contracts and usage | [Verification](verification.md) |

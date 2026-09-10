@@ -1,8 +1,17 @@
 # Tesota
 
-Tesota is a private, incremental successor to Kiln. Its goal is to make a small
-change to its own next version, verify the change, and present it for human
-acceptance.
+Tesota is a local coding agent in development, built around verifiable changes
+and human control. It aims to help developers take a task from intent to a
+reviewable result: understand the code, make a bounded change, check it, and
+show the evidence needed to decide whether to accept it.
+
+Its first proving ground is its own development. Tesota should be able to help
+build its next version while keeping the current usable version available.
+The name comes from desert ironwood, *Olneya tesota*: the project's image of a
+durable foundation that supports growth. Read [Identity and purpose](docs/identity.md)
+for the name's origin, intended experience and measure of success.
+
+## Current state
 
 Today it provides a CLI with one bounded Oxlint check, input binding, and durable
 verification evidence recovery. Separate Pi experiments exercise synthetic agent
@@ -31,6 +40,7 @@ rules; it does not establish general correctness or task acceptance.
 
 | Read | Purpose |
 | --- | --- |
+| [Identity and purpose](docs/identity.md) | What Tesota is, why it exists and why it has this name |
 | [Development](docs/development.md) | Setup, checks, contribution and documentation conventions |
 | [Architecture](docs/architecture.md) | Implemented modules, responsibilities and boundaries |
 | [Roadmap](docs/roadmap.md) | Product goal, current status and open requirements |

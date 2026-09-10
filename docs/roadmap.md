@@ -1,5 +1,6 @@
 # Direction and status
 
+The [product identity](identity.md) defines Tesota's purpose and intended experience.
 The first useful Tesota should take a bounded task on a candidate checkout,
 make a small change, run verification, correct detected failures and present the
 diff and evidence for human acceptance. A known usable version should remain

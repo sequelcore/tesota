@@ -8,6 +8,7 @@ Keep changes scoped to the active increment.
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;
   it is not a verified functional baseline.
 - Read README.md for supported tooling and commands.
+- Read docs/identity.md for product identity, purpose and naming.
 - Read docs/architecture.md for ownership and docs/roadmap.md for current scope.
 - Follow docs/development.md for documentation placement and verification.
 - Run `bun run check` for source, tests, compiled CLI behavior, and lint.
