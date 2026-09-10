@@ -50,6 +50,19 @@ The intended acceptance exercise must demonstrate that:
 Terminal interaction, general candidate-checkout execution, task recovery and promotion still need
 implementation. Do not create unused modules in anticipation of that work.
 
+## Interface sequencing
+
+Complete the real development-cycle work and integrate the required Gentle AI
+review and Dafny property before implementing terminal interaction. The current
+CLI and experiment commands remain the development surface during that work.
+
+The eventual interaction surface is undecided. A shell or richer terminal UI
+must be evaluated against the implemented workflow: giving a task, observing
+progress, interrupting work, recovering a session, reviewing a diff and accepting
+or rejecting changes. Select the surface before its implementation, using
+hands-on comparisons, accessibility and maintenance constraints, and relevant
+community experience. No particular UI framework or existing shell is adopted.
+
 ## Open requirements and scope
 
 The original handoff included a bounded Gentle AI review integration and a small
