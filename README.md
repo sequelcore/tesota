@@ -252,9 +252,9 @@ The explicit opt-in `bun run live:codex` command runs the bounded experiment in
 credential-free. Run `bun run build` first; compiled `--help` is also offline.
 The M3.1a implementation harness is technically accepted with follow-up; its
 live inference proof remains incomplete. Device-code AUTH-ONLY has passed independent
-review and an operator-run login with independently validated evidence. The full-probe
-device-code wiring still requires independent review and live exercise; M3.1a remains
-open and M3.1b has not begun.
+review and an operator-run login with independently validated evidence. The retained
+full-probe device-code attempt failed; its diagnostic follow-up is described below.
+M3.1a remains open and M3.1b has not begun.
 
 `bun run auth:codex` explicitly selects `--auth-only --device-code`: device-code
 OAuth/network authentication with **ZERO model inference calls and no M3.1a probes**.
@@ -265,7 +265,8 @@ exclusively reserves `docs/m31a-auth-only-device-code-evidence.json`. The occupi
 `--help` (`bun run auth:codex --help` and `bun run live:codex --help`); calling the
 compiled entry without an explicit mode is rejected.
 
-For the future full-probe device-code run, build first and then manually run:
+The operator used the following full-probe device-code command once. Its evidence
+destination is now occupied; this is command documentation, not retry authorization:
 
 ```sh
 bun run live:codex:device-code
@@ -283,10 +284,9 @@ refuses the run. All historical evidence destinations remain unchanged.
 The existing `runLiveCodex` authenticates and runs the existing normal and abort
 probes on the same Pi Models instance in one process. No earlier credentials or
 AUTH-ONLY evidence are read. Failed or unconfirmed login starts neither probe.
-The existing full-probe limits and 249,000 ms watchdog apply, and schema v4 records
+The existing full-probe limits and 249,000 ms watchdog apply, and evidence records
 `mode: "full_probe"` with `authenticationMethod: "device_code"`. AUTH-ONLY retains
-its early return, inference guards, null probes and shorter watchdog. This command
-completes wiring only; it has not been exercised live.
+its early return, inference guards, null probes and shorter watchdog.
 
 AUTH-ONLY disables the invocation's Pi Models and provider inference entry points
 before login, then returns immediately after the bounded public `Models.login`
@@ -305,7 +305,9 @@ calling `Models.streamSimple`. An attempted continuation is denied with a local
 error stream using Pi's public `StreamFn` contract; the probe fails. There are
 no executable tools, retries, fallback routes, persistent sessions or live
 verification access. Only the locked `openai-codex` / `openai-codex-responses` /
-`gpt-5.3-codex-spark` route is selected, with SSE and at most 64 output tokens.
+`gpt-5.3-codex-spark` route is selected, with SSE. Tesota passes `maxTokens: 64`,
+but locked Pi's Codex request builder does not transmit that option. There is no
+established 64-token output ceiling; the invocation and time bounds below apply.
 
 Each turn has a **30,000 ms whole-turn deadline** covering the streamed body.
 Any abort request starts a **2,000 ms settlement window**, including the abort
@@ -424,6 +426,70 @@ the artifact. The committed source hashes and a rebuild can be compared with
 this binding; this is code identity, not installed-image attestation or human
 acceptance. The evidence artifact and this implementation are retained together
 for independent re-review.
+
+### Failed device-code full probe and safe diagnostics
+
+`docs/m31a-live-device-code-evidence.json` preserves the operator's failed v4
+attempt. Before rebuilding, all ten recorded source/build/configuration SHA-256
+values matched the files on disk; tracked inputs matched implementation commit
+`9539f61c1395a0a2f1c9ed0f5f064e0290433006`. The record also matched the compiled
+serializer's exact allowlist, with sanitized scalar values and lifecycle enums.
+The evidence-only commit is `52c7d390`. Previous artifacts remain unchanged.
+
+The record reports successful authentication, one admitted Models invocation,
+zero content updates and tool starts, terminal `error`, normalized `failed`, no
+deadline or request-budget violation, and no abort probe. The operator separately
+reported exit 1; the JSON does not record the process exit code. Neither the record
+nor login success establishes an HTTP status, account identity/entitlement, model
+availability, or the historical cause. Hash matching binds observed files; it is
+not independent attestation of the live provider exchange.
+
+Static tracing used the existing Pi clone at exact commit
+`d981de1229ef899957bbe968bc8dcda02a21f477` (locked 0.85.1), with installed JavaScript
+confirming the consumed path. `Models.login` stores the login result in that
+instance's default in-memory store. The same instance reaches model lookup and
+`Models.streamSimple`; auth resolution applies stored OAuth through `toAuth`, then
+dispatches to the selected provider. AUTH-ONLY guards are installed only in
+`auth_only`. Full probing uses SSE, no cache retention, zero retries, no tools,
+thinking off and the existing timeout. The catalog entry is not account availability
+proof. A separate reproducible documentation defect was the claimed token ceiling:
+`buildBaseOptions` carries `maxTokens`, but Codex `buildRequestBody` omits it. The
+claim is corrected above without inventing an unsupported request parameter.
+
+For future records, schema v5 adds `providerDiagnostic` to each non-null probe:
+
+| Field | Observation source and meaning |
+| --- | --- |
+| `httpStatus` | Integer 100–599 from Pi's public `onResponse.status`, otherwise null |
+| `failureStage` | For normalized failed turns: `response_not_observed`, `http_rejection` (status ≥300), or `after_response`; otherwise null |
+| `providerErrorCode` | Always null: no validated structured code survives this supported boundary |
+
+`onResponse` survives Models auth application, provider/lazy dispatch and
+`streamSimple`'s `buildBaseOptions`. SSE invokes it after fetch and before the
+HTTP-success check/body consumption. Pi converts HTTP and stream errors into
+assistant error text; Tesota intentionally discards that text. The new callback
+reads only numeric status, ignores late observations and never retains headers,
+bodies, exceptions, stacks or arbitrary provider strings. The stage describes
+observations, not causation: 403 does not prove missing Spark entitlement, 429 does
+not identify a quota, null does not prove no request, and 200 does not prove stream
+completion. Diagnostics do not participate in authorization or probe acceptance.
+
+`inferenceAttempted` retains its existing name and is now documented at its type:
+it is the AUTH-ONLY forbidden-inference guard latch. Full probing always sets it
+false; ordinary admitted invocations use `modelInvocationCount`. Its historical
+false value does not contradict the recorded invocation and is not rewritten.
+
+Offline regressions exercise real Models login/storage/auth application and the
+locked lazy Codex SSE adapter using synthetic public OAuth login and per-request
+`fetch` boundaries. They cover HTTP 403/429 rejection, error after 200, transport
+failure without response observation, secret-like header/error exclusion, normal
+completion, observed abort, and suppression of the abort probe after failure.
+Windows verification with Bun 1.4.2 and Node 24.15.0 passed the focused regressions,
+`bun run check` (131 tests, build, typecheck and lint), `git diff --check`, compiled
+offline help and a compiled Bun SSE rejection smoke using only synthetic boundaries.
+These tests do not establish live service behavior or human acceptance. No new
+live attempt is authorized here; the operator must still establish whether the
+intended account can use `gpt-5.3-codex-spark`, without supplying credentials.
 
 ### AUTH-ONLY source scouting and offline verification
 

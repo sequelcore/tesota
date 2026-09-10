@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent } from "@earendil-works/pi-agent-core";
-import { createAssistantMessageEventStream, fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, fauxAssistantMessage, type FetchFunction } from "@earendil-works/pi-ai";
 import { runLiveCodex, deviceCodeAuth, deviceCodeTerminalRenderer, browserOnlyAuth, observeLiveBrowserLaunch, LIVE_LIMITS,
   LIVE_CODEX_EXPECTED_TOKEN, type LiveCodexRunResult } from "../src/integrations/pi-live.js";
 import { liveSourceIdentity, serializeLiveEvidence, type LiveSourceIdentity } from "../src/integrations/pi-live-evidence.js";
@@ -51,6 +51,95 @@ function evidence(run: LiveCodexRunResult, identity = liveSourceIdentity()) {
   return JSON.parse(serializeLiveEvidence(identity, "2026-01-01T00:00:00.000Z", run));
 }
 
+// Exercise actual Models auth application, lazy provider and SSE streamSimple.
+// Only public OAuth login and per-request fetch are synthetic; no global fetch patch.
+async function transportFixture(fetch: FetchFunction) {
+  const actual = await vi.importActual<typeof import("@earendil-works/pi-ai")>("@earendil-works/pi-ai");
+  const models = actual.createModels();
+  harness.create.mockReturnValue(models);
+  const setProvider = models.setProvider.bind(models);
+  vi.spyOn(models, "setProvider").mockImplementation((provider) => {
+    const oauth = provider.auth.oauth;
+    if (oauth === undefined) throw new Error("Missing fixture OAuth boundary");
+    // Deliberately invalid as a real credential; sufficient for Pi's local parser.
+    const payload = Buffer.from(JSON.stringify({
+      "https://api.openai.com/auth": { chatgpt_account_id: "SYNTHETIC_PRIVATE" },
+    })).toString("base64url");
+    vi.spyOn(oauth, "login").mockResolvedValue({ type: "oauth",
+      access: `fixture.${payload}.fixture`, refresh: "SYNTHETIC_PRIVATE", expires: Date.now() + 3_600_000 });
+    vi.spyOn(oauth, "refresh").mockRejectedValue(new Error("Unexpected fixture refresh"));
+    setProvider(provider);
+  });
+  const streamSimple = models.streamSimple.bind(models);
+  const invoke = vi.spyOn(models, "streamSimple").mockImplementation((model, context, options) =>
+    streamSimple(model, context, { ...options, fetch }));
+  const run = await runLiveCodex("full_probe", deviceCodeAuth(vi.fn(), new AbortController().signal));
+  return { run, invoke };
+}
+
+it.each([
+  { status: 403, stage: "http_rejection" },
+  { status: 429, stage: "http_rejection" },
+  { status: 200, stage: "after_response" },
+  { status: null, stage: "response_not_observed" },
+])("retains only safe response observations for SSE failure $status", async ({ status, stage }) => {
+  const fetch = vi.fn<FetchFunction>(async () => {
+    if (status === null) throw new Error("SYNTHETIC_PRIVATE Bearer secret before response");
+    const body = status === 200 ?
+      'data: {"type":"error","code":"SYNTHETIC_PRIVATE","message":"SYNTHETIC_PRIVATE"}\n\n' :
+      '{"error":{"code":"SYNTHETIC_PRIVATE","message":"SYNTHETIC_PRIVATE"}}';
+    return new Response(body, { status, headers: {
+      "content-type": "text/event-stream", "set-cookie": "SYNTHETIC_PRIVATE",
+      authorization: "Bearer SYNTHETIC_PRIVATE",
+    } });
+  });
+  const { run, invoke } = await transportFixture(fetch);
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(invoke).toHaveBeenCalledOnce();
+  expect(run.authentication.outcome).toBe("succeeded");
+  expect(run.experiment?.turn).toMatchObject({ status: "failed", terminalStopReason: "error",
+    modelInvocationCount: 1, requestBudgetExceeded: false, deadlineExpired: false,
+    providerDiagnostic: { httpStatus: status, failureStage: stage, providerErrorCode: null } });
+  expect(run.experiment?.abortProbe).toBeNull();
+  const record = evidence(run);
+  expect(record.turn.providerDiagnostic).toEqual({ httpStatus: status, failureStage: stage, providerErrorCode: null });
+  expect(JSON.stringify(record)).not.toMatch(/SYNTHETIC_PRIVATE|Bearer|set-cookie|errorMessage|stack/);
+  expect(run.disposition).toBe("failed");
+});
+
+it("preserves normal and aborted outcomes through the real SSE adapter", async () => {
+  let calls = 0;
+  const fetch = vi.fn<FetchFunction>(async (_input, init) => {
+    const abortProbe = ++calls === 2;
+    const signal = init?.signal;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const emit = (event: unknown): void => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+        emit({ type: "response.output_item.added", output_index: 0,
+          item: { type: "message", id: "fixture", role: "assistant", content: [] } });
+        emit({ type: "response.output_text.delta", output_index: 0, delta: LIVE_CODEX_EXPECTED_TOKEN });
+        if (abortProbe) {
+          if (signal == null) throw new Error("Missing fixture cancellation");
+          signal.addEventListener("abort", () => controller.error(new Error("SYNTHETIC_PRIVATE abort")), { once: true });
+        } else {
+          emit({ type: "response.completed", response: { status: "completed", output: [] } });
+          controller.close();
+        }
+      },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  });
+  const { run, invoke } = await transportFixture(fetch);
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(run.disposition).toBe("passed");
+  expect(run.experiment?.turn).toMatchObject({ status: "completed", terminalStopReason: "stop",
+    providerDiagnostic: { httpStatus: 200, failureStage: null, providerErrorCode: null } });
+  expect(run.experiment?.abortProbe).toMatchObject({ status: "aborted", terminalStopReason: "aborted",
+    abortRequested: true, providerDiagnostic: { httpStatus: 200, failureStage: null, providerErrorCode: null } });
+  expect(JSON.stringify(evidence(run))).not.toContain("SYNTHETIC_PRIVATE");
+});
+
 it("auth success returns without model lookup, Agent, probes, tools or acceptance", async () => {
   const f = await fixture();
   const lookup = vi.spyOn(f.models, "getModel");
@@ -63,7 +152,7 @@ it("auth success returns without model lookup, Agent, probes, tools or acceptanc
   expect(lookup).not.toHaveBeenCalled();
   expect(prompt).not.toHaveBeenCalled();
   const record = evidence(result);
-  expect(record).toMatchObject({ version: 4, mode: "auth_only", authenticationOutcome: "succeeded",
+  expect(record).toMatchObject({ version: 5, mode: "auth_only", authenticationOutcome: "succeeded",
     oauthFailureCategory: null, modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "succeeded" });
   expect(record).not.toHaveProperty("taskAcceptance");
   expect(record).not.toHaveProperty("verification");
@@ -405,7 +494,7 @@ it.skipIf(process.platform !== "win32").each([
     expect(result.stdout).toContain("device-code OAuth/network authentication AND up to two model invocations");
     const serialized = readFileSync(join(directory, "docs/m31a-live-device-code-evidence.json"), "utf8");
     const record = JSON.parse(serialized);
-    expect(record).toMatchObject({ version: 4, mode: "full_probe", authenticationMethod: "device_code",
+    expect(record).toMatchObject({ version: 5, mode: "full_probe", authenticationMethod: "device_code",
       authenticationOutcome: scenario === "login_failure" ? "failed" : scenario === "login_timeout" ? "unconfirmed" : "succeeded",
       modelInvocationCount: count, disposition: exit === 0 ? "passed" : "failed" });
     for (const secret of ["TEST-ONLY", "SYNTHETIC_PRIVATE"]) {

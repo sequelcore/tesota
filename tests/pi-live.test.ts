@@ -66,6 +66,25 @@ it("accepts an independently observed normal fixed response", async () => {
     "turn_completed", "terminal_stop", "normalized_completed"]);
 });
 
+it("ignores invalid HTTP status values without reading headers or changing completion", async () => {
+  const turn = controlled();
+  await turn.started;
+  const call = turn.invoke.mock.calls[0];
+  const onResponse = call?.[2]?.onResponse;
+  if (call === undefined || onResponse === undefined) throw new Error("Missing response observer");
+  for (const status of ["Bearer SYNTHETIC_PRIVATE", null, NaN, Infinity, 200.5, 99, 600]) {
+    await Reflect.apply(onResponse, undefined, [{ status,
+      get headers() { throw new Error("Headers must not be inspected"); },
+    }, call[0]]);
+  }
+  turn.finish();
+  const result = await turn.running;
+  expect(result.providerDiagnostic).toEqual({ httpStatus: null, failureStage: null, providerErrorCode: null });
+  expect(liveProbePasses(result, false)).toBe(true);
+  await onResponse({ status: 403, headers: {} }, call[0]);
+  expect(result.providerDiagnostic.httpStatus).toBeNull();
+});
+
 it("prevents Pi's nonexistent-tool continuation before a second provider invocation", async () => {
   const turn = controlled();
   await turn.started;
@@ -206,18 +225,19 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
   turn.finish();
   const normal = await turn.running;
   const extra = { ...abortProbe, headers: "SYNTHETIC_PRIVATE", response: "SYNTHETIC_PRIVATE",
-    tokens: "SYNTHETIC_PRIVATE", error: "SYNTHETIC_PRIVATE" };
+    tokens: "SYNTHETIC_PRIVATE", error: "SYNTHETIC_PRIVATE",
+    providerDiagnostic: { ...abortProbe.providerDiagnostic, headers: "SYNTHETIC_PRIVATE", body: "SYNTHETIC_PRIVATE" } };
   const serialized = experimentEvidence({ turn: normal, abortProbe: extra });
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   const evidence = JSON.parse(serialized);
   expect(Object.keys(evidence).sort()).toEqual(["format", "version", "provenance", "timestamp", "implementation",
     "provider", "api", "model", "authType", "authenticationMethod", "mode", "authenticationOutcome", "inferenceAttempted", "limits", "oauthFailureCategory", "modelInvocationCount", "turn", "abortProbe", "disposition"].sort());
-  expect(evidence.version).toBe(4);
+  expect(evidence.version).toBe(5);
   expect(evidence.oauthFailureCategory).toBeNull();
   expect(Object.keys(evidence.abortProbe).sort()).toEqual(["status", "modelInvocationCount", "invocationAttempts",
     "toolExecutionStartCount", "streamUpdateCount", "terminalStopReason", "terminalObserved", "abortRequested",
     "taskAcceptance", "responseMatchesExpectedToken", "requestBudgetExceeded", "deadlineExpired", "settlement",
-    "events", "requestBoundRespected", "turnBoundRespected", "disposition"].sort());
+    "events", "providerDiagnostic", "requestBoundRespected", "turnBoundRespected", "disposition"].sort());
   expect(evidence.disposition).toBe("passed");
   for (const result of [
     { turn: { ...normal, responseMatchesExpectedToken: false }, abortProbe },
@@ -235,7 +255,7 @@ function oauthFailureEvidence(error: unknown, category: string) {
     experiment: null, inferenceAttempted: false, disposition: "failed",
   });
   const evidence = JSON.parse(serialized);
-  expect(evidence).toMatchObject({ version: 4, oauthFailureCategory: category,
+  expect(evidence).toMatchObject({ version: 5, oauthFailureCategory: category,
     modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "failed" });
   expect(serialized).not.toContain("SYNTHETIC_PRIVATE");
   expect(serialized).not.toContain("stack");

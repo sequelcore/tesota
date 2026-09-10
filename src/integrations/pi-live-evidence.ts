@@ -39,6 +39,11 @@ function probeEvidence(probe: LiveCodexTurnResult, abort: boolean) {
     deadlineExpired: probe.deadlineExpired,
     settlement: probe.settlement,
     events: [...probe.events],
+    providerDiagnostic: {
+      httpStatus: probe.providerDiagnostic.httpStatus,
+      failureStage: probe.providerDiagnostic.failureStage,
+      providerErrorCode: null,
+    },
     requestBoundRespected: !probe.requestBudgetExceeded && probe.modelInvocationCount <= LIVE_LIMITS.modelInvocationsPerProbe,
     turnBoundRespected: !probe.deadlineExpired,
     disposition: liveProbePasses(probe, abort) ? "passed" : "failed",
@@ -55,7 +60,7 @@ export function serializeLiveEvidence(
   const passed = result !== null && liveProbePasses(result.turn, false) &&
     result.abortProbe !== null && liveProbePasses(result.abortProbe, true);
   return JSON.stringify({
-    format: "tesota-m31a-live-evidence", version: 4,
+    format: "tesota-m31a-live-evidence", version: 5,
     provenance: "machine_generated", timestamp,
     implementation: { binding: "sha256_of_source_and_executed_javascript", sourceSha256 },
     provider: "openai-codex", api: "openai-codex-responses", model: LIVE_CODEX_MODEL_ID,

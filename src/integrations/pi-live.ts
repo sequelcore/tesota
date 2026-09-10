@@ -36,6 +36,14 @@ export interface LiveCodexTurnResult {
   readonly deadlineExpired: boolean;
   readonly settlement: "observed" | "unconfirmed";
   readonly events: readonly LiveObservation[];
+  readonly providerDiagnostic: {
+    /** Validated status from Pi onResponse only; null does not imply no request. */
+    readonly httpStatus: number | null;
+    /** Observation stage of a failed turn, not a provider root cause. */
+    readonly failureStage: "response_not_observed" | "http_rejection" | "after_response" | null;
+    /** Locked Pi exposes free-text errors here, not a safe structured code. */
+    readonly providerErrorCode: null;
+  };
 }
 
 export interface LiveCodexExperimentResult {
@@ -60,6 +68,8 @@ export type LiveCodexRunResult = {
   readonly authentication: LiveAuthenticationResult;
   readonly authenticationMethod: LiveAuthenticationMethod;
 } & (
+  // inferenceAttempted is exclusively the AUTH-ONLY forbidden-inference latch.
+  // Ordinary full-probe invocations are counted by modelInvocationCount.
   | { readonly mode: "auth_only"; readonly experiment: null; readonly inferenceAttempted: boolean;
       readonly disposition: "succeeded" | "failed" }
   | { readonly mode: "full_probe"; readonly experiment: LiveCodexExperimentResult | null;
@@ -121,6 +131,7 @@ export async function runLiveCodexTurn(
   let closed = false;
   let agentErrorObserved = false;
   let responseMatchesExpectedToken = false;
+  let httpStatus: number | null = null;
   let resolveFinished: () => void = () => {};
   const finished = new Promise<void>((resolve) => { resolveFinished = resolve; });
   let settlementTimer: ReturnType<typeof setTimeout> | undefined;
@@ -137,7 +148,11 @@ export async function runLiveCodexTurn(
       modelInvocationCount += 1;
       events.push("model_invocation_started");
       return stream(requestModel, context, { ...options, cacheRetention: "none",
-        maxRetries: 0, timeoutMs: LIVE_LIMITS.turnMs, transport: "sse", maxTokens: 64 });
+        maxRetries: 0, timeoutMs: LIVE_LIMITS.turnMs, transport: "sse", maxTokens: 64,
+        onResponse: ({ status }) => {
+          // Never retain headers or the response object. Ignore late observations.
+          if (!closed && Number.isInteger(status) && status >= 100 && status <= 599) httpStatus = status;
+        } });
     },
     initialState: { systemPrompt: "Return only the requested fixed token. Do not use tools.",
       model, thinkingLevel: "off", tools: [] },
@@ -209,7 +224,13 @@ export async function runLiveCodexTurn(
   return { status, modelInvocationCount, invocationAttempts, toolExecutionStartCount,
     streamUpdateCount, terminalStopReason, terminalObserved, abortRequested,
     taskAcceptance: "not_evaluated", responseMatchesExpectedToken, requestBudgetExceeded,
-    deadlineExpired, settlement: terminalObserved ? "observed" : "unconfirmed", events };
+    deadlineExpired, settlement: terminalObserved ? "observed" : "unconfirmed", events,
+    providerDiagnostic: {
+      httpStatus,
+      failureStage: status !== "failed" ? null : httpStatus === null ? "response_not_observed" :
+        httpStatus >= 300 ? "http_rejection" : "after_response",
+      providerErrorCode: null,
+    } };
 }
 
 export function liveProbePasses(probe: LiveCodexTurnResult, abort: boolean): boolean {
