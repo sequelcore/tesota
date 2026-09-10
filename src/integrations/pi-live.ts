@@ -280,6 +280,46 @@ export function liveProbePasses(probe: LiveCodexTurnResult, abort: boolean): boo
 }
 
 /** AUTH-ONLY has no probe/Agent path. A denied attempt remains a failure even if caught. */
+function codexModels(credentials?: CredentialStore, deny?: () => never): Models {
+  const models = createModels(credentials === undefined ? {} : { credentials });
+  const provider = openaiCodexProvider();
+  if (deny !== undefined) {
+    for (const method of ["stream", "streamSimple", "complete", "completeSimple",
+      "streamDeferred", "fetchDeferred", "cancelDeferred"] as const satisfies readonly (keyof Models)[]) {
+      Object.defineProperty(models, method, { value: deny, writable: false, configurable: false });
+    }
+    for (const method of ["stream", "streamSimple", "fetchDeferred", "cancelDeferred"] as const) {
+      Object.defineProperty(provider, method, { value: deny, writable: false, configurable: false });
+    }
+  }
+  models.setProvider(provider);
+  if (models.getProviders().length !== 1 || provider.id !== "openai-codex" ||
+      provider.auth.apiKey !== undefined || provider.auth.oauth === undefined) {
+    throw new Error("Live Codex route is not isolated to OAuth");
+  }
+  return models;
+}
+
+async function resolveStoredCodex(models: Models, credentials: CredentialStore, interaction: AuthInteraction): Promise<void> {
+  if ((await credentials.read("openai-codex"))?.type !== "oauth") throw new Error("Run tesota auth login first");
+  await runLiveOAuthLogin(async (auth) => {
+    if (await models.getAuth("openai-codex", auth.signal === undefined ? {} : { signal: auth.signal }) === undefined) {
+      throw new Error("Saved Codex login unavailable");
+    }
+  }, interaction);
+}
+
+/** Same isolated route and bounded credential resolution as the turn probes. */
+export async function storedCodexModels(credentials: CredentialStore, signal: AbortSignal): Promise<Models> {
+  const models = codexModels(credentials);
+  await resolveStoredCodex(models, credentials, {
+    signal,
+    prompt: async () => { throw new Error("Stored login cannot prompt"); },
+    notify: () => { throw new Error("Stored login cannot notify"); },
+  });
+  return models;
+}
+
 export async function runLiveCodex(
   mode: LiveCodexMode, authInteraction: LiveAuthInteraction,
   credentials?: CredentialStore,
@@ -291,38 +331,15 @@ export async function runLiveCodex(
     experiment: null, inferenceAttempted,
     disposition: authentication.outcome === "succeeded" && !inferenceAttempted ? "succeeded" : "failed" });
   try {
-    const models = createModels(credentials === undefined ? {} : { credentials });
-    const provider = openaiCodexProvider();
-    if (mode === "auth_only") {
-      const deny = (): never => {
+    const models = codexModels(credentials, mode === "auth_only" ? (): never => {
         inferenceAttempted = true;
         throw new Error("Tesota AUTH-ONLY inference denied");
-      };
-      // Locked Pi Models API. Deny synchronously before lazy auth/provider dispatch,
-      // including unawaited calls and the completion/deferred convenience methods.
-      for (const method of ["stream", "streamSimple", "complete", "completeSimple",
-        "streamDeferred", "fetchDeferred", "cancelDeferred"] as const satisfies readonly (keyof Models)[]) {
-        Object.defineProperty(models, method, { value: deny, writable: false, configurable: false });
-      }
-      for (const method of ["stream", "streamSimple", "fetchDeferred", "cancelDeferred"] as const) {
-        Object.defineProperty(provider, method, { value: deny, writable: false, configurable: false });
-      }
-    }
-    models.setProvider(provider);
-    if (models.getProviders().length !== 1 || provider.id !== "openai-codex" ||
-        provider.auth.apiKey !== undefined || provider.auth.oauth === undefined) {
-      throw new Error("Live Codex route is not isolated to OAuth");
-    }
+      } : undefined);
     if (authInteraction.authenticationMethod === "stored") {
-      if (mode !== "full_probe" || credentials === undefined ||
-          (await credentials.read("openai-codex"))?.type !== "oauth") {
+      if (mode !== "full_probe" || credentials === undefined) {
         throw new Error("Run tesota auth login first");
       }
-      await runLiveOAuthLogin(async (interaction) => {
-        if (await models.getAuth("openai-codex", interaction.signal === undefined ? {} : { signal: interaction.signal }) === undefined) {
-          throw new Error("Saved Codex login unavailable");
-        }
-      }, authInteraction);
+      await resolveStoredCodex(models, credentials, authInteraction);
     } else {
       await runLiveOAuthLogin((interaction) => models.login("openai-codex", "oauth", interaction), authInteraction);
     }

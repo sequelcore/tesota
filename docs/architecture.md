@@ -1,7 +1,7 @@
 # Architecture
 
-Tesota currently has one private TypeScript package with two entry points: the
-verification CLI and an opt-in live integration experiment. There is no production
+Tesota currently has one private TypeScript package with a verification CLI and
+opt-in live integration experiments. There is no production
 task runtime, interactive agent shell or stable/candidate promotion mechanism yet.
 The [roadmap](roadmap.md) describes those intended capabilities separately.
 
@@ -16,14 +16,22 @@ The [roadmap](roadmap.md) describes those intended capabilities separately.
 | [verification/oxlint-input.ts](../src/verification/oxlint-input.ts) | Capture source, fixed configuration and observed verifier identity |
 | [verification/oxlint-result.ts](../src/verification/oxlint-result.ts) | Interpret the bounded result contract |
 | [verification/evidence.ts](../src/verification/evidence.ts) | Save issued results and validate recovered historical evidence |
-| [integrations/pi.ts](../src/integrations/pi.ts) | Synthetic Pi scenarios with bounded verification admission |
+| [verification/candidate.ts](../src/verification/candidate.ts) | Isolated one-file candidate, bounded replacement and check ordering |
+| [integrations/pi.ts](../src/integrations/pi.ts) | Shared bounded verification admission, Pi session limits and synthetic scenarios |
 | [integrations/pi-live.ts](../src/integrations/pi-live.ts) | Live login interaction, model-turn limits and observed outcomes |
 | [integrations/pi-live-evidence.ts](../src/integrations/pi-live-evidence.ts) | Capture implementation identity and serialize sanitized live evidence |
 | [src/live-codex.ts](../src/live-codex.ts) | Select experiment mode, present authentication, reserve output and bound process lifetime |
+| [src/live-verification.ts](../src/live-verification.ts) | Run the fixed live verification fixture and retain issued evidence |
+| [integrations/pi-verification-evidence.ts](../src/integrations/pi-verification-evidence.ts) | Verification and candidate probe criteria, identity and sanitized records |
+| [src/live-candidate.ts](../src/live-candidate.ts) | Run the correction exercise and retain checks, source and review diff |
 
-The verification modules have no Pi dependency. The synthetic adapter consumes
-the existing verifier rather than implementing another one. The live experiment
-has no executable tools and does not yet connect a real model to verification.
+The verification modules have no Pi dependency. Synthetic and live verification
+share the same adapter and verifier. The authentication/turn probes have no
+executable tools; the separate [verification experiment](../experiments/codex/verification.md)
+admits one fixed fixture check.
+The [candidate correction exercise](../experiments/codex/candidate.md) uses the
+same adapter with one bounded replacement between two checks. Candidate files
+are never executed, and no promotion mechanism exists.
 
 ## Engine boundary
 
@@ -53,7 +61,7 @@ store validates structure, while the verifier owns input comparison. These
 modules cooperate within one verification context; they do not form a generic
 storage or attestation framework. See the [verification contract](verification.md).
 
-The synthetic adapter validates and admits a verification request before invoking
+The Pi adapter validates and admits a verification request before invoking
 the shared executor. Pi receives a small result projection; canonical evidence
 stays with Tesota. Model output cannot grant verification authority or human
 acceptance. Current experiments return `taskAcceptance: "not_evaluated"`.

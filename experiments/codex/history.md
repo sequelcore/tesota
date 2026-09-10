@@ -6,6 +6,63 @@ original increments, not fresh checks. Historical artifacts remain unchanged;
 use the [live guide](README.md) for current behavior and the
 [roadmap](../../docs/roadmap.md) for milestone status.
 
+## Candidate correction
+
+Three bounded live runs on 2026-09-10 UTC established the
+[one-file correction contract](candidate.md):
+
+- [Version 1](evidence/candidate-denied.json) denied verification requests and
+  reached its invocation budget without a check or edit. Its record does not
+  retain the requested input values. The next implementation made the exact
+  admitted logical input explicit in the tool schema and prompt.
+- [Version 2](evidence/candidate-newline.json) completed the failed-check, edit,
+  recheck and model-continuation sequence. It retained both checks and a diff;
+  the original evidence became stale and the corrected source's evidence was
+  applicable. Its exact-source assertion nevertheless rejected an omitted final
+  newline. That presentation detail was not part of preserving the exported value.
+- [Version 3](evidence/candidate-passed.json) passed after the task assertion
+  explicitly allowed an optional final LF. It used four model invocations, three
+  tool attempts, one edit and two verifier executions. The final diff removed
+  only `debugger;`, preserving `export const value = 1;`. No deadline or budget
+  was exceeded; the CLI exited 0.
+
+Each retained run's 27 captured implementation hashes matched before subsequent
+source changes. Before the passing live run, `bun run check` passed build,
+typecheck, 168 tests and lint on Windows. Regression coverage accepts either
+final-newline form and rejects missing exports, changed values, extra source,
+stale hashes, oversized edits, concurrent operations, external changes and hard
+links. Evidence hashes still distinguish exact bytes regardless of the task oracle.
+
+Both final-run check records were reloaded through the durable store: the first
+remained `check_failed` and stale, the second remained `passed` and applicable.
+Recovery retained `recovered_untrusted` provenance. Full check records, original
+and candidate source, and the diff remain in the original ignored run directory;
+only sanitized probes are copied here. No repository checkout was promoted, and
+this fixed exercise is not the first real Tesota self-development task.
+
+## Live verification tool
+
+The [verification probe](evidence/verification-probe.json) at
+2026-09-10T07:40:00.526Z reused saved authentication and completed two model
+invocations. Spark requested `tesota_verify` for the fixed fixture. Tesota
+admitted one execution; the real Oxlint process exited with `check_failed` for
+the intended `no-debugger` violation. Pi supplied the bounded result to the
+continuation, which ended with `stop` and the expected answer. No deadline or
+invocation budget was exceeded; the CLI exited 0.
+
+All 23 captured source/build/config/fixture hashes matched the executed checkout.
+Before that one live attempt, `bun run check` passed build, typecheck, 155 tests
+and lint on Windows. The local durable verification record was reloaded through
+the store and remained applicable with `recovered_untrusted` provenance. This
+does not turn recovery into issuance authority.
+
+Only sanitized `probe.json` is retained here. Its `verification.json` reference
+names the sibling saved in the original ignored run directory; that full record
+contains local paths and is intentionally not copied into this evidence folder.
+The [operating contract](verification.md) distinguishes model completion, detected
+lint failure, saved evidence and human acceptance. No source editing or broader
+agent task execution was exercised.
+
 ## Response diagnostic
 
 The [version 8 run](evidence/response-diagnostic.json) on 2026-09-10 UTC

@@ -41,8 +41,9 @@ a silent fallback or maintain two authentication owners preemptively.
 ## Evidence and limitations
 
 See [synthetic compatibility](../../experiments/pi/README.md), [live experiments](../../experiments/codex/README.md)
-and [retained evidence](../../experiments/README.md). Authentication succeeded independently of
-inference; that does not close the live integration milestone. Active verifier
+and [retained evidence](../../experiments/README.md). Authentication, normal/abort
+turns and the fixed verification-tool experiment now have separate live evidence;
+none establishes a complete agent task cycle. Active verifier
 subprocess cancellation through the adapter is unsupported.
 
 Keeping Pi types in adapters contains replacement work. It does not promise

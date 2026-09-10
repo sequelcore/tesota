@@ -2,9 +2,10 @@
 
 Pi is accepted as a candidate engine following the synthetic compatibility
 experiment, with the limitations below. `runPiSession` in
-`src/integrations/pi.ts` uses only Pi's in-memory faux responses; it does not
-connect to a provider. See the [roadmap](../../docs/roadmap.md) for status and
-the [live experiment](../codex/README.md) for the separate provider path.
+`src/integrations/pi.ts` uses Pi's in-memory faux responses for these synthetic
+scenarios. The same adapter now accepts a live stream for the separate
+[verification experiment](../codex/verification.md). See the
+[roadmap](../../docs/roadmap.md) for status.
 
 ## Cancellation
 
@@ -14,7 +15,8 @@ the final assistant outcome from Pi's `agent_end` event. Only an observed
 `aborted` terminal reason produces session status `aborted` and `session_aborted`.
 A request followed by a normal terminal outcome remains `completed`; missing,
 pending or error terminal outcomes produce `failed`. Task acceptance always
-remains `not_evaluated`.
+remains `not_evaluated`. The shared session deadline now bounds missing settlement
+as `unsettled`; an exceeded deadline cannot produce a successful probe.
 
 The abort scenario keeps the faux response active until Pi processes its abort
 signal. The regression delays `Agent.abort()`, checks that the turn is still
@@ -50,7 +52,9 @@ session result; a lint pass still does not establish task acceptance.
 The scripted verification scenario has one tool invocation, at most one executor
 call (zero when denied), and two faux model calls including continuation. The
 successful-turn and abort scenarios have no tool invocation and one faux model
-call. These are synthetic script bounds, not a production agent-loop budget.
+call. The adapter also enforces at most two model invocations and one verifier
+execution for both synthetic and live verification sessions. These bounded
+experiments do not implement a general production agent loop.
 
 ## Optional dependency boundary
 

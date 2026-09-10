@@ -25,13 +25,15 @@ validation of the current checkout.
 | Synthetic Pi compatibility | Reported independently accepted | [Synthetic behavior and limitations](../experiments/pi/README.md) |
 | Live login and turn probes | Passed for bounded Windows probe | Saved login, exact answer with Pi thinking, and observed abort; two invocations, no tools or exceeded limits |
 | Reusable authentication | Live reuse verified; live refresh unverified | Saved credentials resolved without another login; refresh and logout have synthetic coverage |
-| Live verification tool | Not started | Real model requests the existing bounded verifier through Tesota admission |
+| Live verification tool | Passed for fixed Windows fixture | Real model requested the admitted check, received the bounded result in continuation, and completed; issued evidence saved locally |
+| Candidate correction exercise | Passed for isolated one-file scope | Live model corrected the seeded defect, both checks were saved, earlier evidence became stale and final evidence remained applicable; review diff retained |
 | First verified self-development cycle | Not started | Candidate edit, failure correction, applicable evidence and human acceptance |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
-The next increment is a live model request for the existing bounded verifier
-through Tesota's tool admission. Saved-login normal and abort probes now pass;
-this does not establish server-side cancellation or agent task execution.
+The next increment is a real Tesota change in a separate candidate checkout,
+with explicit file scope and checks appropriate to that change. The isolated
+one-file correction exercise now passes, but it does not establish general
+editing permissions, task recovery, server-side cancellation or promotion.
 See the [experiment index](../experiments/README.md).
 
 ## First useful cycle
@@ -45,7 +47,7 @@ The intended acceptance exercise must demonstrate that:
 5. The report presents the diff, actual checks, observed consumption and limits.
 6. Human acceptance and promotion remain separate from model completion and checks.
 
-Terminal interaction, candidate execution, task recovery and promotion still need
+Terminal interaction, general candidate-checkout execution, task recovery and promotion still need
 implementation. Do not create unused modules in anticipation of that work.
 
 ## Open requirements and scope

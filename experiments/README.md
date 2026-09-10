@@ -5,6 +5,10 @@ current acceptance, authenticate their producer, or prove behavior outside the
 recorded scope. [Project status](../docs/roadmap.md) owns progress interpretation;
 [Codex instructions](codex/README.md) own live command behavior. The
 [Pi compatibility experiment](pi/README.md) describes the synthetic boundary.
+The [live verification experiment](codex/verification.md) connects the real model
+to one fixed verifier action.
+The [candidate correction exercise](codex/candidate.md) adds one isolated source
+replacement, rechecking and a review diff.
 
 ## Retained artifacts
 
@@ -18,6 +22,10 @@ recorded scope. [Project status](../docs/roadmap.md) owns progress interpretatio
 | [Saved-login probe](codex/evidence/stored-probe.json) | Stored authentication resolved; HTTP 200 and completed turn; exact-response assertion failed, abort probe absent |
 | [Response diagnostic](codex/evidence/response-diagnostic.json) | Expected text matched; one additional non-text block caused rejection; abort probe absent |
 | [Passing saved-login probe](codex/evidence/stored-probe-passed.json) | Exact answer plus Pi thinking accepted; normal and observed-abort probes passed |
+| [Live verification probe](codex/evidence/verification-probe.json) | One admitted fixture check detected the intended violation; bounded result supplied to the second model invocation; session and local evidence save passed |
+| [Denied candidate attempt](codex/evidence/candidate-denied.json) | Admission rejected requests; zero edits or checks; invocation budget stopped the session |
+| [Candidate newline mismatch](codex/evidence/candidate-newline.json) | Correction and checks completed; version 2's final-newline assertion rejected the source |
+| [Passing candidate correction](codex/evidence/candidate-passed.json) | One edit, two issued checks and review diff saved; previous evidence stale, final evidence applicable |
 | [Codex history](codex/history.md) | Source scouting, historical checks and diagnostic findings |
 
 Verification and synthetic Pi review closure was reported in the development conversation and

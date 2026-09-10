@@ -2,6 +2,8 @@
 
 This Windows-only diagnostic checks one normal model turn and one observed
 cancellation through Pi. It runs no executable tools and grants no task acceptance.
+The separate [verification-tool experiment](verification.md) admits one fixed
+Oxlint check through the same saved login.
 See [history](history.md) for earlier results and the [roadmap](../../docs/roadmap.md)
 for project status.
 

@@ -15,7 +15,9 @@ for the name's origin, intended experience and measure of success.
 
 Today it provides a CLI with one bounded Oxlint check, input binding, and durable
 verification evidence recovery. Separate Pi experiments exercise synthetic agent
-behavior and live Codex authentication. **Tesota does not yet execute agent tasks.**
+behavior, live Codex authentication, one fixed verification action, and an
+isolated candidate correction with a review diff. **Tesota does not yet execute
+general repository tasks.**
 See the [roadmap](docs/roadmap.md) for demonstrated progress and remaining work.
 
 ## Get started
