@@ -29,12 +29,14 @@ validation of the current checkout.
 | Candidate correction exercise | Passed for isolated one-file scope | Live model corrected the seeded defect, both checks were saved, earlier evidence became stale and final evidence remained applicable; review diff retained |
 | Independent candidate checkout | Locally verified on Windows | Create a detached committed copy with independent Git storage; inspect baseline changes while preserving source state |
 | Scoped repository task | Live Windows attempt passed for the Pi decision documentation task | Saved login, bounded model operations, one scoped edit, failed then passing checks and retained review diff |
+| Candidate review and decision | Implemented for the scoped documentation task | Fresh diff and check, fingerprint-bound local operator decision, stale-record detection; no promotion authority |
 | First verified self-development cycle | In progress | Bounded documentation task demonstrated; human acceptance, promotion and broader code-task verification remain open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
-The next increment defines the review and human acceptance boundary for a retained
-candidate result: present its diff, recheck applicability and record an explicit
-decision without equating model completion with acceptance. The
+The next increment defines guarded promotion: apply an explicitly accepted,
+still-applicable candidate change to its source without overwriting newer work.
+Review and local operator decision recording are implemented, with recovered
+decisions treated as untrusted assertions rather than promotion authority. The
 [scoped documentation task](tasks.md) now runs through a bounded live model attempt.
 It does not establish general editing permissions, task recovery, server-side
 cancellation or promotion.
@@ -62,6 +64,13 @@ matched the final source hash; inspection found only the permitted decision-file
 change. Source status, refs and index remained unchanged. The private candidate
 retains its diff and attempt record, including executor hashes for the uncommitted
 implementation used. Human acceptance was not evaluated and nothing was promoted.
+
+Review and decision validation passed 206 tests, build, typecheck and lint on
+Windows. Temporary candidates exercised acceptance, rejection, stale fingerprints,
+forged saved claims and malformed decisions. The retained live candidate was
+reviewed through the compiled CLI: its current check passed and its decision
+remained absent. No live inference or real-candidate decision was needed for this
+increment.
 
 ## First useful cycle
 

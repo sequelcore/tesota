@@ -28,6 +28,7 @@ The [roadmap](roadmap.md) describes those intended capabilities separately.
 | [src/live-candidate.ts](../src/live-candidate.ts) | Run the correction exercise and retain checks, source and review diff |
 | [integrations/pi-task.ts](../src/integrations/pi-task.ts) | Adapt task-owned schemas to Pi tools; bound the live session and observe check continuation |
 | [task-run.ts](../src/task-run.ts) | Create one fresh task attempt, reuse authentication and retain its checks and review diff |
+| [task-review.ts](../src/task-review.ts) | Review current candidate bytes and bind a separate local operator decision to their fingerprint |
 
 The verification modules have no Pi dependency. Synthetic and live verification
 share the same adapter and verifier. The authentication/turn probes have no

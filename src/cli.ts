@@ -9,6 +9,8 @@ Usage: tesota [--help | -h | help]
        tesota task prepare <candidate-directory>
        tesota task check <candidate-directory>
        tesota task run
+       tesota task review <candidate-directory>
+       tesota task decide <candidate-directory> <accept|reject> <review-sha256>
 
 Runs bounded verification and one scoped documentation task.
 `;
@@ -22,6 +24,18 @@ if (
 } else if (args.length === 2 && args[0] === "auth" && args[1] !== undefined) {
   const { runAuthCommand } = await import("./auth.js");
   process.exit(await runAuthCommand(args[1]));
+} else if (args[0] === "task" && (args.length === 3 && args[1] === "review" && args[2] !== undefined ||
+    args.length === 5 && args[1] === "decide" && args[2] !== undefined && args[3] !== undefined && args[4] !== undefined)) {
+  const { reviewTask, decideTask } = await import("./task-review.js");
+  try {
+    const result = args[1] === "review" ? await reviewTask(args[2] ?? "") :
+      await decideTask(args[2] ?? "", { decision: args[3], reviewSha256: args[4] });
+    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+    process.exitCode = args[1] === "decide" && result.operatorDecision?.applicability !== "current" ? 1 : 0;
+  } catch {
+    process.stderr.write("Review or decision unavailable: check scope, fingerprint and existing decision.\n");
+    process.exitCode = 2;
+  }
 } else if (args.length === 2 && args[0] === "task" && args[1] === "run") {
   const { runTaskCommand } = await import("./task-run.js");
   process.exit(await runTaskCommand());

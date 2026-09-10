@@ -9,6 +9,7 @@ import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, 
 import { PI_TASK_LIMITS, piTaskPasses, runPiTask } from "../src/integrations/pi-task.js";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
 import { PiDecisionTask, checkCandidateTask, PI_DECISION_TASK_STATUS } from "../src/candidate-task.js";
+import { reviewTask, decideTask } from "../src/task-review.js";
 
 const editedFile = "docs/decisions/002-use-pi.md";
 const roots: string[] = [];
@@ -38,6 +39,75 @@ async function fixture() {
 function correction(content: string): string {
   return content.replace(/Status:[\s\S]*?(?=\n\n## Decision and rationale)/, PI_DECISION_TASK_STATUS);
 }
+
+it("records acceptance for reviewed bytes separately from check evidence and refuses to overwrite it", async () => {
+  const candidate = await fixture();
+  const task = await PiDecisionTask.prepare(candidate.directory);
+  const input = await task.read({ path: editedFile });
+  await task.check();
+  await task.replace({ path: editedFile, expectedSha256: input.sha256, content: correction(input.content) });
+  task.close();
+  const review = await reviewTask(candidate.directory);
+  expect(review).toMatchObject({ operatorDecision: null, historicalAttempt: "not_evaluated" });
+  expect(review.diff).toContain("+experiments have passed.");
+  const accepted = await decideTask(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
+  expect(accepted.operatorDecision).toMatchObject({ provenance: "recorded_untrusted", applicability: "current",
+    record: { decision: "accept", authority: "local_operator_assertion" } });
+  expect(accepted.check.taskAcceptance).toBe("not_evaluated");
+  await expect(decideTask(candidate.directory, { decision: "reject", reviewSha256: review.reviewSha256 })).rejects.toThrow("already exists");
+  expect(await readFile(join(candidate.source, editedFile), "utf8")).toBe(input.content);
+  await writeFile(join(candidate.checkout, editedFile), input.content);
+  const stale = await reviewTask(candidate.directory);
+  expect(stale.operatorDecision?.applicability).toBe("stale");
+  expect(stale.check.status).toBe("check_failed");
+}, 30_000);
+
+it("rejects a stale review and refuses acceptance based on forged saved success or diff claims", async () => {
+  const candidate = await fixture();
+  const task = await PiDecisionTask.prepare(candidate.directory);
+  const original = await task.read({ path: editedFile });
+  task.close();
+  await writeFile(join(candidate.directory, "attempt.jsonl"), '{"outcome":"passed"}\n');
+  await writeFile(join(candidate.directory, "candidate.diff"), "Forged successful diff");
+  const before = await reviewTask(candidate.directory);
+  expect(before.diff).toBe("");
+  await expect(decideTask(candidate.directory, { decision: "accept", reviewSha256: before.reviewSha256 })).rejects.toThrow("passing current check");
+  await writeFile(join(candidate.checkout, editedFile), correction(original.content));
+  await expect(decideTask(candidate.directory, { decision: "accept", reviewSha256: before.reviewSha256 })).rejects.toThrow("stale");
+  await expect(readFile(join(candidate.directory, "decision.json"))).rejects.toMatchObject({ code: "ENOENT" });
+}, 30_000);
+
+it("allows rejecting a failed candidate through the compiled CLI without granting acceptance", async () => {
+  const candidate = await fixture();
+  (await PiDecisionTask.prepare(candidate.directory)).close();
+  const entry = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
+  const review = spawnSync("bun", ["--no-env-file", entry, "task", "review", candidate.directory], {
+    encoding: "utf8", windowsHide: true, timeout: 15_000,
+  });
+  expect(review.status).toBe(0);
+  const fingerprint: unknown = JSON.parse(review.stdout).reviewSha256;
+  if (typeof fingerprint !== "string") throw new Error("Missing review fingerprint");
+  const decision = spawnSync("bun", ["--no-env-file", entry, "task", "decide", candidate.directory, "reject", fingerprint], {
+    encoding: "utf8", windowsHide: true, timeout: 15_000,
+  });
+  expect(decision.status).toBe(0);
+  expect(JSON.parse(decision.stdout)).toMatchObject({
+    check: { status: "check_failed", taskAcceptance: "not_evaluated" },
+    operatorDecision: { record: { decision: "reject" }, applicability: "current" },
+  });
+}, 30_000);
+
+it("rejects malformed decisions and scope changes instead of presenting a current acceptance", async () => {
+  const candidate = await fixture();
+  (await PiDecisionTask.prepare(candidate.directory)).close();
+  await expect(decideTask(candidate.directory, { decision: "accept", reviewSha256: "0".repeat(64), authority: "model" })).rejects.toThrow();
+  await writeFile(join(candidate.directory, "decision.json"), '{"decision":"accept","authority":"human"}');
+  await expect(reviewTask(candidate.directory)).rejects.toThrow();
+  await writeFile(join(candidate.directory, "decision.json"), " ".repeat(4097));
+  await expect(reviewTask(candidate.directory)).rejects.toThrow("unavailable");
+  await writeFile(join(candidate.checkout, "src/cli.ts"), "out of scope");
+  await expect(reviewTask(candidate.directory)).rejects.toThrow("scope");
+}, 30_000);
 
 function fakeModel(steps: FauxResponseStep[]) {
   const fake = fauxProvider({ models: [{ id: "task-test", name: "Task test" }], tokensPerSecond: 1_000_000 });

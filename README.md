@@ -21,6 +21,8 @@ general repository tasks.** It can also [create and inspect independent candidat
 checkouts](docs/candidates.md) from committed source revisions.
 The first [scoped repository task](docs/tasks.md) can correct one documentation
 paragraph through a bounded model attempt and retain its checks and diff.
+Its offline review commands can record a separate operator decision for the
+exact reviewed candidate state.
 See the [roadmap](docs/roadmap.md) for demonstrated progress and remaining work.
 
 ## Get started

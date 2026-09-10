@@ -35,7 +35,9 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota candidate inspect <candidate-directory>\n" +
     "       tesota task prepare <candidate-directory>\n" +
     "       tesota task check <candidate-directory>\n" +
-    "       tesota task run\n\n" +
+    "       tesota task run\n" +
+    "       tesota task review <candidate-directory>\n" +
+    "       tesota task decide <candidate-directory> <accept|reject> <review-sha256>\n\n" +
     "Runs bounded verification and one scoped documentation task.\n",
   );
 });

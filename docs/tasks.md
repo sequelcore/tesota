@@ -46,6 +46,45 @@ A start record without a finish record is incomplete. A finish record reports th
 local runner's outcome and may still contain an unsettled session; it does not
 prove server-side cancellation. No automatic retry, resume or promotion occurs.
 
+## Review and decide
+
+These offline commands review current candidate bytes and record a separate local
+operator decision:
+
+```sh
+bun start task review <candidate-directory>
+bun start task decide <candidate-directory> accept <review-sha256>
+bun start task decide <candidate-directory> reject <review-sha256>
+```
+
+Review regenerates the diff and runs the documentation check before and after
+capturing it. Its fingerprint binds the canonical candidate directory, baseline,
+current file hash, check status and diff. Output JSON-escapes the diff instead of
+printing its untrusted bytes directly to the terminal. Review does not trust
+the retained `candidate.diff` or interpret `attempt.jsonl` as proof of completion;
+historical model activity remains `not_evaluated` in this current-state review.
+The separate attempt record remains available for historical inspection.
+
+Use the returned `reviewSha256` for an explicit decision. Acceptance requires a
+passing current check and the same fingerprint. Rejection can record a decision
+on a failed check. Either decision is exclusively saved to `decision.json`; an
+existing decision is never overwritten. Later reviews mark the record stale when
+the fingerprint changes. Out-of-scope changes or malformed records make review
+unavailable. A late mutation after saving may leave a recorded decision that is
+stale or cannot currently be evaluated; the command does not roll it back.
+
+These are local operator assertions, not authenticated proof of a human identity
+or of reading the diff. Recovered records have `recorded_untrusted` provenance.
+The model tool set does not include review decisions. Decisions do not change the
+check's `taskAcceptance`, authorize execution, modify the source repository or
+promote the candidate. Revision/revocation and authenticated approval are not
+implemented. The trusted single-writer limitation still applies.
+
+Review exits 0 when it can report the current state, including a failed check or
+stale decision. A decision exits 0 when recorded and currently applicable, 1 if
+the post-write review finds it stale, and 2 for invalid or unavailable operations.
+An error after persistence does not imply that no decision file was created.
+
 ## Prepare and inspect
 
 Create an [independent candidate](candidates.md), then use its returned directory:
@@ -108,5 +147,5 @@ These are task-tool boundaries in a trusted single-writer workspace. They do not
 sandbox a hostile same-user process, authenticate stored metadata, or guarantee
 atomic observation of the entire filesystem. Failed writes may leave local
 temporary state; there is no automatic rollback, task resume or promotion.
-An earlier check describes its observed bytes, not later edits. Human acceptance
-always remains `not_evaluated`.
+An earlier check describes its observed bytes, not later edits. Checks always
+retain `taskAcceptance: "not_evaluated"`; operator decisions are separate records.
