@@ -99,15 +99,16 @@ The responsibilities remain separate:
 | Integration tests | Exercise the connected runtime boundary | Do not replace formal proof of the covered predicate |
 | Tesota | Bind candidate identity, evidence, budgets and acceptance policy | Remains the sole owner of promotion authority |
 
-The Codex-backed reviewer host is implemented as a bounded read-only surface:
-`task run gentle-review <candidate> <lens>` runs one lens through Pi with
-Tesota's `CodexCredentials` and stores a candidate-bound result. The reviewer
-must call Tesota's typed `tesota_submit_review` custom tool; Tesota validates
-the payload at the execution boundary and stops after one accepted submission.
-Text parsing remains only a compatibility fallback. It does not write
-candidate files or accept promotion. The remaining adapter work is to submit
-these results to Gentle's negotiated capture contract and validate its
-model-backed correction and recovery behavior.
+The Codex-backed Gentle relay is implemented as a bounded transport surface.
+Gentle remains the owner of review state, immutable repository context,
+reviewer prompts, result schemas and admission. Tesota asks the package-local
+Gentle executable for the current transition, validates its lineage, target,
+subject and exact argument tokens, and passes the materialized prompt unchanged
+to a tool-free Pi model invocation using Tesota's `CodexCredentials`. Before
+submission it asks Gentle for status again and refuses a changed binding. The
+opaque result is staged with private permissions, submitted through the one
+provider-issued value slot and removed afterward. This surface does not edit
+candidate files, accept promotion or reconstruct provider authority.
 
 ## Static-analysis policy
 

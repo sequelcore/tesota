@@ -13,8 +13,8 @@ const editedFile = PI_DECISION_TASK_FILE;
 const readFiles = Object.freeze([editedFile, "docs/roadmap.md", "experiments/codex/history.md"] as const);
 export const PI_DECISION_TASK_LIMITS: Readonly<{ reads: number; edits: number; checks: number; fileBytes: number }> =
   Object.freeze({ reads: 8, edits: 2, checks: 3, fileBytes: 64 * 1024 });
-const oldStatus = "Status: adopted for the current experiments. Synthetic compatibility is reported\naccepted; bounded live model-turn, verification-tool and candidate-correction\nexperiments have passed. These results do not establish a complete repository task cycle.";
-export const PI_DECISION_TASK_STATUS = "Status: adopted for the current experiments. Synthetic compatibility, live model-turn,\nverification-tool and candidate-correction experiments have passed. A bounded Pi\nCoding Agent host task has also passed; human acceptance, promotion and Gentle\nhigh-risk review remain open for the first verified self-development cycle.";
+const oldStatus = "Status: adopted for the current experiments. Synthetic compatibility, live model-turn,\nverification-tool and candidate-correction experiments have passed. A bounded Pi\nCoding Agent host task has also passed; the first verified self-development\ncycle has been accepted and promoted, while Gentle high-risk review remains\nopen.";
+export const PI_DECISION_TASK_STATUS = "Status: adopted for the current experiments. Synthetic compatibility, live model-turn,\nverification-tool and candidate-correction experiments have passed. A bounded Pi\nCoding Agent host task and an immutable four-lens Gentle review have also\npassed. The first verified self-development cycle was accepted and promoted; a\ncombined correction cycle remains open.";
 
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const planSchema = z.strictObject({

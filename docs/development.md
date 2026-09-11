@@ -26,9 +26,14 @@ operator decision for work that no longer needs review.
 [scoped documentation task](tasks.md), also without model inference.
 `task run` creates a fresh candidate and runs the selected fixed task with the saved login;
 it is a separate live command and is never invoked by the normal check suite.
-`task run gentle-review <candidate> <lens>` runs one read-only Codex-backed
-review lens and saves its candidate-bound evidence; it does not call Gentle's
-acceptance or promotion paths.
+`task run gentle-review <candidate> <gentle-ai-executable> <lineage-id>`
+collects one reviewer slot currently offered by Gentle. The executable path
+must be absolute and identify the package-local, version-qualified Gentle AI
+binary. Tesota preserves the provider's prompt and binding, runs tool-free
+Codex inference with the saved login, and submits only after the same binding
+is observed again. Run the command again for the next offered slot. Other
+provider transitions, including START consent and acknowledgement, remain
+explicit lifecycle operations; review never authorizes promotion.
 `task review <directory>` and `task decide <directory> <accept|reject> <review-sha256>`
 provide offline review and local decision recording; neither promotes code.
 `task promote <directory> <review-sha256>` explicitly applies the accepted paragraph

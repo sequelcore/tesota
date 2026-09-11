@@ -15,7 +15,7 @@ Usage: tesota [--help | -h | help]
        tesota task run coding-agent
        tesota task run pi-result-consistency
        tesota task run formal-invocation-admission
-       tesota task run gentle-review <candidate-id|candidate-directory> <risk|resilience|readability|reliability>
+       tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>
        tesota task review <candidate-id|candidate-directory>
        tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>
        tesota task promote <candidate-id|candidate-directory> <review-sha256>
@@ -54,18 +54,17 @@ if (
   }
 } else if (args[0] === "task" && args[1] === "run" && (args.length === 2 ||
     args.length === 3 && (args[2] === "pi-result-consistency" || args[2] === "formal-invocation-admission" || args[2] === "coding-agent") ||
-    args.length === 5 && args[2] === "gentle-review" && args[3] !== undefined && args[4] !== undefined)) {
+    args.length === 6 && args[2] === "gentle-review" && args[3] !== undefined && args[4] !== undefined && args[5] !== undefined)) {
   if (args[2] === "gentle-review") {
-    const { GENTLE_REVIEW_LENSES, runGentleReviewHost, saveGentleReviewResult } = await import("./gentle-review-host.js");
-    if (!GENTLE_REVIEW_LENSES.includes(args[4] as typeof GENTLE_REVIEW_LENSES[number])) { process.stderr.write("Invalid Gentle review lens.\n"); process.exitCode = 2; }
-    else {
+    const { runGentleReviewHost } = await import("./gentle-review-host.js");
       try {
-        const result = await runGentleReviewHost({ candidate: args[3] ?? "", lens: args[4] as typeof GENTLE_REVIEW_LENSES[number] });
-        await saveGentleReviewResult(args[3] ?? "", result);
+        const result = await runGentleReviewHost({ candidate: args[3] ?? "", executable: args[4] ?? "", lineage: args[5] ?? "" });
         process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-        process.exitCode = result.status === "completed" ? 0 : 1;
-      } catch { process.stderr.write("Gentle reviewer unavailable; candidate remains unchanged.\n"); process.exitCode = 2; }
-    }
+        process.exitCode = result.status === "submitted" ? 0 : 1;
+      } catch (error) {
+        process.stderr.write(`${error instanceof Error ? error.message : "Gentle relay failed"}\n`);
+        process.exitCode = 2;
+      }
   } else {
   if (args[2] === "coding-agent") {
     const { runCodingAgentTaskCommand } = await import("./coding-agent-task.js");

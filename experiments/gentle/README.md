@@ -200,8 +200,70 @@ claimed as settled.
 
 After switching the authorized store to the Plus-compatible `gpt-5.6-luna`
 model, Tesota completed all four lenses for the same candidate identity:
-`risk`, `resilience`, `readability`, and `reliability`. Each result was
-accepted through the typed submission tool and saved beside the candidate; the
-candidate tree remained unchanged. Gentle capture is still a separate step,
-because its provider subjects require their negotiated `location`, severity,
-claim, and proof-reference fields.
+`risk`, `resilience`, `readability`, and `reliability`. Each result was saved
+beside the candidate. These runs demonstrate model output, not Gentle review
+completion: the host also accepts a text fallback, and the saved records do
+not distinguish which submission path produced them. The later Gentle status
+reported the same candidate tree as the original snapshot.
+
+### Phase 13: immutable transport boundary
+
+A new START attempted from the actual candidate `repo` directory, with the
+original base tree, workspace overlay, target and explicit Pi runtime, was
+rejected with `immutable_review_transport_unsupported`. Gentle reported
+`mutation_outcome: not_started` and `next_action: stop`. No new review was
+established by this attempt. Earlier calls from the containing candidate
+directory resolved to a different enclosing Git repository; their timeouts
+and missing-lineage responses do not establish a defect in candidate recovery.
+
+Bound status in the correct repository still identified the original lineage
+as `reviewing`, with `action: stop` and `manual_action_required`. Failure of
+the historical `review-resume` command does not establish that this compact
+lineage is invalid or absent. Its settlement remains unresolved.
+
+The installed provider contract requires the gentle-pi facade and opaque
+reviewer relay: inspect, use the offered START route, obtain provider-bound
+immutable context, run the reviewer, and submit through the offered binding.
+Tesota's current host instead supplies a generic lens prompt and a live
+checkout. Its candidate identity hashes Git revisions and path/status metadata,
+not the uncommitted file contents. Existing Luna records therefore cannot be
+rebound to fresh Gentle subjects as completed immutable reviews.
+
+The temporary conversion attempted during capture also supplied line 1 when a
+finding lacked a line and supplied generic proof references. Those converted
+files are invalid evidence and must not be submitted. No successful admission
+of those conversions was observed. Retained findings are review suggestions,
+not verified defects or evidence of candidate causality.
+
+The next increment must connect Tesota-owned Codex authentication and model
+execution to the provider's opaque relay contract, preserve provider prompts
+and bindings, reject missing evidence, and test repository-root resolution and
+stale candidate rejection. Only then can a fresh immutable multi-lens run
+qualify capture and settlement. Setting the relay handshake variable alone
+does not implement that contract.
+
+### Phase 14: immutable Codex relay and settlement
+
+**The retained high-risk lineage settled on 2026-09-11 UTC.** Tesota implemented a
+small adapter around Gentle's public executable protocol rather than importing
+the package's internal TypeScript modules. It queries bound status, accepts
+only the provider's Pi materialization and submission descriptors, checks the
+lineage, target and artifact subject, passes the materialized prompt unchanged
+to a tool-free Luna invocation, and rechecks the binding before submission.
+Reviewer output is staged in a private temporary directory and removed after
+the provider call.
+
+The first live attempt exposed a transport bug: provider reasoning events were
+incorrectly treated as final non-text output. Focused regression coverage now
+allows reasoning metadata while accepting only text in the submitted result
+and still rejects tool calls, empty output, invalid UTF-8, provider failures,
+oversized data, cancellation and timeout.
+
+Gentle admitted `review-resilience`, `review-readability`, and
+`review-reliability` for lineage `review-17bb8d3881a94fa0`. Together with the
+previously admitted `review-risk`, the last event closed the review as
+`approved`. The exact provider-issued acknowledgement then returned
+`gentle-ai.review-acknowledged/v1` and burned the authority. No candidate bytes,
+Tesota source, local acceptance decision or promotion changed during this
+review. This qualifies one immutable four-lens settlement. Correction and
+recovery behavior remain separate open qualifications.

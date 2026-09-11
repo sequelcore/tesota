@@ -42,7 +42,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota task run coding-agent\n" +
     "       tesota task run pi-result-consistency\n" +
     "       tesota task run formal-invocation-admission\n" +
-    "       tesota task run gentle-review <candidate-id|candidate-directory> <risk|resilience|readability|reliability>\n" +
+    "       tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>\n" +
     "       tesota task review <candidate-id|candidate-directory>\n" +
     "       tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>\n" +
     "       tesota task promote <candidate-id|candidate-directory> <review-sha256>\n\n" +

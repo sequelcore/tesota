@@ -1,81 +1,140 @@
-import { createHash } from "node:crypto";
-import { open } from "node:fs/promises";
-import { join } from "node:path";
 import * as z from "zod";
-import { defineTool } from "@earendil-works/pi-coding-agent";
-import { Type } from "@earendil-works/pi-ai";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { inspectCandidateCheckout } from "./candidate-checkout.js";
-import { CodexCredentials } from "./integrations/codex-credentials.js";
-import { runPiCodingAgent } from "./integrations/pi-coding-agent.js";
+import { runGentleProcess, type GentleProcessRequest } from "./integrations/gentle-process.js";
+import { runOpaquePiReviewer } from "./integrations/pi-opaque-reviewer.js";
 
-export const GENTLE_REVIEW_LENSES = ["risk", "resilience", "readability", "reliability"] as const;
-const resultSchema = z.strictObject({ summary: z.string().min(1).max(8_000), findings: z.array(z.strictObject({
-  severity: z.enum(["info", "low", "medium", "high"]), path: z.string().min(1).max(512), description: z.string().min(1).max(4_000),
-})).max(32) });
-export type GentleReviewLens = "risk" | "resilience" | "readability" | "reliability";
-export interface GentleReviewResult { readonly summary: string; readonly findings: readonly { readonly severity: "info" | "low" | "medium" | "high"; readonly path: string; readonly description: string }[]; }
-
-const reviewFindingSchema = z.strictObject({
-  severity: z.enum(["info", "low", "medium", "high"]),
-  path: z.string().min(1).max(512),
-  description: z.string().min(1).max(4_000),
+const contract = "gentle-ai.review-integration/v2";
+const reviewerSchema = "https://gentle-ai.dev/schema/review/reviewer/v1";
+const token = z.string().min(1).max(16_384).refine((value) => !value.includes("\0"));
+const tokens = z.array(token).min(1).max(64);
+const argument = z.object({ token });
+const hash = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+const tree = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/);
+const subject = z.object({
+  schema: z.literal("gentle-ai.review-artifact-subject/v2"),
+  subject_hash: hash,
+  lineage_id: z.string().min(1),
+  authority_revision: hash,
+  target_identity: hash,
+  base_tree: tree,
+  candidate_tree: tree,
+  changed_path_manifest_sha256: hash,
+  lens: z.enum(["review-risk", "review-resilience", "review-readability", "review-reliability"]),
+  selected_order: z.number().int().min(0).max(3),
 });
-const reviewSubmissionSchema = z.strictObject({ summary: z.string().min(1).max(8_000), findings: z.array(reviewFindingSchema).max(32) });
-type ReviewSubmission = z.infer<typeof reviewSubmissionSchema>;
+const submission = z.object({
+  operation_token: z.literal("capture-result"),
+  argument_tokens: tokens,
+  value: z.object({
+    slot: z.literal("reviewer_result"),
+    domain: z.literal("artifact_path_or_stdin"),
+    schema: z.literal(reviewerSchema),
+    substitution_location: z.number().int().nonnegative(),
+  }),
+});
+const slot = z.object({
+  name: z.literal("reviewer_result"),
+  schema: z.literal(reviewerSchema),
+  capture_operation: z.literal("review.capture-result"),
+  arguments: z.array(argument).min(1).max(64),
+  submission,
+  artifact_subject: subject,
+});
+// This adapter consumes transport fields; Gentle owns the complete review
+// schema, findings, authority validation and admission decision.
+const statusSchema = z.object({
+  schema: z.enum(["gentle-ai.review-integration.status/v5", "gentle-ai.review-integration.status/v6", "gentle-ai.review-integration.status/v7"]),
+  contract: z.literal(contract),
+  operation: z.literal("review.status"),
+  action: z.string(),
+  authority: z.object({ lineage_id: z.string().min(1), revision: hash }).optional(),
+  target_identity: hash,
+  next_transition: z.object({ kind: z.string(), collect: z.object({ inputs: z.array(z.unknown()).min(1).max(4) }).optional() }).optional(),
+});
 
-function parseModelResult(text: string): GentleReviewResult {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("Reviewer returned no JSON result");
-  return resultSchema.parse(JSON.parse(text.slice(start, end + 1)));
+export interface GentleReviewRelayResult {
+  readonly status: "submitted" | "provider_transition_required";
+  readonly provider: unknown;
 }
 
-/** Runs one read-only Gentle review role through Pi with Tesota's Codex OAuth store. */
-export async function runGentleReviewHost(options: {
+export interface GentleReviewRelayOptions {
   readonly candidate: string;
-  readonly lens: GentleReviewLens;
-  readonly credentials?: CodexCredentials;
-}): Promise<{ readonly format: "tesota-gentle-review"; readonly version: 1; readonly lens: GentleReviewLens; readonly candidateIdentity: string; readonly status: "completed" | "failed" | "timed_out"; readonly result?: GentleReviewResult; readonly error?: string }> {
-  const candidate = await inspectCandidateCheckout(options.candidate);
-  const candidateIdentity = createHash("sha256").update(JSON.stringify({ baseline: candidate.baseline, head: candidate.head, changes: candidate.changes })).digest("hex");
-  const prompt = `Review this frozen candidate using the ${options.lens} lens. Use only the read tool. When finished, call tesota_submit_review exactly once with your complete result. Do not put the result in prose. Do not edit files, run commands, or claim that a finding is verified beyond the visible candidate.`;
-  const credentials = options.credentials ?? new CodexCredentials();
-  let submitted: GentleReviewResult | undefined;
-  const submitTool = defineTool({
-    name: "tesota_submit_review",
-    label: "Submit Tesota review",
-    description: "Submit the complete structured review result to Tesota after inspecting the candidate.",
-    parameters: Type.Object({
-      summary: Type.String({ minLength: 1, maxLength: 8_000 }),
-      findings: Type.Array(Type.Object({
-        severity: Type.Union([Type.Literal("info"), Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]),
-        path: Type.String({ minLength: 1, maxLength: 512 }),
-        description: Type.String({ minLength: 1, maxLength: 4_000 }),
-      }, { additionalProperties: false }), { maxItems: 32 }),
-    }, { additionalProperties: false }),
-    execute: async (_toolCallId, args) => {
-      const result = reviewSubmissionSchema.parse(args) as ReviewSubmission;
-      submitted = result;
-      return { content: [{ type: "text", text: "Review accepted by Tesota." }], details: {}, terminate: true };
-    },
-  });
-  let run = await runPiCodingAgent({ cwd: candidate.checkout, prompt, credentials, tools: ["read", "tesota_submit_review"], customTools: [submitTool] });
-  if (run.status !== "completed") return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: run.status, ...(run.error === undefined ? {} : { error: run.error }) };
-  if (submitted !== undefined) return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: "completed", result: submitted };
-  try { return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: "completed", result: parseModelResult(run.responseText) }; }
-  catch (firstError) {
-    submitted = undefined;
-    run = await runPiCodingAgent({ cwd: candidate.checkout,
-      prompt: `${prompt}\nYour prior response was not usable. Call tesota_submit_review now, even when findings is empty.`, credentials, tools: ["read", "tesota_submit_review"], customTools: [submitTool] });
-    if (run.status !== "completed") return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: run.status, ...(run.error === undefined ? {} : { error: run.error }) };
-    if (submitted !== undefined) return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: "completed", result: submitted };
-    try { return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: "completed", result: parseModelResult(run.responseText) }; }
-    catch (error) { return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: "failed", error: error instanceof Error ? error.message : firstError instanceof Error ? firstError.message : String(firstError) }; }
-  }
+  readonly executable: string;
+  readonly lineage: string;
+  readonly signal?: AbortSignal;
 }
 
-/** Persist one bounded reviewer result as evidence; it never changes candidate bytes. */
-export async function saveGentleReviewResult(candidate: string, result: Awaited<ReturnType<typeof runGentleReviewHost>>): Promise<void> {
-  const file = await open(join((await inspectCandidateCheckout(candidate)).directory, `gentle-review-${result.lens}.json`), "wx", 0o600);
-  try { await file.writeFile(JSON.stringify(result, null, 2) + "\n", "utf8"); await file.sync(); } finally { await file.close(); }
+export interface GentleReviewRelayDependencies {
+  readonly inspect: (candidate: string) => Promise<{ readonly checkout: string }>;
+  readonly process: (request: GentleProcessRequest) => Promise<Buffer>;
+  readonly reviewer: typeof runOpaquePiReviewer;
+}
+
+/** Collect one currently offered immutable reviewer slot. Never invent or retry authority. */
+export async function runGentleReviewHost(
+  options: GentleReviewRelayOptions,
+  dependencies: GentleReviewRelayDependencies = { inspect: inspectCandidateCheckout, process: runGentleProcess, reviewer: runOpaquePiReviewer },
+): Promise<GentleReviewRelayResult> {
+  const candidate = await dependencies.inspect(options.candidate);
+  const invoke = async (arguments_: readonly string[], effect: "read" | "write"): Promise<Buffer> => {
+    options.signal?.throwIfAborted();
+    return await dependencies.process({ executable: options.executable, cwd: candidate.checkout, arguments: arguments_, effect,
+      ...(options.signal === undefined ? {} : { signal: options.signal }) });
+  };
+  if (!/^review-[A-Za-z0-9._-]+$/.test(options.lineage)) throw new Error("Gentle lineage is invalid");
+  const statusArguments = ["review", "status", "--contract", contract, "--cwd", candidate.checkout,
+    "--agent", "pi", "--lineage", options.lineage, "--next-transition"];
+  const observed: unknown = JSON.parse((await invoke(statusArguments, "read")).toString("utf8"));
+  const status = statusSchema.parse(observed);
+  if (status.action === "stop" || status.next_transition?.kind !== "collect") {
+    return { status: "provider_transition_required", provider: observed };
+  }
+  const selected = slot.parse(status.next_transition.collect?.inputs[0]);
+  if (status.authority?.lineage_id !== options.lineage ||
+      status.authority.lineage_id !== selected.artifact_subject.lineage_id ||
+      status.target_identity !== selected.artifact_subject.target_identity) {
+    throw new Error("Gentle reviewer subject does not match current authority");
+  }
+  const materializeArguments = selected.arguments.map((value) => value.token);
+  if (!materializeArguments.includes("--agent=pi") || !materializeArguments.includes("--materialize=true")) {
+    throw new Error("Gentle did not offer the Pi immutable materialization contract");
+  }
+  const completion = selected.submission;
+  const location = completion.value.substitution_location;
+  if (completion.argument_tokens[location] !== "--input={{value}}" ||
+      completion.argument_tokens.filter((value) => value.includes("{{value}}")).length !== 1) {
+    throw new Error("Gentle submission must offer exactly one reviewer stdin slot");
+  }
+  const prompt = await invoke(["review", "capture-result", ...materializeArguments], "read");
+  const result = await dependencies.reviewer(prompt, options.signal === undefined ? {} : { signal: options.signal });
+
+  // A completed response cannot authorize submission to a changed slot.
+  const current = statusSchema.parse(JSON.parse((await invoke(statusArguments, "read")).toString("utf8")));
+  if (current.action === "stop" || current.next_transition?.kind !== "collect" ||
+      current.target_identity !== status.target_identity ||
+      JSON.stringify(current.authority) !== JSON.stringify(status.authority) ||
+      JSON.stringify(slot.parse(current.next_transition.collect?.inputs[0])) !== JSON.stringify(selected)) {
+    throw new Error("Gentle reviewer binding changed; result was not submitted");
+  }
+  const stagingDirectory = await mkdtemp(join(tmpdir(), "tesota-gentle-review-"));
+  let primaryFailure: unknown;
+  let response: unknown;
+  try {
+    await chmod(stagingDirectory, 0o700);
+    const resultFile = join(stagingDirectory, "result.raw");
+    await writeFile(resultFile, result.stdout, { mode: 0o600 });
+    await chmod(resultFile, 0o600);
+    const submissionArguments = completion.argument_tokens.map((value, index) =>
+      index === location ? value.replace("{{value}}", resultFile) : value);
+    response = JSON.parse((await invoke(["review", completion.operation_token, ...submissionArguments], "write")).toString("utf8"));
+  } catch (error) {
+    primaryFailure = error;
+  }
+  try { await rm(stagingDirectory, { recursive: true, force: true }); }
+  catch (error) { if (primaryFailure === undefined) throw new Error("Gentle reviewer result cleanup failed", { cause: error }); }
+  if (primaryFailure !== undefined) throw primaryFailure;
+  return { status: "submitted", provider: response };
 }

@@ -130,7 +130,7 @@ it("records acceptance for reviewed bytes separately from check evidence and ref
   task.close();
   const review = await reviewTask(candidate.directory);
   expect(review).toMatchObject({ operatorDecision: null, historicalAttempt: "not_evaluated" });
-  expect(review.diff).toContain("+experiments have passed.");
+  expect(review.diff).toContain("+Coding Agent host task and an immutable four-lens Gentle review have also");
   const accepted = await decideTask(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
   expect(accepted.operatorDecision).toMatchObject({ provenance: "recorded_untrusted", applicability: "current",
     record: { decision: "accept", authority: "local_operator_assertion" } });

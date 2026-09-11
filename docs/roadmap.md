@@ -35,10 +35,10 @@ validation of the current checkout.
 | Real code task | Live Windows attempt passed for `pi-result-consistency` | Model repaired `piTaskPasses`; sandbox oracle failed first, passed after correction; source remained unchanged |
 | Formal correction loop | Passed for bounded Windows task | `canAdmitInvocation` is used by the Pi adapters; a seeded proof failure was returned to Pi, corrected and re-verified with LemmaScript/Dafny |
 | Pi Coding Agent host | Passed for bounded Windows task | Full SDK host reused Tesota's Codex credential store, allowed only `read` and `edit`, and completed the scoped Pi status task in an isolated candidate; check passed and no acceptance was recorded |
-| Codex-backed Gentle reviewer host | Implemented for four read-only lenses | Pi runs bounded read-only reviews with Tesota's Codex credential store; the typed `tesota_submit_review` tool validates all four Luna results at the boundary, while Gentle capture and multi-lens settlement remain open |
+| Codex-backed Gentle reviewer relay | Passed for one retained high-risk lineage | Tesota preserved provider-issued prompts and bindings, Luna completed the remaining three immutable reviewer slots, Gentle admitted them and the exact acknowledgement burned approved authority |
 | Kiln static-analysis qualification | Planned | Compare selected `dev` rules and bounded quality-gate sequencing against Tesota's pinned Oxlint profile; adopt only evidenced, low-noise rules |
-| Gentle AI qualification | In progress | Contract, capabilities, parity lane and stale-binding rejection passed; high-risk review timed out before mutation and recovery could not create a successor; model-backed review and usable recovery remain |
-| First verified self-development cycle | In progress | Pi Coding Agent completed one bounded task; Tesota check, human acceptance and guarded promotion passed, while model-backed Gentle high-risk review remains open |
+| Gentle AI qualification | In progress | Contract, capabilities, parity lane, stale-binding rejection and one immutable model-backed four-lens settlement passed; correction and usable recovery remain |
+| First verified self-development cycle | In progress | Pi Coding Agent completed one bounded task; Tesota check, human acceptance and guarded promotion passed; a separate retained candidate completed immutable Gentle review, while one combined correction cycle remains open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
 The next increment extends the bounded cycle to formal correction of one real
