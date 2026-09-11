@@ -40,9 +40,15 @@ changes `candidateSatisfiesTask` from disjunction to conjunction in an isolated
 checkout, so both valid source forms are rejected. Its predeclared oracle requires
 the exact baseline implementation to be restored and emits a specific diagnostic.
 Direct task operations and a simulated Pi session completed the failed-check,
-edit and passing-check sequence. A stored-OAuth live attempt created candidate
+edit and passing-check sequence. The first stored-OAuth attempt created candidate
 `de392e40-c337-4dc8-8399-73e22e3b8b96`, but the provider returned HTTP 429
-before any tool call or edit; live completion remains unverified.
+before any tool call or edit. A fresh retry against baseline `7ff096c8` created
+candidate `02d51cc2-282a-4c1d-9135-d18c5dfbb8fb` and completed with five model
+invocations, four tool calls and one edit. Its first issued check failed with the
+predeclared diagnostic; its second check and current read-only check passed with
+the same verifier identity and corrected source SHA-256. The final diff is empty
+because the oracle requires exact restoration of the baseline bytes. No operator
+decision or promotion was recorded.
 
 ## Run the task
 
