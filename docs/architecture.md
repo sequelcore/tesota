@@ -77,6 +77,40 @@ the shared executor. Pi receives a small result projection; canonical evidence
 stays with Tesota. Model output cannot grant verification authority or human
 acceptance. Current experiments return `taskAcceptance: "not_evaluated"`.
 
+## Review provider boundary
+
+Tesota owns the operator surface and the decision to accept or promote work.
+Gentle AI is a potential external review provider consumed through an adapter;
+it is not Tesota's shell, authority store or acceptance mechanism. If adopted,
+the adapter will translate Tesota's candidate and evidence contracts to the
+negotiated Gentle review contract and return provider evidence without copying
+Gentle's commands, state model or roadmap into Tesota.
+
+The responsibilities remain separate:
+
+| Check or surface | Responsibility | Limitation |
+| --- | --- | --- |
+| Oxlint | Static source and rule diagnostics | Does not establish semantic intent or integration behavior |
+| Gentle review | Independent, bounded review of a candidate and its integration | Does not prove properties mathematically or authorize delivery |
+| LemmaScript/Dafny | Proof of explicitly expressed properties | Does not cover omitted requirements or real integration wiring |
+| Integration tests | Exercise the connected runtime boundary | Do not replace formal proof of the covered predicate |
+| Tesota | Bind candidate identity, evidence, budgets and acceptance policy | Remains the sole owner of promotion authority |
+
+No Gentle integration is implemented or required yet. Qualification must first
+verify the exact provider contract, candidate identity, recovery behavior and
+evidence retention while preserving Tesota's authority boundaries.
+
+## Static-analysis policy
+
+Tesota's current Oxlint profile is intentionally smaller than Kiln's `dev`
+profile. Kiln's profile is a useful source of candidate rules and includes
+structural limits and TypeScript safety checks, but it does not detect “slop” as
+a semantic category. Tesota will recover rules selectively, with a pinned
+configuration and evidence identity, only when a concrete defect pattern and
+acceptable false-positive cost have been demonstrated. Gentle review, formal
+contracts and integration tests remain responsible for concerns Oxlint cannot
+establish.
+
 ## Failure and recovery boundaries
 
 An abort request is not observed cancellation. Pi's terminal events determine

@@ -33,6 +33,8 @@ validation of the current checkout.
 | Guarded paragraph promotion | Verified in temporary Windows repositories | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal |
 | Real code task | Live Windows attempt passed for `pi-result-consistency` | Model repaired `piTaskPasses`; sandbox oracle failed first, passed after correction; source remained unchanged |
 | Formal correction loop | Passed for bounded Windows task | `canAdmitInvocation` is used by the Pi adapters; a seeded proof failure was returned to Pi, corrected and re-verified with LemmaScript/Dafny |
+| Kiln static-analysis qualification | Planned | Compare selected `dev` rules and bounded quality-gate sequencing against Tesota's pinned Oxlint profile; adopt only evidenced, low-noise rules |
+| Gentle AI qualification | Planned | Evaluate Gentle review as an optional provider behind a Tesota-owned contract; preserve Tesota authority, evidence and formal verification |
 | First verified self-development cycle | In progress | Bounded documentation task demonstrated; human acceptance, promotion and broader code-task verification remain open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
@@ -155,11 +157,27 @@ still need implementation. The current promotion command is limited to the
 accepted documentation task and is not a general write capability. Do not create
 unused modules in anticipation of that work.
 
-## Interface sequencing
+## Interface and review sequencing
 
-Complete the formal correction loop and integrate the required Gentle AI review
-before implementing terminal interaction. The current CLI and experiment
-commands remain the development surface during that work.
+The formal correction loop is complete for its bounded property. The next
+increment is Gentle AI qualification, not a dependency adoption: establish the
+exact Gentle review contract, run a bounded provider experiment, and compare
+its candidate identity, review evidence, recovery and correction behavior with
+Tesota's existing cycle. Gentle review may report findings and bounded next
+actions; Tesota retains acceptance and promotion authority.
+
+Kiln's `dev` Oxlint profile and quality-gate loop are reference material for a
+separate static-analysis qualification. “Anti-slop” is not an Oxlint guarantee;
+candidate rules must be evaluated against real defects, false positives, tool
+version identity and retained evidence before adoption. This qualification may
+run before or alongside Gentle qualification, but neither imports Kiln's
+roadmap or private runtime state.
+
+After qualification, define Tesota's own shell contracts and build the shell as
+a Tesota-owned surface. A future Gentle integration belongs behind that
+boundary, so Tesota is not coupled to Gentle commands, presentation or private
+state. The current CLI and experiment commands remain the development surface
+until those contracts are stable.
 
 The eventual interaction surface is undecided. A shell or richer terminal UI
 must be evaluated against the implemented workflow: giving a task, observing
@@ -171,10 +189,11 @@ community experience. No particular UI framework or existing shell is adopted.
 ## Open requirements and scope
 
 The original handoff included a bounded Gentle AI review integration and a small
-Dafny property for the first useful cycle. Neither exists here. Their exact
-contracts, feasible integration and connection to TypeScript behavior remain
-unresolved; they have not been silently removed from the direction. A formal
-model would not by itself prove the implementation correct.
+Dafny property for the first useful cycle. The formal property is now live for
+the bounded invocation decision. Gentle integration remains proposed pending
+qualification of its public contract, recovery semantics and evidence model.
+A formal model or provider review would not by itself prove the implementation
+correct or grant promotion authority.
 
 Pi is the selected candidate engine, with replacement contained by the integration
 boundary. Codex OAuth is the initial inference route. The fixed Spark selection
