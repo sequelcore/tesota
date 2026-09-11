@@ -113,6 +113,19 @@ it("does not invoke the model when Gentle offers no collection", async () => {
   expect(reviewer).not.toHaveBeenCalled();
 });
 
+it("does not recheck or submit when the reviewer transport fails", async () => {
+  const process = vi.fn(async (request: GentleProcessRequest): Promise<Buffer> =>
+    request.arguments.includes("--materialize=true") ? Buffer.from("provider prompt") : json(status()));
+  const reviewer = vi.fn(async (): Promise<never> => { throw new Error("provider unavailable"); });
+
+  await expect(runGentleReviewHost({ candidate: "one", executable, lineage }, {
+    inspect: async () => ({ checkout: candidate }), process, reviewer,
+  })).rejects.toThrow("provider unavailable");
+
+  expect(process).toHaveBeenCalledTimes(2);
+  expect(process.mock.calls.map(([request]) => request.effect)).toStrictEqual(["read", "read"]);
+});
+
 it("fails closed before submission when the provider binding changes", async () => {
   let call = 0;
   const process = vi.fn(async (): Promise<Buffer> => {

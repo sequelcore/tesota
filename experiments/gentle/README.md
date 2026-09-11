@@ -341,3 +341,30 @@ behavior-preserving `checks[1]?.status` roll-forward; typecheck and the same
 26-case oracle passed afterward. This later byte change does not inherit the
 candidate's human acceptance or Gentle receipt. It records a concrete limit of
 the bounded oracle and why repository gates remain required after promotion.
+
+### Phase 17: interrupted capture re-entry
+
+**Safe re-entry passed; correction blocked by model availability on 2026-09-11
+UTC.** A fresh candidate `fd1dff8e-476f-4fe6-a5fa-7f3a47e8b697` changed the
+absolute-path admission predicate in `src/integrations/gentle-process.ts` from
+`||` to `&&`. Before review, a bounded behavior probe supplied one relative
+executable and one absolute working directory; it failed because the request
+reached `execFile` instead of returning `Gentle requires absolute executable
+and repository paths`.
+
+Gentle froze that exact one-file, two-line diff as target
+`sha256:9e9196f894478ae299be6b008e109398a247e4e3f6c41ec60583cd41975823c9`
+under lineage `review-49a5c41db9a2f57b`, classified it high-risk for the
+process boundary and selected all four lenses. Two explicit Tesota relay calls
+failed before producing a reviewer artifact. The independent bounded Codex
+probe recorded successful stored OAuth authentication followed by HTTP 429 at
+request admission before inference.
+
+After failure, provider status retained `reviewing` authority and reoffered the
+same `review-risk` subject and submission binding. Tesota had made only read
+calls and submitted no synthetic or partial result. This demonstrates explicit
+capture re-entry after interrupted model transport. It is not `review.recover`:
+Gentle did not offer a recovery transition, no severe finding was admitted, no
+correction plan opened and the candidate remains deliberately defective. A live
+correction and targeted validation still require the authorized Codex model to
+become available.

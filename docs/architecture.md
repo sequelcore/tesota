@@ -108,6 +108,9 @@ submission it asks Gentle for status again and refuses a changed binding. The
 opaque result is staged with private permissions, submitted through the one
 provider-issued value slot and removed afterward. This surface does not edit
 candidate files, accept promotion or reconstruct provider authority.
+If model transport fails before producing an artifact, the relay performs no
+submission or follow-up status call. A later explicit invocation must begin from
+fresh provider status; only a slot reoffered there remains usable.
 
 ## Static-analysis policy
 

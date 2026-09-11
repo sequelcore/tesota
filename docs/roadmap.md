@@ -37,7 +37,7 @@ validation of the current checkout.
 | Pi Coding Agent host | Passed for bounded Windows task | Full SDK host reused Tesota's Codex credential store, allowed only `read` and `edit`, and completed the scoped Pi status task in an isolated candidate; check passed and no acceptance was recorded |
 | Codex-backed Gentle reviewer relay | Passed for one retained high-risk lineage | Tesota preserved provider-issued prompts and bindings, Luna completed the remaining three immutable reviewer slots, Gentle admitted them and the exact acknowledgement burned approved authority |
 | Kiln static-analysis qualification | Planned | Compare selected `dev` rules and bounded quality-gate sequencing against Tesota's pinned Oxlint profile; adopt only evidenced, low-noise rules |
-| Gentle AI qualification | In progress | Contract, capabilities, parity lane, stale-binding rejection and immutable model-backed settlement passed; the combined candidate offered no correction or recovery transition, so those paths remain unqualified |
+| Gentle AI qualification | In progress | Contract, capabilities, parity lane, stale-binding rejection and immutable model-backed settlement passed; failed reviewer transport safely reoffered its bound slot, while correction and native recovery remain unqualified |
 | First verified self-development cycle | Complete for the bounded cycle | One combined candidate passed Pi correction, applicable behavioral verification, immutable Gentle review, human acceptance and guarded promotion; the later integration repair is recorded separately |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
@@ -195,6 +195,22 @@ forbade recovery, repair and validation because the native status had not
 selected them. The exact acknowledgement burned the provider authority. Thus
 this real cycle offered no usable correction or recovery transition; those
 paths remain unqualified rather than being reconstructed by Tesota.
+
+A later high-risk candidate `fd1dff8e-476f-4fe6-a5fa-7f3a47e8b697`
+deliberately weakened the absolute-path admission check in
+`src/integrations/gentle-process.ts` from disjunction to conjunction. The
+predeclared behavior probe failed because one relative executable with an
+absolute working directory reached process execution instead of the admission
+error. Gentle froze that one-file, two-line candidate under lineage
+`review-49a5c41db9a2f57b` and selected four lenses. Two explicit Tesota relay
+attempts failed before artifact production; a separate bounded Codex probe
+confirmed successful stored OAuth authentication followed by HTTP 429 at model
+request admission before inference. Gentle retained `reviewing` authority and
+reoffered the same identity-bound `review-risk` slot. No artifact was submitted,
+no candidate byte was corrected and no `review.recover` transition was offered.
+This qualifies safe capture re-entry after an interrupted reviewer transport,
+not correction or native authority recovery; the live correction exercise is
+blocked until the authorized model is available.
 
 Tesota's separate review fingerprint is
 `fc4031e766ce9002da5e05e18dbfc524776e4052e6521d1c2a1f567a727e7ceb`.

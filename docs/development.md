@@ -34,6 +34,9 @@ Codex inference with the saved login, and submits only after the same binding
 is observed again. Run the command again for the next offered slot. Other
 provider transitions, including START consent and acknowledgement, remain
 explicit lifecycle operations; review never authorizes promotion.
+If model inference fails, the command submits nothing. Retry only through a new
+explicit command after bound status still offers the slot; this is capture
+re-entry, not reconstructed `review.recover` authority.
 `task review <directory>` and `task decide <directory> <accept|reject> <review-sha256>`
 provide offline review and local decision recording; neither promotes code.
 `task promote <directory> <review-sha256>` explicitly applies an accepted
