@@ -19,6 +19,7 @@ windowsIt("runs only in the pinned restricted container, with no host mounts or 
     "--security-opt=no-new-privileges", "--user=65534:65534", "--memory=128m", "--pids-limit=32", "--pull=never"]));
   expect(args).not.toEqual(expect.arrayContaining(["--mount", "-v", "--privileged", "--env-file"]));
   expect(options).toMatchObject({ shell: false, timeout: 15_000, maxBuffer: 16_384 });
+  expect(options?.input).toContain("Candidate function must use JavaScript syntax");
   expect(Object.keys(options?.env ?? {}).every((key) => ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"].includes(key))).toBe(true);
   expect(spawn.mock.calls[1]?.[1]).toEqual(expect.arrayContaining(["rm", "--force"]));
   expect(spawn.mock.calls[1]?.[1]?.at(-1)).toBe(args?.[(args?.indexOf("--name") ?? -1) + 1]);

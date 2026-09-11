@@ -52,7 +52,9 @@ export function checkCodeTask(content: string, baseline: string): CodeCheck {
     .replace(/\s+as\s+\{\s*task\?\s*(?::\s*unknown)?\s*\}/g, "");
   // The VM separates test inputs and oracle state; the container is the host isolation boundary.
   const script = "import { runInNewContext } from 'node:vm';\nconst candidate = " + JSON.stringify(functionSource) +
-    ";\nfunction piTaskPasses(result,current) { return runInNewContext('(' + candidate + ')(' + JSON.stringify(result) + ',' + JSON.stringify(current) + ')', Object.create(null), {timeout:100, contextCodeGeneration:{strings:false,wasm:false}}); }\n" + oracle;
+    ";\nlet syntaxValid = true;\ntry { runInNewContext('(' + candidate + ')', Object.create(null), {timeout:100, contextCodeGeneration:{strings:false,wasm:false}}); } catch { syntaxValid = false; }\n" +
+    "if (!syntaxValid) { process.stdout.write(JSON.stringify({failures:['Candidate function must use JavaScript syntax']})); } else {\n" +
+    "function piTaskPasses(result,current) { return runInNewContext('(' + candidate + ')(' + JSON.stringify(result) + ',' + JSON.stringify(current) + ')', Object.create(null), {timeout:100, contextCodeGeneration:{strings:false,wasm:false}}); }\n" + oracle + "\n}";
   const name = "tesota-code-check-" + randomUUID();
   const env: NodeJS.ProcessEnv = {};
   for (const key of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"]) {
