@@ -9,6 +9,8 @@ The [live verification experiment](codex/verification.md) connects the real mode
 to one fixed verifier action.
 The [candidate correction exercise](codex/candidate.md) adds one isolated source
 replacement, rechecking and a review diff.
+The [Gentle AI qualification](gentle/README.md) defines the bounded review
+provider experiment; it has no result yet.
 
 ## Retained artifacts
 
