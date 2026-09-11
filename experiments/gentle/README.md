@@ -101,5 +101,16 @@ timeout as unavailable evidence and use a manual recovery path rather than
 retrying implicitly. A completed model-backed review and an explicit recovery
 exercise remain pending.
 
+### Phase 4: recovery attempt
+
+**Recovery limitation recorded on 2026-09-11.** Re-reading the stopped
+lineage reproduced the same bounded `operation_timeout`. An explicit
+`review recover` attempt was rejected with `recovery scope has not changed`,
+and no successor authority was created. The candidate remained unchanged.
+This means the current pre-native timeout path does not provide a usable
+automatic successor; Tesota must surface this as an unresolved provider state
+and require operator-directed cleanup or a new candidate rather than retrying
+the same lineage.
+
 Until that phase passes, Gentle remains a documented reference and proposed
 provider rather than a Tesota dependency.
