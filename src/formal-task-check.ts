@@ -15,6 +15,12 @@ export interface FormalTaskCheck {
   readonly verifierSha256: string;
 }
 
+export function formalTaskContractSha256(): string {
+  return createHash("sha256").update(
+    FORMAL_TASK_OBJECTIVE + FORMAL_TASK_MARKER + seedFormalTask.toString() + checkFormalTask.toString(),
+  ).digest("hex");
+}
+
 export function seedFormalTask(source: string): string {
   const defective = 'return used < limit ? "allow" : "deny";';
   const seeded = 'return "allow";';

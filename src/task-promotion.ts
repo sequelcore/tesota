@@ -2,25 +2,25 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, open, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { inspectPromotionSource, readCandidateBaselineFiles } from "./candidate-checkout.js";
-import { candidateTaskWriteFile, PI_DECISION_TASK_LIMITS } from "./candidate-task.js";
+import { CANDIDATE_TASK_LIMITS, candidateTaskDefinition } from "./candidate-task-definition.js";
 import { reviewTask } from "./task-review.js";
 
 async function capture(path: string): Promise<{ bytes: Buffer; mode: number }> {
   const metadata = await lstat(path);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 ||
-      metadata.size > PI_DECISION_TASK_LIMITS.fileBytes || relative(path, await realpath(path)) !== "") {
+      metadata.size > CANDIDATE_TASK_LIMITS.fileBytes || relative(path, await realpath(path)) !== "") {
     throw new Error("Promotion file unavailable");
   }
   const file = await open(path, "r");
   try {
-    const bytes = Buffer.alloc(PI_DECISION_TASK_LIMITS.fileBytes + 1);
+    const bytes = Buffer.alloc(CANDIDATE_TASK_LIMITS.fileBytes + 1);
     let length = 0;
     while (length < bytes.length) {
       const chunk = await file.read(bytes, length, bytes.length - length, null);
       if (chunk.bytesRead === 0) break;
       length += chunk.bytesRead;
     }
-    if (length > PI_DECISION_TASK_LIMITS.fileBytes) throw new Error("Promotion file exceeds bound");
+    if (length > CANDIDATE_TASK_LIMITS.fileBytes) throw new Error("Promotion file exceeds bound");
     return { bytes: bytes.subarray(0, length), mode: metadata.mode & 0o777 };
   } finally { await file.close(); }
 }
@@ -32,12 +32,12 @@ export async function promoteTask(directory: string, sourceDirectory: string, re
 }> {
   if (!/^[a-f0-9]{64}$/.test(reviewSha256)) throw new Error("Invalid review fingerprint");
   const review = await reviewTask(directory);
-  const promotable = review.check.task === "pi-decision-status" || review.check.task === "pi-result-consistency";
-  const accepted = (): boolean => promotable &&
+  const definition = candidateTaskDefinition(review.check.task);
+  const accepted = (): boolean => definition.promotable &&
     review.reviewSha256 === reviewSha256 && review.check.status === "passed" &&
     review.operatorDecision?.applicability === "current" && review.operatorDecision.record.decision === "accept";
   if (!accepted()) throw new Error("Promotion requires the current accepted review");
-  const taskFile = candidateTaskWriteFile(review.check.task);
+  const taskFile = definition.writeFile;
   const source = await inspectPromotionSource(review.directory, sourceDirectory, taskFile);
   const baseline = await readCandidateBaselineFiles(review.directory, [taskFile]);
   const original = baseline.files[taskFile];

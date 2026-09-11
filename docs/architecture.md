@@ -1,7 +1,7 @@
 # Architecture
 
 Tesota currently has one private TypeScript package with a verification CLI,
-opt-in live integration experiments, and three fixed bounded repository tasks.
+opt-in live integration experiments, and four registered bounded repository tasks.
 It has no general production task runtime or interactive agent shell. The
 [roadmap](roadmap.md) describes those intended capabilities separately.
 
@@ -11,7 +11,8 @@ It has no general production task runtime or interactive agent shell. The
 | --- | --- |
 | [src/cli.ts](../src/cli.ts) | Dispatch verification, authentication and candidate commands |
 | [src/candidate-checkout.ts](../src/candidate-checkout.ts) | Create independent committed checkouts and inspect changes against their baselines |
-| [src/candidate-task.ts](../src/candidate-task.ts) | Application-owned documentation task, bounded file operations and exact task check |
+| [src/candidate-task-definition.ts](../src/candidate-task-definition.ts) | Own registered task requirements, scopes, oracles, instructions, limits and promotion policy |
+| [src/candidate-task.ts](../src/candidate-task.ts) | Enforce a selected registered task through bounded candidate operations and byte-bound checks |
 | [src/auth.ts](../src/auth.ts) | Login, offline status and local logout |
 | [integrations/codex-credentials.ts](../src/integrations/codex-credentials.ts) | Private Codex credential persistence and serialized mutation |
 | [verification/oxlint.ts](../src/verification/oxlint.ts) | Run Oxlint, issue result identity and assess applicability |
@@ -34,6 +35,7 @@ It has no general production task runtime or interactive agent shell. The
 | [task-promotion.ts](../src/task-promotion.ts) | Apply one explicitly requested, accepted documentation or `pi-result-consistency` change after source checks; retain the write outcome |
 | [code-task-check.ts](../src/code-task-check.ts) | Run the fixed pure-predicate behavior oracle in a pinned, network-disabled container |
 | [formal-task-check.ts](../src/formal-task-check.ts) | Seed and check the bounded LemmaScript/Dafny correction task in a temporary copy |
+| [candidate-source-task-check.ts](../src/candidate-source-task-check.ts) | Seed and check optional-final-LF candidate-source acceptance |
 | [verification/invocation-admission.ts](../src/verification/invocation-admission.ts) | Own the pure bounded-invocation decision and its LemmaScript/Dafny contract |
 
 The verification modules have no Pi dependency. Synthetic and live verification
@@ -42,8 +44,10 @@ executable tools; the separate [verification experiment](../experiments/codex/ve
 admits one fixed fixture check.
 The [candidate correction exercise](../experiments/codex/candidate.md) uses the
 same adapter with one bounded replacement between two checks. Candidate files
-are never executed. The scoped documentation and `pi-result-consistency` tasks
-support guarded single-file promotion; the formal task does not.
+are never executed. Registered definitions supply scope and oracle data to the
+shared task engine; persisted plans cannot add definitions or expand paths. The
+documentation and `pi-result-consistency` definitions support guarded
+single-file promotion; the formal and candidate-source tasks do not.
 
 ## Engine boundary
 

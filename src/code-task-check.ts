@@ -39,11 +39,17 @@ for (const [name,result,now,expected] of cases) {
 process.stdout.write(JSON.stringify({failures}));
 `;
 
+export function codeTaskVerifierSha256(): string {
+  return createHash("sha256").update(
+    CODE_CHECK_IMAGE + CODE_TASK_MARKER + oracle + checkCodeTask.toString(),
+  ).digest("hex");
+}
+
 /** No host mounts or network. Candidate code executes only inside the fixed Linux container. */
 export function checkCodeTask(content: string, baseline: string): CodeCheck {
   const position = baseline.indexOf(CODE_TASK_MARKER);
   const prefix = baseline.slice(0, position);
-  const verifierSha256 = createHash("sha256").update(CODE_CHECK_IMAGE + CODE_TASK_MARKER + oracle + checkCodeTask.toString()).digest("hex");
+  const verifierSha256 = codeTaskVerifierSha256();
   const failed = (diagnostic: string): CodeCheck => ({ status: "check_failed", diagnostics: [diagnostic], verifierSha256 });
   if (position < 0 || baseline.indexOf(CODE_TASK_MARKER, position + 1) !== -1 ||
       !content.startsWith(prefix + CODE_TASK_MARKER)) return failed("Only piTaskPasses may change");

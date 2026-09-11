@@ -11,10 +11,8 @@ Usage: tesota [--help | -h | help]
        tesota candidate abandon <candidate-id|candidate-directory>
        tesota task prepare <candidate-directory>
        tesota task check <candidate-directory>
-       tesota task run
+       tesota task run [task-id]
        tesota task run coding-agent
-       tesota task run pi-result-consistency
-       tesota task run formal-invocation-admission
        tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>
        tesota task review <candidate-id|candidate-directory>
        tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>
@@ -53,7 +51,7 @@ if (
     process.exitCode = 2;
   }
 } else if (args[0] === "task" && args[1] === "run" && (args.length === 2 ||
-    args.length === 3 && (args[2] === "pi-result-consistency" || args[2] === "formal-invocation-admission" || args[2] === "coding-agent") ||
+    args.length === 3 && args[2] !== "gentle-review" ||
     args.length === 6 && args[2] === "gentle-review" && args[3] !== undefined && args[4] !== undefined && args[5] !== undefined)) {
   if (args[2] === "gentle-review") {
     const { runGentleReviewHost } = await import("./gentle-review-host.js");
@@ -71,7 +69,7 @@ if (
     process.exit(await runCodingAgentTaskCommand());
   }
   const { runTaskCommand } = await import("./task-run.js");
-  process.exit(await runTaskCommand(args[2] === "pi-result-consistency" || args[2] === "formal-invocation-admission" ? args[2] : "pi-decision-status"));
+  process.exit(await runTaskCommand(args[2]));
   }
 } else if (args.length === 3 && args[0] === "task" && (args[1] === "prepare" || args[1] === "check") && args[2] !== undefined) {
   const { CandidateTask, checkCandidateTask } = await import("./candidate-task.js");

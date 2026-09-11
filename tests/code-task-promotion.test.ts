@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 vi.mock("../src/code-task-check.js", () => ({
   CODE_TASK_FILE: "src/integrations/pi-task.ts",
   CODE_TASK_OBJECTIVE: "Synthetic promotion fixture",
+  codeTaskVerifierSha256: () => "0".repeat(64),
   checkCodeTask: (content: string) => ({
     status: content === "corrected\n" ? "passed" : "check_failed",
     diagnostics: content === "corrected\n" ? [] : ["correction required"],

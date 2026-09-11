@@ -2,13 +2,19 @@ import { createHash } from "node:crypto";
 import { open, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { candidateDiff, createCandidateCheckout } from "./candidate-checkout.js";
-import { CandidateTask, checkCandidateTask, type CandidateTaskCheck, type CandidateTaskId } from "./candidate-task.js";
+import { CandidateTask, checkCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
+import { DEFAULT_CANDIDATE_TASK_ID, parseCandidateTaskId } from "./candidate-task-definition.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { PI_TASK_LIMITS, piTaskPasses, runPiTask, type PiTaskResult } from "./integrations/pi-task.js";
 
 /** A new invocation creates its own candidate and authority; stored attempts cannot be resumed. */
-export async function runTaskCommand(taskId: CandidateTaskId = "pi-decision-status"): Promise<number> {
+export async function runTaskCommand(requestedTaskId: string = DEFAULT_CANDIDATE_TASK_ID): Promise<number> {
+  const taskId = parseCandidateTaskId(requestedTaskId);
+  if (taskId === null) {
+    process.stderr.write("Unknown task id.\n");
+    return 2;
+  }
   if (process.platform !== "win32") {
     process.stderr.write("Live repository tasks are currently supported on Windows.\n");
     return 2;
@@ -33,7 +39,8 @@ export async function runTaskCommand(taskId: CandidateTaskId = "pi-decision-stat
     let passed = false;
     try {
       const executor: Record<string, string> = {};
-      for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js", "code-task-check.js", "formal-task-check.js",
+      for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js", "candidate-task-definition.js",
+        "code-task-check.js", "formal-task-check.js", "candidate-source-task-check.js",
         "verification/invocation-admission.js",
         "integrations/pi-task.js", "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock"]) {
         executor[path] = createHash("sha256").update(await readFile(new URL(path, import.meta.url))).digest("hex");

@@ -16,12 +16,13 @@ for the name's origin, intended experience and measure of success.
 Today it provides a CLI with one bounded Oxlint check, input binding, and durable
 verification evidence recovery. Separate Pi experiments exercise synthetic agent
 behavior, live Codex authentication, one fixed verification action, and an
-isolated candidate correction with a review diff. **Tesota does not yet execute
-general repository tasks.** It can run three deliberately fixed tasks as development
-evidence. It can also [create and inspect independent candidate
+isolated candidate correction with a review diff. Tesota now executes
+application-registered, bounded single-file tasks through one shared engine.
+It does not accept arbitrary task manifests or general multi-file work. It can
+also [create and inspect independent candidate
 checkouts](docs/candidates.md) from committed source revisions.
-The first [scoped repository task](docs/tasks.md) can correct one documentation
-paragraph through a bounded model attempt and retain its checks and diff.
+The [registered repository tasks](docs/tasks.md) declare their requirement,
+scope and oracle before a bounded model attempt and retain their checks and diff.
 Its offline review commands can record a separate operator decision for the
 exact reviewed candidate state.
 An explicit promotion command can apply the accepted documentation or

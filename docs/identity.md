@@ -6,7 +6,8 @@ want help carrying a task through implementation, checking and review.
 
 This page defines the product's direction. The [roadmap](roadmap.md) records
 progress toward it; the [architecture](architecture.md) describes what exists.
-Tesota does not yet execute agent tasks.
+Tesota executes a small application-owned registry of bounded single-file tasks;
+general repository tasks are not yet supported.
 
 ## Why Tesota exists
 

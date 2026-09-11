@@ -8,7 +8,8 @@ import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, 
   type Context, type FauxResponseStep } from "@earendil-works/pi-ai";
 import { PI_TASK_LIMITS, piTaskPasses, runPiTask } from "../src/integrations/pi-task.js";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
-import { CandidateTask, checkCandidateTask, PI_DECISION_TASK_STATUS } from "../src/candidate-task.js";
+import { CandidateTask, checkCandidateTask } from "../src/candidate-task.js";
+import { PI_DECISION_TASK_STATUS } from "../src/candidate-task-definition.js";
 import { reviewTask, decideTask } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
 
@@ -27,7 +28,8 @@ async function fixture() {
   const source = join(root, "source");
   await mkdir(source);
   git(source, ["init", "--quiet"]);
-  for (const path of [editedFile, "docs/roadmap.md", "experiments/codex/history.md", "src/cli.ts", "src/integrations/pi-task.ts", "src/verification/invocation-admission.ts"]) {
+  for (const path of [editedFile, "docs/roadmap.md", "experiments/codex/history.md", "src/cli.ts", "src/integrations/pi-task.ts",
+    "src/verification/candidate.ts", "src/verification/invocation-admission.ts"]) {
     await mkdir(dirname(join(source, path)), { recursive: true });
     await writeFile(join(source, path), await readFile(new URL("../" + path, import.meta.url)));
   }
@@ -57,6 +59,40 @@ it("returns LemmaScript diagnostics and accepts the corrected formal task", asyn
   const corrected = await readFile(new URL("../src/verification/invocation-admission.ts", import.meta.url), "utf8");
   await task.replace({ path: "src/verification/invocation-admission.ts", expectedSha256: seeded.sha256, content: corrected });
   expect((await task.check()).status).toBe("passed");
+  task.close();
+}, 30_000);
+
+it("executes a registered TypeScript correction without task-specific engine branches", async () => {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepare(candidate.directory, "candidate-source-newline");
+  const description = task.describe();
+  expect(description).toMatchObject({
+    task: "candidate-source-newline",
+    readFiles: ["src/verification/candidate.ts"],
+    writeFiles: ["src/verification/candidate.ts"],
+    oracle: "Exact baseline restoration of optional-final-LF candidate acceptance while preserving every other byte.",
+  });
+  const seeded = await task.read({ path: "src/verification/candidate.ts" });
+  expect(seeded.content).toContain("source === CANDIDATE_EXPECTED_SOURCE &&");
+  expect(await task.check()).toMatchObject({
+    status: "check_failed",
+    diagnostics: ["Candidate source must accept the expected declaration with or without its final LF"],
+  });
+  const corrected = await readFile(new URL("../src/verification/candidate.ts", import.meta.url), "utf8");
+  await task.replace({ path: "src/verification/candidate.ts", expectedSha256: seeded.sha256, content: corrected });
+  expect((await task.check()).status).toBe("passed");
+  expect(JSON.parse(await readFile(join(candidate.directory, "task.json"), "utf8"))).toMatchObject({
+    version: 2,
+    task: "candidate-source-newline",
+    definitionSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    contract: {
+      oracleSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+      readFiles: ["src/verification/candidate.ts"],
+      writeFiles: ["src/verification/candidate.ts"],
+      effects: ["read_candidate", "replace_candidate_file", "run_task_check"],
+      promotion: "denied",
+    },
+  });
   task.close();
 }, 30_000);
 
@@ -196,7 +232,11 @@ function fakeModel(steps: FauxResponseStep[]) {
   return { model: fake.getModel(), stream: vi.fn(fake.provider.streamSimple) };
 }
 
-function modelCorrection(context: Context) {
+function modelReplacement(
+  context: Context,
+  path: string,
+  transform: (content: string) => string,
+) {
   const read = context.messages.find((message) => message.role === "toolResult" && message.toolName === "tesota_read");
   if (read?.role !== "toolResult") throw new Error("Missing tool result");
   const text = read?.content.find((block) => block.type === "text");
@@ -205,8 +245,12 @@ function modelCorrection(context: Context) {
   if (typeof input !== "object" || input === null || !("content" in input) || typeof input.content !== "string" ||
       !("sha256" in input) || typeof input.sha256 !== "string") throw new Error("Invalid model context");
   return fauxAssistantMessage(fauxToolCall("tesota_replace", {
-    path: editedFile, expectedSha256: input.sha256, content: correction(input.content),
+    path, expectedSha256: input.sha256, content: transform(input.content),
   }));
+}
+
+function modelCorrection(context: Context) {
+  return modelReplacement(context, editedFile, correction);
 }
 
 it("executes a Pi repository task and distinguishes model completion from applicable checks", async () => {
@@ -227,6 +271,33 @@ it("executes a Pi repository task and distinguishes model completion from applic
   expect(piTaskPasses({ ...result, finalCheckSuppliedToModel: false }, current)).toBe(false);
   expect(piTaskPasses(result, { ...current, sourceSha256: "0".repeat(64) })).toBe(false);
   await expect(task.read({ path: editedFile })).rejects.toThrow("closed");
+}, 30_000);
+
+it("runs a second registered task through the same Pi tools and evidence predicate", async () => {
+  const candidate = await fixture();
+  const file = "src/verification/candidate.ts";
+  const task = await CandidateTask.prepare(candidate.directory, "candidate-source-newline");
+  const fake = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: file })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    (context) => modelReplacement(context, file, (content) =>
+      content.replace("source === CANDIDATE_EXPECTED_SOURCE &&",
+        "source === CANDIDATE_EXPECTED_SOURCE ||")),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage("Done."),
+  ]);
+  const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
+  const current = await checkCandidateTask(candidate.directory);
+  expect(result).toMatchObject({
+    status: "completed",
+    modelInvocations: 5,
+    toolCalls: 4,
+    edits: 1,
+    checksSuppliedToModel: 2,
+    finalCheckSuppliedToModel: true,
+  });
+  expect(result.checks.map((check) => check.status)).toEqual(["check_failed", "passed"]);
+  expect(piTaskPasses(result, current)).toBe(true);
 }, 30_000);
 
 it.each([
@@ -374,7 +445,13 @@ it("rejects additional payload fields and refuses forged persisted scope", async
   expect(await readFile(path, "utf8")).toBe(original);
   await writeFile(path, JSON.stringify({ ...JSON.parse(original), writeFiles: ["src/cli.ts"] }));
   await expect(checkCandidateTask(candidate.directory)).rejects.toThrow("invalid");
-});
+  await writeFile(path, JSON.stringify({ ...JSON.parse(original), definitionSha256: "0".repeat(64) }));
+  await expect(checkCandidateTask(candidate.directory)).rejects.toThrow("invalid");
+  const changedContract = JSON.parse(original);
+  changedContract.contract.writeFiles = ["src/cli.ts"];
+  await writeFile(path, JSON.stringify(changedContract));
+  await expect(checkCandidateTask(candidate.directory)).rejects.toThrow("invalid");
+}, 30_000);
 
 it("prepares and checks through the compiled CLI without authorizing editing or invoking a model", async () => {
   const candidate = await fixture();

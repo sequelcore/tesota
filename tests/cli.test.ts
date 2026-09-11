@@ -38,10 +38,8 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota candidate abandon <candidate-id|candidate-directory>\n" +
     "       tesota task prepare <candidate-directory>\n" +
     "       tesota task check <candidate-directory>\n" +
-    "       tesota task run\n" +
+    "       tesota task run [task-id]\n" +
     "       tesota task run coding-agent\n" +
-    "       tesota task run pi-result-consistency\n" +
-    "       tesota task run formal-invocation-admission\n" +
     "       tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>\n" +
     "       tesota task review <candidate-id|candidate-directory>\n" +
     "       tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>\n" +
@@ -50,7 +48,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
   );
 });
 
-it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"]])(
+it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["task", "run", "gentle-review"]])(
   "rejects invalid compiled CLI arguments %j",
   (...args) => {
     const result = run(args);
@@ -59,3 +57,10 @@ it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"]])(
     expect(result.stderr).toBe("Invalid arguments. Use tesota --help.\n");
   },
 );
+
+it("rejects an unregistered task before candidate preparation", () => {
+  const result = run(["task", "run", "unregistered"]);
+  expect(result.status).toBe(2);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).toBe("Unknown task id.\n");
+});

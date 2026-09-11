@@ -30,6 +30,7 @@ validation of the current checkout.
 | Independent candidate checkout | Locally verified on Windows | Create a detached committed copy with independent Git storage; inspect baseline changes while preserving source state |
 | Candidate lifecycle and cleanup | Implemented for bounded local storage | List and inspect candidates by ID, explicitly abandon obsolete work, and remove only old rejected, abandoned or failed checkout contents while retaining evidence |
 | Scoped repository task | Live Windows attempt passed for the Pi decision documentation task | Saved login, bounded model operations, one scoped edit, failed then passing checks and retained review diff |
+| Registered task execution | Implemented locally; live attempt blocked externally | One immutable registry now owns four task contracts and the shared engine has no task-name branches; the new candidate-source task passed direct and simulated-Pi correction, while stored OAuth reached HTTP 429 before live tool use |
 | Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
 | Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
 | Real code task | Promoted with a bounded integration repair | Model repaired `piTaskPasses`; the sandbox oracle passed, the operator accepted it and exact bytes were promoted; typecheck then required one optional-index narrowing |
@@ -154,11 +155,12 @@ The intended acceptance exercise must demonstrate that:
 5. The report presents the diff, actual checks, observed consumption and limits.
 6. Human acceptance and promotion remain separate from model completion and checks.
 
-General terminal interaction, general candidate-checkout execution and task
-recovery still need implementation. The current promotion command is limited to
-the accepted documentation and `pi-result-consistency` tasks and is not a
-general write capability. Do not create unused modules in anticipation of that
-work.
+General terminal interaction, multi-file task execution and task recovery still
+need implementation. Registered single-file tasks now share one execution path,
+but operators cannot supply executable task manifests. The current promotion
+command remains limited by the selected definition's explicit policy and is not
+a general write capability. Do not create unused modules in anticipation of
+that work.
 
 ## Combined correction cycle
 
