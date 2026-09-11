@@ -29,12 +29,16 @@ export async function runGentleReviewHost(options: {
   const candidate = await inspectCandidateCheckout(options.candidate);
   const candidateIdentity = createHash("sha256").update(JSON.stringify({ baseline: candidate.baseline, head: candidate.head, changes: candidate.changes })).digest("hex");
   const prompt = `Review this frozen candidate using the ${options.lens} lens. Use only the read tool. Return only JSON matching {"summary":"...","findings":[{"severity":"info|low|medium|high","path":"repository-relative path","description":"..."}]}. Do not edit files, run commands, or claim that a finding is verified beyond the visible candidate.`;
-  const run = await runPiCodingAgent({ cwd: candidate.checkout, prompt, credentials: options.credentials ?? new CodexCredentials(), tools: ["read"] });
+  const credentials = options.credentials ?? new CodexCredentials();
+  let run = await runPiCodingAgent({ cwd: candidate.checkout, prompt, credentials, tools: ["read"] });
   if (run.status !== "completed") return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: run.status, ...(run.error === undefined ? {} : { error: run.error }) };
-  try {
-    return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: "completed", result: parseModelResult(run.responseText) };
-  } catch (error) {
-    return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: "failed", error: error instanceof Error ? error.message : String(error) };
+  try { return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: "completed", result: parseModelResult(run.responseText) }; }
+  catch (firstError) {
+    run = await runPiCodingAgent({ cwd: candidate.checkout,
+      prompt: `${prompt}\nYour prior response was not usable. Reply now with the JSON object, even when findings is empty.`, credentials, tools: ["read"] });
+    if (run.status !== "completed") return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: run.status, ...(run.error === undefined ? {} : { error: run.error }) };
+    try { return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: "completed", result: parseModelResult(run.responseText) }; }
+    catch (error) { return { format: "tesota-gentle-review", version: 1, lens: options.lens, candidateIdentity, status: "failed", error: error instanceof Error ? error.message : firstError instanceof Error ? firstError.message : String(firstError) }; }
   }
 }
 

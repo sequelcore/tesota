@@ -180,3 +180,9 @@ structured JSON and were recorded as failed host attempts; they were not sent
 to Gentle. The lineage therefore remains open at `reviewer_results_required`.
 This proves shared Codex authentication and one real capture, but not
 multi-lens settlement, correction or recovery.
+
+The host retried each missing lens sequentially with an explicit JSON-only
+follow-up prompt. `review-resilience`, `review-readability` and
+`review-reliability` still returned no structured result, so Gentle received no
+unbound or synthetic substitutes. The lineage remains open and requires a
+reviewer transport that reliably emits the negotiated result schema.
