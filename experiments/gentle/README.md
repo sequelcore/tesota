@@ -112,5 +112,14 @@ automatic successor; Tesota must surface this as an unresolved provider state
 and require operator-directed cleanup or a new candidate rather than retrying
 the same lineage.
 
+### Phase 5: provider parity battery
+
+**Deterministic lane passed on 2026-09-11.** Gentle's published
+`test:cross-lane` completed with `cross-lane last-event closure parity passed`.
+The native dev-binary journey was also invoked, but all ten tests were skipped
+by its Windows guard and missing compatible dev-binary registration; no pass is
+claimed for that lane. This verifies one contract-parity lane only and does not
+replace a Tesota-hosted review or a model-backed result.
+
 Until that phase passes, Gentle remains a documented reference and proposed
 provider rather than a Tesota dependency.
