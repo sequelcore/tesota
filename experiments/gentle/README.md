@@ -270,8 +270,8 @@ recovery behavior remain separate open qualifications.
 
 ### Phase 15: combined correction cycle
 
-**Passed through separate human presentation on 2026-09-11 UTC; correction and
-recovery transitions were not offered.** The repository-owned
+**Passed and human-accepted on 2026-09-11 UTC; correction and recovery
+transitions were not offered.** The repository-owned
 `pi-result-consistency` requirement and its 26-case behavioral oracle existed
 before live inference. Two fresh attempts failed safely after Pi wrote
 TypeScript-only syntax inside the JavaScript-only candidate function. The first
@@ -311,6 +311,7 @@ those transitions for a future finding, interruption or uncertain settlement.
 
 Tesota's final local review produced fingerprint
 `fc4031e766ce9002da5e05e18dbfc524776e4052e6521d1c2a1f567a727e7ceb`
-with the same applicable check. `operatorDecision` remained `null`; no
-candidate edit occurred during Gentle review, and no acceptance, promotion or
-candidate commit occurred.
+with the same applicable check. The operator later recorded `accept` for that
+exact fingerprint, and Tesota reported the decision as current. No candidate
+edit occurred during Gentle review, and no promotion or candidate commit
+occurred. Code-task promotion remains unsupported.
