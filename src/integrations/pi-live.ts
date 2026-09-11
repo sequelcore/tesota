@@ -4,6 +4,7 @@ import {
   type Api, type AssistantMessage, type AuthInteraction, type CredentialStore, type Model, type Models,
 } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
+import { canAdmitInvocation } from "../verification/invocation-admission.js";
 
 export const LIVE_CODEX_MODEL_ID = "gpt-5.3-codex-spark";
 export const LIVE_CODEX_EXPECTED_TOKEN = "TESOTA_CODEX_OK";
@@ -149,7 +150,7 @@ export async function runLiveCodexTurn(
   const agent = new Agent({
     streamFn: (requestModel, context, options) => {
       invocationAttempts += 1;
-      if (modelInvocationCount >= LIVE_LIMITS.modelInvocationsPerProbe) {
+      if (canAdmitInvocation("inference", modelInvocationCount, LIVE_LIMITS.modelInvocationsPerProbe) !== "allow") {
         requestBudgetExceeded = true;
         if (!closed) events.push("request_budget_exceeded");
         return deniedStream(requestModel);

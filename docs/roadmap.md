@@ -32,7 +32,7 @@ validation of the current checkout.
 | Candidate review and decision | Implemented for the scoped documentation task | Fresh diff and check, fingerprint-bound local operator decision, stale-record detection; no promotion authority |
 | Guarded paragraph promotion | Verified in temporary Windows repositories | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal |
 | Real code task | Live Windows attempt passed for `pi-result-consistency` | Model repaired `piTaskPasses`; sandbox oracle failed first, passed after correction; source remained unchanged |
-| Formal correction loop | Planned | Connect one pure TypeScript property to a qualified LemmaScript/Dafny check, return bounded verifier feedback to Pi, and require a passing re-check before the candidate can be presented |
+| Formal correction loop | In progress | `canAdmitInvocation` is used by the Pi adapters and passes a LemmaScript/Dafny proof; returning formal diagnostics to Pi and requiring a formal re-check remain open |
 | First verified self-development cycle | In progress | Bounded documentation task demonstrated; human acceptance, promotion and broader code-task verification remain open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
@@ -123,6 +123,13 @@ four tool calls, one edit and two issued checks. The first sandbox check reporte
 current read-only check matched its hash. No source edit, commit or promotion
 occurred. Several earlier attempts failed safely on malformed tool input or
 incomplete corrections and retained their evidence.
+
+The first formal property is now implemented in
+`src/verification/invocation-admission.ts`. LemmaScript 0.6.1 generated the
+Dafny artifact and Dafny 4.11.0 verified one contract with zero errors. The
+property is used before model admission in the task, live-probe and verification
+adapters. This proves only the bounded admission predicate; it does not yet
+feed formal diagnostics back into Pi or establish acceptance authority.
 
 ## First useful cycle
 

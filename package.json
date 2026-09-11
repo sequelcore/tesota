@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun run build && vitest run tests --maxWorkers=1 --no-file-parallelism --testTimeout=10000",
     "lint": "oxlint --deny-warnings src tests",
+    "formal:check": "lsc check --backend=dafny src/verification/invocation-admission.ts",
     "check": "bun run build && bun run typecheck && bun run test && bun run lint",
     "start": "bun --no-env-file dist/cli.js",
     "live:codex": "bun --no-env-file dist/live-codex.js --full-probe --stored",
@@ -25,9 +26,10 @@
   },
   "devDependencies": {
     "@types/node": "24.10.0",
+    "lemmascript": "0.6.1",
+    "oxlint": "1.82.0",
     "typescript": "7.0.2",
-    "vitest": "4.1.11",
-    "oxlint": "1.82.0"
+    "vitest": "4.1.11"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.85.1",

@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, open, realpath, rename, unlink } from "node:fs/promises";
+import { lstat, open, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import * as z from "zod";
 import { inspectCandidateCheckout, readCandidateBaselineFiles } from "./candidate-checkout.js";
 import { CODE_TASK_FILE, CODE_TASK_OBJECTIVE, checkCodeTask } from "./code-task-check.js";
+import { FORMAL_TASK_FILE, FORMAL_TASK_OBJECTIVE, checkFormalTask, seedFormalTask } from "./formal-task-check.js";
 
-export type CandidateTaskId = "pi-decision-status" | "pi-result-consistency";
+export type CandidateTaskId = "pi-decision-status" | "pi-result-consistency" | "formal-invocation-admission";
 const taskId = "pi-decision-status";
 export const PI_DECISION_TASK_FILE = "docs/decisions/002-use-pi.md";
 const editedFile = PI_DECISION_TASK_FILE;
@@ -17,11 +18,11 @@ export const PI_DECISION_TASK_STATUS = "Status: adopted for the current experime
 
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const planSchema = z.strictObject({
-  format: z.literal("tesota-candidate-task"), version: z.literal(1), task: z.enum([taskId, "pi-result-consistency"]),
+  format: z.literal("tesota-candidate-task"), version: z.literal(1), task: z.enum([taskId, "pi-result-consistency", "formal-invocation-admission"]),
   baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/),
   inputs: z.record(z.string(), hashSchema),
 }).refine((plan) => {
-  const paths = plan.task === taskId ? readFiles : [CODE_TASK_FILE];
+  const paths = plan.task === taskId ? readFiles : [plan.task === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE];
   return Object.keys(plan.inputs).length === paths.length && paths.every((path) => plan.inputs[path] !== undefined);
 });
 type TaskPlan = z.infer<typeof planSchema>;
@@ -30,11 +31,17 @@ const taskCheckSchema = z.strictObject({});
 const taskEditSchema = z.strictObject({ path: z.literal(editedFile), expectedSha256: hashSchema,
   content: z.string().max(PI_DECISION_TASK_LIMITS.fileBytes).refine((text) =>
     Buffer.byteLength(text) <= PI_DECISION_TASK_LIMITS.fileBytes && !text.includes("\0") && Buffer.from(text).toString("utf8") === text) });
+interface TaskReadRequest { readonly path: string; }
+interface TaskReplaceRequest { readonly path: string; readonly expectedSha256: string; readonly content: string; }
 
-export function taskRequestSchemas(id: CandidateTaskId = taskId): { read: z.ZodType; replace: z.ZodType; check: z.ZodType } {
+export function taskRequestSchemas(id: CandidateTaskId = taskId): { read: z.ZodType<TaskReadRequest>; replace: z.ZodType<TaskReplaceRequest>; check: z.ZodType<Record<string, never>> } {
   if (id === "pi-result-consistency") return {
     read: z.strictObject({ path: z.literal(CODE_TASK_FILE) }),
     replace: taskEditSchema.extend({ path: z.literal(CODE_TASK_FILE) }), check: taskCheckSchema,
+  };
+  if (id === "formal-invocation-admission") return {
+    read: z.strictObject({ path: z.literal(FORMAL_TASK_FILE) }),
+    replace: taskEditSchema.extend({ path: z.literal(FORMAL_TASK_FILE) }), check: taskCheckSchema,
   };
   return { read: taskReadSchema, replace: taskEditSchema, check: taskCheckSchema };
 }
@@ -71,8 +78,8 @@ async function readText(path: string): Promise<string> {
 }
 
 async function observe(directory: string, plan: TaskPlan): Promise<{ checkout: string; content: string }> {
-  const editedFile = plan.task === taskId ? PI_DECISION_TASK_FILE : CODE_TASK_FILE;
-  const readFiles = plan.task === taskId ? [PI_DECISION_TASK_FILE, "docs/roadmap.md", "experiments/codex/history.md"] : [CODE_TASK_FILE];
+  const editedFile = plan.task === taskId ? PI_DECISION_TASK_FILE : plan.task === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE;
+  const readFiles = plan.task === taskId ? [PI_DECISION_TASK_FILE, "docs/roadmap.md", "experiments/codex/history.md"] : [editedFile];
   const inspection = await inspectCandidateCheckout(directory);
   if (inspection.baseline !== plan.baseline || inspection.headChanged ||
       inspection.changes.some((change) => change.path !== editedFile || change.status !== "M")) throw new Error("Task scope changed");
@@ -91,6 +98,7 @@ function expectedContent(files: Readonly<Record<string, string>>, plan: TaskPlan
     if (content === undefined || hash(content) !== plan.inputs[CODE_TASK_FILE]) throw new Error("Task baseline changed");
     return content;
   }
+  if (plan.task === "formal-invocation-admission") return files[FORMAL_TASK_FILE] ?? (() => { throw new Error("Task baseline changed"); })();
   let expected = "";
   for (const path of readFiles) {
     const baseline = files[path];
@@ -120,8 +128,8 @@ export class CandidateTask {
   }
 
   static async prepare(directory: string, id: CandidateTaskId = taskId): Promise<CandidateTask> {
-    const editedFile = id === taskId ? PI_DECISION_TASK_FILE : CODE_TASK_FILE;
-    const readFiles = id === taskId ? [PI_DECISION_TASK_FILE, "docs/roadmap.md", "experiments/codex/history.md"] : [CODE_TASK_FILE];
+    const editedFile = id === taskId ? PI_DECISION_TASK_FILE : id === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE;
+    const readFiles = id === taskId ? [PI_DECISION_TASK_FILE, "docs/roadmap.md", "experiments/codex/history.md"] : [editedFile];
     const inspection = await inspectCandidateCheckout(directory);
     if (inspection.headChanged || inspection.changes.length !== 0) throw new Error("Task requires an unchanged candidate");
     const snapshot = await readCandidateBaselineFiles(directory, readFiles);
@@ -133,8 +141,13 @@ export class CandidateTask {
       inputs[path] = hash(content);
     }
     const plan = planSchema.parse({ format: "tesota-candidate-task", version: 1, task: id, baseline: inspection.baseline, inputs });
+    const baselineContent = snapshot.files[editedFile];
+    if (baselineContent === undefined) throw new Error("Task source unavailable");
+    if (id === "formal-invocation-admission") await writeFile(join(inspection.checkout, editedFile), seedFormalTask(baselineContent), "utf8");
     const initial = await observe(directory, plan);
-    if (hash(initial.content) !== plan.inputs[editedFile]) throw new Error("Task initial source changed");
+    if (id === "formal-invocation-admission") {
+      if (hash(initial.content) === plan.inputs[editedFile]) throw new Error("Formal task was not seeded");
+    } else if (hash(initial.content) !== plan.inputs[editedFile]) throw new Error("Task initial source changed");
     const expected = expectedContent(snapshot.files, plan);
     const file = await open(join(inspection.directory, "task.json"), "wx", 0o600);
     try { await file.writeFile(JSON.stringify(plan, null, 2) + "\n", "utf8"); await file.sync(); } finally { await file.close(); }
@@ -148,6 +161,10 @@ export class CandidateTask {
     if (this.#plan.task === "pi-result-consistency") return {
       task: this.#plan.task, baseline: this.#plan.baseline, objective: CODE_TASK_OBJECTIVE,
       readFiles: [CODE_TASK_FILE], writeFiles: [CODE_TASK_FILE], requiredStatus: "", limits: PI_DECISION_TASK_LIMITS,
+    };
+    if (this.#plan.task === "formal-invocation-admission") return {
+      task: this.#plan.task, baseline: this.#plan.baseline, objective: FORMAL_TASK_OBJECTIVE,
+      readFiles: [FORMAL_TASK_FILE], writeFiles: [FORMAL_TASK_FILE], requiredStatus: "", limits: PI_DECISION_TASK_LIMITS,
     };
     return { task: taskId, baseline: this.#plan.baseline,
       objective: "Correct the outdated Pi integration status. Replace only its status paragraph, preserving every other byte.",
@@ -171,7 +188,7 @@ export class CandidateTask {
 
   async read(request: unknown): Promise<{ content: string; sha256: string }> {
     return this.#operation(async ({ checkout }) => {
-      const args = taskReadSchema.extend({ path: z.enum(this.describe().readFiles) }).parse(request);
+      const args = taskRequestSchemas(this.#plan.task).read.parse(request);
       if (this.#reads >= PI_DECISION_TASK_LIMITS.reads) throw new Error("Read budget exceeded");
       this.#reads += 1;
       const content = await readText(join(checkout, args.path));
@@ -181,8 +198,8 @@ export class CandidateTask {
 
   async replace(request: unknown): Promise<void> {
     return this.#operation(async ({ checkout, content }) => {
-      const editedFile = this.#plan.task === taskId ? PI_DECISION_TASK_FILE : CODE_TASK_FILE;
-      const args = taskEditSchema.extend({ path: z.literal(editedFile) }).parse(request);
+      const editedFile = this.#plan.task === taskId ? PI_DECISION_TASK_FILE : this.#plan.task === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE;
+      const args = taskRequestSchemas(this.#plan.task).replace.parse(request);
       if (this.#checks === 0 || this.#edits >= PI_DECISION_TASK_LIMITS.edits || args.expectedSha256 !== hash(content)) throw new Error("Edit denied");
       const target = join(checkout, editedFile);
       const temporary = join(this.#directory, ".tesota-" + randomUUID() + ".tmp");
@@ -204,7 +221,8 @@ export class CandidateTask {
     return this.#operation(async ({ content }) => {
       if (this.#checks >= PI_DECISION_TASK_LIMITS.checks) throw new Error("Check budget exceeded");
       this.#checks += 1;
-      const code = this.#plan.task === "pi-result-consistency" ? checkCodeTask(content, this.#expected) : undefined;
+      const code = this.#plan.task === "pi-result-consistency" ? checkCodeTask(content, this.#expected) :
+        this.#plan.task === "formal-invocation-admission" ? checkFormalTask(content) : undefined;
       return { ...code, task: this.#plan.task, status: code?.status ?? (content === this.#expected ? "passed" : "check_failed"), provenance: "issued",
         baseline: this.#plan.baseline, sourceSha256: hash(content), taskAcceptance: "not_evaluated" };
     });
@@ -219,7 +237,8 @@ export async function checkCandidateTask(directory: string): Promise<CandidateTa
   if (baseline.baseline !== parsed.data.baseline) throw new Error("Task baseline changed");
   const expected = expectedContent(baseline.files, parsed.data);
   const snapshot = await observe(directory, parsed.data);
-  const code = parsed.data.task === "pi-result-consistency" ? checkCodeTask(snapshot.content, expected) : undefined;
+  const code = parsed.data.task === "pi-result-consistency" ? checkCodeTask(snapshot.content, expected) :
+    parsed.data.task === "formal-invocation-admission" ? checkFormalTask(snapshot.content) : undefined;
   return { ...code, task: parsed.data.task, status: code?.status ?? (snapshot.content === expected ? "passed" : "check_failed"), provenance: "recorded_untrusted",
     baseline: parsed.data.baseline, sourceSha256: hash(snapshot.content), taskAcceptance: "not_evaluated" };
 }

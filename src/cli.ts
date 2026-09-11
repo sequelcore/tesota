@@ -10,6 +10,7 @@ Usage: tesota [--help | -h | help]
        tesota task check <candidate-directory>
        tesota task run
        tesota task run pi-result-consistency
+       tesota task run formal-invocation-admission
        tesota task review <candidate-directory>
        tesota task decide <candidate-directory> <accept|reject> <review-sha256>
        tesota task promote <candidate-directory> <review-sha256>
@@ -47,9 +48,9 @@ if (
     process.exitCode = 2;
   }
 } else if (args[0] === "task" && args[1] === "run" && (args.length === 2 ||
-    args.length === 3 && args[2] === "pi-result-consistency")) {
+    args.length === 3 && (args[2] === "pi-result-consistency" || args[2] === "formal-invocation-admission"))) {
   const { runTaskCommand } = await import("./task-run.js");
-  process.exit(await runTaskCommand(args[2] === "pi-result-consistency" ? args[2] : "pi-decision-status"));
+  process.exit(await runTaskCommand(args[2] === "pi-result-consistency" || args[2] === "formal-invocation-admission" ? args[2] : "pi-decision-status"));
 } else if (args.length === 3 && args[0] === "task" && (args[1] === "prepare" || args[1] === "check") && args[2] !== undefined) {
   const { CandidateTask, checkCandidateTask } = await import("./candidate-task.js");
   try {

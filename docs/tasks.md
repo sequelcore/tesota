@@ -19,6 +19,13 @@ Tesota implements preparation, operation admission, deterministic documentation
 and code checks, and bounded live model attempts. A separate explicit command can promote
 the accepted paragraph change to the source working tree.
 
+The first formal property is `canAdmitInvocation` in
+`src/verification/invocation-admission.ts`. Run `bun run formal:check` to let
+LemmaScript generate and verify its Dafny proof. The property is used by the
+Pi task, live-probe and verification adapters before admitting model work. A
+passing proof records only that this small property holds; it does not certify
+the surrounding adapters or grant acceptance authority.
+
 ## Run the task
 
 After the [one-time login](authentication.md), build the current executor and run:
@@ -46,6 +53,18 @@ Exit 0 requires model completion, an initial failed check, an edit, a passing
 final check supplied to the model, and a matching current check with a saved diff.
 Other attempt outcomes exit 1; unsupported platforms or arguments exit 2. A model
 claiming success cannot satisfy these conditions. Human acceptance remains separate.
+
+To run the formal correction task, use:
+
+```sh
+bun start task run formal-invocation-admission
+```
+
+This creates a candidate with a deterministic failing implementation of
+`canAdmitInvocation`. `tesota_check` runs LemmaScript and Dafny in a temporary
+copy, returns the verifier diagnostics to Pi, and requires a later passing check.
+The candidate source remains isolated until a separate review and acceptance;
+formal evidence does not authorize promotion.
 
 Interruption closes task authority and requests cancellation. An unresponsive
 session gets a two-second settlement window; missing settlement is reported as

@@ -27,7 +27,7 @@ async function fixture() {
   const source = join(root, "source");
   await mkdir(source);
   git(source, ["init", "--quiet"]);
-  for (const path of [editedFile, "docs/roadmap.md", "experiments/codex/history.md", "src/cli.ts", "src/integrations/pi-task.ts"]) {
+  for (const path of [editedFile, "docs/roadmap.md", "experiments/codex/history.md", "src/cli.ts", "src/integrations/pi-task.ts", "src/verification/invocation-admission.ts"]) {
     await mkdir(dirname(join(source, path)), { recursive: true });
     await writeFile(join(source, path), await readFile(new URL("../" + path, import.meta.url)));
   }
@@ -47,6 +47,17 @@ it("prepares code scope independently of the documentation task and denies other
   expect(task.describe()).toMatchObject({ task: "pi-result-consistency", writeFiles: ["src/integrations/pi-task.ts"] });
   expect((await task.read({ path: "src/integrations/pi-task.ts" })).content).toContain("piTaskPasses");
   await expect(task.read({ path: editedFile })).rejects.toThrow("denied");
+});
+
+it("returns LemmaScript diagnostics and accepts the corrected formal task", async () => {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepare(candidate.directory, "formal-invocation-admission");
+  const seeded = await task.read({ path: "src/verification/invocation-admission.ts" });
+  expect((await task.check()).status).toBe("check_failed");
+  const corrected = await readFile(new URL("../src/verification/invocation-admission.ts", import.meta.url), "utf8");
+  await task.replace({ path: "src/verification/invocation-admission.ts", expectedSha256: seeded.sha256, content: corrected });
+  expect((await task.check()).status).toBe("passed");
+  task.close();
 });
 
 async function acceptedCandidate() {

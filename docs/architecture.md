@@ -1,7 +1,7 @@
 # Architecture
 
 Tesota currently has one private TypeScript package with a verification CLI,
-opt-in live integration experiments, and two fixed bounded repository tasks.
+opt-in live integration experiments, and three fixed bounded repository tasks.
 It has no general production task runtime or interactive agent shell. The
 [roadmap](roadmap.md) describes those intended capabilities separately.
 
@@ -31,6 +31,8 @@ It has no general production task runtime or interactive agent shell. The
 | [task-review.ts](../src/task-review.ts) | Review current candidate bytes and bind a separate local operator decision to their fingerprint |
 | [task-promotion.ts](../src/task-promotion.ts) | Apply one explicitly requested, accepted paragraph change after source checks; retain the write outcome |
 | [code-task-check.ts](../src/code-task-check.ts) | Run the fixed pure-predicate behavior oracle in a pinned, network-disabled container |
+| [formal-task-check.ts](../src/formal-task-check.ts) | Seed and check the bounded LemmaScript/Dafny correction task in a temporary copy |
+| [verification/invocation-admission.ts](../src/verification/invocation-admission.ts) | Own the pure bounded-invocation decision and its LemmaScript/Dafny contract |
 
 The verification modules have no Pi dependency. Synthetic and live verification
 share the same adapter and verifier. The authentication/turn probes have no

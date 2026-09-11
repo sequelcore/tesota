@@ -22,6 +22,7 @@ import type {
   OxlintResult,
 } from "../verification/oxlint-result.js";
 import type { VerificationCandidate } from "../verification/candidate.js";
+import { canAdmitInvocation } from "../verification/invocation-admission.js";
 
 /** Offline scenarios for the bounded verification adapter. */
 export type SyntheticPiScenario = "successful_turn" | "verification_request" | "abort";
@@ -254,7 +255,8 @@ export async function runPiSession(options: PiSessionOptions): Promise<PiSession
 
   const agent = new Agent({
     streamFn: (model, context, streamOptions) => {
-      if (closed || deadlineExpired || modelInvocationCount >= limits.modelInvocations) {
+      if (closed || deadlineExpired ||
+          canAdmitInvocation("verification", modelInvocationCount, limits.modelInvocations) !== "allow") {
         budgetExceeded = true;
         return deniedPiStream(model);
       }
