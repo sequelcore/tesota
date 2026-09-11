@@ -32,7 +32,7 @@ validation of the current checkout.
 | Candidate review and decision | Implemented for the scoped documentation task | Fresh diff and check, fingerprint-bound local operator decision, stale-record detection; no promotion authority |
 | Guarded paragraph promotion | Verified in temporary Windows repositories | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal |
 | Real code task | Live Windows attempt passed for `pi-result-consistency` | Model repaired `piTaskPasses`; sandbox oracle failed first, passed after correction; source remained unchanged |
-| Formal correction loop | In progress | `canAdmitInvocation` is used by the Pi adapters and passes a LemmaScript/Dafny proof; returning formal diagnostics to Pi and requiring a formal re-check remain open |
+| Formal correction loop | Passed for bounded Windows task | `canAdmitInvocation` is used by the Pi adapters; a seeded proof failure was returned to Pi, corrected and re-verified with LemmaScript/Dafny |
 | First verified self-development cycle | In progress | Bounded documentation task demonstrated; human acceptance, promotion and broader code-task verification remain open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
@@ -128,8 +128,16 @@ The first formal property is now implemented in
 `src/verification/invocation-admission.ts`. LemmaScript 0.6.1 generated the
 Dafny artifact and Dafny 4.11.0 verified one contract with zero errors. The
 property is used before model admission in the task, live-probe and verification
-adapters. This proves only the bounded admission predicate; it does not yet
-feed formal diagnostics back into Pi or establish acceptance authority.
+adapters. This proves only the bounded admission predicate and does not grant
+acceptance authority.
+
+The live formal correction task completed on 2026-09-11 UTC against baseline
+`20833acc7927e7c08df6b42fd5baa5e63ecf0422`. It used five model invocations,
+four tool calls, one edit and two issued checks. The seeded implementation
+failed with a Dafny postcondition diagnostic; Pi received that result, corrected
+the implementation and supplied the passing check. The current candidate check
+also passed. The candidate remains isolated and unaccepted; formal evidence does
+not grant promotion authority.
 
 ## First useful cycle
 

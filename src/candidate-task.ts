@@ -233,7 +233,8 @@ export class CandidateTask {
 export async function checkCandidateTask(directory: string): Promise<CandidateTaskCheck> {
   const parsed = planSchema.safeParse(JSON.parse(await readText(join(directory, "task.json"))));
   if (!parsed.success) throw new Error("Task plan invalid");
-  const baseline = await readCandidateBaselineFiles(directory, parsed.data.task === taskId ? readFiles : [CODE_TASK_FILE]);
+  const baseline = await readCandidateBaselineFiles(directory,
+    parsed.data.task === taskId ? readFiles : [parsed.data.task === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE]);
   if (baseline.baseline !== parsed.data.baseline) throw new Error("Task baseline changed");
   const expected = expectedContent(baseline.files, parsed.data);
   const snapshot = await observe(directory, parsed.data);
