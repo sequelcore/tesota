@@ -34,7 +34,7 @@ validation of the current checkout.
 | Real code task | Live Windows attempt passed for `pi-result-consistency` | Model repaired `piTaskPasses`; sandbox oracle failed first, passed after correction; source remained unchanged |
 | Formal correction loop | Passed for bounded Windows task | `canAdmitInvocation` is used by the Pi adapters; a seeded proof failure was returned to Pi, corrected and re-verified with LemmaScript/Dafny |
 | Kiln static-analysis qualification | Planned | Compare selected `dev` rules and bounded quality-gate sequencing against Tesota's pinned Oxlint profile; adopt only evidenced, low-noise rules |
-| Gentle AI qualification | In progress | Package contract, capabilities negotiation and isolated candidate bootstrap passed; model-backed review, correction and interruption recovery remain |
+| Gentle AI qualification | In progress | Package contract, capabilities and isolated bootstrap passed; high-risk lens selection reached a bounded timeout before mutation; model-backed review, correction and recovery remain |
 | First verified self-development cycle | In progress | Bounded documentation task demonstrated; human acceptance, promotion and broader code-task verification remain open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 

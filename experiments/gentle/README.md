@@ -82,5 +82,24 @@ This validates capabilities negotiation, candidate identity and the
 provider-issued transition model. It does not yet qualify a model-backed
 review, correction or interruption recovery; those remain pending.
 
+### Phase 3: high-risk review transition
+
+**Bounded failure recorded on 2026-09-11.** A candidate touching
+`src/auth.ts` caused the provider to require consent and select all four
+review lenses (`review-risk`, `review-resilience`, `review-readability` and
+`review-reliability`). With explicit consent, `review.start` created a high-risk
+lineage, froze the candidate and emitted four identity-bound artifact subjects.
+The next provider-issued `review.status` transition exceeded its aggregate
+time budget and returned `operation_timeout` with `mutation_outcome:
+not_started`, `authority_applicability: not_evaluated` and
+`next_action: stop`. No candidate file was changed and no Tesota acceptance or
+promotion occurred.
+
+This is useful failure evidence: the provider selects deeper review and fails
+closed before mutation when its operation cannot settle. Tesota must treat the
+timeout as unavailable evidence and use a manual recovery path rather than
+retrying implicitly. A completed model-backed review and an explicit recovery
+exercise remain pending.
+
 Until that phase passes, Gentle remains a documented reference and proposed
 provider rather than a Tesota dependency.
