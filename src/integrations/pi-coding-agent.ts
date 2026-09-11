@@ -1,4 +1,5 @@
 import { createAgentSession, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
+import { contentText } from "@earendil-works/pi-ai";
 import type { CredentialStore } from "@earendil-works/pi-ai";
 import { LIVE_CODEX_MODEL_ID } from "./pi-live.js";
 
@@ -8,6 +9,7 @@ export interface PiCodingAgentRun {
   readonly status: "completed" | "timed_out" | "failed";
   readonly messages: number;
   readonly toolNames: readonly string[];
+  readonly responseText: string;
   readonly error?: string;
 }
 
@@ -22,6 +24,7 @@ export async function runPiCodingAgent(options: {
   readonly credentials: CredentialStore;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
+  readonly tools?: readonly ("read" | "edit")[];
 }): Promise<PiCodingAgentRun> {
   const runtime = await ModelRuntime.create({ credentials: options.credentials, refreshOnCreate: false, allowModelNetwork: false });
   const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
@@ -31,13 +34,15 @@ export async function runPiCodingAgent(options: {
     modelRuntime: runtime,
     model,
     sessionManager: SessionManager.inMemory(options.cwd),
-    tools: ["read", "edit"],
+    tools: [...(options.tools ?? ["read", "edit"])],
   });
   const toolNames = new Set<string>();
   let messages = 0;
+  const responses: string[] = [];
   const unsubscribe = session.subscribe((event) => {
     if (event.type === "tool_execution_start") toolNames.add(event.toolName);
     if (event.type === "message_end") messages += 1;
+    if (event.type === "message_end" && event.message.role === "assistant") responses.push(contentText(event.message.content));
   });
   const timeoutMs = options.timeoutMs ?? PI_CODING_AGENT_LIMITS.sessionMs;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -50,11 +55,11 @@ export async function runPiCodingAgent(options: {
   });
   try {
     await Promise.race([session.prompt(options.prompt).then(() => session.waitForIdle()), timeout]);
-    if (options.signal?.aborted) return { status: "failed", messages, toolNames: [...toolNames], error: "session aborted" };
-    return { status: "completed", messages, toolNames: [...toolNames] };
+    if (options.signal?.aborted) return { status: "failed", messages, toolNames: [...toolNames], responseText: responses.join("\n"), error: "session aborted" };
+    return { status: "completed", messages, toolNames: [...toolNames], responseText: responses.join("\n") };
   } catch (error) {
     if (!session.isIdle) await session.abort().catch(() => undefined);
-    return { status: timedOut ? "timed_out" : "failed", messages, toolNames: [...toolNames], error: error instanceof Error ? error.message : String(error) };
+    return { status: timedOut ? "timed_out" : "failed", messages, toolNames: [...toolNames], responseText: responses.join("\n"), error: error instanceof Error ? error.message : String(error) };
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     unsubscribe();

@@ -99,9 +99,12 @@ The responsibilities remain separate:
 | Integration tests | Exercise the connected runtime boundary | Do not replace formal proof of the covered predicate |
 | Tesota | Bind candidate identity, evidence, budgets and acceptance policy | Remains the sole owner of promotion authority |
 
-No Gentle integration is implemented or required yet. Qualification must first
-verify the exact provider contract, candidate identity, recovery behavior and
-evidence retention while preserving Tesota's authority boundaries.
+The Codex-backed reviewer host is implemented as a bounded read-only surface:
+`task run gentle-review <candidate> <lens>` runs one lens through Pi with
+Tesota's `CodexCredentials` and stores a candidate-bound result. It does not
+write candidate files or accept promotion. The remaining adapter work is to
+submit these results to Gentle's negotiated capture contract and validate its
+model-backed correction and recovery behavior.
 
 ## Static-analysis policy
 
