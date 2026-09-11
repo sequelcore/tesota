@@ -21,6 +21,7 @@ It has no general production task runtime or interactive agent shell. The
 | [verification/candidate.ts](../src/verification/candidate.ts) | Isolated one-file candidate, bounded replacement and check ordering |
 | [integrations/pi.ts](../src/integrations/pi.ts) | Shared bounded verification admission, Pi session limits and synthetic scenarios |
 | [integrations/pi-live.ts](../src/integrations/pi-live.ts) | Live login interaction, model-turn limits and observed outcomes |
+| [integrations/pi-coding-agent.ts](../src/integrations/pi-coding-agent.ts) | Time-bounded Pi Coding Agent SDK host with Tesota-owned credentials and read/edit tools |
 | [integrations/pi-live-evidence.ts](../src/integrations/pi-live-evidence.ts) | Capture implementation identity and serialize sanitized live evidence |
 | [src/live-codex.ts](../src/live-codex.ts) | Select experiment mode, present authentication, reserve output and bound process lifetime |
 | [src/live-verification.ts](../src/live-verification.ts) | Run the fixed live verification fixture and retain issued evidence |
@@ -47,10 +48,12 @@ does not support promotion.
 ## Engine boundary
 
 Pi supplies agent mechanics, provider transport and authentication. Tesota uses
-the public APIs of the pinned `pi-agent-core` and `pi-ai` packages; it does not
-install the full Pi coding-agent application. Integration types remain inside
-the adapters instead of defining Tesota's verification contract. Experiment guides
-and evidence live under [experiments/](../experiments/README.md).
+the public APIs of the pinned `pi-agent-core`, `pi-ai` and
+`pi-coding-agent` packages. The coding-agent host is time-bounded and exposes
+only the read/edit tools required by its caller; it never commits, promotes or
+grants acceptance authority. Integration types remain inside the adapters
+instead of defining Tesota's verification contract. Experiment guides and
+evidence live under [experiments/](../experiments/README.md).
 
 For live authentication, Tesota calls `Models.login` and handles its public
 interaction. Pi owns authorization requests, polling, exchange and refresh.

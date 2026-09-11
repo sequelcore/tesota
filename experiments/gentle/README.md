@@ -131,5 +131,20 @@ and returned `retry_safe: true` with `next_action: review.status`. No lineage
 or candidate mutation was created. This is the expected fail-closed behavior
 for a stale or forged binding.
 
-Until that phase passes, Gentle remains a documented reference and proposed
-provider rather than a Tesota dependency.
+### Phase 7: Tesota-hosted bounded cycle
+
+**Passed for the low-risk path on 2026-09-11.** Tesota's new
+`pi-coding-agent` host reused the existing Codex credential store, ran Pi Coding
+Agent with only `read` and `edit`, and completed the scoped Pi status task in
+an isolated candidate. The host recorded six messages and both allowed tool
+names; Tesota's current task check passed and retained a one-file diff.
+
+The same candidate was then presented to Gentle AI `v2.7.0`. Gentle bound the
+review to the candidate identity and trees and closed the non-executable-only
+change as low-risk `approved` with no selected lenses. Tesota's own review
+produced a current fingerprint, but no operator decision or promotion was
+recorded. This completes the low-risk construction and review path while
+keeping human acceptance separate.
+
+Until the remaining model-backed and recovery phases pass, Gentle remains a
+documented reference and proposed provider rather than a Tesota dependency.

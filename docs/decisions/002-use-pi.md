@@ -1,7 +1,8 @@
 # 002: Use Pi behind a bounded integration
 
 Status: adopted for the current experiments. Synthetic compatibility is reported
-accepted; successful live model-turn and verification-tool integration remain open.
+accepted; bounded live model-turn, verification-tool and candidate-correction
+experiments have passed. These results do not establish a complete repository task cycle.
 
 ## Decision and rationale
 
@@ -12,10 +13,12 @@ second OAuth protocol implementation. Tesota supplies the app-owned storage
 adapter required by Pi's public credential contract.
 
 The bootstrap selected `@earendil-works/pi-agent-core` and
-`@earendil-works/pi-ai` at 0.85.1. The current selections are owned by
+`@earendil-works/pi-ai` at 0.85.1. Tesota now also uses the public
+`@earendil-works/pi-coding-agent` SDK at 0.85.1 as a bounded host; it does not
+delegate candidate authority or acceptance to the application. The current selections are owned by
 [package.json](../../package.json) and [bun.lock](../../bun.lock). The full Pi
-coding-agent application is not installed. The [architecture](../architecture.md)
-identifies the implemented boundary.
+coding-agent SDK is embedded only behind [the Tesota host](../architecture.md);
+the interactive application and its private state are not Tesota authorities.
 
 ## Alternative: extract Kiln's implementation
 

@@ -12,6 +12,7 @@
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "isolatedDeclarations": true,
+    "skipLibCheck": true,
     "declaration": true,
     "erasableSyntaxOnly": true,
     "types": [
