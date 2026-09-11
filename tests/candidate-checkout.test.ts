@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
 import * as childProcess from "node:child_process";
-import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, symlink, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
-import { createCandidateCheckout, inspectCandidateCheckout } from "../src/candidate-checkout.js";
+import { abandonCandidate, cleanCandidateCheckouts, createCandidateCheckout, inspectCandidateCheckout, listCandidateCheckouts } from "../src/candidate-checkout.js";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof childProcess>();
@@ -183,6 +183,35 @@ it("retains failed creation explicitly and never calls the source checkout a can
   expect(metadata).not.toContain("SYNTHETIC_PRIVATE");
   await expect(inspectCandidateCheckout(directory)).rejects.toThrow("failed");
   expect(await readFile(join(source, "source.ts"), "utf8")).toBe("export const value = 1;\n");
+});
+
+it("lists lifecycle states and cleans only old rejected or failed checkouts", async () => {
+  const { source, candidates } = await fixture();
+  const active = await createCandidateCheckout(source, candidates);
+  await writeFile(join(active.directory, "candidate.diff"), "diff\n");
+  const rejected = await createCandidateCheckout(source, candidates);
+  await writeFile(join(rejected.directory, "decision.json"), JSON.stringify({ decision: "reject" }));
+  const old = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  await utimes(rejected.directory, old, old);
+  await expect(listCandidateCheckouts(candidates)).resolves.toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: active.directory.split(/[\\/]/).pop(), status: "awaiting-review", checkoutPresent: true }),
+    expect.objectContaining({ id: rejected.directory.split(/[\\/]/).pop(), status: "rejected", checkoutPresent: true }),
+  ]));
+  await expect(cleanCandidateCheckouts(candidates, 30 * 24 * 60 * 60 * 1000)).resolves.toEqual([rejected.directory.split(/[\\/]/).pop()]);
+  await expect(readdir(join(rejected.directory, "repo"))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(readFile(join(rejected.directory, "checkout.json"), "utf8")).resolves.toContain("tesota-candidate-checkout");
+  await expect(readdir(join(active.directory, "repo"))).resolves.toContain("source.ts");
+});
+
+it("resolves candidate IDs and records explicit abandonment", async () => {
+  const { source, candidates } = await fixture();
+  const created = await createCandidateCheckout(source, candidates);
+  const id = created.directory.split(/[\\/]/).pop();
+  if (id === undefined) throw new Error("Missing candidate ID");
+  expect((await inspectCandidateCheckout(id, candidates)).directory).toBe(created.directory);
+  await expect(abandonCandidate(id, candidates)).resolves.toMatchObject({ id, status: "abandoned" });
+  await expect(inspectCandidateCheckout(id, candidates)).resolves.toMatchObject({ directory: created.directory });
+  await expect(abandonCandidate(id, candidates)).rejects.toThrow("cannot be abandoned");
 });
 
 it.each([

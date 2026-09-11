@@ -19,8 +19,22 @@ source repository and outside Kiln's private namespace.
 To inspect one, use the directory returned by creation:
 
 ```sh
-bun start candidate inspect <candidate-directory>
+bun start candidate inspect <candidate-id|candidate-directory>
 ```
+
+You normally do not need to open the candidate folder. List candidates by their
+stable ID and lifecycle status:
+
+```sh
+bun start candidate list
+```
+
+The statuses are `active` (created but no attempt evidence), `awaiting-review`
+(an attempt or diff is present), `accepted`, `rejected`, `abandoned`, `failed`, or
+`invalid`.
+They are derived from the existing checkout and decision records; the listing is
+an observation, not acceptance authority. Inspection, review, decision and
+promotion commands accept either the displayed ID or its directory.
 
 Creation takes the source repository from the current directory. It accepts no
 destination, revision, remote URL or Git flags from CLI arguments. Extra
@@ -67,6 +81,23 @@ to record `failed`. The directory is retained, and the error identifies it.
 A crash can leave `preparing` or a temporary record; neither counts as ready.
 There is no automatic resume, removal or overwrite of an earlier candidate.
 
+Terminal checkouts are cleaned separately from their evidence. After the
+retention period, `candidate clean` removes only the `repo/` and template
+directories for old rejected or failed candidates. It preserves `checkout.json`,
+diffs, attempts, decisions and promotion journals. Active, awaiting-review and
+accepted candidates are never removed by this command. The default retention is
+30 days; cleanup never runs as a side effect of creation, review or checking.
+
+If a candidate is no longer relevant, explicitly mark it first:
+
+```sh
+bun start candidate abandon <candidate-id>
+```
+
+Abandonment is a local operator assertion. It does not grant acceptance or
+promotion authority. Abandoned candidates become eligible for the same
+evidence-preserving cleanup as rejected candidates.
+
 Inspection requires a ready record and checks the checkout's Git directory,
 common directory, remotes and object-sharing metadata. It reports the current
 HEAD, whether it differs from the baseline, and file changes against that
@@ -82,7 +113,8 @@ project documentation.
 ## Limits and next increment
 
 Each Git command has a 60-second timeout and an 8 MiB captured-output bound.
-There is no aggregate creation deadline or disk quota in this increment.
+There is no aggregate creation deadline or disk quota in this increment. Cleanup
+is explicit and currently targets only old rejected or failed checkouts.
 Git is a trusted installed executable; a process timeout is not proof that every
 Git descendant terminated. Failed attempts remain available for inspection.
 

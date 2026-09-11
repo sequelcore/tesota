@@ -16,8 +16,12 @@ Run commands from the repository root.
 | `bun run check` | Run the complete repository gate |
 
 The main CLI accepts no arguments, `help`, `--help` or `-h` for help (exit 0).
-`candidate create` and `candidate inspect <directory>` prepare and inspect
+`candidate create` and `candidate inspect <id|directory>` prepare and inspect
 [independent checkouts](candidates.md); they do not invoke a model.
+`candidate list` summarizes stored candidates by lifecycle status, and
+`candidate clean` removes only old rejected, abandoned or failed checkout directories while
+retaining their evidence. `candidate abandon <id|directory>` records an explicit
+operator decision for work that no longer needs review.
 `task prepare <directory>` and `task check <directory>` expose the first
 [scoped documentation task](tasks.md), also without model inference.
 `task run` creates a fresh candidate and runs the selected fixed task with the saved login;

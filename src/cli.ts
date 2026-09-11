@@ -5,16 +5,19 @@ Usage: tesota [--help | -h | help]
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout>
        tesota candidate create
-       tesota candidate inspect <candidate-directory>
+       tesota candidate inspect <candidate-id|candidate-directory>
+       tesota candidate list
+       tesota candidate clean
+       tesota candidate abandon <candidate-id|candidate-directory>
        tesota task prepare <candidate-directory>
        tesota task check <candidate-directory>
        tesota task run
        tesota task run coding-agent
        tesota task run pi-result-consistency
        tesota task run formal-invocation-admission
-       tesota task review <candidate-directory>
-       tesota task decide <candidate-directory> <accept|reject> <review-sha256>
-       tesota task promote <candidate-directory> <review-sha256>
+       tesota task review <candidate-id|candidate-directory>
+       tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>
+       tesota task promote <candidate-id|candidate-directory> <review-sha256>
 
 Runs bounded verification and scoped repository tasks.
 `;
@@ -72,11 +75,15 @@ if (
     process.stderr.write("Task unavailable, outside scope, or already prepared.\n");
     process.exitCode = 2;
   }
-} else if (args[0] === "candidate" && (args.length === 2 && args[1] === "create" ||
+} else if (args[0] === "candidate" && (args.length === 2 && ["create", "list", "clean"].includes(args[1] ?? "") ||
+    args.length === 3 && args[1] === "abandon" && args[2] !== undefined ||
     args.length === 3 && args[1] === "inspect" && args[2] !== undefined)) {
-  const { createCandidateCheckout, inspectCandidateCheckout } = await import("./candidate-checkout.js");
+  const { abandonCandidate, cleanCandidateCheckouts, createCandidateCheckout, inspectCandidateCheckout, listCandidateCheckouts } = await import("./candidate-checkout.js");
   try {
-    const result = args[1] === "create" ? await createCandidateCheckout(process.cwd()) : await inspectCandidateCheckout(args[2] ?? "");
+    const result = args[1] === "create" ? await createCandidateCheckout(process.cwd()) :
+      args[1] === "list" ? await listCandidateCheckouts() : args[1] === "clean" ? await cleanCandidateCheckouts() : args[1] === "abandon" ?
+        await abandonCandidate(args[2] ?? "") :
+        await inspectCandidateCheckout(args[2] ?? "");
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
   } catch (error) {
     process.stderr.write(error instanceof Error && error.message.startsWith("Candidate ") ? `${error.message}\n` : "Candidate operation failed.\n");

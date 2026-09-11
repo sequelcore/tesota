@@ -32,16 +32,19 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota verify <file.ts|file.js>\n" +
     "       tesota auth <login|status|logout>\n" +
     "       tesota candidate create\n" +
-    "       tesota candidate inspect <candidate-directory>\n" +
+    "       tesota candidate inspect <candidate-id|candidate-directory>\n" +
+    "       tesota candidate list\n" +
+    "       tesota candidate clean\n" +
+    "       tesota candidate abandon <candidate-id|candidate-directory>\n" +
     "       tesota task prepare <candidate-directory>\n" +
     "       tesota task check <candidate-directory>\n" +
-       "       tesota task run\n" +
-       "       tesota task run coding-agent\n" +
-       "       tesota task run pi-result-consistency\n" +
+    "       tesota task run\n" +
+    "       tesota task run coding-agent\n" +
+    "       tesota task run pi-result-consistency\n" +
     "       tesota task run formal-invocation-admission\n" +
-    "       tesota task review <candidate-directory>\n" +
-    "       tesota task decide <candidate-directory> <accept|reject> <review-sha256>\n" +
-    "       tesota task promote <candidate-directory> <review-sha256>\n\n" +
+    "       tesota task review <candidate-id|candidate-directory>\n" +
+    "       tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>\n" +
+    "       tesota task promote <candidate-id|candidate-directory> <review-sha256>\n\n" +
     "Runs bounded verification and scoped repository tasks.\n",
   );
 });

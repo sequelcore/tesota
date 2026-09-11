@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, open, realpath, rename } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, readdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import * as z from "zod";
@@ -31,6 +31,25 @@ export interface CheckoutInspection extends CandidateCheckout {
   readonly headChanged: boolean;
   readonly changes: readonly { readonly status: string; readonly path: string }[];
 }
+
+export type CandidateLifecycleStatus = "active" | "awaiting-review" | "accepted" | "rejected" | "abandoned" | "failed" | "invalid";
+
+export interface CandidateSummary {
+  readonly id: string;
+  readonly directory: string;
+  readonly state: "preparing" | "ready" | "failed";
+  readonly status: CandidateLifecycleStatus;
+  readonly baseline: string;
+  readonly sourceDirty: boolean;
+  readonly checkoutPresent: boolean;
+  readonly updatedAt: string;
+}
+
+const candidateIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const abandonedRecordSchema = z.strictObject({
+  format: z.literal("tesota-candidate-abandonment"), version: z.literal(1),
+  recordedAt: z.iso.datetime(), authority: z.literal("local_operator_assertion"),
+});
 
 /** Git receives no caller-selected commands, shell, credentials, config or network route. */
 function git(cwd: string, args: readonly string[]): string {
@@ -93,6 +112,113 @@ async function readRecord(directory: string): Promise<CheckoutRecord> {
   const parsed = checkoutRecordSchema.safeParse(value);
   if (!parsed.success) throw new Error("Invalid candidate record");
   return parsed.data;
+}
+
+async function exists(path: string): Promise<boolean> {
+  try { await lstat(path); return true; }
+  catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/** Resolve a displayed candidate ID without treating the ID or record as authority. */
+export async function resolveCandidateReference(reference: string,
+  candidatesRoot: string = join(homedir(), ".tesota", "candidates")): Promise<string> {
+  if (!candidateIdPattern.test(reference)) return reference;
+  const root = await plainDirectory(candidatesRoot);
+  return await plainDirectory(join(root, reference));
+}
+
+async function lifecycleStatus(directory: string, record: CheckoutRecord): Promise<CandidateLifecycleStatus> {
+  if (record.state === "failed") return "failed";
+  if (record.state !== "ready") return "invalid";
+  const abandonedPath = join(directory, "abandoned.json");
+  if (await exists(abandonedPath)) {
+    try {
+      const metadata = await lstat(abandonedPath);
+      if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 || metadata.size > 4096 ||
+          relative(abandonedPath, await realpath(abandonedPath)) !== "") return "invalid";
+      abandonedRecordSchema.parse(JSON.parse(await readFile(abandonedPath, "utf8")));
+      return "abandoned";
+    } catch { return "invalid"; }
+  }
+  const decisionPath = join(directory, "decision.json");
+  if (await exists(decisionPath)) {
+    try {
+      const metadata = await lstat(decisionPath);
+      if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 || metadata.size > 4096 ||
+          relative(decisionPath, await realpath(decisionPath)) !== "") return "invalid";
+      const text = await readFile(decisionPath, "utf8");
+      const value: unknown = JSON.parse(text);
+      if (typeof value === "object" && value !== null && "decision" in value &&
+          (value.decision === "accept" || value.decision === "reject")) return value.decision === "accept" ? "accepted" : "rejected";
+    } catch { return "invalid"; }
+    return "invalid";
+  }
+  return await exists(join(directory, "candidate.diff")) || await exists(join(directory, "attempt.jsonl")) ||
+    await exists(join(directory, "coding-agent-attempt.json")) ? "awaiting-review" : "active";
+}
+
+/** Summarize candidates without treating their persisted records as authority. */
+export async function listCandidateCheckouts(candidatesRoot: string = join(homedir(), ".tesota", "candidates")): Promise<readonly CandidateSummary[]> {
+  const root = await plainDirectory(candidatesRoot);
+  const entries = await readdir(root, { withFileTypes: true });
+  const summaries: CandidateSummary[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink() || !candidateIdPattern.test(entry.name)) continue;
+    const directory = join(root, entry.name);
+    try {
+      const record = await readRecord(directory);
+      const metadata = await lstat(directory);
+      summaries.push({ id: entry.name, directory, state: record.state, status: await lifecycleStatus(directory, record),
+        baseline: record.baseline, sourceDirty: record.sourceDirty, checkoutPresent: await exists(join(directory, "repo")),
+        updatedAt: metadata.mtime.toISOString() });
+    } catch {
+      summaries.push({ id: entry.name, directory, state: "failed", status: "invalid", baseline: "unknown", sourceDirty: false,
+        checkoutPresent: await exists(join(directory, "repo")), updatedAt: (await lstat(directory)).mtime.toISOString() });
+    }
+  }
+  return summaries.sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
+}
+
+/** Remove only terminal checkouts while retaining candidate records and evidence. */
+export async function cleanCandidateCheckouts(candidatesRoot: string = join(homedir(), ".tesota", "candidates"),
+  olderThanMs: number = 30 * 24 * 60 * 60 * 1000): Promise<readonly string[]> {
+  if (!Number.isFinite(olderThanMs) || olderThanMs < 0) throw new Error("Invalid candidate retention period");
+  const root = await plainDirectory(candidatesRoot);
+  const now = Date.now();
+  const cleaned: string[] = [];
+  for (const candidate of await listCandidateCheckouts(root)) {
+    if (!(candidate.status === "failed" || candidate.status === "rejected" || candidate.status === "abandoned") ||
+        now - Date.parse(candidate.updatedAt) < olderThanMs || !contains(root, candidate.directory) || candidate.directory === root) continue;
+    for (const name of ["repo", "empty-template"]) {
+      const path = join(candidate.directory, name);
+      const metadata = await lstat(path).catch(() => undefined);
+      if (metadata?.isDirectory() && !metadata.isSymbolicLink()) await rm(path, { recursive: true, force: true });
+    }
+    cleaned.push(candidate.id);
+  }
+  return cleaned;
+}
+
+/** Explicitly mark a ready candidate as no longer requiring review. */
+export async function abandonCandidate(path: string, candidatesRoot?: string): Promise<CandidateSummary> {
+  const directory = await resolveCandidateReference(path, candidatesRoot);
+  const candidate = await inspectCandidateCheckout(directory, candidatesRoot);
+  const current = (await listCandidateCheckouts(dirname(candidate.directory))).find((summary) => summary.directory === candidate.directory);
+  if (current === undefined || current.status === "accepted" || current.status === "rejected" || current.status === "abandoned") {
+    throw new Error("Candidate cannot be abandoned");
+  }
+  const file = await open(join(candidate.directory, "abandoned.json"), "wx", 0o600);
+  try {
+    await file.writeFile(JSON.stringify({ format: "tesota-candidate-abandonment", version: 1,
+      recordedAt: new Date().toISOString(), authority: "local_operator_assertion" }) + "\n", "utf8");
+    await file.sync();
+  } finally { await file.close(); }
+  const result = (await listCandidateCheckouts(dirname(candidate.directory))).find((summary) => summary.directory === candidate.directory);
+  if (result === undefined) throw new Error("Candidate abandonment unavailable");
+  return result;
 }
 
 function validateTree(checkout: string, baseline: string): void {
@@ -164,8 +290,8 @@ export async function createCandidateCheckout(sourceDirectory: string,
 }
 
 /** Read-only observations; stored records do not grant task or promotion authority. */
-export async function inspectCandidateCheckout(path: string): Promise<CheckoutInspection> {
-  const directory = await plainDirectory(path);
+export async function inspectCandidateCheckout(path: string, candidatesRoot?: string): Promise<CheckoutInspection> {
+  const directory = await plainDirectory(await resolveCandidateReference(path, candidatesRoot));
   const record = await readRecord(directory);
   if (record.state !== "ready") throw new Error(`Candidate is ${record.state}; retained at ${directory}`);
   const checkout = await independentCheckout(directory);
