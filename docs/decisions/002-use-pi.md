@@ -1,8 +1,10 @@
 # 002: Use Pi behind a bounded integration
 
-Status: adopted for the current experiments. Synthetic compatibility is reported
-accepted; bounded live model-turn, verification-tool and candidate-correction
-experiments have passed. These results do not establish a complete repository task cycle.
+Status: adopted for the current experiments. Synthetic compatibility, live model-turn,
+verification-tool and candidate-correction experiments have passed. A bounded Pi
+Coding Agent host task has also passed; the first verified self-development
+cycle has been accepted and promoted, while Gentle high-risk review remains
+open.
 
 ## Decision and rationale
 

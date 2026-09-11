@@ -37,7 +37,7 @@ validation of the current checkout.
 | Pi Coding Agent host | Passed for bounded Windows task | Full SDK host reused Tesota's Codex credential store, allowed only `read` and `edit`, and completed the scoped Pi status task in an isolated candidate; check passed and no acceptance was recorded |
 | Kiln static-analysis qualification | Planned | Compare selected `dev` rules and bounded quality-gate sequencing against Tesota's pinned Oxlint profile; adopt only evidenced, low-noise rules |
 | Gentle AI qualification | In progress | Contract, capabilities, parity lane and stale-binding rejection passed; high-risk review timed out before mutation and recovery could not create a successor; model-backed review and usable recovery remain |
-| First verified self-development cycle | In progress | Pi Coding Agent completed one bounded task and Gentle closed the low-risk review; Tesota check passed, while human acceptance, promotion and model-backed high-risk review remain open |
+| First verified self-development cycle | In progress | Pi Coding Agent completed one bounded task; Tesota check, human acceptance and guarded promotion passed, while model-backed Gentle high-risk review remains open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
 The next increment extends the bounded cycle to formal correction of one real

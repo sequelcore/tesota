@@ -148,3 +148,19 @@ keeping human acceptance separate.
 
 Until the remaining model-backed and recovery phases pass, Gentle remains a
 documented reference and proposed provider rather than a Tesota dependency.
+
+### Phase 8: high-risk rerun and recovery preflight
+
+**Provider transition reproduced on 2026-09-11; model-backed review remains
+unavailable.** The retained Windows risk candidate was reviewed again with
+explicit per-candidate consent. Gentle created lineage `review-29a43e93cd67ce4e`,
+bound it to target `sha256:030d61cd916c53176e1c4e78128e12da2c7ee675f86b057fdd8594b0c27e703c`,
+selected all four high-risk lenses and required four reviewer artifacts. The
+next status is `reviewer_results_required`; no reviewer result was available to
+capture, so no model-backed finding or correction is claimed.
+
+The provider's `review repair --preflight` reported `status: unsupported` with
+two compact lineages and zero eligible repair candidates. No candidate bytes,
+Tesota source, acceptance decision or promotion were changed. This confirms
+the existing recovery limitation and leaves operator-directed cleanup or a new
+candidate as the safe path.
