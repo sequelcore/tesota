@@ -120,8 +120,23 @@ precedence, malformed terminal records, the recognized diagnostic projection and
 rejection of changes to every admitted diagnostic field. Focused tests and the
 complete repository gate preserve the existing outputs and failure behavior.
 
-After the pilot, nine functions remain above 20. Complexity is therefore retained
-as measured evaluation evidence, not added to `oxlint-static/v3` or treated as
-human acceptance. A permanent repository gate still needs a bounded mechanism
-that applies maximum 20 to new functions while recording existing hotspots
-without disabling checks for an entire file.
+The follow-up removed the remaining nine hotspots without baselines or
+exceptions:
+
+| Function or callback | Before | After |
+| --- | ---: | ---: |
+| `validBinding` | 26 | 4 |
+| `validResult` | 22 | 15 |
+| `candidateProbePasses` | 23 | 4 |
+| `serializeCandidateProbe` | 30 | 7 |
+| `serializeVerificationProbe` | 29 | 6 |
+| `runGentleReviewHost` | 27 | 10 |
+| `piTaskPasses` | 33 | 11 |
+| Pi live subscription callback | 25 | 14 |
+| `liveProbePasses` | 23 | 3 |
+
+The final 53-file scan passes classic complexity at maximum 20. A measurement
+at maximum 19 reports only `runOxlint` and `runPiSession`, both at exactly
+20. The repository gate is owned by `.oxlintrc.json` and `bun run lint`;
+it remains separate from `oxlint-static/v3`, behavioral verification, Gentle
+review and human acceptance.

@@ -189,16 +189,33 @@ export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck):
   const checks = result.checks;
   const first = checks[0];
   const last = checks[checks.length - 1];
-  const validCount = Number.isInteger(result.modelInvocations) && result.modelInvocations > 0 && result.modelInvocations <= 8 &&
-    Number.isInteger(result.toolCalls) && result.toolCalls > 0 && result.toolCalls <= 13 &&
-    Number.isInteger(result.edits) && result.edits > 0 && result.edits <= 2;
-  const validChecks = (checks.length === 2 || checks.length === 3) && first !== undefined && last !== undefined &&
-    first.status === "check_failed" && last.status === "passed" && first.sourceSha256 !== last.sourceSha256 &&
-    checks.every((check) => check.provenance === "issued" && check.task === first.task && check.baseline === first.baseline &&
-      typeof check.sourceSha256 === "string" && check.sourceSha256.length > 0) &&
-    (checks.length === 2 || checks[1]?.status === "check_failed") &&
-    result.checksSuppliedToModel === checks.length && result.finalCheckSuppliedToModel;
-  return result.status === "completed" && result.terminalStopReason === "stop" && !result.denied && !result.deadlineExpired &&
-    validCount && validChecks && current.task === last?.task && current.baseline === last?.baseline &&
-    current.status === "passed" && current.sourceSha256 === last?.sourceSha256;
+  const validCount = [
+    { value: result.modelInvocations, maximum: 8 },
+    { value: result.toolCalls, maximum: 13 },
+    { value: result.edits, maximum: 2 },
+  ].every(({ value, maximum }) => Number.isInteger(value) && value > 0 && value <= maximum);
+  const validChecks = [
+    checks.length === 2 || checks.length === 3,
+    first?.status === "check_failed",
+    last?.status === "passed",
+    first?.sourceSha256 !== last?.sourceSha256,
+    checks.every((check) => first !== undefined && check.provenance === "issued" &&
+      check.task === first.task && check.baseline === first.baseline &&
+      typeof check.sourceSha256 === "string" && check.sourceSha256.length > 0),
+    checks.length === 2 || checks[1]?.status === "check_failed",
+    result.checksSuppliedToModel === checks.length,
+    result.finalCheckSuppliedToModel,
+  ].every(Boolean);
+  return [
+    result.status === "completed",
+    result.terminalStopReason === "stop",
+    !result.denied,
+    !result.deadlineExpired,
+    validCount,
+    validChecks,
+    current.task === last?.task,
+    current.baseline === last?.baseline,
+    current.status === "passed",
+    current.sourceSha256 === last?.sourceSha256,
+  ].every(Boolean);
 }

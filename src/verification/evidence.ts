@@ -48,48 +48,56 @@ function positiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
+function validSource(value: unknown): boolean {
+  if (!exact(value, ["file", "sha256"])) return false;
+  return string(value["file"]) && isAbsolute(value["file"]) &&
+    string(value["sha256"]) && hash.test(value["sha256"]);
+}
+
+function validLimits(value: unknown): boolean {
+  if (!exact(value, ["timeoutMs", "maxOutputBytes", "terminationWaitMs"])) return false;
+  return positiveInteger(value["timeoutMs"]) && positiveInteger(value["maxOutputBytes"]) &&
+    positiveInteger(value["terminationWaitMs"]);
+}
+
+function validCheck(value: unknown): boolean {
+  if (!exact(value, ["profile", "configuration", "arguments", "limits"])) return false;
+  return isKnownProfileConfiguration(value["profile"], value["configuration"]) &&
+    Array.isArray(value["arguments"]) && value["arguments"].every(string) && validLimits(value["limits"]);
+}
+
+function validVerifier(value: unknown): boolean {
+  if (!exact(value, ["packageVersion", "executable", "executableSha256", "entry", "installationSha256"])) return false;
+  const executableHash = value["executableSha256"];
+  return string(value["packageVersion"]) && string(value["executable"]) && isAbsolute(value["executable"]) &&
+    string(value["entry"]) && isAbsolute(value["entry"]) &&
+    (executableHash === null || (string(executableHash) && hash.test(executableHash))) &&
+    string(value["installationSha256"]) && hash.test(value["installationSha256"]);
+}
+
 function validBinding(value: unknown): value is InputBinding {
   if (!exact(value, ["source", "check", "verifier"])) return false;
-  const source = value["source"];
-  const check = value["check"];
-  const verifier = value["verifier"];
-  if (!exact(source, ["file", "sha256"])) return false;
-  const sourceFile = source["file"];
-  const sourceHash = source["sha256"];
-  if (!string(sourceFile) || !isAbsolute(sourceFile) || !string(sourceHash) || !hash.test(sourceHash)) return false;
-  if (!exact(check, ["profile", "configuration", "arguments", "limits"]) ||
-      !isKnownProfileConfiguration(check["profile"], check["configuration"]) ||
-      !Array.isArray(check["arguments"]) || !check["arguments"].every(string)) return false;
-  const limits = check["limits"];
-  if (!exact(limits, ["timeoutMs", "maxOutputBytes", "terminationWaitMs"]) ||
-      !positiveInteger(limits["timeoutMs"]) || !positiveInteger(limits["maxOutputBytes"]) ||
-      !positiveInteger(limits["terminationWaitMs"])) return false;
-  if (!exact(verifier, ["packageVersion", "executable", "executableSha256", "entry", "installationSha256"]) ||
-      !string(verifier["packageVersion"]) || !string(verifier["executable"]) || !string(verifier["entry"]) ||
-      !isAbsolute(verifier["executable"]) || !isAbsolute(verifier["entry"]) ||
-      !(verifier["executableSha256"] === null ||
-        (string(verifier["executableSha256"]) && hash.test(verifier["executableSha256"]))) ||
-      !string(verifier["installationSha256"]) || !hash.test(verifier["installationSha256"])) return false;
-  return true;
+  return validSource(value["source"]) && validCheck(value["check"]) && validVerifier(value["verifier"]);
+}
+
+function validDiagnostic(value: unknown, binding: InputBinding): boolean {
+  if (!exact(value, ["rule", "message", "line", "column"])) return false;
+  return isKnownDiagnosticRule(binding.check.profile, value["rule"]) && string(value["message"]) &&
+    value["message"].length > 0 && positiveInteger(value["line"]) && positiveInteger(value["column"]);
 }
 
 function validResult(value: unknown): value is CompletedOxlintResult {
   if (!exact(value, ["status", "file", "profile", "diagnostics", "process", "binding"]) ||
       (value["status"] !== "passed" && value["status"] !== "check_failed") ||
       !string(value["file"]) || !isAbsolute(value["file"]) ||
-      value["process"] !== "exited" || !Array.isArray(value["diagnostics"]) ||
-      !validBinding(value["binding"])) return false;
-  if (value["profile"] !== value["binding"]["check"]["profile"]) return false;
+      value["process"] !== "exited" || !Array.isArray(value["diagnostics"])) return false;
+  const binding = value["binding"];
+  if (!validBinding(binding)) return false;
+  if (value["profile"] !== binding.check.profile) return false;
   if (value["status"] === "passed" && value["diagnostics"].length !== 0) return false;
   if (value["status"] === "check_failed" && value["diagnostics"].length === 0) return false;
-  if (value["file"] !== value["binding"]["source"]["file"]) return false;
-  for (const diagnostic of value["diagnostics"]) {
-    if (!exact(diagnostic, ["rule", "message", "line", "column"]) ||
-        !isKnownDiagnosticRule(value["binding"]["check"]["profile"], diagnostic["rule"]) ||
-        !string(diagnostic["message"]) || diagnostic["message"].length === 0 ||
-        !positiveInteger(diagnostic["line"]) || !positiveInteger(diagnostic["column"])) return false;
-  }
-  return true;
+  if (value["file"] !== binding.source.file) return false;
+  return value["diagnostics"].every((diagnostic) => validDiagnostic(diagnostic, binding));
 }
 
 function validDurableRecord(value: unknown): value is DurableRecord {

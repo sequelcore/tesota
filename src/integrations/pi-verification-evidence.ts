@@ -42,41 +42,89 @@ export interface CandidateAssessment {
   readonly current: Applicability;
 }
 
-export function candidateProbePasses(result: PiSessionResult, candidate: VerificationCandidate, assessment: CandidateAssessment): boolean {
-  const [before, after] = candidate.checks;
+function completedCandidateSession(result: PiSessionResult): boolean {
   return result.status === "completed" && result.terminalStopReason === "stop" &&
     !result.abortRequested && !result.budgetExceeded && !result.deadlineExpired &&
     result.modelInvocationCount === 4 && result.verificationInvocationCount === 2 &&
     result.toolExecutionStartCount === 3 && result.verificationResultsSupplied === 2 &&
-    result.response.trim() === "TESOTA_CANDIDATE_OK" &&
-    !result.events.some((event) => event.type === "verification_denied" || event.type === "candidate_edit_denied") &&
-    candidate.edits === 1 && candidateSatisfiesTask(candidate.source) &&
+    result.response.trim() === "TESOTA_CANDIDATE_OK";
+}
+
+function verifiedCandidateCorrection(candidate: VerificationCandidate): boolean {
+  const [before, after] = candidate.checks;
+  return candidate.edits === 1 && candidateSatisfiesTask(candidate.source) &&
     before?.status === "check_failed" && after?.status === "passed" &&
-    isIssuedOxlintResult(before) && isIssuedOxlintResult(after) &&
-    assessment.prior.status === "stale" && assessment.current.status === "applicable" &&
+    isIssuedOxlintResult(before) && isIssuedOxlintResult(after);
+}
+
+function currentCandidateAssessment(assessment: CandidateAssessment): boolean {
+  return assessment.prior.status === "stale" && assessment.current.status === "applicable" &&
     assessment.prior.provenance === "issued" && assessment.current.provenance === "issued";
+}
+
+export function candidateProbePasses(result: PiSessionResult, candidate: VerificationCandidate, assessment: CandidateAssessment): boolean {
+  return completedCandidateSession(result) &&
+    !result.events.some((event) => event.type === "verification_denied" || event.type === "candidate_edit_denied") &&
+    verifiedCandidateCorrection(candidate) && currentCandidateAssessment(assessment);
+}
+
+interface ProbeSessionProjection {
+  readonly status: PiSessionResult["status"];
+  readonly modelInvocationCount: number;
+  readonly verificationInvocationCount: number;
+  readonly toolExecutionStartCount: number;
+  readonly abortRequested: boolean;
+  readonly verificationResultsSupplied: number;
+  readonly responseMatchesCandidateToken: boolean;
+  readonly terminalStopReason: PiSessionResult["terminalStopReason"] | null;
+  readonly deadlineExpired: boolean;
+  readonly budgetExceeded: boolean;
+  readonly eventTypes: readonly PiSessionResult["events"][number]["type"][];
+  readonly deniedInputs: readonly { readonly matchesCandidateName: boolean }[];
+  readonly resultSuppliedToContinuation: boolean;
+  readonly verificationStatus: NonNullable<PiSessionResult["verification"]>["status"] | null;
+}
+
+function projectSession(result: PiSessionResult | null): ProbeSessionProjection {
+  if (result === null) {
+    return { status: "failed", modelInvocationCount: 0, verificationInvocationCount: 0,
+      toolExecutionStartCount: 0, abortRequested: false, verificationResultsSupplied: 0,
+      responseMatchesCandidateToken: false, terminalStopReason: null, deadlineExpired: false,
+      budgetExceeded: false, eventTypes: [], deniedInputs: [], resultSuppliedToContinuation: false,
+      verificationStatus: null };
+  }
+  return { status: result.status, modelInvocationCount: result.modelInvocationCount,
+    verificationInvocationCount: result.verificationInvocationCount,
+    toolExecutionStartCount: result.toolExecutionStartCount, abortRequested: result.abortRequested,
+    verificationResultsSupplied: result.verificationResultsSupplied,
+    responseMatchesCandidateToken: result.response.trim() === "TESOTA_CANDIDATE_OK",
+    terminalStopReason: result.terminalStopReason, deadlineExpired: result.deadlineExpired,
+    budgetExceeded: result.budgetExceeded, eventTypes: result.events.map((event) => event.type),
+    deniedInputs: result.events.filter((event) => event.type === "verification_denied")
+      .map((event) => ({ matchesCandidateName: event.input === "candidate.ts" })),
+    resultSuppliedToContinuation: result.resultSuppliedToContinuation,
+    verificationStatus: result.verification?.status ?? null };
 }
 
 export function serializeCandidateProbe(result: PiSessionResult | null, candidate: VerificationCandidate,
   assessment: CandidateAssessment | null, identity: Readonly<Record<string, string>>, timestamp: string, evidenceSaved: boolean): string {
   if (!identities.has(identity)) throw new Error("Unrecognized candidate probe identity");
+  const session = projectSession(result);
   return JSON.stringify({ format: "tesota-candidate-probe", version: 3, timestamp, implementation: identity,
     provider: "openai-codex", api: "openai-codex-responses", model: LIVE_CODEX_MODEL_ID, authenticationMethod: "stored",
     limits: { ...PI_CANDIDATE_LIMITS, ...CANDIDATE_LIMITS },
-    status: result?.status ?? "failed", modelInvocationCount: result?.modelInvocationCount ?? 0,
-    verificationInvocationCount: result?.verificationInvocationCount ?? 0, edits: candidate.edits,
-    toolExecutionStartCount: result?.toolExecutionStartCount ?? 0, abortRequested: result?.abortRequested ?? false,
-    verificationResultsSupplied: result?.verificationResultsSupplied ?? 0,
-    responseMatchesExpectedToken: result?.response.trim() === "TESOTA_CANDIDATE_OK",
+    status: session.status, modelInvocationCount: session.modelInvocationCount,
+    verificationInvocationCount: session.verificationInvocationCount, edits: candidate.edits,
+    toolExecutionStartCount: session.toolExecutionStartCount, abortRequested: session.abortRequested,
+    verificationResultsSupplied: session.verificationResultsSupplied,
+    responseMatchesExpectedToken: session.responseMatchesCandidateToken,
     candidateSatisfiesTask: candidateSatisfiesTask(candidate.source),
-    terminalStopReason: result?.terminalStopReason ?? null, deadlineExpired: result?.deadlineExpired ?? false,
-    budgetExceeded: result?.budgetExceeded ?? false, taskAcceptance: "not_evaluated",
+    terminalStopReason: session.terminalStopReason, deadlineExpired: session.deadlineExpired,
+    budgetExceeded: session.budgetExceeded, taskAcceptance: "not_evaluated",
     checks: candidate.checks.map((check) => ({ status: check.status, process: check.process,
       sourceSha256: check.binding?.source.sha256 ?? null })),
     applicability: assessment === null ? null : { prior: assessment.prior.status, current: assessment.current.status },
-    evidenceSaved, events: result?.events.map((event) => event.type) ?? [],
-    deniedInputs: result?.events.filter((event) => event.type === "verification_denied")
-      .map((event) => ({ matchesCandidateName: event.input === "candidate.ts" })) ?? [],
+    evidenceSaved, events: session.eventTypes, deniedInputs: session.deniedInputs,
     disposition: result !== null && assessment !== null && evidenceSaved && candidateProbePasses(result, candidate, assessment) ? "passed" : "failed",
   }, null, 2) + "\n";
 }
@@ -85,17 +133,17 @@ export function serializeCandidateProbe(result: PiSessionResult | null, candidat
 export function serializeVerificationProbe(result: PiSessionResult | null, identity: Readonly<Record<string, string>>,
   timestamp: string, evidenceSaved: boolean): string {
   if (!identities.has(identity)) throw new Error("Unrecognized verification probe identity");
+  const session = projectSession(result);
   return JSON.stringify({ format: "tesota-verification-probe", version: 2, timestamp,
     implementation: identity, provider: "openai-codex", api: "openai-codex-responses", model: LIVE_CODEX_MODEL_ID,
     authenticationMethod: "stored", limits: PI_VERIFICATION_LIMITS,
-    status: result?.status ?? "failed", modelInvocationCount: result?.modelInvocationCount ?? 0,
-    verificationInvocationCount: result?.verificationInvocationCount ?? 0,
-    toolExecutionStartCount: result?.toolExecutionStartCount ?? 0,
-    resultSuppliedToContinuation: result?.resultSuppliedToContinuation ?? false,
-    terminalStopReason: result?.terminalStopReason ?? null, abortRequested: result?.abortRequested ?? false,
-    budgetExceeded: result?.budgetExceeded ?? false, deadlineExpired: result?.deadlineExpired ?? false,
-    verificationStatus: result?.verification?.status ?? null,
-    events: result?.events.map((event) => event.type) ?? [],
+    status: session.status, modelInvocationCount: session.modelInvocationCount,
+    verificationInvocationCount: session.verificationInvocationCount,
+    toolExecutionStartCount: session.toolExecutionStartCount,
+    resultSuppliedToContinuation: session.resultSuppliedToContinuation,
+    terminalStopReason: session.terminalStopReason, abortRequested: session.abortRequested,
+    budgetExceeded: session.budgetExceeded, deadlineExpired: session.deadlineExpired,
+    verificationStatus: session.verificationStatus, events: session.eventTypes,
     evidence: evidenceSaved ? "verification.json" : null,
     taskAcceptance: "not_evaluated",
     disposition: result !== null && evidenceSaved && verificationProbePasses(result) ? "passed" : "failed",

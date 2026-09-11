@@ -51,6 +51,9 @@ after checking for conflicting source work.
 arguments print a diagnostic on stderr and exit 2.
 
 Tests exercise real Oxlint, controlled Pi boundaries and compiled CLI processes.
+The repository lint configuration applies Oxlint's classic cyclomatic-complexity
+limit of 20 to every function in `src` and `tests`; it has no baseline or
+file-level exceptions and remains separate from the candidate verifier profile.
 Normal checks do not log in or invoke a live model. Network experiments have a
 separate [operating guide](../experiments/codex/README.md). The CI workflow declares Windows and
 Linux checks; a declared lane does not establish that it has run successfully.

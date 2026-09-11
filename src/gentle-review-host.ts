@@ -73,6 +73,48 @@ export interface GentleReviewRelayDependencies {
   readonly reviewer: typeof runOpaquePiReviewer;
 }
 
+type GentleStatus = z.infer<typeof statusSchema>;
+type ReviewerSlot = z.infer<typeof slot>;
+
+function offeredReviewerSlot(status: GentleStatus): ReviewerSlot | null {
+  if (status.action === "stop" || status.next_transition?.kind !== "collect") return null;
+  return slot.parse(status.next_transition.collect?.inputs[0]);
+}
+
+function assertCurrentSubject(status: GentleStatus, selected: ReviewerSlot, lineage: string): void {
+  if (status.authority?.lineage_id !== lineage ||
+      status.authority.lineage_id !== selected.artifact_subject.lineage_id ||
+      status.target_identity !== selected.artifact_subject.target_identity) {
+    throw new Error("Gentle reviewer subject does not match current authority");
+  }
+}
+
+function materializationArguments(selected: ReviewerSlot): readonly string[] {
+  const arguments_ = selected.arguments.map((value) => value.token);
+  if (!arguments_.includes("--agent=pi") || !arguments_.includes("--materialize=true")) {
+    throw new Error("Gentle did not offer the Pi immutable materialization contract");
+  }
+  return arguments_;
+}
+
+function assertSubmissionSlot(selected: ReviewerSlot): void {
+  const completion = selected.submission;
+  const location = completion.value.substitution_location;
+  if (completion.argument_tokens[location] !== "--input={{value}}" ||
+      completion.argument_tokens.filter((value) => value.includes("{{value}}")).length !== 1) {
+    throw new Error("Gentle submission must offer exactly one reviewer stdin slot");
+  }
+}
+
+function reviewerBindingUnchanged(
+  current: GentleStatus, observed: GentleStatus, selected: ReviewerSlot,
+): boolean {
+  const currentSlot = offeredReviewerSlot(current);
+  return currentSlot !== null && current.target_identity === observed.target_identity &&
+    JSON.stringify(current.authority) === JSON.stringify(observed.authority) &&
+    JSON.stringify(currentSlot) === JSON.stringify(selected);
+}
+
 /** Collect one currently offered immutable reviewer slot. Never invent or retry authority. */
 export async function runGentleReviewHost(
   options: GentleReviewRelayOptions,
@@ -89,34 +131,19 @@ export async function runGentleReviewHost(
     "--agent", "pi", "--lineage", options.lineage, "--next-transition"];
   const observed: unknown = JSON.parse((await invoke(statusArguments, "read")).toString("utf8"));
   const status = statusSchema.parse(observed);
-  if (status.action === "stop" || status.next_transition?.kind !== "collect") {
-    return { status: "provider_transition_required", provider: observed };
-  }
-  const selected = slot.parse(status.next_transition.collect?.inputs[0]);
-  if (status.authority?.lineage_id !== options.lineage ||
-      status.authority.lineage_id !== selected.artifact_subject.lineage_id ||
-      status.target_identity !== selected.artifact_subject.target_identity) {
-    throw new Error("Gentle reviewer subject does not match current authority");
-  }
-  const materializeArguments = selected.arguments.map((value) => value.token);
-  if (!materializeArguments.includes("--agent=pi") || !materializeArguments.includes("--materialize=true")) {
-    throw new Error("Gentle did not offer the Pi immutable materialization contract");
-  }
+  const selected = offeredReviewerSlot(status);
+  if (selected === null) return { status: "provider_transition_required", provider: observed };
+  assertCurrentSubject(status, selected, options.lineage);
+  const materializeArguments = materializationArguments(selected);
   const completion = selected.submission;
   const location = completion.value.substitution_location;
-  if (completion.argument_tokens[location] !== "--input={{value}}" ||
-      completion.argument_tokens.filter((value) => value.includes("{{value}}")).length !== 1) {
-    throw new Error("Gentle submission must offer exactly one reviewer stdin slot");
-  }
+  assertSubmissionSlot(selected);
   const prompt = await invoke(["review", "capture-result", ...materializeArguments], "read");
   const result = await dependencies.reviewer(prompt, options.signal === undefined ? {} : { signal: options.signal });
 
   // A completed response cannot authorize submission to a changed slot.
   const current = statusSchema.parse(JSON.parse((await invoke(statusArguments, "read")).toString("utf8")));
-  if (current.action === "stop" || current.next_transition?.kind !== "collect" ||
-      current.target_identity !== status.target_identity ||
-      JSON.stringify(current.authority) !== JSON.stringify(status.authority) ||
-      JSON.stringify(slot.parse(current.next_transition.collect?.inputs[0])) !== JSON.stringify(selected)) {
+  if (!reviewerBindingUnchanged(current, status, selected)) {
     throw new Error("Gentle reviewer binding changed; result was not submitted");
   }
   const stagingDirectory = await mkdtemp(join(tmpdir(), "tesota-gentle-review-"));

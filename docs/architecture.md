@@ -131,12 +131,12 @@ false-positive cost and a new pinned configuration identity. Gentle review,
 formal contracts and integration tests remain responsible for concerns Oxlint
 cannot establish.
 
-Cyclomatic complexity is currently a repository-maintainability measurement,
-not part of the candidate verifier profile. The first bounded refactor kept its
-helpers beside each owning behavior and reduced two functions below 20 without
-changing their public contracts. A later gate must distinguish new code from the
-nine existing functions above 20; it must not make historical complexity or a
-lower metric sufficient evidence for acceptance.
+Cyclomatic complexity is a repository-maintainability gate, not part of the
+candidate verifier profile and not evidence of task acceptance. The
+repository-owned Oxlint configuration enforces the classic variant at maximum
+20 across `src` and `tests`, without baselines or file exceptions. Refactored
+helpers remain beside their owning behavior; candidate verification continues
+to use its own fixed, identity-bound `oxlint-static/v3` configuration.
 
 ## Failure and recovery boundaries
 

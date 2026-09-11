@@ -123,6 +123,28 @@ function deniedStream(model: Model<Api>): ReturnType<typeof createAssistantMessa
   return stream;
 }
 
+function isStreamContentUpdate(type: string): boolean {
+  return type === "text_delta" || type === "thinking_delta" || type === "toolcall_delta";
+}
+
+function inspectResponse(message: AssistantMessage | undefined): LiveCodexTurnResult["responseDiagnostic"] {
+  const content = message?.content;
+  const textBlocks = content?.filter((block) => block.type === "text") ?? [];
+  return {
+    messageObserved: message !== undefined,
+    textBlockCount: textBlocks.length,
+    nonTextBlockCount: (content?.length ?? 0) - textBlocks.length,
+    thinkingBlockCount: content?.filter((block) => block.type === "thinking").length ?? 0,
+    textMatchesExpectedToken: textBlocks.map((block) => block.text).join("").trim() === LIVE_CODEX_EXPECTED_TOKEN,
+  };
+}
+
+function terminalObservation(reason: AssistantMessage["stopReason"] | null): LiveObservation {
+  if (reason === "stop") return "terminal_stop";
+  if (reason === "aborted") return "terminal_aborted";
+  return "terminal_other";
+}
+
 /** One bounded turn. Injectable public stream boundary permits credential-free regressions. */
 export async function runLiveCodexTurn(
   stream: StreamFn, model: Model<Api>, abortOnUpdate: boolean,
@@ -184,9 +206,7 @@ export async function runLiveCodexTurn(
       case "turn_start": events.push("turn_started"); break;
       case "message_update":
         // Pi forwards start/done/error too. Only actual content deltas prove streaming.
-        if (event.assistantMessageEvent.type === "text_delta" ||
-            event.assistantMessageEvent.type === "thinking_delta" ||
-            event.assistantMessageEvent.type === "toolcall_delta") {
+        if (isStreamContentUpdate(event.assistantMessageEvent.type)) {
           streamUpdateCount += 1;
           // Retain the first update's order, not an unbounded event transcript.
           if (streamUpdateCount === 1) events.push("stream_update");
@@ -203,21 +223,12 @@ export async function runLiveCodexTurn(
         const message = event.messages.findLast((item) => item.role === "assistant");
         terminalStopReason = message?.stopReason ?? null;
         agentErrorObserved = agent.state.errorMessage !== undefined;
-        const content = message?.content;
-        const textBlocks = content?.filter((block) => block.type === "text") ?? [];
-        responseDiagnostic = {
-          messageObserved: message !== undefined,
-          textBlockCount: textBlocks.length,
-          nonTextBlockCount: (content?.length ?? 0) - textBlocks.length,
-          thinkingBlockCount: content?.filter((block) => block.type === "thinking").length ?? 0,
-          textMatchesExpectedToken: textBlocks.map((block) => block.text).join("").trim() === LIVE_CODEX_EXPECTED_TOKEN,
-        };
+        responseDiagnostic = inspectResponse(message);
         // Pi represents provider reasoning separately from answer text, even without a summary.
         // Only text and thinking are permitted; tool calls and future block types fail closed.
         responseMatchesExpectedToken = responseDiagnostic.nonTextBlockCount === responseDiagnostic.thinkingBlockCount &&
           responseDiagnostic.textMatchesExpectedToken;
-        events.push(terminalStopReason === "stop" ? "terminal_stop" :
-          terminalStopReason === "aborted" ? "terminal_aborted" : "terminal_other");
+        events.push(terminalObservation(terminalStopReason));
         resolveFinished();
         break;
       }
@@ -255,30 +266,42 @@ export async function runLiveCodexTurn(
     } };
 }
 
-export function liveProbePasses(probe: LiveCodexTurnResult, abort: boolean): boolean {
+function observationsOrdered(events: readonly LiveObservation[], names: readonly LiveObservation[]): boolean {
+  let previous = -1;
+  return names.every((name) => {
+    const index = events.indexOf(name);
+    const valid = index > previous;
+    previous = index;
+    return valid;
+  });
+}
+
+function commonProbeEvidence(probe: LiveCodexTurnResult): boolean {
   const events = probe.events;
-  const ordered = (names: readonly LiveObservation[]): boolean => {
-    let previous = -1;
-    return names.every((name) => {
-      const index = events.indexOf(name);
-      const valid = index > previous;
-      previous = index;
-      return valid;
-    });
-  };
-  const common = probe.modelInvocationCount === 1 && probe.invocationAttempts === 1 &&
+  return probe.modelInvocationCount === 1 && probe.invocationAttempts === 1 &&
     probe.toolExecutionStartCount === 0 && !events.includes("tool_execution_started") &&
     !probe.requestBudgetExceeded && !events.includes("request_budget_exceeded") &&
     !probe.deadlineExpired && !events.includes("deadline_expired") &&
     probe.terminalObserved && probe.settlement === "observed" && probe.taskAcceptance === "not_evaluated" &&
     events.filter((event) => event === "model_invocation_started").length === 1;
-  if (!common) return false;
-  return abort ? probe.status === "aborted" && probe.terminalStopReason === "aborted" &&
-    probe.abortRequested && probe.streamUpdateCount > 0 && ordered([
+}
+
+function abortedProbePasses(probe: LiveCodexTurnResult): boolean {
+  return probe.status === "aborted" && probe.terminalStopReason === "aborted" &&
+    probe.abortRequested && probe.streamUpdateCount > 0 && observationsOrdered(probe.events, [
       "model_invocation_started", "stream_update", "abort_requested", "terminal_aborted", "normalized_aborted",
-    ]) : probe.status === "completed" && probe.terminalStopReason === "stop" &&
-    !probe.abortRequested && !events.includes("abort_requested") && probe.responseMatchesExpectedToken &&
-    ordered(["model_invocation_started", "terminal_stop", "normalized_completed"]);
+    ]);
+}
+
+function completedProbePasses(probe: LiveCodexTurnResult): boolean {
+  return probe.status === "completed" && probe.terminalStopReason === "stop" &&
+    !probe.abortRequested && !probe.events.includes("abort_requested") && probe.responseMatchesExpectedToken &&
+    observationsOrdered(probe.events, ["model_invocation_started", "terminal_stop", "normalized_completed"]);
+}
+
+export function liveProbePasses(probe: LiveCodexTurnResult, abort: boolean): boolean {
+  if (!commonProbeEvidence(probe)) return false;
+  return abort ? abortedProbePasses(probe) : completedProbePasses(probe);
 }
 
 /** AUTH-ONLY has no probe/Agent path. A denied attempt remains a failure even if caught. */
