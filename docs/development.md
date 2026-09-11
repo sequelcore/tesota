@@ -37,6 +37,11 @@ explicit lifecycle operations; review never authorizes promotion.
 If model inference fails, the command submits nothing. Retry only through a new
 explicit command after bound status still offers the slot; this is capture
 re-entry, not reconstructed `review.recover` authority.
+Gentle's targeted validator launches a fixed `pi` process. The compiled
+`dist/pi-review-relay.js` is Tesota's credential-preserving implementation of
+that process contract: it admits only the fixed tool-free argv and never copies
+OAuth credentials into Pi's default store. Gentle remains responsible for the
+isolated process, prompt and verdict admission.
 `task review <directory>` and `task decide <directory> <accept|reject> <review-sha256>`
 provide offline review and local decision recording; neither promotes code.
 `task promote <directory> <review-sha256>` explicitly applies an accepted

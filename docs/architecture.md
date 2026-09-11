@@ -28,6 +28,7 @@ It has no general production task runtime or interactive agent shell. The
 | [integrations/pi-verification-evidence.ts](../src/integrations/pi-verification-evidence.ts) | Verification and candidate probe criteria, identity and sanitized records |
 | [src/live-candidate.ts](../src/live-candidate.ts) | Run the correction exercise and retain checks, source and review diff |
 | [integrations/pi-task.ts](../src/integrations/pi-task.ts) | Adapt task-owned schemas to Pi tools; bound the live session and observe check continuation |
+| [src/pi-review-relay.ts](../src/pi-review-relay.ts) | Expose Tesota's saved Codex OAuth through Gentle's fixed tool-free Pi process transport |
 | [task-run.ts](../src/task-run.ts) | Create one fresh task attempt, reuse authentication and retain its checks and review diff |
 | [task-review.ts](../src/task-review.ts) | Review current candidate bytes and bind a separate local operator decision to their fingerprint |
 | [task-promotion.ts](../src/task-promotion.ts) | Apply one explicitly requested, accepted documentation or `pi-result-consistency` change after source checks; retain the write outcome |
@@ -111,6 +112,10 @@ candidate files, accept promotion or reconstruct provider authority.
 If model transport fails before producing an artifact, the relay performs no
 submission or follow-up status call. A later explicit invocation must begin from
 fresh provider status; only a slot reoffered there remains usable.
+For provider-owned targeted validation, the compiled Pi process relay accepts
+only Gentle's fixed no-tools argument vector, bounds stdin, invokes the same
+Tesota-owned OAuth reviewer and writes only its opaque result bytes. Gentle still
+owns prompt materialization, isolated execution, result admission and closure.
 
 ## Static-analysis policy
 

@@ -37,7 +37,7 @@ validation of the current checkout.
 | Pi Coding Agent host | Passed for bounded Windows task | Full SDK host reused Tesota's Codex credential store, allowed only `read` and `edit`, and completed the scoped Pi status task in an isolated candidate; check passed and no acceptance was recorded |
 | Codex-backed Gentle reviewer relay | Passed for one retained high-risk lineage | Tesota preserved provider-issued prompts and bindings, Luna completed the remaining three immutable reviewer slots, Gentle admitted them and the exact acknowledgement burned approved authority |
 | Kiln static-analysis qualification | Planned | Compare selected `dev` rules and bounded quality-gate sequencing against Tesota's pinned Oxlint profile; adopt only evidenced, low-noise rules |
-| Gentle AI qualification | In progress | Contract, capabilities, parity lane, stale-binding rejection and immutable model-backed settlement passed; failed reviewer transport safely reoffered its bound slot, while correction and native recovery remain unqualified |
+| Gentle AI qualification | Correction path passed; native authority recovery remains open | Immutable settlement, interrupted capture re-entry, one provider-authorized correction and targeted validation passed; `review.recover` remains unqualified |
 | First verified self-development cycle | Complete for the bounded cycle | One combined candidate passed Pi correction, applicable behavioral verification, immutable Gentle review, human acceptance and guarded promotion; the later integration repair is recorded separately |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
@@ -208,9 +208,32 @@ confirmed successful stored OAuth authentication followed by HTTP 429 at model
 request admission before inference. Gentle retained `reviewing` authority and
 reoffered the same identity-bound `review-risk` slot. No artifact was submitted,
 no candidate byte was corrected and no `review.recover` transition was offered.
-This qualifies safe capture re-entry after an interrupted reviewer transport,
-not correction or native authority recovery; the live correction exercise is
-blocked until the authorized model is available.
+This qualified safe capture re-entry after an interrupted reviewer transport,
+not correction or native authority recovery; the live correction exercise was
+blocked until the authorized model became available.
+
+After model availability returned, the interrupted high-risk lineage admitted
+all four lenses. Gentle recorded a deterministic introduced `CRITICAL`, but a
+second lens supplied conflicting causal evidence, so the provider closed the
+lineage as terminal `escalated` and allowed only `stop`. No correction or
+recovery was reconstructed from that result.
+
+A narrower `pi-result-consistency` candidate
+`863e280c-6512-45ca-989e-12c90955d2aa`, based on
+`eda9f4d7400ab42265b97272359bd9626fdd1aef`, changed the final current-check
+conjunction into a precedence-bypassing disjunction. Its pre-existing 26-case
+oracle rejected 23 cases before review. Gentle froze the candidate under
+lineage `review-6522051d6b1f0d20`; its single reliability lens admitted
+`R3-precedence-bypass` as an introduced deterministic `CRITICAL` and opened
+`correction_required`. The provider accepted a two-line correction plan, then
+bound the corrected tree after the conjunction was restored with explicit
+grouping. The same oracle passed on source SHA-256
+`573af3f2aaa78d499b2fe58a13688f1c34e15aa13ab24b8e558fd74db1b66f65`.
+Gentle's targeted validator ran through Tesota's fixed tool-free Pi process relay,
+closed the review as `approved` and emitted an exact acknowledgement; executing
+it burned the review authority. No human decision or promotion was recorded.
+This qualifies the native correction path. A real `review.recover` successor
+transition after changed scope or invalidation remains open.
 
 Tesota's separate review fingerprint is
 `fc4031e766ce9002da5e05e18dbfc524776e4052e6521d1c2a1f567a727e7ceb`.

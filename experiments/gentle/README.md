@@ -366,5 +366,53 @@ calls and submitted no synthetic or partial result. This demonstrates explicit
 capture re-entry after interrupted model transport. It is not `review.recover`:
 Gentle did not offer a recovery transition, no severe finding was admitted, no
 correction plan opened and the candidate remains deliberately defective. A live
-correction and targeted validation still require the authorized Codex model to
-become available.
+correction and targeted validation required the authorized Codex model to become
+available; Phase 18 records that continuation.
+
+### Phase 18: provider-authorized correction
+
+**Passed on 2026-09-11 UTC.** After account usage became available, the retained
+high-risk lineage completed all four lenses. Gentle admitted a deterministic
+introduced `CRITICAL`, but another lens supplied conflicting causal evidence;
+the provider closed that lineage as terminal `escalated` with only `stop`
+allowed. This was a real manual-intervention transition, not correction or
+recoverable authority, and Tesota did not override it.
+
+A fresh, narrower candidate `863e280c-6512-45ca-989e-12c90955d2aa` used the
+repository-owned `pi-result-consistency` task and baseline
+`eda9f4d7400ab42265b97272359bd9626fdd1aef`. It changed the final current-check
+conjunction to a disjunction. The 26-case behavior oracle existed before review
+and rejected 23 cases, including failed sessions, stale evidence and invalid
+budgets. Initial source SHA-256 was
+`b8f4e4e0b698dd2f91e08d8b75bbbf4f90ddea04bb3a1b73abada1114dad3149`.
+
+Gentle froze target
+`sha256:cff065f5ed7e7484548252d8ebe32fe2f84e4eb84cde9db503d20f971b891aa1`
+under lineage `review-6522051d6b1f0d20`. Its reliability reviewer admitted
+`R3-precedence-bypass` as an introduced deterministic `CRITICAL`: operator
+precedence allowed a matching source hash to bypass completion, denial,
+deadline, budget and check conditions. Native status then offered only the
+correction-plan slot, bounded to two diff lines. Gentle captured that exact
+forecast without changing candidate bytes.
+
+The candidate restored the conjunction and added explicit grouping, staying in
+the original file and two-line correction bound. The behavior oracle passed on
+corrected source SHA-256
+`573af3f2aaa78d499b2fe58a13688f1c34e15aa13ab24b8e558fd74db1b66f65`.
+Gentle bound candidate tree `dc672cf0fdf4a90dc607c2e3ff8d11fbafee5de7`
+and issued one targeted-validation request for the original finding.
+
+The native validator initially failed safely because `pi` was absent from
+`PATH`, then because Pi's default store had no API key; both attempts reported
+`mutation_outcome: not_started` and `retry_safe: true`. Tesota added a bounded
+process relay that accepts only Gentle's fixed no-tools argv, reads the opaque
+prompt from stdin and uses Tesota's existing `CodexCredentials` without copying
+tokens. Through that relay, Gentle's provider-owned validator admitted the
+corrected target and closed as `approved`. The exact acknowledgement for target
+`sha256:f4213bd3adf33ea845ac53f49434added0b968f17af817fc26356b08234c679e`
+then returned `authority: burned`.
+
+This qualifies one real correction-plan and targeted-validation path, including
+safe retry after preflight failures. It does not qualify `review.recover`, which
+was never offered, and it grants neither Tesota acceptance nor promotion. The
+candidate remains isolated with one behavior-preserving grouped expression.
