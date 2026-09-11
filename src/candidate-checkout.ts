@@ -130,34 +130,44 @@ export async function resolveCandidateReference(reference: string,
   return await plainDirectory(join(root, reference));
 }
 
+async function readCandidateMarker(path: string): Promise<unknown> {
+  const metadata = await lstat(path);
+  if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 || metadata.size > 4096 ||
+      relative(path, await realpath(path)) !== "") throw new Error("Invalid candidate marker");
+  return JSON.parse(await readFile(path, "utf8"));
+}
+
+async function abandonmentStatus(path: string): Promise<"abandoned" | "invalid"> {
+  try {
+    abandonedRecordSchema.parse(await readCandidateMarker(path));
+    return "abandoned";
+  } catch { return "invalid"; }
+}
+
+async function decisionStatus(path: string): Promise<"accepted" | "rejected" | "invalid"> {
+  try {
+    const value = await readCandidateMarker(path);
+    if (typeof value !== "object" || value === null || !("decision" in value)) return "invalid";
+    if (value.decision === "accept") return "accepted";
+    return value.decision === "reject" ? "rejected" : "invalid";
+  } catch { return "invalid"; }
+}
+
+async function hasCandidateWork(directory: string): Promise<boolean> {
+  for (const name of ["candidate.diff", "attempt.jsonl", "coding-agent-attempt.json"]) {
+    if (await exists(join(directory, name))) return true;
+  }
+  return false;
+}
+
 async function lifecycleStatus(directory: string, record: CheckoutRecord): Promise<CandidateLifecycleStatus> {
   if (record.state === "failed") return "failed";
   if (record.state !== "ready") return "invalid";
   const abandonedPath = join(directory, "abandoned.json");
-  if (await exists(abandonedPath)) {
-    try {
-      const metadata = await lstat(abandonedPath);
-      if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 || metadata.size > 4096 ||
-          relative(abandonedPath, await realpath(abandonedPath)) !== "") return "invalid";
-      abandonedRecordSchema.parse(JSON.parse(await readFile(abandonedPath, "utf8")));
-      return "abandoned";
-    } catch { return "invalid"; }
-  }
+  if (await exists(abandonedPath)) return abandonmentStatus(abandonedPath);
   const decisionPath = join(directory, "decision.json");
-  if (await exists(decisionPath)) {
-    try {
-      const metadata = await lstat(decisionPath);
-      if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 || metadata.size > 4096 ||
-          relative(decisionPath, await realpath(decisionPath)) !== "") return "invalid";
-      const text = await readFile(decisionPath, "utf8");
-      const value: unknown = JSON.parse(text);
-      if (typeof value === "object" && value !== null && "decision" in value &&
-          (value.decision === "accept" || value.decision === "reject")) return value.decision === "accept" ? "accepted" : "rejected";
-    } catch { return "invalid"; }
-    return "invalid";
-  }
-  return await exists(join(directory, "candidate.diff")) || await exists(join(directory, "attempt.jsonl")) ||
-    await exists(join(directory, "coding-agent-attempt.json")) ? "awaiting-review" : "active";
+  if (await exists(decisionPath)) return decisionStatus(decisionPath);
+  return await hasCandidateWork(directory) ? "awaiting-review" : "active";
 }
 
 /** Summarize candidates without treating their persisted records as authority. */

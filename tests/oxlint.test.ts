@@ -135,6 +135,34 @@ it.each([
     .toEqual({ status: "execution_failed", reason: "invalid_verifier_result", process: "exited" });
 });
 
+it("projects a recognized diagnostic and rejects changes to any admitted diagnostic field", () => {
+  const file = resolve("source.ts");
+  const diagnostic = {
+    code: "eslint(no-debugger)", severity: "error", message: "Unexpected debugger statement.",
+    filename: file, labels: [{ span: { line: 3, column: 5 } }],
+  };
+  const report = (value: unknown) => JSON.stringify({
+    diagnostics: [value], number_of_files: 1, number_of_rules: ruleCount, threads_count: 1, start_time: 0,
+  });
+  expect(interpretOxlint(report(diagnostic), "", 1, file)).toEqual({
+    status: "check_failed", profile, file, process: "exited",
+    diagnostics: [{ rule: diagnostic.code, message: diagnostic.message, line: 3, column: 5 }],
+  });
+  for (const invalid of [
+    { ...diagnostic, code: "eslint(unadmitted)" },
+    { ...diagnostic, severity: "warning" },
+    { ...diagnostic, message: "" },
+    { ...diagnostic, filename: resolve("other.ts") },
+    { ...diagnostic, labels: [] },
+    { ...diagnostic, labels: [{ span: { line: 0, column: 5 } }] },
+    { ...diagnostic, labels: [{ span: { line: 3, column: 0 } }] },
+  ]) {
+    expect(interpretOxlint(report(invalid), "", 1, file)).toMatchObject({
+      status: "execution_failed", reason: "invalid_verifier_result",
+    });
+  }
+});
+
 it("does not read candidate configuration, execute plugins, or honor inline suppressions", async () => {
   const { root, file, check } = await fixture("debugger;\n");
   await writeFile(join(root, "oxlint.config.ts"), 'throw new Error("must not execute");');

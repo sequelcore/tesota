@@ -203,6 +203,39 @@ it("lists lifecycle states and cleans only old rejected or failed checkouts", as
   await expect(readdir(join(active.directory, "repo"))).resolves.toContain("source.ts");
 });
 
+it("preserves lifecycle precedence and treats malformed terminal records as invalid", async () => {
+  const { source, candidates } = await fixture();
+  const created = await createCandidateCheckout(source, candidates);
+  const id = created.directory.split(/[\\/]/).pop();
+  if (id === undefined) throw new Error("Missing candidate ID");
+  const status = async () => (await listCandidateCheckouts(candidates)).find((candidate) => candidate.id === id)?.status;
+
+  await expect(status()).resolves.toBe("active");
+  await writeFile(join(created.directory, "attempt.jsonl"), "attempt\n");
+  await expect(status()).resolves.toBe("awaiting-review");
+  await writeFile(join(created.directory, "decision.json"), JSON.stringify({ decision: "accept" }));
+  await expect(status()).resolves.toBe("accepted");
+  await writeFile(join(created.directory, "decision.json"), JSON.stringify({ decision: "other" }));
+  await expect(status()).resolves.toBe("invalid");
+  await writeFile(join(created.directory, "decision.json"), JSON.stringify({ decision: "accept" }));
+  await writeFile(join(created.directory, "abandoned.json"), JSON.stringify({
+    format: "tesota-candidate-abandonment", version: 1,
+    recordedAt: "2026-09-11T00:00:00.000Z", authority: "local_operator_assertion",
+  }));
+  await expect(status()).resolves.toBe("abandoned");
+  await writeFile(join(created.directory, "abandoned.json"), "{}");
+  await expect(status()).resolves.toBe("invalid");
+
+  await rm(join(created.directory, "abandoned.json"));
+  await rm(join(created.directory, "decision.json"));
+  const recordPath = join(created.directory, "checkout.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  await writeFile(recordPath, JSON.stringify({ ...record, state: "preparing" }));
+  await expect(status()).resolves.toBe("invalid");
+  await writeFile(recordPath, JSON.stringify({ ...record, state: "failed" }));
+  await expect(status()).resolves.toBe("failed");
+});
+
 it("resolves candidate IDs and records explicit abandonment", async () => {
   const { source, candidates } = await fixture();
   const created = await createCandidateCheckout(source, candidates);

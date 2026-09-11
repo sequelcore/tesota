@@ -100,3 +100,28 @@ justifies it.
 This follow-up remains internal-decision-ready under the same corpus and
 single-run limitations. Historical v1 and v2 results remain recoverable but are
 stale against v3.
+
+## Cyclomatic-complexity pilot
+
+Oxlint's native `complexity` rule measured the 53-file corpus before the pilot.
+Its default maximum of 20 reported 11 functions; a probe at maximum 8 reported
+63, demonstrating that 8 is not a usable immediate repository gate.
+
+Two existing owners were selected because their observable behavior already had
+focused tests and their conditions could be named without creating a new module:
+
+| Function | Before | After | Structural change |
+| --- | ---: | ---: | --- |
+| `lifecycleStatus` | 26 | 6 | Shared secure marker reading, explicit abandonment and decision interpretation, and named work detection |
+| `interpretOxlint` | 35 | 12 | Separate report-header, diagnostic-location and diagnostic-field projection |
+
+No extracted helper exceeds complexity 11. Characterization now covers lifecycle
+precedence, malformed terminal records, the recognized diagnostic projection and
+rejection of changes to every admitted diagnostic field. Focused tests and the
+complete repository gate preserve the existing outputs and failure behavior.
+
+After the pilot, nine functions remain above 20. Complexity is therefore retained
+as measured evaluation evidence, not added to `oxlint-static/v3` or treated as
+human acceptance. A permanent repository gate still needs a bounded mechanism
+that applies maximum 20 to new functions while recording existing hotspots
+without disabling checks for an entire file.

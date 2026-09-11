@@ -44,6 +44,40 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function reportDiagnostics(value: unknown): readonly unknown[] | undefined {
+  if (!record(value)) return undefined;
+  if (value["number_of_files"] !== 1) return undefined;
+  if (value["number_of_rules"] !== OXLINT_DIAGNOSTIC_RULES.length) return undefined;
+  if (value["threads_count"] !== 1) return undefined;
+  const startTime = value["start_time"];
+  if (typeof startTime !== "number" || !Number.isFinite(startTime) || startTime < 0) return undefined;
+  return Array.isArray(value["diagnostics"]) ? value["diagnostics"] : undefined;
+}
+
+function diagnosticLocation(value: unknown): { readonly line: number; readonly column: number } | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const label: unknown = value[0];
+  if (!record(label) || !record(label["span"])) return undefined;
+  const line = label["span"]["line"];
+  const column = label["span"]["column"];
+  if (typeof line !== "number" || !Number.isSafeInteger(line) || line < 1) return undefined;
+  if (typeof column !== "number" || !Number.isSafeInteger(column) || column < 1) return undefined;
+  return { line, column };
+}
+
+function lintDiagnostic(value: unknown, file: string, cwd: string): LintDiagnostic | undefined {
+  if (!record(value)) return undefined;
+  const rule = value["code"];
+  if (!isKnownDiagnosticRule(OXLINT_PROFILE, rule)) return undefined;
+  if (value["severity"] !== "error") return undefined;
+  const message = value["message"];
+  if (typeof message !== "string" || message.length === 0) return undefined;
+  const filename = value["filename"];
+  if (typeof filename !== "string" || resolve(cwd, filename) !== file) return undefined;
+  const location = diagnosticLocation(value["labels"]);
+  return location === undefined ? undefined : { rule, message, ...location };
+}
+
 /** Project only the pinned producer's fields needed by the fixed profile. */
 export function interpretOxlint(
   stdout: string,
@@ -58,27 +92,14 @@ export function interpretOxlint(
   if (stderr.trim() !== "" || (exitCode !== 0 && exitCode !== 1)) return invalid;
   let report: unknown;
   try { report = JSON.parse(stdout); } catch { return invalid; }
-  if (!record(report) || report["number_of_files"] !== 1 ||
-      report["number_of_rules"] !== OXLINT_DIAGNOSTIC_RULES.length || report["threads_count"] !== 1 ||
-      typeof report["start_time"] !== "number" ||
-      !Number.isFinite(report["start_time"]) || report["start_time"] < 0 ||
-      !Array.isArray(report["diagnostics"])) return invalid;
+  const reportedDiagnostics = reportDiagnostics(report);
+  if (reportedDiagnostics === undefined) return invalid;
 
   const diagnostics: LintDiagnostic[] = [];
-  for (const value of report["diagnostics"]) {
-    if (!record(value) ||
-        !isKnownDiagnosticRule(OXLINT_PROFILE, value["code"]) ||
-        value["severity"] !== "error" || typeof value["message"] !== "string" ||
-        value["message"].length === 0 || typeof value["filename"] !== "string" ||
-        resolve(cwd, value["filename"]) !== file || !Array.isArray(value["labels"]) ||
-        value["labels"].length === 0) return invalid;
-    const label: unknown = value["labels"][0];
-    if (!record(label) || !record(label["span"])) return invalid;
-    const line = label["span"]["line"];
-    const column = label["span"]["column"];
-    if (typeof line !== "number" || !Number.isSafeInteger(line) || line < 1 ||
-        typeof column !== "number" || !Number.isSafeInteger(column) || column < 1) return invalid;
-    diagnostics.push({ rule: value["code"], message: value["message"], line, column });
+  for (const value of reportedDiagnostics) {
+    const diagnostic = lintDiagnostic(value, file, cwd);
+    if (diagnostic === undefined) return invalid;
+    diagnostics.push(diagnostic);
   }
   if (exitCode !== (diagnostics.length === 0 ? 0 : 1)) return invalid;
   return {

@@ -131,6 +131,13 @@ false-positive cost and a new pinned configuration identity. Gentle review,
 formal contracts and integration tests remain responsible for concerns Oxlint
 cannot establish.
 
+Cyclomatic complexity is currently a repository-maintainability measurement,
+not part of the candidate verifier profile. The first bounded refactor kept its
+helpers beside each owning behavior and reduced two functions below 20 without
+changing their public contracts. A later gate must distinguish new code from the
+nine existing functions above 20; it must not make historical complexity or a
+lower metric sufficient evidence for acceptance.
+
 ## Failure and recovery boundaries
 
 An abort request is not observed cancellation. Pi's terminal events determine
