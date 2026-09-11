@@ -195,3 +195,13 @@ directly, while final response text is only a compatibility fallback. Build,
 typecheck and lint pass. A new live capture is pending because the authorized
 Codex store currently reports its usage limit; the open Gentle lineage is not
 claimed as settled.
+
+### Phase 12: Luna multi-lens rerun
+
+After switching the authorized store to the Plus-compatible `gpt-5.6-luna`
+model, Tesota completed all four lenses for the same candidate identity:
+`risk`, `resilience`, `readability`, and `reliability`. Each result was
+accepted through the typed submission tool and saved beside the candidate; the
+candidate tree remained unchanged. Gentle capture is still a separate step,
+because its provider subjects require their negotiated `location`, severity,
+claim, and proof-reference fields.
