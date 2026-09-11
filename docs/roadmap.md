@@ -14,7 +14,7 @@ specification. [Architecture](architecture.md) describes what is implemented.
 ## Milestones
 
 Status below combines implementation records and retained live evidence through
-2026-09-10 UTC. Historical review acceptance is not a new review or a live
+2026-09-11 UTC. Historical review acceptance is not a new review or a live
 validation of the current checkout.
 
 | Increment | Status | Outcome or remaining condition |
@@ -41,16 +41,13 @@ validation of the current checkout.
 | First verified self-development cycle | In progress | Pi Coding Agent completed one bounded task; Tesota check, human acceptance and guarded promotion passed; a separate retained candidate completed immutable Gentle review, while one combined correction cycle remains open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
-The next increment extends the bounded cycle to formal correction of one real
-TypeScript property, with human acceptance kept separate from model completion.
-The code-task attempt used a sandboxed behavioral oracle and failure correction;
-guarded paragraph promotion is implemented
-as an explicit command that preserves conflicting source work by refusing the write.
-Review and local operator decision recording are implemented, with recovered
-decisions treated as untrusted assertions rather than promotion authority. The
-[scoped documentation task](tasks.md) now runs through a bounded live model attempt.
-It does not establish general editing permissions, task recovery, server-side
-cancellation or general promotion.
+The next increment is one combined correction cycle on a fresh candidate. Pi
+must make a bounded TypeScript change, applicable verification must detect a
+real defect, and the same candidate must pass corrected verification and Gentle
+review before it is presented for human acceptance. Tesota must preserve
+candidate identity, evidence applicability and provider authority throughout
+the cycle. This exercise does not establish general editing permissions,
+task recovery, server-side cancellation or general promotion.
 See the [experiment index](../experiments/README.md).
 See [candidate checkouts](candidates.md) for the new preparation commands.
 
@@ -63,12 +60,12 @@ task and property -> Pi implements -> LemmaScript/Dafny checks ->
 diagnostic feedback -> Pi corrects -> the property is checked again
 ```
 
-The first Tesota slice will use one pure TypeScript function with a small,
-explicit property. A deliberately defective implementation must fail the formal
-check, the agent must repair the implementation or propose a contract change,
-and the second check must bind to the corrected candidate. A contract change
-that weakens or contradicts the intended requirement requires human review; the
-agent may not silently make the obligation easier to prove.
+The first Tesota slice used one pure TypeScript function with a small, explicit
+property. Its deliberately defective implementation failed the formal check,
+Pi repaired the implementation, and the second check bound to the corrected
+candidate. The same rule governs future cycles: a contract change that weakens
+or contradicts the intended requirement requires human review; the agent may
+not silently make the obligation easier to prove.
 
 The result is verification evidence, not acceptance authority. Tesota must bind
 each observation to the exact candidate bytes and observed tool versions, keep
@@ -155,32 +152,52 @@ The intended acceptance exercise must demonstrate that:
 5. The report presents the diff, actual checks, observed consumption and limits.
 6. Human acceptance and promotion remain separate from model completion and checks.
 
-Terminal interaction, general candidate-checkout execution and task recovery
-still need implementation. The current promotion command is limited to the
-accepted documentation task and is not a general write capability. Do not create
-unused modules in anticipation of that work.
+General terminal interaction, general candidate-checkout execution and task
+recovery still need implementation. The current promotion command is limited to
+the accepted documentation task and is not a general write capability. Do not
+create unused modules in anticipation of that work.
+
+## Next increment: combined correction cycle
+
+Continue with one fresh, repository-owned task whose requirement and verification
+oracle are explicit before inference begins. Completion requires all of the
+following:
+
+1. Pi changes only the admitted files in an isolated candidate checkout.
+2. Oxlint, a behavioral check or LemmaScript/Dafny exposes a real seeded defect.
+3. Pi receives the exact diagnostic and corrects the implementation without
+   weakening the requirement or formal contract.
+4. Verification is rerun and bound to the corrected candidate bytes.
+5. Gentle reviews that same immutable candidate through its public relay. Any
+   actionable finding is either corrected through a new provider-authorized
+   transition or recorded as unresolved; authority is never reconstructed.
+6. Tesota presents the final diff, applicable evidence and remaining limits for
+   a separate human decision. No automatic acceptance or promotion occurs.
+
+The experiment must also record whether Gentle offers a usable correction or
+recovery transition. A successful four-lens settlement alone does not satisfy
+that remaining qualification.
 
 ## Interface and review sequencing
 
-The formal correction loop is complete for its bounded property. The next
-increment is Gentle AI qualification, not a dependency adoption: establish the
-exact Gentle review contract, run a bounded provider experiment, and compare
-its candidate identity, review evidence, recovery and correction behavior with
-Tesota's existing cycle. Gentle review may report findings and bounded next
-actions; Tesota retains acceptance and promotion authority.
+The formal correction loop is complete for its bounded property. Gentle's public
+review relay and one immutable four-lens settlement are also qualified. The next
+increment combines those proven slices on one fresh candidate and evaluates the
+provider's correction and recovery transitions. Gentle may report findings and
+bounded next actions; Tesota retains acceptance and promotion authority.
 
 Kiln's `dev` Oxlint profile and quality-gate loop are reference material for a
 separate static-analysis qualification. “Anti-slop” is not an Oxlint guarantee;
 candidate rules must be evaluated against real defects, false positives, tool
 version identity and retained evidence before adoption. This qualification may
-run before or alongside Gentle qualification, but neither imports Kiln's
-roadmap or private runtime state.
+run before or alongside the combined correction cycle, but neither imports
+Kiln's roadmap or private runtime state.
 
-After qualification, define Tesota's own shell contracts and build the shell as
-a Tesota-owned surface. A future Gentle integration belongs behind that
-boundary, so Tesota is not coupled to Gentle commands, presentation or private
-state. The current CLI and experiment commands remain the development surface
-until those contracts are stable.
+After the construction cycle is stable, define Tesota's own shell contracts and
+build the shell as a Tesota-owned surface. Gentle remains behind that boundary,
+so Tesota is not coupled to Gentle presentation or private state. The current
+CLI and experiment commands remain the development surface until those contracts
+are stable.
 
 The eventual interaction surface is undecided. A shell or richer terminal UI
 must be evaluated against the implemented workflow: giving a task, observing
@@ -192,15 +209,15 @@ community experience. No particular UI framework or existing shell is adopted.
 ## Open requirements and scope
 
 The original handoff included a bounded Gentle AI review integration and a small
-Dafny property for the first useful cycle. The formal property is now live for
-the bounded invocation decision. Gentle integration remains proposed pending
-qualification of its public contract, recovery semantics and evidence model.
-A formal model or provider review would not by itself prove the implementation
+Dafny property for the first useful cycle. The formal property is live for the
+bounded invocation decision. Gentle's public relay and immutable settlement are
+implemented; correction and usable recovery semantics remain unqualified. A
+formal model or provider review does not by itself prove the whole implementation
 correct or grant promotion authority.
 
 Pi is the selected candidate engine, with replacement contained by the integration
-boundary. Codex OAuth is the initial inference route. The fixed Spark selection
-belongs to the current experiment; it does not establish a permanent product
+boundary. Codex OAuth is the initial inference route. The fixed Luna selection
+belongs to the current experiments; it does not establish a permanent product
 model or subscription requirement. Account/model availability remains a live
 prerequisite, separate from successful authentication.
 
