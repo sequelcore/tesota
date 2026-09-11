@@ -6,7 +6,8 @@ import {
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { canAdmitInvocation } from "../verification/invocation-admission.js";
 
-export const LIVE_CODEX_MODEL_ID = "gpt-5.3-codex-spark";
+/** Default live model for the current Plus-compatible development account. */
+export const LIVE_CODEX_MODEL_ID = "gpt-5.6-luna";
 export const LIVE_CODEX_EXPECTED_TOKEN = "TESOTA_CODEX_OK";
 export const LIVE_LIMITS: Readonly<{
   modelInvocationsPerProbe: number; turnMs: number; settlementMs: number; loginMs: number;
