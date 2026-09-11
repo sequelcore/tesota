@@ -18,9 +18,12 @@ it("compiled login persists across processes, status is sanitized, and logout re
       encoding: "utf8", timeout: 8_000, windowsHide: true,
       env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"], TESOTA_TEST_AUTH_DIRECTORY: join(root, "auth") },
     });
-    for (const [action, expected] of [["login", "login saved"], ["status", "saved login available"],
-      ["login", "already logged in"], ["logout", "credentials removed"], ["status", "logged out"]]) {
-      const result = invoke(action!);
+    const operations: readonly (readonly [string, string])[] = [
+      ["login", "login saved"], ["status", "saved login available"],
+      ["login", "already logged in"], ["logout", "credentials removed"], ["status", "logged out"],
+    ];
+    for (const [action, expected] of operations) {
+      const result = invoke(action);
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain(expected);
       expect(result.stdout + result.stderr).not.toMatch(/SYNTHETIC_ACCESS|SYNTHETIC_REFRESH|NETWORK_FORBIDDEN/);
@@ -33,7 +36,9 @@ it("compiled login persists across processes, status is sanitized, and logout re
         expect(experiment.status, experiment.stderr).toBe(0);
         expect(experiment.stdout + experiment.stderr).not.toMatch(/SYNTHETIC_ACCESS|SYNTHETIC_REFRESH|LOGIN_FORBIDDEN|NETWORK_FORBIDDEN/);
         const runs = join(root, "experiments/codex/runs");
-        const record = JSON.parse(await readFile(join(runs, (await readdir(runs))[0]!), "utf8"));
+        const [runFile] = await readdir(runs);
+        if (runFile === undefined) throw new Error("Expected one retained run");
+        const record = JSON.parse(await readFile(join(runs, runFile), "utf8"));
         expect(record).toMatchObject({ version: 9, authenticationMethod: "stored", disposition: "passed", modelInvocationCount: 2 });
       }
     }
@@ -64,7 +69,9 @@ it("serializes Pi refresh across independent stores and preserves credentials on
     const instances = [first, new CodexCredentials(join(root, "auth"))].map((credentials) => {
       const models = createModels({ credentials });
       const codex = openaiCodexProvider();
-      codex.auth.oauth!.refresh = refresh;
+      const oauth = codex.auth.oauth;
+      if (oauth === undefined) throw new Error("Expected Codex OAuth support");
+      oauth.refresh = refresh;
       models.setProvider(codex);
       return models;
     });

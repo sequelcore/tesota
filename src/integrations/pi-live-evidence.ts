@@ -16,6 +16,7 @@ export type LiveSourceIdentity = Readonly<Record<(typeof implementationFiles)[nu
 const capturedIdentities = new WeakSet<object>();
 
 export function liveSourceIdentity(): LiveSourceIdentity {
+  // SAFETY: this module enumerates every key, freezes the result and admits only captured identities.
   const identity = Object.freeze(Object.fromEntries(implementationFiles.map((file) =>
     [file, createHash("sha256").update(readFileSync(new URL(`../../${file}`, import.meta.url))).digest("hex")]))) as LiveSourceIdentity;
   capturedIdentities.add(identity);

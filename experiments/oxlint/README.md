@@ -73,3 +73,30 @@ integration coverage and the repository gate passes. It is not externally
 claim-ready because the corpus is one private repository, the probes are
 deliberate fixtures, the measurement is one Windows/toolchain run and there was
 no independent reproduction.
+
+## Low-evidence follow-up
+
+Tesota later inspected
+[`dmmulroy/anti-slop`](https://github.com/dmmulroy/anti-slop) at commit
+`c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b`. Its explicit goal is an
+opinionated rejection of low-evidence and low-signal patterns, not a universal
+standard. Tesota used that distinction as policy inspiration but did not vendor
+the plugin, add `@oxlint/plugins`, or copy rule code.
+
+Two existing native rules supplied bounded equivalents for current needs:
+
+| Rule | Evidence and disposition |
+| --- | --- |
+| `typescript/no-non-null-assertion` | Found six `!` assertions in tests and none in production. Explicit guards replaced all six; a defect fixture fails and a narrowed control passes. |
+| `oxc/no-accumulating-spread` | Found no current violation. A reducer that copies its growing accumulator fails, while mutation of a fresh local accumulator passes. |
+
+The two-rule final scan covered the same 53 `src` and `tests` files with no
+diagnostics. They extend the verifier as `oxlint-static/v3`. The OAuth credential
+owner was also refactored to replace three type assertions with a credential
+type guard and safe error-code narrowing. The remaining branded source-identity
+assertion is required by its nominal boundary and now records the invariant that
+justifies it.
+
+This follow-up remains internal-decision-ready under the same corpus and
+single-run limitations. Historical v1 and v2 results remain recoverable but are
+stale against v3.

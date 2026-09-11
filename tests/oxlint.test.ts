@@ -12,8 +12,8 @@ const bun = execFileSync("bun", ["--no-env-file", "-p", "process.execPath"], {
   encoding: "utf8", windowsHide: true, timeout: 5000,
 }).trim();
 const cli = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
-const profile = "oxlint-static/v2";
-const ruleCount = 7;
+const profile = "oxlint-static/v3";
+const ruleCount = 9;
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -70,6 +70,8 @@ it.each([
   { source: "export function fail(): void { new Error(\"denied\"); }\n", rule: "oxc(missing-throw)" },
   { source: "export function identity(value: any): unknown { return value; }\n", rule: "typescript(no-explicit-any)" },
   { source: "// @ts-ignore\nexport const value: number = \"wrong\";\n", rule: "typescript(ban-ts-comment)" },
+  { source: "export function length(value?: string): number { return value!.length; }\n", rule: "typescript(no-non-null-assertion)" },
+  { source: "export const values = [1, 2].reduce((all, value) => [...all, value], [] as number[]);\n", rule: "oxc(no-accumulating-spread)" },
 ])("reports $rule without fixing its defect", async ({ source, rule }) => {
   const { file, check } = await fixture(source);
   const result = await runOxlint(check, file);
@@ -88,7 +90,9 @@ it("does not flag the corresponding valid constructs", async () => {
     "  return value?.callback?.();\n" +
     "}\n" +
     "// @ts-expect-error -- intentional compile-time fixture\n" +
-    "export const invalidAssignment: number = \"fixture\";\n";
+    "export const invalidAssignment: number = \"fixture\";\n" +
+    "export function length(value?: string): number { if (value === undefined) return 0; return value.length; }\n" +
+    "export function collect(values: readonly number[]): number[] { return values.reduce((all, value) => { all.push(value); return all; }, []); }\n";
   const { file, check } = await fixture(source);
   expect(await runOxlint(check, file)).toMatchObject({ status: "passed", profile, diagnostics: [] });
 });

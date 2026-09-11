@@ -119,11 +119,13 @@ owns prompt materialization, isolated execution, result admission and closure.
 
 ## Static-analysis policy
 
-Tesota's `oxlint-static/v2` profile is intentionally smaller than Kiln's `dev`
-profile. It owns seven file-local rules: the original debugger and unused-value
-checks plus five qualified correctness and TypeScript rules. The complete Kiln
-profile was not adopted: its structural limits produced high noise on the
-current repository, and Oxlint does not detect “slop” as a semantic category.
+Tesota's `oxlint-static/v3` profile is intentionally smaller than Kiln's `dev`
+profile. It owns nine file-local rules: the original debugger and unused-value
+checks, five qualified Kiln rules, and two native rules selected from the
+low-evidence patterns described by `anti-slop`. No external plugin or copied
+rule implementation is part of the verifier. The complete Kiln profile was not
+adopted: its structural limits produced high noise on the current repository,
+and Oxlint does not detect “slop” as a semantic category.
 Each later rule addition requires a concrete defect pattern, an acceptable
 false-positive cost and a new pinned configuration identity. Gentle review,
 formal contracts and integration tests remain responsible for concerns Oxlint

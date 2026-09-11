@@ -10,11 +10,12 @@ The CLI and tests use `runOxlint` from `src/verification/oxlint.ts`. The trusted
 application configuration selects the absolute runtime and installed Oxlint
 1.82.0 entry, working directory and limits. CLI arguments select one existing
 JavaScript or TypeScript file, never an executable, shell command or arbitrary
-flags. The fixed `oxlint-static/v2` profile checks `no-debugger`,
+flags. The fixed `oxlint-static/v3` profile checks `no-debugger`,
 `no-unused-vars`, `no-constant-binary-expression`,
 `no-unsafe-optional-chaining`, `oxc/missing-throw`,
-`typescript/no-explicit-any` and `typescript/ban-ts-comment`; a pass does not
-establish general correctness or acceptance.
+`typescript/no-explicit-any`, `typescript/ban-ts-comment`,
+`typescript/no-non-null-assertion` and `oxc/no-accumulating-spread`; a pass does
+not establish general correctness or acceptance.
 
 The verifier runs in a private temporary directory with an explicit JSON config,
 one thread, no external plugins, nested config, type-aware execution or fixes.
@@ -27,7 +28,7 @@ Each invocation prints one JSON result on stdout:
 
 | Status | CLI exit | Meaning |
 | --- | --- | --- |
-| `passed` | 0 | Complete report, one file, seven rules, no violations |
+| `passed` | 0 | Complete report, one file, nine rules, no violations |
 | `check_failed` | 1 | Complete report with recognized lint violations |
 | `execution_failed` | 2 | Input/install/spawn failure, unsupported output, timeout or incomplete execution |
 
@@ -68,7 +69,7 @@ The executor reads at most 1 MiB plus one overflow byte, then hashes and writes
 the same captured buffer to a private temporary file. It preserves the original
 basename and extension, writes the recorded configuration, and directs Oxlint
 only to those snapshot inputs. Diagnostics are validated against the snapshot
-and attributed to the original logical filename. This preserves the seven
+and attributed to the original logical filename. This preserves the nine
 bundled, file-local rules; project configuration, external plugins and
 import-aware analysis remain excluded.
 Unconfirmed termination retains both source and configuration snapshots. Failures
@@ -125,10 +126,10 @@ order while preserving exact configuration text and argument order.
 verifier inputs, returning `applicable`, `stale` or `unavailable` while keeping
 that recovered provenance visible. A recovered `passed` result remains
 historically passed when current inputs make it stale. Exact `oxlint-basic/v1`
-records remain structurally recoverable, but they are stale against the current
-`oxlint-static/v2` profile and cannot supply current verification. The storage
-API is explicit; the CLI prints the verification result without saving it
-through this store.
+and `oxlint-static/v2` records remain structurally recoverable, but they are
+stale against the current `oxlint-static/v3` profile and cannot supply current
+verification. The storage API is explicit; the CLI prints the verification
+result without saving it through this store.
 
 See [architecture](architecture.md) for ownership and [experiments](../experiments/README.md)
 for recorded validation.

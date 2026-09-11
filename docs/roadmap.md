@@ -36,7 +36,7 @@ validation of the current checkout.
 | Formal correction loop | Passed for bounded Windows task | `canAdmitInvocation` is used by the Pi adapters; a seeded proof failure was returned to Pi, corrected and re-verified with LemmaScript/Dafny |
 | Pi Coding Agent host | Passed for bounded Windows task | Full SDK host reused Tesota's Codex credential store, allowed only `read` and `edit`, and completed the scoped Pi status task in an isolated candidate; check passed and no acceptance was recorded |
 | Codex-backed Gentle reviewer relay | Passed for one retained high-risk lineage | Tesota preserved provider-issued prompts and bindings, Luna completed the remaining three immutable reviewer slots, Gentle admitted them and the exact acknowledgement burned approved authority |
-| Kiln static-analysis qualification | Complete for five selected rules | `dev` rules were measured against 53 files and defect/control probes; five low-noise rules entered `oxlint-static/v2`, while noisy structural limits and a new quality-gate owner were rejected |
+| Static-analysis qualification | Complete for seven selected additions | Five Kiln `dev` rules entered v2; two native, low-evidence rules inspired by `anti-slop` entered v3; noisy structural limits, external plugins and a new quality-gate owner were rejected |
 | Gentle AI qualification | Correction and scope-change recovery paths passed | Immutable settlement, interrupted capture re-entry, provider-authorized correction and one native `scope_changed` successor passed; other recovery dispositions remain unqualified |
 | First verified self-development cycle | Complete for the bounded cycle | One combined candidate passed Pi correction, applicable behavioral verification, immutable Gentle review, human acceptance and guarded promotion; the later integration repair is recorded separately |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
@@ -263,6 +263,15 @@ profile as `oxlint-static/v2`. Tesota's existing check sequencing remains the
 owner because no separate quality-gate runtime consumer was demonstrated.
 “Anti-slop” remains outside the Oxlint contract. See the
 [retained evaluation](../experiments/oxlint/README.md).
+
+A follow-up used `dmmulroy/anti-slop` at
+`c44ef22ca116d0ba62a3ff663a0bd13a3f3fa40b` as policy inspiration without
+vendoring its plugin. Tesota removed avoidable production assertions and added
+the native `typescript/no-non-null-assertion` and
+`oxc/no-accumulating-spread` rules. Six existing non-null assertions in tests
+were replaced by explicit guards; the final two-rule scan produced no findings
+across the same 53 files. Defect and control fixtures bind both additions to
+`oxlint-static/v3`.
 
 After the construction cycle is stable, define Tesota's own shell contracts and
 build the shell as a Tesota-owned surface. Gentle remains behind that boundary,

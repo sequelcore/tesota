@@ -6,6 +6,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { assessApplicability, configuredOxlint, runOxlint } from "../src/verification/oxlint.js";
 import { DurableVerificationEvidenceStore } from "../src/verification/evidence.js";
+import { legacyConfigurationV2 } from "../src/verification/oxlint-input.js";
 
 const renameMock = vi.hoisted(() => vi.fn());
 vi.mock("node:fs/promises", async (original) => {
@@ -19,7 +20,7 @@ const bun = execFileSync("bun", ["--no-env-file", "-p", "process.execPath"], {
 }).trim();
 const evidenceModule = pathToFileURL(fileURLToPath(new URL("../dist/verification/evidence.js", import.meta.url))).href;
 const oxlintModule = pathToFileURL(fileURLToPath(new URL("../dist/verification/oxlint.js", import.meta.url))).href;
-const legacyConfiguration = JSON.stringify({
+const legacyConfigurationV1 = JSON.stringify({
   plugins: [], categories: { correctness: "off" },
   rules: { "no-debugger": "error", "no-unused-vars": "error" },
 });
@@ -95,7 +96,10 @@ it("preserves a check failure while distinguishing missing evidence", async () =
   expect(missing).toEqual({ status: "missing" });
 });
 
-it("recovers v1 evidence as historical but makes it stale against the v2 profile", async () => {
+it.each([
+  { profile: "oxlint-basic/v1", configuration: legacyConfigurationV1 },
+  { profile: "oxlint-static/v2", configuration: legacyConfigurationV2 },
+])("recovers $profile evidence as historical but makes it stale against v3", async ({ profile, configuration }) => {
   const { root, file, check, store } = await fixture();
   const current = await runOxlint(check, file);
   await store.save(current);
@@ -106,14 +110,14 @@ it("recovers v1 evidence as historical but makes it stale against the v2 profile
   if (!record(result)) throw new Error("Expected durable result fixture");
   const binding = result["binding"];
   if (!record(binding) || !record(binding["check"])) throw new Error("Expected durable binding fixture");
-  result["profile"] = "oxlint-basic/v1";
+  result["profile"] = profile;
   binding["check"] = { ...binding["check"],
-    profile: "oxlint-basic/v1", configuration: legacyConfiguration };
+    profile, configuration };
   await writeFile(path, JSON.stringify(durable));
 
   const recovered = await store.load();
-  if (recovered.status !== "recovered") throw new Error("Expected recovered v1 evidence");
-  expect(recovered.evidence.historical.profile).toBe("oxlint-basic/v1");
+  if (recovered.status !== "recovered") throw new Error("Expected recovered legacy evidence");
+  expect(recovered.evidence.historical.profile).toBe(profile);
   expect(await assessApplicability(recovered.evidence, check)).toMatchObject({
     status: "stale", provenance: "recovered_untrusted",
   });

@@ -9,6 +9,18 @@ import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore 
 const provider = "openai-codex";
 const maxBytes = 64 * 1024;
 
+function isOAuthCredential(value: unknown): value is Credential {
+  return typeof value === "object" && value !== null && "type" in value && value.type === "oauth" &&
+    "access" in value && typeof value.access === "string" && value.access.length > 0 &&
+    "refresh" in value && typeof value.refresh === "string" && value.refresh.length > 0 &&
+    "expires" in value && typeof value.expires === "number" && Number.isFinite(value.expires);
+}
+
+function readErrorCode(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+  return typeof error.code === "string" ? error.code : undefined;
+}
+
 /** Pi owns OAuth. This store owns one provider's private persistence and mutation lock. */
 export class CodexCredentials implements CredentialStore {
   private readonly directory: string;
@@ -70,15 +82,10 @@ export class CodexCredentials implements CredentialStore {
         bytes = bytes.subarray(0, length);
       } finally { await file.close(); }
       const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-      if (typeof value !== "object" || value === null || !("type" in value) || value.type !== "oauth" ||
-          !("access" in value) || typeof value.access !== "string" || !value.access ||
-          !("refresh" in value) || typeof value.refresh !== "string" || !value.refresh ||
-          !("expires" in value) || typeof value.expires !== "number" || !Number.isFinite(value.expires)) {
-        throw new Error("Invalid OAuth credential");
-      }
-      return value as Credential;
+      if (!isOAuthCredential(value)) throw new Error("Invalid OAuth credential");
+      return value;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      if (readErrorCode(error) === "ENOENT") return undefined;
       throw new Error("Cannot read Tesota credentials; repair private storage before continuing");
     }
   }
@@ -103,7 +110,7 @@ export class CodexCredentials implements CredentialStore {
       options?.signal?.throwIfAborted();
       try { handle = await open(lock, "wx", 0o600); }
       catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw new Error("Cannot lock Tesota credentials");
+        if (readErrorCode(error) !== "EEXIST") throw new Error("Cannot lock Tesota credentials");
         if (Date.now() >= deadline) throw new Error("Tesota credentials are busy; a stopped process may have left codex.lock");
         await setTimeout(50, undefined, options?.signal === undefined ? {} : { signal: options.signal });
       }

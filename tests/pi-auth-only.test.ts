@@ -284,7 +284,10 @@ it.skipIf(process.platform !== "win32")("compiled AUTH-ONLY exits with sanitized
       env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"] },
     });
     expect(output).toContain("ZERO model inference calls");
-    const record = JSON.parse(readFileSync(join(directory, "experiments/codex/runs", readdirSync(join(directory, "experiments/codex/runs"))[0]!), "utf8"));
+    const runs = join(directory, "experiments/codex/runs");
+    const [runFile] = readdirSync(runs);
+    if (runFile === undefined) throw new Error("Expected one retained run");
+    const record = JSON.parse(readFileSync(join(runs, runFile), "utf8"));
     expect(record).toMatchObject({ mode: "auth_only", authenticationOutcome: "succeeded",
       modelInvocationCount: 0, turn: null, abortProbe: null, disposition: "succeeded" });
   } finally { rmSync(directory, { recursive: true, force: true }); }
@@ -447,7 +450,9 @@ it.skipIf(process.platform !== "win32")("compiled captured mode refuses login an
     expect(first.status).toBe(0);
     expect((first.stdout + first.stderr).includes(deviceNotification.userCode)).toBe(false);
     const runs = join(directory, "experiments/codex/runs");
-    const firstPath = join(runs, readdirSync(runs)[0]!);
+    const [runFile] = readdirSync(runs);
+    if (runFile === undefined) throw new Error("Expected one retained run");
+    const firstPath = join(runs, runFile);
     const record = readFileSync(firstPath);
     expect(JSON.parse(record.toString())).toMatchObject({ authenticationMethod: "device_code", modelInvocationCount: 0 });
     expect(invoke(false).status).toBe(0);
@@ -515,7 +520,10 @@ it.skipIf(process.platform !== "win32").each([
     });
     expect(result.status).toBe(exit);
     expect(result.stdout).toContain("device-code OAuth/network authentication AND up to two model invocations");
-    const serialized = readFileSync(join(directory, "experiments/codex/runs", readdirSync(join(directory, "experiments/codex/runs"))[0]!), "utf8");
+    const runs = join(directory, "experiments/codex/runs");
+    const [runFile] = readdirSync(runs);
+    if (runFile === undefined) throw new Error("Expected one retained run");
+    const serialized = readFileSync(join(runs, runFile), "utf8");
     const record = JSON.parse(serialized);
     expect(record).toMatchObject({ format: "tesota-codex-evidence", version: 9, mode: "full_probe", authenticationMethod: "device_code",
       authenticationOutcome: scenario === "login_failure" ? "failed" : scenario === "login_timeout" ? "unconfirmed" : "succeeded",
