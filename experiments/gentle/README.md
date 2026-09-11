@@ -267,3 +267,50 @@ previously admitted `review-risk`, the last event closed the review as
 Tesota source, local acceptance decision or promotion changed during this
 review. This qualifies one immutable four-lens settlement. Correction and
 recovery behavior remain separate open qualifications.
+
+### Phase 15: combined correction cycle
+
+**Passed through separate human presentation on 2026-09-11 UTC; correction and
+recovery transitions were not offered.** The repository-owned
+`pi-result-consistency` requirement and its 26-case behavioral oracle existed
+before live inference. Two fresh attempts failed safely after Pi wrote
+TypeScript-only syntax inside the JavaScript-only candidate function. The first
+behavioral response obscured that cause behind case failures, so Tesota changed
+only the checker diagnostic: invalid JavaScript now returns `Candidate function
+must use JavaScript syntax`. The focused regression, typecheck and full 240-test
+gate passed without changing the requirement or oracle cases.
+
+The successful fresh candidate
+`9783bee4-f5e7-4de5-8705-5253c2d77ffc` used baseline
+`168944ddb3469f50f3c69a520701403be8af28b2`. Pi reused Tesota's saved Codex
+credentials and received an initial issued failure listing 14 inconsistent
+evidence cases. It changed only `src/integrations/pi-task.ts` in one edit. The
+second issued check passed, both checks were supplied to the model, and a later
+read-only check matched corrected source SHA-256
+`ec9af28b47470956d33faa5726642e580eec65cd051d118f3a2dcea722e6bca3`.
+The candidate retained detached `HEAD` at its baseline and one changed path.
+
+Gentle AI 2.7.0 then froze that same workspace-overlay candidate as tree
+`809ffd2cdf4b7f64b48f0e2a873a96cf1fbc24d4`, target
+`sha256:fc55b0069e48c2f6c30fdd7b9fe5325c8e8ebaab88b84a0e0f2ed3444dc8c4f3`
+and lineage `review-6a859e0e80e5d67c`. Its public transition selected the
+`review-reliability` lens. Tesota passed the provider-materialized prompt
+unchanged through the Codex relay and Gentle admitted the result as `approved`.
+The provider reported informational warning `R3-sparse-checks`; its closure
+stated that the warning was non-blocking, opened no correction and offered no
+correction transition.
+
+Bound status at the approved revision allowed only the exact acknowledgement.
+It marked `review.recover`, `review.repair` and `review.validate` forbidden
+because native status had not selected them; the advertised correction budget
+was therefore not executable authority. The acknowledgement returned
+`gentle-ai.review-acknowledged/v1` and `authority: burned`. This qualifies the
+combined immutable review path and establishes that this approved medium-risk
+cycle offered no usable correction or recovery transition. It does not qualify
+those transitions for a future finding, interruption or uncertain settlement.
+
+Tesota's final local review produced fingerprint
+`fc4031e766ce9002da5e05e18dbfc524776e4052e6521d1c2a1f567a727e7ceb`
+with the same applicable check. `operatorDecision` remained `null`; no
+candidate edit occurred during Gentle review, and no acceptance, promotion or
+candidate commit occurred.

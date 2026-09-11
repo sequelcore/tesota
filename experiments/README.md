@@ -10,7 +10,8 @@ to one fixed verifier action.
 The [candidate correction exercise](codex/candidate.md) adds one isolated source
 replacement, rechecking and a review diff.
 The [Gentle AI qualification](gentle/README.md) defines the bounded review
-provider experiment; it has no result yet.
+provider experiment and records immutable review, correction and recovery
+observations, including the combined correction cycle.
 
 ## Retained artifacts
 

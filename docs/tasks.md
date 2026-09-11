@@ -13,7 +13,9 @@ behavior oracle runs the candidate function in a pinned Node container with no
 network or host mounts. The checker covers valid completion, correction after an
 intermediate failure, bounds, issued provenance, task and baseline consistency,
 changed hashes and current-check matching. It does not run the candidate
-repository or expose source credentials.
+repository or expose source credentials. A body that is not valid JavaScript is
+reported separately from behavioral case failures so Pi can correct the syntax
+without changing the oracle.
 
 Tesota implements preparation, operation admission, deterministic documentation
 and code checks, and bounded live model attempts. A separate explicit command can promote

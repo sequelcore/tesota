@@ -37,17 +37,17 @@ validation of the current checkout.
 | Pi Coding Agent host | Passed for bounded Windows task | Full SDK host reused Tesota's Codex credential store, allowed only `read` and `edit`, and completed the scoped Pi status task in an isolated candidate; check passed and no acceptance was recorded |
 | Codex-backed Gentle reviewer relay | Passed for one retained high-risk lineage | Tesota preserved provider-issued prompts and bindings, Luna completed the remaining three immutable reviewer slots, Gentle admitted them and the exact acknowledgement burned approved authority |
 | Kiln static-analysis qualification | Planned | Compare selected `dev` rules and bounded quality-gate sequencing against Tesota's pinned Oxlint profile; adopt only evidenced, low-noise rules |
-| Gentle AI qualification | In progress | Contract, capabilities, parity lane, stale-binding rejection and one immutable model-backed four-lens settlement passed; correction and usable recovery remain |
-| First verified self-development cycle | In progress | Pi Coding Agent completed one bounded task; Tesota check, human acceptance and guarded promotion passed; a separate retained candidate completed immutable Gentle review, while one combined correction cycle remains open |
+| Gentle AI qualification | In progress | Contract, capabilities, parity lane, stale-binding rejection and immutable model-backed settlement passed; the combined candidate offered no correction or recovery transition, so those paths remain unqualified |
+| First verified self-development cycle | Awaiting human decision | One combined candidate passed Pi correction, applicable behavioral verification and immutable Gentle review; Tesota presented a fingerprint without accepting or promoting it |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
-The next increment is one combined correction cycle on a fresh candidate. Pi
-must make a bounded TypeScript change, applicable verification must detect a
-real defect, and the same candidate must pass corrected verification and Gentle
-review before it is presented for human acceptance. Tesota must preserve
-candidate identity, evidence applicability and provider authority throughout
-the cycle. This exercise does not establish general editing permissions,
-task recovery, server-side cancellation or general promotion.
+The combined correction cycle completed through presentation for human decision
+on 2026-09-11 UTC. Pi made a bounded TypeScript change, the behavioral oracle
+detected a real defect and the corrected bytes passed before the same immutable
+candidate completed Gentle review. Candidate identity, evidence applicability
+and provider authority remained distinct. This exercise does not establish
+general editing permissions, task recovery, server-side cancellation or general
+promotion, and no human acceptance or promotion occurred.
 See the [experiment index](../experiments/README.md).
 See [candidate checkouts](candidates.md) for the new preparation commands.
 
@@ -157,11 +157,10 @@ recovery still need implementation. The current promotion command is limited to
 the accepted documentation task and is not a general write capability. Do not
 create unused modules in anticipation of that work.
 
-## Next increment: combined correction cycle
+## Combined correction cycle
 
-Continue with one fresh, repository-owned task whose requirement and verification
-oracle are explicit before inference begins. Completion requires all of the
-following:
+The handoff required one fresh, repository-owned task whose requirement and
+verification oracle were explicit before inference began:
 
 1. Pi changes only the admitted files in an isolated candidate checkout.
 2. Oxlint, a behavioral check or LemmaScript/Dafny exposes a real seeded defect.
@@ -174,9 +173,31 @@ following:
 6. Tesota presents the final diff, applicable evidence and remaining limits for
    a separate human decision. No automatic acceptance or promotion occurs.
 
-The experiment must also record whether Gentle offers a usable correction or
-recovery transition. A successful four-lens settlement alone does not satisfy
-that remaining qualification.
+The cycle used `pi-result-consistency` on candidate
+`9783bee4-f5e7-4de5-8705-5253c2d77ffc`, based on
+`168944ddb3469f50f3c69a520701403be8af28b2`. The first issued behavior check
+reported 14 rejected evidence cases. Pi received it, changed only
+`src/integrations/pi-task.ts`, and the second issued check passed with source
+SHA-256 `ec9af28b47470956d33faa5726642e580eec65cd051d118f3a2dcea722e6bca3`.
+The read-only current check matched those bytes. Two earlier fresh attempts
+failed safely when candidate bodies used TypeScript-only syntax; the checker was
+then corrected to return that exact diagnostic without changing its behavioral
+obligations.
+
+Gentle reviewed the same frozen candidate through the public relay under lineage
+`review-6a859e0e80e5d67c` and target
+`sha256:fc55b0069e48c2f6c30fdd7b9fe5325c8e8ebaab88b84a0e0f2ed3444dc8c4f3`.
+Its reliability review approved the candidate with one informational warning and
+explicitly opened no correction. Bound status allowed only acknowledgement and
+forbade recovery, repair and validation because the native status had not
+selected them. The exact acknowledgement burned the provider authority. Thus
+this real cycle offered no usable correction or recovery transition; those
+paths remain unqualified rather than being reconstructed by Tesota.
+
+Tesota's separate review fingerprint is
+`fc4031e766ce9002da5e05e18dbfc524776e4052e6521d1c2a1f567a727e7ceb`.
+Its operator decision remains absent. The full live observations and limits are
+recorded in the [Gentle qualification](../experiments/gentle/README.md).
 
 ## Interface and review sequencing
 
