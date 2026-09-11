@@ -12,6 +12,8 @@ replacement, rechecking and a review diff.
 The [Gentle AI qualification](gentle/README.md) defines the bounded review
 provider experiment and records immutable review, correction and recovery
 observations, including the combined correction cycle.
+The [Oxlint qualification](oxlint/README.md) records the measured selection of
+five Kiln `dev` rules and the rejection of noisy structural limits.
 
 ## Retained artifacts
 

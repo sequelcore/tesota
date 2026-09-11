@@ -43,8 +43,8 @@ bun --no-env-file dist/cli.js verify src/cli.ts
 
 `check` builds, typechecks source and tests, runs tests including compiled CLI
 behavior, and runs Oxlint without fixes. These checks use no live provider or
-OAuth credentials. A passing verification command covers one file and two lint
-rules; it does not establish general correctness or task acceptance.
+OAuth credentials. A passing verification command covers one file and seven
+lint rules; it does not establish general correctness or task acceptance.
 
 ## Documentation
 

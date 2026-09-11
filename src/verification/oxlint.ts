@@ -9,7 +9,7 @@ import {
   type OxlintResult,
 } from "./oxlint-result.js";
 import { isRecoveredOxlintEvidence } from "./evidence.js";
-import { digest, fixedConfiguration, observeVerifier, semanticArguments, sourceBytes, type InputBinding } from "./oxlint-input.js";
+import { OXLINT_PROFILE, digest, fixedConfiguration, observeVerifier, semanticArguments, sourceBytes, type InputBinding } from "./oxlint-input.js";
 
 /** Trusted application configuration, never CLI-supplied executable or argv. */
 export interface OxlintCheck {
@@ -38,7 +38,7 @@ export function isIssuedOxlintResult(value: unknown): value is OxlintResult {
 }
 
 function effectiveCheck(check: OxlintCheck, file: string): InputBinding["check"] {
-  return { profile: "oxlint-basic/v1", configuration: check.configuration,
+  return { profile: OXLINT_PROFILE, configuration: check.configuration,
     arguments: ["--no-env-file", "<oxlint-entry>", ...semanticArguments(file)],
     limits: { timeoutMs: check.timeoutMs, maxOutputBytes: check.maxOutputBytes,
       terminationWaitMs: check.terminationWaitMs } };

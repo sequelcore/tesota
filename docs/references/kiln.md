@@ -27,7 +27,7 @@ Repository links may require access. No current remote branch state is asserted.
 | Browser/device OAuth | [codex-oauth-auth.ts](https://github.com/sequelcore/kiln/blob/4257ee9fce034cfe8e50dce3dbe3afb12f468094/packages/runtime/src/agents/credential-acquisition/codex-oauth-auth.ts) | Studied for existing behavior and extraction dependencies; Tesota uses Pi authentication |
 | Codex transport | [codex-oauth.ts](https://github.com/sequelcore/kiln/blob/4257ee9fce034cfe8e50dce3dbe3afb12f468094/packages/runtime/src/agents/provider-adapters/codex-oauth.ts) | Studied for adapter dependencies; not ported |
 | Authentication regressions | [codex-oauth-auth.test.ts](https://github.com/sequelcore/kiln/blob/4257ee9fce034cfe8e50dce3dbe3afb12f468094/packages/runtime/tests/agents/credential-acquisition/codex-oauth-auth.test.ts) | Located as a future comparison source; not rerun or adopted |
-| Static analysis profile | `packages/runtime/src/verification/oxlint/oxlint-analyzer.ts` on the local `dev` branch | Studied as a candidate source for an explicit Tesota rule profile; not copied |
+| Static analysis profile | `packages/runtime/src/verification/oxlint/oxlint-analyzer.ts` at `9b604b105fbf3644328e187b862233660280b604` | Five rules adapted into Tesota's owned `oxlint-static/v2` configuration; no implementation code copied |
 | Quality-gate loop | `packages/core/src/quality-gates/gate-runner.ts` and `verification-loop.ts` on the local `dev` branch | Studied as a bounded orchestration pattern; not adopted as a general runtime |
 
 ## How to use the reference
@@ -51,10 +51,10 @@ Oxlint rules catch structural defects and risky patterns such as unused code,
 unnecessary complexity, oversized functions and unsafe TypeScript constructs.
 Quality gates can sequence those checks and offer a bounded correction loop,
 but they do not establish semantic intent, formal correctness or acceptance.
-Tesota may recover individual rules or the bounded pattern only after checking
-their current value, false-positive cost, pinned tool identity and evidence
-contract. It will not copy Kiln's complete profile or quality-gate runtime by
-default.
+Tesota recovered five individual rules after checking concrete defect fixtures,
+controls, current-repository noise, pinned tool identity and evidence binding.
+The complete profile and quality-gate runtime were not copied. Future additions
+require the same evidence and a new profile identity.
 
 Keep machine-specific checkout paths in local working context. Neither a sibling
 checkout nor Kiln's private namespace is a Tesota runtime dependency or state store.

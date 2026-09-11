@@ -19,7 +19,15 @@ const bun = execFileSync("bun", ["--no-env-file", "-p", "process.execPath"], {
 }).trim();
 const evidenceModule = pathToFileURL(fileURLToPath(new URL("../dist/verification/evidence.js", import.meta.url))).href;
 const oxlintModule = pathToFileURL(fileURLToPath(new URL("../dist/verification/oxlint.js", import.meta.url))).href;
+const legacyConfiguration = JSON.stringify({
+  plugins: [], categories: { correctness: "off" },
+  rules: { "no-debugger": "error", "no-unused-vars": "error" },
+});
 const roots: string[] = [];
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -85,6 +93,30 @@ it("preserves a check failure while distinguishing missing evidence", async () =
 
   const missing = await new DurableVerificationEvidenceStore(join(root, "missing.json")).load();
   expect(missing).toEqual({ status: "missing" });
+});
+
+it("recovers v1 evidence as historical but makes it stale against the v2 profile", async () => {
+  const { root, file, check, store } = await fixture();
+  const current = await runOxlint(check, file);
+  await store.save(current);
+  const path = join(root, "evidence.json");
+  const durable: unknown = JSON.parse(await readFile(path, "utf8"));
+  if (!record(durable)) throw new Error("Expected durable record fixture");
+  const result = durable["result"];
+  if (!record(result)) throw new Error("Expected durable result fixture");
+  const binding = result["binding"];
+  if (!record(binding) || !record(binding["check"])) throw new Error("Expected durable binding fixture");
+  result["profile"] = "oxlint-basic/v1";
+  binding["check"] = { ...binding["check"],
+    profile: "oxlint-basic/v1", configuration: legacyConfiguration };
+  await writeFile(path, JSON.stringify(durable));
+
+  const recovered = await store.load();
+  if (recovered.status !== "recovered") throw new Error("Expected recovered v1 evidence");
+  expect(recovered.evidence.historical.profile).toBe("oxlint-basic/v1");
+  expect(await assessApplicability(recovered.evidence, check)).toMatchObject({
+    status: "stale", provenance: "recovered_untrusted",
+  });
 });
 
 it.each(["{", JSON.stringify({ format: "tesota-verification-evidence", version: 99 })])(

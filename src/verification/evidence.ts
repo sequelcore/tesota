@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { open, rename, rm, writeFile } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import { fixedConfiguration, type InputBinding } from "./oxlint-input.js";
+import { isKnownDiagnosticRule, isKnownProfileConfiguration, type InputBinding } from "./oxlint-input.js";
 import { isIssuedOxlintResult } from "./oxlint.js";
 import {
   type CompletedOxlintResult,
@@ -13,7 +13,6 @@ const recordFormat = "tesota-verification-evidence" as const;
 const recordVersion = 1 as const;
 const maxRecordBytes = 512 * 1024;
 const hash = /^[a-f0-9]{64}$/u;
-const rules = new Set(["eslint(no-debugger)", "eslint(no-unused-vars)"]);
 const recovered = new WeakSet<object>();
 
 export function isRecoveredOxlintEvidence(value: unknown): value is RecoveredOxlintEvidence {
@@ -59,7 +58,7 @@ function validBinding(value: unknown): value is InputBinding {
   const sourceHash = source["sha256"];
   if (!string(sourceFile) || !isAbsolute(sourceFile) || !string(sourceHash) || !hash.test(sourceHash)) return false;
   if (!exact(check, ["profile", "configuration", "arguments", "limits"]) ||
-      check["profile"] !== "oxlint-basic/v1" || check["configuration"] !== fixedConfiguration ||
+      !isKnownProfileConfiguration(check["profile"], check["configuration"]) ||
       !Array.isArray(check["arguments"]) || !check["arguments"].every(string)) return false;
   const limits = check["limits"];
   if (!exact(limits, ["timeoutMs", "maxOutputBytes", "terminationWaitMs"]) ||
@@ -77,15 +76,16 @@ function validBinding(value: unknown): value is InputBinding {
 function validResult(value: unknown): value is CompletedOxlintResult {
   if (!exact(value, ["status", "file", "profile", "diagnostics", "process", "binding"]) ||
       (value["status"] !== "passed" && value["status"] !== "check_failed") ||
-      !string(value["file"]) || !isAbsolute(value["file"]) || value["profile"] !== "oxlint-basic/v1" ||
+      !string(value["file"]) || !isAbsolute(value["file"]) ||
       value["process"] !== "exited" || !Array.isArray(value["diagnostics"]) ||
       !validBinding(value["binding"])) return false;
+  if (value["profile"] !== value["binding"]["check"]["profile"]) return false;
   if (value["status"] === "passed" && value["diagnostics"].length !== 0) return false;
   if (value["status"] === "check_failed" && value["diagnostics"].length === 0) return false;
   if (value["file"] !== value["binding"]["source"]["file"]) return false;
   for (const diagnostic of value["diagnostics"]) {
     if (!exact(diagnostic, ["rule", "message", "line", "column"]) ||
-        !string(diagnostic["rule"]) || !rules.has(diagnostic["rule"]) ||
+        !isKnownDiagnosticRule(value["binding"]["check"]["profile"], diagnostic["rule"]) ||
         !string(diagnostic["message"]) || diagnostic["message"].length === 0 ||
         !positiveInteger(diagnostic["line"]) || !positiveInteger(diagnostic["column"])) return false;
   }

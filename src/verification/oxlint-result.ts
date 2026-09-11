@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
-import type { InputBinding } from "./oxlint-input.js";
+import { OXLINT_DIAGNOSTIC_RULES, OXLINT_PROFILE, isKnownDiagnosticRule,
+  type InputBinding, type OxlintProfile } from "./oxlint-input.js";
 
 export interface LintDiagnostic {
   readonly rule: string;
@@ -12,7 +13,7 @@ export type OxlintReport =
   | {
       readonly status: "passed" | "check_failed";
       readonly file: string;
-      readonly profile: "oxlint-basic/v1";
+      readonly profile: OxlintProfile;
       readonly diagnostics: readonly LintDiagnostic[];
       readonly process: "exited";
     }
@@ -58,7 +59,7 @@ export function interpretOxlint(
   let report: unknown;
   try { report = JSON.parse(stdout); } catch { return invalid; }
   if (!record(report) || report["number_of_files"] !== 1 ||
-      report["number_of_rules"] !== 2 || report["threads_count"] !== 1 ||
+      report["number_of_rules"] !== OXLINT_DIAGNOSTIC_RULES.length || report["threads_count"] !== 1 ||
       typeof report["start_time"] !== "number" ||
       !Number.isFinite(report["start_time"]) || report["start_time"] < 0 ||
       !Array.isArray(report["diagnostics"])) return invalid;
@@ -66,7 +67,7 @@ export function interpretOxlint(
   const diagnostics: LintDiagnostic[] = [];
   for (const value of report["diagnostics"]) {
     if (!record(value) ||
-        (value["code"] !== "eslint(no-debugger)" && value["code"] !== "eslint(no-unused-vars)") ||
+        !isKnownDiagnosticRule(OXLINT_PROFILE, value["code"]) ||
         value["severity"] !== "error" || typeof value["message"] !== "string" ||
         value["message"].length === 0 || typeof value["filename"] !== "string" ||
         resolve(cwd, value["filename"]) !== file || !Array.isArray(value["labels"]) ||
@@ -82,6 +83,6 @@ export function interpretOxlint(
   if (exitCode !== (diagnostics.length === 0 ? 0 : 1)) return invalid;
   return {
     status: diagnostics.length === 0 ? "passed" : "check_failed",
-    profile: "oxlint-basic/v1", file, diagnostics, process: "exited",
+    profile: OXLINT_PROFILE, file, diagnostics, process: "exited",
   };
 }

@@ -12,6 +12,8 @@ const bun = execFileSync("bun", ["--no-env-file", "-p", "process.execPath"], {
   encoding: "utf8", windowsHide: true, timeout: 5000,
 }).trim();
 const cli = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
+const profile = "oxlint-static/v2";
+const ruleCount = 7;
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -56,20 +58,39 @@ it.each(["source.ts", "source.js"])("passes valid synthetic %s through the execu
   const file = join(root, name);
   await writeFile(file, "export const value = 1;\n");
   const result = await runOxlint(check, file);
-  expect(result).toMatchObject({ status: "passed", profile: "oxlint-basic/v1", file, diagnostics: [], process: "exited" });
+  expect(result).toMatchObject({ status: "passed", profile, file, diagnostics: [], process: "exited" });
   expect(runCli(file)).toEqual({ code: 0, result });
 });
 
-it.each(["debugger;\n", "const unusedValue = 1;\n"])("reports a real violation without fixing %j", async (source) => {
+it.each([
+  { source: "debugger;\n", rule: "eslint(no-debugger)" },
+  { source: "const unusedValue = 1;\n", rule: "eslint(no-unused-vars)" },
+  { source: "export const value = true || sideEffect();\nfunction sideEffect(): boolean { return false; }\n", rule: "eslint(no-constant-binary-expression)" },
+  { source: "export const value = ({ callback: undefined }?.callback)();\n", rule: "eslint(no-unsafe-optional-chaining)" },
+  { source: "export function fail(): void { new Error(\"denied\"); }\n", rule: "oxc(missing-throw)" },
+  { source: "export function identity(value: any): unknown { return value; }\n", rule: "typescript(no-explicit-any)" },
+  { source: "// @ts-ignore\nexport const value: number = \"wrong\";\n", rule: "typescript(ban-ts-comment)" },
+])("reports $rule without fixing its defect", async ({ source, rule }) => {
   const { file, check } = await fixture(source);
   const result = await runOxlint(check, file);
   expect(result).toMatchObject({ status: "check_failed", process: "exited" });
   if (result.status === "execution_failed") throw new Error("Expected lint diagnostics");
   expect(result.diagnostics).toHaveLength(1);
-  expect(result.diagnostics[0]?.rule).toBe(source.startsWith("debugger") ? "eslint(no-debugger)" : "eslint(no-unused-vars)");
+  expect(result.diagnostics[0]?.rule).toBe(rule);
   expect(runCli(file)).toEqual({ code: 1, result });
   expect((await assessApplicability(result, check)).status).toBe("applicable");
   expect(await readFile(file, "utf8")).toBe(source);
+});
+
+it("does not flag the corresponding valid constructs", async () => {
+  const source = "export function checked(value?: { callback?: () => number }): number | undefined {\n" +
+    "  if (value === undefined) throw new Error(\"missing\");\n" +
+    "  return value?.callback?.();\n" +
+    "}\n" +
+    "// @ts-expect-error -- intentional compile-time fixture\n" +
+    "export const invalidAssignment: number = \"fixture\";\n";
+  const { file, check } = await fixture(source);
+  expect(await runOxlint(check, file)).toMatchObject({ status: "passed", profile, diagnostics: [] });
 });
 
 it("reports a missing executable as an execution failure", async () => {
@@ -101,10 +122,10 @@ it.each([
   { output: "", code: 0 },
   { output: "{}", code: 0 },
   { output: '{"diagnostics":[]}', code: 0 },
-  { output: JSON.stringify({ diagnostics: [], number_of_files: 0, number_of_rules: 2, threads_count: 1, start_time: 0 }), code: 0 },
+  { output: JSON.stringify({ diagnostics: [], number_of_files: 0, number_of_rules: ruleCount, threads_count: 1, start_time: 0 }), code: 0 },
   { output: JSON.stringify({ diagnostics: [], number_of_files: 1, number_of_rules: 0, threads_count: 1, start_time: 0 }), code: 0 },
-  { output: JSON.stringify({ diagnostics: [], number_of_files: 1, number_of_rules: 2, threads_count: 1, start_time: 0 }), code: 1 },
-  { output: JSON.stringify({ diagnostics: [], number_of_files: 1, number_of_rules: 2, threads_count: 1, start_time: 0 }), code: 9 },
+  { output: JSON.stringify({ diagnostics: [], number_of_files: 1, number_of_rules: ruleCount, threads_count: 1, start_time: 0 }), code: 1 },
+  { output: JSON.stringify({ diagnostics: [], number_of_files: 1, number_of_rules: ruleCount, threads_count: 1, start_time: 0 }), code: 9 },
 ])("rejects incomplete or inconsistent producer evidence %#", ({ output, code }) => {
   expect(interpretOxlint(output, "", code, resolve("source.ts")))
     .toEqual({ status: "execution_failed", reason: "invalid_verifier_result", process: "exited" });
@@ -166,7 +187,7 @@ it("compares configuration contents even with the same profile label", async () 
   const { file, check } = await fixture();
   const result = await runOxlint(check, file);
   expect((await assessApplicability(result, { ...check, configuration: check.configuration + " " })).status).toBe("stale");
-  expect(result.binding?.check.profile).toBe("oxlint-basic/v1");
+  expect(result.binding?.check.profile).toBe(profile);
   expect((await assessApplicability(result, { ...check, timeoutMs: check.timeoutMs + 1 })).status).toBe("stale");
 });
 
@@ -183,7 +204,7 @@ it("never makes unavailable sources or serialized assertions applicable", async 
 
 it.each(["entry", "native"])("binds %s content, not just the declared package version", async (changed) => {
   const { root, file } = await fixture();
-  const check = await fakeInstallation(root, 'console.log(JSON.stringify({diagnostics:[],number_of_files:1,number_of_rules:2,threads_count:1,start_time:0}));');
+  const check = await fakeInstallation(root, `console.log(JSON.stringify({diagnostics:[],number_of_files:1,number_of_rules:${ruleCount},threads_count:1,start_time:0}));`);
   const nativeRoot = join(root, "node_modules/@oxlint/binding-test");
   await mkdir(nativeRoot, { recursive: true });
   await writeFile(join(nativeRoot, "package.json"), '{"version":"1.82.0","main":"native.node"}');

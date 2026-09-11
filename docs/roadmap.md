@@ -36,7 +36,7 @@ validation of the current checkout.
 | Formal correction loop | Passed for bounded Windows task | `canAdmitInvocation` is used by the Pi adapters; a seeded proof failure was returned to Pi, corrected and re-verified with LemmaScript/Dafny |
 | Pi Coding Agent host | Passed for bounded Windows task | Full SDK host reused Tesota's Codex credential store, allowed only `read` and `edit`, and completed the scoped Pi status task in an isolated candidate; check passed and no acceptance was recorded |
 | Codex-backed Gentle reviewer relay | Passed for one retained high-risk lineage | Tesota preserved provider-issued prompts and bindings, Luna completed the remaining three immutable reviewer slots, Gentle admitted them and the exact acknowledgement burned approved authority |
-| Kiln static-analysis qualification | Planned | Compare selected `dev` rules and bounded quality-gate sequencing against Tesota's pinned Oxlint profile; adopt only evidenced, low-noise rules |
+| Kiln static-analysis qualification | Complete for five selected rules | `dev` rules were measured against 53 files and defect/control probes; five low-noise rules entered `oxlint-static/v2`, while noisy structural limits and a new quality-gate owner were rejected |
 | Gentle AI qualification | Correction and scope-change recovery paths passed | Immutable settlement, interrupted capture re-entry, provider-authorized correction and one native `scope_changed` successor passed; other recovery dispositions remain unqualified |
 | First verified self-development cycle | Complete for the bounded cycle | One combined candidate passed Pi correction, applicable behavioral verification, immutable Gentle review, human acceptance and guarded promotion; the later integration repair is recorded separately |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
@@ -253,12 +253,16 @@ bounded cases. Gentle may report findings and bounded next actions; Tesota
 retains acceptance and promotion authority. Recovery dispositions for
 invalidation or escalation remain separate qualifications.
 
-Kiln's `dev` Oxlint profile and quality-gate loop are reference material for a
-separate static-analysis qualification. “Anti-slop” is not an Oxlint guarantee;
-candidate rules must be evaluated against real defects, false positives, tool
-version identity and retained evidence before adoption. This qualification may
-run before or alongside the combined correction cycle, but neither imports
-Kiln's roadmap or private runtime state.
+The static-analysis qualification resolved local Kiln `dev` to
+`9b604b105fbf3644328e187b862233660280b604` and evaluated its 105-rule set with
+the pinned Oxlint 1.82.0. A 53-file Tesota scan produced 159 diagnostics, all
+from six structural limits, so those limits were not adopted. Five file-local
+rules detected their deliberate defect fixtures, passed corresponding controls
+and produced no findings on the current repository; they now extend the fixed
+profile as `oxlint-static/v2`. Tesota's existing check sequencing remains the
+owner because no separate quality-gate runtime consumer was demonstrated.
+“Anti-slop” remains outside the Oxlint contract. See the
+[retained evaluation](../experiments/oxlint/README.md).
 
 After the construction cycle is stable, define Tesota's own shell contracts and
 build the shell as a Tesota-owned surface. Gentle remains behind that boundary,
