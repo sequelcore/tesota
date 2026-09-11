@@ -416,3 +416,49 @@ This qualifies one real correction-plan and targeted-validation path, including
 safe retry after preflight failures. It does not qualify `review.recover`, which
 was never offered, and it grants neither Tesota acceptance nor promotion. The
 candidate remains isolated with one behavior-preserving grouped expression.
+
+### Phase 19: native scope-change recovery
+
+**Passed for `scope_changed` on 2026-09-11 UTC.** An initial documentation-only
+candidate `410b41fc-d7e1-4663-9298-aa7bdf700984`, based on
+`a38a788ac9fe893d4a77f745092e180d14de6ab0`, closed low-risk as `approved`.
+Changing its bytes before acknowledgement made the new target unrelated: native
+status allowed a fresh START and explicitly forbade recovery. This confirms that
+drift after approval does not itself turn the old receipt into recovery authority.
+
+A separate candidate `97a77e60-a0aa-4762-9c64-6e236515d992` used the same
+baseline and the pre-existing `pi-result-consistency` plan and oracle. Its
+one-line conjunction-to-disjunction defect produced 23 behavior diagnostics on
+source SHA-256
+`b8f4e4e0b698dd2f91e08d8b75bbbf4f90ddea04bb3a1b73abada1114dad3149`.
+Gentle froze that one-file target as
+`sha256:c15a2dee26eddbbdacca9af9d60c2ff3c0704b120833ba543108a3ccf4a2f7fa`
+under predecessor `review-recovery-defect-20260911`. Tesota's public OAuth relay
+submitted the required reliability result, and Gentle entered
+`correction_required` at revision
+`sha256:4ff1b6ef68705e3bb7c302e5bf4254df9178d7fb48771db7e25a39c0c82ae3c3`.
+
+Before correction, the candidate added `docs/roadmap.md`, changing both the
+candidate tree and path manifest. Native status kept the predecessor identity,
+reported current target
+`sha256:4d13b1d37b49fc71aeb4e27b9e47257fc4ac15b30b60b610db149631af57e187`,
+selected only `review.recover` with disposition `scope_changed`, and required an
+exact external maintainer authorization. Supplying the provider-validated
+binding created successor `review-recovery-successor-20260911` in `reviewing`
+state without changing candidate bytes or its predecessor revision.
+
+The successor froze the expanded two-path tree under its own artifact subject
+and required a fresh reliability result; it inherited neither the predecessor's
+finding nor its correction decision. The new review closed terminal `escalated`
+with only `stop` allowed, so Tesota did not correct, accept or promote the
+candidate. Repeating the original recovery command with the same successor was
+rejected because that successor already existed with different, later authority;
+no state was overwritten.
+
+This qualifies one provider-issued, maintainer-authorized `scope_changed`
+recovery into a distinct identity-bound successor. It does not qualify the
+`invalidated` or `escalated` dispositions. Native status continued to display
+recovery eligibility on the predecessor, so this experiment also does not claim
+that the provider enforces one global successor per predecessor; creating a
+second successor was deliberately not attempted. The candidate remains isolated,
+defective, outside its original task scope and without a Tesota decision.

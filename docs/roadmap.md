@@ -37,7 +37,7 @@ validation of the current checkout.
 | Pi Coding Agent host | Passed for bounded Windows task | Full SDK host reused Tesota's Codex credential store, allowed only `read` and `edit`, and completed the scoped Pi status task in an isolated candidate; check passed and no acceptance was recorded |
 | Codex-backed Gentle reviewer relay | Passed for one retained high-risk lineage | Tesota preserved provider-issued prompts and bindings, Luna completed the remaining three immutable reviewer slots, Gentle admitted them and the exact acknowledgement burned approved authority |
 | Kiln static-analysis qualification | Planned | Compare selected `dev` rules and bounded quality-gate sequencing against Tesota's pinned Oxlint profile; adopt only evidenced, low-noise rules |
-| Gentle AI qualification | Correction path passed; native authority recovery remains open | Immutable settlement, interrupted capture re-entry, one provider-authorized correction and targeted validation passed; `review.recover` remains unqualified |
+| Gentle AI qualification | Correction and scope-change recovery paths passed | Immutable settlement, interrupted capture re-entry, provider-authorized correction and one native `scope_changed` successor passed; other recovery dispositions remain unqualified |
 | First verified self-development cycle | Complete for the bounded cycle | One combined candidate passed Pi correction, applicable behavioral verification, immutable Gentle review, human acceptance and guarded promotion; the later integration repair is recorded separately |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
@@ -232,8 +232,8 @@ grouping. The same oracle passed on source SHA-256
 Gentle's targeted validator ran through Tesota's fixed tool-free Pi process relay,
 closed the review as `approved` and emitted an exact acknowledgement; executing
 it burned the review authority. No human decision or promotion was recorded.
-This qualifies the native correction path. A real `review.recover` successor
-transition after changed scope or invalidation remains open.
+This qualifies the native correction path. The later recovery qualification
+records a real `review.recover` successor after changed scope.
 
 Tesota's separate review fingerprint is
 `fc4031e766ce9002da5e05e18dbfc524776e4052e6521d1c2a1f567a727e7ceb`.
@@ -247,11 +247,11 @@ recorded in the [Gentle qualification](../experiments/gentle/README.md).
 
 ## Interface and review sequencing
 
-The formal correction loop is complete for its bounded property. Gentle's public
-review relay and one immutable four-lens settlement are also qualified. The next
-increment combines those proven slices on one fresh candidate and evaluates the
-provider's correction and recovery transitions. Gentle may report findings and
-bounded next actions; Tesota retains acceptance and promotion authority.
+The formal correction loop, combined correction cycle, provider-authorized
+correction and one native `scope_changed` recovery are qualified for their
+bounded cases. Gentle may report findings and bounded next actions; Tesota
+retains acceptance and promotion authority. Recovery dispositions for
+invalidation or escalation remain separate qualifications.
 
 Kiln's `dev` Oxlint profile and quality-gate loop are reference material for a
 separate static-analysis qualification. “Anti-slop” is not an Oxlint guarantee;
@@ -277,8 +277,9 @@ community experience. No particular UI framework or existing shell is adopted.
 
 The original handoff included a bounded Gentle AI review integration and a small
 Dafny property for the first useful cycle. The formal property is live for the
-bounded invocation decision. Gentle's public relay and immutable settlement are
-implemented; correction and usable recovery semantics remain unqualified. A
+bounded invocation decision. Gentle's public relay, immutable settlement,
+provider-authorized correction and one scope-change successor are implemented
+and qualified. Recovery after invalidation or escalation remains unqualified. A
 formal model or provider review does not by itself prove the whole implementation
 correct or grant promotion authority.
 

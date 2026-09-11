@@ -83,11 +83,11 @@ acceptance. Current experiments return `taskAcceptance: "not_evaluated"`.
 ## Review provider boundary
 
 Tesota owns the operator surface and the decision to accept or promote work.
-Gentle AI is a potential external review provider consumed through an adapter;
-it is not Tesota's shell, authority store or acceptance mechanism. If adopted,
-the adapter will translate Tesota's candidate and evidence contracts to the
-negotiated Gentle review contract and return provider evidence without copying
-Gentle's commands, state model or roadmap into Tesota.
+Gentle AI is an external review provider consumed through a bounded adapter; it
+is not Tesota's shell, authority store or acceptance mechanism. The adapter
+translates Tesota's candidate and evidence contracts to the negotiated Gentle
+review contract and returns provider evidence without copying Gentle's commands,
+state model or roadmap into Tesota.
 
 The responsibilities remain separate:
 
