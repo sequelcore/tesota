@@ -101,9 +101,12 @@ The responsibilities remain separate:
 
 The Codex-backed reviewer host is implemented as a bounded read-only surface:
 `task run gentle-review <candidate> <lens>` runs one lens through Pi with
-Tesota's `CodexCredentials` and stores a candidate-bound result. It does not
-write candidate files or accept promotion. The remaining adapter work is to
-submit these results to Gentle's negotiated capture contract and validate its
+Tesota's `CodexCredentials` and stores a candidate-bound result. The reviewer
+must call Tesota's typed `tesota_submit_review` custom tool; Tesota validates
+the payload at the execution boundary and stops after one accepted submission.
+Text parsing remains only a compatibility fallback. It does not write
+candidate files or accept promotion. The remaining adapter work is to submit
+these results to Gentle's negotiated capture contract and validate its
 model-backed correction and recovery behavior.
 
 ## Static-analysis policy

@@ -1,4 +1,5 @@
 import { createAgentSession, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { contentText } from "@earendil-works/pi-ai";
 import type { CredentialStore } from "@earendil-works/pi-ai";
 import { LIVE_CODEX_MODEL_ID } from "./pi-live.js";
@@ -24,7 +25,8 @@ export async function runPiCodingAgent(options: {
   readonly credentials: CredentialStore;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
-  readonly tools?: readonly ("read" | "edit")[];
+  readonly tools?: readonly string[];
+  readonly customTools?: readonly ToolDefinition[];
 }): Promise<PiCodingAgentRun> {
   const runtime = await ModelRuntime.create({ credentials: options.credentials, refreshOnCreate: false, allowModelNetwork: false });
   const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
@@ -35,6 +37,7 @@ export async function runPiCodingAgent(options: {
     model,
     sessionManager: SessionManager.inMemory(options.cwd),
     tools: [...(options.tools ?? ["read", "edit"])],
+    ...(options.customTools === undefined ? {} : { customTools: [...options.customTools] }),
   });
   const toolNames = new Set<string>();
   let messages = 0;

@@ -186,3 +186,12 @@ follow-up prompt. `review-resilience`, `review-readability` and
 `review-reliability` still returned no structured result, so Gentle received no
 unbound or synthetic substitutes. The lineage remains open and requires a
 reviewer transport that reliably emits the negotiated result schema.
+
+### Phase 11: typed reviewer submission
+
+The host now uses Pi's typed custom-tool contract. The reviewer must call
+`tesota_submit_review` once; Tesota validates the schema and accepts the result
+directly, while final response text is only a compatibility fallback. Build,
+typecheck and lint pass. A new live capture is pending because the authorized
+Codex store currently reports its usage limit; the open Gentle lineage is not
+claimed as settled.
