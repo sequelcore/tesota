@@ -8,8 +8,9 @@ import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, 
   type Context, type FauxResponseStep } from "@earendil-works/pi-ai";
 import { PI_TASK_LIMITS, piTaskPasses, runPiTask } from "../src/integrations/pi-task.js";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
-import { PiDecisionTask, checkCandidateTask, PI_DECISION_TASK_STATUS } from "../src/candidate-task.js";
+import { CandidateTask, checkCandidateTask, PI_DECISION_TASK_STATUS } from "../src/candidate-task.js";
 import { reviewTask, decideTask } from "../src/task-review.js";
+import { promoteTask } from "../src/task-promotion.js";
 
 const editedFile = "docs/decisions/002-use-pi.md";
 const roots: string[] = [];
@@ -26,7 +27,7 @@ async function fixture() {
   const source = join(root, "source");
   await mkdir(source);
   git(source, ["init", "--quiet"]);
-  for (const path of [editedFile, "docs/roadmap.md", "experiments/codex/history.md", "src/cli.ts"]) {
+  for (const path of [editedFile, "docs/roadmap.md", "experiments/codex/history.md", "src/cli.ts", "src/integrations/pi-task.ts"]) {
     await mkdir(dirname(join(source, path)), { recursive: true });
     await writeFile(join(source, path), await readFile(new URL("../" + path, import.meta.url)));
   }
@@ -40,9 +41,78 @@ function correction(content: string): string {
   return content.replace(/Status:[\s\S]*?(?=\n\n## Decision and rationale)/, PI_DECISION_TASK_STATUS);
 }
 
+it("prepares code scope independently of the documentation task and denies other files", async () => {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepare(candidate.directory, "pi-result-consistency");
+  expect(task.describe()).toMatchObject({ task: "pi-result-consistency", writeFiles: ["src/integrations/pi-task.ts"] });
+  expect((await task.read({ path: "src/integrations/pi-task.ts" })).content).toContain("piTaskPasses");
+  await expect(task.read({ path: editedFile })).rejects.toThrow("denied");
+});
+
+async function acceptedCandidate() {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepare(candidate.directory);
+  const input = await task.read({ path: editedFile });
+  await task.check();
+  await task.replace({ path: editedFile, expectedSha256: input.sha256, content: correction(input.content) });
+  task.close();
+  const review = await reviewTask(candidate.directory);
+  await decideTask(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
+  return { ...candidate, review, original: input.content };
+}
+
+it("promotes through the CLI while preserving unrelated source edits, index and refs", async () => {
+  const candidate = await acceptedCandidate();
+  await writeFile(join(candidate.source, "src/cli.ts"), "unrelated edit");
+  const index = await readFile(join(candidate.source, ".git/index"));
+  const head = await readFile(join(candidate.source, ".git/HEAD"));
+  const entry = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
+  const result = spawnSync("bun", ["--no-env-file", entry, "task", "promote", candidate.directory, candidate.review.reviewSha256], {
+    cwd: candidate.source, encoding: "utf8", windowsHide: true, timeout: 30_000,
+  });
+  expect(result.status).toBe(0);
+  expect(JSON.parse(result.stdout).status).toBe("applied");
+  expect(await readFile(join(candidate.source, editedFile), "utf8")).toBe(correction(candidate.original));
+  expect(await readFile(join(candidate.source, "src/cli.ts"), "utf8")).toBe("unrelated edit");
+  expect(await readFile(join(candidate.source, ".git/index"))).toEqual(index);
+  expect(await readFile(join(candidate.source, ".git/HEAD"))).toEqual(head);
+  expect(await readFile(join(candidate.directory, "promotion.jsonl"), "utf8")).toContain('"state":"applied"');
+  await expect(promoteTask(candidate.directory, candidate.source, candidate.review.reviewSha256)).rejects.toThrow();
+}, 60_000);
+
+it.each(["working", "index", "revision", "candidate", "wrong_source", "journal"] as const)(
+  "refuses promotion after %s changes without overwriting source", async (change) => {
+    const candidate = await acceptedCandidate();
+    const target = join(candidate.source, editedFile);
+    if (change === "working") await writeFile(target, "newer work");
+    if (change === "index" || change === "revision") {
+      await writeFile(target, "staged work");
+      git(candidate.source, ["add", editedFile]);
+      if (change === "revision") git(candidate.source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+        "commit", "--no-gpg-sign", "--quiet", "-m", "Newer source"]);
+      await writeFile(target, candidate.original);
+    }
+    if (change === "candidate") await writeFile(join(candidate.checkout, editedFile), "changed candidate");
+    if (change === "journal") await writeFile(join(candidate.directory, "promotion.jsonl"), '{"state":"started"}\n');
+    const before = await readFile(target);
+    await expect(promoteTask(candidate.directory, change === "wrong_source" ? candidate.checkout : candidate.source,
+      candidate.review.reviewSha256)).rejects.toThrow();
+    expect(await readFile(target)).toEqual(before);
+  }, 60_000);
+
+it("does not promote a passing candidate without explicit acceptance", async () => {
+  const candidate = await fixture();
+  (await CandidateTask.prepare(candidate.directory)).close();
+  const original = await readFile(join(candidate.source, editedFile), "utf8");
+  await writeFile(join(candidate.checkout, editedFile), correction(original));
+  const review = await reviewTask(candidate.directory);
+  await expect(promoteTask(candidate.directory, candidate.source, review.reviewSha256)).rejects.toThrow("accepted");
+  expect(await readFile(join(candidate.source, editedFile), "utf8")).toBe(original);
+}, 30_000);
+
 it("records acceptance for reviewed bytes separately from check evidence and refuses to overwrite it", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const input = await task.read({ path: editedFile });
   await task.check();
   await task.replace({ path: editedFile, expectedSha256: input.sha256, content: correction(input.content) });
@@ -64,7 +134,7 @@ it("records acceptance for reviewed bytes separately from check evidence and ref
 
 it("rejects a stale review and refuses acceptance based on forged saved success or diff claims", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const original = await task.read({ path: editedFile });
   task.close();
   await writeFile(join(candidate.directory, "attempt.jsonl"), '{"outcome":"passed"}\n');
@@ -79,7 +149,7 @@ it("rejects a stale review and refuses acceptance based on forged saved success 
 
 it("allows rejecting a failed candidate through the compiled CLI without granting acceptance", async () => {
   const candidate = await fixture();
-  (await PiDecisionTask.prepare(candidate.directory)).close();
+  (await CandidateTask.prepare(candidate.directory)).close();
   const entry = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
   const review = spawnSync("bun", ["--no-env-file", entry, "task", "review", candidate.directory], {
     encoding: "utf8", windowsHide: true, timeout: 15_000,
@@ -99,7 +169,7 @@ it("allows rejecting a failed candidate through the compiled CLI without grantin
 
 it("rejects malformed decisions and scope changes instead of presenting a current acceptance", async () => {
   const candidate = await fixture();
-  (await PiDecisionTask.prepare(candidate.directory)).close();
+  (await CandidateTask.prepare(candidate.directory)).close();
   await expect(decideTask(candidate.directory, { decision: "accept", reviewSha256: "0".repeat(64), authority: "model" })).rejects.toThrow();
   await writeFile(join(candidate.directory, "decision.json"), '{"decision":"accept","authority":"human"}');
   await expect(reviewTask(candidate.directory)).rejects.toThrow();
@@ -130,7 +200,7 @@ function modelCorrection(context: Context) {
 
 it("executes a Pi repository task and distinguishes model completion from applicable checks", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const fake = fakeModel([
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: editedFile })),
     fauxAssistantMessage(fauxToolCall("tesota_check", {})),
@@ -154,7 +224,7 @@ it.each([
   { name: "unknown", args: {} },
 ])("denies malformed or unknown model tools and closes further authority: $name", async ({ name, args }) => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const fake = fakeModel([fauxAssistantMessage(fauxToolCall(name, args)), fauxAssistantMessage("Done.")]);
   const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
   expect(result).toMatchObject({ status: "failed", edits: 0, checks: [], denied: true });
@@ -165,7 +235,7 @@ it.each([
 
 it("does not pass a model's unsupported completion claim", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const fake = fakeModel([fauxAssistantMessage("All checks passed. Accepted.")]);
   const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
   expect(result.status).toBe("completed");
@@ -175,7 +245,7 @@ it("does not pass a model's unsupported completion claim", async () => {
 
 it("bounds model continuations independently of the permitted read budget", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const fake = fakeModel(Array.from({ length: 9 }, () => fauxAssistantMessage(fauxToolCall("tesota_read", { path: editedFile }))));
   const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
   expect(result).toMatchObject({ status: "failed", denied: true, modelInvocations: PI_TASK_LIMITS.modelInvocations });
@@ -184,7 +254,7 @@ it("bounds model continuations independently of the permitted read budget", asyn
 
 it.each(["deadline", "interrupt"] as const)("closes authority when a stream will not settle after %s", async (reason) => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const model = fakeModel([]).model;
   const cancellation = new AbortController();
   const stream = createAssistantMessageEventStream();
@@ -208,7 +278,7 @@ it.each(["deadline", "interrupt"] as const)("closes authority when a stream will
 
 it("permits the exact documentation correction, binds its checks to bytes and preserves the source", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const input = await task.read({ path: editedFile });
   const before = await task.check();
   expect(before).toMatchObject({ status: "check_failed", provenance: "issued", taskAcceptance: "not_evaluated" });
@@ -228,7 +298,7 @@ it("permits the exact documentation correction, binds its checks to bytes and pr
 it.each(["../source/docs/decisions/002-use-pi.md", ".git/config", "docs\\decisions\\002-use-pi.md", "src/cli.ts"])(
   "rejects a write to %s before any file mutation", async (path) => {
     const candidate = await fixture();
-    const task = await PiDecisionTask.prepare(candidate.directory);
+    const task = await CandidateTask.prepare(candidate.directory);
     const input = await task.read({ path: editedFile });
     await task.check();
     await expect(task.replace({ path, expectedSha256: input.sha256, content: correction(input.content) })).rejects.toThrow("denied");
@@ -238,13 +308,13 @@ it.each(["../source/docs/decisions/002-use-pi.md", ".git/config", "docs\\decisio
 
 it("requires an initial check and rejects stale hashes without overwriting source", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const input = await task.read({ path: editedFile });
   await expect(task.replace({ path: editedFile, expectedSha256: input.sha256, content: correction(input.content) })).rejects.toThrow("denied");
   expect(await readFile(join(candidate.checkout, editedFile), "utf8")).toBe(input.content);
   // Fresh explicit task authority uses a fresh candidate; a saved plan cannot reset a budget.
   const second = await fixture();
-  const next = await PiDecisionTask.prepare(second.directory);
+  const next = await CandidateTask.prepare(second.directory);
   const content = await next.read({ path: editedFile });
   await next.check();
   await expect(next.replace({ path: editedFile, expectedSha256: "0".repeat(64), content: correction(content.content) })).rejects.toThrow("denied");
@@ -253,7 +323,7 @@ it("requires an initial check and rejects stale hashes without overwriting sourc
 
 it("detects out-of-scope changes and refuses to read unlisted files", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   await writeFile(join(candidate.checkout, "src/cli.ts"), "external change");
   await expect(task.read({ path: editedFile })).rejects.toThrow("denied");
   await expect(checkCandidateTask(candidate.directory)).rejects.toThrow("scope changed");
@@ -262,7 +332,7 @@ it("detects out-of-scope changes and refuses to read unlisted files", async () =
 
 it("detects external modification of the writable file and preserves it", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const input = await task.read({ path: editedFile });
   await task.check();
   await writeFile(join(candidate.checkout, editedFile), "external");
@@ -272,7 +342,7 @@ it("detects external modification of the writable file and preserves it", async 
 
 it("does not pass a corrected status if unrelated document text changes, and bounds correction attempts", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   const input = await task.read({ path: editedFile });
   await task.check();
   await task.replace({ path: editedFile, expectedSha256: input.sha256, content: correction(input.content) + "\nUnrequested text\n" });
@@ -285,11 +355,11 @@ it("does not pass a corrected status if unrelated document text changes, and bou
 
 it("rejects additional payload fields and refuses forged persisted scope", async () => {
   const candidate = await fixture();
-  const task = await PiDecisionTask.prepare(candidate.directory);
+  const task = await CandidateTask.prepare(candidate.directory);
   await expect(task.read({ path: editedFile, command: "SYNTHETIC_PRIVATE" })).rejects.toThrow("denied");
   const path = join(candidate.directory, "task.json");
   const original = await readFile(path, "utf8");
-  await expect(PiDecisionTask.prepare(candidate.directory)).rejects.toThrow();
+  await expect(CandidateTask.prepare(candidate.directory)).rejects.toThrow();
   expect(await readFile(path, "utf8")).toBe(original);
   await writeFile(path, JSON.stringify({ ...JSON.parse(original), writeFiles: ["src/cli.ts"] }));
   await expect(checkCandidateTask(candidate.directory)).rejects.toThrow("invalid");

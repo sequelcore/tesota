@@ -9,10 +9,12 @@ Usage: tesota [--help | -h | help]
        tesota task prepare <candidate-directory>
        tesota task check <candidate-directory>
        tesota task run
+       tesota task run pi-result-consistency
        tesota task review <candidate-directory>
        tesota task decide <candidate-directory> <accept|reject> <review-sha256>
+       tesota task promote <candidate-directory> <review-sha256>
 
-Runs bounded verification and one scoped documentation task.
+Runs bounded verification and scoped repository tasks.
 `;
 
 const args = process.argv.slice(2);
@@ -24,6 +26,14 @@ if (
 } else if (args.length === 2 && args[0] === "auth" && args[1] !== undefined) {
   const { runAuthCommand } = await import("./auth.js");
   process.exit(await runAuthCommand(args[1]));
+} else if (args.length === 4 && args[0] === "task" && args[1] === "promote" && args[2] !== undefined && args[3] !== undefined) {
+  const { promoteTask } = await import("./task-promotion.js");
+  try {
+    process.stdout.write(JSON.stringify(await promoteTask(args[2], process.cwd(), args[3]), null, 2) + "\n");
+  } catch {
+    process.stderr.write("Promotion unavailable or failed. Inspect source and any promotion journal before retrying.\n");
+    process.exitCode = 2;
+  }
 } else if (args[0] === "task" && (args.length === 3 && args[1] === "review" && args[2] !== undefined ||
     args.length === 5 && args[1] === "decide" && args[2] !== undefined && args[3] !== undefined && args[4] !== undefined)) {
   const { reviewTask, decideTask } = await import("./task-review.js");
@@ -36,14 +46,15 @@ if (
     process.stderr.write("Review or decision unavailable: check scope, fingerprint and existing decision.\n");
     process.exitCode = 2;
   }
-} else if (args.length === 2 && args[0] === "task" && args[1] === "run") {
+} else if (args[0] === "task" && args[1] === "run" && (args.length === 2 ||
+    args.length === 3 && args[2] === "pi-result-consistency")) {
   const { runTaskCommand } = await import("./task-run.js");
-  process.exit(await runTaskCommand());
+  process.exit(await runTaskCommand(args[2] === "pi-result-consistency" ? args[2] : "pi-decision-status"));
 } else if (args.length === 3 && args[0] === "task" && (args[1] === "prepare" || args[1] === "check") && args[2] !== undefined) {
-  const { PiDecisionTask, checkCandidateTask } = await import("./candidate-task.js");
+  const { CandidateTask, checkCandidateTask } = await import("./candidate-task.js");
   try {
     if (args[1] === "prepare") {
-      const task = await PiDecisionTask.prepare(args[2]);
+      const task = await CandidateTask.prepare(args[2]);
       try { process.stdout.write(JSON.stringify(task.describe(), null, 2) + "\n"); }
       finally { task.close(); }
     } else {

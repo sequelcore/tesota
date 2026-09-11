@@ -2,7 +2,8 @@
 
 This private package provides a CLI, development checks, bounded Oxlint
 verification, durable evidence recovery, independent candidate checkouts and
-one scoped documentation task with bounded live execution and local review decisions.
+one scoped documentation task with bounded live execution, local review decisions
+and guarded paragraph promotion.
 Separate Pi compatibility and live
 authentication, fixed verification-tool and isolated candidate-correction experiments
 exist; it does not yet execute general repository tasks.

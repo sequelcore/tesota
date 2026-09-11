@@ -30,16 +30,21 @@ validation of the current checkout.
 | Independent candidate checkout | Locally verified on Windows | Create a detached committed copy with independent Git storage; inspect baseline changes while preserving source state |
 | Scoped repository task | Live Windows attempt passed for the Pi decision documentation task | Saved login, bounded model operations, one scoped edit, failed then passing checks and retained review diff |
 | Candidate review and decision | Implemented for the scoped documentation task | Fresh diff and check, fingerprint-bound local operator decision, stale-record detection; no promotion authority |
+| Guarded paragraph promotion | Verified in temporary Windows repositories | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal |
+| Real code task | Live Windows attempt passed for `pi-result-consistency` | Model repaired `piTaskPasses`; sandbox oracle failed first, passed after correction; source remained unchanged |
 | First verified self-development cycle | In progress | Bounded documentation task demonstrated; human acceptance, promotion and broader code-task verification remain open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
-The next increment defines guarded promotion: apply an explicitly accepted,
-still-applicable candidate change to its source without overwriting newer work.
+The next increment extends the bounded cycle to review and guarded promotion of a
+real code task, with human acceptance kept separate from model completion.
+The code-task attempt used a sandboxed behavioral oracle and failure correction;
+guarded paragraph promotion is implemented
+as an explicit command that preserves conflicting source work by refusing the write.
 Review and local operator decision recording are implemented, with recovered
 decisions treated as untrusted assertions rather than promotion authority. The
 [scoped documentation task](tasks.md) now runs through a bounded live model attempt.
 It does not establish general editing permissions, task recovery, server-side
-cancellation or promotion.
+cancellation or general promotion.
 See the [experiment index](../experiments/README.md).
 See [candidate checkouts](candidates.md) for the new preparation commands.
 
@@ -71,6 +76,23 @@ forged saved claims and malformed decisions. The retained live candidate was
 reviewed through the compiled CLI: its current check passed and its decision
 remained absent. No live inference or real-candidate decision was needed for this
 increment.
+
+Guarded promotion validation passed 214 tests, build, typecheck and lint. The
+compiled CLI applied an accepted paragraph in a temporary source repository while
+preserving its index, HEAD and unrelated edits. Negative cases rejected newer
+working bytes, staged or committed target changes, changed candidates, a wrong
+source directory, missing acceptance and an existing journal. The final permission
+preservation change also passed a focused CLI rerun. No real candidate was accepted
+or promoted, and no live model was invoked for this increment. Recovery after a
+process crash or power loss remains unverified.
+
+The code-task attempt completed on 2026-09-10 UTC against baseline
+`3752e2b0465560fea45a8b2ae99bb1c98bf7e7ba`. It used five model invocations,
+four tool calls, one edit and two issued checks. The first sandbox check reported
+14 rejected evidence cases; the corrected predicate passed all cases and the
+current read-only check matched its hash. No source edit, commit or promotion
+occurred. Several earlier attempts failed safely on malformed tool input or
+incomplete corrections and retained their evidence.
 
 ## First useful cycle
 

@@ -6,8 +6,18 @@ integrations remain open, while retained evidence records successful bounded
 experiments. The correction must preserve the rest of the decision and must not
 claim a complete repository task cycle.
 
-Tesota implements preparation, operation admission, a deterministic documentation
-check and one bounded live model attempt. It does not promote the result.
+The first code task is `pi-result-consistency`: strengthen the pure
+`piTaskPasses` predicate so inconsistent session evidence cannot be accepted.
+Its candidate may change only the body of `src/integrations/pi-task.ts`; the
+behavior oracle runs the candidate function in a pinned Node container with no
+network or host mounts. The checker covers valid completion, correction after an
+intermediate failure, bounds, issued provenance, task and baseline consistency,
+changed hashes and current-check matching. It does not run the candidate
+repository or expose source credentials.
+
+Tesota implements preparation, operation admission, deterministic documentation
+and code checks, and bounded live model attempts. A separate explicit command can promote
+the accepted paragraph change to the source working tree.
 
 ## Run the task
 
@@ -85,6 +95,43 @@ stale decision. A decision exits 0 when recorded and currently applicable, 1 if
 the post-write review finds it stale, and 2 for invalid or unavailable operations.
 An error after persistence does not imply that no decision file was created.
 
+## Promote an accepted change
+
+From the original source repository root, use the accepted review fingerprint:
+
+```sh
+bun start task promote <candidate-directory> <review-sha256>
+```
+
+This explicit invocation authorizes one source-file replacement. The saved
+acceptance is a required local assertion, not independent write authority. No
+model tool can invoke promotion. Tesota rechecks the accepted fingerprint, current
+task check and source identity. The target's committed blob and mode must match
+the candidate baseline, its index entry must match HEAD, and its working bytes
+must match the baseline exactly. Later commits affecting other files are allowed;
+staged or unstaged target changes are rejected. Unrelated edits remain untouched.
+
+Only the task-owned decision-document path can be replaced. Regular single-link
+files and unredirected paths are required. The replacement is captured and hashed,
+written to an exclusive temporary file beside the source target, then rechecked
+before rename. Source permissions are carried into the temporary file. The
+command does not stage files, commit, move refs or execute candidate code.
+
+An exclusive `promotion.jsonl` beside the candidate records the source, revision,
+review fingerprint and before/after hashes before the write. A verified write
+records `applied`; a caught failure records `not_applied` or `applied_unconfirmed`
+when possible. A start without a terminal record is incomplete. Exit 0 reports a
+verified replacement; exit 2 requires inspecting both source and journal because
+failure after the rename can still leave the change applied. An existing journal
+blocks another attempt. There is no automatic rollback, journal deletion or retry.
+
+This remains a trusted single-writer operation, not a filesystem transaction or
+authenticated approval system. Other processes can race the final observation
+and rename. Interrupted writes may leave a temporary file or incomplete journal;
+power-loss durability and recovery are not established. Promotion of multiple
+files, conflict resolution and stable executable version switching remain future
+work.
+
 ## Prepare and inspect
 
 Create an [independent candidate](candidates.md), then use its returned directory:
@@ -137,7 +184,7 @@ their own appropriate checks; an Oxlint pass would not verify these prose claims
 
 ## Authority and limits
 
-`PiDecisionTask.prepare` creates an in-memory editing handle selected by trusted
+`CandidateTask.prepare` creates an in-memory editing handle selected by trusted
 application code. The preparation CLI closes that handle after printing the
 plan. Loading `task.json` supports read-only checking; it does not recreate the
 handle or reset an execution budget. `task run` creates a new candidate and handle
@@ -146,6 +193,6 @@ for each explicit invocation instead of interpreting a saved plan as authorizati
 These are task-tool boundaries in a trusted single-writer workspace. They do not
 sandbox a hostile same-user process, authenticate stored metadata, or guarantee
 atomic observation of the entire filesystem. Failed writes may leave local
-temporary state; there is no automatic rollback, task resume or promotion.
+temporary state; there is no automatic rollback, task resume or automatic promotion.
 An earlier check describes its observed bytes, not later edits. Checks always
 retain `taskAcceptance: "not_evaluated"`; operator decisions are separate records.

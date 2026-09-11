@@ -2,13 +2,13 @@ import { createHash } from "node:crypto";
 import { open, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { candidateDiff, createCandidateCheckout } from "./candidate-checkout.js";
-import { PiDecisionTask, checkCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
+import { CandidateTask, checkCandidateTask, type CandidateTaskCheck, type CandidateTaskId } from "./candidate-task.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { PI_TASK_LIMITS, piTaskPasses, runPiTask, type PiTaskResult } from "./integrations/pi-task.js";
 
 /** A new invocation creates its own candidate and authority; stored attempts cannot be resumed. */
-export async function runTaskCommand(): Promise<number> {
+export async function runTaskCommand(taskId: CandidateTaskId = "pi-decision-status"): Promise<number> {
   if (process.platform !== "win32") {
     process.stderr.write("Live repository tasks are currently supported on Windows.\n");
     return 2;
@@ -26,14 +26,14 @@ export async function runTaskCommand(): Promise<number> {
     const candidate = await createCandidateCheckout(process.cwd());
     process.stdout.write("Task candidate: " + candidate.directory + "\n");
     const record = await open(join(candidate.directory, "attempt.jsonl"), "wx", 0o600);
-    let task: PiDecisionTask | undefined;
+    let task: CandidateTask | undefined;
     let session: PiTaskResult | null = null;
     let current: CandidateTaskCheck | null = null;
     let reviewSaved = false;
     let passed = false;
     try {
       const executor: Record<string, string> = {};
-      for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js",
+      for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js", "code-task-check.js",
         "integrations/pi-task.js", "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock"]) {
         executor[path] = createHash("sha256").update(await readFile(new URL(path, import.meta.url))).digest("hex");
       }
@@ -42,7 +42,7 @@ export async function runTaskCommand(): Promise<number> {
         executor, model: LIVE_CODEX_MODEL_ID, limits: PI_TASK_LIMITS, taskAcceptance: "not_evaluated" }) + "\n");
       await record.sync();
       if (cancellation.signal.aborted) throw new Error("Task interrupted");
-      task = await PiDecisionTask.prepare(candidate.directory);
+      task = await CandidateTask.prepare(candidate.directory, taskId);
       const models = await storedCodexModels(new CodexCredentials(), cancellation.signal);
       const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
       if (model?.api !== "openai-codex-responses") throw new Error("Task model unavailable");

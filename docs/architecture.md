@@ -1,9 +1,9 @@
 # Architecture
 
-Tesota currently has one private TypeScript package with a verification CLI and
-opt-in live integration experiments. There is no production
-task runtime, interactive agent shell or stable/candidate promotion mechanism yet.
-The [roadmap](roadmap.md) describes those intended capabilities separately.
+Tesota currently has one private TypeScript package with a verification CLI,
+opt-in live integration experiments, and two fixed bounded repository tasks.
+It has no general production task runtime or interactive agent shell. The
+[roadmap](roadmap.md) describes those intended capabilities separately.
 
 ## Implemented ownership
 
@@ -29,6 +29,8 @@ The [roadmap](roadmap.md) describes those intended capabilities separately.
 | [integrations/pi-task.ts](../src/integrations/pi-task.ts) | Adapt task-owned schemas to Pi tools; bound the live session and observe check continuation |
 | [task-run.ts](../src/task-run.ts) | Create one fresh task attempt, reuse authentication and retain its checks and review diff |
 | [task-review.ts](../src/task-review.ts) | Review current candidate bytes and bind a separate local operator decision to their fingerprint |
+| [task-promotion.ts](../src/task-promotion.ts) | Apply one explicitly requested, accepted paragraph change after source checks; retain the write outcome |
+| [code-task-check.ts](../src/code-task-check.ts) | Run the fixed pure-predicate behavior oracle in a pinned, network-disabled container |
 
 The verification modules have no Pi dependency. Synthetic and live verification
 share the same adapter and verifier. The authentication/turn probes have no
@@ -36,7 +38,9 @@ executable tools; the separate [verification experiment](../experiments/codex/ve
 admits one fixed fixture check.
 The [candidate correction exercise](../experiments/codex/candidate.md) uses the
 same adapter with one bounded replacement between two checks. Candidate files
-are never executed, and no promotion mechanism exists.
+are never executed. The scoped documentation task has an explicit guarded
+paragraph-promotion command; the code task has a sandboxed behavior oracle and
+does not support promotion.
 
 ## Engine boundary
 

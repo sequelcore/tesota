@@ -187,6 +187,26 @@ export async function inspectCandidateCheckout(path: string): Promise<CheckoutIn
     provenance: "recorded_untrusted", head, headChanged: head !== record.baseline, changes };
 }
 
+/** Bind an explicitly selected source to the candidate and reject target revision/index drift. */
+export async function inspectPromotionSource(directory: string, sourceDirectory: string, path: string): Promise<{
+  source: string; head: string;
+}> {
+  if (!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(path) ||
+      path.split("/").some((part) => part === ".." || part === ".git")) throw new Error("Promotion path denied");
+  const candidate = await inspectCandidateCheckout(directory);
+  const record = await readRecord(candidate.directory);
+  const source = await plainDirectory(sourceDirectory);
+  if (source !== record.source || contains(source, candidate.checkout) || contains(candidate.checkout, source) ||
+      relative(source, git(source, ["rev-parse", "--show-toplevel"]).trim()) !== "") throw new Error("Promotion source mismatch");
+  const head = git(source, ["rev-parse", "--verify", "HEAD^{commit}"]).trim();
+  const original = git(candidate.checkout, ["ls-tree", candidate.baseline, "--", path]);
+  if (!original.startsWith("100644 blob ") || git(source, ["ls-tree", head, "--", path]) !== original ||
+      git(source, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--name-only", head, "--", path]) !== "") {
+    throw new Error("Promotion source revision or index changed");
+  }
+  return { source, head };
+}
+
 /** Review the tracked diff with the same isolated Git configuration as inspection. */
 export async function candidateDiff(directory: string): Promise<string> {
   const inspection = await inspectCandidateCheckout(directory);
