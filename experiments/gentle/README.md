@@ -60,5 +60,27 @@ does not establish runtime compatibility, review correctness or acceptance
 authority. The next phase must run the contract's capabilities and bounded
 review flow against one isolated Tesota candidate.
 
+### Phase 2: capabilities and candidate bootstrap
+
+**Partially passed on 2026-09-11.** The package-local Gentle AI `v2.7.0`
+executable was installed in the temporary qualification directory. Its
+capabilities command returned contract `gentle-ai.review-integration/v2`,
+protocol `2.5`, all seven mandatory features and all seventeen advertised
+optional features as supported. The executable reported its own digest and the
+package reported the pinned build identity.
+
+An isolated Tesota clone with one modified documentation file was then
+identified through `review status --workspace-overlay --base-ref HEAD`. The
+provider returned a current target identity, immutable base and candidate tree,
+the changed-path manifest, and a provider-issued `review.start` transition.
+Executing that exact transition closed the low-risk review as `approved` with
+zero selected lenses and a correction budget of one. A follow-up status bound
+the approved authority to the same target and revision and required the
+provider-issued acknowledgement token.
+
+This validates capabilities negotiation, candidate identity and the
+provider-issued transition model. It does not yet qualify a model-backed
+review, correction or interruption recovery; those remain pending.
+
 Until that phase passes, Gentle remains a documented reference and proposed
 provider rather than a Tesota dependency.
