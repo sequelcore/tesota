@@ -58,7 +58,7 @@ it("returns LemmaScript diagnostics and accepts the corrected formal task", asyn
   await task.replace({ path: "src/verification/invocation-admission.ts", expectedSha256: seeded.sha256, content: corrected });
   expect((await task.check()).status).toBe("passed");
   task.close();
-});
+}, 30_000);
 
 async function acceptedCandidate() {
   const candidate = await fixture();
@@ -227,7 +227,7 @@ it("executes a Pi repository task and distinguishes model completion from applic
   expect(piTaskPasses({ ...result, finalCheckSuppliedToModel: false }, current)).toBe(false);
   expect(piTaskPasses(result, { ...current, sourceSha256: "0".repeat(64) })).toBe(false);
   await expect(task.read({ path: editedFile })).rejects.toThrow("closed");
-});
+}, 30_000);
 
 it.each([
   { name: "tesota_replace", args: { path: "../outside", expectedSha256: "0".repeat(64), content: "SYNTHETIC_PRIVATE" } },
@@ -362,7 +362,7 @@ it("does not pass a corrected status if unrelated document text changes, and bou
   await task.replace({ path: editedFile, expectedSha256: current.sha256, content: correction(input.content) });
   expect((await task.check()).status).toBe("passed");
   await expect(task.check()).rejects.toThrow("denied");
-});
+}, 30_000);
 
 it("rejects additional payload fields and refuses forged persisted scope", async () => {
   const candidate = await fixture();

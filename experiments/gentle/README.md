@@ -314,4 +314,30 @@ Tesota's final local review produced fingerprint
 with the same applicable check. The operator later recorded `accept` for that
 exact fingerprint, and Tesota reported the decision as current. No candidate
 edit occurred during Gentle review, and no promotion or candidate commit
-occurred. Code-task promotion remains unsupported.
+occurred during that review.
+
+### Phase 16: guarded code promotion
+
+**Passed for the accepted code candidate on 2026-09-11 UTC.** Tesota extended
+the existing promotion owner to admit `pi-result-consistency` while keeping the
+formal task unsupported. A focused integration test exercised current acceptance,
+the task-owned code path, baseline bytes, preserved HEAD and index, unrelated
+source work and the exclusive journal. The existing negative promotion suite
+continued to cover stale or missing acceptance, source/index/revision drift,
+candidate mutation, wrong source and repeated invocation.
+
+The compiled CLI promoted candidate
+`9783bee4-f5e7-4de5-8705-5253c2d77ffc` using its accepted fingerprint. The
+journal records source HEAD `06999fe34425f5c5616680c066e4a761277f45f3`, before
+SHA-256 `1079f91a725edd3623fea7b5685aa1473edbd4d96968af3d6f162d131435bcc8`
+and the exact accepted after SHA-256
+`ec9af28b47470956d33faa5726642e580eec65cd051d118f3a2dcea722e6bca3`.
+The command returned `applied`; it did not stage, commit or move HEAD.
+
+The immediate repository typecheck then found that `checks[1].status` was not
+narrowed under `noUncheckedIndexedAccess`. The behavioral oracle and Gentle's
+approval had not established TypeScript integration. The source received the
+behavior-preserving `checks[1]?.status` roll-forward; typecheck and the same
+26-case oracle passed afterward. This later byte change does not inherit the
+candidate's human acceptance or Gentle receipt. It records a concrete limit of
+the bounded oracle and why repository gates remain required after promotion.

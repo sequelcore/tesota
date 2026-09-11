@@ -24,8 +24,8 @@ The first [scoped repository task](docs/tasks.md) can correct one documentation
 paragraph through a bounded model attempt and retain its checks and diff.
 Its offline review commands can record a separate operator decision for the
 exact reviewed candidate state.
-An explicit promotion command can apply the accepted paragraph while refusing
-conflicting source changes.
+An explicit promotion command can apply the accepted documentation or
+`pi-result-consistency` change while refusing conflicting source changes.
 See the [roadmap](docs/roadmap.md) for demonstrated progress and remaining work.
 
 ## Get started

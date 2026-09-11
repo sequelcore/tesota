@@ -186,10 +186,19 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
 
 /** Model completion and a currently applicable task check are separate requirements. */
 export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck): boolean {
-  const before = result.checks[0];
-  const last = result.checks.at(-1);
-  return result.status === "completed" && !result.denied && !result.deadlineExpired &&
-    result.edits > 0 && before?.status === "check_failed" && last?.status === "passed" &&
-    result.finalCheckSuppliedToModel && result.checksSuppliedToModel === result.checks.length &&
-    current.status === "passed" && current.sourceSha256 === last.sourceSha256 && current.baseline === last.baseline;
+  const checks = result.checks;
+  const first = checks[0];
+  const last = checks[checks.length - 1];
+  const validCount = Number.isInteger(result.modelInvocations) && result.modelInvocations > 0 && result.modelInvocations <= 8 &&
+    Number.isInteger(result.toolCalls) && result.toolCalls > 0 && result.toolCalls <= 13 &&
+    Number.isInteger(result.edits) && result.edits > 0 && result.edits <= 2;
+  const validChecks = (checks.length === 2 || checks.length === 3) && first !== undefined && last !== undefined &&
+    first.status === "check_failed" && last.status === "passed" && first.sourceSha256 !== last.sourceSha256 &&
+    checks.every((check) => check.provenance === "issued" && check.task === first.task && check.baseline === first.baseline &&
+      typeof check.sourceSha256 === "string" && check.sourceSha256.length > 0) &&
+    (checks.length === 2 || checks[1]?.status === "check_failed") &&
+    result.checksSuppliedToModel === checks.length && result.finalCheckSuppliedToModel;
+  return result.status === "completed" && result.terminalStopReason === "stop" && !result.denied && !result.deadlineExpired &&
+    validCount && validChecks && current.task === last?.task && current.baseline === last?.baseline &&
+    current.status === "passed" && current.sourceSha256 === last?.sourceSha256;
 }

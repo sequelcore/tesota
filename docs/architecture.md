@@ -30,7 +30,7 @@ It has no general production task runtime or interactive agent shell. The
 | [integrations/pi-task.ts](../src/integrations/pi-task.ts) | Adapt task-owned schemas to Pi tools; bound the live session and observe check continuation |
 | [task-run.ts](../src/task-run.ts) | Create one fresh task attempt, reuse authentication and retain its checks and review diff |
 | [task-review.ts](../src/task-review.ts) | Review current candidate bytes and bind a separate local operator decision to their fingerprint |
-| [task-promotion.ts](../src/task-promotion.ts) | Apply one explicitly requested, accepted paragraph change after source checks; retain the write outcome |
+| [task-promotion.ts](../src/task-promotion.ts) | Apply one explicitly requested, accepted documentation or `pi-result-consistency` change after source checks; retain the write outcome |
 | [code-task-check.ts](../src/code-task-check.ts) | Run the fixed pure-predicate behavior oracle in a pinned, network-disabled container |
 | [formal-task-check.ts](../src/formal-task-check.ts) | Seed and check the bounded LemmaScript/Dafny correction task in a temporary copy |
 | [verification/invocation-admission.ts](../src/verification/invocation-admission.ts) | Own the pure bounded-invocation decision and its LemmaScript/Dafny contract |
@@ -41,9 +41,8 @@ executable tools; the separate [verification experiment](../experiments/codex/ve
 admits one fixed fixture check.
 The [candidate correction exercise](../experiments/codex/candidate.md) uses the
 same adapter with one bounded replacement between two checks. Candidate files
-are never executed. The scoped documentation task has an explicit guarded
-paragraph-promotion command; the code task has a sandboxed behavior oracle and
-does not support promotion.
+are never executed. The scoped documentation and `pi-result-consistency` tasks
+support guarded single-file promotion; the formal task does not.
 
 ## Engine boundary
 

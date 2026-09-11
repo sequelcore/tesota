@@ -18,8 +18,9 @@ reported separately from behavioral case failures so Pi can correct the syntax
 without changing the oracle.
 
 Tesota implements preparation, operation admission, deterministic documentation
-and code checks, and bounded live model attempts. A separate explicit command can promote
-the accepted paragraph change to the source working tree.
+and code checks, and bounded live model attempts. A separate explicit command can
+promote an accepted documentation or `pi-result-consistency` change to the source
+working tree.
 
 The first formal property is `canAdmitInvocation` in
 `src/verification/invocation-admission.ts`. Run `bun run formal:check` to let
@@ -132,11 +133,13 @@ the candidate baseline, its index entry must match HEAD, and its working bytes
 must match the baseline exactly. Later commits affecting other files are allowed;
 staged or unstaged target changes are rejected. Unrelated edits remain untouched.
 
-Only the task-owned decision-document path can be replaced. Regular single-link
-files and unredirected paths are required. The replacement is captured and hashed,
-written to an exclusive temporary file beside the source target, then rechecked
-before rename. Source permissions are carried into the temporary file. The
-command does not stage files, commit, move refs or execute candidate code.
+Only the task-owned decision-document path or `src/integrations/pi-task.ts` for
+`pi-result-consistency` can be replaced. The formal task remains unsupported.
+Regular single-link files and unredirected paths are required. The replacement
+is captured and hashed, written to an exclusive temporary file beside the source
+target, then rechecked before rename. Source permissions are carried into the
+temporary file. The command does not stage files, commit, move refs or execute
+candidate code.
 
 An exclusive `promotion.jsonl` beside the candidate records the source, revision,
 review fingerprint and before/after hashes before the write. A verified write

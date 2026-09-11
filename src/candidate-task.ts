@@ -22,7 +22,7 @@ const planSchema = z.strictObject({
   baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/),
   inputs: z.record(z.string(), hashSchema),
 }).refine((plan) => {
-  const paths = plan.task === taskId ? readFiles : [plan.task === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE];
+  const paths = plan.task === taskId ? readFiles : [candidateTaskWriteFile(plan.task)];
   return Object.keys(plan.inputs).length === paths.length && paths.every((path) => plan.inputs[path] !== undefined);
 });
 type TaskPlan = z.infer<typeof planSchema>;
@@ -33,6 +33,11 @@ const taskEditSchema = z.strictObject({ path: z.literal(editedFile), expectedSha
     Buffer.byteLength(text) <= PI_DECISION_TASK_LIMITS.fileBytes && !text.includes("\0") && Buffer.from(text).toString("utf8") === text) });
 interface TaskReadRequest { readonly path: string; }
 interface TaskReplaceRequest { readonly path: string; readonly expectedSha256: string; readonly content: string; }
+
+/** The application-owned task definition is the sole owner of its writable path. */
+export function candidateTaskWriteFile(id: CandidateTaskId): string {
+  return id === taskId ? PI_DECISION_TASK_FILE : id === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE;
+}
 
 export function taskRequestSchemas(id: CandidateTaskId = taskId): { read: z.ZodType<TaskReadRequest>; replace: z.ZodType<TaskReplaceRequest>; check: z.ZodType<Record<string, never>> } {
   if (id === "pi-result-consistency") return {
@@ -78,7 +83,7 @@ async function readText(path: string): Promise<string> {
 }
 
 async function observe(directory: string, plan: TaskPlan): Promise<{ checkout: string; content: string }> {
-  const editedFile = plan.task === taskId ? PI_DECISION_TASK_FILE : plan.task === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE;
+  const editedFile = candidateTaskWriteFile(plan.task);
   const readFiles = plan.task === taskId ? [PI_DECISION_TASK_FILE, "docs/roadmap.md", "experiments/codex/history.md"] : [editedFile];
   const inspection = await inspectCandidateCheckout(directory);
   if (inspection.baseline !== plan.baseline || inspection.headChanged ||
@@ -128,7 +133,7 @@ export class CandidateTask {
   }
 
   static async prepare(directory: string, id: CandidateTaskId = taskId): Promise<CandidateTask> {
-    const editedFile = id === taskId ? PI_DECISION_TASK_FILE : id === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE;
+    const editedFile = candidateTaskWriteFile(id);
     const readFiles = id === taskId ? [PI_DECISION_TASK_FILE, "docs/roadmap.md", "experiments/codex/history.md"] : [editedFile];
     const inspection = await inspectCandidateCheckout(directory);
     if (inspection.headChanged || inspection.changes.length !== 0) throw new Error("Task requires an unchanged candidate");
@@ -198,7 +203,7 @@ export class CandidateTask {
 
   async replace(request: unknown): Promise<void> {
     return this.#operation(async ({ checkout, content }) => {
-      const editedFile = this.#plan.task === taskId ? PI_DECISION_TASK_FILE : this.#plan.task === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE;
+      const editedFile = candidateTaskWriteFile(this.#plan.task);
       const args = taskRequestSchemas(this.#plan.task).replace.parse(request);
       if (this.#checks === 0 || this.#edits >= PI_DECISION_TASK_LIMITS.edits || args.expectedSha256 !== hash(content)) throw new Error("Edit denied");
       const target = join(checkout, editedFile);
@@ -234,7 +239,7 @@ export async function checkCandidateTask(directory: string): Promise<CandidateTa
   const parsed = planSchema.safeParse(JSON.parse(await readText(join(directory, "task.json"))));
   if (!parsed.success) throw new Error("Task plan invalid");
   const baseline = await readCandidateBaselineFiles(directory,
-    parsed.data.task === taskId ? readFiles : [parsed.data.task === "pi-result-consistency" ? CODE_TASK_FILE : FORMAL_TASK_FILE]);
+    parsed.data.task === taskId ? readFiles : [candidateTaskWriteFile(parsed.data.task)]);
   if (baseline.baseline !== parsed.data.baseline) throw new Error("Task baseline changed");
   const expected = expectedContent(baseline.files, parsed.data);
   const snapshot = await observe(directory, parsed.data);

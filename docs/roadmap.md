@@ -30,15 +30,15 @@ validation of the current checkout.
 | Independent candidate checkout | Locally verified on Windows | Create a detached committed copy with independent Git storage; inspect baseline changes while preserving source state |
 | Candidate lifecycle and cleanup | Implemented for bounded local storage | List and inspect candidates by ID, explicitly abandon obsolete work, and remove only old rejected, abandoned or failed checkout contents while retaining evidence |
 | Scoped repository task | Live Windows attempt passed for the Pi decision documentation task | Saved login, bounded model operations, one scoped edit, failed then passing checks and retained review diff |
-| Candidate review and decision | Implemented for the scoped documentation task | Fresh diff and check, fingerprint-bound local operator decision, stale-record detection; no promotion authority |
-| Guarded paragraph promotion | Verified in temporary Windows repositories | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal |
-| Real code task | Live Windows attempt passed for `pi-result-consistency` | Model repaired `piTaskPasses`; sandbox oracle failed first, passed after correction; source remained unchanged |
+| Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
+| Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
+| Real code task | Promoted with a bounded integration repair | Model repaired `piTaskPasses`; the sandbox oracle passed, the operator accepted it and exact bytes were promoted; typecheck then required one optional-index narrowing |
 | Formal correction loop | Passed for bounded Windows task | `canAdmitInvocation` is used by the Pi adapters; a seeded proof failure was returned to Pi, corrected and re-verified with LemmaScript/Dafny |
 | Pi Coding Agent host | Passed for bounded Windows task | Full SDK host reused Tesota's Codex credential store, allowed only `read` and `edit`, and completed the scoped Pi status task in an isolated candidate; check passed and no acceptance was recorded |
 | Codex-backed Gentle reviewer relay | Passed for one retained high-risk lineage | Tesota preserved provider-issued prompts and bindings, Luna completed the remaining three immutable reviewer slots, Gentle admitted them and the exact acknowledgement burned approved authority |
 | Kiln static-analysis qualification | Planned | Compare selected `dev` rules and bounded quality-gate sequencing against Tesota's pinned Oxlint profile; adopt only evidenced, low-noise rules |
 | Gentle AI qualification | In progress | Contract, capabilities, parity lane, stale-binding rejection and immutable model-backed settlement passed; the combined candidate offered no correction or recovery transition, so those paths remain unqualified |
-| First verified self-development cycle | Accepted, not promoted | One combined candidate passed Pi correction, applicable behavioral verification and immutable Gentle review; the operator accepted its current fingerprint, while code promotion remains unavailable |
+| First verified self-development cycle | Complete for the bounded cycle | One combined candidate passed Pi correction, applicable behavioral verification, immutable Gentle review, human acceptance and guarded promotion; the later integration repair is recorded separately |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
 The combined correction cycle completed through human acceptance on 2026-09-11
@@ -47,8 +47,8 @@ detected a real defect and the corrected bytes passed before the same immutable
 candidate completed Gentle review. Candidate identity, evidence applicability
 and provider authority remained distinct. This exercise does not establish
 general editing permissions, task recovery, server-side cancellation or general
-promotion. The operator accepted the current review fingerprint; no promotion
-occurred.
+promotion. The operator accepted the current review fingerprint and the guarded
+command later promoted those exact bytes.
 See the [experiment index](../experiments/README.md).
 See [candidate checkouts](candidates.md) for the new preparation commands.
 
@@ -155,8 +155,9 @@ The intended acceptance exercise must demonstrate that:
 
 General terminal interaction, general candidate-checkout execution and task
 recovery still need implementation. The current promotion command is limited to
-the accepted documentation task and is not a general write capability. Do not
-create unused modules in anticipation of that work.
+the accepted documentation and `pi-result-consistency` tasks and is not a
+general write capability. Do not create unused modules in anticipation of that
+work.
 
 ## Combined correction cycle
 
@@ -172,7 +173,7 @@ verification oracle were explicit before inference began:
    actionable finding is either corrected through a new provider-authorized
    transition or recorded as unresolved; authority is never reconstructed.
 6. Tesota presents the final diff, applicable evidence and remaining limits for
-   a separate human decision. No automatic acceptance or promotion occurs.
+   a separate human decision; any promotion remains an explicit later command.
 
 The cycle used `pi-result-consistency` on candidate
 `9783bee4-f5e7-4de5-8705-5253c2d77ffc`, based on
@@ -198,9 +199,12 @@ paths remain unqualified rather than being reconstructed by Tesota.
 Tesota's separate review fingerprint is
 `fc4031e766ce9002da5e05e18dbfc524776e4052e6521d1c2a1f567a727e7ceb`.
 The operator recorded `accept` for that fingerprint, and Tesota reported the
-decision as current. Code-task promotion is not implemented, so the accepted
-candidate remains isolated. The full live observations and limits are recorded
-in the [Gentle qualification](../experiments/gentle/README.md).
+decision as current. The guarded command later promoted those exact candidate
+bytes and retained its write journal. Repository typecheck then exposed an
+unchecked-index typing defect outside the behavioral oracle; the source received
+the behavior-preserving `checks[1]?.status` narrowing. That roll-forward does not
+inherit the candidate acceptance. The full live observations and limits are
+recorded in the [Gentle qualification](../experiments/gentle/README.md).
 
 ## Interface and review sequencing
 
