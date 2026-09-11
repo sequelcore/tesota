@@ -164,3 +164,19 @@ two compact lineages and zero eligible repair candidates. No candidate bytes,
 Tesota source, acceptance decision or promotion were changed. This confirms
 the existing recovery limitation and leaves operator-directed cleanup or a new
 candidate as the safe path.
+
+### Phase 9: Codex-backed artifact capture
+
+**First provider capture passed on 2026-09-11.** Tesota created candidate
+`c472bbc9-4392-44e6-ab72-99d7474a607d` with one controlled `src/auth.ts` change.
+Gentle emitted four identity-bound high-risk subjects under lineage
+`review-17bb8d3881a94fa0`. Tesota's Codex-backed host completed the
+`review-risk` lens in read-only mode and Gentle admitted the result with
+`admission_decision: completed` for subject
+`sha256:1dfcdd823de47553f7cd89c302acc4188a26d865d1ac5a58c1053e337973184a`.
+
+Three concurrent reviewer launches for the remaining lenses returned no
+structured JSON and were recorded as failed host attempts; they were not sent
+to Gentle. The lineage therefore remains open at `reviewer_results_required`.
+This proves shared Codex authentication and one real capture, but not
+multi-lens settlement, correction or recovery.
