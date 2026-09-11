@@ -121,5 +121,15 @@ by its Windows guard and missing compatible dev-binary registration; no pass is
 claimed for that lane. This verifies one contract-parity lane only and does not
 replace a Tesota-hosted review or a model-backed result.
 
+### Phase 6: stale target binding
+
+**Passed on 2026-09-11.** A review start was deliberately sent with a
+`target_identity` that did not match the freshly built workspace snapshot.
+Gentle rejected it during `preflight` with `stale_target_identity`, reported
+`mutation_outcome: not_started` and `authority_applicability: not_evaluated`,
+and returned `retry_safe: true` with `next_action: review.status`. No lineage
+or candidate mutation was created. This is the expected fail-closed behavior
+for a stale or forged binding.
+
 Until that phase passes, Gentle remains a documented reference and proposed
 provider rather than a Tesota dependency.
