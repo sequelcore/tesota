@@ -44,5 +44,19 @@ evaluations after the review contract is qualified.
 
 ## Result
 
-No result has been recorded. Until this experiment passes, Gentle remains a
-documented reference and proposed provider rather than a Tesota dependency.
+### Phase 1: package and contract inspection
+
+**Passed on 2026-09-11.** The published `gentle-pi@2.5.0` package was retrieved
+without adding it to Tesota and inspected from its package contents. Its
+manifest declares the `gentle-ai.review-integration/v2` contract, includes the
+v2 schemas and fixtures, and runs a provider-contract check as part of its own
+test lifecycle. The package tarball SHA-256 was recorded as
+`sha256:e03bab34f40cd8ea9673f12e752c5d35376f5f52536bdfb5d747829ff106e803`.
+
+This phase establishes package provenance and contract availability only. It
+does not establish runtime compatibility, review correctness or acceptance
+authority. The next phase must run the contract's capabilities and bounded
+review flow against one isolated Tesota candidate.
+
+Until that phase passes, Gentle remains a documented reference and proposed
+provider rather than a Tesota dependency.
