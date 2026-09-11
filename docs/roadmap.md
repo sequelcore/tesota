@@ -32,11 +32,12 @@ validation of the current checkout.
 | Candidate review and decision | Implemented for the scoped documentation task | Fresh diff and check, fingerprint-bound local operator decision, stale-record detection; no promotion authority |
 | Guarded paragraph promotion | Verified in temporary Windows repositories | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal |
 | Real code task | Live Windows attempt passed for `pi-result-consistency` | Model repaired `piTaskPasses`; sandbox oracle failed first, passed after correction; source remained unchanged |
+| Formal correction loop | Planned | Connect one pure TypeScript property to a qualified LemmaScript/Dafny check, return bounded verifier feedback to Pi, and require a passing re-check before the candidate can be presented |
 | First verified self-development cycle | In progress | Bounded documentation task demonstrated; human acceptance, promotion and broader code-task verification remain open |
 | Improvements driven by use | Future direction | Add a capability only for an observed need and demonstrate its benefit |
 
-The next increment extends the bounded cycle to review and guarded promotion of a
-real code task, with human acceptance kept separate from model completion.
+The next increment extends the bounded cycle to formal correction of one real
+TypeScript property, with human acceptance kept separate from model completion.
 The code-task attempt used a sandboxed behavioral oracle and failure correction;
 guarded paragraph promotion is implemented
 as an explicit command that preserves conflicting source work by refusing the write.
@@ -47,6 +48,35 @@ It does not establish general editing permissions, task recovery, server-side
 cancellation or general promotion.
 See the [experiment index](../experiments/README.md).
 See [candidate checkouts](candidates.md) for the new preparation commands.
+
+## Formal correction loop
+
+The target experience is a bounded construction loop:
+
+```text
+task and property -> Pi implements -> LemmaScript/Dafny checks ->
+diagnostic feedback -> Pi corrects -> the property is checked again
+```
+
+The first Tesota slice will use one pure TypeScript function with a small,
+explicit property. A deliberately defective implementation must fail the formal
+check, the agent must repair the implementation or propose a contract change,
+and the second check must bind to the corrected candidate. A contract change
+that weakens or contradicts the intended requirement requires human review; the
+agent may not silently make the obligation easier to prove.
+
+The result is verification evidence, not acceptance authority. Tesota must bind
+each observation to the exact candidate bytes and observed tool versions, keep
+integration tests for behavior outside the formal boundary, and report what the
+property does not cover. A passing proof does not establish requirements that
+were never expressed in the contract.
+
+Kiln's `dev` branch is the reference implementation for this direction: it
+already contains `formal_verify`, a bounded verification loop, Gentle AI review,
+and a diagnostic LemmaScript-to-Dafny qualification. Tesota may reuse the
+lessons and contract boundaries, but it owns its reduced implementation and
+evidence; it does not inherit Kiln's private state, roadmap or acceptance
+decisions.
 
 Checkout validation passed 183 tests, build, typecheck and lint on Windows. A real
 candidate was created from `662c3726775baffe27afcd0f82758ac41c3a70f6` and inspected
@@ -105,14 +135,16 @@ The intended acceptance exercise must demonstrate that:
 5. The report presents the diff, actual checks, observed consumption and limits.
 6. Human acceptance and promotion remain separate from model completion and checks.
 
-Terminal interaction, general candidate-checkout execution, task recovery and promotion still need
-implementation. Do not create unused modules in anticipation of that work.
+Terminal interaction, general candidate-checkout execution and task recovery
+still need implementation. The current promotion command is limited to the
+accepted documentation task and is not a general write capability. Do not create
+unused modules in anticipation of that work.
 
 ## Interface sequencing
 
-Complete the real development-cycle work and integrate the required Gentle AI
-review and Dafny property before implementing terminal interaction. The current
-CLI and experiment commands remain the development surface during that work.
+Complete the formal correction loop and integrate the required Gentle AI review
+before implementing terminal interaction. The current CLI and experiment
+commands remain the development surface during that work.
 
 The eventual interaction surface is undecided. A shell or richer terminal UI
 must be evaluated against the implemented workflow: giving a task, observing
