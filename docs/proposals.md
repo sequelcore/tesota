@@ -88,6 +88,13 @@ resumed start is rejected. Pi receives only bounded read, whole-file replacement
 and Tesota-owned scope-check operations. No shell command, candidate program,
 repository script or model-controlled network tool is available.
 
+### If the operator declines approval
+
+If the operator declines the first task-start approval, execution does not begin.
+No candidate and no `start.jsonl` record are created. The source checkout remains
+unchanged, and the retained proposal stays available for later review and a later
+start attempt.
+
 The scope check proves only that at least one admitted documentation byte changed
 and no out-of-scope path entered the candidate. It explicitly reports that the
 declarative repository check is not executed in this slice and cannot prove that
