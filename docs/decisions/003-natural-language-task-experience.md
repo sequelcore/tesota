@@ -21,8 +21,9 @@ authority.
 
 This proposal was formed from hands-on inspection of the installed Codex, Claude
 Code and OpenCode command surfaces; source and tests in the local Codex, Gemini
-CLI, OpenCode, Pi and Gentle AI reference checkouts; current vendor documentation;
-and public issue reports about approval friction. The reference revisions were:
+CLI, OpenCode, Pi, Gentle Pi and Gentle AI reference checkouts; current vendor
+documentation; and public issue reports about approval friction. The reference
+revisions were:
 
 | Reference | Revision | Relevant observation |
 | --- | --- | --- |
@@ -30,6 +31,7 @@ and public issue reports about approval friction. The reference revisions were:
 | Gemini CLI | `3818efbbfbf8ef029ef53a6ab1093db39971ce83` | Plan mode accepts a goal in natural language, restricts tools during research and requires formal approval before implementation. |
 | OpenCode | `3016830e253492ef41b6cc00dbed623e5989279b` | Its terminal UI makes a conversational session the normal entry point; permission rules resolve to allow, ask or deny and can be narrower than a whole tool. |
 | Pi | `1dd2354052f7dd9fcdcc3097b87cf4b377853a74` | Project trust and execution isolation are different boundaries; Pi deliberately relies on an external sandbox. |
+| Gentle Pi | `db788aefa2cdbc3504ab7723c1f270ebbfe29caa` | Gentle Shell is a package-owned visual layer over Pi with a framed prompt, live status, working-tree changes and inspectable subagents; it extends Pi without making the renderer the agent engine. |
 | Gentle AI | `a440e791c342b69ca79f7759e697fc88c1272ca5` | Small requests should avoid visible planning ceremony, while substantial work benefits from explicit proposal, implementation and review phases handled through the agent's normal surface. |
 
 The vendor contracts converge on read-only exploration before consequential
@@ -158,11 +160,13 @@ copying proposal IDs or assembling lifecycle commands. Composable commands such
 as `task propose`, `task start`, review and promotion remain useful automation,
 diagnostic and test seams behind that experience.
 
-OpenCode is the closest inspected reference for making a terminal conversation
-the normal entry point. Gentle AI supplies a separate lesson: small work stays
-direct and internal planning or review machinery should not become mandatory
-user-visible ceremony. Tesota adopts those experience properties, not either
-project's renderer, permission defaults or lifecycle ownership.
+OpenCode is a direct reference for making a terminal conversation the normal
+entry point. Gentle Shell is a direct reference for placing a native visual layer
+over Pi while preserving the underlying engine, and Gentle AI supplies the
+separate lesson that small work stays direct and internal planning or review
+machinery should not become mandatory user-visible ceremony. Tesota adopts those
+experience properties, not either project's renderer, theme, permission defaults
+or lifecycle ownership.
 
 ## Canonical concepts
 
