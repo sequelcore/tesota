@@ -8,6 +8,26 @@ export interface NativeShellDependencies {
   readonly propose: (request: string) => Promise<number>;
 }
 
+export interface NativePromptTerminal {
+  question(prompt: string, options?: { readonly signal?: AbortSignal }): Promise<string>;
+  once(event: "SIGINT", listener: () => void): unknown;
+  removeListener(event: "SIGINT", listener: () => void): unknown;
+  close(): void;
+}
+
+/** Release readline after one request so later Ctrl+C reaches the active task owner. */
+export async function askNativeShellRequest(terminal: NativePromptTerminal, prompt: string): Promise<string> {
+  const cancellation = new AbortController();
+  const interrupt = (): void => { cancellation.abort(); };
+  terminal.once("SIGINT", interrupt);
+  try {
+    return await terminal.question(prompt, { signal: cancellation.signal });
+  } finally {
+    terminal.removeListener("SIGINT", interrupt);
+    terminal.close();
+  }
+}
+
 /** First Tesota-owned operator surface; execution remains a later admitted consumer. */
 export async function runNativeShell(dependencies: NativeShellDependencies): Promise<number> {
   dependencies.write(
@@ -34,12 +54,15 @@ export async function runNativeShellCommand(): Promise<number> {
     return await runNativeShell({
       cwd: process.cwd(),
       write: (text) => { process.stdout.write(text); },
-      ask: async (prompt) => terminal.question(prompt),
+      ask: async (prompt) => askNativeShellRequest(terminal, prompt),
       propose: runTaskProposalCommand,
     });
-  } catch {
-    process.stderr.write("Tesota session ended before a proposal completed. Nothing changed.\n");
-    return 1;
+  } catch (error) {
+    const cancelled = error instanceof Error && error.name === "AbortError";
+    process.stderr.write(cancelled
+      ? "Tesota session cancelled. Nothing changed.\n"
+      : "Tesota session ended before a proposal completed. Nothing changed.\n");
+    return cancelled ? 130 : 1;
   } finally {
     terminal.close();
   }
