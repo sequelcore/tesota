@@ -342,6 +342,7 @@ it("executes a Pi repository task and distinguishes model completion from applic
   expect(piTaskPasses(result, current)).toBe(true);
   expect(piTaskPasses({ ...result, finalCheckSuppliedToModel: false }, current)).toBe(false);
   expect(piTaskPasses(result, { ...current, writeSetSha256: "0".repeat(64) })).toBe(false);
+  expect(fake.stream.mock.calls[0]?.[1].systemPrompt).toContain("Run tesota_check before the first replacement");
   await expect(task.read({ path: editedFile })).rejects.toThrow("closed");
 }, 30_000);
 
