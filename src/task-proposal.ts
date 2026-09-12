@@ -3,12 +3,11 @@ import { execFileSync } from "node:child_process";
 import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { StreamFn } from "@earendil-works/pi-agent-core";
 import * as z from "zod";
 import type { TaskProposalTurn } from "./conversation-turn-contract.js";
-import { runPiDiscovery, type PiDiscoveryResult } from "./integrations/pi-discovery.js";
-import { openRepositoryDiscovery, type RepositoryDiscoveryDescription } from "./repository-discovery.js";
-import { isGitObjectId, runRepositoryGit } from "./repository-git.js";
+import type { PiDiscoveryResult } from "./integrations/pi-discovery.js";
+import type { RepositoryDiscoveryDescription } from "./repository-discovery.js";
+import { isGitObjectId } from "./repository-git.js";
 import { PROPOSAL_CHECKS, PROPOSAL_LIMITS, taskProposalSchema, validProposalPath,
   type TaskProposal } from "./task-proposal-contract.js";
 
@@ -182,27 +181,4 @@ export function formatTaskProposal(created: ProposedTask): string {
   lines.push(`Baseline: ${record.baseline}`, "Authority: none; no candidate was created and nothing can execute this proposal.",
     `Saved: ${created.directory}`);
   return lines.join("\n") + "\n";
-}
-
-export async function proposeTask(options: {
-  readonly sourceDirectory: string;
-  readonly proposalsRoot: string;
-  readonly request: string;
-  readonly model: Model<Api>;
-  readonly stream: StreamFn;
-  readonly signal: AbortSignal;
-}): Promise<ProposedTask> {
-  const request = z.string().trim().min(1).max(8_000).parse(options.request);
-  await validateStoreLocation(options.proposalsRoot, await realpath(runRepositoryGit(resolve(options.sourceDirectory),
-    ["rev-parse", "--show-toplevel"]).trim()));
-  const discovery = await openRepositoryDiscovery(options.sourceDirectory);
-  const description = discovery.describe();
-  let result: PiDiscoveryResult;
-  try { result = await runPiDiscovery(discovery, request, "task_proposal", options.model, options.stream, options.signal); }
-  finally { discovery.close(); }
-  if (result.status !== "completed" || result.outcome?.kind !== "task_proposal") {
-    throw new Error("Proposal discovery failed");
-  }
-  return retainTaskProposal({ proposalsRoot: options.proposalsRoot, request, description,
-    result: { ...result, outcome: result.outcome }, model: options.model });
 }

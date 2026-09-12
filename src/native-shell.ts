@@ -61,7 +61,7 @@ export async function runNativeShellCommand(): Promise<number> {
     const cancelled = error instanceof Error && error.name === "AbortError";
     process.stderr.write(cancelled
       ? "Tesota session cancelled. Nothing changed.\n"
-      : "Tesota session ended before a proposal completed. Nothing changed.\n");
+      : "Tesota session ended before the read-only turn completed. Nothing changed.\n");
     return cancelled ? 130 : 1;
   } finally {
     terminal.close();

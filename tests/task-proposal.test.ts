@@ -7,7 +7,7 @@ import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, 
   type FauxResponseStep } from "@earendil-works/pi-ai";
 import { discoverConversationTurn, formatConversationTurn } from "../src/conversation-turn.js";
 import { openRepositoryDiscovery } from "../src/repository-discovery.js";
-import { formatTaskProposal, proposeTask } from "../src/task-proposal.js";
+import { formatTaskProposal, type ProposedTask } from "../src/task-proposal.js";
 import { runPiDiscovery } from "../src/integrations/pi-discovery.js";
 
 const roots: string[] = [];
@@ -47,6 +47,19 @@ function fakeModel(steps: FauxResponseStep[]) {
   const fake = fauxProvider({ models: [{ id: "proposal-test", name: "Proposal test" }], tokensPerSecond: 1_000_000 });
   fake.setResponses(steps);
   return { model: fake.getModel(), stream: vi.fn(fake.provider.streamSimple) };
+}
+
+async function proposeThroughConversation(options: {
+  readonly sourceDirectory: string;
+  readonly proposalsRoot: string;
+  readonly request: string;
+  readonly model: ReturnType<typeof fakeModel>["model"];
+  readonly stream: ReturnType<typeof fakeModel>["stream"];
+  readonly signal: AbortSignal;
+}): Promise<ProposedTask> {
+  const turn = await discoverConversationTurn({ ...options, allowedOutcome: "task_proposal" });
+  if (turn.kind !== "task_proposal") throw new Error("Expected a task proposal");
+  return turn.proposedTask;
 }
 
 function proposalSteps(): FauxResponseStep[] {
@@ -122,7 +135,7 @@ it("fails closed without running a worktree-configured Git clean filter", async 
 it("produces and privately retains a non-authoritative proposal from bounded read-only tools", async () => {
   const { source, proposals } = await fixture();
   const fake = fakeModel(proposalSteps());
-  const created = await proposeTask({ sourceDirectory: source, proposalsRoot: proposals,
+  const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
     request: "Improve the task experience wording without requiring me to name files.",
     model: fake.model, stream: fake.stream, signal: new AbortController().signal });
   expect(created.record).toMatchObject({
@@ -227,7 +240,7 @@ it("rejects an answer from the explicit proposal-only command contract", async (
     })),
   ]);
 
-  await expect(proposeTask({ sourceDirectory: source, proposalsRoot: proposals, request: "Explain the README",
+  await expect(proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals, request: "Explain the README",
     model: fake.model, stream: fake.stream, signal: new AbortController().signal })).rejects.toThrow("failed");
   await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
 });
@@ -237,7 +250,7 @@ it("blocks a proposal whose paths or immutable check inputs have excluded workin
   await writeFile(join(source, "README.md"), "operator draft\n");
   await writeFile(join(source, "tests", "contract.test.ts"), "export const obligation = false;\n");
   const fake = fakeModel(proposalSteps());
-  const created = await proposeTask({ sourceDirectory: source, proposalsRoot: proposals, request: "Clarify task wording",
+  const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals, request: "Clarify task wording",
     model: fake.model, stream: fake.stream, signal: new AbortController().signal });
   expect(created.record).toMatchObject({ status: "blocked_dirty",
     dirtyConflicts: ["README.md", "tests/contract.test.ts"] });
@@ -264,13 +277,13 @@ it("rejects unobserved paths, malformed or mutating tools without retaining prop
       checks: ["repository-check"], uncertainties: [],
     } })),
   ]);
-  await expect(proposeTask({ sourceDirectory: source, proposalsRoot: proposals, request: "Change identity",
+  await expect(proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals, request: "Change identity",
     model: unobserved.model, stream: unobserved.stream, signal: new AbortController().signal })).rejects.toThrow("failed");
 
   const mutating = fakeModel([fauxAssistantMessage(fauxToolCall("tesota_replace", {
     path: "README.md", content: "SYNTHETIC_PRIVATE",
   }))]);
-  await expect(proposeTask({ sourceDirectory: source, proposalsRoot: proposals, request: "Change README",
+  await expect(proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals, request: "Change README",
     model: mutating.model, stream: mutating.stream, signal: new AbortController().signal })).rejects.toThrow("failed");
   await expect(readFile(join(source, "README.md"), "utf8")).resolves.toContain("Old task wording");
   await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
@@ -346,6 +359,6 @@ it("does not accept a terminal stop that arrives after the session deadline", as
 it("rejects an overlapping proposal store before creating state", async () => {
   const { source } = await fixture();
   const fake = fakeModel(proposalSteps());
-  await expect(proposeTask({ sourceDirectory: source, proposalsRoot: join(source, ".tesota"), request: "Clarify task wording",
+  await expect(proposeThroughConversation({ sourceDirectory: source, proposalsRoot: join(source, ".tesota"), request: "Clarify task wording",
     model: fake.model, stream: fake.stream, signal: new AbortController().signal })).rejects.toThrow("separate");
 });

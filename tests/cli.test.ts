@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
@@ -9,7 +12,7 @@ for (const key of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP",
   if (value !== undefined) env[key] = value;
 }
 
-function run(args: readonly string[]) {
+function run(args: readonly string[], cwd?: string) {
   const result = spawnSync("bun", ["--no-env-file", entry, ...args], {
     encoding: "utf8",
     windowsHide: true,
@@ -17,6 +20,7 @@ function run(args: readonly string[]) {
     timeout: 5000,
     maxBuffer: 64 * 1024,
     env,
+    ...(cwd === undefined ? {} : { cwd }),
   });
   if (result.error !== undefined) throw result.error;
   expect(result.signal).toBeNull();
@@ -48,6 +52,22 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota task promote <candidate-id|candidate-directory> <review-sha256>\n\n" +
     "Runs bounded verification and scoped repository tasks.\n",
   );
+});
+
+it("reports an unsupported Git repository before inference", () => {
+  const foreignRepository = mkdtempSync(join(tmpdir(), "tesota-cli-foreign-"));
+  try {
+    const initialized = spawnSync("git", ["init", "--quiet"], {
+      cwd: foreignRepository, encoding: "utf8", windowsHide: true, shell: false, timeout: 5000, env,
+    });
+    expect(initialized.status).toBe(0);
+    const result = run(["task", "propose", "Explain this repository"], foreignRepository);
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("Live repository discovery currently supports only the Tesota repository root.\n");
+  } finally {
+    rmSync(foreignRepository, { recursive: true, force: true });
+  }
 });
 
 it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["task", "run", "gentle-review"],

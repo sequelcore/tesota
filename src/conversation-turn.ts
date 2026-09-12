@@ -59,11 +59,10 @@ export function formatConversationTurn(turn: CompletedConversationTurn): string 
     `Baseline: ${turn.baseline}\nAuthority: none; nothing changed.\n`;
 }
 
-async function liveSource(): Promise<string> {
+async function liveSource(): Promise<string | null> {
   const source = await realpath(runRepositoryGit(process.cwd(), ["rev-parse", "--show-toplevel"]).trim());
   const packageRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)));
-  if (relative(packageRoot, source) !== "") throw new Error("unsupported repository");
-  return source;
+  return relative(packageRoot, source) === "" ? source : null;
 }
 
 async function runLiveConversation(rawRequest: string, allowedOutcome: DiscoveryOutcome): Promise<number> {
@@ -73,6 +72,10 @@ async function runLiveConversation(rawRequest: string, allowedOutcome: Discovery
   }
   try {
     const source = await liveSource();
+    if (source === null) {
+      process.stderr.write("Live repository discovery currently supports only the Tesota repository root.\n");
+      return 2;
+    }
     const cancellation = new AbortController();
     const interrupt = (): void => cancellation.abort();
     process.once("SIGINT", interrupt);
