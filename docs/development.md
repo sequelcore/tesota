@@ -18,7 +18,8 @@ Run commands from the repository root.
 With no arguments, the main CLI opens the first conversational shell when standard
 input, output and error are interactive terminals. It accepts one natural-language
 message. Bounded discovery can answer a repository question, ask for clarification
-or retain a proposal for a requested change; it cannot approve or execute a proposal.
+or retain a proposal for a requested change. A ready supported documentation
+proposal then continues to its explicit approval and review flow.
 With no arguments in a non-interactive process, or with
 `help`, `--help` or `-h`, it prints help (exit 0).
 `candidate create` and `candidate inspect <id|directory>` prepare and inspect
@@ -35,6 +36,13 @@ it is a separate live command and is never invoked by the normal check suite.
 Tesota's committed baseline. It retains a proposal with no execution authority,
 creates no candidate and never runs in the normal check suite. See
 [task proposals](proposals.md).
+`task start <proposal-id>` is the composable seam behind the shell continuation.
+It requires an interactive Windows terminal and admits only a current ready
+proposal for one existing Markdown file below `docs/`. Approval creates a fresh
+candidate; replay and resume are rejected. The first slice runs only Tesota's
+scope-integrity check and explicitly reports that the declarative repository
+check did not run. A later accept/reject question is bound to the escaped diff;
+acceptance invokes conflict-safe promotion without requiring another ID.
 `task recover <candidate>` explicitly retries a failed or incomplete registered
 task in a clean successor at the same baseline. It never resumes the prior model
 session or copies that candidate's working bytes or evidence.
@@ -57,7 +65,7 @@ isolated process, prompt and verdict admission.
 `task review <directory>` and `task decide <directory> <accept|reject> <review-sha256>`
 provide offline review and local decision recording; neither promotes code.
 `task promote <directory> <review-sha256>` explicitly applies an accepted
-promotable registered write set from the original source root
+promotable registered or admitted write set from the original source root
 after checking for conflicting source work.
 `verify <file.ts|file.js>` runs the [bounded check](verification.md); unsupported
 arguments print a diagnostic on stderr and exit 2.

@@ -1,10 +1,12 @@
 # 003: Natural-language task experience
 
-Status: proposed product direction. Read-only `task propose` and the first
-argument-free conversational entry point are implemented and locally verified.
-The shell can answer, request clarification or propose a task; proposal paths and
-one grounded answer have stored-OAuth qualification. Approval, run grants and
-general execution are not implemented.
+Status: adopted incrementally. Read-only discovery and the argument-free
+conversational entry point are implemented and locally verified. The first narrow
+proposal-backed documentation lifecycle is also implemented locally: it admits
+one current Markdown target below `docs/`, asks for scope approval, uses an
+isolated candidate, presents an escaped diff, records a separate decision and can
+promote without copied lifecycle IDs. Live end-to-end qualification and general
+execution remain open.
 
 ## Problem
 
@@ -244,14 +246,12 @@ the answer path without retaining a proposal; clarification remains unqualified.
 Multi-turn continuation is deliberately deferred
 until real use demonstrates the required session semantics.
 
-The next product increment is a thin inline `tesota` session backed by the first
-deliberately narrow `task start <proposal-id>` consumer. The shell and consumer
-must exercise one real operator-described Tesota change beyond paraphrasing an
-existing registered repair. The flow discovers and displays scope, permits request
-revision by producing a fresh proposal, obtains one approval, edits an independent
-candidate through supported operations, runs applicable admitted checks, presents
-the diff and evidence for a separate human decision, and refuses promotion after
-a conflicting source edit.
+The first deliberately narrow `task start <proposal-id>` consumer is now connected
+to the inline shell. It displays scope, obtains one approval, edits an independent
+candidate through supported operations, presents the diff and evidence for a
+separate human decision, and uses the existing conflict-safe promotion boundary.
+Local tests cover the lifecycle; one real operator-described Tesota change beyond
+an existing registered repair remains the live qualification requirement.
 
 This slice keeps authority narrow by rejecting unsupported proposal fields, a
 second start of the same grant and concurrent or resumed execution. It does not
@@ -262,8 +262,9 @@ binary oracle reports that limitation instead of inventing a pass. Cancellation
 must stop new action admission and report observed or unresolved settlement, but
 richer recovery follows only after real interrupted use requires it.
 
-This direction adds one confirmation before a new general task writes anything.
+This direction adds one confirmation before a new admitted task writes anything.
 Registered tasks can remain a faster predeclared path because their scope and
-checks already have a trusted owner. The design does not yet choose the proposal
-schema, trust-store format, sandbox implementation or shell rendering library;
-those choices require implementation evidence and platform tests.
+checks already have a trusted owner. The current implementation keeps the version
+1 proposal schema as untrusted evidence, uses an exclusive one-shot start journal
+and requires no sandbox because it exposes no candidate command. A sandbox design
+and richer renderer remain contingent on tasks that actually need them.

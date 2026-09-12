@@ -4,8 +4,9 @@ Repository discovery gives the model a bounded, read-only view of a committed
 baseline. The explicit `task propose` command requires a concise proposed outcome,
 read/write set and declarative check selection. The interactive `tesota` shell uses
 the same boundary but accepts three results: an answer grounded in observed files,
-one necessary clarification question or a task proposal. None creates a candidate,
-edits files, executes repository code, approves work or creates a run grant.
+one necessary clarification question or a task proposal. Discovery itself never
+creates a candidate, edits files, executes repository code, approves work or
+creates a run grant. A separate admitted start may follow.
 
 ## Use
 
@@ -63,10 +64,38 @@ budgets, dirty paths and the submitted proposal. Its authority is explicitly
 non-executable. Answers, clarification, failed or unsettled discovery retain no
 proposal record.
 
-There is deliberately no record reader or `task start` consumer yet. Editing a
-proposal file therefore cannot grant file, check, network, candidate, acceptance
-or promotion authority. The [natural-language task decision](decisions/003-natural-language-task-experience.md)
-defines the later admission boundary that must exist before execution is added.
+Editing a proposal file cannot grant file, check, network, candidate, acceptance
+or promotion authority. The record reader treats JSON as untrusted evidence.
+`task start` issues an in-memory grant only after the current baseline and the
+first narrow policy are revalidated and the operator approves the displayed scope.
+
+## Start the first supported task
+
+The first execution slice accepts exactly one existing `.md` write below `docs/`,
+at most eight proposed reads including that file, and the declarative
+`repository-check`. The proposal must be `ready`, belong to the current repository
+and match its current `HEAD`. Other paths, multiple writes, stale baselines and
+blocked proposals fail before candidate creation.
+
+```sh
+bun start task start <proposal-id>
+```
+
+The argument-free shell calls this seam itself for a supported ready proposal, so
+the normal experience does not require copying the ID. Approval creates one
+independent candidate and one exclusive `start.jsonl`; any second, concurrent or
+resumed start is rejected. Pi receives only bounded read, whole-file replacement
+and Tesota-owned scope-check operations. No shell command, candidate program,
+repository script or model-controlled network tool is available.
+
+The scope check proves only that at least one admitted documentation byte changed
+and no out-of-scope path entered the candidate. It explicitly reports that the
+declarative repository check is not executed in this slice and cannot prove that
+the prose satisfies the request. Tesota prints the diff as an escaped JSON string,
+then asks the person to accept or reject those exact reviewed bytes. Acceptance
+and passing scope evidence remain separate. An accepted candidate is promoted
+only if the source baseline and target bytes still match; a conflict changes no
+source file.
 
 Exit 0 reports a completed answer, clarification or proposal ready for review.
 Exit 1 reports a blocked proposal or failed discovery. Invalid or unsupported live

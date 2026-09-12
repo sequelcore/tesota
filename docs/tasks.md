@@ -25,7 +25,16 @@ without changing the oracle.
 
 Tesota implements preparation, operation admission, deterministic documentation
 and code checks, and bounded live model attempts. A separate explicit command can
-promote an accepted registered write set to the source working tree.
+promote an accepted registered or admitted write set to the source working tree.
+
+Proposal-backed documentation work is deliberately separate from this registry.
+`proposal-admission.ts` can issue one in-memory grant for a current ready proposal
+that writes one existing Markdown file below `docs/`. `CandidateTask` enforces its
+proposed read/write paths with the same per-file hashes and budgets, while the
+persisted grant remains untrusted evidence. Its application-owned check establishes
+only scope integrity and a changed target; it reports that the declarative
+repository check did not run and leaves prose correctness to human review. See
+[Task proposals](proposals.md) for the full one-shot lifecycle.
 
 The first formal property is `canAdmitInvocation` in
 `src/verification/invocation-admission.ts`. Run `bun run formal:check` to let

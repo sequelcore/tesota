@@ -33,7 +33,7 @@ validation of the current checkout.
 | Registered task execution | Passed for a second live task | One immutable registry owns four task contracts and the shared engine has no task-name branches; the candidate-source task passed direct, simulated-Pi and stored-OAuth live correction through the same bounded operations |
 | Registered multi-file task | Locally verified for a two-file write set | One task can read, replace, check, review and promote two registered paths; checks and review bind the ordered write set, and promotion preflights every source target before its first rename |
 | Natural-language task proposal | Stored-OAuth discovery and dirty-input blocking passed | A Spanish goal named no files; bounded read-only discovery selected one documentation path, retained a strict proposal and reported relevant excluded changes with no candidate or execution authority |
-| Native terminal shell | Live answer and local result contract verified | Interactive `tesota` accepts one natural-language message and returns a grounded answer, necessary clarification or non-authoritative task proposal; continuation, approval, execution, progress and review remain unimplemented |
+| Native terminal shell | Live answer; local proposal lifecycle verified | Interactive `tesota` accepts one natural-language message and returns a grounded answer, necessary clarification or non-authoritative task proposal; a supported ready documentation proposal continues through approval, isolated execution, review, decision and promotion without copied IDs; live lifecycle qualification and continuation after clarification remain open |
 | Task recovery successor | Passed for one interrupted live task | An explicit command validated the failed predecessor, recreated its exact baseline in a clean candidate, recorded the relationship and completed a fresh Pi correction without inheriting bytes, evidence or acceptance |
 | Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
 | Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
@@ -321,17 +321,24 @@ separately. Local fake-provider behavior and stored-OAuth `blocked_dirty` and
 clean `ready` proposals are qualified. Neither live result establishes proposal
 correctness, acceptance or executable admission.
 
-The next product increment extends the thin inline `tesota` session with a narrow
-`task start <proposal-id>` consumer. It must let an operator complete one real
-task through request, proposal, one approval, isolated execution, applicable
-checks, diff, human decision and conflict-safe promotion without manually copying
-lifecycle identifiers. It adds a trusted proposal-admission owner rather than
-weakening the current five-task registry, binds applicable oracles to immutable
-obligation inputs and sandboxes any candidate command that runs. The first slice
-rejects replay, concurrent or resumed execution and unsupported scope instead of
-implementing general successors. Scope expansion, richer recovery, arbitrary
-shell execution, mandatory external review and a full-screen TUI remain later
-slices justified by observed use.
+The first narrow `task start <proposal-id>` consumer is now implemented. The thin
+shell passes a supported ready proposal into it directly, so the operator can
+approve scope and later accept or reject reviewed bytes without copying lifecycle
+identifiers. A separate admission owner accepts only one current Markdown target
+below `docs/`; it does not weaken the five-task registry or treat stored JSON as
+authority. Execution stays inside an independent candidate with bounded read,
+replace and scope-check operations. No candidate command or repository check runs,
+and the review says plainly that prose correctness remains a human judgment.
+Exclusive start evidence rejects replay, concurrent and resumed execution;
+promotion retains its source-conflict preflight.
+
+Local tests qualify admission, unsupported and stale rejection, dynamic candidate
+scope, grant-tamper rejection, review, decision, promotion, replay exclusion and
+the shell handoff. Stored-OAuth end-to-end use remains unqualified. The next step
+is that real run; its evidence should decide whether to improve clarification and
+progress rendering or broaden admission. Scope expansion, richer recovery,
+arbitrary shell execution, sandboxed candidate commands, mandatory external
+review and a full-screen TUI remain later slices justified by observed use.
 
 ## Open requirements and scope
 

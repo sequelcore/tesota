@@ -1,9 +1,10 @@
 # Architecture
 
 Tesota currently has one private TypeScript package with a verification CLI,
-opt-in live integration experiments, and five registered bounded repository tasks.
-It has a first interactive shell for one natural-language discovery request, but
-no general production task runtime or proposal execution. The [roadmap](roadmap.md)
+opt-in live integration experiments, five registered bounded repository tasks and
+one admitted proposal-backed documentation task. It has an interactive shell for
+one natural-language request and one narrow proposal lifecycle, but no general
+production task runtime. The [roadmap](roadmap.md)
 describes those intended capabilities separately.
 
 ## Implemented ownership
@@ -11,16 +12,18 @@ describes those intended capabilities separately.
 | Owner | Responsibility |
 | --- | --- |
 | [src/cli.ts](../src/cli.ts) | Dispatch the interactive entry point, verification, authentication and candidate commands |
-| [src/native-shell.ts](../src/native-shell.ts) | Own the first inline terminal prompt and route one message to bounded repository discovery |
+| [src/native-shell.ts](../src/native-shell.ts) | Own the inline terminal prompt and continue a ready proposal into its approval flow without exposing lifecycle IDs |
 | [src/conversation-turn.ts](../src/conversation-turn.ts) | Own valid read-only turn outcomes, live setup and operator-facing result formatting |
 | [src/conversation-turn-contract.ts](../src/conversation-turn-contract.ts) | Parse the answer, clarification and task-proposal result variants |
 | [src/candidate-checkout.ts](../src/candidate-checkout.ts) | Create independent committed checkouts and inspect changes against their baselines |
 | [src/repository-git.ts](../src/repository-git.ts) | Run fixed shell-free local Git operations without ambient config, hooks, credentials or network protocols |
 | [src/repository-discovery.ts](../src/repository-discovery.ts) | Expose a bounded committed repository view and validate evidence paths for read-only turns |
 | [src/task-proposal-contract.ts](../src/task-proposal-contract.ts) | Own proposal vocabulary, tool request schemas, declarative check IDs and discovery limits |
-| [src/task-proposal.ts](../src/task-proposal.ts) | Classify dirty conflicts and retain non-authoritative proposals |
+| [src/task-proposal.ts](../src/task-proposal.ts) | Classify dirty conflicts and retain or safely read non-authoritative proposal evidence |
+| [src/proposal-admission.ts](../src/proposal-admission.ts) | Admit one current single-file documentation proposal and issue its in-memory run grant |
+| [src/task-start.ts](../src/task-start.ts) | Own approval, replay exclusion, execution-to-review handoff, decision and promotion for one proposal |
 | [src/candidate-task-definition.ts](../src/candidate-task-definition.ts) | Own registered task requirements, read/write sets, oracles, instructions, limits and promotion policy |
-| [src/candidate-task.ts](../src/candidate-task.ts) | Enforce a selected registered task through bounded per-file operations and write-set-bound checks |
+| [src/candidate-task.ts](../src/candidate-task.ts) | Enforce a selected registered task or admitted documentation grant through bounded per-file operations and write-set-bound checks |
 | [src/auth.ts](../src/auth.ts) | Login, offline status and local logout |
 | [integrations/codex-credentials.ts](../src/integrations/codex-credentials.ts) | Private Codex credential persistence and serialized mutation |
 | [verification/oxlint.ts](../src/verification/oxlint.ts) | Run Oxlint, issue result identity and assess applicability |
@@ -64,15 +67,20 @@ blobs without creating a candidate and gives Pi no edit, shell, check, web or
 arbitrary network tool. A conversational turn must submit exactly one parsed
 `answer`, `clarification` or `task_proposal`. Answers cite observed baseline files;
 proposed writes must be fully read. Only the proposal variant is retained. Its
-version 1 record has `authority: "none"` and no reader or execution consumer. The
+version 1 record has `authority: "none"`; reading it cannot issue authority. The
 configured provider call is inference transport, not model-controlled repository
 network access. See the
 [proposal contract](proposals.md).
 
-The native shell currently collects one message and invokes that discovery
-boundary. It does not continue after an answer or clarification, parse retained
-proposal files, grant authority, create a
-candidate, approve work or execute checks. When standard input, output or error is
+The native shell collects one message and invokes that discovery boundary. It
+stops after an answer, clarification or blocked proposal. A ready supported
+proposal continues to a compact approval card; only approval lets Tesota issue
+an in-memory grant and create a candidate. `start.jsonl` excludes a second or
+concurrent start, but remains evidence rather than reusable authority. The model
+receives only bounded read, replace and application-owned scope-check tools. No
+candidate command, repository check or model-controlled network operation runs
+in this first proposal slice. The escaped diff discloses that limitation before
+a separate human accept/reject decision and explicit guarded promotion. When standard input, output or error is
 not an interactive terminal, the argument-free CLI preserves the non-inferential
 help behavior.
 

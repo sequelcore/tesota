@@ -30,17 +30,20 @@ Its offline review commands can record a separate operator decision for the
 exact reviewed candidate state.
 An explicit promotion command can apply an accepted registered write set while
 refusing conflicting source changes before the first source write.
-The new [`task propose`](docs/proposals.md) command accepts an ordinary-language
+The [`task propose`](docs/proposals.md) command accepts an ordinary-language
 goal and uses bounded, read-only discovery over committed Tesota files to retain
-a non-authoritative proposed scope. It creates no candidate and cannot execute
-the proposal. In an interactive terminal, running `tesota` now opens the first
+a non-authoritative proposed scope. In an interactive terminal, running `tesota` opens the first
 Tesota-owned conversational shell. One read-only turn can answer a repository
-question, request a necessary clarification or retain a task proposal. None of
-those results grants execution authority, and the shell does not yet approve or
-execute proposals.
+question, request a necessary clarification or retain a task proposal. A current
+`ready` single-file Markdown proposal under `docs/` can continue directly to one
+scope approval, isolated execution, an escaped diff, a separate accept/reject
+decision and conflict-safe promotion. `task start <proposal-id>` exposes the same
+one-shot lifecycle. Tesota rejects stale, unsupported, concurrent, replayed and
+resumed proposal starts. This is a narrow documentation slice, not general
+repository execution.
 See the [roadmap](docs/roadmap.md) for demonstrated progress and remaining work.
 The proposed [natural-language task experience](docs/decisions/003-natural-language-task-experience.md)
-defines how later approval and execution will remain separate from this proposal.
+defines why proposal, run authority, check evidence and human acceptance remain separate.
 
 ## Get started
 
@@ -53,6 +56,7 @@ bun install --frozen-lockfile --ignore-scripts
 bun run check
 bun --no-env-file dist/cli.js
 bun --no-env-file dist/cli.js --help
+bun --no-env-file dist/cli.js task start <proposal-id>
 bun --no-env-file dist/cli.js verify src/cli.ts
 ```
 
