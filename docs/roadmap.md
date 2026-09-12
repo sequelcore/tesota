@@ -310,8 +310,9 @@ baseline, exposes only bounded list, literal-search, baseline-read and submissio
 tools, reports relevant dirty-path conflicts and retains a non-authoritative
 proposal. Mutation, repository-code execution and model-controlled network access
 fail closed during discovery; configured inference transport is reported
-separately. Local fake-provider behavior and one stored-OAuth blocked proposal are
-qualified; a clean `ready` live proposal remains unobserved.
+separately. Local fake-provider behavior and stored-OAuth `blocked_dirty` and
+clean `ready` proposals are qualified. Neither live result establishes proposal
+correctness, acceptance or executable admission.
 
 The next executable increment is the proposed `task start <proposal-id>` consumer.
 It must add a trusted

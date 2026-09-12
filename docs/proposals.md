@@ -75,3 +75,11 @@ check inputs had excluded working changes. The retained record had
 `authority: "none"`; no candidate, repository edit, check execution, acceptance or
 promotion occurred. This qualifies discovery and safe dirty-input blocking, not
 proposal correctness or executable admission.
+
+After the implementation commits left the repository clean, a second stored-OAuth
+run completed against baseline `9f9031e68464d82ecab02e3a7f22352381f5c0e2`.
+The same Spanish outcome-only request selected `docs/verification.md` without a
+file hint and returned `ready` through five model invocations, ten bounded tool
+calls and ten admitted operations. The private record retained `authority: "none"`
+and the repository remained unchanged. This qualifies the clean proposal path;
+it still does not establish proposal correctness, acceptance or execution.
