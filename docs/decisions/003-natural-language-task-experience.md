@@ -2,9 +2,9 @@
 
 Status: proposed product direction. Read-only `task propose` and the first
 argument-free conversational entry point are implemented and locally verified.
-The shell can answer, request clarification or propose a task; only proposal paths
-have stored-OAuth qualification. Approval, run grants and general execution are not
-implemented.
+The shell can answer, request clarification or propose a task; proposal paths and
+one grounded answer have stored-OAuth qualification. Approval, run grants and
+general execution are not implemented.
 
 ## Problem
 
@@ -239,8 +239,9 @@ The argument-free shell now generalizes that same boundary into one read-only tu
 whose strict result is `answer`, `clarification` or `task_proposal`. The explicit
 command remains proposal-only. Answers and clarification are not persisted and no
 variant can create a candidate or authority. Local fake-provider tests establish
-the result contract and observed-evidence rule; live usefulness for questions and
-clarification remains unqualified. Multi-turn continuation is deliberately deferred
+the result contract and observed-evidence rule. One stored-OAuth question qualified
+the answer path without retaining a proposal; clarification remains unqualified.
+Multi-turn continuation is deliberately deferred
 until real use demonstrates the required session semantics.
 
 The next product increment is a thin inline `tesota` session backed by the first

@@ -92,3 +92,12 @@ file hint and returned `ready` through five model invocations, ten bounded tool
 calls and ten admitted operations. The private record retained `authority: "none"`
 and the repository remained unchanged. This qualifies the clean proposal path;
 it still does not establish proposal correctness, acceptance or execution.
+
+After conversational discovery was implemented, a stored-OAuth shell run on
+2026-09-12 UTC asked in Spanish what Ctrl+C does while Tesota waits for input. The
+result was an `answer` grounded in `src/native-shell.ts` and
+`tests/native-shell.test.ts` at baseline
+`1f2326992c9130717945c97f8b477bbb9a696aa4`. It reported authority `none`, changed
+no repository files and left the private proposal-directory count unchanged at
+three. This qualifies one live answer path, not general intent recognition,
+clarification usefulness or answer correctness beyond the inspected example.
