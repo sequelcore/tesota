@@ -23,6 +23,9 @@ also [create and inspect independent candidate
 checkouts](docs/candidates.md) from committed source revisions.
 The [registered repository tasks](docs/tasks.md) declare their requirement,
 scope and oracle before a bounded model attempt and retain their checks and diff.
+An explicit recovery command can retry a failed or interrupted registered task
+from the same committed baseline in a clean successor candidate without copying
+partial work or prior authority.
 Its offline review commands can record a separate operator decision for the
 exact reviewed candidate state.
 An explicit promotion command can apply the accepted documentation or
@@ -60,7 +63,7 @@ acceptance.
 | [Verification](docs/verification.md) | CLI outcomes, input binding and evidence recovery |
 | [Authentication](docs/authentication.md) | One-time Codex login, saved credentials and logout |
 | [Candidate checkouts](docs/candidates.md) | Separate committed working copies, inspection and incomplete state |
-| [Scoped task](docs/tasks.md) | Permitted file operations and the first repository task's checks |
+| [Registered tasks](docs/tasks.md) | Task contracts, bounded operations, recovery and checks |
 | [Experiments](experiments/README.md) | Pi and Codex guides, recorded outcomes and limitations |
 | [Project history](docs/history/README.md) | Bootstrap provenance and toolchain validation |
 

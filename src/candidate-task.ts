@@ -11,6 +11,7 @@ import {
   candidateTaskDefinition,
   candidateTaskDefinitionSha256,
   taskRequestSchemas,
+  type CandidateTaskDefinition,
   type CandidateTaskId,
 } from "./candidate-task-definition.js";
 
@@ -248,7 +249,12 @@ export class CandidateTask {
 }
 
 /** Read-only rechecking of a stored plan does not reopen its editing authority. */
-export async function checkCandidateTask(directory: string): Promise<CandidateTaskCheck> {
+async function loadCandidateTask(directory: string): Promise<{
+  plan: TaskPlan;
+  definition: CandidateTaskDefinition;
+  expected: string;
+  content: string;
+}> {
   const parsed = planSchema.safeParse(JSON.parse(await readText(join(directory, "task.json"))));
   if (!parsed.success) throw new Error("Task plan invalid");
   const definition = candidateTaskDefinition(parsed.data.task);
@@ -256,7 +262,22 @@ export async function checkCandidateTask(directory: string): Promise<CandidateTa
   if (baseline.baseline !== parsed.data.baseline) throw new Error("Task baseline changed");
   const expected = expectedContent(baseline.files, parsed.data);
   const snapshot = await observe(directory, parsed.data);
-  const check = definition.check(snapshot.content, expected);
-  return { ...check, task: parsed.data.task, status: check.status, provenance: "recorded_untrusted",
-    baseline: parsed.data.baseline, sourceSha256: hash(snapshot.content), taskAcceptance: "not_evaluated" };
+  return { plan: parsed.data, definition, expected, content: snapshot.content };
+}
+
+/** Validate persisted task identity and current scope without running its oracle or granting authority. */
+export async function inspectCandidateTask(directory: string): Promise<{
+  task: CandidateTaskId;
+  baseline: string;
+  sourceSha256: string;
+}> {
+  const loaded = await loadCandidateTask(directory);
+  return { task: loaded.plan.task, baseline: loaded.plan.baseline, sourceSha256: hash(loaded.content) };
+}
+
+export async function checkCandidateTask(directory: string): Promise<CandidateTaskCheck> {
+  const loaded = await loadCandidateTask(directory);
+  const check = loaded.definition.check(loaded.content, loaded.expected);
+  return { ...check, task: loaded.plan.task, status: check.status, provenance: "recorded_untrusted",
+    baseline: loaded.plan.baseline, sourceSha256: hash(loaded.content), taskAcceptance: "not_evaluated" };
 }

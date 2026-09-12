@@ -31,6 +31,7 @@ validation of the current checkout.
 | Candidate lifecycle and cleanup | Implemented for bounded local storage | List and inspect candidates by ID, explicitly abandon obsolete work, and remove only old rejected, abandoned or failed checkout contents while retaining evidence |
 | Scoped repository task | Live Windows attempt passed for the Pi decision documentation task | Saved login, bounded model operations, one scoped edit, failed then passing checks and retained review diff |
 | Registered task execution | Passed for a second live task | One immutable registry owns four task contracts and the shared engine has no task-name branches; the candidate-source task passed direct, simulated-Pi and stored-OAuth live correction through the same bounded operations |
+| Task recovery successor | Passed for one interrupted live task | An explicit command validated the failed predecessor, recreated its exact baseline in a clean candidate, recorded the relationship and completed a fresh Pi correction without inheriting bytes, evidence or acceptance |
 | Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
 | Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
 | Real code task | Promoted with a bounded integration repair | Model repaired `piTaskPasses`; the sandbox oracle passed, the operator accepted it and exact bytes were promoted; typecheck then required one optional-index narrowing |
@@ -48,7 +49,7 @@ UTC. Pi made a bounded TypeScript change, the behavioral oracle
 detected a real defect and the corrected bytes passed before the same immutable
 candidate completed Gentle review. Candidate identity, evidence applicability
 and provider authority remained distinct. This exercise does not establish
-general editing permissions, task recovery, server-side cancellation or general
+general editing permissions, same-session resume, server-side cancellation or general
 promotion. The operator accepted the current review fingerprint and the guarded
 command later promoted those exact bytes.
 See the [experiment index](../experiments/README.md).
@@ -144,6 +145,18 @@ the implementation and supplied the passing check. The current candidate check
 also passed. The candidate remains isolated and unaccepted; formal evidence does
 not grant promotion authority.
 
+The first task-recovery successor was exercised live on 2026-09-11 UTC. Candidate
+`b7ce6564-6c22-4c1d-9135-d18c5dfbb8fb` was explicitly interrupted after three
+model invocations, two tool calls, no edit and one issued failed check. Tesota
+retained its settled `aborted` session and failed outcome. The recovery command
+created successor `609f2fdf-4fea-4711-9775-d11b5587922e` from the same
+`ae6c7d81a10231d0d9775b6325fe079111c12046` baseline and recorded that relation.
+The successor used five model invocations, four tool calls and one edit; its
+failed then passing checks shared the same verifier identity, and the current
+read-only check matched the corrected bytes. The pre-existing candidate remained
+unchanged. The final diff was empty because this task restores baseline bytes;
+neither candidate received an operator decision or promotion authority.
+
 ## First useful cycle
 
 The intended acceptance exercise must demonstrate that:
@@ -155,12 +168,13 @@ The intended acceptance exercise must demonstrate that:
 5. The report presents the diff, actual checks, observed consumption and limits.
 6. Human acceptance and promotion remain separate from model completion and checks.
 
-General terminal interaction, multi-file task execution and task recovery still
-need implementation. Registered single-file tasks now share one execution path,
+General terminal interaction and multi-file task execution still need
+implementation. Registered single-file tasks now share one execution path,
 but operators cannot supply executable task manifests. The current promotion
 command remains limited by the selected definition's explicit policy and is not
-a general write capability. Do not create unused modules in anticipation of
-that work.
+a general write capability. Recovery restarts from the same baseline in a clean
+successor; same-candidate/session continuation and promotion-journal recovery
+remain unsupported. Do not create unused modules in anticipation of that work.
 
 ## Combined correction cycle
 

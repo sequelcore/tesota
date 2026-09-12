@@ -104,6 +104,26 @@ A start record without a finish record is incomplete. A finish record reports th
 local runner's outcome and may still contain an unsettled session; it does not
 prove server-side cancellation. No automatic retry, resume or promotion occurs.
 
+To retry a failed or incomplete registered task explicitly, run:
+
+```sh
+bun start task recover <candidate-id|candidate-directory>
+```
+
+Recovery accepts only a ready, undecided candidate whose bounded attempt record
+is either failed or lacks a complete terminal record. Tesota validates its current
+version 2 task plan and scope without rerunning the old oracle, then clones the
+predecessor's exact commit into a new independent candidate and starts the same
+registered task with fresh authority and limits. The successor attempt binds the
+predecessor ID, baseline and prior outcome. It copies no working bytes, checks,
+diff, decision or acceptance from the predecessor. Successful, decided, abandoned,
+invalid and obsolete-plan candidates are rejected before successor creation.
+
+This is task retry from a known baseline, not continuation of the previous Pi
+conversation. Multiple explicit recoveries may create independent successors;
+there is no automatic deduplication. Recovery does not settle the old provider
+request, repair incomplete promotion journals or grant human acceptance.
+
 ## Review and decide
 
 These offline commands review current candidate bytes and record a separate local
@@ -240,11 +260,14 @@ LemmaScript/Dafny. A passing check establishes only its declared requirement.
 application code. The preparation CLI closes that handle after printing the
 plan. Loading `task.json` supports read-only checking; it does not recreate the
 handle or reset an execution budget. `task run` creates a new candidate and handle
-for each explicit invocation instead of interpreting a saved plan as authorization.
+for each explicit invocation. `task recover` likewise grants authority only to a
+new successor candidate after validating the old plan; it never reopens the old
+handle or its budgets.
 
 These are task-tool boundaries in a trusted single-writer workspace. They do not
 sandbox a hostile same-user process, authenticate stored metadata, or guarantee
 atomic observation of the entire filesystem. Failed writes may leave local
-temporary state; there is no automatic rollback, task resume or automatic promotion.
+temporary state; there is no automatic rollback, same-candidate task resume or
+automatic promotion.
 An earlier check describes its observed bytes, not later edits. Checks always
 retain `taskAcceptance: "not_evaluated"`; operator decisions are separate records.

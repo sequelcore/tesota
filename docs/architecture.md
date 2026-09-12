@@ -30,7 +30,7 @@ It has no general production task runtime or interactive agent shell. The
 | [src/live-candidate.ts](../src/live-candidate.ts) | Run the correction exercise and retain checks, source and review diff |
 | [integrations/pi-task.ts](../src/integrations/pi-task.ts) | Adapt task-owned schemas to Pi tools; bound the live session and observe check continuation |
 | [src/pi-review-relay.ts](../src/pi-review-relay.ts) | Expose Tesota's saved Codex OAuth through Gentle's fixed tool-free Pi process transport |
-| [task-run.ts](../src/task-run.ts) | Create one fresh task attempt, reuse authentication and retain its checks and review diff |
+| [task-run.ts](../src/task-run.ts) | Create fresh task attempts or validated recovery successors, reuse authentication and retain checks and review diffs |
 | [task-review.ts](../src/task-review.ts) | Review current candidate bytes and bind a separate local operator decision to their fingerprint |
 | [task-promotion.ts](../src/task-promotion.ts) | Apply one explicitly requested, accepted documentation or `pi-result-consistency` change after source checks; retain the write outcome |
 | [code-task-check.ts](../src/code-task-check.ts) | Run the fixed pure-predicate behavior oracle in a pinned, network-disabled container |
@@ -154,6 +154,13 @@ reads. It does not promise locking, power-loss durability or authenticated recor
 Live evidence is a separate diagnostic format with exclusive output reservation
 and source/build hashes. Neither format establishes human acceptance.
 
-The current verifier's temporary snapshot is not a general sandbox. Future
-candidate editing and execution require their own implemented boundaries; a Git
-worktree alone would not provide security isolation.
+Task recovery validates an undecided failed or incomplete attempt, its current
+registered task plan and scope, then creates a clean successor from the
+predecessor's exact committed baseline. The explicit command grants a new bounded
+handle; it does not resume the old Pi session, copy partial working bytes or
+inherit checks, decisions or promotion authority. The predecessor remains intact.
+
+The current verifier's temporary snapshot is not a general sandbox. Registered
+candidate editing has its own fixed scope and effect boundaries; arbitrary code
+execution would require a separate implemented isolation boundary because a Git
+worktree alone does not provide one.

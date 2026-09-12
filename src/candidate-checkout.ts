@@ -255,6 +255,57 @@ async function independentCheckout(directory: string): Promise<string> {
   return checkout;
 }
 
+async function prepareCandidatesRoot(path: string): Promise<string> {
+  const root = resolve(path);
+  let ancestor = root;
+  for (;;) {
+    try { await lstat(ancestor); break; } catch (error) {
+      if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "ENOENT") throw error;
+      ancestor = dirname(ancestor);
+    }
+  }
+  await plainDirectory(ancestor);
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  return plainDirectory(root);
+}
+
+async function cloneCandidate(
+  cloneSource: string,
+  recordSource: string,
+  baseline: string,
+  sourceDirty: boolean,
+  root: string,
+): Promise<CandidateCheckout> {
+  validateTree(cloneSource, baseline);
+  const directory = join(root, randomUUID());
+  await mkdir(directory, { mode: 0o700 });
+  const record: CheckoutRecord = {
+    format: "tesota-candidate-checkout", version: 1, source: recordSource,
+    baseline, sourceDirty, state: "preparing",
+  };
+  await saveRecord(directory, record);
+  try {
+    const template = join(directory, "empty-template");
+    await mkdir(template);
+    const checkout = join(directory, "repo");
+    git(directory, ["clone", "--no-local", "--no-hardlinks", "--no-checkout", "--no-tags", "--depth", "1",
+      "--single-branch", `--template=${template}`, "--", cloneSource, checkout]);
+    validateTree(checkout, baseline);
+    git(checkout, ["checkout", "--detach", baseline, "--"]);
+    git(checkout, ["remote", "remove", "origin"]);
+    await independentCheckout(directory);
+    if (git(checkout, ["rev-parse", "HEAD"]).trim() !== baseline ||
+        git(checkout, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length !== 0) {
+      throw new Error("Candidate checkout mismatch");
+    }
+    await saveRecord(directory, { ...record, state: "ready" });
+    return { directory, checkout, baseline, sourceDirty };
+  } catch {
+    await saveRecord(directory, { ...record, state: "failed" }).catch(() => {});
+    throw new Error(`Candidate creation failed; incomplete state retained at ${directory}`);
+  }
+}
+
 /** Clone committed HEAD only; preserve dirty source files, refs, config and worktree state. */
 export async function createCandidateCheckout(sourceDirectory: string,
   candidatesRoot: string = join(homedir(), ".tesota", "candidates")): Promise<CandidateCheckout> {
@@ -265,38 +316,20 @@ export async function createCandidateCheckout(sourceDirectory: string,
   const sourceDirty = git(source, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length !== 0;
   const root = resolve(candidatesRoot);
   if (contains(source, root) || contains(root, source)) throw new Error("Candidate storage must be separate from source");
-  let ancestor = root;
-  for (;;) {
-    try { await lstat(ancestor); break; } catch (error) {
-      if (typeof error !== "object" || error === null || !("code" in error) || error.code !== "ENOENT") throw error;
-      ancestor = dirname(ancestor);
-    }
+  return cloneCandidate(source, source, baseline, sourceDirty, await prepareCandidatesRoot(root));
+}
+
+/** Create a clean sibling from an existing candidate's exact committed baseline. */
+export async function createCandidateSuccessor(path: string, candidatesRoot?: string): Promise<CandidateCheckout> {
+  const predecessor = await inspectCandidateCheckout(path, candidatesRoot);
+  if (predecessor.headChanged) throw new Error("Candidate baseline changed");
+  const root = await plainDirectory(candidatesRoot ?? dirname(predecessor.directory));
+  if (dirname(predecessor.directory) !== root || !candidateIdPattern.test(predecessor.directory.split(sep).at(-1) ?? "")) {
+    throw new Error("Candidate successor requires sibling storage");
   }
-  await plainDirectory(ancestor);
-  await mkdir(root, { recursive: true, mode: 0o700 });
-  await plainDirectory(root);
-  const directory = join(root, randomUUID());
-  await mkdir(directory, { mode: 0o700 });
-  const record: CheckoutRecord = { format: "tesota-candidate-checkout", version: 1, source, baseline, sourceDirty, state: "preparing" };
-  await saveRecord(directory, record);
-  try {
-    const template = join(directory, "empty-template");
-    await mkdir(template);
-    const checkout = join(directory, "repo");
-    git(directory, ["clone", "--no-local", "--no-hardlinks", "--no-checkout", "--no-tags", "--depth", "1",
-      "--single-branch", `--template=${template}`, "--", source, checkout]);
-    validateTree(checkout, baseline);
-    git(checkout, ["checkout", "--detach", baseline, "--"]);
-    git(checkout, ["remote", "remove", "origin"]);
-    await independentCheckout(directory);
-    if (git(checkout, ["rev-parse", "HEAD"]).trim() !== baseline ||
-        git(checkout, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length !== 0) throw new Error("Candidate checkout mismatch");
-    await saveRecord(directory, { ...record, state: "ready" });
-    return { directory, checkout, baseline, sourceDirty };
-  } catch {
-    await saveRecord(directory, { ...record, state: "failed" }).catch(() => {});
-    throw new Error(`Candidate creation failed; incomplete state retained at ${directory}`);
-  }
+  const record = await readRecord(predecessor.directory);
+  if (contains(record.source, root) || contains(root, record.source)) throw new Error("Candidate storage must be separate from source");
+  return cloneCandidate(predecessor.checkout, record.source, predecessor.baseline, record.sourceDirty, root);
 }
 
 /** Read-only observations; stored records do not grant task or promotion authority. */
@@ -305,7 +338,9 @@ export async function inspectCandidateCheckout(path: string, candidatesRoot?: st
   const record = await readRecord(directory);
   if (record.state !== "ready") throw new Error(`Candidate is ${record.state}; retained at ${directory}`);
   const checkout = await independentCheckout(directory);
-  if (contains(record.source, checkout) || contains(checkout, record.source)) throw new Error("Candidate overlaps source");
+  const root = dirname(directory);
+  if (contains(record.source, root) || contains(root, record.source) ||
+      contains(record.source, checkout) || contains(checkout, record.source)) throw new Error("Candidate overlaps source");
   const head = git(checkout, ["rev-parse", "--verify", "HEAD^{commit}"]).trim();
   if (!oid(head)) throw new Error("Invalid candidate revision");
   const fields = git(checkout, ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-status", "-z", record.baseline, "--"]).split("\0");

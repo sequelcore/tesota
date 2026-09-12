@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ import { CandidateTask, checkCandidateTask } from "../src/candidate-task.js";
 import { PI_DECISION_TASK_STATUS } from "../src/candidate-task-definition.js";
 import { reviewTask, decideTask } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
+import { prepareTaskRecovery } from "../src/task-run.js";
 
 const editedFile = "docs/decisions/002-use-pi.md";
 const roots: string[] = [];
@@ -298,6 +299,73 @@ it("runs a second registered task through the same Pi tools and evidence predica
   });
   expect(result.checks.map((check) => check.status)).toEqual(["check_failed", "passed"]);
   expect(piTaskPasses(result, current)).toBe(true);
+}, 30_000);
+
+it("prepares a fresh successor for failed task recovery without inheriting candidate bytes or evidence", async () => {
+  const candidate = await fixture();
+  (await CandidateTask.prepare(candidate.directory, "candidate-source-newline")).close();
+  const started = { format: "tesota-task-attempt", version: 1, state: "started",
+    timestamp: new Date().toISOString(), baseline: candidate.baseline, sourceDirty: false,
+    executor: {}, model: "gpt-5.6-luna", limits: PI_TASK_LIMITS, taskAcceptance: "not_evaluated" };
+  const finished = { state: "finished", timestamp: new Date().toISOString(), outcome: "failed",
+    session: null, current: null, reviewSaved: true, taskAcceptance: "not_evaluated" };
+  await writeFile(join(candidate.directory, "attempt.jsonl"), `${JSON.stringify(started)}\n${JSON.stringify(finished)}\n`);
+  await writeFile(join(candidate.directory, "candidate.diff"), "historical untrusted bytes\n");
+
+  const recovery = await prepareTaskRecovery(candidate.directory);
+
+  expect(recovery.taskId).toBe("candidate-source-newline");
+  expect(recovery.predecessor).toBe(candidate.directory);
+  expect(recovery.candidate.baseline).toBe(candidate.baseline);
+  expect(recovery.candidate.directory).not.toBe(candidate.directory);
+  expect(await readFile(join(recovery.candidate.checkout, "src/verification/candidate.ts"), "utf8"))
+    .toBe(await readFile(new URL("../src/verification/candidate.ts", import.meta.url), "utf8"));
+  await expect(readFile(join(recovery.candidate.directory, "attempt.jsonl"))).rejects.toMatchObject({ code: "ENOENT" });
+  await expect(readFile(join(recovery.candidate.directory, "candidate.diff"))).rejects.toMatchObject({ code: "ENOENT" });
+}, 30_000);
+
+it("recovers an incomplete task attempt conservatively and refuses a recorded success", async () => {
+  const incomplete = await fixture();
+  (await CandidateTask.prepare(incomplete.directory, "candidate-source-newline")).close();
+  const started = { format: "tesota-task-attempt", version: 1, state: "started",
+    timestamp: new Date().toISOString(), baseline: incomplete.baseline, sourceDirty: false,
+    executor: {}, model: "gpt-5.6-luna", limits: PI_TASK_LIMITS, taskAcceptance: "not_evaluated" };
+  await writeFile(join(incomplete.directory, "attempt.jsonl"), `${JSON.stringify(started)}\n{"state":"fin`);
+  await expect(prepareTaskRecovery(incomplete.directory)).resolves.toMatchObject({ priorOutcome: "incomplete" });
+
+  const successful = await fixture();
+  (await CandidateTask.prepare(successful.directory, "candidate-source-newline")).close();
+  const successStarted = { ...started, baseline: successful.baseline };
+  const finished = { state: "finished", timestamp: new Date().toISOString(), outcome: "passed",
+    session: null, current: null, reviewSaved: true, taskAcceptance: "not_evaluated" };
+  await writeFile(join(successful.directory, "attempt.jsonl"),
+    `${JSON.stringify(successStarted)}\n${JSON.stringify(finished)}\n`);
+  const before = await readdir(dirname(successful.directory));
+  await expect(prepareTaskRecovery(successful.directory)).rejects.toThrow("Successful task attempts cannot be recovered");
+  expect(await readdir(dirname(successful.directory))).toEqual(before);
+
+  const decided = await fixture();
+  (await CandidateTask.prepare(decided.directory, "candidate-source-newline")).close();
+  await writeFile(join(decided.directory, "attempt.jsonl"), `${JSON.stringify({ ...started, baseline: decided.baseline })}\n`);
+  await writeFile(join(decided.directory, "decision.json"), JSON.stringify({ decision: "reject" }));
+  await expect(prepareTaskRecovery(decided.directory)).rejects.toThrow("undecided candidate");
+}, 30_000);
+
+it("refuses recovery before successor creation when the predecessor escaped task scope", async () => {
+  const candidate = await fixture();
+  (await CandidateTask.prepare(candidate.directory, "candidate-source-newline")).close();
+  const started = { format: "tesota-task-attempt", version: 1, state: "started",
+    timestamp: new Date().toISOString(), baseline: candidate.baseline, sourceDirty: false,
+    executor: {}, model: "gpt-5.6-luna", limits: PI_TASK_LIMITS, taskAcceptance: "not_evaluated" };
+  const finished = { state: "finished", timestamp: new Date().toISOString(), outcome: "failed",
+    session: null, current: null, reviewSaved: false, taskAcceptance: "not_evaluated" };
+  await writeFile(join(candidate.directory, "attempt.jsonl"), `${JSON.stringify(started)}\n${JSON.stringify(finished)}\n`);
+  await writeFile(join(candidate.checkout, "src/cli.ts"), "out of scope\n");
+  const root = dirname(candidate.directory);
+  const before = await readdir(root);
+
+  await expect(prepareTaskRecovery(candidate.directory)).rejects.toThrow("scope changed");
+  expect(await readdir(root)).toEqual(before);
 }, 30_000);
 
 it.each([

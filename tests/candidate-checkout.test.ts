@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
-import { abandonCandidate, cleanCandidateCheckouts, createCandidateCheckout, inspectCandidateCheckout, listCandidateCheckouts } from "../src/candidate-checkout.js";
+import { abandonCandidate, cleanCandidateCheckouts, createCandidateCheckout, createCandidateSuccessor,
+  inspectCandidateCheckout, listCandidateCheckouts } from "../src/candidate-checkout.js";
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof childProcess>();
@@ -70,6 +71,29 @@ it("creates an independent detached checkout and preserves dirty source files, r
   expect(await readFile(join(source, "source.ts"), "utf8")).toBe("operator work\n");
   await rm(join(source, ".git"), { recursive: true, force: true });
   expect((await inspectCandidateCheckout(created.directory)).head).toBe(baseline);
+});
+
+it("creates a clean successor from the predecessor baseline without inheriting candidate or newer source bytes", async () => {
+  const { source, candidates, baseline } = await fixture();
+  const predecessor = await createCandidateCheckout(source, candidates);
+  await writeFile(join(predecessor.checkout, "source.ts"), "partial candidate work\n");
+  await writeFile(join(source, "source.ts"), "export const value = 2;\n");
+  git(source, ["add", "source.ts"]);
+  git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Newer source"]);
+
+  const successor = await createCandidateSuccessor(predecessor.directory, candidates);
+
+  expect(successor).toMatchObject({ baseline });
+  expect(successor.directory).not.toBe(predecessor.directory);
+  expect(await readFile(join(successor.checkout, "source.ts"), "utf8")).toBe("export const value = 1;\n");
+  expect(await readFile(join(predecessor.checkout, "source.ts"), "utf8")).toBe("partial candidate work\n");
+  expect((await inspectCandidateCheckout(successor.directory)).changes).toEqual([]);
+  expect(git(successor.checkout, ["remote"])).toBe("");
+
+  const recordPath = join(predecessor.directory, "checkout.json");
+  const record = JSON.parse(await readFile(recordPath, "utf8"));
+  await writeFile(recordPath, JSON.stringify({ ...record, source: successor.directory }));
+  await expect(createCandidateSuccessor(predecessor.directory, candidates)).rejects.toThrow("overlaps source");
 });
 
 it("reports staged, untracked and ignored files plus a changed candidate HEAD", async () => {
@@ -146,6 +170,15 @@ it("rejects remotes, redirected worktree config and incomplete or oversized reco
   await expect(inspectCandidateCheckout(created.directory)).rejects.toThrow("preparing");
   await writeFile(path, "x".repeat(16_385));
   await expect(inspectCandidateCheckout(created.directory)).rejects.toThrow("Invalid candidate record");
+});
+
+it("rejects a recorded source that overlaps candidate storage", async () => {
+  const { source, candidates } = await fixture();
+  const created = await createCandidateCheckout(source, candidates);
+  const path = join(created.directory, "checkout.json");
+  const record = JSON.parse(await readFile(path, "utf8"));
+  await writeFile(path, JSON.stringify({ ...record, source: candidates }));
+  await expect(inspectCandidateCheckout(created.directory)).rejects.toThrow("overlaps source");
 });
 
 it("supports compiled inspection and rejects extra creation arguments", async () => {

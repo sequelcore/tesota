@@ -22,10 +22,13 @@ The main CLI accepts no arguments, `help`, `--help` or `-h` for help (exit 0).
 `candidate clean` removes only old rejected, abandoned or failed checkout directories while
 retaining their evidence. `candidate abandon <id|directory>` records an explicit
 operator decision for work that no longer needs review.
-`task prepare <directory>` and `task check <directory>` expose the first
-[scoped documentation task](tasks.md), also without model inference.
+`task prepare <directory>` and `task check <directory>` expose the default
+[registered task](tasks.md), also without model inference.
 `task run` creates a fresh candidate and runs the selected fixed task with the saved login;
 it is a separate live command and is never invoked by the normal check suite.
+`task recover <candidate>` explicitly retries a failed or incomplete registered
+task in a clean successor at the same baseline. It never resumes the prior model
+session or copies that candidate's working bytes or evidence.
 `task run gentle-review <candidate> <gentle-ai-executable> <lineage-id>`
 collects one reviewer slot currently offered by Gentle. The executable path
 must be absolute and identify the package-local, version-qualified Gentle AI

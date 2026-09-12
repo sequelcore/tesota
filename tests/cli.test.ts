@@ -39,6 +39,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota task prepare <candidate-directory>\n" +
     "       tesota task check <candidate-directory>\n" +
     "       tesota task run [task-id]\n" +
+    "       tesota task recover <candidate-id|candidate-directory>\n" +
     "       tesota task run coding-agent\n" +
     "       tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>\n" +
     "       tesota task review <candidate-id|candidate-directory>\n" +
@@ -63,4 +64,11 @@ it("rejects an unregistered task before candidate preparation", () => {
   expect(result.status).toBe(2);
   expect(result.stdout).toBe("");
   expect(result.stderr).toBe("Unknown task id.\n");
+});
+
+it("reports unavailable task recovery without treating it as a task ID", () => {
+  const result = run(["task", "recover", "missing-candidate"]);
+  expect(result.status).toBe(2);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).toBe("Task recovery unavailable. No predecessor state was changed.\n");
 });

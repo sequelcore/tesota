@@ -1,24 +1,92 @@
 import { createHash } from "node:crypto";
-import { open, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { candidateDiff, createCandidateCheckout } from "./candidate-checkout.js";
-import { CandidateTask, checkCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
-import { DEFAULT_CANDIDATE_TASK_ID, parseCandidateTaskId } from "./candidate-task-definition.js";
+import { lstat, open, readFile, realpath, writeFile } from "node:fs/promises";
+import { dirname, join, relative } from "node:path";
+import * as z from "zod";
+import { candidateDiff, createCandidateCheckout, createCandidateSuccessor, inspectCandidateCheckout,
+  listCandidateCheckouts, type CandidateCheckout } from "./candidate-checkout.js";
+import { CandidateTask, checkCandidateTask, inspectCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
+import { DEFAULT_CANDIDATE_TASK_ID, parseCandidateTaskId, type CandidateTaskId } from "./candidate-task-definition.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { PI_TASK_LIMITS, piTaskPasses, runPiTask, type PiTaskResult } from "./integrations/pi-task.js";
 
-/** A new invocation creates its own candidate and authority; stored attempts cannot be resumed. */
-export async function runTaskCommand(requestedTaskId: string = DEFAULT_CANDIDATE_TASK_ID): Promise<number> {
-  const taskId = parseCandidateTaskId(requestedTaskId);
-  if (taskId === null) {
-    process.stderr.write("Unknown task id.\n");
-    return 2;
-  }
-  if (process.platform !== "win32") {
-    process.stderr.write("Live repository tasks are currently supported on Windows.\n");
-    return 2;
-  }
+const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const baselineSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/);
+const limitsSchema = z.strictObject({
+  modelInvocations: z.number().int().positive(),
+  toolCalls: z.number().int().positive(),
+  sessionMs: z.number().int().positive(),
+  settlementMs: z.number().int().positive(),
+  outputTokens: z.number().int().positive(),
+});
+const recoverySchema = z.strictObject({
+  predecessorId: z.uuid(), predecessorBaseline: baselineSchema,
+  priorOutcome: z.enum(["failed", "incomplete"]), authority: z.literal("local_operator_request"),
+});
+const attemptStartedSchema = z.strictObject({
+  format: z.literal("tesota-task-attempt"), version: z.literal(1), state: z.literal("started"),
+  timestamp: z.iso.datetime(), baseline: baselineSchema, sourceDirty: z.boolean(),
+  executor: z.record(z.string(), hashSchema), model: z.string().min(1), limits: limitsSchema,
+  taskAcceptance: z.literal("not_evaluated"), recovery: recoverySchema.optional(),
+});
+const attemptFinishedSchema = z.strictObject({
+  state: z.literal("finished"), timestamp: z.iso.datetime(), outcome: z.enum(["passed", "failed"]),
+  session: z.unknown(), current: z.unknown(), reviewSaved: z.boolean(), taskAcceptance: z.literal("not_evaluated"),
+});
+type Recovery = z.infer<typeof recoverySchema>;
+
+async function recoverableOutcome(directory: string, baseline: string): Promise<"failed" | "incomplete"> {
+  const path = join(directory, "attempt.jsonl");
+  const metadata = await lstat(path);
+  if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 || metadata.size > 1024 * 1024 ||
+      relative(path, await realpath(path)) !== "") throw new Error("Task attempt unavailable");
+  const file = await open(path, "r");
+  let text: string;
+  try {
+    const bytes = Buffer.alloc(1024 * 1024 + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const chunk = await file.read(bytes, length, bytes.length - length, null);
+      if (chunk.bytesRead === 0) break;
+      length += chunk.bytesRead;
+    }
+    if (length > 1024 * 1024) throw new Error("Task attempt unavailable");
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length));
+  } finally { await file.close(); }
+  const lines = text.split("\n");
+  const terminalComplete = lines.at(-1) === "";
+  if (terminalComplete) lines.pop();
+  else if (lines.length === 2) lines.pop();
+  else throw new Error("Task attempt invalid");
+  if (lines.length < 1 || lines.length > 2) throw new Error("Task attempt invalid");
+  const started = attemptStartedSchema.parse(JSON.parse(lines[0] ?? ""));
+  if (started.baseline !== baseline) throw new Error("Task attempt baseline changed");
+  if (lines.length === 1 || !terminalComplete) return "incomplete";
+  const finished = attemptFinishedSchema.parse(JSON.parse(lines[1] ?? ""));
+  if (finished.outcome !== "failed") throw new Error("Successful task attempts cannot be recovered");
+  return "failed";
+}
+
+export interface PreparedTaskRecovery {
+  readonly predecessor: string;
+  readonly taskId: CandidateTaskId;
+  readonly priorOutcome: "failed" | "incomplete";
+  readonly candidate: CandidateCheckout;
+}
+
+/** Explicit recovery starts from the same baseline in a fresh candidate and inherits no task authority or worktree bytes. */
+export async function prepareTaskRecovery(reference: string): Promise<PreparedTaskRecovery> {
+  const predecessor = await inspectCandidateCheckout(reference);
+  const summary = (await listCandidateCheckouts(dirname(predecessor.directory)))
+    .find((candidate) => candidate.directory === predecessor.directory);
+  if (summary?.status !== "awaiting-review") throw new Error("Task recovery requires an undecided candidate");
+  const priorOutcome = await recoverableOutcome(predecessor.directory, predecessor.baseline);
+  const current = await inspectCandidateTask(predecessor.directory);
+  const candidate = await createCandidateSuccessor(predecessor.directory);
+  return { predecessor: predecessor.directory, taskId: current.task, priorOutcome, candidate };
+}
+
+async function runPreparedTask(candidate: CandidateCheckout, taskId: CandidateTaskId, recovery?: Recovery): Promise<number> {
   const cancellation = new AbortController();
   const interrupt = (): void => cancellation.abort();
   process.once("SIGINT", interrupt);
@@ -29,7 +97,6 @@ export async function runTaskCommand(requestedTaskId: string = DEFAULT_CANDIDATE
     process.exit(1);
   }, 360_000);
   try {
-    const candidate = await createCandidateCheckout(process.cwd());
     process.stdout.write("Task candidate: " + candidate.directory + "\n");
     const record = await open(join(candidate.directory, "attempt.jsonl"), "wx", 0o600);
     let task: CandidateTask | undefined;
@@ -47,7 +114,8 @@ export async function runTaskCommand(requestedTaskId: string = DEFAULT_CANDIDATE
       }
       await record.writeFile(JSON.stringify({ format: "tesota-task-attempt", version: 1, state: "started",
         timestamp: new Date().toISOString(), baseline: candidate.baseline, sourceDirty: candidate.sourceDirty,
-        executor, model: LIVE_CODEX_MODEL_ID, limits: PI_TASK_LIMITS, taskAcceptance: "not_evaluated" }) + "\n");
+        executor, model: LIVE_CODEX_MODEL_ID, limits: PI_TASK_LIMITS, taskAcceptance: "not_evaluated",
+        ...(recovery === undefined ? {} : { recovery }) }) + "\n");
       await record.sync();
       if (cancellation.signal.aborted) throw new Error("Task interrupted");
       task = await CandidateTask.prepare(candidate.directory, taskId);
@@ -85,5 +153,46 @@ export async function runTaskCommand(requestedTaskId: string = DEFAULT_CANDIDATE
     clearTimeout(watchdog);
     process.removeListener("SIGINT", interrupt);
     process.removeListener("SIGTERM", interrupt);
+  }
+}
+
+/** A normal invocation creates its own candidate and authority. */
+export async function runTaskCommand(requestedTaskId: string = DEFAULT_CANDIDATE_TASK_ID): Promise<number> {
+  const taskId = parseCandidateTaskId(requestedTaskId);
+  if (taskId === null) {
+    process.stderr.write("Unknown task id.\n");
+    return 2;
+  }
+  if (process.platform !== "win32") {
+    process.stderr.write("Live repository tasks are currently supported on Windows.\n");
+    return 2;
+  }
+  try { return await runPreparedTask(await createCandidateCheckout(process.cwd()), taskId); }
+  catch {
+    process.stderr.write("Task preparation or evidence persistence failed. No promotion occurred.\n");
+    return 1;
+  }
+}
+
+/** Recovery is an explicit fresh attempt; it never resumes the predecessor's model session. */
+export async function recoverTaskCommand(reference: string): Promise<number> {
+  if (process.platform !== "win32") {
+    process.stderr.write("Live repository tasks are currently supported on Windows.\n");
+    return 2;
+  }
+  try {
+    const prepared = await prepareTaskRecovery(reference);
+    const predecessorId = prepared.predecessor.split(/[\\/]/).at(-1);
+    if (predecessorId === undefined) throw new Error("Task predecessor unavailable");
+    const recovery = recoverySchema.parse({
+      predecessorId,
+      predecessorBaseline: prepared.candidate.baseline,
+      priorOutcome: prepared.priorOutcome,
+      authority: "local_operator_request",
+    });
+    return await runPreparedTask(prepared.candidate, prepared.taskId, recovery);
+  } catch {
+    process.stderr.write("Task recovery unavailable. No predecessor state was changed.\n");
+    return 2;
   }
 }

@@ -12,6 +12,7 @@ Usage: tesota [--help | -h | help]
        tesota task prepare <candidate-directory>
        tesota task check <candidate-directory>
        tesota task run [task-id]
+       tesota task recover <candidate-id|candidate-directory>
        tesota task run coding-agent
        tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>
        tesota task review <candidate-id|candidate-directory>
@@ -38,6 +39,9 @@ if (
     process.stderr.write("Promotion unavailable or failed. Inspect source and any promotion journal before retrying.\n");
     process.exitCode = 2;
   }
+} else if (args.length === 3 && args[0] === "task" && args[1] === "recover" && args[2] !== undefined) {
+  const { recoverTaskCommand } = await import("./task-run.js");
+  process.exit(await recoverTaskCommand(args[2]));
 } else if (args[0] === "task" && (args.length === 3 && args[1] === "review" && args[2] !== undefined ||
     args.length === 5 && args[1] === "decide" && args[2] !== undefined && args[3] !== undefined && args[4] !== undefined)) {
   const { reviewTask, decideTask } = await import("./task-review.js");
