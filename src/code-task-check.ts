@@ -14,12 +14,12 @@ export interface CodeCheck {
 
 // Kept in the executor, outside the candidate's edit authority.
 const oracle = String.raw`
-const before = {task:"pi-result-consistency",status:"check_failed",provenance:"issued",baseline:"a".repeat(40),sourceSha256:"1".repeat(64),taskAcceptance:"not_evaluated"};
-const after = {...before,status:"passed",sourceSha256:"2".repeat(64)};
+const before = {task:"pi-result-consistency",status:"check_failed",provenance:"issued",baseline:"a".repeat(40),writeSetSha256:"1".repeat(64),taskAcceptance:"not_evaluated"};
+const after = {...before,status:"passed",writeSetSha256:"2".repeat(64)};
 const valid = {status:"completed",modelInvocations:5,toolCalls:4,edits:1,checks:[before,after],checksSuppliedToModel:2,finalCheckSuppliedToModel:true,deadlineExpired:false,denied:false,terminalStopReason:"stop",taskAcceptance:"not_evaluated"};
 const current = {...after,provenance:"recorded_untrusted"};
 const cases = [["valid",valid,current,true],
- ["correction",{...valid,modelInvocations:7,toolCalls:6,edits:2,checks:[before,{...before,sourceSha256:"3".repeat(64)},after],checksSuppliedToModel:3},current,true]];
+ ["correction",{...valid,modelInvocations:7,toolCalls:6,edits:2,checks:[before,{...before,writeSetSha256:"3".repeat(64)},after],checksSuppliedToModel:3},current,true]];
 for(const [key,value] of [["status","failed"],["terminalStopReason","error"],["denied",true],["deadlineExpired",true],["modelInvocations",0],["modelInvocations",9],["toolCalls",0],["toolCalls",14],["edits",0],["edits",3],["edits",1.5],["modelInvocations",2.5],["toolCalls",4.5],["finalCheckSuppliedToModel",false],["checksSuppliedToModel",1]])
  cases.push([key+"="+value,{...valid,[key]:value},current,false]);
 cases.push(["missing checks",{...valid,checks:[]},current,false],
@@ -28,8 +28,8 @@ cases.push(["missing checks",{...valid,checks:[]},current,false],
  ["task mismatch",{...valid,checks:[{...before,task:"other"},after]},current,false],
  ["current task",valid,{...current,task:"other"},false],
  ["unchanged hash",{...valid,checks:[after,after]},current,false],
- ["no changed bytes",{...valid,checks:[{...before,sourceSha256:after.sourceSha256},after]},current,false],
- ["stale",valid,{...current,sourceSha256:"4".repeat(64)},false],
+ ["no changed bytes",{...valid,checks:[{...before,writeSetSha256:after.writeSetSha256},after]},current,false],
+ ["stale",valid,{...current,writeSetSha256:"4".repeat(64)},false],
  ["failed current",valid,{...current,status:"check_failed"},false]);
 let failures = [];
 for (const [name,result,now,expected] of cases) {

@@ -21,7 +21,7 @@ const contractSchema = z.strictObject({
   oracle: z.string().min(1),
   oracleSha256: hashSchema,
   readFiles: z.array(z.string()).min(1),
-  writeFiles: z.tuple([z.string()]),
+  writeFiles: z.array(z.string()).min(1).max(CANDIDATE_TASK_LIMITS.edits),
   requiredStatus: z.string(),
   limits: z.strictObject({
     reads: z.literal(CANDIDATE_TASK_LIMITS.reads),
@@ -38,7 +38,7 @@ const contractSchema = z.strictObject({
 });
 const planSchema = z.strictObject({
   format: z.literal("tesota-candidate-task"),
-  version: z.literal(2),
+  version: z.literal(3),
   task: z.enum(CANDIDATE_TASK_IDS),
   definitionSha256: hashSchema,
   contract: contractSchema,
@@ -58,7 +58,7 @@ export interface CandidateTaskCheck {
   readonly status: "passed" | "check_failed";
   readonly provenance: "issued" | "recorded_untrusted";
   readonly baseline: string;
-  readonly sourceSha256: string;
+  readonly writeSetSha256: string;
   readonly taskAcceptance: "not_evaluated";
   readonly diagnostics?: readonly string[];
   readonly verifierSha256?: string;
@@ -84,21 +84,37 @@ async function readText(path: string): Promise<string> {
   } finally { await file.close(); }
 }
 
-async function observe(directory: string, plan: TaskPlan): Promise<{ checkout: string; content: string }> {
-  const definition = candidateTaskDefinition(plan.task);
-  const inspection = await inspectCandidateCheckout(directory);
-  if (inspection.baseline !== plan.baseline || inspection.headChanged ||
-      inspection.changes.some((change) => change.path !== definition.writeFile || change.status !== "M")) throw new Error("Task scope changed");
-  let content = "";
-  for (const path of definition.readFiles) {
-    const text = await readText(join(inspection.checkout, path));
-    if (path === definition.writeFile) content = text;
-    else if (hash(text) !== plan.inputs[path]) throw new Error("Task context changed");
-  }
-  return { checkout: inspection.checkout, content };
+type TaskFiles = Readonly<Record<string, string>>;
+
+function sameFiles(left: TaskFiles, right: TaskFiles): boolean {
+  const paths = Object.keys(left);
+  return paths.length === Object.keys(right).length && paths.every((path) => left[path] === right[path]);
 }
 
-function expectedContent(files: Readonly<Record<string, string>>, plan: TaskPlan): string {
+export function taskWriteSetSha256(files: TaskFiles, paths: readonly string[]): string {
+  return hash(JSON.stringify(paths.map((path) => {
+    const content = files[path];
+    if (content === undefined) throw new Error("Task write set unavailable");
+    return [path, hash(content)];
+  })));
+}
+
+async function observe(directory: string, plan: TaskPlan): Promise<{ checkout: string; files: TaskFiles }> {
+  const definition = candidateTaskDefinition(plan.task);
+  const writable = new Set(definition.writeFiles);
+  const inspection = await inspectCandidateCheckout(directory);
+  if (inspection.baseline !== plan.baseline || inspection.headChanged ||
+      inspection.changes.some((change) => !writable.has(change.path) || change.status !== "M")) throw new Error("Task scope changed");
+  const files: Record<string, string> = {};
+  for (const path of definition.readFiles) {
+    const text = await readText(join(inspection.checkout, path));
+    files[path] = text;
+    if (!writable.has(path) && hash(text) !== plan.inputs[path]) throw new Error("Task context changed");
+  }
+  return { checkout: inspection.checkout, files };
+}
+
+function expectedContent(files: TaskFiles, plan: TaskPlan): TaskFiles {
   const definition = candidateTaskDefinition(plan.task);
   for (const path of definition.readFiles) {
     const baseline = files[path];
@@ -111,15 +127,15 @@ function expectedContent(files: Readonly<Record<string, string>>, plan: TaskPlan
 export class CandidateTask {
   readonly #directory: string;
   readonly #plan: TaskPlan;
-  readonly #expected: string;
-  #current: string;
+  readonly #expected: TaskFiles;
+  #current: TaskFiles;
   #reads = 0;
   #edits = 0;
   #checks = 0;
   #closed = false;
   #busy = false;
 
-  private constructor(directory: string, plan: TaskPlan, initial: string, expected: string) {
+  private constructor(directory: string, plan: TaskPlan, initial: TaskFiles, expected: TaskFiles) {
     this.#directory = directory; this.#plan = plan; this.#current = initial; this.#expected = expected;
   }
 
@@ -137,29 +153,33 @@ export class CandidateTask {
     }
     const plan = planSchema.parse({
       format: "tesota-candidate-task",
-      version: 2,
+      version: 3,
       task: id,
       definitionSha256: candidateTaskDefinitionSha256(id),
       contract: candidateTaskContract(id),
       baseline: inspection.baseline,
       inputs,
     });
-    const baselineContent = snapshot.files[definition.writeFile];
-    if (baselineContent === undefined) throw new Error("Task source unavailable");
     if (definition.seed !== undefined) {
-      await writeFile(join(inspection.checkout, definition.writeFile), definition.seed(baselineContent), "utf8");
+      const seeded = definition.seed(snapshot.files);
+      for (const path of definition.writeFiles) {
+        const content = seeded[path];
+        if (content === undefined) throw new Error("Task seed unavailable");
+        await writeFile(join(inspection.checkout, path), content, "utf8");
+      }
     }
     const initial = await observe(directory, plan);
-    if (definition.seed === undefined && hash(initial.content) !== plan.inputs[definition.writeFile]) {
+    const unchanged = definition.writeFiles.every((path) => hash(initial.files[path] ?? "") === plan.inputs[path]);
+    if (definition.seed === undefined && !unchanged) {
       throw new Error("Task initial source changed");
     }
-    if (definition.seed !== undefined && hash(initial.content) === plan.inputs[definition.writeFile]) {
+    if (definition.seed !== undefined && unchanged) {
       throw new Error("Task was not seeded");
     }
     const expected = expectedContent(snapshot.files, plan);
     const file = await open(join(inspection.directory, "task.json"), "wx", 0o600);
     try { await file.writeFile(JSON.stringify(plan, null, 2) + "\n", "utf8"); await file.sync(); } finally { await file.close(); }
-    return new CandidateTask(inspection.directory, plan, initial.content, expected);
+    return new CandidateTask(inspection.directory, plan, initial.files, expected);
   }
 
   describe(): {
@@ -185,7 +205,7 @@ export class CandidateTask {
       oracleSha256: this.#plan.contract.oracleSha256,
       instructions: definition.instructions,
       readFiles: definition.readFiles,
-      writeFiles: [definition.writeFile],
+      writeFiles: definition.writeFiles,
       requiredStatus: definition.requiredStatus,
       limits: CANDIDATE_TASK_LIMITS,
     };
@@ -193,12 +213,12 @@ export class CandidateTask {
 
   close(): void { this.#closed = true; }
 
-  async #operation<T>(action: (snapshot: { checkout: string; content: string }) => Promise<T>): Promise<T> {
+  async #operation<T>(action: (snapshot: { checkout: string; files: TaskFiles }) => Promise<T>): Promise<T> {
     if (this.#closed || this.#busy) { this.#closed = true; throw new Error("Task is closed or busy"); }
     this.#busy = true;
     try {
       const snapshot = await observe(this.#directory, this.#plan);
-      if (this.#closed || snapshot.content !== this.#current) throw new Error("Task source changed externally");
+      if (this.#closed || !sameFiles(snapshot.files, this.#current)) throw new Error("Task source changed externally");
       const result = await action(snapshot);
       if (this.#closed) throw new Error("Task closed");
       return result;
@@ -217,11 +237,12 @@ export class CandidateTask {
   }
 
   async replace(request: unknown): Promise<void> {
-    return this.#operation(async ({ checkout, content }) => {
-      const editedFile = candidateTaskDefinition(this.#plan.task).writeFile;
+    return this.#operation(async ({ checkout, files }) => {
       const args = taskRequestSchemas(this.#plan.task).replace.parse(request);
-      if (this.#checks === 0 || this.#edits >= CANDIDATE_TASK_LIMITS.edits || args.expectedSha256 !== hash(content)) throw new Error("Edit denied");
-      const target = join(checkout, editedFile);
+      const currentContent = files[args.path];
+      if (currentContent === undefined || this.#checks === 0 || this.#edits >= CANDIDATE_TASK_LIMITS.edits ||
+          args.expectedSha256 !== hash(currentContent)) throw new Error("Edit denied");
+      const target = join(checkout, args.path);
       const temporary = join(this.#directory, ".tesota-" + randomUUID() + ".tmp");
       const file = await open(temporary, "wx", 0o600);
       try {
@@ -229,21 +250,23 @@ export class CandidateTask {
       } catch { await unlink(temporary).catch(() => {}); throw new Error("Write failed"); }
       try {
         const current = await observe(this.#directory, this.#plan);
-        if (this.#closed || current.content !== content || relative(dirname(target), await realpath(dirname(target))) !== "") throw new Error("Task changed during edit");
+        if (this.#closed || !sameFiles(current.files, files) || relative(dirname(target), await realpath(dirname(target))) !== "") throw new Error("Task changed during edit");
         await rename(temporary, target);
-        this.#current = args.content; this.#edits += 1;
-        await observe(this.#directory, this.#plan);
+        this.#current = { ...files, [args.path]: args.content }; this.#edits += 1;
+        const updated = await observe(this.#directory, this.#plan);
+        if (!sameFiles(updated.files, this.#current)) throw new Error("Task write mismatch");
       } finally { await unlink(temporary).catch(() => {}); }
     });
   }
 
   async check(): Promise<CandidateTaskCheck> {
-    return this.#operation(async ({ content }) => {
+    return this.#operation(async ({ files }) => {
       if (this.#checks >= CANDIDATE_TASK_LIMITS.checks) throw new Error("Check budget exceeded");
       this.#checks += 1;
-      const check = candidateTaskDefinition(this.#plan.task).check(content, this.#expected);
+      const definition = candidateTaskDefinition(this.#plan.task);
+      const check = definition.check(files, this.#expected);
       return { ...check, task: this.#plan.task, status: check.status, provenance: "issued",
-        baseline: this.#plan.baseline, sourceSha256: hash(content), taskAcceptance: "not_evaluated" };
+        baseline: this.#plan.baseline, writeSetSha256: taskWriteSetSha256(files, definition.writeFiles), taskAcceptance: "not_evaluated" };
     });
   }
 }
@@ -252,8 +275,8 @@ export class CandidateTask {
 async function loadCandidateTask(directory: string): Promise<{
   plan: TaskPlan;
   definition: CandidateTaskDefinition;
-  expected: string;
-  content: string;
+  expected: TaskFiles;
+  files: TaskFiles;
 }> {
   const parsed = planSchema.safeParse(JSON.parse(await readText(join(directory, "task.json"))));
   if (!parsed.success) throw new Error("Task plan invalid");
@@ -262,22 +285,24 @@ async function loadCandidateTask(directory: string): Promise<{
   if (baseline.baseline !== parsed.data.baseline) throw new Error("Task baseline changed");
   const expected = expectedContent(baseline.files, parsed.data);
   const snapshot = await observe(directory, parsed.data);
-  return { plan: parsed.data, definition, expected, content: snapshot.content };
+  return { plan: parsed.data, definition, expected, files: snapshot.files };
 }
 
 /** Validate persisted task identity and current scope without running its oracle or granting authority. */
 export async function inspectCandidateTask(directory: string): Promise<{
   task: CandidateTaskId;
   baseline: string;
-  sourceSha256: string;
+  writeSetSha256: string;
 }> {
   const loaded = await loadCandidateTask(directory);
-  return { task: loaded.plan.task, baseline: loaded.plan.baseline, sourceSha256: hash(loaded.content) };
+  return { task: loaded.plan.task, baseline: loaded.plan.baseline,
+    writeSetSha256: taskWriteSetSha256(loaded.files, loaded.definition.writeFiles) };
 }
 
 export async function checkCandidateTask(directory: string): Promise<CandidateTaskCheck> {
   const loaded = await loadCandidateTask(directory);
-  const check = loaded.definition.check(loaded.content, loaded.expected);
+  const check = loaded.definition.check(loaded.files, loaded.expected);
   return { ...check, task: loaded.plan.task, status: check.status, provenance: "recorded_untrusted",
-    baseline: loaded.plan.baseline, sourceSha256: hash(loaded.content), taskAcceptance: "not_evaluated" };
+    baseline: loaded.plan.baseline, writeSetSha256: taskWriteSetSha256(loaded.files, loaded.definition.writeFiles),
+    taskAcceptance: "not_evaluated" };
 }

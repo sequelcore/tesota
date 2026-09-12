@@ -65,7 +65,7 @@ export async function reviewTask(directory: string): Promise<TaskReview> {
   if (JSON.stringify(check) !== JSON.stringify(current)) throw new Error("Candidate changed during review");
   const reviewSha256 = digest(JSON.stringify({
     format: "tesota-task-review", version: 1, directory: candidate.directory,
-    task: check.task, baseline: check.baseline, sourceSha256: check.sourceSha256,
+    task: check.task, baseline: check.baseline, writeSetSha256: check.writeSetSha256,
     checkStatus: check.status, diffSha256: digest(diff),
   }));
   const record = await readDecision(candidate.directory);

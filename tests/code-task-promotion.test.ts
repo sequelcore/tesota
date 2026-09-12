@@ -60,7 +60,7 @@ it("promotes an accepted code task without changing refs, index or unrelated sou
 
   const result = await promoteTask(candidate.directory, source, review.reviewSha256);
 
-  expect(result).toMatchObject({ status: "applied", path: codeFile });
+  expect(result).toMatchObject({ status: "applied", files: [{ path: codeFile }] });
   expect(await readFile(join(source, codeFile), "utf8")).toBe("corrected\n");
   expect(await readFile(join(source, "README.md"), "utf8")).toBe("unrelated edit\n");
   expect(await readFile(join(source, ".git/index"))).toEqual(index);

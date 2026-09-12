@@ -362,8 +362,8 @@ export async function inspectCandidateCheckout(path: string, candidatesRoot?: st
 export async function inspectPromotionSource(directory: string, sourceDirectory: string, path: string): Promise<{
   source: string; head: string;
 }> {
-  if (!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(path) ||
-      path.split("/").some((part) => part === ".." || part === ".git")) throw new Error("Promotion path denied");
+  if (!/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(path) ||
+      path.split("/").some((part) => part === "." || part === ".." || part === ".git")) throw new Error("Promotion path denied");
   const candidate = await inspectCandidateCheckout(directory);
   const record = await readRecord(candidate.directory);
   const source = await plainDirectory(sourceDirectory);
@@ -388,7 +388,7 @@ export async function candidateDiff(directory: string): Promise<string> {
 export async function readCandidateBaselineFiles(directory: string, paths: readonly string[]): Promise<{
   baseline: string; files: Readonly<Record<string, string>>;
 }> {
-  if (paths.some((path) => !/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_.-]+)+$/.test(path) || path.split("/").some((part) => part === ".." || part === ".git"))) {
+  if (paths.some((path) => !/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/.test(path) || path.split("/").some((part) => part === "." || part === ".." || part === ".git"))) {
     throw new Error("Candidate baseline path denied");
   }
   const inspection = await inspectCandidateCheckout(directory);

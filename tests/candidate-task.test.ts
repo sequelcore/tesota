@@ -13,6 +13,7 @@ import { PI_DECISION_TASK_STATUS } from "../src/candidate-task-definition.js";
 import { reviewTask, decideTask } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
 import { prepareTaskRecovery } from "../src/task-run.js";
+import { expectedMultiFileTask } from "../src/multi-file-task-check.js";
 
 const editedFile = "docs/decisions/002-use-pi.md";
 const roots: string[] = [];
@@ -30,7 +31,7 @@ async function fixture() {
   await mkdir(source);
   git(source, ["init", "--quiet"]);
   for (const path of [editedFile, "docs/roadmap.md", "experiments/codex/history.md", "src/cli.ts", "src/integrations/pi-task.ts",
-    "src/verification/candidate.ts", "src/verification/invocation-admission.ts"]) {
+    "src/verification/candidate.ts", "src/verification/invocation-admission.ts", "README.md", "docs/identity.md"]) {
     await mkdir(dirname(join(source, path)), { recursive: true });
     await writeFile(join(source, path), await readFile(new URL("../" + path, import.meta.url)));
   }
@@ -83,7 +84,7 @@ it("executes a registered TypeScript correction without task-specific engine bra
   await task.replace({ path: "src/verification/candidate.ts", expectedSha256: seeded.sha256, content: corrected });
   expect((await task.check()).status).toBe("passed");
   expect(JSON.parse(await readFile(join(candidate.directory, "task.json"), "utf8"))).toMatchObject({
-    version: 2,
+    version: 3,
     task: "candidate-source-newline",
     definitionSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
     contract: {
@@ -96,6 +97,63 @@ it("executes a registered TypeScript correction without task-specific engine bra
   });
   task.close();
 }, 30_000);
+
+it("binds, checks, reviews and promotes one registered two-file write set", async () => {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepare(candidate.directory, "multi-file-task-status");
+  expect(task.describe()).toMatchObject({
+    task: "multi-file-task-status",
+    readFiles: ["README.md", "docs/identity.md"],
+    writeFiles: ["README.md", "docs/identity.md"],
+  });
+  const readme = await task.read({ path: "README.md" });
+  const identity = await task.read({ path: "docs/identity.md" });
+  const expected = expectedMultiFileTask({ "README.md": readme.content, "docs/identity.md": identity.content });
+  const before = await task.check();
+  expect(before).toMatchObject({ status: "check_failed", writeSetSha256: expect.stringMatching(/^[a-f0-9]{64}$/) });
+  await task.replace({ path: "README.md", expectedSha256: readme.sha256,
+    content: expected["README.md"] });
+  await task.replace({ path: "docs/identity.md", expectedSha256: identity.sha256,
+    content: expected["docs/identity.md"] });
+  const after = await task.check();
+  expect(after.status).toBe("passed");
+  expect(after.writeSetSha256).not.toBe(before.writeSetSha256);
+  task.close();
+
+  const review = await reviewTask(candidate.directory);
+  await decideTask(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
+  const promoted = await promoteTask(candidate.directory, candidate.source, review.reviewSha256);
+  expect(promoted.files.map((file) => file.path)).toEqual(["README.md", "docs/identity.md"]);
+  expect(await readFile(join(candidate.source, "README.md"), "utf8")).toBe(expected["README.md"]);
+  expect(await readFile(join(candidate.source, "docs/identity.md"), "utf8")).toBe(expected["docs/identity.md"]);
+  expect(await readFile(join(candidate.directory, "promotion.jsonl"), "utf8"))
+    .toContain('"version":2');
+}, 60_000);
+
+it("validates every multi-file promotion target before changing any source file", async () => {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepare(candidate.directory, "multi-file-task-status");
+  const inputs: Record<string, { content: string; sha256: string }> = {};
+  for (const path of ["README.md", "docs/identity.md"]) {
+    const input = await task.read({ path });
+    inputs[path] = input;
+  }
+  const expected = expectedMultiFileTask(Object.fromEntries(Object.entries(inputs).map(([path, input]) => [path, input.content])));
+  for (const path of ["README.md", "docs/identity.md"] as const) {
+    const input = inputs[path];
+    if (input === undefined) throw new Error("Missing multi-file test input");
+    await task.check().catch(() => {});
+    await task.replace({ path, expectedSha256: input.sha256,
+      content: expected[path] });
+  }
+  task.close();
+  const review = await reviewTask(candidate.directory);
+  await decideTask(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
+  const readmeBefore = await readFile(join(candidate.source, "README.md"));
+  await writeFile(join(candidate.source, "docs/identity.md"), "conflicting operator work\n");
+  await expect(promoteTask(candidate.directory, candidate.source, review.reviewSha256)).rejects.toThrow();
+  expect(await readFile(join(candidate.source, "README.md"))).toEqual(readmeBefore);
+}, 60_000);
 
 async function acceptedCandidate() {
   const candidate = await fixture();
@@ -238,7 +296,7 @@ function modelReplacement(
   path: string,
   transform: (content: string) => string,
 ) {
-  const read = context.messages.find((message) => message.role === "toolResult" && message.toolName === "tesota_read");
+  const read = context.messages.findLast((message) => message.role === "toolResult" && message.toolName === "tesota_read");
   if (read?.role !== "toolResult") throw new Error("Missing tool result");
   const text = read?.content.find((block) => block.type === "text");
   if (text?.type !== "text") throw new Error("Missing model context");
@@ -270,8 +328,29 @@ it("executes a Pi repository task and distinguishes model completion from applic
     checksSuppliedToModel: 2, finalCheckSuppliedToModel: true, denied: false, deadlineExpired: false });
   expect(piTaskPasses(result, current)).toBe(true);
   expect(piTaskPasses({ ...result, finalCheckSuppliedToModel: false }, current)).toBe(false);
-  expect(piTaskPasses(result, { ...current, sourceSha256: "0".repeat(64) })).toBe(false);
+  expect(piTaskPasses(result, { ...current, writeSetSha256: "0".repeat(64) })).toBe(false);
   await expect(task.read({ path: editedFile })).rejects.toThrow("closed");
+}, 30_000);
+
+it("re-reads a file before a second Pi correction after an edited check fails", async () => {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepare(candidate.directory);
+  const fake = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: editedFile })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    (context) => modelReplacement(context, editedFile, (content) => correction(content) + "\nUnrequested text\n"),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: editedFile })),
+    (context) => modelReplacement(context, editedFile, (content) =>
+      correction(content).replace(/\n+Unrequested text\n$/u, "\n")),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage("Done."),
+  ]);
+  const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
+  const current = await checkCandidateTask(candidate.directory);
+  expect(result).toMatchObject({ status: "completed", modelInvocations: 8, toolCalls: 7, edits: 2,
+    checks: [{ status: "check_failed" }, { status: "check_failed" }, { status: "passed" }] });
+  expect(piTaskPasses(result, current)).toBe(true);
 }, 30_000);
 
 it("runs a second registered task through the same Pi tools and evidence predicate", async () => {
@@ -435,12 +514,12 @@ it("permits the exact documentation correction, binds its checks to bytes and pr
   await task.replace({ path: editedFile, expectedSha256: input.sha256, content: correction(input.content) });
   const after = await task.check();
   expect(after.status).toBe("passed");
-  expect(after.sourceSha256).not.toBe(before.sourceSha256);
+  expect(after.writeSetSha256).not.toBe(before.writeSetSha256);
   expect(await readFile(join(candidate.source, editedFile), "utf8")).toBe(input.content);
   expect(await readFile(join(candidate.checkout, editedFile), "utf8")).toBe(correction(input.content));
   task.close();
   expect(await checkCandidateTask(candidate.directory)).toMatchObject({ status: "passed", provenance: "recorded_untrusted" });
-  await expect(task.replace({ path: editedFile, expectedSha256: after.sourceSha256, content: input.content })).rejects.toThrow("closed");
+  await expect(task.replace({ path: editedFile, expectedSha256: after.writeSetSha256, content: input.content })).rejects.toThrow("closed");
   await writeFile(join(candidate.checkout, editedFile), input.content);
   expect((await checkCandidateTask(candidate.directory)).status).toBe("check_failed");
 });
