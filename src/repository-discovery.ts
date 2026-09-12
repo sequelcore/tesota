@@ -33,6 +33,10 @@ function sensitivePath(path: string): boolean {
     name === "id_rsa" || name === "id_ed25519" || /\.(?:pem|key|p12|pfx|secret)$/u.test(name);
 }
 
+export function isRepositoryDiscoveryPathAllowed(path: string): boolean {
+  return validProposalPath(path) && !sensitivePath(path);
+}
+
 function splitNull(value: string): string[] {
   return value.split("\0").filter((path) => path.length > 0);
 }
@@ -56,7 +60,7 @@ function parseTree(value: string): Map<string, BlobEntry> {
     }
     const size = Number(sizeText);
     if (!Number.isSafeInteger(size) || size < 0) throw new Error("Repository discovery tree invalid");
-    if (!sensitivePath(path)) entries.set(path, { oid, size });
+    if (isRepositoryDiscoveryPathAllowed(path)) entries.set(path, { oid, size });
   }
   return entries;
 }

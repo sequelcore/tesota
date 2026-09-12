@@ -3,6 +3,7 @@ import { isAbsolute, relative } from "node:path";
 import * as z from "zod";
 import { loadTaskProposal } from "./task-proposal.js";
 import { runRepositoryGit } from "./repository-git.js";
+import { isRepositoryDiscoveryPathAllowed } from "./repository-discovery.js";
 import { validProposalPath } from "./task-proposal-contract.js";
 
 export const PROPOSAL_TASK_KIND = "proposal-documentation";
@@ -37,7 +38,8 @@ const proposalRunGrantSchema = z.strictObject({
   declaredChecks: z.tuple([z.literal("repository-check")]),
   verification: z.strictObject({ scopeIntegrity: z.literal("application_owned"),
     repositoryCheck: z.literal("not_executed_in_first_slice") }),
-}).refine((grant) => documentationPath(grant.writeFiles[0]) && grant.readFiles.includes(grant.writeFiles[0]));
+}).refine((grant) => documentationPath(grant.writeFiles[0]) && grant.readFiles.includes(grant.writeFiles[0]) &&
+  grant.readFiles.every(isRepositoryDiscoveryPathAllowed));
 
 export function validateProposalRunGrant(value: unknown): ProposalRunGrant {
   const parsed = proposalRunGrantSchema.parse(value);
@@ -66,6 +68,7 @@ export async function admitTaskProposal(options: {
   if (proposal.writeFiles.length !== 1 || writeFile === undefined || !documentationPath(writeFile) ||
       proposal.readFiles.length === 0 || proposal.readFiles.length > 8 ||
       !proposal.readFiles.includes(writeFile) ||
+      !proposal.readFiles.every(isRepositoryDiscoveryPathAllowed) ||
       proposal.checks.length !== 1 || proposal.checks[0] !== "repository-check") {
     throw new Error("Proposal scope is unsupported");
   }

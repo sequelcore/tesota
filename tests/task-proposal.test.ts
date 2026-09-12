@@ -222,6 +222,19 @@ it("rejects stale and unsupported proposal evidence before issuing a run grant",
     .rejects.toThrow("unsupported");
 });
 
+it("reapplies discovery exclusions when retained proposal evidence is coherently rewritten", async () => {
+  const { source, proposals } = await fixture();
+  const fake = fakeModel(documentationProposalSteps());
+  const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "Clarify the operator experience.", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal });
+  const rewritten = { ...created.record, proposal: { ...created.record.proposal,
+    readFiles: [...created.record.proposal.readFiles, ".env"] } };
+  await writeFile(join(created.directory, "proposal.json"), JSON.stringify(rewritten, null, 2) + "\n");
+  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id, sourceDirectory: source }))
+    .rejects.toThrow("unsupported");
+});
+
 it("answers a repository question from observed baseline evidence without retaining a proposal", async () => {
   const { source, proposals } = await fixture();
   const fake = fakeModel([
