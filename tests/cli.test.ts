@@ -54,7 +54,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
   );
 });
 
-it("reports an unsupported Git repository before inference", () => {
+it.runIf(process.platform === "win32")("reports an unsupported Git repository before inference", () => {
   const foreignRepository = mkdtempSync(join(tmpdir(), "tesota-cli-foreign-"));
   try {
     const initialized = spawnSync("git", ["init", "--quiet"], {
