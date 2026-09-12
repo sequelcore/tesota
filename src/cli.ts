@@ -44,7 +44,7 @@ if (args.length === 0 && process.stdin.isTTY === true && process.stdout.isTTY ==
   const { recoverTaskCommand } = await import("./task-run.js");
   process.exit(await recoverTaskCommand(args[2]));
 } else if (args.length >= 3 && args[0] === "task" && args[1] === "propose") {
-  const { runTaskProposalCommand } = await import("./task-proposal.js");
+  const { runTaskProposalCommand } = await import("./conversation-turn.js");
   process.exit(await runTaskProposalCommand(args.slice(2).join(" ")));
 } else if (args[0] === "task" && (args.length === 3 && args[1] === "review" && args[2] !== undefined ||
     args.length === 5 && args[1] === "decide" && args[2] !== undefined && args[3] !== undefined && args[4] !== undefined)) {

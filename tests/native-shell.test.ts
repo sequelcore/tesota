@@ -3,7 +3,7 @@ import { askNativeShellRequest, runNativeShell } from "../src/native-shell.js";
 
 it("starts a Tesota-owned conversation and sends the natural-language request to discovery", async () => {
   const output: string[] = [];
-  const propose = vi.fn(async () => 0);
+  const discover = vi.fn(async () => 0);
 
   const result = await runNativeShell({
     cwd: "C:\\work\\tesota",
@@ -12,35 +12,35 @@ it("starts a Tesota-owned conversation and sends the natural-language request to
       output.push(prompt);
       return "  Corrige la experiencia del shell.  ";
     },
-    propose,
+    discover,
   });
 
   expect(result).toBe(0);
-  expect(propose).toHaveBeenCalledOnce();
-  expect(propose).toHaveBeenCalledWith("Corrige la experiencia del shell.");
+  expect(discover).toHaveBeenCalledOnce();
+  expect(discover).toHaveBeenCalledWith("Corrige la experiencia del shell.");
   expect(output.join("")).toBe(
     "Tesota\n" +
     "Repository: C:\\work\\tesota\n" +
-    "Describe the change you want. File names are optional.\n\n" +
+    "Ask about the repository or describe a change. File names are optional.\n\n" +
     "> \n" +
-    "Discovering scope and checks. Nothing will be changed.\n\n" +
-    "Proposal ready. Execution from this session is not available yet.\n",
+    "Inspecting the committed repository. Nothing will be changed.\n\n" +
+    "Read-only turn complete. No execution authority was created.\n",
   );
 });
 
 it("ends without inference when the operator enters no request", async () => {
   const output: string[] = [];
-  const propose = vi.fn(async () => 0);
+  const discover = vi.fn(async () => 0);
 
   const result = await runNativeShell({
     cwd: "C:\\work\\tesota",
     write: (text) => { output.push(text); },
     ask: async () => "   ",
-    propose,
+    discover,
   });
 
   expect(result).toBe(0);
-  expect(propose).not.toHaveBeenCalled();
+  expect(discover).not.toHaveBeenCalled();
   expect(output.at(-1)).toBe("No request entered. Nothing changed.\n");
 });
 
@@ -51,11 +51,11 @@ it("reports a blocked proposal without claiming executable progress", async () =
     cwd: "C:\\work\\tesota",
     write: (text) => { output.push(text); },
     ask: async () => "Update the docs",
-    propose: async () => 1,
+    discover: async () => 1,
   });
 
   expect(result).toBe(1);
-  expect(output.at(-1)).toBe("Proposal blocked or unavailable. Nothing changed.\n");
+  expect(output.at(-1)).toBe("Request blocked or unavailable. Nothing changed.\n");
 });
 
 it("releases readline before discovery so process interruption reaches the proposal owner", async () => {

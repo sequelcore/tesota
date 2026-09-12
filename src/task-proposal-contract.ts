@@ -19,11 +19,14 @@ function hasControlCharacter(value: string): boolean {
   return false;
 }
 
+export function modelTextSchema(maximumLength: number): z.ZodString {
+  return z.string().trim().min(1).max(maximumLength)
+    .refine((value) => !hasControlCharacter(value));
+}
+
 const pathSchema = z.string().min(1).max(512).refine((path) => validProposalPath(path));
-const sentenceSchema = z.string().trim().min(1).max(1_000)
-  .refine((value) => !hasControlCharacter(value));
-const conditionSchema = z.string().trim().min(1).max(500)
-  .refine((value) => !hasControlCharacter(value));
+const sentenceSchema = modelTextSchema(1_000);
+const conditionSchema = modelTextSchema(500);
 export interface TaskProposal {
   readonly objective: string;
   readonly completionConditions: readonly string[];

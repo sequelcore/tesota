@@ -5,8 +5,10 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall,
   type FauxResponseStep } from "@earendil-works/pi-ai";
-import { formatTaskProposal, openProposalDiscovery, proposeTask } from "../src/task-proposal.js";
-import { runPiProposalDiscovery } from "../src/integrations/pi-proposal.js";
+import { discoverConversationTurn, formatConversationTurn } from "../src/conversation-turn.js";
+import { openRepositoryDiscovery } from "../src/repository-discovery.js";
+import { formatTaskProposal, proposeTask } from "../src/task-proposal.js";
+import { runPiDiscovery } from "../src/integrations/pi-discovery.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -53,14 +55,14 @@ function proposalSteps(): FauxResponseStep[] {
     fauxAssistantMessage(fauxToolCall("tesota_search", { query: "task", prefix: "" })),
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "README.md" })),
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "docs/identity.md" })),
-    fauxAssistantMessage(fauxToolCall("tesota_submit_proposal", {
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
       objective: "Clarify the natural-language task experience.",
       completionConditions: ["README and identity describe the same operator flow."],
       readFiles: ["README.md", "docs/identity.md"],
       writeFiles: ["README.md", "docs/identity.md"],
       checks: ["repository-check"],
       uncertainties: [],
-    })),
+    } })),
     fauxAssistantMessage("Proposal ready."),
   ];
 }
@@ -75,7 +77,7 @@ it("reads only committed regular blobs and reports source changes without modify
   await writeFile(join(source, "README.md"), "operator work\n");
   await writeFile(join(source, "untracked.md"), "untracked operator work\n");
   const before = git(source, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]);
-  const discovery = await openProposalDiscovery(source);
+  const discovery = await openRepositoryDiscovery(source);
   expect(discovery.describe()).toMatchObject({
     baseline: expect.stringMatching(/^[a-f0-9]{40}$/),
     dirtyPaths: ["README.md", "untracked.md"],
@@ -99,7 +101,7 @@ it("reads only committed regular blobs and reports source changes without modify
 it.runIf(process.platform === "win32")("does not execute a repository-root git.exe", async () => {
   const { source } = await fixture();
   await writeFile(join(source, "git.exe"), "repository-owned executable must not run");
-  const discovery = await openProposalDiscovery(source);
+  const discovery = await openRepositoryDiscovery(source);
   expect(discovery.describe().baseline).toMatch(/^[a-f0-9]{40}$/u);
   discovery.close();
 });
@@ -113,7 +115,7 @@ it("fails closed without running a worktree-configured Git clean filter", async 
   git(source, ["config", "extensions.worktreeConfig", "true"]);
   git(source, ["config", "--worktree", "filter.probe.clean", "tee filter-marker.txt"]);
   await writeFile(join(source, "README.md"), "changed after filter configuration\n");
-  await expect(openProposalDiscovery(source)).rejects.toThrow("Git programs");
+  await expect(openRepositoryDiscovery(source)).rejects.toThrow("Git programs");
   await expect(readFile(join(source, "filter-marker.txt"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 });
 
@@ -152,9 +154,82 @@ it("produces and privately retains a non-authoritative proposal from bounded rea
   expect(fake.stream).toHaveBeenCalledTimes(6);
   for (const call of fake.stream.mock.calls) {
     expect(call[1].tools?.map((tool) => tool.name)).toEqual([
-      "tesota_list", "tesota_search", "tesota_read", "tesota_submit_proposal",
+      "tesota_list", "tesota_search", "tesota_read", "tesota_submit_result",
     ]);
   }
+});
+
+it("answers a repository question from observed baseline evidence without retaining a proposal", async () => {
+  const { source, proposals } = await fixture();
+  const fake = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "docs/identity.md" })),
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", {
+      kind: "answer",
+      message: "Tesota is a bounded coding agent.",
+      evidenceFiles: ["docs/identity.md"],
+      uncertainties: [],
+    })),
+    fauxAssistantMessage("Answered."),
+  ]);
+
+  const turn = await discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "What is Tesota?", allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal });
+
+  expect(turn).toMatchObject({ kind: "answer", answer: {
+    message: "Tesota is a bounded coding agent.", evidenceFiles: ["docs/identity.md"], uncertainties: [],
+  } });
+  expect(formatConversationTurn(turn)).toContain("Authority: none; nothing changed.\n");
+  await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("returns one clarification without inventing a proposal or repository evidence", async () => {
+  const { source, proposals } = await fixture();
+  const fake = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", {
+      kind: "clarification",
+      question: "Which behavior should change?",
+      reason: "The requested improvement does not identify an observable outcome.",
+    })),
+    fauxAssistantMessage("Clarification requested."),
+  ]);
+
+  const turn = await discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "Make it better", allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal });
+
+  expect(turn).toMatchObject({ kind: "clarification", clarification: {
+    question: "Which behavior should change?",
+  } });
+  expect(formatConversationTurn(turn)).toContain("Authority: none; nothing changed.\n");
+  await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("rejects an answer that cites a baseline file it did not observe", async () => {
+  const { source, proposals } = await fixture();
+  const fake = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", {
+      kind: "answer", message: "Tesota is documented.", evidenceFiles: ["docs/identity.md"], uncertainties: [],
+    })),
+  ]);
+
+  await expect(discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "What is Tesota?", allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal })).rejects.toThrow("failed");
+  await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("rejects an answer from the explicit proposal-only command contract", async () => {
+  const { source, proposals } = await fixture();
+  const fake = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", {
+      kind: "answer", message: "No change is needed.", evidenceFiles: ["README.md"], uncertainties: [],
+    })),
+  ]);
+
+  await expect(proposeTask({ sourceDirectory: source, proposalsRoot: proposals, request: "Explain the README",
+    model: fake.model, stream: fake.stream, signal: new AbortController().signal })).rejects.toThrow("failed");
+  await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
 it("blocks a proposal whose paths or immutable check inputs have excluded working changes", async () => {
@@ -173,7 +248,7 @@ it("reports both sides of a staged rename so a deleted proposal input cannot loo
   const { source } = await fixture();
   await rename(join(source, "README.md"), join(source, "RENAMED.md"));
   git(source, ["add", "-A"]);
-  const discovery = await openProposalDiscovery(source);
+  const discovery = await openRepositoryDiscovery(source);
   expect(discovery.describe().dirtyPaths).toContain("README.md");
   expect(discovery.describe().dirtyPaths).toContain("RENAMED.md");
   discovery.close();
@@ -183,11 +258,11 @@ it("rejects unobserved paths, malformed or mutating tools without retaining prop
   const { source, proposals } = await fixture();
   const unobserved = fakeModel([
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "README.md" })),
-    fauxAssistantMessage(fauxToolCall("tesota_submit_proposal", {
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
       objective: "Change identity.", completionConditions: ["Identity changes."],
       readFiles: ["README.md", "docs/identity.md"], writeFiles: ["docs/identity.md"],
       checks: ["repository-check"], uncertainties: [],
-    })),
+    } })),
   ]);
   await expect(proposeTask({ sourceDirectory: source, proposalsRoot: proposals, request: "Change identity",
     model: unobserved.model, stream: unobserved.stream, signal: new AbortController().signal })).rejects.toThrow("failed");
@@ -203,7 +278,7 @@ it("rejects unobserved paths, malformed or mutating tools without retaining prop
 
 it("closes discovery when its product-owned operation budget is exhausted", async () => {
   const { source } = await fixture();
-  const discovery = await openProposalDiscovery(source);
+  const discovery = await openRepositoryDiscovery(source);
   for (let index = 0; index < 32; index += 1) await discovery.list({ prefix: "" });
   await expect(discovery.list({ prefix: "" })).rejects.toThrow("denied");
   await expect(discovery.read({ path: "README.md" })).rejects.toThrow("closed");
@@ -211,39 +286,40 @@ it("closes discovery when its product-owned operation budget is exhausted", asyn
 
 it("settles an aborted discovery without accepting a late proposal", async () => {
   const { source } = await fixture();
-  const discovery = await openProposalDiscovery(source);
+  const discovery = await openRepositoryDiscovery(source);
   const fake = fakeModel([]);
   const stream = createAssistantMessageEventStream();
   fake.stream.mockImplementation(() => stream);
   const cancellation = new AbortController();
   vi.useFakeTimers();
-  const running = runPiProposalDiscovery(discovery, "Inspect the repository", fake.model, fake.stream, cancellation.signal);
+  const running = runPiDiscovery(discovery, "Inspect the repository", "task_proposal",
+    fake.model, fake.stream, cancellation.signal);
   await vi.advanceTimersByTimeAsync(0);
   cancellation.abort();
   await vi.advanceTimersByTimeAsync(2_000);
   const result = await running;
-  expect(result).toMatchObject({ status: "unsettled", proposal: null });
-  const late = fauxAssistantMessage(fauxToolCall("tesota_submit_proposal", {
+  expect(result).toMatchObject({ status: "unsettled", outcome: null });
+  const late = fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
     objective: "Late", completionConditions: ["Late"], readFiles: [], writeFiles: ["README.md"],
     checks: ["repository-check"], uncertainties: [],
-  }));
+  } }));
   stream.push({ type: "done", reason: "toolUse", message: late });
   stream.end(late);
   await vi.advanceTimersByTimeAsync(1);
-  expect(result.proposal).toBeNull();
+  expect(result.outcome).toBeNull();
 });
 
 it("does not accept a terminal stop that arrives after the session deadline", async () => {
   const { source } = await fixture();
-  const discovery = await openProposalDiscovery(source);
+  const discovery = await openRepositoryDiscovery(source);
   const fake = fakeModel([]);
   const held = createAssistantMessageEventStream();
   const messages = [
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "README.md" })),
-    fauxAssistantMessage(fauxToolCall("tesota_submit_proposal", {
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
       objective: "Clarify README.", completionConditions: ["README is clear."],
       readFiles: ["README.md"], writeFiles: ["README.md"], checks: ["repository-check"], uncertainties: [],
-    })),
+    } })),
   ];
   let invocation = 0;
   fake.stream.mockImplementation(() => {
@@ -255,7 +331,7 @@ it("does not accept a terminal stop that arrives after the session deadline", as
     return response;
   });
   vi.useFakeTimers();
-  const running = runPiProposalDiscovery(discovery, "Clarify README", fake.model, fake.stream,
+  const running = runPiDiscovery(discovery, "Clarify README", "task_proposal", fake.model, fake.stream,
     new AbortController().signal);
   for (let index = 0; index < 10 && invocation < 3; index += 1) await vi.advanceTimersByTimeAsync(0);
   expect(invocation).toBe(3);
@@ -264,7 +340,7 @@ it("does not accept a terminal stop that arrives after the session deadline", as
   held.push({ type: "done", reason: "stop", message: stopped });
   held.end(stopped);
   await vi.advanceTimersByTimeAsync(2_000);
-  await expect(running).resolves.toMatchObject({ status: "aborted", proposal: null });
+  await expect(running).resolves.toMatchObject({ status: "aborted", outcome: null });
 });
 
 it("rejects an overlapping proposal store before creating state", async () => {

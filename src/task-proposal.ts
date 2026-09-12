@@ -1,18 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { lstat, mkdir, open, realpath } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import * as z from "zod";
-import { runPiProposalDiscovery, type PiProposalDiscoveryResult } from "./integrations/pi-proposal.js";
-import { CodexCredentials } from "./integrations/codex-credentials.js";
-import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
-import { assertNoRepositoryGitPrograms, isGitObjectId, runRepositoryGit, runRepositoryGitBytes } from "./repository-git.js";
-import { PROPOSAL_CHECKS, PROPOSAL_LIMITS, proposalListSchema, proposalReadSchema, proposalSearchSchema,
-  taskProposalSchema, validProposalPath, type TaskProposal } from "./task-proposal-contract.js";
+import type { TaskProposalTurn } from "./conversation-turn-contract.js";
+import { runPiDiscovery, type PiDiscoveryResult } from "./integrations/pi-discovery.js";
+import { openRepositoryDiscovery, type RepositoryDiscoveryDescription } from "./repository-discovery.js";
+import { isGitObjectId, runRepositoryGit } from "./repository-git.js";
+import { PROPOSAL_CHECKS, PROPOSAL_LIMITS, taskProposalSchema, validProposalPath,
+  type TaskProposal } from "./task-proposal-contract.js";
 
 export interface TaskProposalRecord {
   readonly format: "tesota-task-proposal";
@@ -54,37 +52,6 @@ const proposalRecordSchema: z.ZodType<TaskProposalRecord> = z.strictObject({
     }),
   }),
 });
-
-interface BlobEntry { readonly oid: string; readonly size: number; }
-export interface ProposalDiscoveryDescription {
-  readonly source: string;
-  readonly baseline: string;
-  readonly dirtyPaths: readonly string[];
-  readonly checks: typeof PROPOSAL_CHECKS;
-  readonly limits: typeof PROPOSAL_LIMITS;
-}
-
-export interface ProposalDiscovery {
-  describe(): ProposalDiscoveryDescription;
-  list(input: unknown): Promise<{ readonly files: readonly string[]; readonly truncated: boolean }>;
-  search(input: unknown): Promise<{ readonly matches: readonly { readonly path: string; readonly line: number; readonly text: string }[];
-    readonly truncated: boolean }>;
-  read(input: unknown): Promise<{ readonly path: string; readonly content: string }>;
-  submit(input: unknown): TaskProposal;
-  metrics(): { readonly operations: number; readonly exposedBytes: number };
-  close(): void;
-}
-
-function sensitivePath(path: string): boolean {
-  const name = path.split("/").at(-1)?.toLowerCase() ?? "";
-  return name === ".env" || name.startsWith(".env.") || name === "credentials.json" || name === "secrets.json" ||
-    name === "auth.json" || name === ".npmrc" || name === ".pypirc" || name === ".netrc" ||
-    name === "id_rsa" || name === "id_ed25519" || /\.(?:pem|key|p12|pfx|secret)$/u.test(name);
-}
-
-function splitNull(value: string): string[] {
-  return value.split("\0").filter((path) => path.length > 0);
-}
 
 function contains(parent: string, child: string): boolean {
   const difference = relative(parent, child);
@@ -149,178 +116,6 @@ async function prepareStore(path: string, source: string): Promise<string> {
   return actual;
 }
 
-function containsBinaryControls(content: string): boolean {
-  for (const character of content) {
-    const code = character.codePointAt(0) ?? 0;
-    if (code < 32 && code !== 9 && code !== 10 && code !== 13 || code >= 127 && code <= 159) return true;
-  }
-  return false;
-}
-
-function parseTree(value: string): Map<string, BlobEntry> {
-  const entries = new Map<string, BlobEntry>();
-  for (const line of splitNull(value)) {
-    const match = /^(100644|100755) blob ([a-f0-9]{40}|[a-f0-9]{64}) +([0-9]+)\t([\s\S]+)$/u.exec(line);
-    if (match === null) throw new Error("Proposal discovery requires regular tracked files");
-    const [, , oid, sizeText, path] = match;
-    if (oid === undefined || sizeText === undefined || path === undefined || !validProposalPath(path)) {
-      throw new Error("Proposal discovery tree invalid");
-    }
-    const size = Number(sizeText);
-    if (!Number.isSafeInteger(size) || size < 0) throw new Error("Proposal discovery tree invalid");
-    if (!sensitivePath(path)) entries.set(path, { oid, size });
-  }
-  return entries;
-}
-
-class GitProposalDiscovery implements ProposalDiscovery {
-  readonly #source: string;
-  readonly #baseline: string;
-  readonly #files: Map<string, BlobEntry>;
-  readonly #dirtyPaths: readonly string[];
-  readonly #observed = new Set<string>();
-  readonly #fullyRead = new Set<string>();
-  #operations = 0;
-  #exposedBytes = 0;
-  #closed = false;
-
-  constructor(source: string, baseline: string, files: Map<string, BlobEntry>, dirtyPaths: readonly string[]) {
-    this.#source = source;
-    this.#baseline = baseline;
-    this.#files = files;
-    this.#dirtyPaths = dirtyPaths;
-  }
-
-  describe(): ProposalDiscoveryDescription {
-    return { source: this.#source, baseline: this.#baseline, dirtyPaths: this.#dirtyPaths,
-      checks: PROPOSAL_CHECKS, limits: PROPOSAL_LIMITS };
-  }
-
-  #admit(): void {
-    if (this.#closed) throw new Error("Proposal discovery closed");
-    this.#operations += 1;
-    if (this.#operations > PROPOSAL_LIMITS.operations) { this.close(); throw new Error("Proposal discovery denied"); }
-  }
-
-  #expose(text: string): void {
-    this.#exposedBytes += Buffer.byteLength(text);
-    if (this.#exposedBytes > PROPOSAL_LIMITS.exposedBytes) { this.close(); throw new Error("Proposal discovery denied"); }
-  }
-
-  #blobBytes(path: string): Buffer {
-    const entry = this.#files.get(path);
-    if (entry === undefined || entry.size > PROPOSAL_LIMITS.fileBytes) throw new Error("Proposal read denied");
-    const bytes = runRepositoryGitBytes(this.#source, ["cat-file", "blob", entry.oid]);
-    if (bytes.length !== entry.size) throw new Error("Proposal baseline blob changed");
-    return bytes;
-  }
-
-  #blob(path: string): string {
-    const content = new TextDecoder("utf-8", { fatal: true }).decode(this.#blobBytes(path));
-    if (containsBinaryControls(content)) throw new Error("Proposal read denied");
-    return content;
-  }
-
-  #searchableBlob(path: string): string | null {
-    try {
-      const content = new TextDecoder("utf-8", { fatal: true }).decode(this.#blobBytes(path));
-      return containsBinaryControls(content) ? null : content;
-    } catch (error) {
-      if (error instanceof TypeError) return null;
-      throw error;
-    }
-  }
-
-  async list(input: unknown): Promise<{ readonly files: readonly string[]; readonly truncated: boolean }> {
-    this.#admit();
-    const parsed = proposalListSchema.safeParse(input);
-    if (!parsed.success) throw new Error("Proposal list denied");
-    const { prefix } = parsed.data;
-    const matching = [...this.#files.keys()].filter((path) => path.startsWith(prefix));
-    const files = matching.slice(0, PROPOSAL_LIMITS.listedFiles);
-    this.#expose(files.join("\n"));
-    return { files, truncated: matching.length > files.length };
-  }
-
-  async search(input: unknown): Promise<{ readonly matches: readonly { readonly path: string; readonly line: number; readonly text: string }[];
-    readonly truncated: boolean }> {
-    this.#admit();
-    const parsed = proposalSearchSchema.safeParse(input);
-    if (!parsed.success) throw new Error("Proposal search denied");
-    const { query, prefix } = parsed.data;
-    const needle = query.toLocaleLowerCase("en-US");
-    const matches: { path: string; line: number; text: string }[] = [];
-    let scanned = 0;
-    let truncated = false;
-    for (const [path, entry] of this.#files) {
-      if (!path.startsWith(prefix) || entry.size > PROPOSAL_LIMITS.fileBytes) continue;
-      scanned += entry.size;
-      if (scanned > PROPOSAL_LIMITS.scannedBytes) { truncated = true; break; }
-      const content = this.#searchableBlob(path);
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      if (this.#closed) throw new Error("Proposal discovery closed");
-      if (content === null) continue;
-      const lines = content.split(/\r?\n/u);
-      for (let index = 0; index < lines.length; index += 1) {
-        const text = lines[index] ?? "";
-        if (!text.toLocaleLowerCase("en-US").includes(needle)) continue;
-        matches.push({ path, line: index + 1, text: text.slice(0, 400) });
-        this.#observed.add(path);
-        if (matches.length === PROPOSAL_LIMITS.searchMatches) { truncated = true; break; }
-      }
-      if (truncated) break;
-    }
-    this.#expose(JSON.stringify(matches));
-    return { matches, truncated };
-  }
-
-  async read(input: unknown): Promise<{ readonly path: string; readonly content: string }> {
-    this.#admit();
-    const parsed = proposalReadSchema.safeParse(input);
-    if (!parsed.success) throw new Error("Proposal read denied");
-    const { path } = parsed.data;
-    const content = this.#blob(path);
-    this.#observed.add(path);
-    this.#fullyRead.add(path);
-    this.#expose(content);
-    return { path, content };
-  }
-
-  submit(input: unknown): TaskProposal {
-    this.#admit();
-    const parsed = taskProposalSchema.safeParse(input);
-    if (!parsed.success) throw new Error("Proposal submission denied");
-    const proposal = parsed.data;
-    if (proposal.readFiles.some((path) => !this.#observed.has(path)) ||
-        proposal.writeFiles.some((path) => !this.#fullyRead.has(path))) {
-      this.close();
-      throw new Error("Proposal paths were not observed");
-    }
-    return proposal;
-  }
-
-  metrics(): { readonly operations: number; readonly exposedBytes: number } {
-    return { operations: this.#operations, exposedBytes: this.#exposedBytes };
-  }
-
-  close(): void { this.#closed = true; }
-}
-
-/** Observe only committed blobs; dirty source bytes are named but never read into discovery. */
-export async function openProposalDiscovery(sourceDirectory: string): Promise<ProposalDiscovery> {
-  const source = await realpath(runRepositoryGit(resolve(sourceDirectory), ["rev-parse", "--show-toplevel"]).trim());
-  assertNoRepositoryGitPrograms(source);
-  const baseline = runRepositoryGit(source, ["rev-parse", "--verify", "HEAD^{commit}"]).trim();
-  if (!isGitObjectId(baseline)) throw new Error("Proposal baseline invalid");
-  const files = parseTree(runRepositoryGit(source, ["ls-tree", "-r", "-l", "-z", "--full-tree", baseline]));
-  const dirty = new Set([
-    ...splitNull(runRepositoryGit(source, ["diff", "--no-renames", "--name-only", "-z", baseline, "--"])),
-    ...splitNull(runRepositoryGit(source, ["diff", "--cached", "--no-renames", "--name-only", "-z", baseline, "--"])),
-    ...splitNull(runRepositoryGit(source, ["ls-files", "--others", "--exclude-standard", "-z"])),
-  ].filter((path) => validProposalPath(path) && !sensitivePath(path)));
-  return new GitProposalDiscovery(source, baseline, files, [...dirty].sort());
-}
-
 function checkInputConflict(path: string, check: typeof PROPOSAL_CHECKS[number]): boolean {
   if (check !== "repository-check") return false;
   return path === "package.json" || path === "bun.lock" || path === ".oxlintrc.json" ||
@@ -335,6 +130,36 @@ function proposalConflicts(proposal: TaskProposal, dirtyPaths: readonly string[]
 export interface ProposedTask {
   readonly directory: string;
   readonly record: TaskProposalRecord;
+}
+
+export async function retainTaskProposal(options: {
+  readonly proposalsRoot: string;
+  readonly request: string;
+  readonly description: RepositoryDiscoveryDescription;
+  readonly result: PiDiscoveryResult & { readonly outcome: TaskProposalTurn };
+  readonly model: Model<Api>;
+}): Promise<ProposedTask> {
+  const { description, result } = options;
+  const proposal = result.outcome.proposal;
+  const dirtyConflicts = proposalConflicts(proposal, description.dirtyPaths);
+  const id = randomUUID();
+  const record = proposalRecordSchema.parse({
+    format: "tesota-task-proposal", version: 1, id, recordedAt: new Date().toISOString(),
+    source: description.source, baseline: description.baseline, request: options.request, authority: "none",
+    provenance: "model_proposed", status: dirtyConflicts.length === 0 ? "ready" : "blocked_dirty", proposal,
+    dirtyPaths: description.dirtyPaths, dirtyConflicts,
+    checks: proposal.checks.map((check) => ({ id: check, definition: "application_owned_declarative_only", executable: false })),
+    discovery: { provider: options.model.provider, model: options.model.id, inferenceTransport: "configured_provider",
+      modelControlledNetwork: false, modelInvocations: result.modelInvocations, toolCalls: result.toolCalls,
+      ...result.metrics, limits: PROPOSAL_LIMITS },
+  });
+  const root = await prepareStore(options.proposalsRoot, description.source);
+  const directory = resolve(root, id);
+  await mkdir(directory, { mode: 0o700 });
+  const file = await open(resolve(directory, "proposal.json"), "wx", 0o600);
+  try { await file.writeFile(JSON.stringify(record, null, 2) + "\n", "utf8"); await file.sync(); }
+  finally { await file.close(); }
+  return { directory, record };
 }
 
 /** Compact operator surface; retained JSON remains the machine-readable evidence. */
@@ -370,66 +195,14 @@ export async function proposeTask(options: {
   const request = z.string().trim().min(1).max(8_000).parse(options.request);
   await validateStoreLocation(options.proposalsRoot, await realpath(runRepositoryGit(resolve(options.sourceDirectory),
     ["rev-parse", "--show-toplevel"]).trim()));
-  const discovery = await openProposalDiscovery(options.sourceDirectory);
+  const discovery = await openRepositoryDiscovery(options.sourceDirectory);
   const description = discovery.describe();
-  let result: PiProposalDiscoveryResult;
-  try { result = await runPiProposalDiscovery(discovery, request, options.model, options.stream, options.signal); }
+  let result: PiDiscoveryResult;
+  try { result = await runPiDiscovery(discovery, request, "task_proposal", options.model, options.stream, options.signal); }
   finally { discovery.close(); }
-  if (result.status !== "completed" || result.proposal === null) throw new Error("Proposal discovery failed");
-  const dirtyConflicts = proposalConflicts(result.proposal, description.dirtyPaths);
-  const id = randomUUID();
-  const record = proposalRecordSchema.parse({
-    format: "tesota-task-proposal", version: 1, id, recordedAt: new Date().toISOString(),
-    source: description.source, baseline: description.baseline, request, authority: "none", provenance: "model_proposed",
-    status: dirtyConflicts.length === 0 ? "ready" : "blocked_dirty", proposal: result.proposal,
-    dirtyPaths: description.dirtyPaths, dirtyConflicts,
-    checks: result.proposal.checks.map((check) => ({ id: check, definition: "application_owned_declarative_only", executable: false })),
-    discovery: { provider: options.model.provider, model: options.model.id, inferenceTransport: "configured_provider",
-      modelControlledNetwork: false, modelInvocations: result.modelInvocations, toolCalls: result.toolCalls,
-      ...result.metrics, limits: PROPOSAL_LIMITS },
-  });
-  const root = await prepareStore(options.proposalsRoot, description.source);
-  const directory = resolve(root, id);
-  await mkdir(directory, { mode: 0o700 });
-  const file = await open(resolve(directory, "proposal.json"), "wx", 0o600);
-  try { await file.writeFile(JSON.stringify(record, null, 2) + "\n", "utf8"); await file.sync(); }
-  finally { await file.close(); }
-  return { directory, record };
-}
-
-/** Live command for Tesota's own repository; proposal persistence grants no execution authority. */
-export async function runTaskProposalCommand(rawRequest: string): Promise<number> {
-  if (process.platform !== "win32") {
-    process.stderr.write("Live task proposal is currently supported on Windows.\n");
-    return 2;
+  if (result.status !== "completed" || result.outcome?.kind !== "task_proposal") {
+    throw new Error("Proposal discovery failed");
   }
-  try {
-    const source = await realpath(runRepositoryGit(process.cwd(), ["rev-parse", "--show-toplevel"]).trim());
-    const packageRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)));
-    if (relative(packageRoot, source) !== "") {
-      process.stderr.write("Live task proposal currently supports only the Tesota repository root.\n");
-      return 2;
-    }
-    const cancellation = new AbortController();
-    const interrupt = (): void => cancellation.abort();
-    process.once("SIGINT", interrupt);
-    process.once("SIGTERM", interrupt);
-    try {
-      const models = await storedCodexModels(new CodexCredentials(), cancellation.signal);
-      const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
-      if (model?.api !== "openai-codex-responses") throw new Error("model unavailable");
-      const created = await proposeTask({ sourceDirectory: source, proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
-        request: rawRequest, model, stream: (requested, context, streamOptions) =>
-          models.streamSimple(requested, context, streamOptions), signal: cancellation.signal });
-      process.stdout.write(formatTaskProposal(created));
-      return created.record.status === "ready" ? 0 : 1;
-    } finally {
-      cancellation.abort();
-      process.removeListener("SIGINT", interrupt);
-      process.removeListener("SIGTERM", interrupt);
-    }
-  } catch {
-    process.stderr.write("Task proposal unavailable or failed; no candidate or execution authority was created.\n");
-    return 1;
-  }
+  return retainTaskProposal({ proposalsRoot: options.proposalsRoot, request, description,
+    result: { ...result, outcome: result.outcome }, model: options.model });
 }

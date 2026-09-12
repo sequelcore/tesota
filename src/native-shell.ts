@@ -1,11 +1,11 @@
 import { createInterface } from "node:readline/promises";
-import { runTaskProposalCommand } from "./task-proposal.js";
+import { runRepositoryConversationCommand } from "./conversation-turn.js";
 
 export interface NativeShellDependencies {
   readonly cwd: string;
   readonly write: (text: string) => void;
   readonly ask: (prompt: string) => Promise<string>;
-  readonly propose: (request: string) => Promise<number>;
+  readonly discover: (request: string) => Promise<number>;
 }
 
 export interface NativePromptTerminal {
@@ -32,7 +32,7 @@ export async function askNativeShellRequest(terminal: NativePromptTerminal, prom
 export async function runNativeShell(dependencies: NativeShellDependencies): Promise<number> {
   dependencies.write(
     `Tesota\nRepository: ${dependencies.cwd}\n` +
-    "Describe the change you want. File names are optional.\n\n",
+    "Ask about the repository or describe a change. File names are optional.\n\n",
   );
   const request = (await dependencies.ask("> ")).trim();
   if (request.length === 0) {
@@ -40,11 +40,11 @@ export async function runNativeShell(dependencies: NativeShellDependencies): Pro
     return 0;
   }
 
-  dependencies.write("\nDiscovering scope and checks. Nothing will be changed.\n\n");
-  const result = await dependencies.propose(request);
+  dependencies.write("\nInspecting the committed repository. Nothing will be changed.\n\n");
+  const result = await dependencies.discover(request);
   dependencies.write(result === 0
-    ? "Proposal ready. Execution from this session is not available yet.\n"
-    : "Proposal blocked or unavailable. Nothing changed.\n");
+    ? "Read-only turn complete. No execution authority was created.\n"
+    : "Request blocked or unavailable. Nothing changed.\n");
   return result;
 }
 
@@ -55,7 +55,7 @@ export async function runNativeShellCommand(): Promise<number> {
       cwd: process.cwd(),
       write: (text) => { process.stdout.write(text); },
       ask: async (prompt) => askNativeShellRequest(terminal, prompt),
-      propose: runTaskProposalCommand,
+      discover: runRepositoryConversationCommand,
     });
   } catch (error) {
     const cancelled = error instanceof Error && error.name === "AbortError";
