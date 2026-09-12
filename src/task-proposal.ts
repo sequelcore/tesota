@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -129,6 +129,40 @@ function proposalConflicts(proposal: TaskProposal, dirtyPaths: readonly string[]
 export interface ProposedTask {
   readonly directory: string;
   readonly record: TaskProposalRecord;
+}
+
+export interface LoadedTaskProposal extends ProposedTask {
+  readonly sha256: string;
+}
+
+const proposalIdSchema = z.uuid();
+
+/** Read retained proposal evidence without treating its contents as authority. */
+export async function loadTaskProposal(proposalsRoot: string, reference: string): Promise<LoadedTaskProposal> {
+  const id = proposalIdSchema.parse(reference);
+  const root = await plainDirectory(proposalsRoot);
+  const directory = resolve(root, id);
+  if (!contains(root, directory) || await plainDirectory(directory) !== directory) throw new Error("Proposal unavailable");
+  const path = resolve(directory, "proposal.json");
+  const metadata = await lstat(path);
+  if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 || metadata.size > 128 * 1024 ||
+      await realpath(path) !== path) throw new Error("Proposal unavailable");
+  const file = await open(path, "r");
+  try {
+    const bytes = Buffer.alloc(128 * 1024 + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const chunk = await file.read(bytes, length, bytes.length - length, null);
+      if (chunk.bytesRead === 0) break;
+      length += chunk.bytesRead;
+    }
+    if (length > 128 * 1024) throw new Error("Proposal exceeds bound");
+    const content = bytes.subarray(0, length);
+    const record = proposalRecordSchema.parse(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(content)));
+    if (record.id !== id) throw new Error("Proposal identity changed");
+    await validateStoreLocation(root, record.source);
+    return { directory, record, sha256: createHash("sha256").update(content).digest("hex") };
+  } finally { await file.close(); }
 }
 
 export async function retainTaskProposal(options: {

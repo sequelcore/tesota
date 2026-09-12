@@ -9,6 +9,7 @@ import { discoverConversationTurn, formatConversationTurn } from "../src/convers
 import { openRepositoryDiscovery } from "../src/repository-discovery.js";
 import { formatTaskProposal, type ProposedTask } from "../src/task-proposal.js";
 import { runPiDiscovery } from "../src/integrations/pi-discovery.js";
+import { admitTaskProposal } from "../src/proposal-admission.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -75,6 +76,19 @@ function proposalSteps(): FauxResponseStep[] {
       writeFiles: ["README.md", "docs/identity.md"],
       checks: ["repository-check"],
       uncertainties: [],
+    } })),
+    fauxAssistantMessage("Proposal ready."),
+  ];
+}
+
+function documentationProposalSteps(): FauxResponseStep[] {
+  return [
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "docs/identity.md" })),
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
+      objective: "Clarify the documented operator experience.",
+      completionConditions: ["The explanation uses plain language."],
+      readFiles: ["docs/identity.md"], writeFiles: ["docs/identity.md"],
+      checks: ["repository-check"], uncertainties: [],
     } })),
     fauxAssistantMessage("Proposal ready."),
   ];
@@ -170,6 +184,42 @@ it("produces and privately retains a non-authoritative proposal from bounded rea
       "tesota_list", "tesota_search", "tesota_read", "tesota_submit_result",
     ]);
   }
+});
+
+it("admits one current single-file documentation proposal without trusting it as authority", async () => {
+  const { source, proposals } = await fixture();
+  const fake = fakeModel(documentationProposalSteps());
+  const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "Clarify the operator experience.", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal });
+  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id, sourceDirectory: source }))
+    .resolves.toMatchObject({
+      kind: "proposal-documentation", proposalId: created.record.id, baseline: created.record.baseline,
+      objective: "Clarify the documented operator experience.", readFiles: ["docs/identity.md"],
+      writeFiles: ["docs/identity.md"],
+      verification: { scopeIntegrity: "application_owned", repositoryCheck: "not_executed_in_first_slice" },
+    });
+});
+
+it("rejects stale and unsupported proposal evidence before issuing a run grant", async () => {
+  const { source, proposals } = await fixture();
+  const supported = fakeModel(documentationProposalSteps());
+  const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "Clarify the operator experience.", model: supported.model, stream: supported.stream,
+    signal: new AbortController().signal });
+  await writeFile(join(source, "README.md"), "# Changed baseline\n");
+  git(source, ["add", "README.md"]);
+  git(source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit",
+    "--quiet", "--no-gpg-sign", "-m", "Advance baseline"]);
+  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id, sourceDirectory: source }))
+    .rejects.toThrow("stale");
+
+  const unsupported = fakeModel(proposalSteps());
+  const multi = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "Change two files.", model: unsupported.model, stream: unsupported.stream,
+    signal: new AbortController().signal });
+  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: multi.record.id, sourceDirectory: source }))
+    .rejects.toThrow("unsupported");
 });
 
 it("answers a repository question from observed baseline evidence without retaining a proposal", async () => {
