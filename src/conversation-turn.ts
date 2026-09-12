@@ -65,16 +65,21 @@ async function liveSource(): Promise<string | null> {
   return relative(packageRoot, source) === "" ? source : null;
 }
 
-async function runLiveConversation(rawRequest: string, allowedOutcome: DiscoveryOutcome): Promise<number> {
+export interface ConversationCommandResult {
+  readonly exitCode: number;
+  readonly proposalId?: string;
+}
+
+async function runLiveConversation(rawRequest: string, allowedOutcome: DiscoveryOutcome): Promise<ConversationCommandResult> {
   if (process.platform !== "win32") {
     process.stderr.write("Live repository discovery is currently supported on Windows.\n");
-    return 2;
+    return { exitCode: 2 };
   }
   try {
     const source = await liveSource();
     if (source === null) {
       process.stderr.write("Live repository discovery currently supports only the Tesota repository root.\n");
-      return 2;
+      return { exitCode: 2 };
     }
     const cancellation = new AbortController();
     const interrupt = (): void => cancellation.abort();
@@ -89,7 +94,10 @@ async function runLiveConversation(rawRequest: string, allowedOutcome: Discovery
         stream: (requested, context, streamOptions) => models.streamSimple(requested, context, streamOptions),
         signal: cancellation.signal });
       process.stdout.write(formatConversationTurn(turn));
-      return turn.kind === "task_proposal" && turn.proposedTask.record.status !== "ready" ? 1 : 0;
+      return turn.kind === "task_proposal" ? {
+        exitCode: turn.proposedTask.record.status === "ready" ? 0 : 1,
+        ...(turn.proposedTask.record.status === "ready" ? { proposalId: turn.proposedTask.record.id } : {}),
+      } : { exitCode: 0 };
     } finally {
       cancellation.abort();
       process.removeListener("SIGINT", interrupt);
@@ -97,16 +105,20 @@ async function runLiveConversation(rawRequest: string, allowedOutcome: Discovery
     }
   } catch {
     process.stderr.write("Repository discovery unavailable or failed; nothing changed and no authority was created.\n");
-    return 1;
+    return { exitCode: 1 };
   }
 }
 
 /** Conversational shell turn; questions and change requests share the same read-only boundary. */
 export async function runRepositoryConversationCommand(rawRequest: string): Promise<number> {
+  return (await runLiveConversation(rawRequest, "conversation")).exitCode;
+}
+
+export async function runRepositoryConversationForShell(rawRequest: string): Promise<ConversationCommandResult> {
   return runLiveConversation(rawRequest, "conversation");
 }
 
 /** Explicit proposal command; its narrower contract does not accept answer or clarification results. */
 export async function runTaskProposalCommand(rawRequest: string): Promise<number> {
-  return runLiveConversation(rawRequest, "task_proposal");
+  return (await runLiveConversation(rawRequest, "task_proposal")).exitCode;
 }

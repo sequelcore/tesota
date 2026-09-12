@@ -1,11 +1,13 @@
 import { createInterface } from "node:readline/promises";
-import { runRepositoryConversationCommand } from "./conversation-turn.js";
+import { runRepositoryConversationForShell, type ConversationCommandResult } from "./conversation-turn.js";
+import { runTaskStartCommand } from "./task-start.js";
 
 export interface NativeShellDependencies {
   readonly cwd: string;
   readonly write: (text: string) => void;
   readonly ask: (prompt: string) => Promise<string>;
-  readonly discover: (request: string) => Promise<number>;
+  readonly discover: (request: string) => Promise<ConversationCommandResult>;
+  readonly start: (proposalId: string) => Promise<number>;
 }
 
 export interface NativePromptTerminal {
@@ -42,20 +44,25 @@ export async function runNativeShell(dependencies: NativeShellDependencies): Pro
 
   dependencies.write("\nInspecting the committed repository. Nothing will be changed.\n\n");
   const result = await dependencies.discover(request);
-  dependencies.write(result === 0
-    ? "Read-only turn complete. No execution authority was created.\n"
+  dependencies.write(result.exitCode === 0
+    ? result.proposalId === undefined ? "Read-only turn complete. No execution authority was created.\n" :
+      "Proposal ready. Execution still requires your approval.\n"
     : "Request blocked or unavailable. Nothing changed.\n");
-  return result;
+  return result.proposalId === undefined ? result.exitCode : dependencies.start(result.proposalId);
 }
 
 export async function runNativeShellCommand(): Promise<number> {
-  const terminal = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  let terminal: ReturnType<typeof createInterface> | undefined;
   try {
     return await runNativeShell({
       cwd: process.cwd(),
       write: (text) => { process.stdout.write(text); },
-      ask: async (prompt) => askNativeShellRequest(terminal, prompt),
-      discover: runRepositoryConversationCommand,
+      ask: async (prompt) => {
+        terminal = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+        return askNativeShellRequest(terminal, prompt);
+      },
+      discover: runRepositoryConversationForShell,
+      start: runTaskStartCommand,
     });
   } catch (error) {
     const cancelled = error instanceof Error && error.name === "AbortError";
@@ -64,6 +71,6 @@ export async function runNativeShellCommand(): Promise<number> {
       : "Tesota session ended before the read-only turn completed. Nothing changed.\n");
     return cancelled ? 130 : 1;
   } finally {
-    terminal.close();
+    terminal?.close();
   }
 }

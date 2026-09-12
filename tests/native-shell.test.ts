@@ -3,7 +3,7 @@ import { askNativeShellRequest, runNativeShell } from "../src/native-shell.js";
 
 it("starts a Tesota-owned conversation and sends the natural-language request to discovery", async () => {
   const output: string[] = [];
-  const discover = vi.fn(async () => 0);
+  const discover = vi.fn(async () => ({ exitCode: 0 }));
 
   const result = await runNativeShell({
     cwd: "C:\\work\\tesota",
@@ -13,6 +13,7 @@ it("starts a Tesota-owned conversation and sends the natural-language request to
       return "  Corrige la experiencia del shell.  ";
     },
     discover,
+    start: vi.fn(),
   });
 
   expect(result).toBe(0);
@@ -30,13 +31,14 @@ it("starts a Tesota-owned conversation and sends the natural-language request to
 
 it("ends without inference when the operator enters no request", async () => {
   const output: string[] = [];
-  const discover = vi.fn(async () => 0);
+  const discover = vi.fn(async () => ({ exitCode: 0 }));
 
   const result = await runNativeShell({
     cwd: "C:\\work\\tesota",
     write: (text) => { output.push(text); },
     ask: async () => "   ",
     discover,
+    start: vi.fn(),
   });
 
   expect(result).toBe(0);
@@ -51,11 +53,23 @@ it("reports a blocked proposal without claiming executable progress", async () =
     cwd: "C:\\work\\tesota",
     write: (text) => { output.push(text); },
     ask: async () => "Update the docs",
-    discover: async () => 1,
+    discover: async () => ({ exitCode: 1 }),
+    start: vi.fn(),
   });
 
   expect(result).toBe(1);
   expect(output.at(-1)).toBe("Request blocked or unavailable. Nothing changed.\n");
+});
+
+it("continues a ready proposal into the approval flow without asking for its id", async () => {
+  const output: string[] = [];
+  const start = vi.fn(async () => 0);
+  const result = await runNativeShell({ cwd: "C:\\work\\tesota", write: (text) => output.push(text),
+    ask: async () => "Update the guide", discover: async () => ({ exitCode: 0,
+      proposalId: "9877887d-1475-4439-a0a6-c1c85091fc9e" }), start });
+  expect(result).toBe(0);
+  expect(start).toHaveBeenCalledWith("9877887d-1475-4439-a0a6-c1c85091fc9e");
+  expect(output.at(-1)).toBe("Proposal ready. Execution still requires your approval.\n");
 });
 
 it("releases readline before discovery so process interruption reaches the proposal owner", async () => {
