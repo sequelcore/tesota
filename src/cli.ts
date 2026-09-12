@@ -12,6 +12,7 @@ Usage: tesota [--help | -h | help]
        tesota task prepare <candidate-directory>
        tesota task check <candidate-directory>
        tesota task propose <request>
+       tesota task start <proposal-id>
        tesota task run [task-id]
        tesota task recover <candidate-id|candidate-directory>
        tesota task run coding-agent
@@ -43,6 +44,9 @@ if (args.length === 0 && process.stdin.isTTY === true && process.stdout.isTTY ==
 } else if (args.length === 3 && args[0] === "task" && args[1] === "recover" && args[2] !== undefined) {
   const { recoverTaskCommand } = await import("./task-run.js");
   process.exit(await recoverTaskCommand(args[2]));
+} else if (args.length === 3 && args[0] === "task" && args[1] === "start" && args[2] !== undefined) {
+  const { runTaskStartCommand } = await import("./task-start.js");
+  process.exit(await runTaskStartCommand(args[2]));
 } else if (args.length >= 3 && args[0] === "task" && args[1] === "propose") {
   const { runTaskProposalCommand } = await import("./conversation-turn.js");
   process.exit(await runTaskProposalCommand(args.slice(2).join(" ")));

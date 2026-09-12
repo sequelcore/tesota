@@ -6,6 +6,7 @@ import { candidateDiff, createCandidateCheckout, createCandidateSuccessor, inspe
   listCandidateCheckouts, type CandidateCheckout } from "./candidate-checkout.js";
 import { CandidateTask, checkCandidateTask, inspectCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
 import { DEFAULT_CANDIDATE_TASK_ID, parseCandidateTaskId, type CandidateTaskId } from "./candidate-task-definition.js";
+import { PROPOSAL_TASK_KIND, type ProposalRunGrant } from "./proposal-admission.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { PI_TASK_LIMITS, piTaskPasses, runPiTask, type PiTaskResult } from "./integrations/pi-task.js";
@@ -88,7 +89,13 @@ export async function prepareTaskRecovery(reference: string): Promise<PreparedTa
   return { predecessor: predecessor.directory, taskId, priorOutcome, candidate };
 }
 
-async function runPreparedTask(candidate: CandidateCheckout, taskId: CandidateTaskId, recovery?: Recovery): Promise<number> {
+export interface TaskRunResult {
+  readonly candidate: CandidateCheckout;
+  readonly status: "passed" | "failed";
+}
+
+async function runPreparedTask(candidate: CandidateCheckout, grantOrTaskId: CandidateTaskId | ProposalRunGrant,
+  recovery?: Recovery): Promise<TaskRunResult> {
   const cancellation = new AbortController();
   const interrupt = (): void => cancellation.abort();
   process.once("SIGINT", interrupt);
@@ -120,7 +127,8 @@ async function runPreparedTask(candidate: CandidateCheckout, taskId: CandidateTa
         ...(recovery === undefined ? {} : { recovery }) }) + "\n");
       await record.sync();
       if (cancellation.signal.aborted) throw new Error("Task interrupted");
-      task = await CandidateTask.prepare(candidate.directory, taskId);
+      task = typeof grantOrTaskId === "string" ? await CandidateTask.prepare(candidate.directory, grantOrTaskId) :
+        await CandidateTask.prepareProposal(candidate.directory, grantOrTaskId);
       const models = await storedCodexModels(new CodexCredentials(), cancellation.signal);
       const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
       if (model?.api !== "openai-codex-responses") throw new Error("Task model unavailable");
@@ -146,10 +154,10 @@ async function runPreparedTask(candidate: CandidateCheckout, taskId: CandidateTa
       } finally { await record.close(); }
     }
     process.stdout.write(passed && reviewSaved ? "Task checks passed; diff retained for human review.\n" : "Task unaccepted; inspect the retained checks and diff.\n");
-    return passed && reviewSaved ? 0 : 1;
+    return { candidate, status: passed && reviewSaved ? "passed" : "failed" };
   } catch {
     process.stderr.write("Task preparation or evidence persistence failed. No promotion occurred.\n");
-    return 1;
+    return { candidate, status: "failed" };
   } finally {
     cancellation.abort();
     clearTimeout(watchdog);
@@ -169,7 +177,7 @@ export async function runTaskCommand(requestedTaskId: string = DEFAULT_CANDIDATE
     process.stderr.write("Live repository tasks are currently supported on Windows.\n");
     return 2;
   }
-  try { return await runPreparedTask(await createCandidateCheckout(process.cwd()), taskId); }
+  try { return (await runPreparedTask(await createCandidateCheckout(process.cwd()), taskId)).status === "passed" ? 0 : 1; }
   catch {
     process.stderr.write("Task preparation or evidence persistence failed. No promotion occurred.\n");
     return 1;
@@ -192,9 +200,15 @@ export async function recoverTaskCommand(reference: string): Promise<number> {
       priorOutcome: prepared.priorOutcome,
       authority: "local_operator_request",
     });
-    return await runPreparedTask(prepared.candidate, prepared.taskId, recovery);
+    return (await runPreparedTask(prepared.candidate, prepared.taskId, recovery)).status === "passed" ? 0 : 1;
   } catch {
     process.stderr.write("Task recovery unavailable. No predecessor state was changed.\n");
     return 2;
   }
+}
+
+/** Execute only an in-memory proposal grant already issued by the admission owner. */
+export async function runProposalTask(grant: ProposalRunGrant): Promise<TaskRunResult> {
+  if (grant.kind !== PROPOSAL_TASK_KIND || process.platform !== "win32") throw new Error("Proposal execution unavailable");
+  return runPreparedTask(await createCandidateCheckout(grant.source), grant);
 }
