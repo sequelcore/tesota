@@ -334,9 +334,11 @@ promotion retains its source-conflict preflight.
 
 Local tests qualify admission, unsupported and stale rejection, dynamic candidate
 scope, grant-tamper rejection, review, decision, promotion, replay exclusion and
-the shell handoff. Stored-OAuth end-to-end use remains unqualified. The next step
-is that real run; its evidence should decide whether to improve clarification and
-progress rendering or broaden admission. Scope expansion, richer recovery,
+the shell handoff. One stored-OAuth run also completed the full lifecycle for an
+operator-described `docs/proposals.md` change. A preceding attempt safely denied
+an edit made before the mandatory initial check; the prompt correction then passed
+the fresh one-shot run. This evidence favors improving clarification and progress
+rendering before broadening admission. Scope expansion, richer recovery,
 arbitrary shell execution, sandboxed candidate commands, mandatory external
 review and a full-screen TUI remain later slices justified by observed use.
 

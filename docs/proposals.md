@@ -137,3 +137,23 @@ result was an `answer` grounded in `src/native-shell.ts` and
 no repository files and left the private proposal-directory count unchanged at
 three. This qualifies one live answer path, not general intent recognition,
 clarification usefulness or answer correctness beyond the inspected example.
+
+The first live proposal-start attempt on 2026-09-12 UTC exposed a prompt defect
+without changing source. Proposal `ea1aa560-d6f1-4906-8c9a-ba4b52464b37`
+correctly selected `docs/proposals.md` from an outcome-only request and received
+scope approval, but Luna attempted replacement before the mandatory initial check.
+Tesota denied the operation, retained failed candidate
+`b61901b9-e79c-41ab-a14c-a9772cbc7211` with zero edits, and created no decision
+or promotion. The executor prompt was then corrected and covered by a test; the
+consumed proposal was not replayed or resumed.
+
+A fresh shell run against baseline `8f96f6bfd79c382b2915eb402d70bb618a5f385d`
+created proposal `61e2573c-fd42-4425-b210-10dacde06c49` and passed its ID directly
+to the approval flow. Candidate `5b83844e-ef91-4e32-80cf-07125fafaf56` completed
+through five model invocations, four tool calls, one edit, an initial failed scope
+check and a final passing scope check. The escaped diff was inspected, explicitly
+accepted and promoted only `docs/proposals.md`. The promoted documentation change
+was committed as `571fef2f`; the complete repository gate subsequently passed
+22 test files and 299 tests after two slow integration cases received explicit
+bounded timeouts. This qualifies one end-to-end documentation lifecycle and its
+fail-closed correction path, not general tasks or repository-command execution.
