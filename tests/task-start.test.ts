@@ -136,3 +136,31 @@ it("records failure and grants no decision when Ctrl+C cancels either approval p
   expect(decide).not.toHaveBeenCalled(); expect(promote).not.toHaveBeenCalled();
   expect(await readFile(join(after.directory, "start.jsonl"), "utf8")).toContain('"outcome":"failed"');
 });
+
+it("reports an applied promotion without recording false failure when final start evidence cannot persist", async () => {
+  const current = await fixture();
+  const candidate = { directory: join(current.directory, "candidate"), checkout: join(current.directory, "repo"),
+    baseline: current.baseline, sourceDirty: false };
+  const review = passingReview(candidate.directory, current.baseline);
+  const records: Record<string, unknown>[] = [];
+  const output: string[] = [];
+  const options = {
+    proposalsRoot: current.proposalsRoot, sourceDirectory: current.source, reference: current.id,
+    ask: vi.fn().mockResolvedValueOnce("yes").mockResolvedValueOnce("yes"), write: (text: string) => output.push(text),
+    execute: async () => ({ candidate, status: "passed" as const }), review: async () => review,
+    decide: async () => ({ ...review, operatorDecision: { record: { format: "tesota-task-decision" as const,
+      version: 1 as const, decision: "accept" as const, reviewSha256: review.reviewSha256,
+      recordedAt: new Date().toISOString(), authority: "local_operator_assertion" as const },
+    provenance: "recorded_untrusted" as const, applicability: "current" as const } }),
+    promote: async () => ({ status: "applied" as const, source: current.source,
+      files: [{ path: "docs/guide.md", sourceSha256: "d".repeat(64) }] }),
+    record: async (_file: unknown, value: object) => {
+      const entry = Object.fromEntries(Object.entries(value));
+      records.push(entry);
+      if (entry["outcome"] === "promoted") throw new Error("synthetic storage failure");
+    },
+  };
+  await expect(startTask(options)).resolves.toBe(1);
+  expect(records.some((record) => record["outcome"] === "failed")).toBe(false);
+  expect(output.join("")).toContain("Promotion applied, but proposal start evidence is incomplete");
+});
