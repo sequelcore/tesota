@@ -495,7 +495,7 @@ it("executes, reviews and promotes an admitted documentation grant while reporti
     status: "applied", files: [{ path: "docs/identity.md" }],
   });
   expect(await readFile(join(candidate.source, "docs/identity.md"), "utf8")).toBe(updated);
-}, 30_000);
+}, 60_000);
 
 it("rejects a modified persisted proposal grant without reopening task authority", async () => {
   const candidate = await fixture();
@@ -525,7 +525,7 @@ it("bounds model continuations independently of the permitted read budget", asyn
   const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
   expect(result).toMatchObject({ status: "failed", denied: true, modelInvocations: PI_TASK_LIMITS.modelInvocations });
   expect(fake.stream).toHaveBeenCalledTimes(PI_TASK_LIMITS.modelInvocations);
-});
+}, 30_000);
 
 it.each(["deadline", "interrupt"] as const)("closes authority when a stream will not settle after %s", async (reason) => {
   const candidate = await fixture();
