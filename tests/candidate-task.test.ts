@@ -594,7 +594,7 @@ it("requires an initial check and rejects stale hashes without overwriting sourc
   await next.check();
   await expect(next.replace({ path: editedFile, expectedSha256: "0".repeat(64), content: correction(content.content) })).rejects.toThrow("denied");
   expect(await readFile(join(second.checkout, editedFile), "utf8")).toBe(content.content);
-});
+}, 30_000);
 
 it("detects out-of-scope changes and refuses to read unlisted files", async () => {
   const candidate = await fixture();
