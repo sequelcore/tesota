@@ -75,7 +75,9 @@ The first execution slice accepts exactly one existing `.md` write below `docs/`
 at most eight proposed reads including that file, and the declarative
 `repository-check`. The proposal must be `ready`, belong to the current repository
 and match its current `HEAD`. Other paths, multiple writes, stale baselines and
-blocked proposals fail before candidate creation.
+blocked proposals fail before candidate creation. Read paths are rechecked against
+the discovery exclusion policy, so rewriting retained JSON cannot expose `.env`,
+credential, secret or private-key paths to candidate inference.
 
 ```sh
 bun start task start <proposal-id>
@@ -103,6 +105,12 @@ then asks the person to accept or reject those exact reviewed bytes. Acceptance
 and passing scope evidence remain separate. An accepted candidate is promoted
 only if the source baseline and target bytes still match; a conflict changes no
 source file.
+
+Each approval question owns readline only while the person is answering it. Once
+scope is approved, readline closes so Ctrl+C reaches the active task cancellation
+owner instead of being consumed by the prompt. A cancelled execution returns 130,
+retains its candidate evidence and creates no review decision or promotion. Ctrl+C
+at either question also grants no new authority.
 
 Exit 0 reports a completed answer, clarification or proposal ready for review.
 Exit 1 reports a blocked proposal or failed discovery. Invalid or unsupported live

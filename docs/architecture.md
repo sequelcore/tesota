@@ -13,6 +13,7 @@ describes those intended capabilities separately.
 | --- | --- |
 | [src/cli.ts](../src/cli.ts) | Dispatch the interactive entry point, verification, authentication and candidate commands |
 | [src/native-shell.ts](../src/native-shell.ts) | Own the inline terminal prompt and continue a ready proposal into its approval flow without exposing lifecycle IDs |
+| [src/terminal-question.ts](../src/terminal-question.ts) | Own cancellable one-question readline lifetimes so execution receives process interrupts directly |
 | [src/conversation-turn.ts](../src/conversation-turn.ts) | Own valid read-only turn outcomes, live setup and operator-facing result formatting |
 | [src/conversation-turn-contract.ts](../src/conversation-turn-contract.ts) | Parse the answer, clarification and task-proposal result variants |
 | [src/candidate-checkout.ts](../src/candidate-checkout.ts) | Create independent committed checkouts and inspect changes against their baselines |
@@ -80,7 +81,10 @@ concurrent start, but remains evidence rather than reusable authority. The model
 receives only bounded read, replace and application-owned scope-check tools. No
 candidate command, repository check or model-controlled network operation runs
 in this first proposal slice. The escaped diff discloses that limitation before
-a separate human accept/reject decision and explicit guarded promotion. When standard input, output or error is
+a separate human accept/reject decision and explicit guarded promotion. Each
+question releases readline before the next lifecycle phase; Ctrl+C during
+execution therefore reaches the candidate owner, records cancellation and cannot
+grant a decision or promotion. When standard input, output or error is
 not an interactive terminal, the argument-free CLI preserves the non-inferential
 help behavior.
 

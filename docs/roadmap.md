@@ -330,7 +330,9 @@ authority. Execution stays inside an independent candidate with bounded read,
 replace and scope-check operations. No candidate command or repository check runs,
 and the review says plainly that prose correctness remains a human judgment.
 Exclusive start evidence rejects replay, concurrent and resumed execution;
-promotion retains its source-conflict preflight.
+promotion retains its source-conflict preflight. Discovery-sensitive paths are
+rejected again when proposal evidence is admitted or a persisted grant is checked.
+Short-lived readline ownership leaves Ctrl+C available to cancel active execution.
 
 Local tests qualify admission, unsupported and stale rejection, dynamic candidate
 scope, grant-tamper rejection, review, decision, promotion, replay exclusion and
