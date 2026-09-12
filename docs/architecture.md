@@ -2,14 +2,16 @@
 
 Tesota currently has one private TypeScript package with a verification CLI,
 opt-in live integration experiments, and five registered bounded repository tasks.
-It has no general production task runtime or interactive agent shell. The
-[roadmap](roadmap.md) describes those intended capabilities separately.
+It has a first interactive shell for one natural-language discovery request, but
+no general production task runtime or proposal execution. The [roadmap](roadmap.md)
+describes those intended capabilities separately.
 
 ## Implemented ownership
 
 | Owner | Responsibility |
 | --- | --- |
-| [src/cli.ts](../src/cli.ts) | Dispatch verification, authentication and candidate commands |
+| [src/cli.ts](../src/cli.ts) | Dispatch the interactive entry point, verification, authentication and candidate commands |
+| [src/native-shell.ts](../src/native-shell.ts) | Own the first inline terminal conversation and route one request to bounded proposal discovery |
 | [src/candidate-checkout.ts](../src/candidate-checkout.ts) | Create independent committed checkouts and inspect changes against their baselines |
 | [src/repository-git.ts](../src/repository-git.ts) | Run fixed shell-free local Git operations without ambient config, hooks, credentials or network protocols |
 | [src/task-proposal-contract.ts](../src/task-proposal-contract.ts) | Own proposal vocabulary, tool request schemas, declarative check IDs and discovery limits |
@@ -60,6 +62,12 @@ arbitrary network tool. Its retained version 1 record has `authority: "none"` an
 no reader or execution consumer. The configured provider call is inference
 transport, not model-controlled repository network access. See the
 [proposal contract](proposals.md).
+
+The native shell currently collects one request and invokes that discovery
+boundary. It does not parse retained proposal files, grant authority, create a
+candidate, approve work or execute checks. When standard input, output or error is
+not an interactive terminal, the argument-free CLI preserves the non-inferential
+help behavior.
 
 ## Engine boundary
 

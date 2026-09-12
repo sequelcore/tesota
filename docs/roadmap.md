@@ -33,6 +33,7 @@ validation of the current checkout.
 | Registered task execution | Passed for a second live task | One immutable registry owns four task contracts and the shared engine has no task-name branches; the candidate-source task passed direct, simulated-Pi and stored-OAuth live correction through the same bounded operations |
 | Registered multi-file task | Locally verified for a two-file write set | One task can read, replace, check, review and promote two registered paths; checks and review bind the ordered write set, and promotion preflights every source target before its first rename |
 | Natural-language task proposal | Stored-OAuth discovery and dirty-input blocking passed | A Spanish goal named no files; bounded read-only discovery selected one documentation path, retained a strict proposal and reported relevant excluded changes with no candidate or execution authority |
+| Native terminal shell | Started with locally verified discovery entry | Interactive `tesota` accepts one natural-language request and routes it to bounded proposal discovery; approval, execution, progress and review remain unimplemented |
 | Task recovery successor | Passed for one interrupted live task | An explicit command validated the failed predecessor, recreated its exact baseline in a clean candidate, recorded the relationship and completed a fresh Pi correction without inheriting bytes, evidence or acceptance |
 | Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
 | Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
@@ -170,8 +171,8 @@ The intended acceptance exercise must demonstrate that:
 5. The report presents the diff, actual checks, observed consumption and limits.
 6. Human acceptance and promotion remain separate from model completion and checks.
 
-The primary inline terminal session and operator-defined task execution still need
-implementation. The proposed [natural-language task experience](decisions/003-natural-language-task-experience.md)
+The primary inline terminal session has started, while operator-defined task
+execution still needs implementation. The proposed [natural-language task experience](decisions/003-natural-language-task-experience.md)
 lets an operator state an outcome without naming files, then separates read-only
 discovery, a task proposal, an operator-approved run grant, bounded candidate
 execution and later review and promotion. Registered single-file and multi-file
@@ -314,7 +315,7 @@ separately. Local fake-provider behavior and stored-OAuth `blocked_dirty` and
 clean `ready` proposals are qualified. Neither live result establishes proposal
 correctness, acceptance or executable admission.
 
-The next product increment combines a thin inline `tesota` session with a narrow
+The next product increment extends the thin inline `tesota` session with a narrow
 `task start <proposal-id>` consumer. It must let an operator complete one real
 task through request, proposal, one approval, isolated execution, applicable
 checks, diff, human decision and conflict-safe promotion without manually copying

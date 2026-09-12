@@ -1,8 +1,9 @@
 # 003: Natural-language task experience
 
-Status: proposed product direction. Read-only `task propose` is implemented and
-locally verified, and one stored-OAuth dirty-input block has passed; approval, run
-grants and general execution are not implemented.
+Status: proposed product direction. Read-only `task propose` and the first
+argument-free conversational entry point are implemented and locally verified;
+stored-OAuth dirty-input blocking and clean proposal creation have passed.
+Approval, run grants and general execution are not implemented.
 
 ## Problem
 

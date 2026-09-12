@@ -15,7 +15,11 @@ Run commands from the repository root.
 | `bun run lint` | Check source and tests; no fixes, warnings rejected |
 | `bun run check` | Run the complete repository gate |
 
-The main CLI accepts no arguments, `help`, `--help` or `-h` for help (exit 0).
+With no arguments, the main CLI opens the first conversational shell when standard
+input, output and error are interactive terminals. It accepts one natural-language
+request and routes it to the existing read-only proposal command; it cannot approve
+or execute the proposal. With no arguments in a non-interactive process, or with
+`help`, `--help` or `-h`, it prints help (exit 0).
 `candidate create` and `candidate inspect <id|directory>` prepare and inspect
 [independent checkouts](candidates.md); they do not invoke a model.
 `candidate list` summarizes stored candidates by lifecycle status, and

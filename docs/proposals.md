@@ -1,9 +1,10 @@
 # Task proposals
 
-`task propose` is Tesota's first natural-language repository discovery surface.
-It turns an operator request into a concise proposed outcome, read/write set and
-declarative check selection. It does not create a candidate, edit files, execute
-repository code, approve work or create a run grant.
+Proposal discovery turns an operator request into a concise proposed outcome,
+read/write set and declarative check selection. It is available through the
+`task propose` command and the first interactive `tesota` shell. It does not
+create a candidate, edit files, execute repository code, approve work or create
+a run grant.
 
 ## Use
 
@@ -11,11 +12,15 @@ After the [saved Codex login](authentication.md), build Tesota and run it from
 the Tesota repository root:
 
 ```sh
+bun start
 bun start task propose "Clarify the task recovery documentation"
 ```
 
-The request is ordinary language. File names are optional hints, not required
-syntax. A successful command prints the objective, proposed files, completion
+With no arguments in an interactive terminal, Tesota asks for one request and
+routes it through the same discovery boundary. The explicit subcommand accepts
+the request directly and remains useful for automation and diagnosis. In both
+cases the request is ordinary language; file names are optional hints, not required
+syntax. A successful discovery prints the objective, proposed files, completion
 conditions, check names, exact committed baseline and retained proposal directory.
 `ready for review` means only that discovery produced a structurally admitted
 proposal. It does not mean the proposal is correct, accepted or executable.

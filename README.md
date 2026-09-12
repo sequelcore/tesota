@@ -33,7 +33,9 @@ refusing conflicting source changes before the first source write.
 The new [`task propose`](docs/proposals.md) command accepts an ordinary-language
 goal and uses bounded, read-only discovery over committed Tesota files to retain
 a non-authoritative proposed scope. It creates no candidate and cannot execute
-the proposal.
+the proposal. In an interactive terminal, running `tesota` now opens the first
+Tesota-owned conversational shell and sends one ordinary-language request through
+that same discovery boundary. The shell does not yet approve or execute proposals.
 See the [roadmap](docs/roadmap.md) for demonstrated progress and remaining work.
 The proposed [natural-language task experience](docs/decisions/003-natural-language-task-experience.md)
 defines how later approval and execution will remain separate from this proposal.
@@ -47,9 +49,14 @@ Node runs development tools; Bun runs the compiled CLI.
 ```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run check
+bun --no-env-file dist/cli.js
 bun --no-env-file dist/cli.js --help
 bun --no-env-file dist/cli.js verify src/cli.ts
 ```
+
+The argument-free command opens the conversational shell only when all three
+standard streams are attached to a terminal. In a non-interactive process it
+prints help and performs no inference.
 
 `check` builds, typechecks source and tests, runs tests including compiled CLI
 behavior, and runs Oxlint without fixes. Repository lint enforces classic
