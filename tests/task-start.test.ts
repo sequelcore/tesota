@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { startTask } from "../src/task-start.js";
+import { askTaskStartQuestion, startTask } from "../src/task-start.js";
 import type { TaskReview } from "../src/task-review.js";
 
 const roots: string[] = [];
@@ -94,4 +94,45 @@ it("creates no run record before approval and rejects replay after a start", asy
   await expect(startTask(options)).resolves.toBe(1);
   await expect(startTask(options)).rejects.toThrow();
   expect(failed).toHaveBeenCalledOnce();
+});
+
+it("releases each task-start prompt and maps cancellation without promotion", async () => {
+  const events: string[] = [];
+  const terminal = {
+    question: vi.fn(async () => { events.push("question"); return "yes"; }),
+    once: vi.fn(() => terminal), removeListener: vi.fn(() => terminal),
+    close: vi.fn(() => events.push("close")),
+  };
+  await expect(askTaskStartQuestion("Approve? ", () => terminal)).resolves.toBe("yes");
+  expect(events).toEqual(["question", "close"]);
+
+  const current = await fixture();
+  const candidate = { directory: "cancelled-candidate", checkout: "cancelled-checkout",
+    baseline: current.baseline, sourceDirty: false };
+  const output: string[] = [];
+  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, ask: async () => "yes", write: (text) => output.push(text),
+    execute: async () => ({ candidate, status: "cancelled" }) })).resolves.toBe(130);
+  expect(output.join("")).toContain("Execution did not pass");
+  expect(await readFile(join(current.directory, "start.jsonl"), "utf8")).toContain('"outcome":"cancelled"');
+});
+
+it("records failure and grants no decision when Ctrl+C cancels either approval prompt", async () => {
+  const before = await fixture();
+  const abort = new DOMException("cancelled", "AbortError");
+  await expect(startTask({ proposalsRoot: before.proposalsRoot, sourceDirectory: before.source,
+    reference: before.id, ask: async () => { throw abort; }, write: () => {} })).rejects.toMatchObject({ name: "AbortError" });
+  await expect(readFile(join(before.directory, "start.jsonl"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+
+  const after = await fixture();
+  const candidate = { directory: join(after.directory, "candidate"), checkout: join(after.directory, "repo"),
+    baseline: after.baseline, sourceDirty: false };
+  const review = passingReview(candidate.directory, after.baseline);
+  const decide = vi.fn(); const promote = vi.fn();
+  const ask = vi.fn().mockResolvedValueOnce("yes").mockRejectedValueOnce(abort);
+  await expect(startTask({ proposalsRoot: after.proposalsRoot, sourceDirectory: after.source,
+    reference: after.id, ask, write: () => {}, execute: async () => ({ candidate, status: "passed" }),
+    review: async () => review, decide, promote })).rejects.toMatchObject({ name: "AbortError" });
+  expect(decide).not.toHaveBeenCalled(); expect(promote).not.toHaveBeenCalled();
+  expect(await readFile(join(after.directory, "start.jsonl"), "utf8")).toContain('"outcome":"failed"');
 });

@@ -91,7 +91,7 @@ export async function prepareTaskRecovery(reference: string): Promise<PreparedTa
 
 export interface TaskRunResult {
   readonly candidate: CandidateCheckout;
-  readonly status: "passed" | "failed";
+  readonly status: "passed" | "failed" | "cancelled";
 }
 
 async function runPreparedTask(candidate: CandidateCheckout, grantOrTaskId: CandidateTaskId | ProposalRunGrant,
@@ -153,8 +153,12 @@ async function runPreparedTask(candidate: CandidateCheckout, grantOrTaskId: Cand
         await record.sync();
       } finally { await record.close(); }
     }
-    process.stdout.write(passed && reviewSaved ? "Task checks passed; diff retained for human review.\n" : "Task unaccepted; inspect the retained checks and diff.\n");
-    return { candidate, status: passed && reviewSaved ? "passed" : "failed" };
+    const status: TaskRunResult["status"] = cancellation.signal.aborted ? "cancelled" :
+      passed && reviewSaved ? "passed" : "failed";
+    process.stdout.write(status === "passed" ? "Task checks passed; diff retained for human review.\n" :
+      status === "cancelled" ? "Task cancelled; retained state is available for inspection.\n" :
+        "Task unaccepted; inspect the retained checks and diff.\n");
+    return { candidate, status };
   } catch {
     process.stderr.write("Task preparation or evidence persistence failed. No promotion occurred.\n");
     return { candidate, status: "failed" };
@@ -177,7 +181,10 @@ export async function runTaskCommand(requestedTaskId: string = DEFAULT_CANDIDATE
     process.stderr.write("Live repository tasks are currently supported on Windows.\n");
     return 2;
   }
-  try { return (await runPreparedTask(await createCandidateCheckout(process.cwd()), taskId)).status === "passed" ? 0 : 1; }
+  try {
+    const result = await runPreparedTask(await createCandidateCheckout(process.cwd()), taskId);
+    return result.status === "passed" ? 0 : result.status === "cancelled" ? 130 : 1;
+  }
   catch {
     process.stderr.write("Task preparation or evidence persistence failed. No promotion occurred.\n");
     return 1;
@@ -200,7 +207,8 @@ export async function recoverTaskCommand(reference: string): Promise<number> {
       priorOutcome: prepared.priorOutcome,
       authority: "local_operator_request",
     });
-    return (await runPreparedTask(prepared.candidate, prepared.taskId, recovery)).status === "passed" ? 0 : 1;
+    const result = await runPreparedTask(prepared.candidate, prepared.taskId, recovery);
+    return result.status === "passed" ? 0 : result.status === "cancelled" ? 130 : 1;
   } catch {
     process.stderr.write("Task recovery unavailable. No predecessor state was changed.\n");
     return 2;

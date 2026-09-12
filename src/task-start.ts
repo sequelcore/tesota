@@ -6,6 +6,7 @@ import { admitTaskProposal, type ProposalRunGrant } from "./proposal-admission.j
 import { decideTask, reviewTask, type TaskReview } from "./task-review.js";
 import { promoteTask } from "./task-promotion.js";
 import { runProposalTask, type TaskRunResult } from "./task-run.js";
+import { askTerminalQuestion, type PromptTerminal } from "./terminal-question.js";
 
 interface StartTaskDependencies {
   readonly proposalsRoot: string;
@@ -42,6 +43,7 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<nu
   }
 
   const journal = await open(join(resolve(dependencies.proposalsRoot, grant.proposalId), "start.jsonl"), "wx", 0o600);
+  let promotionApplied = false;
   try {
     await append(journal, { format: "tesota-proposal-start", version: 1, state: "started",
       proposalId: grant.proposalId, proposalSha256: grant.proposalSha256, baseline: grant.baseline,
@@ -51,8 +53,8 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<nu
       outcome: execution.status });
     if (execution.status !== "passed") {
       dependencies.write(`Execution did not pass. Candidate retained: ${execution.candidate.directory}\n`);
-      await append(journal, { state: "finished", outcome: "execution_failed" });
-      return 1;
+      await append(journal, { state: "finished", outcome: execution.status === "cancelled" ? "cancelled" : "execution_failed" });
+      return execution.status === "cancelled" ? 130 : 1;
     }
 
     const review = await (dependencies.review ?? reviewTask)(execution.candidate.directory);
@@ -67,14 +69,21 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<nu
     }
     if (decided.operatorDecision?.applicability !== "current") throw new Error("Decision became stale");
     const promotion = await (dependencies.promote ?? promoteTask)(review.directory, grant.source, review.reviewSha256);
-    dependencies.write(`Promoted: ${promotion.files.map((file) => file.path).join(", ")}\n`);
+    promotionApplied = true;
     await append(journal, { state: "finished", outcome: "promoted", reviewSha256: review.reviewSha256,
       files: promotion.files });
+    dependencies.write(`Promoted: ${promotion.files.map((file) => file.path).join(", ")}\n`);
     return 0;
   } catch (error) {
-    await append(journal, { state: "finished", outcome: "failed" }).catch(() => {});
+    if (!promotionApplied) await append(journal, { state: "finished", outcome: "failed" }).catch(() => {});
     throw error;
   } finally { await journal.close(); }
+}
+
+export async function askTaskStartQuestion(prompt: string,
+  createTerminal: () => PromptTerminal = () => createInterface({ input: process.stdin, output: process.stdout, terminal: true })):
+Promise<string> {
+  return askTerminalQuestion(createTerminal(), prompt);
 }
 
 export async function runTaskStartCommand(reference: string): Promise<number> {
@@ -83,13 +92,14 @@ export async function runTaskStartCommand(reference: string): Promise<number> {
     process.stderr.write("Task start requires an interactive Windows terminal. Nothing changed.\n");
     return 2;
   }
-  const terminal = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   try {
     return await startTask({ proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
-      sourceDirectory: process.cwd(), reference, ask: (prompt) => terminal.question(prompt),
+      sourceDirectory: process.cwd(), reference, ask: askTaskStartQuestion,
       write: (text) => { process.stdout.write(text); } });
-  } catch {
-    process.stderr.write("Task start unavailable or failed. No unconfirmed promotion was reported.\n");
-    return 2;
-  } finally { terminal.close(); }
+  } catch (error) {
+    const cancelled = error instanceof Error && error.name === "AbortError";
+    process.stderr.write(cancelled ? "Task start cancelled. No promotion occurred.\n" :
+      "Task start unavailable or failed. Inspect retained evidence before retrying.\n");
+    return cancelled ? 130 : 2;
+  }
 }

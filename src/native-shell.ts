@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import { runRepositoryConversationForShell, type ConversationCommandResult } from "./conversation-turn.js";
 import { runTaskStartCommand } from "./task-start.js";
+import { askTerminalQuestion, type PromptTerminal } from "./terminal-question.js";
 
 export interface NativeShellDependencies {
   readonly cwd: string;
@@ -10,24 +11,9 @@ export interface NativeShellDependencies {
   readonly start: (proposalId: string) => Promise<number>;
 }
 
-export interface NativePromptTerminal {
-  question(prompt: string, options?: { readonly signal?: AbortSignal }): Promise<string>;
-  once(event: "SIGINT", listener: () => void): unknown;
-  removeListener(event: "SIGINT", listener: () => void): unknown;
-  close(): void;
-}
-
 /** Release readline after one request so later Ctrl+C reaches the active task owner. */
-export async function askNativeShellRequest(terminal: NativePromptTerminal, prompt: string): Promise<string> {
-  const cancellation = new AbortController();
-  const interrupt = (): void => { cancellation.abort(); };
-  terminal.once("SIGINT", interrupt);
-  try {
-    return await terminal.question(prompt, { signal: cancellation.signal });
-  } finally {
-    terminal.removeListener("SIGINT", interrupt);
-    terminal.close();
-  }
+export async function askNativeShellRequest(terminal: PromptTerminal, prompt: string): Promise<string> {
+  return askTerminalQuestion(terminal, prompt);
 }
 
 /** First Tesota-owned operator surface; execution remains a later admitted consumer. */
