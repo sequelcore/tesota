@@ -239,13 +239,22 @@ export function taskRequestSchemas(id: CandidateTaskId = DEFAULT_CANDIDATE_TASK_
   check: z.ZodType<Record<string, never>>;
 } {
   const definition = candidateTaskDefinition(id);
+  return scopedTaskRequestSchemas(definition.readFiles, definition.writeFiles);
+}
+
+export function scopedTaskRequestSchemas(readFiles: readonly [string, ...string[]],
+  writeFiles: readonly [string, ...string[]]): {
+  read: z.ZodType<TaskReadRequest>;
+  replace: z.ZodType<TaskReplaceRequest>;
+  check: z.ZodType<Record<string, never>>;
+} {
   const content = z.string().max(CANDIDATE_TASK_LIMITS.fileBytes).refine((text) =>
     Buffer.byteLength(text) <= CANDIDATE_TASK_LIMITS.fileBytes &&
     !text.includes("\0") && Buffer.from(text).toString("utf8") === text);
   return {
-    read: z.strictObject({ path: z.enum(definition.readFiles) }),
+    read: z.strictObject({ path: z.enum(readFiles) }),
     replace: z.strictObject({
-      path: z.enum(definition.writeFiles),
+      path: z.enum(writeFiles),
       expectedSha256: hashSchema,
       content,
     }),

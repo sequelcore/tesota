@@ -82,8 +82,10 @@ export async function prepareTaskRecovery(reference: string): Promise<PreparedTa
   if (summary?.status !== "awaiting-review") throw new Error("Task recovery requires an undecided candidate");
   const priorOutcome = await recoverableOutcome(predecessor.directory, predecessor.baseline);
   const current = await inspectCandidateTask(predecessor.directory);
+  const taskId = parseCandidateTaskId(current.task);
+  if (taskId === null) throw new Error("Proposal tasks cannot be resumed");
   const candidate = await createCandidateSuccessor(predecessor.directory);
-  return { predecessor: predecessor.directory, taskId: current.task, priorOutcome, candidate };
+  return { predecessor: predecessor.directory, taskId, priorOutcome, candidate };
 }
 
 async function runPreparedTask(candidate: CandidateCheckout, taskId: CandidateTaskId, recovery?: Recovery): Promise<number> {

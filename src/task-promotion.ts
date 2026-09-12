@@ -2,8 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, open, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { inspectPromotionSource, readCandidateBaselineFiles } from "./candidate-checkout.js";
-import { taskWriteSetSha256 } from "./candidate-task.js";
-import { CANDIDATE_TASK_LIMITS, candidateTaskDefinition } from "./candidate-task-definition.js";
+import { inspectCandidateTask, taskWriteSetSha256 } from "./candidate-task.js";
+import { CANDIDATE_TASK_LIMITS } from "./candidate-task-definition.js";
 import { reviewTask } from "./task-review.js";
 
 interface CapturedFile { readonly bytes: Buffer; readonly mode: number }
@@ -102,12 +102,12 @@ export async function promoteTask(directory: string, sourceDirectory: string, re
 }> {
   if (!/^[a-f0-9]{64}$/.test(reviewSha256)) throw new Error("Invalid review fingerprint");
   const review = await reviewTask(directory);
-  const definition = candidateTaskDefinition(review.check.task);
-  const accepted = definition.promotable && review.reviewSha256 === reviewSha256 && review.check.status === "passed" &&
+  const task = await inspectCandidateTask(review.directory);
+  const accepted = task.promotable && review.reviewSha256 === reviewSha256 && review.check.status === "passed" &&
     review.operatorDecision?.applicability === "current" && review.operatorDecision.record.decision === "accept";
   if (!accepted) throw new Error("Promotion requires the current accepted review");
 
-  const prepared = await preparePromotionFiles(review.directory, sourceDirectory, definition.writeFiles);
+  const prepared = await preparePromotionFiles(review.directory, sourceDirectory, task.writeFiles);
   const { files } = prepared;
   if (capturedWriteSetSha256(files) !== review.check.writeSetSha256) throw new Error("Candidate changed");
 

@@ -14,6 +14,7 @@ import { reviewTask, decideTask } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
 import { prepareTaskRecovery } from "../src/task-run.js";
 import { expectedMultiFileTask } from "../src/multi-file-task-check.js";
+import type { ProposalRunGrant } from "../src/proposal-admission.js";
 
 const editedFile = "docs/decisions/002-use-pi.md";
 const roots: string[] = [];
@@ -39,6 +40,18 @@ async function fixture() {
   git(source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--no-gpg-sign", "--quiet", "-m", "Task baseline"]);
   const candidate = await createCandidateCheckout(source, join(root, "candidates"));
   return { source, ...candidate };
+}
+
+function proposalGrant(candidate: Awaited<ReturnType<typeof fixture>>): ProposalRunGrant {
+  return {
+    kind: "proposal-documentation", proposalId: "b0e37d7c-f19f-4c0c-915c-e52aafea93e7",
+    proposalSha256: "a".repeat(64), source: candidate.source, baseline: candidate.baseline,
+    objective: "Add a plain-language operator note.",
+    completionConditions: ["The note explains the behavior without internal jargon."],
+    readFiles: ["docs/identity.md"], writeFiles: ["docs/identity.md"],
+    declaredChecks: ["repository-check"],
+    verification: { scopeIntegrity: "application_owned", repositoryCheck: "not_executed_in_first_slice" },
+  };
 }
 
 function correction(content: string): string {
@@ -460,6 +473,38 @@ it.each([
   expect(fake.stream).toHaveBeenCalledTimes(1);
   expect(JSON.stringify(result)).not.toContain("SYNTHETIC_PRIVATE");
   expect(await readFile(join(candidate.checkout, editedFile))).toEqual(await readFile(join(candidate.source, editedFile)));
+});
+
+it("executes, reviews and promotes an admitted documentation grant while reporting its check limitation", async () => {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepareProposal(candidate.directory, proposalGrant(candidate));
+  expect(task.describe()).toMatchObject({ task: "proposal-documentation", writeFiles: ["docs/identity.md"] });
+  const input = await task.read({ path: "docs/identity.md" });
+  expect(await task.check()).toMatchObject({ status: "check_failed",
+    diagnostics: [expect.stringContaining("Repository check not executed")] });
+  const updated = input.content + "\nThe operator reviews the exact candidate diff before promotion.\n";
+  await task.replace({ path: "docs/identity.md", expectedSha256: input.sha256, content: updated });
+  expect(await task.check()).toMatchObject({ status: "passed",
+    diagnostics: [expect.stringContaining("review must judge")] });
+  task.close();
+  const review = await reviewTask(candidate.directory);
+  expect(review).toMatchObject({ check: { task: "proposal-documentation", status: "passed" } });
+  await decideTask(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
+  await expect(promoteTask(candidate.directory, candidate.source, review.reviewSha256)).resolves.toMatchObject({
+    status: "applied", files: [{ path: "docs/identity.md" }],
+  });
+  expect(await readFile(join(candidate.source, "docs/identity.md"), "utf8")).toBe(updated);
+}, 30_000);
+
+it("rejects a modified persisted proposal grant without reopening task authority", async () => {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepareProposal(candidate.directory, proposalGrant(candidate));
+  task.close();
+  const path = join(candidate.directory, "task.json");
+  const plan = JSON.parse(await readFile(path, "utf8")) as { grant: { objective: string } };
+  plan.grant.objective = "Replace a different document.";
+  await writeFile(path, JSON.stringify(plan, null, 2) + "\n");
+  await expect(checkCandidateTask(candidate.directory)).rejects.toThrow("invalid");
 });
 
 it("does not pass a model's unsupported completion claim", async () => {

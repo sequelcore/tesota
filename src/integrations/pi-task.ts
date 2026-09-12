@@ -3,7 +3,6 @@ import { Type, createAssistantMessageEventStream, fauxAssistantMessage, type Api
   type AssistantMessage } from "@earendil-works/pi-ai";
 import * as z from "zod";
 import { type CandidateTask, type CandidateTaskCheck } from "../candidate-task.js";
-import { taskRequestSchemas } from "../candidate-task-definition.js";
 import { canAdmitInvocation } from "../verification/invocation-admission.js";
 
 export const PI_TASK_LIMITS: Readonly<{
@@ -56,7 +55,7 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
   const settled = new Promise<void>((resolve) => { settle = resolve; });
   let settlementTimer: ReturnType<typeof setTimeout> | undefined;
   const description = task.describe();
-  const { read: taskReadSchema, replace: taskEditSchema, check: taskCheckSchema } = taskRequestSchemas(description.task);
+  const { read: taskReadSchema, replace: taskEditSchema, check: taskCheckSchema } = task.requestSchemas();
 
   async function execute(action: () => Promise<unknown>, toolSignal?: AbortSignal) {
     try {
