@@ -170,7 +170,7 @@ The intended acceptance exercise must demonstrate that:
 5. The report presents the diff, actual checks, observed consumption and limits.
 6. Human acceptance and promotion remain separate from model completion and checks.
 
-General terminal interaction and operator-defined task execution still need
+The primary inline terminal session and operator-defined task execution still need
 implementation. The proposed [natural-language task experience](decisions/003-natural-language-task-experience.md)
 lets an operator state an outcome without naming files, then separates read-only
 discovery, a task proposal, an operator-approved run grant, bounded candidate
@@ -314,12 +314,17 @@ separately. Local fake-provider behavior and stored-OAuth `blocked_dirty` and
 clean `ready` proposals are qualified. Neither live result establishes proposal
 correctness, acceptance or executable admission.
 
-The next executable increment is the proposed `task start <proposal-id>` consumer.
-It must add a trusted
-proposal-admission owner rather than weakening the current five-task registry,
-bind each oracle's immutable obligation inputs, and prove sandbox enforcement,
-observed cancellation settlement, concurrent-successor exclusion and old-grant
-replay refusal. Scope expansion and richer recovery remain later slices.
+The next product increment combines a thin inline `tesota` session with a narrow
+`task start <proposal-id>` consumer. It must let an operator complete one real
+task through request, proposal, one approval, isolated execution, applicable
+checks, diff, human decision and conflict-safe promotion without manually copying
+lifecycle identifiers. It adds a trusted proposal-admission owner rather than
+weakening the current five-task registry, binds applicable oracles to immutable
+obligation inputs and sandboxes any candidate command that runs. The first slice
+rejects replay, concurrent or resumed execution and unsupported scope instead of
+implementing general successors. Scope expansion, richer recovery, arbitrary
+shell execution, mandatory external review and a full-screen TUI remain later
+slices justified by observed use.
 
 ## Open requirements and scope
 

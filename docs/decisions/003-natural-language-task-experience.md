@@ -28,9 +28,9 @@ and public issue reports about approval friction. The reference revisions were:
 | --- | --- | --- |
 | Codex | `32329b289d05eb6a3f8e35c267ceb25ba46716a2` | Worktree isolation, sandbox policies and bounded permission expansion are runtime concepts, not prompt conventions. |
 | Gemini CLI | `3818efbbfbf8ef029ef53a6ab1093db39971ce83` | Plan mode accepts a goal in natural language, restricts tools during research and requires formal approval before implementation. |
-| OpenCode | `3016830e253492ef41b6cc00dbed623e5989279b` | Permission rules resolve to allow, ask or deny and can be narrower than a whole tool. |
+| OpenCode | `3016830e253492ef41b6cc00dbed623e5989279b` | Its terminal UI makes a conversational session the normal entry point; permission rules resolve to allow, ask or deny and can be narrower than a whole tool. |
 | Pi | `1dd2354052f7dd9fcdcc3097b87cf4b377853a74` | Project trust and execution isolation are different boundaries; Pi deliberately relies on an external sandbox. |
-| Gentle AI | `a440e791c342b69ca79f7759e697fc88c1272ca5` | Small requests should avoid planning ceremony, while substantial work benefits from explicit proposal, implementation and review phases. |
+| Gentle AI | `a440e791c342b69ca79f7759e697fc88c1272ca5` | Small requests should avoid visible planning ceremony, while substantial work benefits from explicit proposal, implementation and review phases handled through the agent's normal surface. |
 
 The vendor contracts converge on read-only exploration before consequential
 changes, visible permission modes, isolated execution and reviewable results.
@@ -149,6 +149,21 @@ The first surface should be an inline terminal workflow with plain-text output a
 keyboard-operable choices. A richer TUI is optional later. Product behavior and
 evidence records must not depend on a particular renderer.
 
+This inline workflow is the intended primary product surface, not a presentation
+layer to add after a general runtime is complete. Running `tesota` without a
+subcommand should open one conversational session in the current repository. The
+operator states the request, reviews the proposal, approves the task-sized scope,
+follows execution and receives the diff, checks and acceptance choice without
+copying proposal IDs or assembling lifecycle commands. Composable commands such
+as `task propose`, `task start`, review and promotion remain useful automation,
+diagnostic and test seams behind that experience.
+
+OpenCode is the closest inspected reference for making a terminal conversation
+the normal entry point. Gentle AI supplies a separate lesson: small work stays
+direct and internal planning or review machinery should not become mandatory
+user-visible ceremony. Tesota adopts those experience properties, not either
+project's renderer, permission defaults or lifecycle ownership.
+
 ## Canonical concepts
 
 | Concept | Meaning | Owner |
@@ -186,6 +201,11 @@ become its own authority and conflict with the current application-owned registr
 tested through an inline CLI first; presentation should not become the semantic
 owner.
 
+**Defer the operator surface until general execution is complete.** This would
+repeat the sequencing problem that led to Tesota: internal capabilities could
+grow without exercising the ordinary development loop. The thin conversational
+surface and its first narrow executable consumer must be developed together.
+
 ## Consequences and implementation order
 
 The first enabling increment is the implemented read-only `task propose` flow for
@@ -195,22 +215,27 @@ strictly parsed proposal with no execution authority. Its acceptance test is tha
 the operator can describe a real multi-file task without naming files and receive
 an accurate, concise proposed write set and checks, while attempted mutation,
 execution and network use fail closed. Local fake-provider tests establish these
-boundaries; one stored-OAuth run qualified discovery and dirty-input blocking, but
-a clean `ready` live proposal remains unobserved.
+boundaries; stored-OAuth runs qualified both dirty-input blocking and a clean
+`ready` proposal. They do not establish proposal correctness or executable
+admission.
 
-Its immediate executable consumer is the proposed `task start <proposal-id>` flow.
-That slice introduces a Tesota-owned admission boundary which compiles only
-supported proposal operations into a run grant, then reuses the existing bounded
-candidate operations without weakening the five-task registry. It must exercise a
-real operator-described Tesota change beyond paraphrasing an existing registered
-repair: proposal revision, one task approval, an immutable baseline oracle that
-first fails and then passes after correction, review, and promotion refusal after
-a conflicting source edit. Sandbox enforcement, accurate cancellation settlement,
-concurrent-successor exclusion and old-grant replay refusal are part of this first
-execution gate. General execution does not ship until tests prove that an edited
-proposal, model output or resumed session cannot add paths, checks or effects.
-Scope-change grants, richer recovery and inline progress presentation follow as
-exercised consumers, not speculative modules.
+The next product increment is a thin inline `tesota` session backed by the first
+deliberately narrow `task start <proposal-id>` consumer. The shell and consumer
+must exercise one real operator-described Tesota change beyond paraphrasing an
+existing registered repair. The flow discovers and displays scope, permits request
+revision by producing a fresh proposal, obtains one approval, edits an independent
+candidate through supported operations, runs applicable admitted checks, presents
+the diff and evidence for a separate human decision, and refuses promotion after
+a conflicting source edit.
+
+This slice keeps authority narrow by rejecting unsupported proposal fields, a
+second start of the same grant and concurrent or resumed execution. It does not
+need executable successor grants, in-session scope expansion, session continuation,
+arbitrary shell commands, external effects or mandatory Gentle review. A candidate
+command that does run must use an enforceable sandbox; a task with no applicable
+binary oracle reports that limitation instead of inventing a pass. Cancellation
+must stop new action admission and report observed or unresolved settlement, but
+richer recovery follows only after real interrupted use requires it.
 
 This direction adds one confirmation before a new general task writes anything.
 Registered tasks can remain a faster predeclared path because their scope and

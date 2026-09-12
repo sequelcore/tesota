@@ -26,6 +26,12 @@ judgment without reconstructing a conversation or trusting a model's declaration
 of success. The proposed contract is recorded in
 [decision 003](decisions/003-natural-language-task-experience.md).
 
+The intended normal entry point is a thin conversational `tesota` session in the
+current repository. Lifecycle subcommands remain available as composable and
+diagnostic seams, but the developer should not need to copy identifiers or drive
+each internal transition to complete an ordinary task. A richer full-screen TUI
+can follow observed need; it is not required for the first useful shell.
+
 ## Why the name
 
 The name is drawn from *Olneya tesota*, desert ironwood, also known as *palo fierro*.
