@@ -11,6 +11,7 @@ Usage: tesota [--help | -h | help]
        tesota candidate abandon <candidate-id|candidate-directory>
        tesota task prepare <candidate-directory>
        tesota task check <candidate-directory>
+       tesota task propose <request>
        tesota task run [task-id]
        tesota task recover <candidate-id|candidate-directory>
        tesota task run coding-agent
@@ -42,6 +43,9 @@ if (
 } else if (args.length === 3 && args[0] === "task" && args[1] === "recover" && args[2] !== undefined) {
   const { recoverTaskCommand } = await import("./task-run.js");
   process.exit(await recoverTaskCommand(args[2]));
+} else if (args.length >= 3 && args[0] === "task" && args[1] === "propose") {
+  const { runTaskProposalCommand } = await import("./task-proposal.js");
+  process.exit(await runTaskProposalCommand(args.slice(2).join(" ")));
 } else if (args[0] === "task" && (args.length === 3 && args[1] === "review" && args[2] !== undefined ||
     args.length === 5 && args[1] === "decide" && args[2] !== undefined && args[3] !== undefined && args[4] !== undefined)) {
   const { reviewTask, decideTask } = await import("./task-review.js");

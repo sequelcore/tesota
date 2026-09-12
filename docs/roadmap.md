@@ -14,7 +14,7 @@ specification. [Architecture](architecture.md) describes what is implemented.
 ## Milestones
 
 Status below combines implementation records and retained live evidence through
-2026-09-11 UTC. Historical review acceptance is not a new review or a live
+2026-09-12 UTC. Historical review acceptance is not a new review or a live
 validation of the current checkout.
 
 | Increment | Status | Outcome or remaining condition |
@@ -31,6 +31,8 @@ validation of the current checkout.
 | Candidate lifecycle and cleanup | Implemented for bounded local storage | List and inspect candidates by ID, explicitly abandon obsolete work, and remove only old rejected, abandoned or failed checkout contents while retaining evidence |
 | Scoped repository task | Live Windows attempt passed for the Pi decision documentation task | Saved login, bounded model operations, one scoped edit, failed then passing checks and retained review diff |
 | Registered task execution | Passed for a second live task | One immutable registry owns four task contracts and the shared engine has no task-name branches; the candidate-source task passed direct, simulated-Pi and stored-OAuth live correction through the same bounded operations |
+| Registered multi-file task | Locally verified for a two-file write set | One task can read, replace, check, review and promote two registered paths; checks and review bind the ordered write set, and promotion preflights every source target before its first rename |
+| Natural-language task proposal | Stored-OAuth discovery and dirty-input blocking passed | A Spanish goal named no files; bounded read-only discovery selected one documentation path, retained a strict proposal and reported relevant excluded changes with no candidate or execution authority |
 | Task recovery successor | Passed for one interrupted live task | An explicit command validated the failed predecessor, recreated its exact baseline in a clean candidate, recorded the relationship and completed a fresh Pi correction without inheriting bytes, evidence or acceptance |
 | Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
 | Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
@@ -168,9 +170,13 @@ The intended acceptance exercise must demonstrate that:
 5. The report presents the diff, actual checks, observed consumption and limits.
 6. Human acceptance and promotion remain separate from model completion and checks.
 
-General terminal interaction and multi-file task execution still need
-implementation. Registered single-file tasks now share one execution path,
-but operators cannot supply executable task manifests. The current promotion
+General terminal interaction and operator-defined task execution still need
+implementation. The proposed [natural-language task experience](decisions/003-natural-language-task-experience.md)
+lets an operator state an outcome without naming files, then separates read-only
+discovery, a task proposal, an operator-approved run grant, bounded candidate
+execution and later review and promotion. Registered single-file and multi-file
+tasks now share one execution path, but operators cannot yet use that flow or
+supply executable task manifests. The current promotion
 command remains limited by the selected definition's explicit policy and is not
 a general write capability. Recovery restarts from the same baseline in a clean
 successor; same-candidate/session continuation and promotion-journal recovery
@@ -290,18 +296,29 @@ were replaced by explicit guards; the final two-rule scan produced no findings
 across the same 53 files. Defect and control fixtures bind both additions to
 `oxlint-static/v3`.
 
-After the construction cycle is stable, define Tesota's own shell contracts and
-build the shell as a Tesota-owned surface. Gentle remains behind that boundary,
-so Tesota is not coupled to Gentle presentation or private state. The current
-CLI and experiment commands remain the development surface until those contracts
-are stable.
+The interaction contract is now proposed in
+[decision 003](decisions/003-natural-language-task-experience.md) from hands-on
+comparison of installed tools, local reference harnesses, vendor documentation
+and community reports. The first surface should be an inline terminal workflow;
+a full-screen TUI or GUI is not required to validate the contract. Gentle remains
+behind the Tesota-owned boundary, so provider presentation and private state do
+not define Tesota's request, grant, progress, review or promotion semantics.
 
-The eventual interaction surface is undecided. A shell or richer terminal UI
-must be evaluated against the implemented workflow: giving a task, observing
-progress, interrupting work, recovering a session, reviewing a diff and accepting
-or rejecting changes. Select the surface before its implementation, using
-hands-on comparisons, accessibility and maintenance constraints, and relevant
-community experience. No particular UI framework or existing shell is adopted.
+Read-only `task propose` is now implemented for Tesota's own repository. It
+accepts a natural-language outcome without requiring file names, binds a committed
+baseline, exposes only bounded list, literal-search, baseline-read and submission
+tools, reports relevant dirty-path conflicts and retains a non-authoritative
+proposal. Mutation, repository-code execution and model-controlled network access
+fail closed during discovery; configured inference transport is reported
+separately. Local fake-provider behavior and one stored-OAuth blocked proposal are
+qualified; a clean `ready` live proposal remains unobserved.
+
+The next executable increment is the proposed `task start <proposal-id>` consumer.
+It must add a trusted
+proposal-admission owner rather than weakening the current five-task registry,
+bind each oracle's immutable obligation inputs, and prove sandbox enforcement,
+observed cancellation settlement, concurrent-successor exclusion and old-grant
+replay refusal. Scope expansion and richer recovery remain later slices.
 
 ## Open requirements and scope
 

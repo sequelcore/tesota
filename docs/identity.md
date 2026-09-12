@@ -17,10 +17,14 @@ relevant checks, correcting failures and explaining what remains uncertain.
 Tesota aims to make that complete development cycle dependable and understandable.
 
 The intended experience begins in a local terminal. A developer gives Tesota a
-bounded task, follows its progress and receives a diff with the checks that apply
-to it. The developer should be able to see what changed, what was verified and
-what still needs judgment without reconstructing a conversation or trusting a
-model's declaration of success.
+goal in ordinary language; naming files is optional. Tesota should first discover
+and show the proposed scope and checks without changing the repository, then ask
+for one task-sized approval before bounded execution. The developer follows its
+progress and receives a diff with the checks that apply to it. The developer
+should be able to see what changed, what was verified and what still needs
+judgment without reconstructing a conversation or trusting a model's declaration
+of success. The proposed contract is recorded in
+[decision 003](decisions/003-natural-language-task-experience.md).
 
 ## Why the name
 

@@ -28,9 +28,15 @@ from the same committed baseline in a clean successor candidate without copying
 partial work or prior authority.
 Its offline review commands can record a separate operator decision for the
 exact reviewed candidate state.
-An explicit promotion command can apply the accepted documentation or
-`pi-result-consistency` change while refusing conflicting source changes.
+An explicit promotion command can apply an accepted registered write set while
+refusing conflicting source changes before the first source write.
+The new [`task propose`](docs/proposals.md) command accepts an ordinary-language
+goal and uses bounded, read-only discovery over committed Tesota files to retain
+a non-authoritative proposed scope. It creates no candidate and cannot execute
+the proposal.
 See the [roadmap](docs/roadmap.md) for demonstrated progress and remaining work.
+The proposed [natural-language task experience](docs/decisions/003-natural-language-task-experience.md)
+defines how later approval and execution will remain separate from this proposal.
 
 ## Get started
 
@@ -64,6 +70,7 @@ acceptance.
 | [Authentication](docs/authentication.md) | One-time Codex login, saved credentials and logout |
 | [Candidate checkouts](docs/candidates.md) | Separate committed working copies, inspection and incomplete state |
 | [Registered tasks](docs/tasks.md) | Task contracts, bounded operations, recovery and checks |
+| [Task proposals](docs/proposals.md) | Natural-language, read-only discovery and non-authoritative proposal records |
 | [Experiments](experiments/README.md) | Pi and Codex guides, recorded outcomes and limitations |
 | [Project history](docs/history/README.md) | Bootstrap provenance and toolchain validation |
 

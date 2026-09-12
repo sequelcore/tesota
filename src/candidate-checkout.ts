@@ -1,12 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, readdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import * as z from "zod";
-
-const gitLimit = 8 * 1024 * 1024;
-const gitTimeoutMs = 60_000;
+import { isGitObjectId, runRepositoryGit as git } from "./repository-git.js";
 
 const checkoutRecordSchema = z.strictObject({
   format: z.literal("tesota-candidate-checkout"),
@@ -51,25 +48,6 @@ const abandonedRecordSchema = z.strictObject({
   recordedAt: z.iso.datetime(), authority: z.literal("local_operator_assertion"),
 });
 
-/** Git receives no caller-selected commands, shell, credentials, config or network route. */
-function git(cwd: string, args: readonly string[]): string {
-  const env: NodeJS.ProcessEnv = {};
-  for (const key of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"]) {
-    const value = process.env[key];
-    if (value !== undefined) env[key] = value;
-  }
-  Object.assign(env, { GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
-    GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", GIT_NO_REPLACE_OBJECTS: "1", LC_ALL: "C" });
-  const result = spawnSync("git", ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
-    "-c", "protocol.allow=never", "-c", "protocol.file.allow=always", "-c", "submodule.recurse=false",
-    "-c", "core.autocrlf=false", ...args], {
-    cwd, env, windowsHide: true, shell: false, encoding: "utf8", timeout: gitTimeoutMs, maxBuffer: gitLimit,
-  });
-  if (result.error !== undefined || result.status !== 0 || result.signal !== null) throw new Error("Candidate Git operation failed");
-  return result.stdout;
-}
-
-function oid(value: unknown): value is string { return typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value); }
 function contains(parent: string, child: string): boolean {
   const difference = relative(parent, child);
   return difference === "" || !isAbsolute(difference) && difference !== ".." && !difference.startsWith(`..${sep}`);
@@ -311,7 +289,7 @@ export async function createCandidateCheckout(sourceDirectory: string,
   candidatesRoot: string = join(homedir(), ".tesota", "candidates")): Promise<CandidateCheckout> {
   const source = await realpath(git(resolve(sourceDirectory), ["rev-parse", "--show-toplevel"]).trim());
   const baseline = git(source, ["rev-parse", "--verify", "HEAD^{commit}"]).trim();
-  if (!oid(baseline)) throw new Error("Invalid source revision");
+  if (!isGitObjectId(baseline)) throw new Error("Invalid source revision");
   validateTree(source, baseline);
   const sourceDirty = git(source, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length !== 0;
   const root = resolve(candidatesRoot);
@@ -342,7 +320,7 @@ export async function inspectCandidateCheckout(path: string, candidatesRoot?: st
   if (contains(record.source, root) || contains(root, record.source) ||
       contains(record.source, checkout) || contains(checkout, record.source)) throw new Error("Candidate overlaps source");
   const head = git(checkout, ["rev-parse", "--verify", "HEAD^{commit}"]).trim();
-  if (!oid(head)) throw new Error("Invalid candidate revision");
+  if (!isGitObjectId(head)) throw new Error("Invalid candidate revision");
   const fields = git(checkout, ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-status", "-z", record.baseline, "--"]).split("\0");
   fields.pop();
   const changes: { status: string; path: string }[] = [];

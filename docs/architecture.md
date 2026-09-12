@@ -11,8 +11,11 @@ It has no general production task runtime or interactive agent shell. The
 | --- | --- |
 | [src/cli.ts](../src/cli.ts) | Dispatch verification, authentication and candidate commands |
 | [src/candidate-checkout.ts](../src/candidate-checkout.ts) | Create independent committed checkouts and inspect changes against their baselines |
-| [src/candidate-task-definition.ts](../src/candidate-task-definition.ts) | Own registered task requirements, scopes, oracles, instructions, limits and promotion policy |
-| [src/candidate-task.ts](../src/candidate-task.ts) | Enforce a selected registered task through bounded candidate operations and byte-bound checks |
+| [src/repository-git.ts](../src/repository-git.ts) | Run fixed shell-free local Git operations without ambient config, hooks, credentials or network protocols |
+| [src/task-proposal-contract.ts](../src/task-proposal-contract.ts) | Own proposal vocabulary, tool request schemas, declarative check IDs and discovery limits |
+| [src/task-proposal.ts](../src/task-proposal.ts) | Read committed baseline blobs, classify dirty conflicts and retain non-authoritative proposals |
+| [src/candidate-task-definition.ts](../src/candidate-task-definition.ts) | Own registered task requirements, read/write sets, oracles, instructions, limits and promotion policy |
+| [src/candidate-task.ts](../src/candidate-task.ts) | Enforce a selected registered task through bounded per-file operations and write-set-bound checks |
 | [src/auth.ts](../src/auth.ts) | Login, offline status and local logout |
 | [integrations/codex-credentials.ts](../src/integrations/codex-credentials.ts) | Private Codex credential persistence and serialized mutation |
 | [verification/oxlint.ts](../src/verification/oxlint.ts) | Run Oxlint, issue result identity and assess applicability |
@@ -29,6 +32,7 @@ It has no general production task runtime or interactive agent shell. The
 | [integrations/pi-verification-evidence.ts](../src/integrations/pi-verification-evidence.ts) | Verification and candidate probe criteria, identity and sanitized records |
 | [src/live-candidate.ts](../src/live-candidate.ts) | Run the correction exercise and retain checks, source and review diff |
 | [integrations/pi-task.ts](../src/integrations/pi-task.ts) | Adapt task-owned schemas to Pi tools; bound the live session and observe check continuation |
+| [integrations/pi-proposal.ts](../src/integrations/pi-proposal.ts) | Expose only bounded list, literal-search, baseline-read and proposal-submission tools to Pi |
 | [src/pi-review-relay.ts](../src/pi-review-relay.ts) | Expose Tesota's saved Codex OAuth through Gentle's fixed tool-free Pi process transport |
 | [task-run.ts](../src/task-run.ts) | Create fresh task attempts or validated recovery successors, reuse authentication and retain checks and review diffs |
 | [task-review.ts](../src/task-review.ts) | Review current candidate bytes and bind a separate local operator decision to their fingerprint |
@@ -47,8 +51,15 @@ The [candidate correction exercise](../experiments/codex/candidate.md) uses the
 same adapter with one bounded replacement between two checks. Candidate files
 are never executed. Registered definitions supply scope and oracle data to the
 shared task engine; persisted plans cannot add definitions or expand paths. The
-documentation and `pi-result-consistency` definitions support guarded
-single-file promotion; the formal and candidate-source tasks do not.
+promotable definitions support guarded write-set promotion; the formal and
+candidate-source tasks do not.
+
+Task proposal discovery is a separate read-only boundary. It observes committed
+Git blobs without creating a candidate and gives Pi no edit, shell, check, web or
+arbitrary network tool. Its retained version 1 record has `authority: "none"` and
+no reader or execution consumer. The configured provider call is inference
+transport, not model-controlled repository network access. See the
+[proposal contract](proposals.md).
 
 ## Engine boundary
 

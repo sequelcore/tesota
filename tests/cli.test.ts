@@ -38,6 +38,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota candidate abandon <candidate-id|candidate-directory>\n" +
     "       tesota task prepare <candidate-directory>\n" +
     "       tesota task check <candidate-directory>\n" +
+    "       tesota task propose <request>\n" +
     "       tesota task run [task-id]\n" +
     "       tesota task recover <candidate-id|candidate-directory>\n" +
     "       tesota task run coding-agent\n" +
@@ -49,7 +50,8 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
   );
 });
 
-it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["task", "run", "gentle-review"]])(
+it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["task", "run", "gentle-review"],
+  ["task", "propose"]])(
   "rejects invalid compiled CLI arguments %j",
   (...args) => {
     const result = run(args);

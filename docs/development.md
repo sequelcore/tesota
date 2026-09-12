@@ -26,6 +26,10 @@ operator decision for work that no longer needs review.
 [registered task](tasks.md), also without model inference.
 `task run` creates a fresh candidate and runs the selected fixed task with the saved login;
 it is a separate live command and is never invoked by the normal check suite.
+`task propose <request>` uses the saved login for bounded read-only discovery over
+Tesota's committed baseline. It retains a proposal with no execution authority,
+creates no candidate and never runs in the normal check suite. See
+[task proposals](proposals.md).
 `task recover <candidate>` explicitly retries a failed or incomplete registered
 task in a clean successor at the same baseline. It never resumes the prior model
 session or copies that candidate's working bytes or evidence.
@@ -92,6 +96,7 @@ copying its explanation into another file.
 | Authentication and private credential lifecycle | [Authentication](authentication.md) |
 | Candidate checkout creation and inspection | [Candidate checkouts](candidates.md) |
 | Task scope and documentation check | [Scoped candidate task](tasks.md) |
+| Natural-language discovery and proposal records | [Task proposals](proposals.md) |
 | Experimental guides and records | [experiments/](../experiments/README.md), grouped by capability |
 | Consequential decisions and rationale | `docs/decisions/`, linked from the relevant guide |
 | Selected upstream source and reuse | `docs/references/` |
