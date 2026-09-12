@@ -17,8 +17,8 @@ Today it provides a CLI with one bounded Oxlint check, input binding, and durabl
 verification evidence recovery. Separate Pi experiments exercise synthetic agent
 behavior, live Codex authentication, one fixed verification action, and an
 isolated candidate correction with a review diff. Tesota now executes
-application-registered, bounded single-file tasks through one shared engine.
-It does not accept arbitrary task manifests or general multi-file work. It can
+application-registered, bounded tasks through one shared engine, including a two-file task.
+It does not accept arbitrary task manifests or general repository work. It can
 also [create and inspect independent candidate
 checkouts](docs/candidates.md) from committed source revisions.
 The [registered repository tasks](docs/tasks.md) declare their requirement,

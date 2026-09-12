@@ -25,8 +25,7 @@ without changing the oracle.
 
 Tesota implements preparation, operation admission, deterministic documentation
 and code checks, and bounded live model attempts. A separate explicit command can
-promote an accepted documentation or `pi-result-consistency` change to the source
-working tree.
+promote an accepted registered write set to the source working tree.
 
 The first formal property is `canAdmitInvocation` in
 `src/verification/invocation-admission.ts`. Run `bun run formal:check` to let
@@ -49,6 +48,12 @@ predeclared diagnostic; its second check and current read-only check passed with
 the same verifier identity and corrected source SHA-256. The final diff is empty
 because the oracle requires exact restoration of the baseline bytes. No operator
 decision or promotion was recorded.
+
+The fifth registered task is `multi-file-task-status`. It expands task status
+wording in `README.md` and `docs/identity.md`, then requires both files to match
+their exact expected bytes. Its ordered two-file write set
+exercises per-file stale-hash admission, aggregate check and review identity, and
+guarded multi-file promotion without granting access to other repository paths.
 
 ## Run the task
 
@@ -79,7 +84,8 @@ Other attempt outcomes exit 1; unsupported platforms or arguments exit 2. A mode
 claiming success cannot satisfy these conditions. Human acceptance remains separate.
 
 The registered IDs are `pi-decision-status`, `pi-result-consistency`,
-`formal-invocation-admission` and `candidate-source-newline`. Omitting the ID
+`formal-invocation-admission`, `candidate-source-newline` and
+`multi-file-task-status`. Omitting the ID
 selects `pi-decision-status`; an unknown ID is rejected before candidate
 creation.
 
@@ -112,7 +118,7 @@ bun start task recover <candidate-id|candidate-directory>
 
 Recovery accepts only a ready, undecided candidate whose bounded attempt record
 is either failed or lacks a complete terminal record. Tesota validates its current
-version 2 task plan and scope without rerunning the old oracle, then clones the
+version 3 task plan and scope without rerunning the old oracle, then clones the
 predecessor's exact commit into a new independent candidate and starts the same
 registered task with fresh authority and limits. The successor attempt binds the
 predecessor ID, baseline and prior outcome. It copies no working bytes, checks,
@@ -171,16 +177,18 @@ From the original source repository root, use the accepted review fingerprint:
 bun start task promote <candidate-directory> <review-sha256>
 ```
 
-This explicit invocation authorizes one source-file replacement. The saved
+This explicit invocation authorizes the registered task's complete write set. The saved
 acceptance is a required local assertion, not independent write authority. No
 model tool can invoke promotion. Tesota rechecks the accepted fingerprint, current
-task check and source identity. The target's committed blob and mode must match
+task check and source identity. Every target's committed blob and mode must match
 the candidate baseline, its index entry must match HEAD, and its working bytes
-must match the baseline exactly. Later commits affecting other files are allowed;
-staged or unstaged target changes are rejected. Unrelated edits remain untouched.
+must match the baseline exactly. All targets are preflighted before the first
+rename. Later commits affecting other files are allowed; staged or unstaged target
+changes are rejected. Unrelated edits remain untouched.
 
 Only definitions whose application-owned promotion policy is `allowed` can be
-promoted: currently the decision-document task and `pi-result-consistency`.
+promoted: currently the decision-document task, `pi-result-consistency` and
+`multi-file-task-status`.
 The formal and candidate-source tasks remain unsupported.
 Regular single-link files and unredirected paths are required. The replacement
 is captured and hashed, written to an exclusive temporary file beside the source
@@ -189,8 +197,8 @@ temporary file. The command does not stage files, commit, move refs or execute
 candidate code.
 
 An exclusive `promotion.jsonl` beside the candidate records the source, revision,
-review fingerprint and before/after hashes before the write. A verified write
-records `applied`; a caught failure records `not_applied` or `applied_unconfirmed`
+review fingerprint and every before/after hash before the write. A verified write
+records `applied`; a caught failure records `not_applied`, `partially_applied` or `applied_unconfirmed`
 when possible. A start without a terminal record is incomplete. Exit 0 reports a
 verified replacement; exit 2 requires inspecting both source and journal because
 failure after the rename can still leave the change applied. An existing journal
@@ -199,9 +207,8 @@ blocks another attempt. There is no automatic rollback, journal deletion or retr
 This remains a trusted single-writer operation, not a filesystem transaction or
 authenticated approval system. Other processes can race the final observation
 and rename. Interrupted writes may leave a temporary file or incomplete journal;
-power-loss durability and recovery are not established. Promotion of multiple
-files, conflict resolution and stable executable version switching remain future
-work.
+power-loss durability and recovery are not established. Conflict resolution and
+stable executable version switching remain future work.
 
 ## Prepare and inspect
 
@@ -215,22 +222,22 @@ bun start task check <candidate-directory>
 Preparation requires an unchanged candidate and an applicable registered
 definition. It returns the objective, oracle, permitted files, required status
 when applicable and limits, then exclusively saves `task.json` beside the
-checkout. Version 2 plans persist the declared objective, oracle, read/write
+checkout. Version 3 plans persist the declared objective, oracle, read/write
 scope, effects, limits and promotion policy, and bind the definition and oracle
-SHA-256 plus every baseline input. Version 1 plans are intentionally unsupported;
+SHA-256 plus every baseline input. Version 1 and 2 plans are intentionally unsupported;
 retained records remain historical evidence but cannot reopen current authority.
 An existing plan is never overwritten.
 
 `task check` exits 0 for the exact correction and 1 for an unmet task assertion.
 Invalid arguments, unavailable state or scope violations exit 2. The check
-reports its observed source SHA-256 and baseline. Saved plans are strictly parsed
+reports its observed write-set SHA-256 and baseline. Saved plans are strictly parsed
 and compared with the baseline files; their provenance remains
 `recorded_untrusted`. Editing JSON cannot expand the application's allowed scope.
 
 ## Enforced scope
 
-The application-owned registry permits only listed relative paths, requires the
-single writable file to also be readable, rejects duplicate or parent-traversal
+The application-owned registry permits only listed relative paths, requires every
+writable file to also be readable, rejects duplicate or parent-traversal
 paths, and supplies strict request schemas to both the engine and Pi adapter.
 Definitions are frozen at runtime. The model cannot load a definition from the
 candidate, alter its promotion policy or select an oracle command.
@@ -243,9 +250,9 @@ cannot select executable commands, create files, delete files, change permission
 or edit task metadata through this API.
 
 Before operations, the adapter checks the checkout baseline and detects changes
-outside the writable file, including untracked and ignored paths. The read-only
+outside the write set, including untracked and ignored paths. The read-only
 context files must retain their baseline hashes. Writable-file changes must
-match the handle's last known content. Redirected paths and hard-linked files
+match the handle's per-file last known content. Redirected paths and hard-linked files
 are rejected. Replacement is written to an exclusive temporary file outside the
 checkout, rechecked against current state, then renamed into the fixed target.
 

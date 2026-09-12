@@ -48,7 +48,7 @@ isolated process, prompt and verdict admission.
 `task review <directory>` and `task decide <directory> <accept|reject> <review-sha256>`
 provide offline review and local decision recording; neither promotes code.
 `task promote <directory> <review-sha256>` explicitly applies an accepted
-documentation or `pi-result-consistency` change from the original source root
+promotable registered write set from the original source root
 after checking for conflicting source work.
 `verify <file.ts|file.js>` runs the [bounded check](verification.md); unsupported
 arguments print a diagnostic on stderr and exit 2.

@@ -1,7 +1,7 @@
 # Architecture
 
 Tesota currently has one private TypeScript package with a verification CLI,
-opt-in live integration experiments, and four registered bounded repository tasks.
+opt-in live integration experiments, and five registered bounded repository tasks.
 It has no general production task runtime or interactive agent shell. The
 [roadmap](roadmap.md) describes those intended capabilities separately.
 
@@ -32,10 +32,11 @@ It has no general production task runtime or interactive agent shell. The
 | [src/pi-review-relay.ts](../src/pi-review-relay.ts) | Expose Tesota's saved Codex OAuth through Gentle's fixed tool-free Pi process transport |
 | [task-run.ts](../src/task-run.ts) | Create fresh task attempts or validated recovery successors, reuse authentication and retain checks and review diffs |
 | [task-review.ts](../src/task-review.ts) | Review current candidate bytes and bind a separate local operator decision to their fingerprint |
-| [task-promotion.ts](../src/task-promotion.ts) | Apply one explicitly requested, accepted documentation or `pi-result-consistency` change after source checks; retain the write outcome |
+| [task-promotion.ts](../src/task-promotion.ts) | Preflight and apply one explicitly requested, accepted registered write set; retain complete or partial outcomes |
 | [code-task-check.ts](../src/code-task-check.ts) | Run the fixed pure-predicate behavior oracle in a pinned, network-disabled container |
 | [formal-task-check.ts](../src/formal-task-check.ts) | Seed and check the bounded LemmaScript/Dafny correction task in a temporary copy |
 | [candidate-source-task-check.ts](../src/candidate-source-task-check.ts) | Seed and check optional-final-LF candidate-source acceptance |
+| [multi-file-task-check.ts](../src/multi-file-task-check.ts) | Derive and check the exact two-file documentation change for the task capability |
 | [verification/invocation-admission.ts](../src/verification/invocation-admission.ts) | Own the pure bounded-invocation decision and its LemmaScript/Dafny contract |
 
 The verification modules have no Pi dependency. Synthetic and live verification
