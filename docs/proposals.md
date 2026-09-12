@@ -1,10 +1,11 @@
 # Task proposals
 
-Proposal discovery turns an operator request into a concise proposed outcome,
-read/write set and declarative check selection. It is available through the
-`task propose` command and the first interactive `tesota` shell. It does not
-create a candidate, edit files, execute repository code, approve work or create
-a run grant.
+Repository discovery gives the model a bounded, read-only view of a committed
+baseline. The explicit `task propose` command requires a concise proposed outcome,
+read/write set and declarative check selection. The interactive `tesota` shell uses
+the same boundary but accepts three results: an answer grounded in observed files,
+one necessary clarification question or a task proposal. None creates a candidate,
+edits files, executes repository code, approves work or creates a run grant.
 
 ## Use
 
@@ -16,12 +17,14 @@ bun start
 bun start task propose "Clarify the task recovery documentation"
 ```
 
-With no arguments in an interactive terminal, Tesota asks for one request and
-routes it through the same discovery boundary. The explicit subcommand accepts
-the request directly and remains useful for automation and diagnosis. In both
-cases the request is ordinary language; file names are optional hints, not required
-syntax. A successful discovery prints the objective, proposed files, completion
-conditions, check names, exact committed baseline and retained proposal directory.
+With no arguments in an interactive terminal, Tesota asks for one message and
+routes it through repository discovery. A question prints an answer and its observed
+evidence files. Material ambiguity prints one question and stops; the current shell
+does not yet continue the conversation. A requested change prints its objective,
+proposed files, completion conditions, check names, exact committed baseline and
+retained proposal directory. The explicit subcommand accepts a request directly,
+requires the proposal result and remains useful for automation and diagnosis. File
+names are optional hints, not required syntax.
 `ready for review` means only that discovery produced a structurally admitted
 proposal. It does not mean the proposal is correct, accepted or executable.
 
@@ -33,7 +36,7 @@ the model receives no shell, edit, check, web or arbitrary network tool.
 
 Tesota reads the named Git `HEAD` commit through fixed local Git operations. The
 model can list allowed paths, search literal text, read an allowed regular UTF-8
-blob and submit one proposal. Application-owned schemas and budgets limit each
+blob and submit one parsed result. Application-owned schemas and budgets limit each
 operation, file size, scan, returned bytes, tool calls, model continuations and
 session settlement. Known credential-like paths and unsupported path shapes are
 omitted or denied. Binary, oversized, redirected and non-regular inputs do not
@@ -52,22 +55,23 @@ does not commit, stash or overwrite operator work.
 
 ## Retained record
 
-Each completed discovery exclusively creates
+Only a completed task-proposal result exclusively creates
 `~/.tesota/proposals/<uuid>/proposal.json` with private permissions. The strict
 version 1 record binds the request, committed baseline, model identity, observed
 budgets, dirty paths and the submitted proposal. Its authority is explicitly
 `none`, its provenance is `model_proposed`, and its check entry is declarative and
-non-executable. Failed or unsettled discovery retains no proposal record.
+non-executable. Answers, clarification, failed or unsettled discovery retain no
+proposal record.
 
 There is deliberately no record reader or `task start` consumer yet. Editing a
 proposal file therefore cannot grant file, check, network, candidate, acceptance
 or promotion authority. The [natural-language task decision](decisions/003-natural-language-task-experience.md)
 defines the later admission boundary that must exist before execution is added.
 
-Exit 0 reports a proposal ready for review. Exit 1 reports a blocked proposal or
-failed discovery. Invalid or unsupported live platform use exits 2 where detected
-before discovery. Normal repository checks use fake provider streams and never
-invoke live inference.
+Exit 0 reports a completed answer, clarification or proposal ready for review.
+Exit 1 reports a blocked proposal or failed discovery. Invalid or unsupported live
+platform use exits 2 where detected before discovery. Normal repository checks use
+fake provider streams and never invoke live inference.
 
 ## Live qualification
 

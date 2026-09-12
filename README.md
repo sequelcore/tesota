@@ -34,8 +34,10 @@ The new [`task propose`](docs/proposals.md) command accepts an ordinary-language
 goal and uses bounded, read-only discovery over committed Tesota files to retain
 a non-authoritative proposed scope. It creates no candidate and cannot execute
 the proposal. In an interactive terminal, running `tesota` now opens the first
-Tesota-owned conversational shell and sends one ordinary-language request through
-that same discovery boundary. The shell does not yet approve or execute proposals.
+Tesota-owned conversational shell. One read-only turn can answer a repository
+question, request a necessary clarification or retain a task proposal. None of
+those results grants execution authority, and the shell does not yet approve or
+execute proposals.
 See the [roadmap](docs/roadmap.md) for demonstrated progress and remaining work.
 The proposed [natural-language task experience](docs/decisions/003-natural-language-task-experience.md)
 defines how later approval and execution will remain separate from this proposal.
@@ -77,7 +79,7 @@ acceptance.
 | [Authentication](docs/authentication.md) | One-time Codex login, saved credentials and logout |
 | [Candidate checkouts](docs/candidates.md) | Separate committed working copies, inspection and incomplete state |
 | [Registered tasks](docs/tasks.md) | Task contracts, bounded operations, recovery and checks |
-| [Task proposals](docs/proposals.md) | Natural-language, read-only discovery and non-authoritative proposal records |
+| [Task proposals](docs/proposals.md) | Read-only conversational discovery and non-authoritative proposal records |
 | [Experiments](experiments/README.md) | Pi and Codex guides, recorded outcomes and limitations |
 | [Project history](docs/history/README.md) | Bootstrap provenance and toolchain validation |
 

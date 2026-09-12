@@ -1,9 +1,10 @@
 # 003: Natural-language task experience
 
 Status: proposed product direction. Read-only `task propose` and the first
-argument-free conversational entry point are implemented and locally verified;
-stored-OAuth dirty-input blocking and clean proposal creation have passed.
-Approval, run grants and general execution are not implemented.
+argument-free conversational entry point are implemented and locally verified.
+The shell can answer, request clarification or propose a task; only proposal paths
+have stored-OAuth qualification. Approval, run grants and general execution are not
+implemented.
 
 ## Problem
 
@@ -60,9 +61,10 @@ still exists in the cited product version.
 
 ## Decision
 
-The default interaction begins with a natural-language **request**. File paths,
-tests and constraints are optional hints; the operator does not need to know the
-implementation scope in advance.
+The default interaction begins with a natural-language **message**. It may be a
+repository question, a request for change or an ambiguous statement requiring one
+clarification. File paths, tests and constraints are optional hints; the operator
+does not need to classify the message or know the implementation scope in advance.
 
 Tesota first performs **discovery** against a named committed baseline using a
 read-only repository view. Discovery may inspect tracked baseline content and
@@ -86,7 +88,14 @@ until the operator selects a suitable committed baseline or explicitly chooses t
 work against the displayed historical state. Tesota does not commit, stash or
 import those changes. Unrelated working changes do not block the proposal.
 
-Discovery produces a compact **task proposal** containing:
+Discovery submits exactly one parsed result. An **answer** cites files actually
+observed from the committed baseline. A **clarification** asks one question needed
+to distinguish materially different outcomes. A **task proposal** represents a
+requested change. Intent selection never changes the available tools or grants
+authority; all three variants run behind the same read-only boundary. This avoids
+making a model classification into a permission decision.
+
+A compact task proposal contains:
 
 - the understood outcome and observable completion conditions;
 - the baseline and proposed readable and writable paths;
@@ -173,7 +182,9 @@ or lifecycle ownership.
 
 | Concept | Meaning | Owner |
 | --- | --- | --- |
-| Request | The operator's natural-language desired outcome and optional hints | Conversation/input boundary |
+| Message | The operator's natural-language question, desired change or ambiguous statement | Conversation/input boundary |
+| Answer | A read-only response grounded in observed baseline files | Discovery boundary |
+| Clarification | One question needed before answering or proposing accurately | Discovery boundary |
 | Task proposal | Tesota's read-only interpretation of outcome, scope, checks and effects | Discovery boundary |
 | Run grant | Immutable machine-enforced authority issued after approval | Tesota runtime |
 | Scope change | A proposed delta to an existing grant | Tesota runtime and operator decision |
@@ -223,6 +234,14 @@ execution and network use fail closed. Local fake-provider tests establish these
 boundaries; stored-OAuth runs qualified both dirty-input blocking and a clean
 `ready` proposal. They do not establish proposal correctness or executable
 admission.
+
+The argument-free shell now generalizes that same boundary into one read-only turn
+whose strict result is `answer`, `clarification` or `task_proposal`. The explicit
+command remains proposal-only. Answers and clarification are not persisted and no
+variant can create a candidate or authority. Local fake-provider tests establish
+the result contract and observed-evidence rule; live usefulness for questions and
+clarification remains unqualified. Multi-turn continuation is deliberately deferred
+until real use demonstrates the required session semantics.
 
 The next product increment is a thin inline `tesota` session backed by the first
 deliberately narrow `task start <proposal-id>` consumer. The shell and consumer

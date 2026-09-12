@@ -11,11 +11,14 @@ describes those intended capabilities separately.
 | Owner | Responsibility |
 | --- | --- |
 | [src/cli.ts](../src/cli.ts) | Dispatch the interactive entry point, verification, authentication and candidate commands |
-| [src/native-shell.ts](../src/native-shell.ts) | Own the first inline terminal conversation and route one request to bounded proposal discovery |
+| [src/native-shell.ts](../src/native-shell.ts) | Own the first inline terminal prompt and route one message to bounded repository discovery |
+| [src/conversation-turn.ts](../src/conversation-turn.ts) | Own valid read-only turn outcomes, live setup and operator-facing result formatting |
+| [src/conversation-turn-contract.ts](../src/conversation-turn-contract.ts) | Parse the answer, clarification and task-proposal result variants |
 | [src/candidate-checkout.ts](../src/candidate-checkout.ts) | Create independent committed checkouts and inspect changes against their baselines |
 | [src/repository-git.ts](../src/repository-git.ts) | Run fixed shell-free local Git operations without ambient config, hooks, credentials or network protocols |
+| [src/repository-discovery.ts](../src/repository-discovery.ts) | Expose a bounded committed repository view and validate evidence paths for read-only turns |
 | [src/task-proposal-contract.ts](../src/task-proposal-contract.ts) | Own proposal vocabulary, tool request schemas, declarative check IDs and discovery limits |
-| [src/task-proposal.ts](../src/task-proposal.ts) | Read committed baseline blobs, classify dirty conflicts and retain non-authoritative proposals |
+| [src/task-proposal.ts](../src/task-proposal.ts) | Classify dirty conflicts and retain non-authoritative proposals |
 | [src/candidate-task-definition.ts](../src/candidate-task-definition.ts) | Own registered task requirements, read/write sets, oracles, instructions, limits and promotion policy |
 | [src/candidate-task.ts](../src/candidate-task.ts) | Enforce a selected registered task through bounded per-file operations and write-set-bound checks |
 | [src/auth.ts](../src/auth.ts) | Login, offline status and local logout |
@@ -34,7 +37,7 @@ describes those intended capabilities separately.
 | [integrations/pi-verification-evidence.ts](../src/integrations/pi-verification-evidence.ts) | Verification and candidate probe criteria, identity and sanitized records |
 | [src/live-candidate.ts](../src/live-candidate.ts) | Run the correction exercise and retain checks, source and review diff |
 | [integrations/pi-task.ts](../src/integrations/pi-task.ts) | Adapt task-owned schemas to Pi tools; bound the live session and observe check continuation |
-| [integrations/pi-proposal.ts](../src/integrations/pi-proposal.ts) | Expose only bounded list, literal-search, baseline-read and proposal-submission tools to Pi |
+| [integrations/pi-discovery.ts](../src/integrations/pi-discovery.ts) | Expose bounded list, literal-search, baseline-read and result-submission tools to Pi |
 | [src/pi-review-relay.ts](../src/pi-review-relay.ts) | Expose Tesota's saved Codex OAuth through Gentle's fixed tool-free Pi process transport |
 | [task-run.ts](../src/task-run.ts) | Create fresh task attempts or validated recovery successors, reuse authentication and retain checks and review diffs |
 | [task-review.ts](../src/task-review.ts) | Review current candidate bytes and bind a separate local operator decision to their fingerprint |
@@ -56,15 +59,19 @@ shared task engine; persisted plans cannot add definitions or expand paths. The
 promotable definitions support guarded write-set promotion; the formal and
 candidate-source tasks do not.
 
-Task proposal discovery is a separate read-only boundary. It observes committed
-Git blobs without creating a candidate and gives Pi no edit, shell, check, web or
-arbitrary network tool. Its retained version 1 record has `authority: "none"` and
-no reader or execution consumer. The configured provider call is inference
-transport, not model-controlled repository network access. See the
+Repository discovery is a separate read-only boundary. It observes committed Git
+blobs without creating a candidate and gives Pi no edit, shell, check, web or
+arbitrary network tool. A conversational turn must submit exactly one parsed
+`answer`, `clarification` or `task_proposal`. Answers cite observed baseline files;
+proposed writes must be fully read. Only the proposal variant is retained. Its
+version 1 record has `authority: "none"` and no reader or execution consumer. The
+configured provider call is inference transport, not model-controlled repository
+network access. See the
 [proposal contract](proposals.md).
 
-The native shell currently collects one request and invokes that discovery
-boundary. It does not parse retained proposal files, grant authority, create a
+The native shell currently collects one message and invokes that discovery
+boundary. It does not continue after an answer or clarification, parse retained
+proposal files, grant authority, create a
 candidate, approve work or execute checks. When standard input, output or error is
 not an interactive terminal, the argument-free CLI preserves the non-inferential
 help behavior.

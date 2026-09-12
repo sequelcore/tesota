@@ -17,8 +17,9 @@ Run commands from the repository root.
 
 With no arguments, the main CLI opens the first conversational shell when standard
 input, output and error are interactive terminals. It accepts one natural-language
-request and routes it to the existing read-only proposal command; it cannot approve
-or execute the proposal. With no arguments in a non-interactive process, or with
+message. Bounded discovery can answer a repository question, ask for clarification
+or retain a proposal for a requested change; it cannot approve or execute a proposal.
+With no arguments in a non-interactive process, or with
 `help`, `--help` or `-h`, it prints help (exit 0).
 `candidate create` and `candidate inspect <id|directory>` prepare and inspect
 [independent checkouts](candidates.md); they do not invoke a model.
@@ -100,7 +101,7 @@ copying its explanation into another file.
 | Authentication and private credential lifecycle | [Authentication](authentication.md) |
 | Candidate checkout creation and inspection | [Candidate checkouts](candidates.md) |
 | Task scope and documentation check | [Scoped candidate task](tasks.md) |
-| Natural-language discovery and proposal records | [Task proposals](proposals.md) |
+| Read-only conversational discovery and proposal records | [Task proposals](proposals.md) |
 | Experimental guides and records | [experiments/](../experiments/README.md), grouped by capability |
 | Consequential decisions and rationale | `docs/decisions/`, linked from the relevant guide |
 | Selected upstream source and reuse | `docs/references/` |

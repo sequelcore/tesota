@@ -33,7 +33,7 @@ validation of the current checkout.
 | Registered task execution | Passed for a second live task | One immutable registry owns four task contracts and the shared engine has no task-name branches; the candidate-source task passed direct, simulated-Pi and stored-OAuth live correction through the same bounded operations |
 | Registered multi-file task | Locally verified for a two-file write set | One task can read, replace, check, review and promote two registered paths; checks and review bind the ordered write set, and promotion preflights every source target before its first rename |
 | Natural-language task proposal | Stored-OAuth discovery and dirty-input blocking passed | A Spanish goal named no files; bounded read-only discovery selected one documentation path, retained a strict proposal and reported relevant excluded changes with no candidate or execution authority |
-| Native terminal shell | Started with locally verified discovery entry | Interactive `tesota` accepts one natural-language request and routes it to bounded proposal discovery; approval, execution, progress and review remain unimplemented |
+| Native terminal shell | Read-only turn locally verified | Interactive `tesota` accepts one natural-language message and returns a grounded answer, necessary clarification or non-authoritative task proposal; continuation, approval, execution, progress and review remain unimplemented |
 | Task recovery successor | Passed for one interrupted live task | An explicit command validated the failed predecessor, recreated its exact baseline in a clean candidate, recorded the relationship and completed a fresh Pi correction without inheriting bytes, evidence or acceptance |
 | Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
 | Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
@@ -305,8 +305,13 @@ a full-screen TUI or GUI is not required to validate the contract. Gentle remain
 behind the Tesota-owned boundary, so provider presentation and private state do
 not define Tesota's request, grant, progress, review or promotion semantics.
 
-Read-only `task propose` is now implemented for Tesota's own repository. It
-accepts a natural-language outcome without requiring file names, binds a committed
+Read-only conversational discovery is now implemented for Tesota's own repository.
+The shell can return a grounded answer, one necessary clarification or a task
+proposal through one strict result union. Only proposals are retained; every result
+has zero execution authority. The explicit `task propose` command remains a narrower
+proposal-only consumer. This behavior has local fake-provider coverage but has not
+yet been exercised through a live question or clarification. A proposal accepts a
+natural-language outcome without requiring file names, binds a committed
 baseline, exposes only bounded list, literal-search, baseline-read and submission
 tools, reports relevant dirty-path conflicts and retains a non-authoritative
 proposal. Mutation, repository-code execution and model-controlled network access
