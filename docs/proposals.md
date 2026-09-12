@@ -161,7 +161,8 @@ to the approval flow. Candidate `5b83844e-ef91-4e32-80cf-07125fafaf56` completed
 through five model invocations, four tool calls, one edit, an initial failed scope
 check and a final passing scope check. The escaped diff was inspected, explicitly
 accepted and promoted only `docs/proposals.md`. The promoted documentation change
-was committed as `571fef2f`; the complete repository gate subsequently passed
-22 test files and 299 tests after two slow integration cases received explicit
-bounded timeouts. This qualifies one end-to-end documentation lifecycle and its
-fail-closed correction path, not general tasks or repository-command execution.
+was committed as `571fef2f`; after the final cancellation and sensitive-path
+repairs, the complete repository gate passed 22 test files and 302 tests. Two slow
+integration cases also received explicit bounded timeouts. This qualifies one
+end-to-end documentation lifecycle and its fail-closed correction path, not
+general tasks or repository-command execution.
