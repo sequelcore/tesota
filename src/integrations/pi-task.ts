@@ -7,7 +7,7 @@ import { canAdmitInvocation } from "../verification/invocation-admission.js";
 
 export const PI_TASK_LIMITS: Readonly<{
   modelInvocations: number; toolCalls: number; sessionMs: number; settlementMs: number; outputTokens: number;
-}> = Object.freeze({ modelInvocations: 8, toolCalls: 13, sessionMs: 180_000, settlementMs: 2_000, outputTokens: 4096 });
+}> = Object.freeze({ modelInvocations: 10, toolCalls: 13, sessionMs: 180_000, settlementMs: 2_000, outputTokens: 4096 });
 
 export interface PiTaskResult {
   readonly status: "completed" | "failed" | "aborted" | "unsettled";
@@ -188,7 +188,7 @@ export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck):
   const first = checks[0];
   const last = checks[checks.length - 1];
   const validCount = [
-    { value: result.modelInvocations, maximum: 8 },
+    { value: result.modelInvocations, maximum: 10 },
     { value: result.toolCalls, maximum: 13 },
     { value: result.edits, maximum: 2 },
   ].every(({ value, maximum }) => Number.isInteger(value) && value > 0 && value <= maximum);

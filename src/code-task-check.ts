@@ -5,7 +5,7 @@ import { CONTAINER_ENGINE_ARGS, CONTAINER_IMAGE, containerRunPolicyArgs,
 
 export const CODE_TASK_FILE = "src/integrations/pi-task.ts";
 export const CODE_TASK_MARKER = "export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck): boolean {";
-export const CODE_TASK_OBJECTIVE = "Strengthen piTaskPasses to reject inconsistent session evidence. Preserve every byte before its export declaration. Require completed/stop, no denial/deadline, positive bounded integer invocation/tool/edit counts (8/13/2), 2-3 issued checks for the same task and baseline, initial check_failed then final passed with changed source hashes, all checks supplied to the model, not_evaluated task acceptance throughout, and a matching current passed check with recorded_untrusted provenance. Allow a correction attempt with an intermediate failed check. Do not require exact counts when valid runs can differ. Use only this pure function, JavaScript syntax inside its existing TypeScript signature, no imports or additional declarations outside the function.";
+export const CODE_TASK_OBJECTIVE = "Strengthen piTaskPasses to reject inconsistent session evidence. Preserve every byte before its export declaration. Require completed/stop, no denial/deadline, positive bounded integer invocation/tool/edit counts (10/13/2), 2-3 issued checks for the same task and baseline, initial check_failed then final passed with changed source hashes, all checks supplied to the model, not_evaluated task acceptance throughout, and a matching current passed check with recorded_untrusted provenance. Allow a correction attempt with an intermediate failed check. Do not require exact counts when valid runs can differ. Use only this pure function, JavaScript syntax inside its existing TypeScript signature, no imports or additional declarations outside the function.";
 
 export interface CodeCheck {
   readonly status: "passed" | "check_failed";
@@ -20,8 +20,9 @@ const after = {...before,status:"passed",writeSetSha256:"2".repeat(64)};
 const valid = {status:"completed",modelInvocations:5,toolCalls:4,edits:1,checks:[before,after],checksSuppliedToModel:2,finalCheckSuppliedToModel:true,deadlineExpired:false,denied:false,terminalStopReason:"stop",taskAcceptance:"not_evaluated"};
 const current = {...after,provenance:"recorded_untrusted"};
 const cases = [["valid",valid,current,true],
- ["correction",{...valid,modelInvocations:7,toolCalls:6,edits:2,checks:[before,{...before,writeSetSha256:"3".repeat(64)},after],checksSuppliedToModel:3},current,true]];
-for(const [key,value] of [["status","failed"],["terminalStopReason","error"],["denied",true],["deadlineExpired",true],["modelInvocations",0],["modelInvocations",9],["toolCalls",0],["toolCalls",14],["edits",0],["edits",3],["edits",1.5],["modelInvocations",2.5],["toolCalls",4.5],["finalCheckSuppliedToModel",false],["checksSuppliedToModel",1]])
+ ["correction",{...valid,modelInvocations:7,toolCalls:6,edits:2,checks:[before,{...before,writeSetSha256:"3".repeat(64)},after],checksSuppliedToModel:3},current,true],
+ ["bounded max",{...valid,modelInvocations:10},current,true]];
+for(const [key,value] of [["status","failed"],["terminalStopReason","error"],["denied",true],["deadlineExpired",true],["modelInvocations",0],["modelInvocations",11],["toolCalls",0],["toolCalls",14],["edits",0],["edits",3],["edits",1.5],["modelInvocations",2.5],["toolCalls",4.5],["finalCheckSuppliedToModel",false],["checksSuppliedToModel",1]])
  cases.push([key+"="+value,{...valid,[key]:value},current,false]);
 cases.push(["missing checks",{...valid,checks:[]},current,false],
  ["unissued",{...valid,checks:[{...before,provenance:"recorded_untrusted"},after]},current,false],

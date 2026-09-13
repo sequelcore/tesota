@@ -9,7 +9,7 @@ import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, 
 import { PI_TASK_LIMITS, piTaskPasses, runPiTask } from "../src/integrations/pi-task.js";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
 import { CandidateTask, checkCandidateTask } from "../src/candidate-task.js";
-import { PI_DECISION_TASK_STATUS } from "../src/candidate-task-definition.js";
+import { CANDIDATE_TASK_LIMITS, PI_DECISION_TASK_STATUS } from "../src/candidate-task-definition.js";
 import { reviewTask, decideTask } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
 import { prepareTaskRecovery } from "../src/task-run.js";
@@ -97,6 +97,8 @@ it.runIf(process.platform === "win32")("binds a proposed code grant to the regis
   expect(test.content).toContain("piTaskPasses");
   expect((await task.check()).status).toBe("check_failed");
   const corrected = source.content
+    .replace("{ value: result.modelInvocations, maximum: 8 }",
+      "{ value: result.modelInvocations, maximum: 10 }")
     .replace("typeof check.writeSetSha256 === \"string\" && check.writeSetSha256.length > 0),",
       "typeof check.writeSetSha256 === \"string\" && check.writeSetSha256.length > 0 &&\n" +
       "      check.taskAcceptance === \"not_evaluated\"),")
@@ -105,7 +107,7 @@ it.runIf(process.platform === "win32")("binds a proposed code grant to the regis
       "    current.taskAcceptance === \"not_evaluated\",");
   await task.replace({ path: "src/integrations/pi-task.ts", expectedSha256: source.sha256, content: corrected });
   expect(await task.check()).toMatchObject({ status: "check_failed",
-    diagnostics: expect.arrayContaining(["The admitted regression test must change"]) });
+    diagnostics: expect.arrayContaining(["The admitted regression test must preserve its baseline and append focused cases"]) });
   await task.replace({ path: "tests/candidate-task.test.ts", expectedSha256: test.sha256,
     content: test.content + "\n// Proposed task regression coverage.\n" });
   expect((await task.check()).status).toBe("passed");
@@ -589,10 +591,11 @@ it("does not pass a model's unsupported completion claim", async () => {
 it("bounds model continuations independently of the permitted read budget", async () => {
   const candidate = await fixture();
   const task = await CandidateTask.prepare(candidate.directory);
-  const fake = fakeModel(Array.from({ length: 9 }, () => fauxAssistantMessage(fauxToolCall("tesota_read", { path: editedFile }))));
+  const admittedReads = CANDIDATE_TASK_LIMITS.reads + 1;
+  const fake = fakeModel(Array.from({ length: admittedReads }, () => fauxAssistantMessage(fauxToolCall("tesota_read", { path: editedFile }))));
   const result = await runPiTask(task, fake.model, fake.stream, new AbortController().signal);
-  expect(result).toMatchObject({ status: "failed", denied: true, modelInvocations: PI_TASK_LIMITS.modelInvocations });
-  expect(fake.stream).toHaveBeenCalledTimes(PI_TASK_LIMITS.modelInvocations);
+  expect(result).toMatchObject({ status: "failed", denied: true, modelInvocations: admittedReads });
+  expect(fake.stream).toHaveBeenCalledTimes(admittedReads);
 }, 30_000);
 
 it.each(["deadline", "interrupt"] as const)("closes authority when a stream will not settle after %s", async (reason) => {
