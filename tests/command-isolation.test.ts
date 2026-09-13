@@ -10,6 +10,7 @@ import {
 import {
   CleanupUnconfirmedError,
   collectUnconfirmedResources,
+  networkControlIsUsable,
   runIsolationQualificationCommand,
   type IsolationQualification,
 } from "../src/isolation-qualification.js";
@@ -23,6 +24,11 @@ const paths: IsolationPaths = {
 };
 
 describe("command isolation qualification", () => {
+  it("rejects a reachable network control when its client cleanup is unconfirmed", () => {
+    expect(networkControlIsUsable({ reachable: true, pending: ["positive-control-client"] })).toBe(false);
+    expect(networkControlIsUsable({ reachable: true, pending: [] })).toBe(true);
+  });
+
   it("attempts every cleanup and reports each resource whose absence is unconfirmed", () => {
     const attempted: string[] = [];
 

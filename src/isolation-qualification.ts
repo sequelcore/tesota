@@ -248,6 +248,10 @@ interface NetworkControlReachability {
   readonly pending: readonly string[];
 }
 
+export function networkControlIsUsable(reachability: NetworkControlReachability): boolean {
+  return reachability.reachable && reachability.pending.length === 0;
+}
+
 function containerCanReachNetworkControl(control: ContainerNetworkControl, env: NodeJS.ProcessEnv): NetworkControlReachability {
   const name = `tesota-network-control-${randomUUID()}`;
   const script = "const net=require('node:net');const deadline=Date.now()+3000;function attempt(){const s=net.connect(Number(process.argv[1]),process.argv[2],()=>{s.destroy();process.exit(0)});s.on('error',()=>{s.destroy();if(Date.now()<deadline)setTimeout(attempt,100);else process.exit(1)})}attempt()";
@@ -290,7 +294,7 @@ function createContainerNetworkControl(env: NodeJS.ProcessEnv): ContainerNetwork
   const control = { ...partial, address };
   const serverReady = server.error === undefined && server.status === 0 && /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(address);
   const reachability = serverReady ? containerCanReachNetworkControl(control, env) : { reachable: false, pending: [] };
-  if (reachability.reachable) return control;
+  if (networkControlIsUsable(reachability)) return control;
   const pending = [
     ...reachability.pending,
     ...collectUnconfirmedResources([
