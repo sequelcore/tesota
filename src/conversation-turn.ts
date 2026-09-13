@@ -79,15 +79,16 @@ export type ConversationCommandResult =
   | Readonly<{ status: "unavailable"; exitCode: number; reason: "baseline_changed" | "unavailable" }>;
 
 async function runLiveConversation(rawInput: ConversationInput,
-  allowedOutcome: DiscoveryOutcome): Promise<ConversationCommandResult> {
+  allowedOutcome: DiscoveryOutcome, writeError: (text: string) => void = (text) => { process.stderr.write(text); }):
+Promise<ConversationCommandResult> {
   if (process.platform !== "win32") {
-    process.stderr.write("Live repository discovery is currently supported on Windows.\n");
+    writeError("Live repository discovery is currently supported on Windows.\n");
     return { status: "unavailable", exitCode: 2, reason: "unavailable" };
   }
   try {
     const source = await liveSource();
     if (source === null) {
-      process.stderr.write("Live repository discovery currently supports only the Tesota repository root.\n");
+      writeError("Live repository discovery currently supports only the Tesota repository root.\n");
       return { status: "unavailable", exitCode: 2, reason: "unavailable" };
     }
     const cancellation = new AbortController();
@@ -113,7 +114,7 @@ async function runLiveConversation(rawInput: ConversationInput,
     if (error instanceof ConversationBaselineChangedError) {
       return { status: "unavailable", exitCode: 1, reason: "baseline_changed" };
     }
-    process.stderr.write("Repository discovery unavailable or failed; nothing changed and no authority was created.\n");
+    writeError("Repository discovery unavailable or failed; nothing changed and no authority was created.\n");
     return { status: "unavailable", exitCode: 1, reason: "unavailable" };
   }
 }
@@ -125,8 +126,9 @@ export async function runRepositoryConversationCommand(rawRequest: string): Prom
   return result.exitCode;
 }
 
-export async function runRepositoryConversationForShell(input: ConversationInput): Promise<ConversationCommandResult> {
-  return runLiveConversation(input, "conversation");
+export async function runRepositoryConversationForShell(input: ConversationInput,
+  writeError?: (text: string) => void): Promise<ConversationCommandResult> {
+  return runLiveConversation(input, "conversation", writeError);
 }
 
 /** Explicit proposal command; its narrower contract does not accept answer or clarification results. */

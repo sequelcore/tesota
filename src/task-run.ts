@@ -94,19 +94,49 @@ export interface TaskRunResult {
   readonly status: "passed" | "failed" | "cancelled";
 }
 
+export interface TaskRunHost {
+  readonly signal?: AbortSignal;
+  readonly write?: (text: string) => void;
+  readonly writeError?: (text: string) => void;
+  readonly exitUnsettled?: (code: number) => never;
+}
+
+function stdout(text: string): void { process.stdout.write(text); }
+function stderr(text: string): void { process.stderr.write(text); }
+function exitProcess(code: number): never { process.exit(code); }
+function ignore(): void {}
+
+function relayCancellation(source: AbortSignal | undefined, target: AbortController): () => void {
+  if (source === undefined) return ignore;
+  const abort = (): void => { target.abort(); };
+  if (source.aborted) abort();
+  source.addEventListener("abort", abort, { once: true });
+  return () => { source.removeEventListener("abort", abort); };
+}
+
+function resolveTaskRunHost(host: TaskRunHost): Required<Omit<TaskRunHost, "signal">> {
+  return {
+    write: host.write ?? stdout,
+    writeError: host.writeError ?? stderr,
+    exitUnsettled: host.exitUnsettled ?? exitProcess,
+  };
+}
+
 async function runPreparedTask(candidate: CandidateCheckout, grantOrTaskId: CandidateTaskId | ProposalRunGrant,
-  recovery?: Recovery): Promise<TaskRunResult> {
+  recovery: Recovery | undefined, host: TaskRunHost): Promise<TaskRunResult> {
   const cancellation = new AbortController();
+  const { write, writeError, exitUnsettled } = resolveTaskRunHost(host);
   const interrupt = (): void => cancellation.abort();
+  const stopRelayingCancellation = relayCancellation(host.signal, cancellation);
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", interrupt);
   const watchdog = setTimeout(() => {
     cancellation.abort();
-    process.stderr.write("Task settlement unconfirmed; inspect the retained attempt.\n");
-    process.exit(1);
+    writeError("Task settlement unconfirmed; inspect the retained attempt.\n");
+    exitUnsettled(1);
   }, 360_000);
   try {
-    process.stdout.write("Task candidate: " + candidate.directory + "\n");
+    write("Task candidate: " + candidate.directory + "\n");
     const record = await open(join(candidate.directory, "attempt.jsonl"), "wx", 0o600);
     let task: CandidateTask | undefined;
     let session: PiTaskResult | null = null;
@@ -135,7 +165,7 @@ async function runPreparedTask(candidate: CandidateCheckout, grantOrTaskId: Cand
       session = await runPiTask(task, model, (requested, context, options) =>
         models.streamSimple(requested, context, options), cancellation.signal);
     } catch {
-      process.stderr.write("Task attempt did not complete successfully; retained state is available for inspection.\n");
+      writeError("Task attempt did not complete successfully; retained state is available for inspection.\n");
     } finally {
       task?.close();
       try {
@@ -155,18 +185,19 @@ async function runPreparedTask(candidate: CandidateCheckout, grantOrTaskId: Cand
     }
     const status: TaskRunResult["status"] = cancellation.signal.aborted ? "cancelled" :
       passed && reviewSaved ? "passed" : "failed";
-    process.stdout.write(status === "passed" ? "Task checks passed; diff retained for human review.\n" :
+    write(status === "passed" ? "Task checks passed; diff retained for human review.\n" :
       status === "cancelled" ? "Task cancelled; retained state is available for inspection.\n" :
         "Task unaccepted; inspect the retained checks and diff.\n");
     return { candidate, status };
   } catch {
-    process.stderr.write("Task preparation or evidence persistence failed. No promotion occurred.\n");
+    writeError("Task preparation or evidence persistence failed. No promotion occurred.\n");
     return { candidate, status: "failed" };
   } finally {
     cancellation.abort();
     clearTimeout(watchdog);
     process.removeListener("SIGINT", interrupt);
     process.removeListener("SIGTERM", interrupt);
+    stopRelayingCancellation();
   }
 }
 
@@ -182,7 +213,7 @@ export async function runTaskCommand(requestedTaskId: string = DEFAULT_CANDIDATE
     return 2;
   }
   try {
-    const result = await runPreparedTask(await createCandidateCheckout(process.cwd()), taskId);
+    const result = await runPreparedTask(await createCandidateCheckout(process.cwd()), taskId, undefined, {});
     return result.status === "passed" ? 0 : result.status === "cancelled" ? 130 : 1;
   }
   catch {
@@ -207,7 +238,7 @@ export async function recoverTaskCommand(reference: string): Promise<number> {
       priorOutcome: prepared.priorOutcome,
       authority: "local_operator_request",
     });
-    const result = await runPreparedTask(prepared.candidate, prepared.taskId, recovery);
+    const result = await runPreparedTask(prepared.candidate, prepared.taskId, recovery, {});
     return result.status === "passed" ? 0 : result.status === "cancelled" ? 130 : 1;
   } catch {
     process.stderr.write("Task recovery unavailable. No predecessor state was changed.\n");
@@ -216,7 +247,9 @@ export async function recoverTaskCommand(reference: string): Promise<number> {
 }
 
 /** Execute only an in-memory proposal grant already issued by the admission owner. */
-export async function runProposalTask(grant: ProposalRunGrant): Promise<TaskRunResult> {
+export async function runProposalTask(grant: ProposalRunGrant, host: TaskRunHost = {}): Promise<TaskRunResult> {
   if (grant.kind !== PROPOSAL_TASK_KIND || process.platform !== "win32") throw new Error("Proposal execution unavailable");
-  return runPreparedTask(await createCandidateCheckout(grant.source), grant);
+  if (host.signal?.aborted === true) throw new DOMException("cancelled", "AbortError");
+  const candidate = await createCandidateCheckout(grant.source);
+  return runPreparedTask(candidate, grant, undefined, host);
 }

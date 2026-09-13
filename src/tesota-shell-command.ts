@@ -7,6 +7,7 @@ import type { TesotaShellProgress } from "./shell-progress.js";
 import { runTesotaShell } from "./tesota-shell.js";
 import { createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
 import { startTask, type TaskStartProgress } from "./task-start.js";
+import { runProposalTask } from "./task-run.js";
 
 export interface TesotaShellCommandDependencies {
   readonly surface: TesotaShellTerminal;
@@ -14,14 +15,17 @@ export interface TesotaShellCommandDependencies {
   readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void) => Promise<number>;
 }
 
-function interruptActiveOperation(): void { process.emit("SIGINT"); }
-
 export function createProcessTesotaShell(cwd: string = process.cwd()): TesotaShellCommandDependencies {
+  const cancellation = new AbortController();
   const tui = new TuiAltScreen(new ProcessTerminal(), false, undefined, { mouse: true });
-  const surface = createTesotaShellTerminal({ cwd, tui, interrupt: interruptActiveOperation });
+  const interrupt = (): void => {
+    cancellation.abort();
+    process.emit("SIGINT");
+  };
+  const surface = createTesotaShellTerminal({ cwd, tui, interrupt });
   return {
     surface,
-    discover: runRepositoryConversationForShell,
+    discover: (input) => runRepositoryConversationForShell(input, (text) => { surface.write(text); }),
     start: (proposalId, report) => startTask({
       proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
       sourceDirectory: cwd,
@@ -29,6 +33,15 @@ export function createProcessTesotaShell(cwd: string = process.cwd()): TesotaShe
       ask: (prompt) => surface.ask(prompt),
       write: (text) => { surface.write(text); },
       report,
+      execute: (grant) => runProposalTask(grant, {
+        signal: cancellation.signal,
+        write: (text) => { surface.write(text); },
+        writeError: (text) => { surface.write(text); },
+        exitUnsettled: (code) => {
+          surface.stop();
+          process.exit(code);
+        },
+      }),
     }),
   };
 }
@@ -49,8 +62,8 @@ export async function runTesotaShellCommand(
   } catch (error) {
     const cancelled = error instanceof Error && error.name === "AbortError";
     surface.write(cancelled
-      ? "Tesota session cancelled. Nothing changed.\n"
-      : "Tesota session ended before the active turn completed. Nothing changed.\n");
+      ? "Tesota session cancelled. Inspect retained evidence before retrying.\n"
+      : "Tesota session failed. Inspect retained evidence before retrying.\n");
     return cancelled ? 130 : 1;
   } finally {
     surface.stop();
