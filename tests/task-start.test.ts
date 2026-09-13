@@ -67,14 +67,18 @@ it("runs one approved proposal through execution, review, decision and promotion
   const promote = vi.fn(async () => ({ status: "applied" as const, source: current.source,
     files: [{ path: "docs/guide.md", sourceSha256: "d".repeat(64) }] }));
   const output: string[] = [];
+  const progress: string[] = [];
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
     reference: current.id, ask: vi.fn().mockResolvedValueOnce("yes").mockResolvedValueOnce("yes"),
-    write: (text) => output.push(text), execute, review: async () => review, decide, promote })).resolves.toBe(0);
+    write: (text) => output.push(text), report: (event) => progress.push(`${event.phase}:${event.operation}`),
+    execute, review: async () => review, decide, promote })).resolves.toBe(0);
   expect(execute).toHaveBeenCalledOnce();
   expect(decide).toHaveBeenCalledWith(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
   expect(promote).toHaveBeenCalledWith(candidate.directory, current.source, review.reviewSha256);
   expect(output.join("")).toContain("repository check will not run");
   expect(output.join("")).toContain(JSON.stringify(review.diff));
+  expect(progress).toEqual(["awaiting_approval:proposal_scope", "executing:candidate_task",
+    "ready_for_review:candidate_review", "promoting:accepted_candidate"]);
   expect(await readFile(join(current.directory, "start.jsonl"), "utf8")).toContain('"outcome":"promoted"');
 });
 

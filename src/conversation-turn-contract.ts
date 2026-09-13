@@ -4,6 +4,17 @@ import { modelTextSchema, taskProposalSchema, validProposalPath } from "./task-p
 const messageSchema = modelTextSchema(4_000);
 const evidencePathSchema = z.string().min(1).max(512).refine(validProposalPath);
 
+export const conversationInputSchema: z.ZodType<{
+  request: string; clarification?: { question: string; answer: string } | undefined;
+}> = z.strictObject({
+  request: z.string().trim().min(1).max(8_000),
+  clarification: z.strictObject({
+    question: messageSchema.max(1_000),
+    answer: messageSchema.max(4_000),
+  }).optional(),
+}).refine((input) => input.clarification === undefined ||
+  input.request.length + input.clarification.question.length + input.clarification.answer.length <= 8_000);
+
 export const answerTurnSchema: z.ZodType<{
   kind: "answer"; message: string; evidenceFiles: string[]; uncertainties: string[];
 }> = z.strictObject({
@@ -28,6 +39,13 @@ export const taskProposalTurnSchema: z.ZodType<{
   proposal: taskProposalSchema,
 });
 
+export const continuedConversationTurnSchema: z.ZodType<
+  z.infer<typeof answerTurnSchema> | z.infer<typeof taskProposalTurnSchema>
+> = z.union([
+  answerTurnSchema,
+  taskProposalTurnSchema,
+]);
+
 export const conversationTurnSchema: z.ZodType<
   z.infer<typeof answerTurnSchema> | z.infer<typeof clarificationTurnSchema> | z.infer<typeof taskProposalTurnSchema>
 > = z.union([
@@ -41,3 +59,4 @@ export type ClarificationTurn = z.infer<typeof clarificationTurnSchema>;
 export type TaskProposalTurn = z.infer<typeof taskProposalTurnSchema>;
 export type ConversationTurn = z.infer<typeof conversationTurnSchema>;
 export type ConversationTurnKind = ConversationTurn["kind"];
+export type ConversationInput = z.infer<typeof conversationInputSchema>;

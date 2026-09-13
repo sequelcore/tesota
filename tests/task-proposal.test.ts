@@ -58,7 +58,8 @@ async function proposeThroughConversation(options: {
   readonly stream: ReturnType<typeof fakeModel>["stream"];
   readonly signal: AbortSignal;
 }): Promise<ProposedTask> {
-  const turn = await discoverConversationTurn({ ...options, allowedOutcome: "task_proposal" });
+  const { request, ...dependencies } = options;
+  const turn = await discoverConversationTurn({ ...dependencies, input: { request }, allowedOutcome: "task_proposal" });
   if (turn.kind !== "task_proposal") throw new Error("Expected a task proposal");
   return turn.proposedTask;
 }
@@ -249,7 +250,7 @@ it("answers a repository question from observed baseline evidence without retain
   ]);
 
   const turn = await discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
-    request: "What is Tesota?", allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
+    input: { request: "What is Tesota?" }, allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
     signal: new AbortController().signal });
 
   expect(turn).toMatchObject({ kind: "answer", answer: {
@@ -271,7 +272,7 @@ it("returns one clarification without inventing a proposal or repository evidenc
   ]);
 
   const turn = await discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
-    request: "Make it better", allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
+    input: { request: "Make it better" }, allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
     signal: new AbortController().signal });
 
   expect(turn).toMatchObject({ kind: "clarification", clarification: {
@@ -279,6 +280,27 @@ it("returns one clarification without inventing a proposal or repository evidenc
   } });
   expect(formatConversationTurn(turn)).toContain("Authority: none; nothing changed.\n");
   await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("binds one clarification answer to a continued proposal and disallows another question", async () => {
+  const { source, proposals } = await fixture();
+  const clarified = { request: "Update the guide", clarification: {
+    question: "Which guide should change?", answer: "Use the identity guide." } };
+  const proposed = await discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
+    input: clarified, allowedOutcome: "conversation", ...fakeModel(proposalSteps()),
+    signal: new AbortController().signal });
+  if (proposed.kind !== "task_proposal") throw new Error("Expected a continued proposal");
+  expect(proposed.proposedTask.record.request).toBe(
+    "Update the guide\n\nClarification: Which guide should change?\nOperator answer: Use the identity guide.",
+  );
+
+  const repeated = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "clarification",
+      question: "Which section?", reason: "The answer remains broad." })),
+  ]);
+  await expect(discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
+    input: clarified, allowedOutcome: "conversation", model: repeated.model, stream: repeated.stream,
+    signal: new AbortController().signal })).rejects.toThrow("failed");
 });
 
 it("rejects an answer that cites a baseline file it did not observe", async () => {
@@ -290,7 +312,7 @@ it("rejects an answer that cites a baseline file it did not observe", async () =
   ]);
 
   await expect(discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
-    request: "What is Tesota?", allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
+    input: { request: "What is Tesota?" }, allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
     signal: new AbortController().signal })).rejects.toThrow("failed");
   await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
 });
@@ -368,7 +390,7 @@ it("settles an aborted discovery without accepting a late proposal", async () =>
   fake.stream.mockImplementation(() => stream);
   const cancellation = new AbortController();
   vi.useFakeTimers();
-  const running = runPiDiscovery(discovery, "Inspect the repository", "task_proposal",
+  const running = runPiDiscovery(discovery, { request: "Inspect the repository" }, "task_proposal",
     fake.model, fake.stream, cancellation.signal);
   await vi.advanceTimersByTimeAsync(0);
   cancellation.abort();
@@ -407,7 +429,7 @@ it("does not accept a terminal stop that arrives after the session deadline", as
     return response;
   });
   vi.useFakeTimers();
-  const running = runPiDiscovery(discovery, "Clarify README", "task_proposal", fake.model, fake.stream,
+  const running = runPiDiscovery(discovery, { request: "Clarify README" }, "task_proposal", fake.model, fake.stream,
     new AbortController().signal);
   for (let index = 0; index < 10 && invocation < 3; index += 1) await vi.advanceTimersByTimeAsync(0);
   expect(invocation).toBe(3);
