@@ -151,6 +151,18 @@ no repository files and left the private proposal-directory count unchanged at
 three. This qualifies one live answer path, not general intent recognition,
 clarification usefulness or answer correctness beyond the inspected example.
 
+After clarification continuation was implemented, a stored-OAuth shell run on
+2026-09-13 UTC deliberately omitted the topic of a document search. Tesota asked
+one necessary question, accepted the operator's answer about Ctrl+C behavior and
+then returned a grounded answer citing `docs/proposals.md`,
+`src/terminal-question.ts`, `src/native-shell.ts` and
+`tests/native-shell.test.ts`. Both turns reported the unchanged baseline
+`acdda06544ddc70a9f682d94ceb85ef6366efb26` and authority `none`; the answer
+returned to the prompt, an empty next input ended the session, the repository
+remained clean and no proposal or candidate file was created during the run. This
+qualifies one live clarification-to-answer path, not clarification-to-proposal,
+baseline-race handling or broad conversational quality.
+
 The first live proposal-start attempt on 2026-09-12 UTC exposed a prompt defect
 without changing source. Proposal `ea1aa560-d6f1-4906-8c9a-ba4b52464b37`
 correctly selected `docs/proposals.md` from an outcome-only request and received

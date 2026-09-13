@@ -33,7 +33,7 @@ validation of the current checkout.
 | Registered task execution | Passed for a second live task | One immutable registry owns four task contracts and the shared engine has no task-name branches; the candidate-source task passed direct, simulated-Pi and stored-OAuth live correction through the same bounded operations |
 | Registered multi-file task | Locally verified for a two-file write set | One task can read, replace, check, review and promote two registered paths; checks and review bind the ordered write set, and promotion preflights every source target before its first rename |
 | Natural-language task proposal | Stored-OAuth discovery and dirty-input blocking passed | A Spanish goal named no files; bounded read-only discovery selected one documentation path, retained a strict proposal and reported relevant excluded changes with no candidate or execution authority |
-| Tesota Shell | Local clarification continuation; live lifecycle and Ctrl+C verified | Interactive `tesota` accepts natural-language messages, returns grounded answers to the prompt and continues one clarification against an unchanged baseline; typed progress covers discovery, approval, execution, review and promotion; a focused persistent TUI and live clarification qualification remain open |
+| Tesota Shell | Live clarification, lifecycle and Ctrl+C verified | Interactive `tesota` accepts natural-language messages, returns grounded answers to the prompt and continues one clarification against an unchanged baseline; typed progress covers discovery, approval, execution, review and promotion; a focused persistent TUI remains open |
 | Task recovery successor | Passed for one interrupted live task | An explicit command validated the failed predecessor, recreated its exact baseline in a clean candidate, recorded the relationship and completed a fresh Pi correction without inheriting bytes, evidence or acceptance |
 | Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
 | Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
@@ -310,9 +310,10 @@ The shell can return a grounded answer, one necessary clarification or a task
 proposal through one strict result union. Only proposals are retained; every result
 has zero execution authority. The explicit `task propose` command remains a narrower
 proposal-only consumer. This behavior has local fake-provider coverage, and one
-stored-OAuth question produced a grounded answer without retaining a proposal;
-clarification continuation now has local fake-provider coverage but remains
-unqualified in live use. A proposal accepts a
+stored-OAuth question produced a grounded answer without retaining a proposal. A
+second stored-OAuth run completed one clarification-to-answer continuation without
+retaining a proposal or candidate; clarification-to-proposal and baseline-race
+behavior remain locally verified only. A proposal accepts a
 natural-language outcome without requiring file names, binds a committed
 baseline, exposes only bounded list, literal-search, baseline-read and submission
 tools, reports relevant dirty-path conflicts and retains a non-authoritative
@@ -371,8 +372,8 @@ before the next stage can broaden authority:
    the inline shell shows its current phase, active operation and elapsed time;
    cancellation reports observed settlement. One ordinary documentation change
    completes without requiring the operator to copy lifecycle identifiers. The
-   continuation, semantic result and progress paths are locally verified; live
-   clarification use remains the exit evidence.
+   continuation, semantic result and progress paths are locally verified, and one
+   stored-OAuth clarification-to-answer run supplies the live exit evidence.
 2. **Focused Tesota Shell TUI.** Separate typed application outcomes and operator
    decisions from terminal text, then render persistent conversation, phase,
    operation, diff and check evidence. Keyboard operation, scrolling, resize,

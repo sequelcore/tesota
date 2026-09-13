@@ -6,9 +6,9 @@ proposal-backed documentation lifecycle is also implemented locally: it admits
 one current Markdown target below `docs/`, asks for scope approval, uses an
 isolated candidate, presents an escaped diff, records a separate decision and can
 promote without copied lifecycle IDs. One stored-OAuth documentation lifecycle
-has completed. One clarification now continues locally against the same baseline
-with typed results and progress; live clarification qualification and general
-execution remain open.
+has completed. One clarification now continues against the same baseline with typed
+results and progress; a stored-OAuth clarification-to-answer run has qualified that
+path. Clarification-to-proposal qualification and general execution remain open.
 
 ## Problem
 
