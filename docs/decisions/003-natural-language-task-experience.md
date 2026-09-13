@@ -285,9 +285,10 @@ whose strict result is `answer`, `clarification` or `task_proposal`. The explici
 command remains proposal-only. Answers and clarification are not independently
 persisted and no variant can create a candidate or authority. An answer returns to
 the prompt. One clarification answer is retained in bounded process memory and sent
-with the original request through a second discovery over the same baseline; a
-baseline change or second clarification fails closed. A continued proposal retains
-the exchange as request evidence. Local fake-provider tests establish these result,
+with the original request through a second discovery. The application validates the
+expected baseline and final retained-request size before inference; a baseline change
+or second clarification fails closed. A continued proposal retains the exchange as
+request evidence. Local fake-provider tests establish these result,
 continuation and observed-evidence rules. One stored-OAuth question qualified the
 answer path without retaining a proposal; live clarification remains unqualified.
 

@@ -22,7 +22,8 @@ With no arguments in an interactive terminal, Tesota asks for a message and rout
 it through repository discovery. A question prints an answer and its observed
 evidence files, then returns to the prompt. Material ambiguity prints one question;
 the operator's answer continues the same request in memory. Continued discovery
-opens the committed repository again and stops if the baseline changed. It may
+opens the committed repository again and validates the expected baseline before
+model inference or proposal retention. It may
 answer or propose work but cannot ask a second clarification. A requested change
 prints its objective, proposed files, completion conditions, check names, exact
 committed baseline and retained proposal directory. The explicit subcommand accepts
@@ -60,11 +61,12 @@ does not commit, stash or overwrite operator work.
 
 Only a completed task-proposal result exclusively creates
 `~/.tesota/proposals/<uuid>/proposal.json` with private permissions. The strict
-version 1 record binds the request, committed baseline, model identity, observed
+version 1 record binds the bounded request, committed baseline, model identity, observed
 budgets, dirty paths and the submitted proposal. Its authority is explicitly
 `none`, its provenance is `model_proposed`, and its check entry is declarative and
 non-executable. A proposal produced after clarification includes the exact question
-and operator answer in its retained request evidence. Answers, clarification, failed
+and operator answer in its retained request evidence; its size is validated in that
+final serialized form before inference. Answers, clarification, failed
 or unsettled discovery retain no proposal record.
 
 Editing a proposal file cannot grant file, check, network, candidate, acceptance

@@ -77,8 +77,9 @@ The native shell passes a typed request to that discovery boundary and retains i
 typed result instead of reconstructing intent from printed text. An answer returns
 to the main prompt. One clarification can continue in memory with the original
 request, exact question and operator answer; the continued result may be an answer
-or proposal but not another clarification. Discovery opens the repository again,
-and the shell rejects the continuation if its committed baseline changed. A
+or proposal but not another clarification. Discovery opens the repository again;
+the shared application boundary rejects a changed committed baseline before model
+inference or proposal retention. A
 continued proposal retains the clarification exchange as part of its request
 evidence. No conversation state grants authority or resumes a model execution.
 
