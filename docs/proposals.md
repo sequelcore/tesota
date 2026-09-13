@@ -74,15 +74,18 @@ or promotion authority. The record reader treats JSON as untrusted evidence.
 `task start` issues an in-memory grant only after the current baseline and the
 first narrow policy are revalidated and the operator approves the displayed scope.
 
-## Start the first supported task
+## Start a supported task
 
-The first execution slice accepts exactly one existing `.md` write below `docs/`,
-at most eight proposed reads including that file, and the declarative
-`repository-check`. The proposal must be `ready`, belong to the current repository
-and match its current `HEAD`. Other paths, multiple writes, stale baselines and
-blocked proposals fail before candidate creation. Read paths are rechecked against
-the discovery exclusion policy, so rewriting retained JSON cannot expose `.env`,
-credential, secret or private-key paths to candidate inference.
+The current execution policy accepts either exactly one existing `.md` write below
+`docs/` with the declarative `repository-check`, or the exact existing pair
+`src/integrations/pi-task.ts` and `tests/pi-task-evidence.test.ts` with
+`pi-result-consistency`. Discovery may propose at most eight reads, but the code
+run grant is attenuated to that canonical pair. The proposal must be `ready`,
+belong to the current repository and match its current `HEAD`. Other paths, other
+TypeScript changes, stale baselines and blocked proposals fail before candidate
+creation. Read paths are rechecked against the discovery exclusion policy, so
+rewriting retained JSON cannot expose `.env`, credential, secret or private-key
+paths to candidate inference.
 
 ```sh
 bun start task start <proposal-id>
@@ -92,8 +95,11 @@ The argument-free shell calls this seam itself for a supported ready proposal, s
 the normal experience does not require copying the ID. Approval creates one
 independent candidate and one exclusive `start.jsonl`; any second, concurrent or
 resumed start is rejected. Pi receives only bounded read, whole-file replacement
-and Tesota-owned scope-check operations. No shell command, candidate program,
-repository script or model-controlled network tool is available.
+and Tesota-owned check operations. The code task further limits the source change
+to `piTaskPasses`, runs an immutable behavior oracle in the pinned offline
+container and requires the focused test to append without changing its baseline.
+No shell command, candidate program, repository script or model-controlled
+network tool is available.
 
 ### If the operator declines approval
 
@@ -102,7 +108,7 @@ No candidate and no `start.jsonl` record are created. The source checkout remain
 unchanged, and the retained proposal stays available for later review and a later
 start attempt.
 
-The scope check proves only that at least one admitted documentation byte changed
+The documentation scope check proves only that at least one admitted byte changed
 and no out-of-scope path entered the candidate. It explicitly reports that the
 declarative repository check is not executed in this slice and cannot prove that
 the prose satisfies the request. Tesota prints the diff as an escaped JSON string,
@@ -110,6 +116,11 @@ then asks the person to accept or reject those exact reviewed bytes. Acceptance
 and passing scope evidence remain separate. An accepted candidate is promoted
 only if the source baseline and target bytes still match; a conflict changes no
 source file.
+
+The code check proves only its declared pure-predicate cases and that the focused
+test preserved its baseline while appending bytes. Candidate-authored assertions
+remain untrusted and require human review; they do not replace the immutable
+oracle or establish repository-wide correctness.
 
 Each approval question owns readline only while the person is answering it. Once
 scope is approved, readline closes so Ctrl+C reaches the active task cancellation
@@ -221,3 +232,21 @@ persistence was forced to fail. Tesota returned a failure, reported that promoti
 had already applied, directed the operator to the candidate promotion journal and
 did not append a contradictory `failed` outcome. The storage failure is simulated;
 no real source write was intentionally combined with a failing filesystem.
+
+The first proposed-code qualification completed on 2026-09-13 UTC. A Spanish
+request named no files; discovery selected the fixed `piTaskPasses` source and
+focused regression test. Several retained attempts failed safely and drove
+contract repairs: extra discovery reads were attenuated, source-only correction
+could not pass, destructive test replacement was rejected, and incomplete human
+test coverage was not accepted. No failed candidate changed the source.
+
+The successful fresh proposal `52715f42-a1fd-4eba-969a-3f118f70a272` used baseline
+`41668e16887830d4b54c8ce5a1c50926528504a9`. Candidate
+`0032163f-b208-4e2a-bc8e-5848754de450` completed with eight model invocations,
+seven tool calls, two edits and three issued checks. The first check rejected the
+missing evidence invariants, the second required the append-only regression test,
+and the third passed. All three results reached the model; the current check had
+matching bytes and `recorded_untrusted` provenance. Human review accepted the
+exact two-file fingerprint and guarded promotion applied both files. The focused
+tests, typecheck and lint then passed in the source repository. This qualifies
+Stage 4's fixed code slice, not adaptive scope or general repository execution.

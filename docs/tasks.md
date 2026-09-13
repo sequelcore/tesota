@@ -36,6 +36,15 @@ only scope integrity and a changed target; it reports that the declarative
 repository check did not run and leaves prose correctness to human review. See
 [Task proposals](proposals.md) for the full one-shot lifecycle.
 
+The first proposal-backed code task is also separate from model-authored scope.
+`src/proposed-code-task.ts` maps only the exact pair
+`src/integrations/pi-task.ts` and `tests/pi-task-evidence.test.ts` to the registered
+`pi-result-consistency` oracle. Proposed extra reads are attenuated out of the run
+grant. The source edit remains limited to `piTaskPasses`; the focused test may only
+append to its committed baseline. Its assertions supplement the immutable
+container oracle and still require human review. No other TypeScript proposal is
+currently executable.
+
 The first formal property is `canAdmitInvocation` in
 `src/verification/invocation-admission.ts`. Run `bun run formal:check` to let
 LemmaScript generate and verify its Dafny proof. The property is used by the
@@ -77,8 +86,8 @@ This Windows command reuses saved authentication and creates a fresh independent
 candidate from committed HEAD. Uncommitted source changes are excluded. It issues
 a new in-memory task handle; it does not reopen a previously prepared task.
 The model can use only the task's read, replace and check operations. The adapter
-allows at most eight model invocations, thirteen tool calls and 4,096 output tokens
-per invocation, with no retries and a two-minute session deadline. These are
+allows at most ten model invocations, thirteen tool calls and 4,096 output tokens
+per invocation, with no retries and a three-minute session deadline. These are
 admitted SDK calls, not independently counted HTTP requests.
 
 The printed candidate directory retains `attempt.jsonl`, `candidate.diff`, the

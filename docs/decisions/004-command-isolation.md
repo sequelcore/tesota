@@ -103,7 +103,12 @@ increment. It is not a public security certification, an exploit-resistance
 benchmark, a Linux-host qualification or evidence for commands other than the
 fixed probe.
 
-The next increment may use this runner for one predeclared TypeScript task and
-trusted check. Broader commands, dependency installation, selective network,
-new-file grants, multiple writable source paths and other host platforms each
-need their own admitted contract and evidence.
+The first proposed code increment now uses the stricter no-mount form of this
+runner: Tesota sends only the admitted pure function and immutable oracle over
+stdin to the pinned, offline container. The verifier identity includes the shared
+container policy, and unconfirmed cleanup fails closed. The successful live cycle
+does not qualify candidate repository execution.
+
+Broader commands, dependency installation, selective network, new-file grants,
+multiple writable source paths and other host platforms each need their own
+admitted contract and evidence.

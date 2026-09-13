@@ -33,6 +33,7 @@ validation of the current checkout.
 | Registered task execution | Passed for a second live task | One immutable registry owns four task contracts and the shared engine has no task-name branches; the candidate-source task passed direct, simulated-Pi and stored-OAuth live correction through the same bounded operations |
 | Registered multi-file task | Locally verified for a two-file write set | One task can read, replace, check, review and promote two registered paths; checks and review bind the ordered write set, and promotion preflights every source target before its first rename |
 | Natural-language task proposal | Stored-OAuth discovery and dirty-input blocking passed | A Spanish goal named no files; bounded read-only discovery selected one documentation path, retained a strict proposal and reported relevant excluded changes with no candidate or execution authority |
+| First proposed code task | Live end-to-end Windows cycle passed | A Spanish request named no files; discovery selected the fixed TypeScript source and focused test, the run grant attenuated extra context, the immutable container oracle drove a two-edit correction, human review accepted the exact diff and guarded promotion applied both files |
 | Tesota Shell | Persistent terminal foundation implemented; complete live lifecycle on the new renderer remains open | Interactive `tesota` now owns a persistent transcript, editor and typed status over the existing clarification and proposal lifecycle; keyboard cancellation, resize, scrolling and terminal restoration have focused coverage, plus a real PTY open/cancel smoke test |
 | Qualified command isolation | Passed for the fixed Windows qualification | A pinned Docker runner passed separate source, build and scratch writes; outside read, sibling write, synthetic credential, positive-controlled network, confirmed descendant start and cancellation controls. Codex Windows failed the stricter outside-read and offline controls and was not selected. |
 | Task recovery successor | Passed for one interrupted live task | An explicit command validated the failed predecessor, recreated its exact baseline in a clean candidate, recorded the relationship and completed a fresh Pi correction without inheriting bytes, evidence or acceptance |
@@ -396,11 +397,12 @@ before the next stage can broaden authority:
    runtime or image, rejected hardening, malformed output and unconfirmed cleanup
    fail closed. This selects the Docker boundary for the next bounded increment,
    not for arbitrary commands. See [decision 004](decisions/004-command-isolation.md).
-4. **First proposed code task.** Admit one existing TypeScript source file and its
-   test with a trusted fixed check. Complete approval, isolated editing, a failing
-   check, correction, applicable final evidence, review, human acceptance and
-   guarded promotion. Candidate-authored tests supplement rather than replace the
-   original obligation.
+4. **First proposed code task — complete for the fixed slice.** One existing
+   TypeScript source and its focused existing test are admitted only when discovery
+   matches the application-owned `pi-result-consistency` definition. The live run
+   completed approval, bounded editing, two informative failures, applicable final
+   evidence, review, human acceptance and guarded two-file promotion.
+   Candidate-authored tests supplement rather than replace the immutable oracle.
 5. **Adaptive bounded scope.** Add multiple files, explicit creation, deletion and
    rename, plus one aggregated scope-change request. Approval issues a successor
    grant; the prior grant cannot continue or replay. Recovery starts a clean
@@ -421,6 +423,9 @@ before the next stage can broaden authority:
    demonstrated consumer; cross-surface contracts do not create GUI, web, IDE or
    remote-parity work by themselves. The runtime must not depend on a particular
    renderer or import another harness's workflow and authority model wholesale.
+
+Stage 5 is the next task. Stage 4 does not authorize arbitrary TypeScript files,
+new paths, deletion, rename, shell commands or repository-selected checks.
 
 Reuse Pi for model transport, sessions, tool events and agent mechanics; reuse an
 established operating-system sandbox, Git and repository-native checks. Gentle can

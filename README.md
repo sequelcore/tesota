@@ -36,13 +36,14 @@ a non-authoritative proposed scope. In an interactive terminal, running `tesota`
 opens **Tesota Shell**, its persistent terminal interface. A read-only turn can answer a repository
 question, request one necessary clarification or retain a task proposal. Answers
 return to the prompt. A clarification answer continues the same bounded request
-only while its committed baseline remains unchanged. A current
-`ready` single-file Markdown proposal under `docs/` can continue directly to one
-scope approval, isolated execution, an escaped diff, a separate accept/reject
-decision and conflict-safe promotion. `task start <proposal-id>` exposes the same
-one-shot lifecycle. Tesota rejects stale, unsupported, concurrent, replayed and
-resumed proposal starts. This is a narrow documentation slice, not general
-repository execution.
+only while its committed baseline remains unchanged. A current supported `ready`
+proposal can continue directly to one scope approval, isolated execution, an
+escaped diff, a separate accept/reject decision and conflict-safe promotion. The
+supported scopes are one existing Markdown file under `docs/`, or the fixed
+`piTaskPasses` TypeScript source plus its focused existing regression test.
+`task start <proposal-id>` exposes the same one-shot lifecycle. Tesota rejects
+stale, unsupported, concurrent, replayed and resumed proposal starts. This proves
+one fixed proposed code task, not general repository execution.
 The explicit `isolation qualify` diagnostic compares the installed native
 Windows sandbox with Tesota's pinned container policy using one fixed command.
 It invokes no model and does not enable general repository tasks. See the

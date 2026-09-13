@@ -1,8 +1,9 @@
 # Architecture
 
 Tesota currently has one private TypeScript package with a verification CLI,
-opt-in live integration experiments, five registered bounded repository tasks and
-one admitted proposal-backed documentation task. It has a persistent interactive
+opt-in live integration experiments, five registered bounded repository tasks,
+one admitted proposal-backed documentation task and one fixed proposed code task.
+It has a persistent interactive
 terminal surface for natural-language requests and one narrow proposal lifecycle,
 but no general production task runtime. The [roadmap](roadmap.md)
 describes those intended capabilities separately.
@@ -24,10 +25,11 @@ describes those intended capabilities separately.
 | [src/repository-discovery.ts](../src/repository-discovery.ts) | Expose a bounded committed repository view and validate evidence paths for read-only turns |
 | [src/task-proposal-contract.ts](../src/task-proposal-contract.ts) | Own proposal vocabulary, tool request schemas, declarative check IDs and discovery limits |
 | [src/task-proposal.ts](../src/task-proposal.ts) | Classify dirty conflicts and retain or safely read non-authoritative proposal evidence |
-| [src/proposal-admission.ts](../src/proposal-admission.ts) | Admit one current single-file documentation proposal and issue its in-memory run grant |
+| [src/proposal-admission.ts](../src/proposal-admission.ts) | Attenuate one supported current proposal to an application-owned documentation or fixed code run grant |
+| [src/proposed-code-task.ts](../src/proposed-code-task.ts) | Own the first proposed code scope, regression policy and composition with the immutable behavior oracle |
 | [src/task-start.ts](../src/task-start.ts) | Own approval, replay exclusion, execution-to-review handoff, decision and promotion for one proposal |
 | [src/candidate-task-definition.ts](../src/candidate-task-definition.ts) | Own registered task requirements, read/write sets, oracles, instructions, limits and promotion policy |
-| [src/candidate-task.ts](../src/candidate-task.ts) | Enforce a selected registered task or admitted documentation grant through bounded per-file operations and write-set-bound checks |
+| [src/candidate-task.ts](../src/candidate-task.ts) | Enforce a selected registered task or admitted proposal grant through bounded per-file operations and write-set-bound checks |
 | [src/auth.ts](../src/auth.ts) | Login, offline status and local logout |
 | [integrations/codex-credentials.ts](../src/integrations/codex-credentials.ts) | Private Codex credential persistence and serialized mutation |
 | [verification/oxlint.ts](../src/verification/oxlint.ts) | Run Oxlint, issue result identity and assess applicability |
@@ -91,10 +93,14 @@ evidence. No conversation state grants authority or resumes a model execution.
 A ready supported proposal continues to a compact approval card; only approval
 lets Tesota issue an in-memory grant and create a candidate. `start.jsonl` excludes
 a second or concurrent start, but remains evidence rather than reusable authority.
-The model receives only bounded read, replace and application-owned scope-check
-tools. No candidate command, repository check or model-controlled network operation
-runs in this first proposal slice. The escaped diff discloses that limitation before
-a separate human accept/reject decision and explicit guarded promotion.
+The model receives only bounded read, replace and application-owned check tools.
+Documentation proposals use a scope-only check. The fixed code proposal uses the
+pinned, offline behavior oracle and requires its focused existing test to preserve
+every baseline byte and append regression cases. Candidate-authored tests remain
+untrusted support: they do not replace the oracle. No candidate command,
+repository check or model-controlled network operation is available. The escaped
+diff discloses the applicable limitation before a separate human accept/reject
+decision and explicit guarded promotion.
 
 Tesota Shell renders typed progress for repository discovery and operator
 clarification. Task start reports scope approval, candidate execution, review and
