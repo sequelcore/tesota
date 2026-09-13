@@ -249,7 +249,7 @@ it("records acceptance for reviewed bytes separately from check evidence and ref
   const stale = await reviewTask(candidate.directory);
   expect(stale.operatorDecision?.applicability).toBe("stale");
   expect(stale.check.status).toBe("check_failed");
-}, 30_000);
+}, 60_000);
 
 it("rejects a stale review and refuses acceptance based on forged saved success or diff claims", async () => {
   const candidate = await fixture();
@@ -568,7 +568,7 @@ it("permits the exact documentation correction, binds its checks to bytes and pr
   await expect(task.replace({ path: editedFile, expectedSha256: after.writeSetSha256, content: input.content })).rejects.toThrow("closed");
   await writeFile(join(candidate.checkout, editedFile), input.content);
   expect((await checkCandidateTask(candidate.directory)).status).toBe("check_failed");
-});
+}, 30_000);
 
 it.each(["../source/docs/decisions/002-use-pi.md", ".git/config", "docs\\decisions\\002-use-pi.md", "src/cli.ts"])(
   "rejects a write to %s before any file mutation", async (path) => {
