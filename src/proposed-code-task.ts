@@ -4,7 +4,7 @@ import { candidateTaskDefinition, type CandidateTaskDefinition,
 import { CODE_TASK_FILE } from "./code-task-check.js";
 
 export const CODE_PROPOSAL_TASK_ID = "pi-result-consistency";
-export const CODE_PROPOSAL_TEST_FILE = "tests/candidate-task.test.ts";
+export const CODE_PROPOSAL_TEST_FILE = "tests/pi-task-evidence.test.ts";
 const regressionPolicy = "The admitted existing regression test may only append focused cases; candidate-authored tests supplement the immutable behavior oracle.";
 
 function proposedCodeExpected(files: Readonly<Record<string, string>>): Readonly<Record<string, string>> {

@@ -41,7 +41,7 @@ async function fixture(): Promise<{ readonly root: string; readonly source: stri
   await writeFile(join(source, "src", "code-task-check.ts"), "export const oracle = true;\n");
   await writeFile(join(source, "src", "candidate-task-definition.ts"), "export const definition = true;\n");
   await writeFile(join(source, "src", "command-isolation.ts"), "export const boundary = true;\n");
-  await writeFile(join(source, "tests", "candidate-task.test.ts"), "// Existing trusted checks.\n");
+  await writeFile(join(source, "tests", "pi-task-evidence.test.ts"), "// Existing focused checks.\n");
   await writeFile(join(source, ".env"), "SYNTHETIC_PRIVATE=never-disclose\n");
   git(source, ["init", "--quiet"]);
   git(source, ["add", "."]);
@@ -104,13 +104,13 @@ function documentationProposalSteps(): FauxResponseStep[] {
 function codeProposalSteps(): FauxResponseStep[] {
   return [
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
-    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "tests/candidate-task.test.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "tests/pi-task-evidence.test.ts" })),
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/code-task-check.ts" })),
     fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
       objective: "Strengthen task-result consistency checks.",
       completionConditions: ["Inconsistent evidence is rejected by the trusted behavior check."],
-      readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts", "src/code-task-check.ts"],
-      writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+      readFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts", "src/code-task-check.ts"],
+      writeFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
       checks: ["pi-result-consistency"], uncertainties: [],
     } })),
     fauxAssistantMessage("Proposal ready."),
@@ -135,7 +135,7 @@ it("reads only committed regular blobs and reports source changes without modify
   expect((await discovery.list({ prefix: "" })).files).toEqual([
     "README.md", "binary.dat", "bun.lock", "control.bin", "docs/identity.md", "package.json",
     "src/candidate-task-definition.ts", "src/code-task-check.ts", "src/command-isolation.ts",
-    "src/integrations/pi-task.ts", "tests/candidate-task.test.ts", "tests/contract.test.ts",
+    "src/integrations/pi-task.ts", "tests/contract.test.ts", "tests/pi-task-evidence.test.ts",
   ]);
   expect((await discovery.read({ path: "README.md" })).content).toContain("Old task wording");
   await expect(discovery.read({ path: ".env" })).rejects.toThrow("denied");
@@ -236,8 +236,8 @@ it("maps the exact proposed TypeScript scope to an application-owned code grant"
   await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id, sourceDirectory: source }))
     .resolves.toMatchObject({
       kind: "proposal-code", task: "pi-result-consistency", proposalId: created.record.id,
-      readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
-      writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+      readFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
+      writeFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
       declaredChecks: ["pi-result-consistency"],
       verification: { scopeIntegrity: "application_owned", behaviorCheck: "pinned_container" },
     });

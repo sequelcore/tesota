@@ -59,8 +59,8 @@ async function codeFixture() {
   const record = JSON.parse(await readFile(join(current.directory, "proposal.json"), "utf8"));
   record.baseline = baseline;
   record.proposal = { objective: "Model wording is non-authoritative.", completionConditions: ["Model condition."],
-    readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
-    writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+    readFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
+    writeFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
     checks: ["pi-result-consistency"], uncertainties: [] };
   record.checks = [{ id: "pi-result-consistency", definition: "application_owned_declarative_only", executable: false }];
   await writeFile(join(current.directory, "proposal.json"), JSON.stringify(record, null, 2) + "\n");

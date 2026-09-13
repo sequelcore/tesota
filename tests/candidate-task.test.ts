@@ -15,7 +15,7 @@ import { promoteTask } from "../src/task-promotion.js";
 import { prepareTaskRecovery } from "../src/task-run.js";
 import { expectedMultiFileTask } from "../src/multi-file-task-check.js";
 import type { ProposalRunGrant } from "../src/proposal-admission.js";
-import { proposedCodeTaskDefinition } from "../src/proposed-code-task.js";
+import { CODE_PROPOSAL_TEST_FILE, proposedCodeTaskDefinition } from "../src/proposed-code-task.js";
 
 const editedFile = "docs/decisions/002-use-pi.md";
 const roots: string[] = [];
@@ -34,7 +34,7 @@ async function fixture() {
   git(source, ["init", "--quiet"]);
   for (const path of [editedFile, "docs/roadmap.md", "experiments/codex/history.md", "src/cli.ts", "src/integrations/pi-task.ts",
     "src/verification/candidate.ts", "src/verification/invocation-admission.ts", "README.md", "docs/identity.md",
-    "tests/candidate-task.test.ts"]) {
+    "tests/candidate-task.test.ts", CODE_PROPOSAL_TEST_FILE]) {
     await mkdir(dirname(join(source, path)), { recursive: true });
     await writeFile(join(source, path), await readFile(new URL("../" + path, import.meta.url)));
   }
@@ -64,8 +64,8 @@ function codeProposalGrant(candidate: Awaited<ReturnType<typeof fixture>>): Prop
     source: candidate.source, baseline: candidate.baseline,
     objective: definition.objective,
     completionConditions: [definition.oracle],
-    readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
-    writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+    readFiles: ["src/integrations/pi-task.ts", CODE_PROPOSAL_TEST_FILE],
+    writeFiles: ["src/integrations/pi-task.ts", CODE_PROPOSAL_TEST_FILE],
     declaredChecks: ["pi-result-consistency"],
     verification: { scopeIntegrity: "application_owned", behaviorCheck: "pinned_container" },
   };
@@ -89,11 +89,11 @@ it.runIf(process.platform === "win32")("binds a proposed code grant to the regis
   expect(task.describe()).toMatchObject({
     task: "proposal-code",
     objective: expect.stringContaining("piTaskPasses"),
-    readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
-    writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+    readFiles: ["src/integrations/pi-task.ts", CODE_PROPOSAL_TEST_FILE],
+    writeFiles: ["src/integrations/pi-task.ts", CODE_PROPOSAL_TEST_FILE],
   });
   const source = await task.read({ path: "src/integrations/pi-task.ts" });
-  const test = await task.read({ path: "tests/candidate-task.test.ts" });
+  const test = await task.read({ path: CODE_PROPOSAL_TEST_FILE });
   expect(test.content).toContain("piTaskPasses");
   expect((await task.check()).status).toBe("check_failed");
   const corrected = source.content
@@ -108,7 +108,7 @@ it.runIf(process.platform === "win32")("binds a proposed code grant to the regis
   await task.replace({ path: "src/integrations/pi-task.ts", expectedSha256: source.sha256, content: corrected });
   expect(await task.check()).toMatchObject({ status: "check_failed",
     diagnostics: expect.arrayContaining(["The admitted regression test must preserve its baseline and append focused cases"]) });
-  await task.replace({ path: "tests/candidate-task.test.ts", expectedSha256: test.sha256,
+  await task.replace({ path: CODE_PROPOSAL_TEST_FILE, expectedSha256: test.sha256,
     content: test.content + "\n// Proposed task regression coverage.\n" });
   expect((await task.check()).status).toBe("passed");
   task.close();
@@ -119,7 +119,7 @@ it.runIf(process.platform === "win32")("binds a proposed code grant to the regis
   await expect(promoteTask(candidate.directory, candidate.source, review.reviewSha256)).resolves.toMatchObject({
     status: "applied", files: [
       { path: "src/integrations/pi-task.ts" },
-      { path: "tests/candidate-task.test.ts" },
+      { path: CODE_PROPOSAL_TEST_FILE },
     ],
   });
   expect(await readFile(join(candidate.source, "src/integrations/pi-task.ts"), "utf8")).toBe(corrected);

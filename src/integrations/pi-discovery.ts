@@ -44,7 +44,7 @@ function systemPrompt(allowedOutcome: DiscoveryOutcome): string {
     "Ground answers in observed files and name them in evidenceFiles. Fully read every proposed write file. " +
     "Proposal readFiles may contain only observed paths, and writeFiles must also be in readFiles. Select repository-check " +
     "for documentation, or pi-result-consistency only after reading and proposing the exact writable pair " +
-    "src/integrations/pi-task.ts and tests/candidate-task.test.ts. Submit exactly one result, then stop. " +
+    "src/integrations/pi-task.ts and tests/pi-task-evidence.test.ts. Submit exactly one result, then stop. " +
     "Do not claim approval, execution, acceptance or network access.";
 }
 
