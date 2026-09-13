@@ -9,6 +9,7 @@ Usage: tesota [--help | -h | help]
        tesota candidate list
        tesota candidate clean
        tesota candidate abandon <candidate-id|candidate-directory>
+       tesota isolation qualify
        tesota task prepare <candidate-directory>
        tesota task check <candidate-directory>
        tesota task propose <request>
@@ -33,6 +34,9 @@ if (args.length === 0 && process.stdin.isTTY === true && process.stdout.isTTY ==
 } else if (args.length === 2 && args[0] === "auth" && args[1] !== undefined) {
   const { runAuthCommand } = await import("./auth.js");
   process.exit(await runAuthCommand(args[1]));
+} else if (args.length === 2 && args[0] === "isolation" && args[1] === "qualify") {
+  const { runIsolationQualificationCommand } = await import("./isolation-qualification.js");
+  process.exit(await runIsolationQualificationCommand());
 } else if (args.length === 4 && args[0] === "task" && args[1] === "promote" && args[2] !== undefined && args[3] !== undefined) {
   const { promoteTask } = await import("./task-promotion.js");
   try {

@@ -40,6 +40,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota candidate list\n" +
     "       tesota candidate clean\n" +
     "       tesota candidate abandon <candidate-id|candidate-directory>\n" +
+    "       tesota isolation qualify\n" +
     "       tesota task prepare <candidate-directory>\n" +
     "       tesota task check <candidate-directory>\n" +
     "       tesota task propose <request>\n" +
