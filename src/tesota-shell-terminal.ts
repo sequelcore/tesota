@@ -113,6 +113,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   ask(prompt: string): Promise<string> {
     if (this.pending !== undefined) return Promise.reject(new Error("Tesota Shell prompt already active"));
+    if (prompt === "> ") {
+      this.progress = undefined;
+      this.status.setText("Ready");
+      this.tui.terminal.setProgress(false);
+    }
     this.prompt.setText(promptLabel(prompt));
     this.editor.disableSubmit = false;
     this.tui.setFocus(this.editor);

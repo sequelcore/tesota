@@ -50,6 +50,8 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   shell.report({ phase: "discovering", operation: "repository_discovery" });
   now.mockReturnValue(3_000);
   shell.refreshElapsed();
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Inspecting the committed repository · 2s");
   const answer = shell.ask("> ");
   terminal.send("Explain the shell");
   terminal.send("\r");
@@ -62,7 +64,7 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   expect(screen).toContain("The repository is bounded.");
   expect(screen).toContain("You");
   expect(screen).toContain("Explain the shell");
-  expect(screen).toContain("Inspecting the committed repository · 2s");
+  expect(screen).toContain("Ready");
   shell.stop();
   expect(terminal.started).toBe(false);
 });
@@ -96,5 +98,22 @@ it("reflows the persistent layout after terminal resize", () => {
   const screen = visible(terminal);
   expect(screen).toContain("A long transcript line that must");
   expect(screen).toContain("terminal becomes narrow.");
+  shell.stop();
+});
+
+it("lets the operator scroll the persistent transcript with the keyboard", () => {
+  const terminal = new TestTerminal();
+  terminal.rows = 12;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  shell.start();
+  for (let index = 1; index <= 20; index++) shell.write(`Transcript entry ${index}\n`);
+  tui.renderNow(true);
+  terminal.writes.length = 0;
+
+  terminal.send("\x1b[5~");
+  tui.renderNow(true);
+
+  expect(visible(terminal)).toContain("Transcript entry 1");
   shell.stop();
 });
