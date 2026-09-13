@@ -4,6 +4,7 @@ import {
   assessIsolationProbe,
   buildCodexSandboxInvocation,
   buildContainerInvocation,
+  containerRunPolicySha256,
   type IsolationPaths,
   type IsolationProbeReport,
 } from "../src/command-isolation.js";
@@ -24,6 +25,11 @@ const paths: IsolationPaths = {
 };
 
 describe("command isolation qualification", () => {
+  it("gives the shared container restrictions a stable evidence identity", () => {
+    expect(containerRunPolicySha256()).toMatch(/^[a-f\d]{64}$/u);
+    expect(containerRunPolicySha256()).toBe(containerRunPolicySha256());
+  });
+
   it("rejects a reachable network control when its client cleanup is unconfirmed", () => {
     expect(networkControlIsUsable({ reachable: true, pending: ["positive-control-client"] })).toBe(false);
     expect(networkControlIsUsable({ reachable: true, pending: [] })).toBe(true);

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { CONTAINER_ENGINE_ARGS, CONTAINER_IMAGE, containerRunPolicyArgs } from "./command-isolation.js";
+import { CONTAINER_ENGINE_ARGS, CONTAINER_IMAGE, containerRunPolicyArgs,
+  containerRunPolicySha256 } from "./command-isolation.js";
 
 export const CODE_TASK_FILE = "src/integrations/pi-task.ts";
 export const CODE_TASK_MARKER = "export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck): boolean {";
@@ -44,7 +45,7 @@ process.stdout.write(JSON.stringify({failures}));
 
 export function codeTaskVerifierSha256(): string {
   return createHash("sha256").update(
-    CONTAINER_IMAGE + CODE_TASK_MARKER + oracle + checkCodeTask.toString(),
+    containerRunPolicySha256() + CODE_TASK_MARKER + oracle + checkCodeTask.toString(),
   ).digest("hex");
 }
 

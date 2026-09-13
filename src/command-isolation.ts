@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 export const CONTAINER_IMAGE = "node@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f";
 export const CONTAINER_ENGINE_ARGS: readonly ["--host", "npipe:////./pipe/dockerDesktopLinuxEngine"] =
   ["--host", "npipe:////./pipe/dockerDesktopLinuxEngine"];
@@ -63,6 +65,12 @@ export function containerRunPolicyArgs(name: string): readonly string[] {
     "--memory=128m", "--memory-swap=128m", "--cpus=1", "--log-driver=none",
     "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m",
   ];
+}
+
+/** Stable identity for the application-owned container restrictions; runtime names are excluded. */
+export function containerRunPolicySha256(): string {
+  const args = containerRunPolicyArgs("<runtime-name>");
+  return createHash("sha256").update(JSON.stringify({ image: CONTAINER_IMAGE, args })).digest("hex");
 }
 
 export function buildContainerInvocation(
