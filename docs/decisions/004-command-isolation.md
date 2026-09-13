@@ -74,10 +74,11 @@ closed.
 
 The installed Codex native Windows sandbox remains a comparison only. Under the
 same fixed probe and an explicit permission profile, it passed the write,
-network, synthetic-environment and descendant-settlement controls but read the
-outside sentinel. That observed read is compatible with a workspace-write model
-that protects writes more narrowly than reads, but it does not satisfy Tesota's
-strict candidate-only read contract.
+synthetic-environment and descendant-settlement controls, but read the outside
+sentinel and reached a positive local network control. Those observations are
+compatible with a workspace-write model that protects writes more narrowly than
+reads and with native network enforcement requiring additional installed setup,
+but they do not satisfy Tesota's strict candidate-only, offline contract.
 
 `src/command-isolation.ts` owns the fixed policy and assessment. The separate
 qualification command owns fixture preparation and lifecycle observation. Model
@@ -85,6 +86,15 @@ output and repository configuration cannot change the image, command, mounts,
 limits or evaluation criteria.
 
 ## Evidence and limits
+
+The network result is admitted only after an unconfined control reaches the same
+ephemeral listener: directly on Windows for the native comparison and through a
+private internal Docker network for the container comparison. The synthetic
+credential is present in each launcher environment but excluded from the child.
+The descendant writes a ready marker before cancellation and would write a late
+marker if it survived; Tesota also requires confirmed container, control-server
+and network cleanup. SIGINT is converted to the same owned abort path, which
+returns 130 only after cleanup.
 
 The 2026-09-13 Windows run and reproduction instructions are retained in the
 [isolation experiment](../../experiments/isolation/README.md). Its verdict is

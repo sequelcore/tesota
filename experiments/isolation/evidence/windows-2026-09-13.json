@@ -9,7 +9,7 @@
       "status": "failed",
       "assessment": {
         "status": "failed",
-        "failedControls": ["outsideReadDenied"]
+        "failedControls": ["outsideReadDenied", "networkDenied"]
       }
     },
     {
