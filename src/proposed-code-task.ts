@@ -6,6 +6,8 @@ import { CODE_TASK_FILE } from "./code-task-check.js";
 export const CODE_PROPOSAL_TASK_ID = "pi-result-consistency";
 export const CODE_PROPOSAL_TEST_FILE = "tests/pi-task-evidence.test.ts";
 const regressionPolicy = "The admitted existing regression test may only append focused cases; candidate-authored tests supplement the immutable behavior oracle.";
+const regressionCases = "Append negative piTaskPasses assertions for an accepted result, an accepted issued check, " +
+  "an accepted current check, and an issued rather than recorded_untrusted current check.";
 
 function proposedCodeExpected(files: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
   return files;
@@ -28,11 +30,12 @@ function checkProposedCodeTask(files: Readonly<Record<string, string>>,
 /** Application-owned executable definition selected after a matching model proposal. */
 export function proposedCodeTaskDefinition(): CandidateTaskDefinition {
   const registered = candidateTaskDefinition(CODE_PROPOSAL_TASK_ID);
-  const objective = registered.objective + " Preserve the admitted test baseline and append focused rejection cases.";
+  const objective = registered.objective + " Preserve the admitted test baseline. " + regressionCases;
   const oracle = registered.oracle + " The admitted test file must append cases without changing its baseline, but does not replace this behavior oracle.";
   const oracleSha256 = createHash("sha256").update(JSON.stringify({
     registered: registered.oracleSha256,
     regressionPolicy,
+    regressionCases,
     expected: proposedCodeExpected.toString(),
     check: checkProposedCodeTask.toString(),
   })).digest("hex");
@@ -42,7 +45,8 @@ export function proposedCodeTaskDefinition(): CandidateTaskDefinition {
     oracle,
     oracleSha256,
     instructions: "Read the admitted source and test, run the fixed check before editing, then strengthen only piTaskPasses. " +
-      "Preserve every existing byte of the admitted test file and only append focused rejection cases; they supplement the immutable behavior oracle. " +
+      "Preserve every existing byte of the admitted test file. " + regressionCases +
+      " These tests supplement the immutable behavior oracle. " +
       "Run the fixed check after each edit; do not add imports or declarations to the source file.",
     readFiles: [CODE_TASK_FILE, CODE_PROPOSAL_TEST_FILE],
     writeFiles: [CODE_TASK_FILE, CODE_PROPOSAL_TEST_FILE],
