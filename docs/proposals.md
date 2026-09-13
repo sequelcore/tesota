@@ -163,6 +163,17 @@ remained clean and no proposal or candidate file was created during the run. Thi
 qualifies one live clarification-to-answer path, not clarification-to-proposal,
 baseline-race handling or broad conversational quality.
 
+A later stored-OAuth shell run on 2026-09-13 UTC qualified the other continued
+result. An underspecified documentation change produced one clarification; the
+operator's answer yielded ready proposal
+`f1dc2a0a-1c57-4948-8a5f-fb718582528c`, limited to
+`docs/development.md` at baseline
+`9a2067e4c5b4527393e4d8a542bcc77cf3298956`. The retained record kept authority
+`none`. Tesota then displayed the separate scope-approval boundary, the operator
+declined it and no candidate was created. This qualifies one live
+clarification-to-proposal and declined-approval path, not proposal correctness or
+approved execution after clarification.
+
 The first live proposal-start attempt on 2026-09-12 UTC exposed a prompt defect
 without changing source. Proposal `ea1aa560-d6f1-4906-8c9a-ba4b52464b37`
 correctly selected `docs/proposals.md` from an outcome-only request and received
