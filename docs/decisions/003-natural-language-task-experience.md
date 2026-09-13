@@ -159,9 +159,12 @@ diff, applicable check evidence, unverified claims and observed consumption. Hum
 `accept` or `reject` remains separate from model completion and passing checks;
 promotion remains a later explicit operation over the exact accepted bytes.
 
-The first surface should be an inline terminal workflow with plain-text output and
-keyboard-operable choices. A richer TUI is optional later. Product behavior and
-evidence records must not depend on a particular renderer.
+The first surface is an inline terminal workflow with plain-text output and
+keyboard-operable choices. **Tesota Shell** names this interactive terminal
+experience and its planned evolution into a focused persistent TUI; it does not
+name a separate engine. The TUI should follow bounded clarification continuation
+and typed lifecycle interaction, before general repository authority expands.
+Product behavior and evidence records must not depend on a particular renderer.
 
 This inline workflow is the intended primary product surface, not a presentation
 layer to add after a general runtime is complete. Running `tesota` without a
@@ -171,6 +174,21 @@ follows execution and receives the diff, checks and acceptance choice without
 copying proposal IDs or assembling lifecycle commands. Composable commands such
 as `task propose`, `task start`, review and promotion remain useful automation,
 diagnostic and test seams behind that experience.
+
+Tesota is **cross-surface by contract and TUI-first by product**. The application
+owns conversation continuation and sequences existing proposal, grant, candidate,
+check, decision and promotion owners. It exposes typed outcomes and requests typed
+operator decisions. Tesota Shell owns focus, layout, scrolling, key bindings,
+formatting and terminal restoration. A displayed view or selected control cannot
+grant authority, make evidence applicable or permit promotion.
+
+This boundary serves current consumers: Tesota Shell, composable lifecycle commands
+and deterministic tests. It does not justify a generic event bus, public transport,
+network DTOs, a second lifecycle state machine or abstractions for hypothetical
+renderers. A local callback for a typed decision and an observer for an implemented
+phase are sufficient until a real second interactive surface establishes different
+requirements. Surface independence alone does not promise reconnection, concurrent
+clients, durable conversation recovery or remote execution.
 
 OpenCode is a direct reference for making a terminal conversation the normal
 entry point. Gentle Shell is a direct reference for placing a native visual layer
@@ -196,13 +214,12 @@ working-tree changes, diff viewer, notices, todos and subagent views. It remains
 renderer and interaction extension: Pi owns the agent session and Gentle Shell is
 neither a desktop GUI nor an operating-system shell.
 
-Tesota does not need to reproduce Gentle Shell before it can become useful. Its
-inline shell is the initial native product surface because it exercises the real
-proposal, approval, progress, review and decision contract with less presentation
-machinery. A richer TUI may later render the same application-owned states and
-actions when observed use shows that persistent panels, navigation or concurrent
-activity materially improve the workflow. It must not become the owner of task
-authority or lifecycle semantics.
+Tesota does not reproduce Gentle Shell's renderer, theme or complete feature set.
+Its inline shell first exercises the real proposal, approval, progress, review and
+decision contract with less presentation machinery. The next focused TUI renders
+those same application-owned states and actions with persistent conversation,
+progress and review regions. It must not add empty orchestration panels or become
+the owner of task authority or lifecycle semantics.
 
 ## Canonical concepts
 

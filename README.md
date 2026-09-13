@@ -33,7 +33,7 @@ refusing conflicting source changes before the first source write.
 The [`task propose`](docs/proposals.md) command accepts an ordinary-language
 goal and uses bounded, read-only discovery over committed Tesota files to retain
 a non-authoritative proposed scope. In an interactive terminal, running `tesota` opens the first
-Tesota-owned conversational shell. One read-only turn can answer a repository
+**Tesota Shell** inline workflow. One read-only turn can answer a repository
 question, request a necessary clarification or retain a task proposal. A current
 `ready` single-file Markdown proposal under `docs/` can continue directly to one
 scope approval, isolated execution, an escaped diff, a separate accept/reject
@@ -60,7 +60,7 @@ bun --no-env-file dist/cli.js task start <proposal-id>
 bun --no-env-file dist/cli.js verify src/cli.ts
 ```
 
-The argument-free command opens the conversational shell only when all three
+The argument-free command opens Tesota Shell only when all three
 standard streams are attached to a terminal. In a non-interactive process it
 prints help and performs no inference.
 

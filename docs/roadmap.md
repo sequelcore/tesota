@@ -33,7 +33,7 @@ validation of the current checkout.
 | Registered task execution | Passed for a second live task | One immutable registry owns four task contracts and the shared engine has no task-name branches; the candidate-source task passed direct, simulated-Pi and stored-OAuth live correction through the same bounded operations |
 | Registered multi-file task | Locally verified for a two-file write set | One task can read, replace, check, review and promote two registered paths; checks and review bind the ordered write set, and promotion preflights every source target before its first rename |
 | Natural-language task proposal | Stored-OAuth discovery and dirty-input blocking passed | A Spanish goal named no files; bounded read-only discovery selected one documentation path, retained a strict proposal and reported relevant excluded changes with no candidate or execution authority |
-| Native terminal shell | Live answer; local proposal lifecycle verified | Interactive `tesota` accepts one natural-language message and returns a grounded answer, necessary clarification or non-authoritative task proposal; a supported ready documentation proposal continues through approval, isolated execution, review, decision and promotion without copied IDs; live lifecycle qualification and continuation after clarification remain open |
+| Tesota Shell | Live lifecycle and Ctrl+C verified | Interactive `tesota` accepts one natural-language message and returns a grounded answer, necessary clarification or non-authoritative task proposal; a supported ready documentation proposal continues through approval, isolated execution, review, decision and promotion without copied IDs; continuation after clarification and a focused persistent TUI remain open |
 | Task recovery successor | Passed for one interrupted live task | An explicit command validated the failed predecessor, recreated its exact baseline in a clean candidate, recorded the relationship and completed a fresh Pi correction without inheriting bytes, evidence or acceptance |
 | Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
 | Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
@@ -340,9 +340,10 @@ the shell handoff. One stored-OAuth run also completed the full lifecycle for an
 operator-described `docs/proposals.md` change. A preceding attempt safely denied
 an edit made before the mandatory initial check; the prompt correction then passed
 the fresh one-shot run. This evidence favors improving clarification and progress
-rendering before broadening admission. Scope expansion, richer recovery,
-arbitrary shell execution, sandboxed candidate commands, mandatory external
-review and a full-screen TUI remain later slices justified by observed use.
+rendering, then delivering the focused Tesota Shell TUI before broadening
+admission. Scope expansion, richer recovery, arbitrary shell execution, sandboxed
+candidate commands and mandatory external review remain later slices justified by
+observed use.
 
 The two residual lifecycle risks from final review are now bounded by additional
 evidence. A live Ctrl+C during proposal execution settled the Pi session as
@@ -369,36 +370,42 @@ before the next stage can broaden authority:
    the inline shell shows its current phase, active operation and elapsed time;
    cancellation reports observed settlement. One ordinary documentation change
    completes without requiring the operator to copy lifecycle identifiers.
-2. **Qualified command isolation.** Compare an existing Windows-capable sandbox
+2. **Focused Tesota Shell TUI.** Separate typed application outcomes and operator
+   decisions from terminal text, then render persistent conversation, phase,
+   operation, diff and check evidence. Keyboard operation, scrolling, resize,
+   interruption and terminal restoration must work. The existing inline path is a
+   fallback over the same workflow, not a second independently evolving product.
+3. **Qualified command isolation.** Compare an existing Windows-capable sandbox
    with a pinned container runner using one fixed command. Demonstrate denied
    access outside the candidate, credential and network isolation, bounded child
    processes, Ctrl+C settlement and fail-closed initialization. Source writes,
    build outputs and verifier scratch space must be separate capabilities; making
    the whole candidate writable would not preserve an exact write grant.
-3. **First proposed code task.** Admit one existing TypeScript source file and its
+4. **First proposed code task.** Admit one existing TypeScript source file and its
    test with a trusted fixed check. Complete approval, isolated editing, a failing
    check, correction, applicable final evidence, review, human acceptance and
    guarded promotion. Candidate-authored tests supplement rather than replace the
    original obligation.
-4. **Adaptive bounded scope.** Add multiple files, explicit creation, deletion and
+5. **Adaptive bounded scope.** Add multiple files, explicit creation, deletion and
    rename, plus one aggregated scope-change request. Approval issues a successor
    grant; the prior grant cannot continue or replay. Recovery starts a clean
    successor and promotion checks every expected source-path state before writing.
-5. **Governed checks and effects.** Bind checks to frozen inputs or invalidate them
+6. **Governed checks and effects.** Bind checks to frozen inputs or invalidate them
    when their source changes. Represent source mutation, generated output,
    temporary storage, process, environment and network effects separately. Trusted
    application or repository configuration selects commands; model text cannot
    authorize arbitrary shell execution.
-6. **Useful general subset.** Qualify a bug fix, a feature with a new file, a
+7. **Useful general subset.** Qualify a bug fix, a feature with a new file, a
    multi-file refactor and a failed-check correction in Tesota and at least one
    other repository. Record completion, intervention, scope expansion, elapsed
    time, consumption and unsupported cases as product evidence, not benchmark
    superiority.
-7. **Evidence-driven expansion.** Persistent sessions, steering, optional external
-   review, additional ecosystems, typed tool integrations, subagents and a richer
-   terminal surface follow only when observed use requires them. The runtime must
-   not depend on a particular renderer or import another harness's workflow and
-   authority model wholesale.
+8. **Evidence-driven expansion.** Durable sessions, steering, optional external
+   review, additional ecosystems, typed tool integrations and subagents follow
+   only when observed use requires them. Another interactive surface requires a
+   demonstrated consumer; cross-surface contracts do not create GUI, web, IDE or
+   remote-parity work by themselves. The runtime must not depend on a particular
+   renderer or import another harness's workflow and authority model wholesale.
 
 Reuse Pi for model transport, sessions, tool events and agent mechanics; reuse an
 established operating-system sandbox, Git and repository-native checks. Gentle can

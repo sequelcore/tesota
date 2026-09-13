@@ -26,11 +26,19 @@ judgment without reconstructing a conversation or trusting a model's declaration
 of success. The proposed contract is recorded in
 [decision 003](decisions/003-natural-language-task-experience.md).
 
-The intended normal entry point is a thin conversational `tesota` session in the
-current repository. Lifecycle subcommands remain available as composable and
-diagnostic seams, but the developer should not need to copy identifiers or drive
-each internal transition to complete an ordinary task. A richer full-screen TUI
-can follow observed need; it is not required for the first useful shell.
+The intended normal entry point is **Tesota Shell**, the interactive terminal
+experience opened by running `tesota` in the current repository. It begins as a
+thin inline conversation and should become a focused persistent TUI before Tesota
+broadens into general repository execution. Lifecycle subcommands remain available
+as composable and diagnostic seams, but the developer should not need to copy
+identifiers or drive each internal transition to complete an ordinary task.
+
+Tesota is cross-surface by contract and TUI-first by product. Task authority,
+lifecycle validity and evidence meaning belong to the application rather than its
+renderer, so changing presentation cannot change what an action is allowed to do.
+Tesota Shell is the only interactive product surface currently planned. This
+principle does not commit the project to a GUI, web application, IDE extension,
+remote protocol or parity work for surfaces without a demonstrated consumer.
 
 ## Why the name
 
