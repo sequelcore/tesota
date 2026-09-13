@@ -3,17 +3,43 @@ import { modelTextSchema, taskProposalSchema, validProposalPath } from "./task-p
 
 const messageSchema = modelTextSchema(4_000);
 const evidencePathSchema = z.string().min(1).max(512).refine(validProposalPath);
+const requestSchema = z.string().trim().min(1).max(8_000);
+const baselineSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u);
 
-export const conversationInputSchema: z.ZodType<{
-  request: string; clarification?: { question: string; answer: string } | undefined;
-}> = z.strictObject({
-  request: z.string().trim().min(1).max(8_000),
+export interface InitialConversationInput {
+  readonly request: string;
+  readonly clarification?: undefined;
+}
+
+export interface ContinuedConversationInput {
+  readonly request: string;
+  readonly clarification: { readonly question: string; readonly answer: string; readonly baseline: string };
+}
+
+export type ConversationInput = InitialConversationInput | ContinuedConversationInput;
+
+const initialConversationInputSchema: z.ZodType<InitialConversationInput> =
+  z.strictObject({ request: requestSchema });
+const continuedConversationInputSchema: z.ZodType<ContinuedConversationInput> = z.strictObject({
+  request: requestSchema,
   clarification: z.strictObject({
     question: messageSchema.max(1_000),
     answer: messageSchema.max(4_000),
-  }).optional(),
-}).refine((input) => input.clarification === undefined ||
-  input.request.length + input.clarification.question.length + input.clarification.answer.length <= 8_000);
+    baseline: baselineSchema,
+  }),
+}).refine((input) => retainedConversationRequest(input).length <= 8_000,
+  { message: "Retained clarified request exceeds 8000 characters" });
+
+export const conversationInputSchema: z.ZodType<ConversationInput> = z.union([
+  initialConversationInputSchema,
+  continuedConversationInputSchema,
+]);
+
+/** Canonical request evidence retained when one clarification produces a proposal. */
+export function retainedConversationRequest(input: ContinuedConversationInput): string {
+  return `${input.request}\n\nClarification: ${input.clarification.question}\n` +
+    `Operator answer: ${input.clarification.answer}`;
+}
 
 export const answerTurnSchema: z.ZodType<{
   kind: "answer"; message: string; evidenceFiles: string[]; uncertainties: string[];
@@ -59,4 +85,3 @@ export type ClarificationTurn = z.infer<typeof clarificationTurnSchema>;
 export type TaskProposalTurn = z.infer<typeof taskProposalTurnSchema>;
 export type ConversationTurn = z.infer<typeof conversationTurnSchema>;
 export type ConversationTurnKind = ConversationTurn["kind"];
-export type ConversationInput = z.infer<typeof conversationInputSchema>;

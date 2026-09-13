@@ -38,11 +38,6 @@ function progressReporter(dependencies: NativeShellDependencies): (progress: Nat
   };
 }
 
-function turnBaseline(result: ConversationCommandResult): string | undefined {
-  if (result.turn === undefined) return undefined;
-  return result.turn.kind === "task_proposal" ? result.turn.proposedTask.record.baseline : result.turn.baseline;
-}
-
 async function runShellRequest(dependencies: NativeShellDependencies, request: string,
   report: (progress: NativeShellProgress) => void): Promise<{ readonly exitCode: number; readonly continue: boolean }> {
   let input: ConversationInput = { request };
@@ -51,13 +46,13 @@ async function runShellRequest(dependencies: NativeShellDependencies, request: s
     dependencies.write("\n");
     report({ phase: "discovering", operation: "repository_discovery" });
     const result = await dependencies.discover(input);
-    if (result.turn === undefined) {
+    if (result.status === "unavailable") {
+      if (result.reason === "baseline_changed") {
+        dependencies.write("The committed baseline changed during clarification. Start a new request. Nothing changed.\n");
+        return { exitCode: result.exitCode, continue: false };
+      }
       dependencies.write("Request blocked or unavailable. Nothing changed.\n");
       return { exitCode: result.exitCode, continue: false };
-    }
-    if (clarificationBaseline !== undefined && turnBaseline(result) !== clarificationBaseline) {
-      dependencies.write("The committed baseline changed during clarification. Start a new request. Nothing changed.\n");
-      return { exitCode: 1, continue: false };
     }
     dependencies.write(formatConversationTurn(result.turn));
     if (result.turn.kind === "clarification") {
@@ -72,7 +67,8 @@ async function runShellRequest(dependencies: NativeShellDependencies, request: s
         dependencies.write("Clarification cancelled. Nothing changed.\n");
         return { exitCode: 0, continue: false };
       }
-      input = { request, clarification: { question: result.turn.clarification.question, answer } };
+      input = { request, clarification: { question: result.turn.clarification.question, answer,
+        baseline: clarificationBaseline } };
       continue;
     }
     if (result.turn.kind !== "task_proposal") {

@@ -4,7 +4,7 @@ import { realpath } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { conversationInputSchema, type AnswerTurn, type ClarificationTurn,
+import { conversationInputSchema, retainedConversationRequest, type AnswerTurn, type ClarificationTurn,
   type ConversationInput } from "./conversation-turn-contract.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { runPiDiscovery, type DiscoveryOutcome, type PiDiscoveryResult } from "./integrations/pi-discovery.js";
@@ -17,6 +17,10 @@ export type CompletedConversationTurn =
   | { readonly kind: "answer"; readonly answer: AnswerTurn; readonly baseline: string }
   | { readonly kind: "clarification"; readonly clarification: ClarificationTurn; readonly baseline: string }
   | { readonly kind: "task_proposal"; readonly proposedTask: ProposedTask };
+
+class ConversationBaselineChangedError extends Error {
+  constructor() { super("Clarification baseline changed"); }
+}
 
 export async function discoverConversationTurn(options: {
   readonly sourceDirectory: string;
@@ -32,6 +36,9 @@ export async function discoverConversationTurn(options: {
   const description = discovery.describe();
   let result: PiDiscoveryResult;
   try {
+    if (input.clarification !== undefined && input.clarification.baseline !== description.baseline) {
+      throw new ConversationBaselineChangedError();
+    }
     const outcome = input.clarification === undefined ? options.allowedOutcome : "continued_conversation";
     result = await runPiDiscovery(discovery, input, outcome, options.model, options.stream, options.signal);
   } finally {
@@ -44,8 +51,7 @@ export async function discoverConversationTurn(options: {
   if (result.outcome.kind === "clarification") {
     return { kind: "clarification", clarification: result.outcome, baseline: description.baseline };
   }
-  const request = input.clarification === undefined ? input.request :
-    `${input.request}\n\nClarification: ${input.clarification.question}\nOperator answer: ${input.clarification.answer}`;
+  const request = input.clarification === undefined ? input.request : retainedConversationRequest(input);
   return { kind: "task_proposal", proposedTask: await retainTaskProposal({ proposalsRoot: options.proposalsRoot,
     request, description, result: { ...result, outcome: result.outcome }, model: options.model }) };
 }
@@ -68,22 +74,21 @@ async function liveSource(): Promise<string | null> {
   return relative(packageRoot, source) === "" ? source : null;
 }
 
-export interface ConversationCommandResult {
-  readonly exitCode: number;
-  readonly turn?: CompletedConversationTurn;
-}
+export type ConversationCommandResult =
+  | Readonly<{ status: "completed"; exitCode: number; turn: CompletedConversationTurn }>
+  | Readonly<{ status: "unavailable"; exitCode: number; reason: "baseline_changed" | "unavailable" }>;
 
 async function runLiveConversation(rawInput: ConversationInput,
   allowedOutcome: DiscoveryOutcome): Promise<ConversationCommandResult> {
   if (process.platform !== "win32") {
     process.stderr.write("Live repository discovery is currently supported on Windows.\n");
-    return { exitCode: 2 };
+    return { status: "unavailable", exitCode: 2, reason: "unavailable" };
   }
   try {
     const source = await liveSource();
     if (source === null) {
       process.stderr.write("Live repository discovery currently supports only the Tesota repository root.\n");
-      return { exitCode: 2 };
+      return { status: "unavailable", exitCode: 2, reason: "unavailable" };
     }
     const cancellation = new AbortController();
     const interrupt = (): void => cancellation.abort();
@@ -97,22 +102,26 @@ async function runLiveConversation(rawInput: ConversationInput,
         proposalsRoot: resolve(homedir(), ".tesota", "proposals"), input: rawInput, allowedOutcome, model,
         stream: (requested, context, streamOptions) => models.streamSimple(requested, context, streamOptions),
         signal: cancellation.signal });
-      return { exitCode: turn.kind === "task_proposal" && turn.proposedTask.record.status !== "ready" ? 1 : 0, turn };
+      return { status: "completed",
+        exitCode: turn.kind === "task_proposal" && turn.proposedTask.record.status !== "ready" ? 1 : 0, turn };
     } finally {
       cancellation.abort();
       process.removeListener("SIGINT", interrupt);
       process.removeListener("SIGTERM", interrupt);
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof ConversationBaselineChangedError) {
+      return { status: "unavailable", exitCode: 1, reason: "baseline_changed" };
+    }
     process.stderr.write("Repository discovery unavailable or failed; nothing changed and no authority was created.\n");
-    return { exitCode: 1 };
+    return { status: "unavailable", exitCode: 1, reason: "unavailable" };
   }
 }
 
 /** Conversational shell turn; questions and change requests share the same read-only boundary. */
 export async function runRepositoryConversationCommand(rawRequest: string): Promise<number> {
   const result = await runLiveConversation({ request: rawRequest }, "conversation");
-  if (result.turn !== undefined) process.stdout.write(formatConversationTurn(result.turn));
+  if (result.status === "completed") process.stdout.write(formatConversationTurn(result.turn));
   return result.exitCode;
 }
 
@@ -123,6 +132,6 @@ export async function runRepositoryConversationForShell(input: ConversationInput
 /** Explicit proposal command; its narrower contract does not accept answer or clarification results. */
 export async function runTaskProposalCommand(rawRequest: string): Promise<number> {
   const result = await runLiveConversation({ request: rawRequest }, "task_proposal");
-  if (result.turn !== undefined) process.stdout.write(formatConversationTurn(result.turn));
+  if (result.status === "completed") process.stdout.write(formatConversationTurn(result.turn));
   return result.exitCode;
 }

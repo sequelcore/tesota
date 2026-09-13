@@ -6,20 +6,20 @@ import type { TaskStartProgress } from "../src/task-start.js";
 const baseline = "a".repeat(40);
 
 function answerResult(message = "The shell is bounded.", observedBaseline = baseline) {
-  return { exitCode: 0, turn: { kind: "answer" as const,
+  return { status: "completed" as const, exitCode: 0, turn: { kind: "answer" as const,
     answer: { kind: "answer" as const, message, evidenceFiles: ["src/native-shell.ts"], uncertainties: [] },
     baseline: observedBaseline } };
 }
 
 function clarificationResult() {
-  return { exitCode: 0, turn: { kind: "clarification" as const,
+  return { status: "completed" as const, exitCode: 0, turn: { kind: "clarification" as const,
     clarification: { kind: "clarification" as const, question: "Which guide should change?",
       reason: "Two guides match the request." }, baseline } };
 }
 
 function proposalResult() {
   const id = "9877887d-1475-4439-a0a6-c1c85091fc9e";
-  return { exitCode: 0, turn: { kind: "task_proposal" as const, proposedTask: { directory: "proposal",
+  return { status: "completed" as const, exitCode: 0, turn: { kind: "task_proposal" as const, proposedTask: { directory: "proposal",
     record: { format: "tesota-task-proposal" as const, version: 1 as const, id,
       recordedAt: "2026-09-12T00:00:00.000Z", source: "C:\\work\\tesota", baseline,
       request: "Update the guide", authority: "none" as const, provenance: "model_proposed" as const,
@@ -125,7 +125,7 @@ it("continues one clarification in the same shell session without granting autho
   expect(result).toBe(0);
   expect(discover).toHaveBeenNthCalledWith(1, { request: "Update the guide" });
   expect(discover).toHaveBeenNthCalledWith(2, { request: "Update the guide", clarification: {
-    question: "Which guide should change?", answer: "docs/guide.md" } });
+    question: "Which guide should change?", answer: "docs/guide.md", baseline } });
   expect(output.join("")).toContain("[awaiting_clarification] Waiting for your answer");
   expect(output.join("")).toContain("The requested guide is already clear.");
 });
@@ -146,7 +146,8 @@ it("invalidates a clarification continuation when the committed baseline changes
   const answers = ["Update the guide", "docs/guide.md"];
   const discover = vi.fn()
     .mockResolvedValueOnce(clarificationResult())
-    .mockResolvedValueOnce(answerResult("Changed baseline answer", "b".repeat(40)));
+    .mockResolvedValueOnce({ status: "unavailable" as const, exitCode: 1,
+      reason: "baseline_changed" as const });
   const result = await runNativeShell({ cwd: "C:\\work\\tesota", write: (text) => output.push(text),
     ask: async () => answers.shift() ?? "", discover, start: vi.fn() });
   expect(result).toBe(1);

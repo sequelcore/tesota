@@ -152,7 +152,9 @@ export async function runPiDiscovery(discovery: RepositoryDiscovery, input: Conv
     if (signal.aborted) abort();
     else {
       const description = discovery.describe();
-      void agent.prompt(JSON.stringify({ ...input, repository: { baseline: description.baseline,
+      const request = input.clarification === undefined ? { request: input.request } : { request: input.request,
+        clarification: { question: input.clarification.question, answer: input.clarification.answer } };
+      void agent.prompt(JSON.stringify({ ...request, repository: { baseline: description.baseline,
         dirtyPaths: description.dirtyPaths, checks: description.checks, limits: description.limits } })).then(settle, () => {
         promptFailed = true;
         settle();

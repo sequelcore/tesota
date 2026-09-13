@@ -284,8 +284,9 @@ it("returns one clarification without inventing a proposal or repository evidenc
 
 it("binds one clarification answer to a continued proposal and disallows another question", async () => {
   const { source, proposals } = await fixture();
+  const baseline = git(source, ["rev-parse", "HEAD"]).trim();
   const clarified = { request: "Update the guide", clarification: {
-    question: "Which guide should change?", answer: "Use the identity guide." } };
+    question: "Which guide should change?", answer: "Use the identity guide.", baseline } };
   const proposed = await discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
     input: clarified, allowedOutcome: "conversation", ...fakeModel(proposalSteps()),
     signal: new AbortController().signal });
@@ -301,6 +302,36 @@ it("binds one clarification answer to a continued proposal and disallows another
   await expect(discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
     input: clarified, allowedOutcome: "conversation", model: repeated.model, stream: repeated.stream,
     signal: new AbortController().signal })).rejects.toThrow("failed");
+});
+
+it("rejects an oversized retained clarification request before inference", async () => {
+  const { source, proposals } = await fixture();
+  const fake = fakeModel(proposalSteps());
+  await expect(discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
+    input: { request: "x".repeat(7_998), clarification: {
+      question: "q", answer: "a", baseline: git(source, ["rev-parse", "HEAD"]).trim() } },
+    allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal })).rejects.toThrow();
+  expect(fake.stream).not.toHaveBeenCalled();
+  await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
+});
+
+it("rejects a changed clarification baseline before inference or proposal retention", async () => {
+  const { source, proposals } = await fixture();
+  const expectedBaseline = git(source, ["rev-parse", "HEAD"]).trim();
+  await writeFile(join(source, "README.md"), "# New committed baseline\n");
+  git(source, ["add", "README.md"]);
+  git(source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit",
+    "--quiet", "--no-gpg-sign", "-m", "Advance during clarification"]);
+  const fake = fakeModel(proposalSteps());
+
+  await expect(discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
+    input: { request: "Update the guide", clarification: {
+      question: "Which guide?", answer: "The identity guide.", baseline: expectedBaseline } },
+    allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal })).rejects.toThrow("baseline changed");
+  expect(fake.stream).not.toHaveBeenCalled();
+  await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
 it("rejects an answer that cites a baseline file it did not observe", async () => {
