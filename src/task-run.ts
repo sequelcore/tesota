@@ -6,7 +6,7 @@ import { candidateDiff, createCandidateCheckout, createCandidateSuccessor, inspe
   listCandidateCheckouts, type CandidateCheckout } from "./candidate-checkout.js";
 import { CandidateTask, checkCandidateTask, inspectCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
 import { DEFAULT_CANDIDATE_TASK_ID, parseCandidateTaskId, type CandidateTaskId } from "./candidate-task-definition.js";
-import { PROPOSAL_TASK_KIND, type ProposalRunGrant } from "./proposal-admission.js";
+import { validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { PI_TASK_LIMITS, piTaskPasses, runPiTask, type PiTaskResult } from "./integrations/pi-task.js";
@@ -248,8 +248,9 @@ export async function recoverTaskCommand(reference: string): Promise<number> {
 
 /** Execute only an in-memory proposal grant already issued by the admission owner. */
 export async function runProposalTask(grant: ProposalRunGrant, host: TaskRunHost = {}): Promise<TaskRunResult> {
-  if (grant.kind !== PROPOSAL_TASK_KIND || process.platform !== "win32") throw new Error("Proposal execution unavailable");
+  const admitted = validateProposalRunGrant(grant);
+  if (process.platform !== "win32") throw new Error("Proposal execution unavailable");
   if (host.signal?.aborted === true) throw new DOMException("cancelled", "AbortError");
-  const candidate = await createCandidateCheckout(grant.source);
-  return runPreparedTask(candidate, grant, undefined, host);
+  const candidate = await createCandidateCheckout(admitted.source);
+  return runPreparedTask(candidate, admitted, undefined, host);
 }

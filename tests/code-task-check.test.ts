@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { afterEach, expect, it, vi } from "vitest";
-import { CODE_CHECK_IMAGE, CODE_TASK_MARKER, checkCodeTask } from "../src/code-task-check.js";
+import { CODE_TASK_MARKER, checkCodeTask } from "../src/code-task-check.js";
+import { CONTAINER_IMAGE } from "../src/command-isolation.js";
 
 vi.mock("node:child_process", () => ({ spawnSync: vi.fn() }));
 const spawn = vi.mocked(spawnSync);
@@ -15,8 +16,9 @@ windowsIt("runs only in the pinned restricted container, with no host mounts or 
   expect(checkCodeTask(source, source).status).toBe("passed");
   const [command, args, options] = spawn.mock.calls[0] ?? [];
   expect(command).toBe("docker");
-  expect(args).toEqual(expect.arrayContaining([CODE_CHECK_IMAGE, "--network=none", "--read-only", "--cap-drop=ALL",
-    "--security-opt=no-new-privileges", "--user=65534:65534", "--memory=128m", "--pids-limit=32", "--pull=never"]));
+  expect(args).toEqual(expect.arrayContaining([CONTAINER_IMAGE, "--network=none", "--read-only", "--cap-drop=ALL",
+    "--security-opt=no-new-privileges", "--user=65534:65534", "--memory=128m", "--pids-limit=32", "--pull=never",
+    "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m"]));
   expect(args).not.toEqual(expect.arrayContaining(["--mount", "-v", "--privileged", "--env-file"]));
   expect(options).toMatchObject({ shell: false, timeout: 15_000, maxBuffer: 16_384 });
   expect(options?.input).toContain("Candidate function must use JavaScript syntax");

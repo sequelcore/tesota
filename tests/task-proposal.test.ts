@@ -30,12 +30,18 @@ async function fixture(): Promise<{ readonly root: string; readonly source: stri
   roots.push(root);
   const source = join(root, "source with spaces");
   await mkdir(join(source, "docs"), { recursive: true });
+  await mkdir(join(source, "src", "integrations"), { recursive: true });
   await mkdir(join(source, "tests"), { recursive: true });
   await writeFile(join(source, "README.md"), "# Fixture\n\nOld task wording.\n");
   await writeFile(join(source, "docs", "identity.md"), "# Identity\n\nA bounded coding agent.\n");
   await writeFile(join(source, "package.json"), '{"name":"tesota","scripts":{"check":"bounded"}}\n');
   await writeFile(join(source, "bun.lock"), "fixture lock\n");
   await writeFile(join(source, "tests", "contract.test.ts"), "export const obligation = true;\n");
+  await writeFile(join(source, "src", "integrations", "pi-task.ts"), "export const result = true;\n");
+  await writeFile(join(source, "src", "code-task-check.ts"), "export const oracle = true;\n");
+  await writeFile(join(source, "src", "candidate-task-definition.ts"), "export const definition = true;\n");
+  await writeFile(join(source, "src", "command-isolation.ts"), "export const boundary = true;\n");
+  await writeFile(join(source, "tests", "candidate-task.test.ts"), "// Existing trusted checks.\n");
   await writeFile(join(source, ".env"), "SYNTHETIC_PRIVATE=never-disclose\n");
   git(source, ["init", "--quiet"]);
   git(source, ["add", "."]);
@@ -95,6 +101,21 @@ function documentationProposalSteps(): FauxResponseStep[] {
   ];
 }
 
+function codeProposalSteps(): FauxResponseStep[] {
+  return [
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "tests/candidate-task.test.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
+      objective: "Strengthen task-result consistency checks.",
+      completionConditions: ["Inconsistent evidence is rejected by the trusted behavior check."],
+      readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+      writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+      checks: ["pi-result-consistency"], uncertainties: [],
+    } })),
+    fauxAssistantMessage("Proposal ready."),
+  ];
+}
+
 it("reads only committed regular blobs and reports source changes without modifying them", async () => {
   const { source } = await fixture();
   await writeFile(join(source, "binary.dat"), Buffer.from([0xff, 0x00, 0xfe]));
@@ -111,7 +132,9 @@ it("reads only committed regular blobs and reports source changes without modify
     dirtyPaths: ["README.md", "untracked.md"],
   });
   expect((await discovery.list({ prefix: "" })).files).toEqual([
-    "README.md", "binary.dat", "bun.lock", "control.bin", "docs/identity.md", "package.json", "tests/contract.test.ts",
+    "README.md", "binary.dat", "bun.lock", "control.bin", "docs/identity.md", "package.json",
+    "src/candidate-task-definition.ts", "src/code-task-check.ts", "src/command-isolation.ts",
+    "src/integrations/pi-task.ts", "tests/candidate-task.test.ts", "tests/contract.test.ts",
   ]);
   expect((await discovery.read({ path: "README.md" })).content).toContain("Old task wording");
   await expect(discovery.read({ path: ".env" })).rejects.toThrow("denied");
@@ -200,6 +223,36 @@ it("admits one current single-file documentation proposal without trusting it as
       writeFiles: ["docs/identity.md"],
       verification: { scopeIntegrity: "application_owned", repositoryCheck: "not_executed_in_first_slice" },
     });
+});
+
+it("maps the exact proposed TypeScript scope to an application-owned code grant", async () => {
+  const { source, proposals } = await fixture();
+  const fake = fakeModel(codeProposalSteps());
+  const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "Strengthen the task-result consistency checks.", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal });
+
+  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id, sourceDirectory: source }))
+    .resolves.toMatchObject({
+      kind: "proposal-code", task: "pi-result-consistency", proposalId: created.record.id,
+      readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+      writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+      declaredChecks: ["pi-result-consistency"],
+      verification: { scopeIntegrity: "application_owned", behaviorCheck: "pinned_container" },
+    });
+});
+
+it("blocks a code proposal when its application-owned check input is dirty", async () => {
+  const { source, proposals } = await fixture();
+  await writeFile(join(source, "src", "code-task-check.ts"), "export const oracle = false;\n");
+  const fake = fakeModel(codeProposalSteps());
+  const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "Strengthen the task-result consistency checks.", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal });
+
+  expect(created.record).toMatchObject({ status: "blocked_dirty", dirtyConflicts: ["src/code-task-check.ts"] });
+  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id, sourceDirectory: source }))
+    .rejects.toThrow("not admissible");
 });
 
 it("rejects stale and unsupported proposal evidence before issuing a run grant", async () => {

@@ -32,7 +32,8 @@ async function fixture() {
   await mkdir(source);
   git(source, ["init", "--quiet"]);
   for (const path of [editedFile, "docs/roadmap.md", "experiments/codex/history.md", "src/cli.ts", "src/integrations/pi-task.ts",
-    "src/verification/candidate.ts", "src/verification/invocation-admission.ts", "README.md", "docs/identity.md"]) {
+    "src/verification/candidate.ts", "src/verification/invocation-admission.ts", "README.md", "docs/identity.md",
+    "tests/candidate-task.test.ts"]) {
     await mkdir(dirname(join(source, path)), { recursive: true });
     await writeFile(join(source, path), await readFile(new URL("../" + path, import.meta.url)));
   }
@@ -54,6 +55,20 @@ function proposalGrant(candidate: Awaited<ReturnType<typeof fixture>>): Proposal
   };
 }
 
+function codeProposalGrant(candidate: Awaited<ReturnType<typeof fixture>>): ProposalRunGrant {
+  return {
+    kind: "proposal-code", task: "pi-result-consistency",
+    proposalId: "26ff8867-86b9-4b05-8cc0-96343fb5204c", proposalSha256: "b".repeat(64),
+    source: candidate.source, baseline: candidate.baseline,
+    objective: "Untrusted model objective is not the executable definition.",
+    completionConditions: ["Untrusted model condition."],
+    readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+    writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+    declaredChecks: ["pi-result-consistency"],
+    verification: { scopeIntegrity: "application_owned", behaviorCheck: "pinned_container" },
+  };
+}
+
 function correction(content: string): string {
   return content.replace(/Status:[\s\S]*?(?=\n\n## Decision and rationale)/, PI_DECISION_TASK_STATUS);
 }
@@ -65,6 +80,41 @@ it("prepares code scope independently of the documentation task and denies other
   expect((await task.read({ path: "src/integrations/pi-task.ts" })).content).toContain("piTaskPasses");
   await expect(task.read({ path: editedFile })).rejects.toThrow("denied");
 });
+
+it.runIf(process.platform === "win32")("binds a proposed code grant to the registered objective, test context and trusted check", async () => {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepareProposal(candidate.directory, codeProposalGrant(candidate));
+  expect(task.describe()).toMatchObject({
+    task: "proposal-code",
+    objective: expect.stringContaining("piTaskPasses"),
+    readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+    writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+  });
+  const source = await task.read({ path: "src/integrations/pi-task.ts" });
+  expect((await task.read({ path: "tests/candidate-task.test.ts" })).content).toContain("piTaskPasses");
+  expect((await task.check()).status).toBe("check_failed");
+  const corrected = source.content
+    .replace("typeof check.writeSetSha256 === \"string\" && check.writeSetSha256.length > 0),",
+      "typeof check.writeSetSha256 === \"string\" && check.writeSetSha256.length > 0 &&\n" +
+      "      check.taskAcceptance === \"not_evaluated\"),")
+    .replace("current.status === \"passed\",",
+      "current.status === \"passed\",\n    current.provenance === \"recorded_untrusted\",\n" +
+      "    current.taskAcceptance === \"not_evaluated\",");
+  await task.replace({ path: "src/integrations/pi-task.ts", expectedSha256: source.sha256, content: corrected });
+  expect((await task.check()).status).toBe("passed");
+  task.close();
+  const review = await reviewTask(candidate.directory);
+  expect(review).toMatchObject({ check: { task: "proposal-code", status: "passed" } });
+  const decided = await decideTask(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
+  expect(decided.operatorDecision?.applicability).toBe("current");
+  await expect(promoteTask(candidate.directory, candidate.source, review.reviewSha256)).resolves.toMatchObject({
+    status: "applied", files: [
+      { path: "src/integrations/pi-task.ts" },
+      { path: "tests/candidate-task.test.ts" },
+    ],
+  });
+  expect(await readFile(join(candidate.source, "src/integrations/pi-task.ts"), "utf8")).toBe(corrected);
+}, 30_000);
 
 it("returns LemmaScript diagnostics and accepts the corrected formal task", async () => {
   const candidate = await fixture();

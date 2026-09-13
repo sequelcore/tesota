@@ -1,4 +1,6 @@
 export const CONTAINER_IMAGE = "node@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f";
+export const CONTAINER_ENGINE_ARGS: readonly ["--host", "npipe:////./pipe/dockerDesktopLinuxEngine"] =
+  ["--host", "npipe:////./pipe/dockerDesktopLinuxEngine"];
 export const ISOLATION_PROBE_FILE = "isolation-probe.mjs";
 
 export interface IsolationPaths {
@@ -54,6 +56,15 @@ function portableWindowsPath(path: string): string {
   return path.replaceAll("\\", "/");
 }
 
+export function containerRunPolicyArgs(name: string): readonly string[] {
+  return [
+    ...CONTAINER_ENGINE_ARGS, "run", "--name", name, "--pull=never", "--network=none", "--read-only",
+    "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65534:65534", "--pids-limit=32",
+    "--memory=128m", "--memory-swap=128m", "--cpus=1", "--log-driver=none",
+    "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m",
+  ];
+}
+
 export function buildContainerInvocation(
   paths: IsolationPaths,
   name: string,
@@ -61,11 +72,7 @@ export function buildContainerInvocation(
   networkHost = "tesota-network-control",
 ): IsolationInvocation {
   const args = [
-    "--host", "npipe:////./pipe/dockerDesktopLinuxEngine", "run", "--name", name,
-    "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL",
-    "--security-opt=no-new-privileges", "--user=65534:65534", "--pids-limit=32",
-    "--memory=128m", "--memory-swap=128m", "--cpus=1", "--log-driver=none",
-    "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m",
+    ...containerRunPolicyArgs(name),
     "--mount", dockerMount(paths.candidate, "/workspace", true),
     "--mount", dockerMount(paths.writableSource, "/workspace/source/allowed.txt"),
     "--mount", dockerMount(paths.buildOutput, "/workspace-build"),

@@ -15,7 +15,8 @@ import {
   type CandidateTaskDefinition,
   type CandidateTaskId,
 } from "./candidate-task-definition.js";
-import { PROPOSAL_TASK_KIND, validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
+import { CODE_PROPOSAL_TASK_KIND, DOCUMENTATION_PROPOSAL_TASK_KIND, PROPOSAL_TASK_KINDS,
+  validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
 
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const contractSchema = z.strictObject({
@@ -54,14 +55,14 @@ const registeredPlanSchema = z.strictObject({
     definition.readFiles.every((path) => plan.inputs[path] !== undefined);
 });
 const proposalPlanSchema = z.strictObject({
-  format: z.literal("tesota-candidate-task"), version: z.literal(4), task: z.literal(PROPOSAL_TASK_KIND),
+  format: z.literal("tesota-candidate-task"), version: z.literal(4), task: z.enum(PROPOSAL_TASK_KINDS),
   definitionSha256: hashSchema, contract: contractSchema,
   baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/),
   inputs: z.record(z.string(), hashSchema), grant: z.unknown(),
 });
 const planSchema = z.union([registeredPlanSchema, proposalPlanSchema]);
 type TaskPlan = z.infer<typeof planSchema>;
-export type CandidateTaskKind = CandidateTaskId | typeof PROPOSAL_TASK_KIND;
+export type CandidateTaskKind = CandidateTaskId | typeof PROPOSAL_TASK_KINDS[number];
 
 export interface CandidateTaskCheck {
   readonly task: CandidateTaskKind;
@@ -98,8 +99,17 @@ type TaskFiles = Readonly<Record<string, string>>;
 
 function proposalTaskDefinition(grantValue: unknown): CandidateTaskDefinition {
   const grant = validateProposalRunGrant(grantValue);
+  if (grant.kind === CODE_PROPOSAL_TASK_KIND) {
+    const definition = candidateTaskDefinition(grant.task);
+    return { ...definition, readFiles: grant.readFiles, writeFiles: grant.writeFiles,
+      instructions: "Read the admitted source and test, run the fixed check before editing, then strengthen only piTaskPasses. " +
+        "You may add a focused regression to the admitted test file, but it supplements the immutable behavior oracle. " +
+        "Run the fixed check again after editing; do not add imports or declarations to the source file." };
+  }
   const oracle = "Application-owned scope integrity: at least one admitted documentation file changed. " +
     "The declared repository check is not executed in this first slice; outcome correctness requires human review.";
+  const [firstRead, ...remainingReads] = grant.readFiles;
+  if (firstRead === undefined) throw new Error("Proposal read scope is empty");
   return {
     version: 1, objective: grant.objective, oracle,
     oracleSha256: hash(JSON.stringify({ policy: "proposal-documentation-v1", proposalSha256: grant.proposalSha256,
@@ -107,7 +117,7 @@ function proposalTaskDefinition(grantValue: unknown): CandidateTaskDefinition {
     instructions: `Complete the approved documentation outcome: ${grant.objective}\nCompletion conditions:\n` +
       grant.completionConditions.map((condition) => `- ${condition}`).join("\n") +
       "\nChange only the admitted documentation file. The check validates scope integrity, not prose correctness.",
-    readFiles: grant.readFiles, writeFiles: grant.writeFiles, requiredStatus: "", promotable: true,
+    readFiles: [firstRead, ...remainingReads], writeFiles: grant.writeFiles, requiredStatus: "", promotable: true,
     expected: (files) => files,
     check: (files, initial) => ({
       status: grant.writeFiles.some((path) => files[path] !== initial[path]) ? "passed" : "check_failed",
@@ -117,7 +127,8 @@ function proposalTaskDefinition(grantValue: unknown): CandidateTaskDefinition {
 }
 
 function definitionFor(plan: TaskPlan): CandidateTaskDefinition {
-  return plan.task === PROPOSAL_TASK_KIND ? proposalTaskDefinition(plan.grant) : candidateTaskDefinition(plan.task);
+  return plan.task === DOCUMENTATION_PROPOSAL_TASK_KIND || plan.task === CODE_PROPOSAL_TASK_KIND ?
+    proposalTaskDefinition(plan.grant) : candidateTaskDefinition(plan.task);
 }
 
 function proposalContract(definition: CandidateTaskDefinition): z.infer<typeof contractSchema> {
@@ -130,7 +141,7 @@ function proposalContract(definition: CandidateTaskDefinition): z.infer<typeof c
 }
 
 function proposalDefinitionSha256(grant: ProposalRunGrant, contract: z.infer<typeof contractSchema>, instructions: string): string {
-  return hash(JSON.stringify({ task: PROPOSAL_TASK_KIND, version: 1, grant, contract, instructions }));
+  return hash(JSON.stringify({ task: grant.kind, version: 1, grant, contract, instructions }));
 }
 
 function sameFiles(left: TaskFiles, right: TaskFiles): boolean {
@@ -243,7 +254,7 @@ export class CandidateTask {
       return [path, hash(content)];
     }));
     const contract = proposalContract(definition);
-    const plan = proposalPlanSchema.parse({ format: "tesota-candidate-task", version: 4, task: PROPOSAL_TASK_KIND,
+    const plan = proposalPlanSchema.parse({ format: "tesota-candidate-task", version: 4, task: grant.kind,
       definitionSha256: proposalDefinitionSha256(grant, contract, definition.instructions), contract,
       baseline: grant.baseline, inputs, grant });
     const file = await open(join(inspection.directory, "task.json"), "wx", 0o600);
@@ -285,7 +296,8 @@ export class CandidateTask {
 
   requestSchemas(): ReturnType<typeof taskRequestSchemas> {
     const definition = definitionFor(this.#plan);
-    return this.#plan.task === PROPOSAL_TASK_KIND ? scopedTaskRequestSchemas(definition.readFiles, definition.writeFiles) :
+    return this.#plan.task === DOCUMENTATION_PROPOSAL_TASK_KIND || this.#plan.task === CODE_PROPOSAL_TASK_KIND ?
+      scopedTaskRequestSchemas(definition.readFiles, definition.writeFiles) :
       taskRequestSchemas(this.#plan.task);
   }
 
@@ -305,7 +317,7 @@ export class CandidateTask {
   async read(request: unknown): Promise<{ content: string; sha256: string }> {
     return this.#operation(async ({ checkout }) => {
       const definition = definitionFor(this.#plan);
-      const args = (this.#plan.task === PROPOSAL_TASK_KIND ?
+      const args = (this.#plan.task === DOCUMENTATION_PROPOSAL_TASK_KIND || this.#plan.task === CODE_PROPOSAL_TASK_KIND ?
         scopedTaskRequestSchemas(definition.readFiles, definition.writeFiles) : taskRequestSchemas(this.#plan.task)).read.parse(request);
       if (this.#reads >= CANDIDATE_TASK_LIMITS.reads) throw new Error("Read budget exceeded");
       this.#reads += 1;
@@ -317,7 +329,7 @@ export class CandidateTask {
   async replace(request: unknown): Promise<void> {
     return this.#operation(async ({ checkout, files }) => {
       const definition = definitionFor(this.#plan);
-      const args = (this.#plan.task === PROPOSAL_TASK_KIND ?
+      const args = (this.#plan.task === DOCUMENTATION_PROPOSAL_TASK_KIND || this.#plan.task === CODE_PROPOSAL_TASK_KIND ?
         scopedTaskRequestSchemas(definition.readFiles, definition.writeFiles) : taskRequestSchemas(this.#plan.task)).replace.parse(request);
       const currentContent = files[args.path];
       if (currentContent === undefined || this.#checks === 0 || this.#edits >= CANDIDATE_TASK_LIMITS.edits ||
@@ -361,7 +373,7 @@ async function loadCandidateTask(directory: string): Promise<{
   const parsed = planSchema.safeParse(JSON.parse(await readText(join(directory, "task.json"))));
   if (!parsed.success) throw new Error("Task plan invalid");
   const definition = definitionFor(parsed.data);
-  if (parsed.data.task === PROPOSAL_TASK_KIND) {
+  if (parsed.data.task === DOCUMENTATION_PROPOSAL_TASK_KIND || parsed.data.task === CODE_PROPOSAL_TASK_KIND) {
     const grant = validateProposalRunGrant(parsed.data.grant);
     const contract = proposalContract(definition);
     if (grant.baseline !== parsed.data.baseline || parsed.data.definitionSha256 !==

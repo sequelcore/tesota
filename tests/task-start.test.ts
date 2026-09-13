@@ -46,6 +46,27 @@ async function fixture() {
   return { source, proposalsRoot, directory, id, baseline };
 }
 
+async function codeFixture() {
+  const current = await fixture();
+  await mkdir(join(current.source, "src", "integrations"), { recursive: true });
+  await mkdir(join(current.source, "tests"), { recursive: true });
+  await writeFile(join(current.source, "src", "integrations", "pi-task.ts"), "export function piTaskPasses() { return false; }\n");
+  await writeFile(join(current.source, "tests", "candidate-task.test.ts"), "// trusted context\n");
+  git(current.source, ["add", "."]);
+  git(current.source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit",
+    "--quiet", "--no-gpg-sign", "-m", "Code fixture"]);
+  const baseline = git(current.source, ["rev-parse", "HEAD"]);
+  const record = JSON.parse(await readFile(join(current.directory, "proposal.json"), "utf8"));
+  record.baseline = baseline;
+  record.proposal = { objective: "Model wording is non-authoritative.", completionConditions: ["Model condition."],
+    readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+    writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+    checks: ["pi-result-consistency"], uncertainties: [] };
+  record.checks = [{ id: "pi-result-consistency", definition: "application_owned_declarative_only", executable: false }];
+  await writeFile(join(current.directory, "proposal.json"), JSON.stringify(record, null, 2) + "\n");
+  return { ...current, baseline };
+}
+
 function passingReview(directory: string, baseline: string): TaskReview {
   return { directory, reviewSha256: "b".repeat(64), diff: "diff --git a/docs/guide.md b/docs/guide.md\n+clear text\n",
     historicalAttempt: "not_evaluated", operatorDecision: null,
@@ -80,6 +101,20 @@ it("runs one approved proposal through execution, review, decision and promotion
   expect(progress).toEqual(["awaiting_approval:proposal_scope", "executing:candidate_task",
     "ready_for_review:candidate_review", "promoting:accepted_candidate"]);
   expect(await readFile(join(current.directory, "start.jsonl"), "utf8")).toContain('"outcome":"promoted"');
+});
+
+it("shows the application-owned code objective and fixed check before approval", async () => {
+  const current = await codeFixture();
+  const output: string[] = [];
+  const execute = vi.fn();
+
+  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, ask: async () => "no", write: (text) => output.push(text), execute })).resolves.toBe(0);
+
+  expect(execute).not.toHaveBeenCalled();
+  expect(output.join("")).toContain("Strengthen piTaskPasses");
+  expect(output.join("")).toContain("pinned pi-result-consistency behavior check");
+  expect(output.join("")).not.toContain("repository check will not run");
 });
 
 it("creates no run record before approval and rejects replay after a start", async () => {

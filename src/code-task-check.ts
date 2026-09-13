@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
+import { CONTAINER_ENGINE_ARGS, CONTAINER_IMAGE, containerRunPolicyArgs } from "./command-isolation.js";
 
 export const CODE_TASK_FILE = "src/integrations/pi-task.ts";
 export const CODE_TASK_MARKER = "export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck): boolean {";
-export const CODE_CHECK_IMAGE = "node@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f";
-export const CODE_TASK_OBJECTIVE = "Strengthen piTaskPasses to reject inconsistent session evidence. Preserve every byte before its export declaration. Require completed/stop, no denial/deadline, positive bounded integer invocation/tool/edit counts (8/13/2), 2-3 issued checks for the same task and baseline, initial check_failed then final passed with changed source hashes, all checks supplied to the model, and a matching current passed check. Allow a correction attempt with an intermediate failed check. Do not require exact counts when valid runs can differ. Use only this pure function, JavaScript syntax inside its existing TypeScript signature, no imports or additional declarations outside the function.";
+export const CODE_TASK_OBJECTIVE = "Strengthen piTaskPasses to reject inconsistent session evidence. Preserve every byte before its export declaration. Require completed/stop, no denial/deadline, positive bounded integer invocation/tool/edit counts (8/13/2), 2-3 issued checks for the same task and baseline, initial check_failed then final passed with changed source hashes, all checks supplied to the model, not_evaluated task acceptance throughout, and a matching current passed check with recorded_untrusted provenance. Allow a correction attempt with an intermediate failed check. Do not require exact counts when valid runs can differ. Use only this pure function, JavaScript syntax inside its existing TypeScript signature, no imports or additional declarations outside the function.";
 
 export interface CodeCheck {
   readonly status: "passed" | "check_failed";
@@ -24,12 +24,15 @@ for(const [key,value] of [["status","failed"],["terminalStopReason","error"],["d
  cases.push([key+"="+value,{...valid,[key]:value},current,false]);
 cases.push(["missing checks",{...valid,checks:[]},current,false],
  ["unissued",{...valid,checks:[{...before,provenance:"recorded_untrusted"},after]},current,false],
+ ["issued acceptance",{...valid,checks:[{...before,taskAcceptance:"accepted"},after]},current,false],
  ["baseline mismatch",{...valid,checks:[{...before,baseline:"b".repeat(40)},after]},current,false],
  ["task mismatch",{...valid,checks:[{...before,task:"other"},after]},current,false],
  ["current task",valid,{...current,task:"other"},false],
  ["unchanged hash",{...valid,checks:[after,after]},current,false],
  ["no changed bytes",{...valid,checks:[{...before,writeSetSha256:after.writeSetSha256},after]},current,false],
  ["stale",valid,{...current,writeSetSha256:"4".repeat(64)},false],
+ ["current provenance",valid,{...current,provenance:"issued"},false],
+ ["current acceptance",valid,{...current,taskAcceptance:"accepted"},false],
  ["failed current",valid,{...current,status:"check_failed"},false]);
 let failures = [];
 for (const [name,result,now,expected] of cases) {
@@ -41,7 +44,7 @@ process.stdout.write(JSON.stringify({failures}));
 
 export function codeTaskVerifierSha256(): string {
   return createHash("sha256").update(
-    CODE_CHECK_IMAGE + CODE_TASK_MARKER + oracle + checkCodeTask.toString(),
+    CONTAINER_IMAGE + CODE_TASK_MARKER + oracle + checkCodeTask.toString(),
   ).digest("hex");
 }
 
@@ -66,13 +69,10 @@ export function checkCodeTask(content: string, baseline: string): CodeCheck {
   for (const key of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"]) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
   }
-  const args = ["--host", "npipe:////./pipe/dockerDesktopLinuxEngine"];
   if (process.platform !== "win32") throw new Error("Code checks currently require Windows Docker Desktop");
   const execute = (): CodeCheck => {
-    const result = spawnSync("docker", [...args, "run", "--name", name, "--pull=never", "--network=none",
-      "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65534:65534",
-      "--pids-limit=32", "--memory=128m", "--memory-swap=128m", "--cpus=1", "--log-driver=none",
-      "--entrypoint=node", "-i", CODE_CHECK_IMAGE, "--input-type=module", "--max-old-space-size=64", "-"], {
+    const result = spawnSync("docker", [...containerRunPolicyArgs(name),
+      "--entrypoint=node", "-i", CONTAINER_IMAGE, "--input-type=module", "--max-old-space-size=64", "-"], {
       env, input: script, encoding: "utf8", shell: false, windowsHide: true, timeout: 15_000, maxBuffer: 16_384,
     });
     if (result.error !== undefined || result.status !== 0 || result.signal !== null) return failed("Behavior check did not complete");
@@ -87,7 +87,7 @@ export function checkCodeTask(content: string, baseline: string): CodeCheck {
   let result: CodeCheck;
   let cleaned = false;
   try { result = execute(); } finally {
-    const cleanup = spawnSync("docker", [...args, "rm", "--force", name], {
+    const cleanup = spawnSync("docker", [...CONTAINER_ENGINE_ARGS, "rm", "--force", name], {
       env, encoding: "utf8", shell: false, windowsHide: true, timeout: 10_000, maxBuffer: 4096,
     });
     cleaned = cleanup.error === undefined && cleanup.status === 0;
