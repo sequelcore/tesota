@@ -33,6 +33,36 @@ execution. Lifecycle subcommands remain available
 as composable and diagnostic seams, but the developer should not need to copy
 identifiers or drive each internal transition to complete an ordinary task.
 
+### Target operator experience
+
+The eventual interaction should feel like a normal coding-agent conversation. For
+example, the developer should be able to open a terminal, run `tesota` and write:
+
+> I would like to implement this feature. Research the topic in official
+> documentation, relevant products and established practices, then prepare an
+> issue with the proposed plan.
+
+Tesota should understand that request without requiring file names or a task
+manifest. It should clarify only a consequential ambiguity, inspect the repository,
+research through explicitly admitted external tools, cite the sources that support
+its conclusions and prepare a reviewable issue draft. Before publishing anything
+to an issue tracker, it should show the proposed destination and exact content and
+ask for approval. Creating the issue is an external effect; repository discovery,
+research, issue drafting and publication therefore remain distinct operations with
+distinct evidence and authority.
+
+Afterward, the same shell should allow a natural continuation such as “implement
+the approved plan.” That continuation should produce a new task-sized proposal and
+approval boundary before editing files or running checks. Conversation context may
+help interpret the request, but it must not silently carry write, command, network
+or publication authority from the earlier research turn.
+
+This is the product target, not the current feature set. Today Tesota can answer
+repository questions, clarify a request, retain a bounded proposal and execute only
+the documented fixed task slices. General web research, adaptive repository scope,
+issue-tracker publication and durable cross-task conversation remain future work
+on the [roadmap](roadmap.md).
+
 Tesota is cross-surface by contract and TUI-first by product. Task authority,
 lifecycle validity and evidence meaning belong to the application rather than its
 renderer, so changing presentation cannot change what an action is allowed to do.
