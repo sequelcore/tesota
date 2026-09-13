@@ -250,3 +250,8 @@ matching bytes and `recorded_untrusted` provenance. Human review accepted the
 exact two-file fingerprint and guarded promotion applied both files. The focused
 tests, typecheck and lint then passed in the source repository. This qualifies
 Stage 4's fixed code slice, not adaptive scope or general repository execution.
+The later final review found that this retained attempt's immutable oracle omitted
+one negative `result.taskAcceptance` case. The current oracle adds that case and a
+Docker-backed mutation regression, and the complete local gate passes; the live
+record remains bound to its earlier verifier identity rather than becoming fresh
+live evidence for the strengthened oracle.
