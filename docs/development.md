@@ -11,7 +11,7 @@ Run commands from the repository root.
 | --- | --- |
 | `bun run build` | Compile source to `dist/` |
 | `bun run typecheck` | Check source and test types |
-| `bun run test` | Build, then run the test suite |
+| `bun run test` | Build, then run core and filesystem-heavy Vitest groups in isolated processes |
 | `bun run lint` | Check source and tests; no fixes, warnings rejected |
 | `bun run check` | Run the complete repository gate |
 
@@ -82,8 +82,11 @@ The repository lint configuration applies Oxlint's classic cyclomatic-complexity
 limit of 20 to every function in `src` and `tests`; it has no baseline or
 file-level exceptions and remains separate from the candidate verifier profile.
 Normal checks do not log in or invoke a live model. Network experiments have a
-separate [operating guide](../experiments/codex/README.md). The CI workflow declares Windows and
-Linux checks; a declared lane does not establish that it has run successfully.
+separate [operating guide](../experiments/codex/README.md). Filesystem-heavy
+candidate suites run in separate Vitest processes so a timed-out filesystem
+operation cannot contaminate later suites; they retain the same isolated worker
+model and per-test limits. The CI workflow gives its Windows and Linux checks 20
+minutes; a declared lane does not establish that it has run successfully.
 
 Before completing a change, run the relevant checks and `git diff --check`.
 Report what actually ran and any unverified behavior. Passing checks, reviewer
