@@ -1,0 +1,25 @@
+{
+  "command": "node isolation-probe.mjs",
+  "image": "node@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f",
+  "selected": "docker-container",
+  "results": [
+    {
+      "backend": "codex-windows",
+      "identity": "codex-cli 0.154.0",
+      "status": "failed",
+      "assessment": {
+        "status": "failed",
+        "failedControls": ["outsideReadDenied"]
+      }
+    },
+    {
+      "backend": "docker-container",
+      "identity": "Docker version 29.7.2, build a7dcaa6; node@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f",
+      "status": "passed",
+      "assessment": {
+        "status": "passed",
+        "failedControls": []
+      }
+    }
+  ]
+}

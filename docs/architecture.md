@@ -50,6 +50,8 @@ describes those intended capabilities separately.
 | [task-review.ts](../src/task-review.ts) | Review current candidate bytes and bind a separate local operator decision to their fingerprint |
 | [task-promotion.ts](../src/task-promotion.ts) | Preflight and apply one explicitly requested, accepted registered write set; retain complete or partial outcomes |
 | [code-task-check.ts](../src/code-task-check.ts) | Run the fixed pure-predicate behavior oracle in a pinned, network-disabled container |
+| [command-isolation.ts](../src/command-isolation.ts) | Own the fixed command-isolation policy, pinned image and conjunctive assessment |
+| [isolation-qualification.ts](../src/isolation-qualification.ts) | Compare native Windows and container backends with temporary fixtures and observed cancellation |
 | [formal-task-check.ts](../src/formal-task-check.ts) | Seed and check the bounded LemmaScript/Dafny correction task in a temporary copy |
 | [candidate-source-task-check.ts](../src/candidate-source-task-check.ts) | Seed and check optional-final-LF candidate-source acceptance |
 | [multi-file-task-check.ts](../src/multi-file-task-check.ts) | Derive and check the exact two-file documentation change for the task capability |
@@ -215,7 +217,9 @@ predecessor's exact committed baseline. The explicit command grants a new bounde
 handle; it does not resume the old Pi session, copy partial working bytes or
 inherit checks, decisions or promotion authority. The predecessor remains intact.
 
-The current verifier's temporary snapshot is not a general sandbox. Registered
-candidate editing has its own fixed scope and effect boundaries; arbitrary code
-execution would require a separate implemented isolation boundary because a Git
-worktree alone does not provide one.
+The fixed command-isolation runner is qualified on Windows but is not connected
+to task execution and does not accept model-authored commands. Its candidate
+mount is read-only, with one existing source file, build output and verifier
+scratch granted independently. Registered candidate editing retains its own
+scope and effect boundaries; a Git worktree alone is not a sandbox. See
+[decision 004](decisions/004-command-isolation.md).

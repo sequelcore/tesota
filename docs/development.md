@@ -14,6 +14,7 @@ Run commands from the repository root.
 | `bun run test` | Build, then run core and filesystem-heavy Vitest groups in isolated processes |
 | `bun run lint` | Check source and tests; no fixes, warnings rejected |
 | `bun run check` | Run the complete repository gate |
+| `bun --no-env-file dist/cli.js isolation qualify` | Run the explicit live Windows isolation comparison; excluded from normal checks |
 
 With no arguments, the main CLI opens Tesota Shell when standard input, output and
 error are interactive terminals. It accepts a natural-language message. Bounded
@@ -31,6 +32,11 @@ With no arguments in a non-interactive process, or with
 `help`, `--help` or `-h`, it prints help (exit 0).
 `candidate create` and `candidate inspect <id|directory>` prepare and inspect
 [independent checkouts](candidates.md); they do not invoke a model.
+`isolation qualify` runs the same fixed probe in the installed Codex Windows
+sandbox and a pinned Docker container. It selects a backend only when every
+filesystem, synthetic-credential, network, descendant and cancellation control
+passes. It creates only temporary fixtures, invokes no model and grants no task
+execution authority. See the [qualification record](../experiments/isolation/README.md).
 `candidate list` summarizes stored candidates by lifecycle status, and
 `candidate clean` removes only old rejected, abandoned or failed checkout directories while
 retaining their evidence. `candidate abandon <id|directory>` records an explicit

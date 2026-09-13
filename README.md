@@ -43,6 +43,10 @@ decision and conflict-safe promotion. `task start <proposal-id>` exposes the sam
 one-shot lifecycle. Tesota rejects stale, unsupported, concurrent, replayed and
 resumed proposal starts. This is a narrow documentation slice, not general
 repository execution.
+The explicit `isolation qualify` diagnostic compares the installed native
+Windows sandbox with Tesota's pinned container policy using one fixed command.
+It invokes no model and does not enable general repository tasks. See the
+[retained qualification](experiments/isolation/README.md).
 See the [roadmap](docs/roadmap.md) for demonstrated progress and remaining work.
 The proposed [natural-language task experience](docs/decisions/003-natural-language-task-experience.md)
 defines why proposal, run authority, check evidence and human acceptance remain separate.
@@ -59,6 +63,7 @@ bun run check
 bun --no-env-file dist/cli.js
 bun --no-env-file dist/cli.js --help
 bun --no-env-file dist/cli.js task start <proposal-id>
+bun --no-env-file dist/cli.js isolation qualify
 bun --no-env-file dist/cli.js verify src/cli.ts
 ```
 

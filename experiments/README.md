@@ -14,6 +14,8 @@ provider experiment and records immutable review, correction and recovery
 observations, including the combined correction cycle.
 The [Oxlint qualification](oxlint/README.md) records the measured selection of
 five Kiln `dev` rules and the rejection of noisy structural limits.
+The [command isolation qualification](isolation/README.md) compares one native
+Windows sandbox with the pinned container selected for the next bounded code task.
 
 ## Retained artifacts
 

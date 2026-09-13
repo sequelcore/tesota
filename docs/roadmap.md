@@ -14,7 +14,7 @@ specification. [Architecture](architecture.md) describes what is implemented.
 ## Milestones
 
 Status below combines implementation records and retained live evidence through
-2026-09-12 UTC. Historical review acceptance is not a new review or a live
+2026-09-13 UTC. Historical review acceptance is not a new review or a live
 validation of the current checkout.
 
 | Increment | Status | Outcome or remaining condition |
@@ -34,6 +34,7 @@ validation of the current checkout.
 | Registered multi-file task | Locally verified for a two-file write set | One task can read, replace, check, review and promote two registered paths; checks and review bind the ordered write set, and promotion preflights every source target before its first rename |
 | Natural-language task proposal | Stored-OAuth discovery and dirty-input blocking passed | A Spanish goal named no files; bounded read-only discovery selected one documentation path, retained a strict proposal and reported relevant excluded changes with no candidate or execution authority |
 | Tesota Shell | Persistent terminal foundation implemented; complete live lifecycle on the new renderer remains open | Interactive `tesota` now owns a persistent transcript, editor and typed status over the existing clarification and proposal lifecycle; keyboard cancellation, resize, scrolling and terminal restoration have focused coverage, plus a real PTY open/cancel smoke test |
+| Qualified command isolation | Passed for the fixed Windows qualification | A pinned Docker runner passed separate source, build and scratch writes; outside read, sibling write, synthetic credential, network, descendant and cancellation controls. Codex Windows failed the stricter outside-read control and was not selected. |
 | Task recovery successor | Passed for one interrupted live task | An explicit command validated the failed predecessor, recreated its exact baseline in a clean candidate, recorded the relationship and completed a fresh Pi correction without inheriting bytes, evidence or acceptance |
 | Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
 | Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
@@ -385,12 +386,14 @@ before the next stage can broaden authority:
    interruption and terminal restoration must work. The persistent renderer now
    provides this foundation over the same application workflow; full proposal,
    review and promotion interaction still needs live qualification.
-3. **Qualified command isolation.** Compare an existing Windows-capable sandbox
-   with a pinned container runner using one fixed command. Demonstrate denied
-   access outside the candidate, credential and network isolation, bounded child
-   processes, Ctrl+C settlement and fail-closed initialization. Source writes,
-   build outputs and verifier scratch space must be separate capabilities; making
-   the whole candidate writable would not preserve an exact write grant.
+3. **Qualified command isolation.** Complete for the fixed Windows probe. The
+   installed Codex sandbox and a pinned Docker runner executed the same command.
+   Docker passed separate source, build and scratch grants plus outside-read,
+   sibling-write, synthetic-credential, network, descendant and cancellation
+   controls; Codex Windows failed the stricter outside-read control. Missing
+   runtime or image, rejected hardening, malformed output and unconfirmed cleanup
+   fail closed. This selects the Docker boundary for the next bounded increment,
+   not for arbitrary commands. See [decision 004](decisions/004-command-isolation.md).
 4. **First proposed code task.** Admit one existing TypeScript source file and its
    test with a trusted fixed check. Complete approval, isolated editing, a failing
    check, correction, applicable final evidence, review, human acceptance and
