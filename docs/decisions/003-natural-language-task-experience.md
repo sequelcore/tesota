@@ -289,8 +289,9 @@ with the original request through a second discovery. The application validates 
 expected baseline and final retained-request size before inference; a baseline change
 or second clarification fails closed. A continued proposal retains the exchange as
 request evidence. Local fake-provider tests establish these result,
-continuation and observed-evidence rules. One stored-OAuth question qualified the
-answer path without retaining a proposal; live clarification remains unqualified.
+continuation and observed-evidence rules. Stored-OAuth runs qualified both a direct
+answer and one clarification-to-answer path without retaining a proposal;
+clarification-to-proposal remains unqualified in live use.
 
 The first deliberately narrow `task start <proposal-id>` consumer is now connected
 to the inline shell. It displays scope, obtains one approval, edits an independent
