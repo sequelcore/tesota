@@ -7,8 +7,9 @@ one current Markdown target below `docs/`, asks for scope approval, uses an
 isolated candidate, presents an escaped diff, records a separate decision and can
 promote without copied lifecycle IDs. One stored-OAuth documentation lifecycle
 has completed. One clarification now continues against the same baseline with typed
-results and progress; stored-OAuth runs have qualified both answer and proposal
-results after clarification. General repository execution remains open.
+results and progress; stored-OAuth runs have qualified answer and proposal results
+after clarification plus invalidation after a real committed baseline change.
+General repository execution remains open.
 
 ## Problem
 
@@ -292,6 +293,8 @@ request evidence. Local fake-provider tests establish these result,
 continuation and observed-evidence rules. Stored-OAuth runs qualified a direct
 answer, clarification-to-answer without proposal retention and
 clarification-to-proposal stopped at declined approval without candidate creation.
+A controlled live commit while awaiting an answer also qualified baseline-change
+rejection without another proposal or candidate.
 
 The first deliberately narrow `task start <proposal-id>` consumer is now connected
 to the inline shell. It displays scope, obtains one approval, edits an independent

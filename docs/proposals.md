@@ -174,6 +174,16 @@ declined it and no candidate was created. This qualifies one live
 clarification-to-proposal and declined-approval path, not proposal correctness or
 approved execution after clarification.
 
+The next stored-OAuth shell run on 2026-09-13 UTC exercised baseline invalidation
+with a real commit. Tesota asked one clarification at baseline
+`9a2067e4c5b4527393e4d8a542bcc77cf3298956`; while it waited for the answer, the
+preceding qualification evidence was committed as
+`42f6f11db05c2c7929517698c3842ff9111fbc5d`. After the operator answered, Tesota
+reported the changed baseline and ended the request. Proposal and candidate counts
+remained unchanged; the only recently written proposal was the expected record from
+the preceding run. This qualifies live rejection across a committed baseline
+change, not every concurrent filesystem or Git-state race.
+
 The first live proposal-start attempt on 2026-09-12 UTC exposed a prompt defect
 without changing source. Proposal `ea1aa560-d6f1-4906-8c9a-ba4b52464b37`
 correctly selected `docs/proposals.md` from an outcome-only request and received
