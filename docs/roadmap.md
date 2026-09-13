@@ -33,7 +33,7 @@ validation of the current checkout.
 | Registered task execution | Passed for a second live task | One immutable registry owns four task contracts and the shared engine has no task-name branches; the candidate-source task passed direct, simulated-Pi and stored-OAuth live correction through the same bounded operations |
 | Registered multi-file task | Locally verified for a two-file write set | One task can read, replace, check, review and promote two registered paths; checks and review bind the ordered write set, and promotion preflights every source target before its first rename |
 | Natural-language task proposal | Stored-OAuth discovery and dirty-input blocking passed | A Spanish goal named no files; bounded read-only discovery selected one documentation path, retained a strict proposal and reported relevant excluded changes with no candidate or execution authority |
-| Tesota Shell | Live clarification outcomes, baseline invalidation, lifecycle and Ctrl+C verified | Interactive `tesota` accepts natural-language messages, returns grounded answers to the prompt and continues one clarification into an answer or proposal only against an unchanged baseline; typed progress covers discovery, approval, execution, review and promotion; a focused persistent TUI remains open |
+| Tesota Shell | Persistent terminal foundation implemented; complete live lifecycle on the new renderer remains open | Interactive `tesota` now owns a persistent transcript, editor and typed status over the existing clarification and proposal lifecycle; keyboard cancellation, resize, scrolling and terminal restoration have focused coverage, plus a real PTY open/cancel smoke test |
 | Task recovery successor | Passed for one interrupted live task | An explicit command validated the failed predecessor, recreated its exact baseline in a clean candidate, recorded the relationship and completed a fresh Pi correction without inheriting bytes, evidence or acceptance |
 | Candidate review and decision | Implemented for the fixed candidate tasks | Fresh diff and check, fingerprint-bound local operator decision and stale-record detection remain separate from promotion authority |
 | Guarded task promotion | Live code promotion passed on Windows | Explicit source write with current acceptance, unchanged target and index checks, and a retained write journal; documentation and `pi-result-consistency` are supported |
@@ -344,9 +344,11 @@ scope, grant-tamper rejection, review, decision, promotion, replay exclusion and
 the shell handoff. One stored-OAuth run also completed the full lifecycle for an
 operator-described `docs/proposals.md` change. A preceding attempt safely denied
 an edit made before the mandatory initial check; the prompt correction then passed
-the fresh one-shot run. This evidence favors improving clarification and progress
-rendering, then delivering the focused Tesota Shell TUI before broadening
-admission. Scope expansion, richer recovery, arbitrary shell execution, sandboxed
+the fresh one-shot run. This evidence favored improving clarification and progress
+rendering, then delivering the focused Tesota Shell terminal interface before
+broadening admission. Its persistent foundation is now implemented; a complete
+live proposal lifecycle through that renderer remains to be qualified. Scope
+expansion, richer recovery, arbitrary shell execution, sandboxed
 candidate commands and mandatory external review remain later slices justified by
 observed use.
 
@@ -372,16 +374,17 @@ Progress toward that target is incremental. Each stage must pass its exit eviden
 before the next stage can broaden authority:
 
 1. **Usable conversational loop.** A clarification continues the same request;
-   the inline shell shows its current phase, active operation and elapsed time;
+   the shell shows its current phase, active operation and elapsed time;
    cancellation reports observed settlement. One ordinary documentation change
    completes without requiring the operator to copy lifecycle identifiers. The
    continuation, semantic result and progress paths are locally verified, and one
    stored-OAuth clarification-to-answer run supplies the live exit evidence.
-2. **Focused Tesota Shell TUI.** Separate typed application outcomes and operator
+2. **Focused Tesota Shell.** Separate typed application outcomes and operator
    decisions from terminal text, then render persistent conversation, phase,
    operation, diff and check evidence. Keyboard operation, scrolling, resize,
-   interruption and terminal restoration must work. The existing inline path is a
-   fallback over the same workflow, not a second independently evolving product.
+   interruption and terminal restoration must work. The persistent renderer now
+   provides this foundation over the same application workflow; full proposal,
+   review and promotion interaction still needs live qualification.
 3. **Qualified command isolation.** Compare an existing Windows-capable sandbox
    with a pinned container runner using one fixed command. Demonstrate denied
    access outside the candidate, credential and network isolation, bounded child

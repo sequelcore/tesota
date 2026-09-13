@@ -32,8 +32,8 @@ An explicit promotion command can apply an accepted registered write set while
 refusing conflicting source changes before the first source write.
 The [`task propose`](docs/proposals.md) command accepts an ordinary-language
 goal and uses bounded, read-only discovery over committed Tesota files to retain
-a non-authoritative proposed scope. In an interactive terminal, running `tesota` opens the first
-**Tesota Shell** inline workflow. A read-only turn can answer a repository
+a non-authoritative proposed scope. In an interactive terminal, running `tesota`
+opens **Tesota Shell**, its persistent terminal interface. A read-only turn can answer a repository
 question, request one necessary clarification or retain a task proposal. Answers
 return to the prompt. A clarification answer continues the same bounded request
 only while its committed baseline remains unchanged. A current
@@ -65,6 +65,10 @@ bun --no-env-file dist/cli.js verify src/cli.ts
 The argument-free command opens Tesota Shell only when all three
 standard streams are attached to a terminal. In a non-interactive process it
 prints help and performs no inference.
+
+**Tesota Shell** is the surface name. **Tesota** remains the product and agent
+name; “TUI” describes the terminal-rendering technology and is not part of either
+name.
 
 `check` builds, typechecks source and tests, runs tests including compiled CLI
 behavior, and runs Oxlint without fixes. Repository lint enforces classic

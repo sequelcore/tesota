@@ -22,8 +22,11 @@ proposal for a requested change. An answer returns to the prompt. A clarificatio
 answer continues the original request only against the same committed baseline;
 blank input ends the session or cancels the pending clarification. A ready supported
 documentation proposal continues to its explicit approval and review flow. The
-inline renderer shows typed phase labels and elapsed time; those labels report
-observed application progress and grant no authority.
+persistent renderer keeps the transcript, current phase, elapsed time and editor
+visible while the terminal resizes or scrolls. Ctrl+C cancels a pending prompt; in
+discovery or execution it reaches the application owner. Those observations and
+controls grant no authority. The surface is named **Tesota Shell**; “TUI” is only
+its implementation category.
 With no arguments in a non-interactive process, or with
 `help`, `--help` or `-h`, it prints help (exit 0).
 `candidate create` and `candidate inspect <id|directory>` prepare and inspect

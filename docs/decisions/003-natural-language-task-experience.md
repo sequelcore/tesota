@@ -162,15 +162,15 @@ diff, applicable check evidence, unverified claims and observed consumption. Hum
 `accept` or `reject` remains separate from model completion and passing checks;
 promotion remains a later explicit operation over the exact accepted bytes.
 
-The first surface is an inline terminal workflow with plain-text output and
-keyboard-operable choices. **Tesota Shell** names this interactive terminal
-experience and its planned evolution into a focused persistent TUI; it does not
-name a separate engine. The TUI should follow bounded clarification continuation
-and typed lifecycle interaction, before general repository authority expands.
+The first surface is a keyboard-operable terminal workflow. **Tesota Shell** names
+this interactive terminal experience; it does not name a separate engine. “TUI”
+describes its rendering technology and is not part of the product-facing name.
+The persistent renderer follows bounded clarification continuation and typed
+lifecycle interaction before general repository authority expands.
 Product behavior and evidence records must not depend on a particular renderer.
 
-This inline workflow is the intended primary product surface, not a presentation
-layer to add after a general runtime is complete. Running `tesota` without a
+This workflow is the intended primary product surface, not a presentation layer
+to add after a general runtime is complete. Running `tesota` without a
 subcommand should open one conversational session in the current repository. The
 operator states the request, reviews the proposal, approves the task-sized scope,
 follows execution and receives the diff, checks and acceptance choice without
@@ -203,11 +203,9 @@ or lifecycle ownership.
 
 ### Terminal surface terms
 
-Tesota currently exposes a CLI with an inline conversational shell. `tesota`
-starts an interactive prompt, but output follows the terminal's ordinary scrolling
-flow and is not managed as a persistent full-screen layout. Calling this a shell
-describes the conversation entry point; it does not mean a system command shell or
-a separate agent engine.
+Tesota exposes command-oriented CLI seams and a persistent conversational surface.
+Running `tesota` starts Tesota Shell; calling it a shell describes the conversation
+entry point and does not mean a system command shell or a separate agent engine.
 
 A terminal user interface (TUI) manages rendered regions, focus, keyboard or mouse
 interaction and repeated screen updates inside the terminal. Gentle Shell is such
@@ -218,11 +216,10 @@ renderer and interaction extension: Pi owns the agent session and Gentle Shell i
 neither a desktop GUI nor an operating-system shell.
 
 Tesota does not reproduce Gentle Shell's renderer, theme or complete feature set.
-Its inline shell first exercises the real proposal, approval, progress, review and
-decision contract with less presentation machinery. The next focused TUI renders
-those same application-owned states and actions with persistent conversation,
-progress and review regions. It must not add empty orchestration panels or become
-the owner of task authority or lifecycle semantics.
+Its focused renderer presents the existing proposal, approval, progress, review
+and decision contract through a persistent transcript, status region and editor.
+It must not add empty orchestration panels or become the owner of task authority
+or lifecycle semantics.
 
 ## Canonical concepts
 
@@ -296,12 +293,13 @@ clarification-to-proposal stopped at declined approval without candidate creatio
 A controlled live commit while awaiting an answer also qualified baseline-change
 rejection without another proposal or candidate.
 
-The first deliberately narrow `task start <proposal-id>` consumer is now connected
-to the inline shell. It displays scope, obtains one approval, edits an independent
-candidate through supported operations, presents the diff and evidence for a
+The first deliberately narrow `task start <proposal-id>` consumer is connected to
+the Tesota Shell workflow. It displays scope, obtains one approval, edits an
+independent candidate through supported operations, presents the diff and evidence for a
 separate human decision, and uses the existing conflict-safe promotion boundary.
-Local tests cover the lifecycle; one real operator-described Tesota change beyond
-an existing registered repair remains the live qualification requirement.
+Local tests and one real operator-described documentation change cover the
+lifecycle. Repeating that complete lifecycle through the persistent renderer
+remains a qualification requirement.
 
 This slice keeps authority narrow by rejecting unsupported proposal fields, a
 second start of the same grant and concurrent or resumed execution. It does not

@@ -2,9 +2,9 @@
 
 Tesota currently has one private TypeScript package with a verification CLI,
 opt-in live integration experiments, five registered bounded repository tasks and
-one admitted proposal-backed documentation task. It has an interactive shell for
-one natural-language request and one narrow proposal lifecycle, but no general
-production task runtime. The [roadmap](roadmap.md)
+one admitted proposal-backed documentation task. It has a persistent interactive
+terminal surface for natural-language requests and one narrow proposal lifecycle,
+but no general production task runtime. The [roadmap](roadmap.md)
 describes those intended capabilities separately.
 
 ## Implemented ownership
@@ -12,8 +12,11 @@ describes those intended capabilities separately.
 | Owner | Responsibility |
 | --- | --- |
 | [src/cli.ts](../src/cli.ts) | Dispatch the interactive entry point, verification, authentication and candidate commands |
-| [src/native-shell.ts](../src/native-shell.ts) | Own the inline terminal prompt and continue a ready proposal into its approval flow without exposing lifecycle IDs |
-| [src/terminal-question.ts](../src/terminal-question.ts) | Own cancellable one-question readline lifetimes so execution receives process interrupts directly |
+| [src/tesota-shell-command.ts](../src/tesota-shell-command.ts) | Compose the process terminal, conversation and admitted-task lifecycle for the argument-free command |
+| [src/tesota-shell.ts](../src/tesota-shell.ts) | Sequence conversation and approval flow through renderer-independent typed callbacks |
+| [src/tesota-shell-terminal.ts](../src/tesota-shell-terminal.ts) | Render Tesota Shell as a persistent terminal layout and own focus, scrolling, resize and prompt cancellation |
+| [src/shell-progress.ts](../src/shell-progress.ts) | Own the closed progress vocabulary and operator-facing phase labels |
+| [src/terminal-question.ts](../src/terminal-question.ts) | Own cancellable one-question readline lifetimes for explicit lifecycle commands |
 | [src/conversation-turn.ts](../src/conversation-turn.ts) | Own valid read-only turn outcomes, live setup and operator-facing result formatting |
 | [src/conversation-turn-contract.ts](../src/conversation-turn-contract.ts) | Parse the answer, clarification and task-proposal result variants |
 | [src/candidate-checkout.ts](../src/candidate-checkout.ts) | Create independent committed checkouts and inspect changes against their baselines |
@@ -73,8 +76,8 @@ configured provider call is inference transport, not model-controlled repository
 network access. See the
 [proposal contract](proposals.md).
 
-The native shell passes a typed request to that discovery boundary and retains its
-typed result instead of reconstructing intent from printed text. An answer returns
+The Tesota Shell workflow passes a typed request to that discovery boundary and
+retains its typed result instead of reconstructing intent from printed text. An answer returns
 to the main prompt. One clarification can continue in memory with the original
 request, exact question and operator answer; the continued result may be an answer
 or proposal but not another clarification. Discovery opens the repository again;
@@ -91,14 +94,15 @@ tools. No candidate command, repository check or model-controlled network operat
 runs in this first proposal slice. The escaped diff discloses that limitation before
 a separate human accept/reject decision and explicit guarded promotion.
 
-The shell renders typed progress for repository discovery and operator
+Tesota Shell renders typed progress for repository discovery and operator
 clarification. Task start reports scope approval, candidate execution, review and
-promotion through a closed progress union; these observations do not authorize the
-reported operation. Each question releases readline before the next lifecycle
-phase; Ctrl+C during execution therefore reaches the candidate owner, records
-cancellation and cannot grant a decision or promotion. When standard input, output
-or error is not an interactive terminal, the argument-free CLI preserves the
-non-inferential help behavior.
+promotion through the same closed progress union; these observations do not
+authorize the reported operation. The terminal renderer owns only presentation:
+its persistent transcript, status, prompt focus, resize and scrolling cannot grant
+authority. Ctrl+C cancels an active prompt locally; during discovery or execution
+it is forwarded to the application owner, which remains responsible for observed
+settlement. When standard input, output or error is not an interactive terminal,
+the argument-free CLI preserves the non-inferential help behavior.
 
 ## Engine boundary
 

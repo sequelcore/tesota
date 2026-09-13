@@ -27,9 +27,9 @@ of success. The proposed contract is recorded in
 [decision 003](decisions/003-natural-language-task-experience.md).
 
 The intended normal entry point is **Tesota Shell**, the interactive terminal
-experience opened by running `tesota` in the current repository. It begins as a
-thin inline conversation and should become a focused persistent TUI before Tesota
-broadens into general repository execution. Lifecycle subcommands remain available
+experience opened by running `tesota` in the current repository. It uses a focused
+persistent terminal interface before Tesota broadens into general repository
+execution. Lifecycle subcommands remain available
 as composable and diagnostic seams, but the developer should not need to copy
 identifiers or drive each internal transition to complete an ordinary task.
 
