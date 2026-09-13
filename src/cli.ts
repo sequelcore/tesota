@@ -26,8 +26,8 @@ Runs bounded verification and scoped repository tasks.
 
 const args = process.argv.slice(2);
 if (args.length === 0 && process.stdin.isTTY === true && process.stdout.isTTY === true && process.stderr.isTTY === true) {
-  const { runNativeShellCommand } = await import("./native-shell.js");
-  process.exit(await runNativeShellCommand());
+  const { runTesotaShellCommand } = await import("./tesota-shell-command.js");
+  process.exit(await runTesotaShellCommand());
 } else if (args.length === 0 || (args.length === 1 && ["--help", "-h", "help"].includes(args[0] ?? ""))) {
   process.stdout.write(help);
 } else if (args.length === 2 && args[0] === "auth" && args[1] !== undefined) {

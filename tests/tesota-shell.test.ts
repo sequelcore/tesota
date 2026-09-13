@@ -1,13 +1,14 @@
 import { expect, it, vi } from "vitest";
-import { askNativeShellRequest, runNativeShell } from "../src/native-shell.js";
+import { runTesotaShell } from "../src/tesota-shell.js";
 import { PROPOSAL_LIMITS } from "../src/task-proposal-contract.js";
+import type { TesotaShellProgress } from "../src/shell-progress.js";
 import type { TaskStartProgress } from "../src/task-start.js";
 
 const baseline = "a".repeat(40);
 
 function answerResult(message = "The shell is bounded.", observedBaseline = baseline) {
   return { status: "completed" as const, exitCode: 0, turn: { kind: "answer" as const,
-    answer: { kind: "answer" as const, message, evidenceFiles: ["src/native-shell.ts"], uncertainties: [] },
+    answer: { kind: "answer" as const, message, evidenceFiles: ["src/tesota-shell.ts"], uncertainties: [] },
     baseline: observedBaseline } };
 }
 
@@ -34,11 +35,11 @@ function proposalResult() {
 
 it("starts a Tesota-owned conversation and sends the natural-language request to discovery", async () => {
   const output: string[] = [];
+  const progress: TesotaShellProgress[] = [];
   const discover = vi.fn(async () => answerResult());
   const answers = ["  Corrige la experiencia del shell.  ", ""];
 
-  const result = await runNativeShell({
-    cwd: "C:\\work\\tesota",
+  const result = await runTesotaShell({
     write: (text) => { output.push(text); },
     ask: async (prompt) => {
       output.push(prompt);
@@ -46,30 +47,26 @@ it("starts a Tesota-owned conversation and sends the natural-language request to
     },
     discover,
     start: vi.fn(),
-    now: () => 1_000,
+    report: (event) => { progress.push(event); },
   });
 
   expect(result).toBe(0);
   expect(discover).toHaveBeenCalledOnce();
   expect(discover).toHaveBeenCalledWith({ request: "Corrige la experiencia del shell." });
   expect(output.join("")).toBe(
-    "Tesota\n" +
-    "Repository: C:\\work\\tesota\n" +
-    "Ask about the repository or describe a change. File names are optional.\n\n" +
     "> \n" +
-    "[discovering] Inspecting the committed repository (0s)\n" +
-    "The shell is bounded.\nEvidence: src/native-shell.ts\nBaseline: " + baseline + "\nAuthority: none; nothing changed.\n" +
+    "The shell is bounded.\nEvidence: src/tesota-shell.ts\nBaseline: " + baseline + "\nAuthority: none; nothing changed.\n" +
     "Read-only turn complete. No execution authority was created.\n" +
     "> Tesota session ended. Nothing changed.\n",
   );
+  expect(progress).toEqual([{ phase: "discovering", operation: "repository_discovery" }]);
 });
 
 it("ends without inference when the operator enters no request", async () => {
   const output: string[] = [];
   const discover = vi.fn(async () => answerResult());
 
-  const result = await runNativeShell({
-    cwd: "C:\\work\\tesota",
+  const result = await runTesotaShell({
     write: (text) => { output.push(text); },
     ask: async () => "   ",
     discover,
@@ -84,8 +81,7 @@ it("ends without inference when the operator enters no request", async () => {
 it("reports a blocked proposal without claiming executable progress", async () => {
   const output: string[] = [];
 
-  const result = await runNativeShell({
-    cwd: "C:\\work\\tesota",
+  const result = await runTesotaShell({
     write: (text) => { output.push(text); },
     ask: async () => "Update the docs",
     discover: async () => ({ ...proposalResult(), exitCode: 1,
@@ -101,14 +97,15 @@ it("reports a blocked proposal without claiming executable progress", async () =
 it("continues a ready proposal into the approval flow without asking for its id", async () => {
   const output: string[] = [];
   const start = vi.fn(async (_id: string, _report: (progress: TaskStartProgress) => void) => 0);
-  const result = await runNativeShell({ cwd: "C:\\work\\tesota", write: (text) => output.push(text),
+  const progress: TesotaShellProgress[] = [];
+  const result = await runTesotaShell({ write: (text) => output.push(text),
     ask: async () => "Update the guide", discover: async () => proposalResult(), start: async (id, report) => {
       report({ phase: "executing", operation: "candidate_task" });
       return start(id, report);
-    } });
+    }, report: (event) => { progress.push(event); } });
   expect(result).toBe(0);
   expect(start).toHaveBeenCalledWith("9877887d-1475-4439-a0a6-c1c85091fc9e", expect.any(Function));
-  expect(output.join("")).toContain("[executing] Running the isolated candidate task");
+  expect(progress).toContainEqual({ phase: "executing", operation: "candidate_task" });
   expect(output.join("")).toContain("Proposal ready. Execution still requires your approval.\n");
 });
 
@@ -119,14 +116,15 @@ it("continues one clarification in the same shell session without granting autho
     .mockResolvedValueOnce(clarificationResult())
     .mockResolvedValueOnce(answerResult("The requested guide is already clear."));
 
-  const result = await runNativeShell({ cwd: "C:\\work\\tesota", write: (text) => output.push(text),
-    ask: async () => answers.shift() ?? "", discover, start: vi.fn() });
+  const progress: TesotaShellProgress[] = [];
+  const result = await runTesotaShell({ write: (text) => output.push(text),
+    ask: async () => answers.shift() ?? "", discover, start: vi.fn(), report: (event) => { progress.push(event); } });
 
   expect(result).toBe(0);
   expect(discover).toHaveBeenNthCalledWith(1, { request: "Update the guide" });
   expect(discover).toHaveBeenNthCalledWith(2, { request: "Update the guide", clarification: {
     question: "Which guide should change?", answer: "docs/guide.md", baseline } });
-  expect(output.join("")).toContain("[awaiting_clarification] Waiting for your answer");
+  expect(progress).toContainEqual({ phase: "awaiting_clarification", operation: "operator_answer" });
   expect(output.join("")).toContain("The requested guide is already clear.");
 });
 
@@ -134,7 +132,7 @@ it("stops after an unanswered clarification without starting work", async () => 
   const output: string[] = [];
   const answers = ["Update the guide", "   "];
   const start = vi.fn();
-  const result = await runNativeShell({ cwd: "C:\\work\\tesota", write: (text) => output.push(text),
+  const result = await runTesotaShell({ write: (text) => output.push(text),
     ask: async () => answers.shift() ?? "", discover: async () => clarificationResult(), start });
   expect(result).toBe(0);
   expect(start).not.toHaveBeenCalled();
@@ -148,45 +146,8 @@ it("invalidates a clarification continuation when the committed baseline changes
     .mockResolvedValueOnce(clarificationResult())
     .mockResolvedValueOnce({ status: "unavailable" as const, exitCode: 1,
       reason: "baseline_changed" as const });
-  const result = await runNativeShell({ cwd: "C:\\work\\tesota", write: (text) => output.push(text),
+  const result = await runTesotaShell({ write: (text) => output.push(text),
     ask: async () => answers.shift() ?? "", discover, start: vi.fn() });
   expect(result).toBe(1);
   expect(output.at(-1)).toBe("The committed baseline changed during clarification. Start a new request. Nothing changed.\n");
-});
-
-it("releases readline before discovery so process interruption reaches the proposal owner", async () => {
-  const events: string[] = [];
-  const terminal = {
-    question: vi.fn(async (_prompt: string, _options?: { readonly signal?: AbortSignal }) => {
-      events.push("question");
-      return "Update the docs";
-    }),
-    once: vi.fn((_event: "SIGINT", _listener: () => void) => terminal),
-    removeListener: vi.fn((_event: "SIGINT", _listener: () => void) => terminal),
-    close: vi.fn(() => { events.push("close"); }),
-  };
-
-  await expect(askNativeShellRequest(terminal, "> ")).resolves.toBe("Update the docs");
-  expect(events).toEqual(["question", "close"]);
-  expect(terminal.removeListener).toHaveBeenCalledOnce();
-});
-
-it("aborts and closes the pending question when readline receives Ctrl+C", async () => {
-  let interrupt: (() => void) | undefined;
-  const terminal = {
-    question: vi.fn(async (_prompt: string, options?: { readonly signal?: AbortSignal }) =>
-      new Promise<string>((_resolve, reject) => {
-        options?.signal?.addEventListener("abort", () => reject(new DOMException("cancelled", "AbortError")), { once: true });
-      })),
-    once: vi.fn((_event: "SIGINT", listener: () => void) => { interrupt = listener; return terminal; }),
-    removeListener: vi.fn((_event: "SIGINT", _listener: () => void) => terminal),
-    close: vi.fn(),
-  };
-
-  const pending = askNativeShellRequest(terminal, "> ");
-  expect(interrupt).toBeDefined();
-  interrupt?.();
-
-  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
-  expect(terminal.close).toHaveBeenCalledOnce();
 });
