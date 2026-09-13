@@ -5,8 +5,8 @@ conversational entry point are implemented and locally verified. The first narro
 proposal-backed documentation lifecycle is also implemented locally: it admits
 one current Markdown target below `docs/`, asks for scope approval, uses an
 isolated candidate, presents an escaped diff, records a separate decision and can
-promote without copied lifecycle IDs. Live end-to-end qualification and general
-execution remain open.
+promote without copied lifecycle IDs. One stored-OAuth documentation lifecycle
+has completed; clarification continuation and general execution remain open.
 
 ## Problem
 
@@ -179,6 +179,30 @@ separate lesson that small work stays direct and internal planning or review
 machinery should not become mandatory user-visible ceremony. Tesota adopts those
 experience properties, not either project's renderer, theme, permission defaults
 or lifecycle ownership.
+
+### Terminal surface terms
+
+Tesota currently exposes a CLI with an inline conversational shell. `tesota`
+starts an interactive prompt, but output follows the terminal's ordinary scrolling
+flow and is not managed as a persistent full-screen layout. Calling this a shell
+describes the conversation entry point; it does not mean a system command shell or
+a separate agent engine.
+
+A terminal user interface (TUI) manages rendered regions, focus, keyboard or mouse
+interaction and repeated screen updates inside the terminal. Gentle Shell is such
+a visual layer supplied by Gentle Pi on top of Pi's TUI. It can use Pi's regular
+terminal mode or a full-screen mode with a status bar, sidebar, framed prompt,
+working-tree changes, diff viewer, notices, todos and subagent views. It remains a
+renderer and interaction extension: Pi owns the agent session and Gentle Shell is
+neither a desktop GUI nor an operating-system shell.
+
+Tesota does not need to reproduce Gentle Shell before it can become useful. Its
+inline shell is the initial native product surface because it exercises the real
+proposal, approval, progress, review and decision contract with less presentation
+machinery. A richer TUI may later render the same application-owned states and
+actions when observed use shows that persistent panels, navigation or concurrent
+activity materially improve the workflow. It must not become the owner of task
+authority or lifecycle semantics.
 
 ## Canonical concepts
 
