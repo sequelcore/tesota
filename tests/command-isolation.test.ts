@@ -9,6 +9,7 @@ import {
 } from "../src/command-isolation.js";
 import {
   CleanupUnconfirmedError,
+  collectUnconfirmedResources,
   runIsolationQualificationCommand,
   type IsolationQualification,
 } from "../src/isolation-qualification.js";
@@ -22,6 +23,19 @@ const paths: IsolationPaths = {
 };
 
 describe("command isolation qualification", () => {
+  it("attempts every cleanup and reports each resource whose absence is unconfirmed", () => {
+    const attempted: string[] = [];
+
+    const pending = collectUnconfirmedResources([
+      { name: "client", remove: () => { attempted.push("client"); return false; } },
+      { name: "server", remove: () => { attempted.push("server"); throw new Error("engine unavailable"); } },
+      { name: "network", remove: () => { attempted.push("network"); return true; } },
+    ]);
+
+    expect(attempted).toEqual(["client", "server", "network"]);
+    expect(pending).toEqual(["client", "server"]);
+  });
+
   it("mounts candidate input read-only and grants source, build and scratch separately", () => {
     const invocation = buildContainerInvocation(paths, "tesota-isolation-fixed");
 
@@ -122,14 +136,14 @@ describe("command isolation qualification", () => {
     const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const diagnostic = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const running = runIsolationQualificationCommand(async (signal) => await new Promise((_, reject) => {
-      signal.addEventListener("abort", () => reject(new CleanupUnconfirmedError("pending: tesota-test-resource")), { once: true });
+      signal.addEventListener("abort", () => reject(new CleanupUnconfirmedError(["tesota-test-resource"])), { once: true });
     }));
 
     process.emit("SIGINT", "SIGINT");
 
     await expect(running).resolves.toBe(2);
     expect(output).not.toHaveBeenCalled();
-    expect(diagnostic).toHaveBeenCalledWith("Command isolation qualification failed closed. pending: tesota-test-resource\n");
+    expect(diagnostic).toHaveBeenCalledWith("Command isolation qualification failed closed. Cleanup was not confirmed: tesota-test-resource\n");
     output.mockRestore();
     diagnostic.mockRestore();
   });

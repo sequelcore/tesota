@@ -40,7 +40,31 @@ interface ProbeExecution {
 }
 
 class QualificationAbortedError extends Error {}
-export class CleanupUnconfirmedError extends Error {}
+export class CleanupUnconfirmedError extends Error {
+  public readonly resources: readonly string[];
+
+  public constructor(resources: readonly string[]) {
+    super(`Cleanup was not confirmed: ${resources.join(", ")}`);
+    this.resources = resources;
+  }
+}
+
+interface NamedCleanup {
+  readonly name: string;
+  readonly remove: () => boolean;
+}
+
+export function collectUnconfirmedResources(cleanups: readonly NamedCleanup[]): readonly string[] {
+  const pending: string[] = [];
+  for (const cleanup of cleanups) {
+    try {
+      if (!cleanup.remove()) pending.push(cleanup.name);
+    } catch {
+      pending.push(cleanup.name);
+    }
+  }
+  return pending;
+}
 
 function isAborted(signal?: AbortSignal): boolean {
   return signal?.aborted === true;
@@ -219,7 +243,12 @@ function reconcileNetworkAbsence(name: string, env: NodeJS.ProcessEnv): boolean 
   return removeDockerNetwork(name, env) || dockerResourceIsAbsent("network", name, env);
 }
 
-function containerCanReachNetworkControl(control: ContainerNetworkControl, env: NodeJS.ProcessEnv): boolean {
+interface NetworkControlReachability {
+  readonly reachable: boolean;
+  readonly pending: readonly string[];
+}
+
+function containerCanReachNetworkControl(control: ContainerNetworkControl, env: NodeJS.ProcessEnv): NetworkControlReachability {
   const name = `tesota-network-control-${randomUUID()}`;
   const script = "const net=require('node:net');const deadline=Date.now()+3000;function attempt(){const s=net.connect(Number(process.argv[1]),process.argv[2],()=>{s.destroy();process.exit(0)});s.on('error',()=>{s.destroy();if(Date.now()<deadline)setTimeout(attempt,100);else process.exit(1)})}attempt()";
   const run = spawnSync("docker", ["--host", "npipe:////./pipe/dockerDesktopLinuxEngine", "run", "--name", name,
@@ -229,8 +258,10 @@ function containerCanReachNetworkControl(control: ContainerNetworkControl, env: 
     env, encoding: "utf8", shell: false, windowsHide: true, timeout: 10_000, maxBuffer: 4_096,
   });
   const removed = reconcileContainerAbsence(name, env);
-  if (!removed) throw new CleanupUnconfirmedError(`Positive-control container cleanup was not confirmed: ${name}`);
-  return run.error === undefined && run.status === 0;
+  return {
+    reachable: run.error === undefined && run.status === 0,
+    pending: removed ? [] : [name],
+  };
 }
 
 function createContainerNetworkControl(env: NodeJS.ProcessEnv): ContainerNetworkControl | undefined {
@@ -241,7 +272,7 @@ function createContainerNetworkControl(env: NodeJS.ProcessEnv): ContainerNetwork
   });
   if (network.error !== undefined || network.status !== 0) {
     if (!reconcileNetworkAbsence(partial.network, env)) {
-      throw new CleanupUnconfirmedError(`Container network cleanup was not confirmed: ${partial.network}`);
+      throw new CleanupUnconfirmedError([partial.network]);
     }
     return undefined;
   }
@@ -257,21 +288,25 @@ function createContainerNetworkControl(env: NodeJS.ProcessEnv): ContainerNetwork
   });
   const address = inspected.stdout.trim();
   const control = { ...partial, address };
-  if (server.error === undefined && server.status === 0 && /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(address) && containerCanReachNetworkControl(control, env)) return control;
-  const serverRemoved = reconcileContainerAbsence(partial.server, env);
-  const networkRemoved = reconcileNetworkAbsence(partial.network, env);
-  if (!serverRemoved || !networkRemoved) {
-    const pending = [!serverRemoved ? partial.server : undefined, !networkRemoved ? partial.network : undefined]
-      .filter((name): name is string => name !== undefined);
-    throw new CleanupUnconfirmedError(`Container control cleanup was not confirmed: ${pending.join(", ")}`);
-  }
+  const serverReady = server.error === undefined && server.status === 0 && /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(address);
+  const reachability = serverReady ? containerCanReachNetworkControl(control, env) : { reachable: false, pending: [] };
+  if (reachability.reachable) return control;
+  const pending = [
+    ...reachability.pending,
+    ...collectUnconfirmedResources([
+      { name: partial.server, remove: () => reconcileContainerAbsence(partial.server, env) },
+      { name: partial.network, remove: () => reconcileNetworkAbsence(partial.network, env) },
+    ]),
+  ];
+  if (pending.length > 0) throw new CleanupUnconfirmedError(pending);
   return undefined;
 }
 
-function removeContainerNetworkControl(control: ContainerNetworkControl, env: NodeJS.ProcessEnv): boolean {
-  const serverRemoved = reconcileContainerAbsence(control.server, env);
-  const networkRemoved = reconcileNetworkAbsence(control.network, env);
-  return serverRemoved && networkRemoved;
+function removeContainerNetworkControl(control: ContainerNetworkControl, env: NodeJS.ProcessEnv): readonly string[] {
+  return collectUnconfirmedResources([
+    { name: control.server, remove: () => reconcileContainerAbsence(control.server, env) },
+    { name: control.network, remove: () => reconcileNetworkAbsence(control.network, env) },
+  ]);
 }
 
 function resolveCodexBinary(): string | undefined {
@@ -318,9 +353,13 @@ async function qualifyContainer(paths: IsolationPaths, signal?: AbortSignal): Pr
   try { execution = await executeProbe(invocation, join(paths.buildOutput, "late.txt"), () => stopDocker(name, invocation.env), signal); }
   catch (error) { failure = error; }
   const containerRemoved = reconcileContainerAbsence(name, invocation.env);
-  const controlRemoved = removeContainerNetworkControl(control, invocation.env);
-  if (!containerRemoved || !controlRemoved) {
-    throw new CleanupUnconfirmedError(`Isolation cleanup was not confirmed: ${name}, ${control.server}, ${control.network}`);
+  const pendingControlResources = removeContainerNetworkControl(control, invocation.env);
+  if (!containerRemoved || pendingControlResources.length > 0) {
+    const pending = [
+      ...(!containerRemoved ? [name] : []),
+      ...pendingControlResources,
+    ];
+    throw new CleanupUnconfirmedError(pending);
   }
   if (failure !== undefined) throw failure;
   if (execution === undefined) throw new Error("Isolation container returned no result");
