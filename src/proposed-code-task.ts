@@ -7,7 +7,8 @@ export const CODE_PROPOSAL_TASK_ID = "pi-result-consistency";
 export const CODE_PROPOSAL_TEST_FILE = "tests/pi-task-evidence.test.ts";
 const regressionPolicy = "The admitted existing regression test may only append focused cases; candidate-authored tests supplement the immutable behavior oracle.";
 const regressionCases = "Append negative piTaskPasses assertions for an accepted result, an accepted issued check, " +
-  "an accepted current check, and an issued rather than recorded_untrusted current check.";
+  "an accepted current check, and an issued rather than recorded_untrusted current check. " +
+  "For every intentionally invalid typed value, cast the complete invalid result or check through unknown to its declared parameter type so TypeScript still accepts the regression test.";
 
 function proposedCodeExpected(files: Readonly<Record<string, string>>): Readonly<Record<string, string>> {
   return files;
