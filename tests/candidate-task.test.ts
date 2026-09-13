@@ -79,6 +79,7 @@ it("prepares code scope independently of the documentation task and denies other
   const candidate = await fixture();
   const task = await CandidateTask.prepare(candidate.directory, "pi-result-consistency");
   expect(task.describe()).toMatchObject({ task: "pi-result-consistency", writeFiles: ["src/integrations/pi-task.ts"] });
+  expect(task.describe().instructions).toContain("numeric bounds 10, 13 and 2");
   expect((await task.read({ path: "src/integrations/pi-task.ts" })).content).toContain("piTaskPasses");
   await expect(task.read({ path: editedFile })).rejects.toThrow("denied");
 });
@@ -124,6 +125,19 @@ it.runIf(process.platform === "win32")("binds a proposed code grant to the regis
   });
   expect(await readFile(join(candidate.source, "src/integrations/pi-task.ts"), "utf8")).toBe(corrected);
 }, 60_000);
+
+it.runIf(process.platform === "win32")("rejects a proposed source that omits result acceptance", async () => {
+  const candidate = await fixture();
+  const task = await CandidateTask.prepareProposal(candidate.directory, codeProposalGrant(candidate));
+  const source = await task.read({ path: "src/integrations/pi-task.ts" });
+  await task.check();
+  const weakened = source.content.replace('    result.taskAcceptance === "not_evaluated",\n', "");
+  expect(weakened).not.toBe(source.content);
+  await task.replace({ path: "src/integrations/pi-task.ts", expectedSha256: source.sha256, content: weakened });
+  expect(await task.check()).toMatchObject({ status: "check_failed",
+    diagnostics: expect.arrayContaining(["result acceptance"]) });
+  task.close();
+}, 30_000);
 
 it("rejects a persisted code grant whose canonical objective is rewritten", async () => {
   const candidate = await fixture();

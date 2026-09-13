@@ -25,6 +25,7 @@ const cases = [["valid",valid,current,true],
 for(const [key,value] of [["status","failed"],["terminalStopReason","error"],["denied",true],["deadlineExpired",true],["modelInvocations",0],["modelInvocations",11],["toolCalls",0],["toolCalls",14],["edits",0],["edits",3],["edits",1.5],["modelInvocations",2.5],["toolCalls",4.5],["finalCheckSuppliedToModel",false],["checksSuppliedToModel",1]])
  cases.push([key+"="+value,{...valid,[key]:value},current,false]);
 cases.push(["missing checks",{...valid,checks:[]},current,false],
+ ["result acceptance",{...valid,taskAcceptance:"accepted"},current,false],
  ["unissued",{...valid,checks:[{...before,provenance:"recorded_untrusted"},after]},current,false],
  ["issued acceptance",{...valid,checks:[{...before,taskAcceptance:"accepted"},after]},current,false],
  ["baseline mismatch",{...valid,checks:[{...before,baseline:"b".repeat(40)},after]},current,false],

@@ -130,7 +130,7 @@ const definitions: Readonly<Record<CandidateTaskId, CandidateTaskDefinition>> = 
     objective: CODE_TASK_OBJECTIVE,
     oracle: "Pinned isolated Node behavior cases for session evidence consistency.",
     oracleSha256: codeTaskVerifierSha256(),
-    instructions: "Read src/integrations/pi-task.ts, check it, replace only the body of piTaskPasses, then check again. Preserve every byte before the export declaration and every declaration after its closing brace, including imports. The edited pure function must use JavaScript syntax inside its existing TypeScript signature, no imports, external declarations or PI_TASK_LIMITS reference; use numeric bounds 8, 13 and 2 inside the function.",
+    instructions: "Read src/integrations/pi-task.ts, check it, replace only the body of piTaskPasses, then check again. Preserve every byte before the export declaration and every declaration after its closing brace, including imports. The edited pure function must use JavaScript syntax inside its existing TypeScript signature, no imports, external declarations or PI_TASK_LIMITS reference; use numeric bounds 10, 13 and 2 inside the function.",
     readFiles: [CODE_TASK_FILE],
     writeFiles: [CODE_TASK_FILE],
     requiredStatus: "",
