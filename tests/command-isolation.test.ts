@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   CONTAINER_IMAGE,
   assessIsolationProbe,
@@ -7,6 +7,7 @@ import {
   type IsolationPaths,
   type IsolationProbeReport,
 } from "../src/command-isolation.js";
+import { runIsolationQualificationCommand } from "../src/isolation-qualification.js";
 
 const paths: IsolationPaths = {
   candidate: "C:\\fixture\\candidate",
@@ -27,7 +28,7 @@ describe("command isolation qualification", () => {
       "--read-only",
       "--cap-drop=ALL",
       "--security-opt=no-new-privileges",
-      "--pids-limit=16",
+      "--pids-limit=32",
       "--memory=128m",
       "--memory-swap=128m",
       "--cpus=1",
@@ -38,7 +39,8 @@ describe("command isolation qualification", () => {
     expect(invocation.args.join("\n")).toContain("target=/workspace-build");
     expect(invocation.args.join("\n")).toContain("target=/verifier-scratch");
     expect(invocation.args.join("\n")).not.toContain(paths.outside);
-    expect(invocation.env["TESOTA_QUALIFICATION_SECRET"]).toBeUndefined();
+    expect(invocation.args.join("\n")).not.toContain("TESOTA_QUALIFICATION_SECRET");
+    expect(invocation.env["TESOTA_QUALIFICATION_SECRET"]).toBe("synthetic-private");
   });
 
   it("gives the native comparison only the declared filesystem capabilities", () => {
@@ -54,7 +56,7 @@ describe("command isolation qualification", () => {
     expect(serialized).toContain("permissions.tesota-qualification.network.enabled=false");
     expect(serialized).not.toContain("APPDATA");
     expect(serialized).not.toContain("USERPROFILE");
-    expect(invocation.env["TESOTA_QUALIFICATION_SECRET"]).toBeUndefined();
+    expect(invocation.env["TESOTA_QUALIFICATION_SECRET"]).toBe("synthetic-private");
   });
 
   it("requires every observed boundary and cancellation settlement", () => {
@@ -66,6 +68,7 @@ describe("command isolation qualification", () => {
       outsideReadDenied: true,
       credentialAbsent: true,
       networkDenied: true,
+      descendantStarted: true,
     };
 
     expect(assessIsolationProbe(passing, { canceled: true, descendantSettled: true })).toEqual({
@@ -79,5 +82,20 @@ describe("command isolation qualification", () => {
       status: "failed",
       failedControls: ["networkDenied", "descendantSettled"],
     });
+  });
+
+  it("maps Ctrl+C to owned cancellation and restores the process listener", async () => {
+    const listeners = process.listenerCount("SIGINT");
+    const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const running = runIsolationQualificationCommand(async (signal) => await new Promise((_, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("synthetic cancellation")), { once: true });
+    }));
+
+    process.emit("SIGINT", "SIGINT");
+
+    await expect(running).resolves.toBe(130);
+    expect(process.listenerCount("SIGINT")).toBe(listeners);
+    expect(output).not.toHaveBeenCalled();
+    output.mockRestore();
   });
 });

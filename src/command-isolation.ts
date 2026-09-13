@@ -24,6 +24,7 @@ export interface IsolationProbeReport {
   readonly outsideReadDenied: boolean;
   readonly credentialAbsent: boolean;
   readonly networkDenied: boolean;
+  readonly descendantStarted: boolean;
 }
 
 export interface IsolationAssessment {
@@ -53,11 +54,16 @@ function portableWindowsPath(path: string): string {
   return path.replaceAll("\\", "/");
 }
 
-export function buildContainerInvocation(paths: IsolationPaths, name: string): IsolationInvocation {
+export function buildContainerInvocation(
+  paths: IsolationPaths,
+  name: string,
+  networkPort = 43123,
+  networkHost = "tesota-network-control",
+): IsolationInvocation {
   const args = [
     "--host", "npipe:////./pipe/dockerDesktopLinuxEngine", "run", "--name", name,
     "--pull=never", "--network=none", "--read-only", "--cap-drop=ALL",
-    "--security-opt=no-new-privileges", "--user=65534:65534", "--pids-limit=16",
+    "--security-opt=no-new-privileges", "--user=65534:65534", "--pids-limit=32",
     "--memory=128m", "--memory-swap=128m", "--cpus=1", "--log-driver=none",
     "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=16m",
     "--mount", dockerMount(paths.candidate, "/workspace", true),
@@ -70,10 +76,18 @@ export function buildContainerInvocation(paths: IsolationPaths, name: string): I
     "--env", "TESOTA_BUILD=/workspace-build/output.txt",
     "--env", "TESOTA_SCRATCH=/verifier-scratch/output.txt",
     "--env", "TESOTA_LATE=/workspace-build/late.txt",
+    "--env", "TESOTA_CHILD_READY=/verifier-scratch/child-ready.txt",
     "--env", "TESOTA_OUTSIDE=/host-outside/sentinel.txt",
+    "--env", `TESOTA_NETWORK_HOST=${networkHost}`,
+    "--env", `TESOTA_NETWORK_PORT=${networkPort}`,
     CONTAINER_IMAGE, ISOLATION_PROBE_FILE,
   ];
-  return { command: "docker", args, cwd: paths.candidate, env: safeHostEnvironment() };
+  return {
+    command: "docker",
+    args,
+    cwd: paths.candidate,
+    env: { ...safeHostEnvironment(), TESOTA_QUALIFICATION_SECRET: "synthetic-private" },
+  };
 }
 
 function codexFilesystem(paths: IsolationPaths): string {
@@ -87,16 +101,19 @@ function codexFilesystem(paths: IsolationPaths): string {
   return `{${entries.map(([path, access]) => `${JSON.stringify(path)}=${JSON.stringify(access)}`).join(",")}}`;
 }
 
-export function buildCodexSandboxInvocation(paths: IsolationPaths): IsolationInvocation {
+export function buildCodexSandboxInvocation(paths: IsolationPaths, networkPort = 43123): IsolationInvocation {
   const probeEnvironment = {
     TESOTA_SOURCE: portableWindowsPath(paths.writableSource),
     TESOTA_SIBLING: portableWindowsPath(paths.candidate + "\\source\\denied.txt"),
     TESOTA_BUILD: portableWindowsPath(paths.buildOutput + "\\output.txt"),
     TESOTA_SCRATCH: portableWindowsPath(paths.verifierScratch + "\\output.txt"),
     TESOTA_LATE: portableWindowsPath(paths.buildOutput + "\\late.txt"),
+    TESOTA_CHILD_READY: portableWindowsPath(paths.verifierScratch + "\\child-ready.txt"),
     TESOTA_OUTSIDE: portableWindowsPath(paths.outside),
+    TESOTA_NETWORK_HOST: "127.0.0.1",
+    TESOTA_NETWORK_PORT: String(networkPort),
   };
-  const env = { ...safeHostEnvironment(), ...probeEnvironment };
+  const env = { ...safeHostEnvironment(), ...probeEnvironment, TESOTA_QUALIFICATION_SECRET: "synthetic-private" };
   const childEnvironment = [
     "Path", "PATH", "PATHEXT", "SystemRoot", "SYSTEMROOT", "WINDIR",
     ...Object.keys(probeEnvironment),
@@ -129,7 +146,7 @@ import { connect } from "node:net";
 async function succeeds(action) { try { await action(); return true; } catch { return false; } }
 async function networkIsDenied() {
   return await new Promise((resolve) => {
-    const socket = connect({ host: "1.1.1.1", port: 443 });
+    const socket = connect({ host: process.env.TESOTA_NETWORK_HOST, port: Number(process.env.TESOTA_NETWORK_PORT) });
     const finish = (denied) => { socket.destroy(); resolve(denied); };
     socket.once("connect", () => finish(false));
     socket.once("error", () => finish(true));
@@ -144,8 +161,14 @@ const scratchWrite = await succeeds(() => writeFile(process.env.TESOTA_SCRATCH, 
 const outsideReadDenied = !await succeeds(() => readFile(process.env.TESOTA_OUTSIDE));
 const credentialAbsent = process.env.TESOTA_QUALIFICATION_SECRET === undefined;
 const networkDenied = await networkIsDenied();
-const child = spawn(process.execPath, ["-e", "setTimeout(async()=>{await import('node:fs/promises').then(m=>m.writeFile(process.env.TESOTA_LATE,'late\\n'))},2500)"], { stdio: "ignore" });
+const childCode = "await import('node:fs/promises').then(m=>m.writeFile(process.env.TESOTA_CHILD_READY,'ready\\n'));setTimeout(async()=>{await import('node:fs/promises').then(m=>m.writeFile(process.env.TESOTA_LATE,'late\\n'))},2500)";
+const child = spawn(process.execPath, ["--input-type=module", "-e", childCode], { stdio: "ignore" });
 child.unref();
-process.stdout.write(JSON.stringify({ sourceWrite, siblingWriteDenied, buildWrite, scratchWrite, outsideReadDenied, credentialAbsent, networkDenied }) + "\nTESOTA_PROBE_READY\n");
+let descendantStarted = false;
+for (let attempt = 0; attempt < 20 && !descendantStarted; attempt += 1) {
+  descendantStarted = await succeeds(() => readFile(process.env.TESOTA_CHILD_READY));
+  if (!descendantStarted) await new Promise(resolve => setTimeout(resolve, 50));
+}
+process.stdout.write(JSON.stringify({ sourceWrite, siblingWriteDenied, buildWrite, scratchWrite, outsideReadDenied, credentialAbsent, networkDenied, descendantStarted }) + "\nTESOTA_PROBE_READY\n");
 setInterval(() => {}, 1000);
 `;
