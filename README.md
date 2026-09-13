@@ -33,8 +33,10 @@ refusing conflicting source changes before the first source write.
 The [`task propose`](docs/proposals.md) command accepts an ordinary-language
 goal and uses bounded, read-only discovery over committed Tesota files to retain
 a non-authoritative proposed scope. In an interactive terminal, running `tesota` opens the first
-**Tesota Shell** inline workflow. One read-only turn can answer a repository
-question, request a necessary clarification or retain a task proposal. A current
+**Tesota Shell** inline workflow. A read-only turn can answer a repository
+question, request one necessary clarification or retain a task proposal. Answers
+return to the prompt. A clarification answer continues the same bounded request
+only while its committed baseline remains unchanged. A current
 `ready` single-file Markdown proposal under `docs/` can continue directly to one
 scope approval, isolated execution, an escaped diff, a separate accept/reject
 decision and conflict-safe promotion. `task start <proposal-id>` exposes the same

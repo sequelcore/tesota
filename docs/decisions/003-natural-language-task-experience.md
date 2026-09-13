@@ -6,7 +6,9 @@ proposal-backed documentation lifecycle is also implemented locally: it admits
 one current Markdown target below `docs/`, asks for scope approval, uses an
 isolated candidate, presents an escaped diff, records a separate decision and can
 promote without copied lifecycle IDs. One stored-OAuth documentation lifecycle
-has completed; clarification continuation and general execution remain open.
+has completed. One clarification now continues locally against the same baseline
+with typed results and progress; live clarification qualification and general
+execution remain open.
 
 ## Problem
 
@@ -278,14 +280,16 @@ boundaries; stored-OAuth runs qualified both dirty-input blocking and a clean
 `ready` proposal. They do not establish proposal correctness or executable
 admission.
 
-The argument-free shell now generalizes that same boundary into one read-only turn
+The argument-free shell now generalizes that same boundary into read-only turns
 whose strict result is `answer`, `clarification` or `task_proposal`. The explicit
-command remains proposal-only. Answers and clarification are not persisted and no
-variant can create a candidate or authority. Local fake-provider tests establish
-the result contract and observed-evidence rule. One stored-OAuth question qualified
-the answer path without retaining a proposal; clarification remains unqualified.
-Multi-turn continuation is deliberately deferred
-until real use demonstrates the required session semantics.
+command remains proposal-only. Answers and clarification are not independently
+persisted and no variant can create a candidate or authority. An answer returns to
+the prompt. One clarification answer is retained in bounded process memory and sent
+with the original request through a second discovery over the same baseline; a
+baseline change or second clarification fails closed. A continued proposal retains
+the exchange as request evidence. Local fake-provider tests establish these result,
+continuation and observed-evidence rules. One stored-OAuth question qualified the
+answer path without retaining a proposal; live clarification remains unqualified.
 
 The first deliberately narrow `task start <proposal-id>` consumer is now connected
 to the inline shell. It displays scope, obtains one approval, edits an independent

@@ -15,11 +15,15 @@ Run commands from the repository root.
 | `bun run lint` | Check source and tests; no fixes, warnings rejected |
 | `bun run check` | Run the complete repository gate |
 
-With no arguments, the main CLI opens the first conversational shell when standard
-input, output and error are interactive terminals. It accepts one natural-language
-message. Bounded discovery can answer a repository question, ask for clarification
-or retain a proposal for a requested change. A ready supported documentation
-proposal then continues to its explicit approval and review flow.
+With no arguments, the main CLI opens Tesota Shell when standard input, output and
+error are interactive terminals. It accepts a natural-language message. Bounded
+discovery can answer a repository question, ask one clarification or retain a
+proposal for a requested change. An answer returns to the prompt. A clarification
+answer continues the original request only against the same committed baseline;
+blank input ends the session or cancels the pending clarification. A ready supported
+documentation proposal continues to its explicit approval and review flow. The
+inline renderer shows typed phase labels and elapsed time; those labels report
+observed application progress and grant no authority.
 With no arguments in a non-interactive process, or with
 `help`, `--help` or `-h`, it prints help (exit 0).
 `candidate create` and `candidate inspect <id|directory>` prepare and inspect

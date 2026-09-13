@@ -18,14 +18,16 @@ bun start
 bun start task propose "Clarify the task recovery documentation"
 ```
 
-With no arguments in an interactive terminal, Tesota asks for one message and
-routes it through repository discovery. A question prints an answer and its observed
-evidence files. Material ambiguity prints one question and stops; the current shell
-does not yet continue the conversation. A requested change prints its objective,
-proposed files, completion conditions, check names, exact committed baseline and
-retained proposal directory. The explicit subcommand accepts a request directly,
-requires the proposal result and remains useful for automation and diagnosis. File
-names are optional hints, not required syntax.
+With no arguments in an interactive terminal, Tesota asks for a message and routes
+it through repository discovery. A question prints an answer and its observed
+evidence files, then returns to the prompt. Material ambiguity prints one question;
+the operator's answer continues the same request in memory. Continued discovery
+opens the committed repository again and stops if the baseline changed. It may
+answer or propose work but cannot ask a second clarification. A requested change
+prints its objective, proposed files, completion conditions, check names, exact
+committed baseline and retained proposal directory. The explicit subcommand accepts
+a request directly, requires the proposal result and remains useful for automation
+and diagnosis. File names are optional hints, not required syntax.
 `ready for review` means only that discovery produced a structurally admitted
 proposal. It does not mean the proposal is correct, accepted or executable.
 
@@ -61,8 +63,9 @@ Only a completed task-proposal result exclusively creates
 version 1 record binds the request, committed baseline, model identity, observed
 budgets, dirty paths and the submitted proposal. Its authority is explicitly
 `none`, its provenance is `model_proposed`, and its check entry is declarative and
-non-executable. Answers, clarification, failed or unsettled discovery retain no
-proposal record.
+non-executable. A proposal produced after clarification includes the exact question
+and operator answer in its retained request evidence. Answers, clarification, failed
+or unsettled discovery retain no proposal record.
 
 Editing a proposal file cannot grant file, check, network, candidate, acceptance
 or promotion authority. The record reader treats JSON as untrusted evidence.

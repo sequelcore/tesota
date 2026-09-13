@@ -73,20 +73,31 @@ configured provider call is inference transport, not model-controlled repository
 network access. See the
 [proposal contract](proposals.md).
 
-The native shell collects one message and invokes that discovery boundary. It
-stops after an answer, clarification or blocked proposal. A ready supported
-proposal continues to a compact approval card; only approval lets Tesota issue
-an in-memory grant and create a candidate. `start.jsonl` excludes a second or
-concurrent start, but remains evidence rather than reusable authority. The model
-receives only bounded read, replace and application-owned scope-check tools. No
-candidate command, repository check or model-controlled network operation runs
-in this first proposal slice. The escaped diff discloses that limitation before
-a separate human accept/reject decision and explicit guarded promotion. Each
-question releases readline before the next lifecycle phase; Ctrl+C during
-execution therefore reaches the candidate owner, records cancellation and cannot
-grant a decision or promotion. When standard input, output or error is
-not an interactive terminal, the argument-free CLI preserves the non-inferential
-help behavior.
+The native shell passes a typed request to that discovery boundary and retains its
+typed result instead of reconstructing intent from printed text. An answer returns
+to the main prompt. One clarification can continue in memory with the original
+request, exact question and operator answer; the continued result may be an answer
+or proposal but not another clarification. Discovery opens the repository again,
+and the shell rejects the continuation if its committed baseline changed. A
+continued proposal retains the clarification exchange as part of its request
+evidence. No conversation state grants authority or resumes a model execution.
+
+A ready supported proposal continues to a compact approval card; only approval
+lets Tesota issue an in-memory grant and create a candidate. `start.jsonl` excludes
+a second or concurrent start, but remains evidence rather than reusable authority.
+The model receives only bounded read, replace and application-owned scope-check
+tools. No candidate command, repository check or model-controlled network operation
+runs in this first proposal slice. The escaped diff discloses that limitation before
+a separate human accept/reject decision and explicit guarded promotion.
+
+The shell renders typed progress for repository discovery and operator
+clarification. Task start reports scope approval, candidate execution, review and
+promotion through a closed progress union; these observations do not authorize the
+reported operation. Each question releases readline before the next lifecycle
+phase; Ctrl+C during execution therefore reaches the candidate owner, records
+cancellation and cannot grant a decision or promotion. When standard input, output
+or error is not an interactive terminal, the argument-free CLI preserves the
+non-inferential help behavior.
 
 ## Engine boundary
 
