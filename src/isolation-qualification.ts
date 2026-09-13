@@ -40,6 +40,16 @@ interface ProbeExecution {
 }
 
 class QualificationAbortedError extends Error {}
+export class CleanupUnconfirmedError extends Error {}
+
+function isAborted(signal?: AbortSignal): boolean {
+  return signal?.aborted === true;
+}
+
+function isCancellationError(error: unknown): boolean {
+  return error instanceof QualificationAbortedError
+    || (error instanceof DOMException && error.name === "AbortError");
+}
 
 function createFixture(root: string): IsolationPaths {
   const candidate = join(root, "candidate");
@@ -93,7 +103,7 @@ async function executeProbe(
   cancel: (child: ChildProcess) => boolean,
   signal?: AbortSignal,
 ): Promise<ProbeExecution> {
-  if (signal?.aborted === true) throw new QualificationAbortedError("Qualification canceled");
+  if (isAborted(signal)) throw new QualificationAbortedError("Qualification canceled");
   const child = spawn(invocation.command, [...invocation.args], {
     cwd: invocation.cwd, env: invocation.env, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
   });
@@ -120,11 +130,14 @@ async function executeProbe(
   child.stderr.on("data", (chunk: string) => { if (stderr.length < 4_096) stderr += chunk; });
   signal?.addEventListener("abort", onAbort, { once: true });
   const deadline = setTimeout(() => child.kill("SIGKILL"), 15_000);
-  await waitForClose(child);
-  clearTimeout(deadline);
-  signal?.removeEventListener("abort", onAbort);
-  await new Promise((resolve) => setTimeout(resolve, 3_000));
-  if (externallyAborted) throw new QualificationAbortedError("Qualification canceled");
+  try {
+    await waitForClose(child);
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener("abort", onAbort);
+  }
+  if (externallyAborted || isAborted(signal)) throw new QualificationAbortedError("Qualification canceled");
   const report = parseProbeReport(stdout);
   const diagnostic = report === undefined ? (stderr.trim().slice(-1_000) || "Probe did not return its fixed report") : undefined;
   return {
@@ -189,6 +202,23 @@ function removeDockerNetwork(name: string, env: NodeJS.ProcessEnv): boolean {
   return removed.error === undefined && removed.status === 0;
 }
 
+function dockerResourceIsAbsent(kind: "container" | "network", name: string, env: NodeJS.ProcessEnv): boolean {
+  const inspected = spawnSync("docker", ["--host", "npipe:////./pipe/dockerDesktopLinuxEngine", kind, "inspect", name], {
+    env, encoding: "utf8", shell: false, windowsHide: true, timeout: 10_000, maxBuffer: 4_096,
+  });
+  return inspected.error === undefined
+    && inspected.status !== 0
+    && /no such (?:object|container|network)/iu.test(inspected.stderr);
+}
+
+function reconcileContainerAbsence(name: string, env: NodeJS.ProcessEnv): boolean {
+  return removeDocker(name, env) || dockerResourceIsAbsent("container", name, env);
+}
+
+function reconcileNetworkAbsence(name: string, env: NodeJS.ProcessEnv): boolean {
+  return removeDockerNetwork(name, env) || dockerResourceIsAbsent("network", name, env);
+}
+
 function containerCanReachNetworkControl(control: ContainerNetworkControl, env: NodeJS.ProcessEnv): boolean {
   const name = `tesota-network-control-${randomUUID()}`;
   const script = "const net=require('node:net');const deadline=Date.now()+3000;function attempt(){const s=net.connect(Number(process.argv[1]),process.argv[2],()=>{s.destroy();process.exit(0)});s.on('error',()=>{s.destroy();if(Date.now()<deadline)setTimeout(attempt,100);else process.exit(1)})}attempt()";
@@ -198,8 +228,9 @@ function containerCanReachNetworkControl(control: ContainerNetworkControl, env: 
     "--entrypoint=node", CONTAINER_IMAGE, "-e", script, String(control.port), control.address], {
     env, encoding: "utf8", shell: false, windowsHide: true, timeout: 10_000, maxBuffer: 4_096,
   });
-  const removed = removeDocker(name, env);
-  return run.error === undefined && run.status === 0 && removed;
+  const removed = reconcileContainerAbsence(name, env);
+  if (!removed) throw new CleanupUnconfirmedError(`Positive-control container cleanup was not confirmed: ${name}`);
+  return run.error === undefined && run.status === 0;
 }
 
 function createContainerNetworkControl(env: NodeJS.ProcessEnv): ContainerNetworkControl | undefined {
@@ -208,7 +239,12 @@ function createContainerNetworkControl(env: NodeJS.ProcessEnv): ContainerNetwork
   const network = spawnSync("docker", ["--host", "npipe:////./pipe/dockerDesktopLinuxEngine", "network", "create", "--internal", partial.network], {
     env, encoding: "utf8", shell: false, windowsHide: true, timeout: 10_000, maxBuffer: 4_096,
   });
-  if (network.error !== undefined || network.status !== 0) return undefined;
+  if (network.error !== undefined || network.status !== 0) {
+    if (!reconcileNetworkAbsence(partial.network, env)) {
+      throw new CleanupUnconfirmedError(`Container network cleanup was not confirmed: ${partial.network}`);
+    }
+    return undefined;
+  }
   const script = "require('node:net').createServer(s=>s.end()).listen(Number(process.argv[1]),'0.0.0.0');setInterval(()=>{},1000)";
   const server = spawnSync("docker", ["--host", "npipe:////./pipe/dockerDesktopLinuxEngine", "run", "--detach", "--name", partial.server,
     "--pull=never", `--network=${partial.network}`, "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
@@ -222,14 +258,19 @@ function createContainerNetworkControl(env: NodeJS.ProcessEnv): ContainerNetwork
   const address = inspected.stdout.trim();
   const control = { ...partial, address };
   if (server.error === undefined && server.status === 0 && /^\d{1,3}(?:\.\d{1,3}){3}$/u.test(address) && containerCanReachNetworkControl(control, env)) return control;
-  removeDocker(partial.server, env);
-  removeDockerNetwork(partial.network, env);
+  const serverRemoved = reconcileContainerAbsence(partial.server, env);
+  const networkRemoved = reconcileNetworkAbsence(partial.network, env);
+  if (!serverRemoved || !networkRemoved) {
+    const pending = [!serverRemoved ? partial.server : undefined, !networkRemoved ? partial.network : undefined]
+      .filter((name): name is string => name !== undefined);
+    throw new CleanupUnconfirmedError(`Container control cleanup was not confirmed: ${pending.join(", ")}`);
+  }
   return undefined;
 }
 
 function removeContainerNetworkControl(control: ContainerNetworkControl, env: NodeJS.ProcessEnv): boolean {
-  const serverRemoved = removeDocker(control.server, env);
-  const networkRemoved = removeDockerNetwork(control.network, env);
+  const serverRemoved = reconcileContainerAbsence(control.server, env);
+  const networkRemoved = reconcileNetworkAbsence(control.network, env);
   return serverRemoved && networkRemoved;
 }
 
@@ -276,32 +317,40 @@ async function qualifyContainer(paths: IsolationPaths, signal?: AbortSignal): Pr
   let failure: unknown;
   try { execution = await executeProbe(invocation, join(paths.buildOutput, "late.txt"), () => stopDocker(name, invocation.env), signal); }
   catch (error) { failure = error; }
-  const containerRemoved = removeDocker(name, invocation.env);
+  const containerRemoved = reconcileContainerAbsence(name, invocation.env);
   const controlRemoved = removeContainerNetworkControl(control, invocation.env);
-  if (!containerRemoved || !controlRemoved) throw new Error("Isolation container cleanup was not confirmed");
+  if (!containerRemoved || !controlRemoved) {
+    throw new CleanupUnconfirmedError(`Isolation cleanup was not confirmed: ${name}, ${control.server}, ${control.network}`);
+  }
   if (failure !== undefined) throw failure;
   if (execution === undefined) throw new Error("Isolation container returned no result");
+  if (isAborted(signal)) throw new QualificationAbortedError("Qualification canceled");
   return resultFor("docker-container", identity, execution);
 }
 
 export async function qualifyCommandIsolation(signal?: AbortSignal): Promise<IsolationQualification> {
   if (process.platform !== "win32") throw new Error("This qualification currently targets the Windows host contract");
   const root = mkdtempSync(join(tmpdir(), "tesota-isolation-"));
-  const network = await startNetworkControl();
+  let network: Awaited<ReturnType<typeof startNetworkControl>> | undefined;
+  let qualification: IsolationQualification | undefined;
   try {
+    network = await startNetworkControl();
     if (!await hostCanReachNetworkControl(network.port)) throw new Error("Host network positive control was unavailable");
     const codex = await qualifyCodex(createFixture(join(root, "codex")), network.port, signal);
     const container = await qualifyContainer(createFixture(join(root, "container")), signal);
-    return {
+    qualification = {
       command: "node isolation-probe.mjs",
       image: CONTAINER_IMAGE,
       selected: container.status === "passed" ? "docker-container" : "none",
       results: [codex, container],
     };
   } finally {
-    await closeNetworkControl(network.server);
+    if (network !== undefined) await closeNetworkControl(network.server);
     rmSync(root, { recursive: true, force: true });
   }
+  if (isAborted(signal)) throw new QualificationAbortedError("Qualification canceled");
+  if (qualification === undefined) throw new Error("Command isolation qualification returned no result");
+  return qualification;
 }
 
 export type IsolationQualifier = (signal: AbortSignal) => Promise<IsolationQualification>;
@@ -314,11 +363,13 @@ export async function runIsolationQualificationCommand(
   process.once("SIGINT", onInterrupt);
   try {
     const result = await qualifier(controller.signal);
+    if (isAborted(controller.signal)) throw new QualificationAbortedError("Qualification canceled");
     process.stdout.write(JSON.stringify(result, null, 2) + "\n");
     return result.selected === "docker-container" ? 0 : 1;
   } catch (error) {
-    if (controller.signal.aborted || error instanceof QualificationAbortedError) return 130;
-    process.stderr.write("Command isolation qualification failed closed.\n");
+    if (isCancellationError(error)) return 130;
+    const cleanupDiagnostic = error instanceof CleanupUnconfirmedError ? ` ${error.message}` : "";
+    process.stderr.write(`Command isolation qualification failed closed.${cleanupDiagnostic}\n`);
     return 2;
   } finally {
     process.removeListener("SIGINT", onInterrupt);

@@ -7,7 +7,11 @@ import {
   type IsolationPaths,
   type IsolationProbeReport,
 } from "../src/command-isolation.js";
-import { runIsolationQualificationCommand } from "../src/isolation-qualification.js";
+import {
+  CleanupUnconfirmedError,
+  runIsolationQualificationCommand,
+  type IsolationQualification,
+} from "../src/isolation-qualification.js";
 
 const paths: IsolationPaths = {
   candidate: "C:\\fixture\\candidate",
@@ -88,7 +92,7 @@ describe("command isolation qualification", () => {
     const listeners = process.listenerCount("SIGINT");
     const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const running = runIsolationQualificationCommand(async (signal) => await new Promise((_, reject) => {
-      signal.addEventListener("abort", () => reject(new Error("synthetic cancellation")), { once: true });
+      signal.addEventListener("abort", () => reject(new DOMException("synthetic cancellation", "AbortError")), { once: true });
     }));
 
     process.emit("SIGINT", "SIGINT");
@@ -97,5 +101,36 @@ describe("command isolation qualification", () => {
     expect(process.listenerCount("SIGINT")).toBe(listeners);
     expect(output).not.toHaveBeenCalled();
     output.mockRestore();
+  });
+
+  it("does not publish a result that resolves after Ctrl+C", async () => {
+    const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    let resolveQualification: ((value: IsolationQualification) => void) | undefined;
+    const running = runIsolationQualificationCommand(async () => await new Promise((resolve) => {
+      resolveQualification = resolve;
+    }));
+
+    process.emit("SIGINT", "SIGINT");
+    resolveQualification?.({ command: "node isolation-probe.mjs", image: CONTAINER_IMAGE, selected: "docker-container", results: [] });
+
+    await expect(running).resolves.toBe(130);
+    expect(output).not.toHaveBeenCalled();
+    output.mockRestore();
+  });
+
+  it("reports cleanup failure even when Ctrl+C was requested", async () => {
+    const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const diagnostic = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const running = runIsolationQualificationCommand(async (signal) => await new Promise((_, reject) => {
+      signal.addEventListener("abort", () => reject(new CleanupUnconfirmedError("pending: tesota-test-resource")), { once: true });
+    }));
+
+    process.emit("SIGINT", "SIGINT");
+
+    await expect(running).resolves.toBe(2);
+    expect(output).not.toHaveBeenCalled();
+    expect(diagnostic).toHaveBeenCalledWith("Command isolation qualification failed closed. pending: tesota-test-resource\n");
+    output.mockRestore();
+    diagnostic.mockRestore();
   });
 });
