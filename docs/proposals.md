@@ -166,3 +166,20 @@ repairs, the complete repository gate passed 22 test files and 302 tests. Two sl
 integration cases also received explicit bounded timeouts. This qualifies one
 end-to-end documentation lifecycle and its fail-closed correction path, not
 general tasks or repository-command execution.
+
+The residual interruption path was exercised live on 2026-09-12 local time
+(2026-09-13 UTC). Proposal `929176b0-0a82-43b8-9285-05704bc69b60` reached candidate
+`af1de773-5def-46cf-a014-01efecc3213b`; Ctrl+C was sent after scope approval while
+Pi was running. The model session settled as `aborted` after three invocations,
+two tool calls and zero edits. Candidate evidence was retained, the proposal start
+journal ended as `cancelled`, no decision or promotion record exists, and the
+source remained clean. The Tesota CLI returned 130; the surrounding `bun start`
+script reported that child code and itself exited 1. This qualifies cancellation
+during one live execution, not every provider-side interruption race.
+
+The post-promotion evidence failure also has deterministic fault-injection
+coverage. After a synthetic promotion returned `applied`, final start-journal
+persistence was forced to fail. Tesota returned a failure, reported that promotion
+had already applied, directed the operator to the candidate promotion journal and
+did not append a contradictory `failed` outcome. The storage failure is simulated;
+no real source write was intentionally combined with a failing filesystem.

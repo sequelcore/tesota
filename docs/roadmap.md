@@ -344,6 +344,14 @@ rendering before broadening admission. Scope expansion, richer recovery,
 arbitrary shell execution, sandboxed candidate commands, mandatory external
 review and a full-screen TUI remain later slices justified by observed use.
 
+The two residual lifecycle risks from final review are now bounded by additional
+evidence. A live Ctrl+C during proposal execution settled the Pi session as
+aborted with zero edits, returned CLI code 130, retained the candidate and created
+no decision or promotion. Deterministic fault injection after a synthetic applied
+promotion verified honest incomplete-evidence reporting without a false failed
+record. A real post-write storage fault remains deliberately unforced because it
+would require combining an intentional source mutation with filesystem failure.
+
 ## Open requirements and scope
 
 The original handoff included a bounded Gentle AI review integration and a small
