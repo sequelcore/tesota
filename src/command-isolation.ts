@@ -97,11 +97,15 @@ export function buildCodexSandboxInvocation(paths: IsolationPaths): IsolationInv
     TESOTA_OUTSIDE: portableWindowsPath(paths.outside),
   };
   const env = { ...safeHostEnvironment(), ...probeEnvironment };
+  const childEnvironment = [
+    "Path", "PATH", "PATHEXT", "SystemRoot", "SYSTEMROOT", "WINDIR",
+    ...Object.keys(probeEnvironment),
+  ];
   const args = [
     "sandbox",
     "-c", `permissions.tesota-qualification.filesystem=${codexFilesystem(paths)}`,
     "-c", "permissions.tesota-qualification.network.enabled=false",
-    "-c", `shell_environment_policy.include_only=${JSON.stringify(Object.keys(env))}`,
+    "-c", `shell_environment_policy.include_only=${JSON.stringify(childEnvironment)}`,
     "-P", "tesota-qualification", "-C", paths.candidate,
     "node", ISOLATION_PROBE_FILE,
   ];

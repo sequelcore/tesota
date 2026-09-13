@@ -52,6 +52,8 @@ describe("command isolation qualification", () => {
     expect(serialized).toContain("fixture/scratch");
     expect(serialized).not.toContain("fixture/outside");
     expect(serialized).toContain("permissions.tesota-qualification.network.enabled=false");
+    expect(serialized).not.toContain("APPDATA");
+    expect(serialized).not.toContain("USERPROFILE");
     expect(invocation.env["TESOTA_QUALIFICATION_SECRET"]).toBeUndefined();
   });
 
