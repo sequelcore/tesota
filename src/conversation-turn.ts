@@ -79,43 +79,48 @@ export type ConversationCommandResult =
   | Readonly<{ status: "unavailable"; exitCode: number; reason: "baseline_changed" | "unavailable" }>;
 
 async function runLiveConversation(rawInput: ConversationInput,
-  allowedOutcome: DiscoveryOutcome, writeError: (text: string) => void = (text) => { process.stderr.write(text); }):
+  allowedOutcome: DiscoveryOutcome, writeError: (text: string) => void = (text) => { process.stderr.write(text); },
+  hostSignal?: AbortSignal):
 Promise<ConversationCommandResult> {
   if (process.platform !== "win32") {
     writeError("Live repository discovery is currently supported on Windows.\n");
     return { status: "unavailable", exitCode: 2, reason: "unavailable" };
   }
+  const cancellation = new AbortController();
+  const interrupt = (): void => cancellation.abort();
+  if (hostSignal?.aborted === true) cancellation.abort();
+  hostSignal?.addEventListener("abort", interrupt, { once: true });
+  process.once("SIGINT", interrupt);
+  process.once("SIGTERM", interrupt);
   try {
+    if (cancellation.signal.aborted) throw new DOMException("cancelled", "AbortError");
     const source = await liveSource();
     if (source === null) {
       writeError("Live repository discovery currently supports only the Tesota repository root.\n");
       return { status: "unavailable", exitCode: 2, reason: "unavailable" };
     }
-    const cancellation = new AbortController();
-    const interrupt = (): void => cancellation.abort();
-    process.once("SIGINT", interrupt);
-    process.once("SIGTERM", interrupt);
-    try {
-      const models = await storedCodexModels(new CodexCredentials(), cancellation.signal);
-      const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
-      if (model?.api !== "openai-codex-responses") throw new Error("model unavailable");
-      const turn = await discoverConversationTurn({ sourceDirectory: source,
-        proposalsRoot: resolve(homedir(), ".tesota", "proposals"), input: rawInput, allowedOutcome, model,
-        stream: (requested, context, streamOptions) => models.streamSimple(requested, context, streamOptions),
-        signal: cancellation.signal });
-      return { status: "completed",
-        exitCode: turn.kind === "task_proposal" && turn.proposedTask.record.status !== "ready" ? 1 : 0, turn };
-    } finally {
-      cancellation.abort();
-      process.removeListener("SIGINT", interrupt);
-      process.removeListener("SIGTERM", interrupt);
-    }
+    if (cancellation.signal.aborted) throw new DOMException("cancelled", "AbortError");
+    const models = await storedCodexModels(new CodexCredentials(), cancellation.signal);
+    const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
+    if (model?.api !== "openai-codex-responses") throw new Error("model unavailable");
+    const turn = await discoverConversationTurn({ sourceDirectory: source,
+      proposalsRoot: resolve(homedir(), ".tesota", "proposals"), input: rawInput, allowedOutcome, model,
+      stream: (requested, context, streamOptions) => models.streamSimple(requested, context, streamOptions),
+      signal: cancellation.signal });
+    return { status: "completed",
+      exitCode: turn.kind === "task_proposal" && turn.proposedTask.record.status !== "ready" ? 1 : 0, turn };
   } catch (error) {
+    if (cancellation.signal.aborted) throw new DOMException("cancelled", "AbortError");
     if (error instanceof ConversationBaselineChangedError) {
       return { status: "unavailable", exitCode: 1, reason: "baseline_changed" };
     }
     writeError("Repository discovery unavailable or failed; nothing changed and no authority was created.\n");
     return { status: "unavailable", exitCode: 1, reason: "unavailable" };
+  } finally {
+    cancellation.abort();
+    hostSignal?.removeEventListener("abort", interrupt);
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", interrupt);
   }
 }
 
@@ -127,8 +132,8 @@ export async function runRepositoryConversationCommand(rawRequest: string): Prom
 }
 
 export async function runRepositoryConversationForShell(input: ConversationInput,
-  writeError?: (text: string) => void): Promise<ConversationCommandResult> {
-  return runLiveConversation(input, "conversation", writeError);
+  writeError?: (text: string) => void, signal?: AbortSignal): Promise<ConversationCommandResult> {
+  return runLiveConversation(input, "conversation", writeError, signal);
 }
 
 /** Explicit proposal command; its narrower contract does not accept answer or clarification results. */

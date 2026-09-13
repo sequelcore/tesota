@@ -25,7 +25,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd()): TesotaShe
   const surface = createTesotaShellTerminal({ cwd, tui, interrupt });
   return {
     surface,
-    discover: (input) => runRepositoryConversationForShell(input, (text) => { surface.write(text); }),
+    discover: (input) => runRepositoryConversationForShell(input, (text) => { surface.write(text); }, cancellation.signal),
     start: (proposalId, report) => startTask({
       proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
       sourceDirectory: cwd,
