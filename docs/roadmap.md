@@ -352,6 +352,62 @@ promotion verified honest incomplete-evidence reporting without a false failed
 record. A real post-write storage fault remains deliberately unforced because it
 would require combining an intentional source mutation with filesystem failure.
 
+## Long-term path to general repository work
+
+Tesota's target is a governed general-purpose coding harness, not a second agent
+engine. An operator should eventually be able to describe an ordinary repository
+outcome without naming files, then review one task-sized proposal before Tesota
+executes it in an isolated candidate. Pi remains the selected engine; Tesota owns
+proposal admission, run grants, effect boundaries, evidence, human decisions and
+promotion. The interaction contract and its terminology remain owned by
+[decision 003](decisions/003-natural-language-task-experience.md).
+
+Progress toward that target is incremental. Each stage must pass its exit evidence
+before the next stage can broaden authority:
+
+1. **Usable conversational loop.** A clarification continues the same request;
+   the inline shell shows its current phase, active operation and elapsed time;
+   cancellation reports observed settlement. One ordinary documentation change
+   completes without requiring the operator to copy lifecycle identifiers.
+2. **Qualified command isolation.** Compare an existing Windows-capable sandbox
+   with a pinned container runner using one fixed command. Demonstrate denied
+   access outside the candidate, credential and network isolation, bounded child
+   processes, Ctrl+C settlement and fail-closed initialization. Source writes,
+   build outputs and verifier scratch space must be separate capabilities; making
+   the whole candidate writable would not preserve an exact write grant.
+3. **First proposed code task.** Admit one existing TypeScript source file and its
+   test with a trusted fixed check. Complete approval, isolated editing, a failing
+   check, correction, applicable final evidence, review, human acceptance and
+   guarded promotion. Candidate-authored tests supplement rather than replace the
+   original obligation.
+4. **Adaptive bounded scope.** Add multiple files, explicit creation, deletion and
+   rename, plus one aggregated scope-change request. Approval issues a successor
+   grant; the prior grant cannot continue or replay. Recovery starts a clean
+   successor and promotion checks every expected source-path state before writing.
+5. **Governed checks and effects.** Bind checks to frozen inputs or invalidate them
+   when their source changes. Represent source mutation, generated output,
+   temporary storage, process, environment and network effects separately. Trusted
+   application or repository configuration selects commands; model text cannot
+   authorize arbitrary shell execution.
+6. **Useful general subset.** Qualify a bug fix, a feature with a new file, a
+   multi-file refactor and a failed-check correction in Tesota and at least one
+   other repository. Record completion, intervention, scope expansion, elapsed
+   time, consumption and unsupported cases as product evidence, not benchmark
+   superiority.
+7. **Evidence-driven expansion.** Persistent sessions, steering, optional external
+   review, additional ecosystems, typed tool integrations, subagents and a richer
+   terminal surface follow only when observed use requires them. The runtime must
+   not depend on a particular renderer or import another harness's workflow and
+   authority model wholesale.
+
+Reuse Pi for model transport, sessions, tool events and agent mechanics; reuse an
+established operating-system sandbox, Git and repository-native checks. Gentle can
+remain an optional bounded reviewer, and Dafny or LemmaScript can cover selected
+production-used predicates with runtime guards and integration tests. Do not build
+a provider gateway, OAuth protocol, sandbox kernel, universal workflow or policy
+framework, marketplace, duplicate review state machine or mandatory autonomous
+team. Those would repeat the control-plane growth that Tesota exists to avoid.
+
 ## Open requirements and scope
 
 The original handoff included a bounded Gentle AI review integration and a small
