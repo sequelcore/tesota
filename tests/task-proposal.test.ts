@@ -105,10 +105,11 @@ function codeProposalSteps(): FauxResponseStep[] {
   return [
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "tests/candidate-task.test.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/code-task-check.ts" })),
     fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
       objective: "Strengthen task-result consistency checks.",
       completionConditions: ["Inconsistent evidence is rejected by the trusted behavior check."],
-      readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
+      readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts", "src/code-task-check.ts"],
       writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
       checks: ["pi-result-consistency"], uncertainties: [],
     } })),

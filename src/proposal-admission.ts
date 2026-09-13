@@ -97,7 +97,8 @@ function supportsCodeProposal(proposal: TaskProposal): boolean {
   const proposedReads = new Set(proposal.readFiles);
   return proposal.writeFiles.length === 2 && proposal.writeFiles[0] === CODE_TASK_FILE &&
     proposal.writeFiles[1] === CODE_PROPOSAL_TEST_FILE &&
-    proposedReads.size === 2 && proposedReads.has(CODE_TASK_FILE) && proposedReads.has(CODE_PROPOSAL_TEST_FILE) &&
+    proposedReads.has(CODE_TASK_FILE) && proposedReads.has(CODE_PROPOSAL_TEST_FILE) &&
+    proposal.readFiles.length <= 8 &&
     proposal.checks.length === 1 && proposal.checks[0] === CODE_PROPOSAL_TASK_ID &&
     proposal.readFiles.every(isRepositoryDiscoveryPathAllowed);
 }
