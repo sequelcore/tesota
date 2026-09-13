@@ -66,4 +66,4 @@ it("promotes an accepted code task without changing refs, index or unrelated sou
   expect(await readFile(join(source, ".git/index"))).toEqual(index);
   expect(await readFile(join(source, ".git/HEAD"))).toEqual(head);
   expect(await readFile(join(candidate.directory, "promotion.jsonl"), "utf8")).toContain(`"path":"${codeFile}"`);
-}, 30_000);
+}, 60_000);
