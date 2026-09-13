@@ -198,7 +198,7 @@ export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck):
     last?.status === "passed",
     first?.writeSetSha256 !== last?.writeSetSha256,
     checks.every((check) => first !== undefined && check.provenance === "issued" &&
-      check.task === first.task && check.baseline === first.baseline &&
+      check.taskAcceptance === "not_evaluated" && check.task === first.task && check.baseline === first.baseline &&
       typeof check.writeSetSha256 === "string" && check.writeSetSha256.length > 0),
     checks.length === 2 || checks[1]?.status === "check_failed",
     result.checksSuppliedToModel === checks.length,
@@ -209,11 +209,14 @@ export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck):
     result.terminalStopReason === "stop",
     !result.denied,
     !result.deadlineExpired,
+    result.taskAcceptance === "not_evaluated",
     validCount,
     validChecks,
     current.task === last?.task,
     current.baseline === last?.baseline,
     current.status === "passed",
+    current.provenance === "recorded_untrusted",
+    current.taskAcceptance === "not_evaluated",
     current.writeSetSha256 === last?.writeSetSha256,
   ].every(Boolean);
 }
