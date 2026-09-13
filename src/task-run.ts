@@ -146,7 +146,8 @@ async function runPreparedTask(candidate: CandidateCheckout, grantOrTaskId: Cand
     try {
       const executor: Record<string, string> = {};
       for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js", "candidate-task-definition.js",
-        "code-task-check.js", "formal-task-check.js", "candidate-source-task-check.js", "multi-file-task-check.js",
+        "code-task-check.js", "command-isolation.js", "proposed-code-task.js", "proposal-admission.js",
+        "formal-task-check.js", "candidate-source-task-check.js", "multi-file-task-check.js",
         "verification/invocation-admission.js",
         "integrations/pi-task.js", "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock"]) {
         executor[path] = createHash("sha256").update(await readFile(new URL(path, import.meta.url))).digest("hex");

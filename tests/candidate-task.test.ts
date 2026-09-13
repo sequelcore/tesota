@@ -15,6 +15,7 @@ import { promoteTask } from "../src/task-promotion.js";
 import { prepareTaskRecovery } from "../src/task-run.js";
 import { expectedMultiFileTask } from "../src/multi-file-task-check.js";
 import type { ProposalRunGrant } from "../src/proposal-admission.js";
+import { proposedCodeTaskDefinition } from "../src/proposed-code-task.js";
 
 const editedFile = "docs/decisions/002-use-pi.md";
 const roots: string[] = [];
@@ -56,12 +57,13 @@ function proposalGrant(candidate: Awaited<ReturnType<typeof fixture>>): Proposal
 }
 
 function codeProposalGrant(candidate: Awaited<ReturnType<typeof fixture>>): ProposalRunGrant {
+  const definition = proposedCodeTaskDefinition();
   return {
     kind: "proposal-code", task: "pi-result-consistency",
     proposalId: "26ff8867-86b9-4b05-8cc0-96343fb5204c", proposalSha256: "b".repeat(64),
     source: candidate.source, baseline: candidate.baseline,
-    objective: "Untrusted model objective is not the executable definition.",
-    completionConditions: ["Untrusted model condition."],
+    objective: definition.objective,
+    completionConditions: [definition.oracle],
     readFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
     writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
     declaredChecks: ["pi-result-consistency"],
@@ -91,7 +93,8 @@ it.runIf(process.platform === "win32")("binds a proposed code grant to the regis
     writeFiles: ["src/integrations/pi-task.ts", "tests/candidate-task.test.ts"],
   });
   const source = await task.read({ path: "src/integrations/pi-task.ts" });
-  expect((await task.read({ path: "tests/candidate-task.test.ts" })).content).toContain("piTaskPasses");
+  const test = await task.read({ path: "tests/candidate-task.test.ts" });
+  expect(test.content).toContain("piTaskPasses");
   expect((await task.check()).status).toBe("check_failed");
   const corrected = source.content
     .replace("typeof check.writeSetSha256 === \"string\" && check.writeSetSha256.length > 0),",
@@ -101,6 +104,10 @@ it.runIf(process.platform === "win32")("binds a proposed code grant to the regis
       "current.status === \"passed\",\n    current.provenance === \"recorded_untrusted\",\n" +
       "    current.taskAcceptance === \"not_evaluated\",");
   await task.replace({ path: "src/integrations/pi-task.ts", expectedSha256: source.sha256, content: corrected });
+  expect(await task.check()).toMatchObject({ status: "check_failed",
+    diagnostics: expect.arrayContaining(["The admitted regression test must change"]) });
+  await task.replace({ path: "tests/candidate-task.test.ts", expectedSha256: test.sha256,
+    content: test.content + "\n// Proposed task regression coverage.\n" });
   expect((await task.check()).status).toBe("passed");
   task.close();
   const review = await reviewTask(candidate.directory);
@@ -114,7 +121,18 @@ it.runIf(process.platform === "win32")("binds a proposed code grant to the regis
     ],
   });
   expect(await readFile(join(candidate.source, "src/integrations/pi-task.ts"), "utf8")).toBe(corrected);
-}, 30_000);
+}, 60_000);
+
+it("rejects a persisted code grant whose canonical objective is rewritten", async () => {
+  const candidate = await fixture();
+  await CandidateTask.prepareProposal(candidate.directory, codeProposalGrant(candidate));
+  const path = join(candidate.directory, "task.json");
+  const plan = JSON.parse(await readFile(path, "utf8"));
+  plan.grant.objective = "Rewritten persisted objective";
+  await writeFile(path, JSON.stringify(plan, null, 2) + "\n");
+
+  await expect(checkCandidateTask(candidate.directory)).rejects.toThrow("canonical");
+});
 
 it("returns LemmaScript diagnostics and accepts the corrected formal task", async () => {
   const candidate = await fixture();

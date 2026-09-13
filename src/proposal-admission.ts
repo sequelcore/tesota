@@ -5,13 +5,11 @@ import { loadTaskProposal } from "./task-proposal.js";
 import { runRepositoryGit } from "./repository-git.js";
 import { isRepositoryDiscoveryPathAllowed } from "./repository-discovery.js";
 import { validProposalPath, type TaskProposal } from "./task-proposal-contract.js";
-import { candidateTaskDefinition } from "./candidate-task-definition.js";
 import { CODE_TASK_FILE } from "./code-task-check.js";
+import { CODE_PROPOSAL_TASK_ID, CODE_PROPOSAL_TEST_FILE, proposedCodeTaskDefinition } from "./proposed-code-task.js";
 
 export const DOCUMENTATION_PROPOSAL_TASK_KIND = "proposal-documentation";
 export const CODE_PROPOSAL_TASK_KIND = "proposal-code";
-export const CODE_PROPOSAL_TASK_ID = "pi-result-consistency";
-export const CODE_PROPOSAL_TEST_FILE = "tests/candidate-task.test.ts";
 export const PROPOSAL_TASK_KINDS: readonly [
   typeof DOCUMENTATION_PROPOSAL_TASK_KIND,
   typeof CODE_PROPOSAL_TASK_KIND,
@@ -82,6 +80,11 @@ const proposalRunGrantSchema: z.ZodType<ProposalRunGrant> =
 
 export function validateProposalRunGrant(value: unknown): ProposalRunGrant {
   const parsed = proposalRunGrantSchema.parse(value);
+  if (parsed.kind === CODE_PROPOSAL_TASK_KIND) {
+    const definition = proposedCodeTaskDefinition();
+    if (parsed.objective !== definition.objective || parsed.completionConditions.length !== 1 ||
+        parsed.completionConditions[0] !== definition.oracle) throw new Error("Code proposal grant is not canonical");
+  }
   return parsed;
 }
 
@@ -136,7 +139,7 @@ export async function admitTaskProposal(options: {
     });
   }
   if (!supportsCodeProposal(proposal)) throw new Error("Proposal scope is unsupported");
-  const definition = candidateTaskDefinition(CODE_PROPOSAL_TASK_ID);
+  const definition = proposedCodeTaskDefinition();
   return validateProposalRunGrant({
     kind: CODE_PROPOSAL_TASK_KIND,
     task: CODE_PROPOSAL_TASK_ID,

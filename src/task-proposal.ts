@@ -118,7 +118,8 @@ async function prepareStore(path: string, source: string): Promise<string> {
 function checkInputConflict(path: string, check: typeof PROPOSAL_CHECKS[number]): boolean {
   if (check === "pi-result-consistency") {
     return path === "src/code-task-check.ts" || path === "src/candidate-task-definition.ts" ||
-      path === "src/command-isolation.ts" || path === "package.json" || path === "bun.lock";
+      path === "src/command-isolation.ts" || path === "src/proposed-code-task.ts" ||
+      path === "src/proposal-admission.ts" || path === "package.json" || path === "bun.lock";
   }
   return path === "package.json" || path === "bun.lock" || path === ".oxlintrc.json" ||
     /^tsconfig(?:\.[^/]+)?\.json$/u.test(path) || path.startsWith("tests/");

@@ -17,6 +17,7 @@ import {
 } from "./candidate-task-definition.js";
 import { CODE_PROPOSAL_TASK_KIND, DOCUMENTATION_PROPOSAL_TASK_KIND, PROPOSAL_TASK_KINDS,
   validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
+import { proposedCodeTaskDefinition } from "./proposed-code-task.js";
 
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const contractSchema = z.strictObject({
@@ -100,11 +101,7 @@ type TaskFiles = Readonly<Record<string, string>>;
 function proposalTaskDefinition(grantValue: unknown): CandidateTaskDefinition {
   const grant = validateProposalRunGrant(grantValue);
   if (grant.kind === CODE_PROPOSAL_TASK_KIND) {
-    const definition = candidateTaskDefinition(grant.task);
-    return { ...definition, readFiles: grant.readFiles, writeFiles: grant.writeFiles,
-      instructions: "Read the admitted source and test, run the fixed check before editing, then strengthen only piTaskPasses. " +
-        "You may add a focused regression to the admitted test file, but it supplements the immutable behavior oracle. " +
-        "Run the fixed check again after editing; do not add imports or declarations to the source file." };
+    return proposedCodeTaskDefinition();
   }
   const oracle = "Application-owned scope integrity: at least one admitted documentation file changed. " +
     "The declared repository check is not executed in this first slice; outcome correctness requires human review.";
