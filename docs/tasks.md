@@ -73,8 +73,29 @@ unavailable instead of being estimated. `tesota task outcome <proposal-id>`
 reloads the durable summary; Tesota Shell prints the same summary when a task
 reaches a recorded terminal outcome.
 
+`tesota task outcomes` derives a newest-first cohort view from those same
+journals. It omits proposals that were never attempted and keeps an invalid or
+unreadable started journal visible as `unavailable`. The projection contains no
+request text or source path and owns no state of its own.
+
 Outcome records have `authority: none`. They describe what was observed and
 never authorize execution, acceptance or promotion.
+
+## Prospective pilot
+
+The first outcome pilot uses 8–12 consecutively selected, ordinary requests
+that fit the supported documentation contract. Select each request before
+seeing its result; do not replace an inconvenient request with an easier one.
+Refusal, scope decline, cancellation, execution failure, rejection, promotion
+and unavailable recovery all remain in the cohort.
+
+For each request, use the normal proposal and start flow. Inspect the aggregate
+with `tesota task outcomes` and the bound detail with
+`tesota task outcome <proposal-id>`. At closeout, report counts and concrete
+failure causes, including operator intervention and unavailable consumption.
+This small pilot is product-learning evidence, not a benchmark or a reliability
+percentage. Raw local journals remain operator state; do not copy task
+transcripts into the repository merely to manufacture durable evidence.
 
 ## Deliberate omissions
 

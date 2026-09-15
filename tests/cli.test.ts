@@ -13,14 +13,14 @@ for (const key of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP",
   if (value !== undefined) env[key] = value;
 }
 
-function run(args: readonly string[], cwd?: string) {
+function run(args: readonly string[], cwd?: string, environment: NodeJS.ProcessEnv = env) {
   const result = spawnSync("bun", ["--no-env-file", entry, ...args], {
     encoding: "utf8",
     windowsHide: true,
     shell: false,
     timeout: 5000,
     maxBuffer: 64 * 1024,
-    env,
+    env: environment,
     ...(cwd === undefined ? {} : { cwd }),
   });
   if (result.error !== undefined) throw result.error;
@@ -50,6 +50,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota isolation qualify\n" +
     "       tesota task propose <request>\n" +
     "       tesota task start <proposal-id>\n" +
+    "       tesota task outcomes\n" +
     "       tesota task outcome <proposal-id>\n" +
     "       tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>\n" +
     "       tesota task review <candidate-id|candidate-directory>\n" +
@@ -57,6 +58,18 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota task promote <candidate-id|candidate-directory> <review-sha256>\n\n" +
     "Runs bounded verification and scoped repository tasks.\n",
   );
+});
+
+it("reports an empty outcome cohort through the compiled CLI", () => {
+  const profile = mkdtempSync(join(tmpdir(), "tesota-cli-profile-"));
+  try {
+    const result = run(["task", "outcomes"], undefined, { ...env, HOME: profile, USERPROFILE: profile });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("No task outcomes recorded.\n");
+    expect(result.stderr).toBe("");
+  } finally {
+    rmSync(profile, { recursive: true, force: true });
+  }
 });
 
 it.runIf(process.platform === "win32")("treats a repository without a committed baseline as unavailable", () => {
