@@ -115,19 +115,9 @@ async function prepareStore(path: string, source: string): Promise<string> {
   return actual;
 }
 
-function checkInputConflict(path: string, check: typeof PROPOSAL_CHECKS[number]): boolean {
-  if (check === "pi-result-consistency") {
-    return path === "src/code-task-check.ts" || path === "src/candidate-task-definition.ts" ||
-      path === "src/command-isolation.ts" || path === "src/proposed-code-task.ts" ||
-      path === "src/proposal-admission.ts" || path === "package.json" || path === "bun.lock";
-  }
-  return path === "package.json" || path === "bun.lock" || path === ".oxlintrc.json" ||
-    /^tsconfig(?:\.[^/]+)?\.json$/u.test(path) || path.startsWith("tests/");
-}
-
 function proposalConflicts(proposal: TaskProposal, dirtyPaths: readonly string[]): string[] {
   const paths = new Set([...proposal.readFiles, ...proposal.writeFiles]);
-  return dirtyPaths.filter((path) => paths.has(path) || proposal.checks.some((check) => checkInputConflict(path, check)));
+  return dirtyPaths.filter((path) => paths.has(path));
 }
 
 export interface ProposedTask {

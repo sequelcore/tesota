@@ -4,6 +4,9 @@ Kiln is Tesota's historical source and a reference for selected implementations
 and tests. Its roadmap and architecture do not define Tesota's requirements.
 Reuse is evaluated for a concrete need, with provenance recorded when code is
 adapted or copied. See the [reconstruction decision](../decisions/001-start-tesota.md).
+The later [selective recovery decision](../decisions/005-recover-kiln-selectively.md)
+and [extraction reference](kiln-extraction.md) record the reconciled policy from
+a pinned review of the frozen Kiln `dev` branch.
 
 ## Repository and fixed source
 

@@ -1,6 +1,6 @@
 import * as z from "zod";
 
-export const PROPOSAL_CHECKS = ["repository-check", "pi-result-consistency"] as const;
+export const PROPOSAL_CHECKS = ["scope-integrity"] as const;
 export const PROPOSAL_LIMITS: Readonly<{
   operations: number; listedFiles: number; searchMatches: number; fileBytes: number; scannedBytes: number; exposedBytes: number;
 }> = Object.freeze({ operations: 32, listedFiles: 512, searchMatches: 40,

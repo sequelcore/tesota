@@ -3,7 +3,7 @@ import type { CandidateTaskCheck } from "../src/candidate-task.js";
 import { piTaskPasses, type PiTaskResult } from "../src/integrations/pi-task.js";
 
 const before: CandidateTaskCheck = {
-  task: "proposal-code", status: "check_failed", provenance: "issued",
+  task: "documentation-change", status: "check_failed", provenance: "issued", diagnostics: ["not changed"],
   baseline: "a".repeat(40), writeSetSha256: "1".repeat(64), taskAcceptance: "not_evaluated",
 };
 const after: CandidateTaskCheck = {

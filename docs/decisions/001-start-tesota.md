@@ -33,6 +33,10 @@ Select code, tests and lessons for a concrete need rather than copying packages
 or inheriting its roadmap. Prefer existing engine capabilities where they satisfy
 the boundary; the [Pi decision](002-use-pi.md) records that choice.
 
+The later [selective recovery decision](005-recover-kiln-selectively.md) confirms
+this direction while increasing the intended reuse of Kiln's contracts, adverse
+fixtures and failure knowledge. It does not authorize whole-package adoption.
+
 ## Consequences
 
 Tesota accepts rebuilding some integration work in exchange for a smaller

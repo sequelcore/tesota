@@ -34,8 +34,8 @@ async function fixture() {
     format: "tesota-task-proposal", version: 1, id, recordedAt: new Date().toISOString(), source, baseline,
     request: "Explain the flow.", authority: "none", provenance: "model_proposed", status: "ready",
     proposal: { objective: "Explain the flow in plain language.", completionConditions: ["A reader can follow it."],
-      readFiles: ["docs/guide.md"], writeFiles: ["docs/guide.md"], checks: ["repository-check"], uncertainties: [] },
-    dirtyPaths: [], dirtyConflicts: [], checks: [{ id: "repository-check",
+      readFiles: ["docs/guide.md"], writeFiles: ["docs/guide.md"], checks: ["scope-integrity"], uncertainties: [] },
+    dirtyPaths: [], dirtyConflicts: [], checks: [{ id: "scope-integrity",
       definition: "application_owned_declarative_only", executable: false }],
     discovery: { provider: "test", model: "test", inferenceTransport: "configured_provider",
       modelControlledNetwork: false, modelInvocations: 1, toolCalls: 1, operations: 1, exposedBytes: 8,
@@ -46,33 +46,12 @@ async function fixture() {
   return { source, proposalsRoot, directory, id, baseline };
 }
 
-async function codeFixture() {
-  const current = await fixture();
-  await mkdir(join(current.source, "src", "integrations"), { recursive: true });
-  await mkdir(join(current.source, "tests"), { recursive: true });
-  await writeFile(join(current.source, "src", "integrations", "pi-task.ts"), "export function piTaskPasses() { return false; }\n");
-  await writeFile(join(current.source, "tests", "candidate-task.test.ts"), "// trusted context\n");
-  git(current.source, ["add", "."]);
-  git(current.source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit",
-    "--quiet", "--no-gpg-sign", "-m", "Code fixture"]);
-  const baseline = git(current.source, ["rev-parse", "HEAD"]);
-  const record = JSON.parse(await readFile(join(current.directory, "proposal.json"), "utf8"));
-  record.baseline = baseline;
-  record.proposal = { objective: "Model wording is non-authoritative.", completionConditions: ["Model condition."],
-    readFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
-    writeFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
-    checks: ["pi-result-consistency"], uncertainties: [] };
-  record.checks = [{ id: "pi-result-consistency", definition: "application_owned_declarative_only", executable: false }];
-  await writeFile(join(current.directory, "proposal.json"), JSON.stringify(record, null, 2) + "\n");
-  return { ...current, baseline };
-}
-
 function passingReview(directory: string, baseline: string): TaskReview {
   return { directory, reviewSha256: "b".repeat(64), diff: "diff --git a/docs/guide.md b/docs/guide.md\n+clear text\n",
     historicalAttempt: "not_evaluated", operatorDecision: null,
-    check: { task: "proposal-documentation", status: "passed", provenance: "recorded_untrusted", baseline,
+    check: { task: "documentation-change", status: "passed", provenance: "recorded_untrusted", baseline,
       writeSetSha256: "c".repeat(64), taskAcceptance: "not_evaluated",
-      diagnostics: ["Repository check not executed in this first slice; review must judge the requested documentation outcome."] } };
+      diagnostics: ["Scope integrity passed. Outcome correctness requires human review."] } };
 }
 
 it("runs one approved proposal through execution, review, decision and promotion without copied lifecycle ids", async () => {
@@ -96,25 +75,11 @@ it("runs one approved proposal through execution, review, decision and promotion
   expect(execute).toHaveBeenCalledOnce();
   expect(decide).toHaveBeenCalledWith(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
   expect(promote).toHaveBeenCalledWith(candidate.directory, current.source, review.reviewSha256);
-  expect(output.join("")).toContain("repository check will not run");
+  expect(output.join("")).toContain("Outcome correctness requires human review");
   expect(output.join("")).toContain(JSON.stringify(review.diff));
   expect(progress).toEqual(["awaiting_approval:proposal_scope", "executing:candidate_task",
     "ready_for_review:candidate_review", "promoting:accepted_candidate"]);
   expect(await readFile(join(current.directory, "start.jsonl"), "utf8")).toContain('"outcome":"promoted"');
-});
-
-it("shows the application-owned code objective and fixed check before approval", async () => {
-  const current = await codeFixture();
-  const output: string[] = [];
-  const execute = vi.fn();
-
-  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
-    reference: current.id, ask: async () => "no", write: (text) => output.push(text), execute })).resolves.toBe(0);
-
-  expect(execute).not.toHaveBeenCalled();
-  expect(output.join("")).toContain("Strengthen piTaskPasses");
-  expect(output.join("")).toContain("pinned pi-result-consistency behavior check");
-  expect(output.join("")).not.toContain("repository check will not run");
 });
 
 it("creates no run record before approval and rejects replay after a start", async () => {

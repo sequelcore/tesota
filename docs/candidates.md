@@ -80,9 +80,8 @@ the baseline, clean checkout and independent Git storage. On failure it attempts
 to record `failed`. The directory is retained, and the error identifies it.
 A crash can leave `preparing` or a temporary record; neither counts as ready.
 There is no automatic resume, removal or overwrite of an earlier candidate.
-For a ready candidate with a failed or incomplete registered-task attempt,
-`task recover <candidate>` can create a separate clean successor from the same
-baseline. The original candidate and its partial bytes remain unchanged.
+A failed or incomplete task remains retained for inspection; the current public
+task flow does not reconstruct execution authority from its persisted state.
 
 Terminal checkouts are cleaned separately from their evidence. After the
 retention period, `candidate clean` removes only the `repo/` and template

@@ -1,257 +1,71 @@
 # Task proposals
 
-Repository discovery gives the model a bounded, read-only view of a committed
-baseline. The explicit `task propose` command requires a concise proposed outcome,
-read/write set and declarative check selection. The interactive `tesota` shell uses
-the same boundary but accepts three results: an answer grounded in observed files,
-one necessary clarification question or a task proposal. Discovery itself never
-creates a candidate, edits files, executes repository code, approves work or
-creates a run grant. A separate admitted start may follow.
+Repository discovery gives the model a bounded, read-only view of one committed
+baseline. It can answer a question, ask one necessary clarification or submit a
+non-authoritative proposal. Discovery cannot edit files, run repository code,
+approve work or create execution authority.
 
 ## Use
 
-After the [saved Codex login](authentication.md), build Tesota and run it from
-the Tesota repository root:
+After [authentication](authentication.md), build Tesota and run:
 
 ```sh
 bun start
-bun start task propose "Clarify the task recovery documentation"
+bun start task propose "Clarify the installation guide"
 ```
 
-With no arguments in an interactive terminal, Tesota asks for a message and routes
-it through repository discovery. A question prints an answer and its observed
-evidence files, then returns to the prompt. Material ambiguity prints one question;
-the operator's answer continues the same request in memory. Continued discovery
-opens the committed repository again and validates the expected baseline before
-model inference or proposal retention. It may
-answer or propose work but cannot ask a second clarification. A requested change
-prints its objective, proposed files, completion conditions, check names, exact
-committed baseline and retained proposal directory. The explicit subcommand accepts
-a request directly, requires the proposal result and remains useful for automation
-and diagnosis. File names are optional hints, not required syntax.
-`ready for review` means only that discovery produced a structurally admitted
-proposal. It does not mean the proposal is correct, accepted or executable.
+The interactive shell chooses among an answer, one clarification or a proposal.
+The explicit subcommand requires a proposal result. File names are optional
+hints; the model must inspect every file it proposes to change.
 
-The current command is intentionally limited to Tesota's own repository and the
-stored Codex model route. Provider inference is reported as configured transport;
-the model receives no shell, edit, check, web or arbitrary network tool.
+The current live discovery boundary uses the current Git repository and the
+configured Codex route. Execution remains limited by the supported admission
+policy below.
 
 ## Discovery boundary
 
-Tesota reads the named Git `HEAD` commit through fixed local Git operations. The
-model can list allowed paths, search literal text, read an allowed regular UTF-8
-blob and submit one parsed result. Application-owned schemas and budgets limit each
-operation, file size, scan, returned bytes, tool calls, model continuations and
-session settlement. Known credential-like paths and unsupported path shapes are
-omitted or denied. Binary, oversized, redirected and non-regular inputs do not
-become model context.
+Tesota reads the named Git `HEAD` through fixed local Git operations. Model tools
+can list allowed paths, search literal text, read allowed regular UTF-8 blobs and
+submit one parsed result. Application-owned schemas bound file shapes, file and
+scan sizes, exposed bytes, operations, model continuations and settlement.
 
-Discovery rejects effective Git configuration that could run a clean, process,
-external-diff or text-conversion program while inspecting working changes.
-Cancellation is observed between bounded blob operations; an in-flight synchronous
-Git operation can delay settlement for at most its 60-second subprocess timeout.
+Credential-like paths, redirects, binaries, oversized files and unsupported
+path shapes are denied. Git configuration capable of executing clean filters,
+external diffs or text conversions is rejected before discovery. The working
+tree is observed only to identify conflicts with proposed read and write paths;
+its bytes are not imported as model context.
 
-The source working tree is observed but never imported into discovery. Tracked,
-staged and non-ignored untracked paths are compared with the proposal. A conflict
-in a proposed read/write path, test or repository-check configuration changes the
-result to `blocked by excluded working changes`; unrelated dirt does not. Tesota
-does not commit, stash or overwrite operator work.
+## Retained evidence
 
-## Retained record
+Only a completed proposal result creates
+`~/.tesota/proposals/<uuid>/proposal.json`. The private versioned record binds:
 
-Only a completed task-proposal result exclusively creates
-`~/.tesota/proposals/<uuid>/proposal.json` with private permissions. The strict
-version 1 record binds the bounded request, committed baseline, model identity, observed
-budgets, dirty paths and the submitted proposal. Its authority is explicitly
-`none`, its provenance is `model_proposed`, and its check entry is declarative and
-non-executable. A proposal produced after clarification includes the exact question
-and operator answer in its retained request evidence; its size is validated in that
-final serialized form before inference. Answers, clarification, failed
-or unsettled discovery retain no proposal record.
+- the operator request and committed baseline;
+- model and configured transport identity;
+- observed operations and limits;
+- proposed objective, completion conditions, read/write set and check; and
+- working-tree conflicts known at proposal time.
 
-Editing a proposal file cannot grant file, check, network, candidate, acceptance
-or promotion authority. The record reader treats JSON as untrusted evidence.
-`task start` issues an in-memory grant only after the current baseline and the
-first narrow policy are revalidated and the operator approves the displayed scope.
+Its authority is `none` and its provenance is `model_proposed`. Editing retained
+JSON cannot grant access, execution, acceptance or promotion. Admission reparses
+the record and rechecks its source, status, baseline, paths and supported policy.
 
-## Start a supported task
+## Supported admission
 
-The current execution policy accepts either exactly one existing `.md` write below
-`docs/` with the declarative `repository-check`, or the exact existing pair
-`src/integrations/pi-task.ts` and `tests/pi-task-evidence.test.ts` with
-`pi-result-consistency`. Discovery may propose at most eight reads, but the code
-run grant is attenuated to that canonical pair. The proposal must be `ready`,
-belong to the current repository and match its current `HEAD`. Other paths, other
-TypeScript changes, stale baselines and blocked proposals fail before candidate
-creation. Read paths are rechecked against the discovery exclusion policy, so
-rewriting retained JSON cannot expose `.env`, credential, secret or private-key
-paths to candidate inference.
+The current policy accepts one or two existing Markdown writes below `docs/`, up
+to eight allowed reads and exactly the `scope-integrity` check. Every write file
+must also be readable. Stale baselines, dirty admitted paths, sensitive paths and
+all other write shapes fail before candidate creation.
 
 ```sh
 bun start task start <proposal-id>
 ```
 
-The argument-free shell calls this seam itself for a supported ready proposal, so
-the normal experience does not require copying the ID. Approval creates one
-independent candidate and one exclusive `start.jsonl`; any second, concurrent or
-resumed start is rejected. Pi receives only bounded read, whole-file replacement
-and Tesota-owned check operations. The code task further limits the source change
-to `piTaskPasses`, runs an immutable behavior oracle in the pinned offline
-container and requires the focused test to append without changing its baseline.
-No shell command, candidate program, repository script or model-controlled
-network tool is available.
+The shell invokes this seam directly for a ready supported proposal, so normal
+interactive use does not require copying an identifier. The operator sees the
+objective, files, baseline and evidence limitation before deciding whether to
+start. Declining creates neither candidate nor start journal.
 
-### If the operator declines approval
-
-If the operator declines the first task-start approval, execution does not begin.
-No candidate and no `start.jsonl` record are created. The source checkout remains
-unchanged, and the retained proposal stays available for later review and a later
-start attempt.
-
-The documentation scope check proves only that at least one admitted byte changed
-and no out-of-scope path entered the candidate. It explicitly reports that the
-declarative repository check is not executed in this slice and cannot prove that
-the prose satisfies the request. Tesota prints the diff as an escaped JSON string,
-then asks the person to accept or reject those exact reviewed bytes. Acceptance
-and passing scope evidence remain separate. An accepted candidate is promoted
-only if the source baseline and target bytes still match; a conflict changes no
-source file.
-
-The code check proves only its declared pure-predicate cases and that the focused
-test preserved its baseline while appending bytes. Candidate-authored assertions
-remain untrusted and require human review; they do not replace the immutable
-oracle or establish repository-wide correctness.
-
-Each approval question owns readline only while the person is answering it. Once
-scope is approved, readline closes so Ctrl+C reaches the active task cancellation
-owner instead of being consumed by the prompt. A cancelled execution returns 130,
-retains its candidate evidence and creates no review decision or promotion. Ctrl+C
-at either question also grants no new authority.
-
-Exit 0 reports a completed answer, clarification or proposal ready for review.
-Exit 1 reports a blocked proposal or failed discovery. Invalid or unsupported live
-platform use exits 2 where detected before discovery. Normal repository checks use
-fake provider streams and never invoke live inference.
-
-## Live qualification
-
-The first stored-OAuth run completed on 2026-09-12 UTC against committed baseline
-`4d6e33ca96b60e3cba4de53a36b4708aac3ad7a3`. The Spanish request named no files;
-the model selected `docs/architecture.md`, supplied two completion conditions and
-the declarative `repository-check` through four model invocations and six bounded
-tool calls. Tesota reported `blocked_dirty` because the proposed file and immutable
-check inputs had excluded working changes. The retained record had
-`authority: "none"`; no candidate, repository edit, check execution, acceptance or
-promotion occurred. This qualifies discovery and safe dirty-input blocking, not
-proposal correctness or executable admission.
-
-After the implementation commits left the repository clean, a second stored-OAuth
-run completed against baseline `9f9031e68464d82ecab02e3a7f22352381f5c0e2`.
-The same Spanish outcome-only request selected `docs/verification.md` without a
-file hint and returned `ready` through five model invocations, ten bounded tool
-calls and ten admitted operations. The private record retained `authority: "none"`
-and the repository remained unchanged. This qualifies the clean proposal path;
-it still does not establish proposal correctness, acceptance or execution.
-
-After conversational discovery was implemented, a stored-OAuth shell run on
-2026-09-12 UTC asked in Spanish what Ctrl+C does while Tesota waits for input. The
-result was an `answer` grounded in `src/native-shell.ts` and
-`tests/native-shell.test.ts` at baseline
-`1f2326992c9130717945c97f8b477bbb9a696aa4`. It reported authority `none`, changed
-no repository files and left the private proposal-directory count unchanged at
-three. This qualifies one live answer path, not general intent recognition,
-clarification usefulness or answer correctness beyond the inspected example.
-
-After clarification continuation was implemented, a stored-OAuth shell run on
-2026-09-13 UTC deliberately omitted the topic of a document search. Tesota asked
-one necessary question, accepted the operator's answer about Ctrl+C behavior and
-then returned a grounded answer citing `docs/proposals.md`,
-`src/terminal-question.ts`, `src/native-shell.ts` and
-`tests/native-shell.test.ts`. Both turns reported the unchanged baseline
-`acdda06544ddc70a9f682d94ceb85ef6366efb26` and authority `none`; the answer
-returned to the prompt, an empty next input ended the session, the repository
-remained clean and no proposal or candidate file was created during the run. This
-qualifies one live clarification-to-answer path, not clarification-to-proposal,
-baseline-race handling or broad conversational quality.
-
-A later stored-OAuth shell run on 2026-09-13 UTC qualified the other continued
-result. An underspecified documentation change produced one clarification; the
-operator's answer yielded ready proposal
-`f1dc2a0a-1c57-4948-8a5f-fb718582528c`, limited to
-`docs/development.md` at baseline
-`9a2067e4c5b4527393e4d8a542bcc77cf3298956`. The retained record kept authority
-`none`. Tesota then displayed the separate scope-approval boundary, the operator
-declined it and no candidate was created. This qualifies one live
-clarification-to-proposal and declined-approval path, not proposal correctness or
-approved execution after clarification.
-
-The next stored-OAuth shell run on 2026-09-13 UTC exercised baseline invalidation
-with a real commit. Tesota asked one clarification at baseline
-`9a2067e4c5b4527393e4d8a542bcc77cf3298956`; while it waited for the answer, the
-preceding qualification evidence was committed as
-`42f6f11db05c2c7929517698c3842ff9111fbc5d`. After the operator answered, Tesota
-reported the changed baseline and ended the request. Proposal and candidate counts
-remained unchanged; the only recently written proposal was the expected record from
-the preceding run. This qualifies live rejection across a committed baseline
-change, not every concurrent filesystem or Git-state race.
-
-The first live proposal-start attempt on 2026-09-12 UTC exposed a prompt defect
-without changing source. Proposal `ea1aa560-d6f1-4906-8c9a-ba4b52464b37`
-correctly selected `docs/proposals.md` from an outcome-only request and received
-scope approval, but Luna attempted replacement before the mandatory initial check.
-Tesota denied the operation, retained failed candidate
-`b61901b9-e79c-41ab-a14c-a9772cbc7211` with zero edits, and created no decision
-or promotion. The executor prompt was then corrected and covered by a test; the
-consumed proposal was not replayed or resumed.
-
-A fresh shell run against baseline `8f96f6bfd79c382b2915eb402d70bb618a5f385d`
-created proposal `61e2573c-fd42-4425-b210-10dacde06c49` and passed its ID directly
-to the approval flow. Candidate `5b83844e-ef91-4e32-80cf-07125fafaf56` completed
-through five model invocations, four tool calls, one edit, an initial failed scope
-check and a final passing scope check. The escaped diff was inspected, explicitly
-accepted and promoted only `docs/proposals.md`. The promoted documentation change
-was committed as `571fef2f`; after the final cancellation and sensitive-path
-repairs, the complete repository gate passed 22 test files and 302 tests. Two slow
-integration cases also received explicit bounded timeouts. This qualifies one
-end-to-end documentation lifecycle and its fail-closed correction path, not
-general tasks or repository-command execution.
-
-The residual interruption path was exercised live on 2026-09-12 local time
-(2026-09-13 UTC). Proposal `929176b0-0a82-43b8-9285-05704bc69b60` reached candidate
-`af1de773-5def-46cf-a014-01efecc3213b`; Ctrl+C was sent after scope approval while
-Pi was running. The model session settled as `aborted` after three invocations,
-two tool calls and zero edits. Candidate evidence was retained, the proposal start
-journal ended as `cancelled`, no decision or promotion record exists, and the
-source remained clean. The Tesota CLI returned 130; the surrounding `bun start`
-script reported that child code and itself exited 1. This qualifies cancellation
-during one live execution, not every provider-side interruption race.
-
-The post-promotion evidence failure also has deterministic fault-injection
-coverage. After a synthetic promotion returned `applied`, final start-journal
-persistence was forced to fail. Tesota returned a failure, reported that promotion
-had already applied, directed the operator to the candidate promotion journal and
-did not append a contradictory `failed` outcome. The storage failure is simulated;
-no real source write was intentionally combined with a failing filesystem.
-
-The first proposed-code qualification completed on 2026-09-13 UTC. A Spanish
-request named no files; discovery selected the fixed `piTaskPasses` source and
-focused regression test. Several retained attempts failed safely and drove
-contract repairs: extra discovery reads were attenuated, source-only correction
-could not pass, destructive test replacement was rejected, and incomplete human
-test coverage was not accepted. No failed candidate changed the source.
-
-The successful fresh proposal `52715f42-a1fd-4eba-969a-3f118f70a272` used baseline
-`41668e16887830d4b54c8ce5a1c50926528504a9`. Candidate
-`0032163f-b208-4e2a-bc8e-5848754de450` completed with eight model invocations,
-seven tool calls, two edits and three issued checks. The first check rejected the
-missing evidence invariants, the second required the append-only regression test,
-and the third passed. All three results reached the model; the current check had
-matching bytes and `recorded_untrusted` provenance. Human review accepted the
-exact two-file fingerprint and guarded promotion applied both files. The focused
-tests, typecheck and lint then passed in the source repository. This qualifies
-Stage 4's fixed code slice, not adaptive scope or general repository execution.
-The later final review found that this retained attempt's immutable oracle omitted
-one negative `result.taskAcceptance` case. The current oracle adds that case and a
-Docker-backed mutation regression, and the complete local gate passes; the live
-record remains bound to its earlier verifier identity rather than becoming fresh
-live evidence for the strengthened oracle.
+Once approved, the [task contract](tasks.md) owns execution, review and guarded
+promotion. A proposal that is structurally ready is not necessarily correct,
+accepted or executable.

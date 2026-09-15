@@ -34,6 +34,25 @@ it("rejects changed process arguments before reading or invoking the model", asy
   expect(reviewer).not.toHaveBeenCalled();
 });
 
+it("admits only the v2.8 Pi route that resolves to Tesota's fixed reviewer", async () => {
+  const reviewer = vi.fn(async (prompt: Buffer) => ({
+    stdout: Buffer.from("result"), promptByteLength: prompt.length, stdoutByteLength: 6,
+  }));
+  const route = [...PI_REVIEW_RELAY_ARGUMENTS, "--model", "openai-codex/gpt-5.6-luna", "--thinking", "off"];
+
+  await runPiReviewRelay(route, { reviewer, input: input("prompt"), write: vi.fn() });
+  expect(reviewer).toHaveBeenCalledOnce();
+
+  for (const arguments_ of [
+    [...PI_REVIEW_RELAY_ARGUMENTS, "--model", "other/model"],
+    [...PI_REVIEW_RELAY_ARGUMENTS, "--thinking", "high"],
+    [...PI_REVIEW_RELAY_ARGUMENTS, "--model"],
+  ]) {
+    await expect(runPiReviewRelay(arguments_, { reviewer: vi.fn(), input: input("prompt"), write: vi.fn() }))
+      .rejects.toThrow("arguments are not admitted");
+  }
+});
+
 it("rejects a provider prompt over the existing reviewer byte bound", async () => {
   const reviewer = vi.fn();
   const source: AsyncIterable<Uint8Array> = {

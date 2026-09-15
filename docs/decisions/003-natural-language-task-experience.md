@@ -39,7 +39,7 @@ revisions were:
 | OpenCode | `3016830e253492ef41b6cc00dbed623e5989279b` | Its terminal UI makes a conversational session the normal entry point; permission rules resolve to allow, ask or deny and can be narrower than a whole tool. |
 | Pi | `1dd2354052f7dd9fcdcc3097b87cf4b377853a74` | Project trust and execution isolation are different boundaries; Pi deliberately relies on an external sandbox. |
 | Gentle Pi | `db788aefa2cdbc3504ab7723c1f270ebbfe29caa` | Gentle Shell is a package-owned visual layer over Pi with a framed prompt, live status, working-tree changes and inspectable subagents; it extends Pi without making the renderer the agent engine. |
-| Gentle AI | `a440e791c342b69ca79f7759e697fc88c1272ca5` | Small requests should avoid visible planning ceremony, while substantial work benefits from explicit proposal, implementation and review phases handled through the agent's normal surface. |
+| Gentle AI | `890ca948e3430abe8d586ed28773a1c7c9c7af65` (v2.8.0) | Small requests should avoid visible planning ceremony, while substantial work benefits from explicit proposal, implementation and review phases handled through the agent's normal surface. The current release also keeps review authority, recovery evidence and runtime diagnostics explicit without making telemetry authoritative. |
 
 The vendor contracts converge on read-only exploration before consequential
 changes, visible permission modes, isolated execution and reviewable results.

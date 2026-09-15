@@ -10,13 +10,8 @@ Usage: tesota [--help | -h | help]
        tesota candidate clean
        tesota candidate abandon <candidate-id|candidate-directory>
        tesota isolation qualify
-       tesota task prepare <candidate-directory>
-       tesota task check <candidate-directory>
        tesota task propose <request>
        tesota task start <proposal-id>
-       tesota task run [task-id]
-       tesota task recover <candidate-id|candidate-directory>
-       tesota task run coding-agent
        tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>
        tesota task review <candidate-id|candidate-directory>
        tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>
@@ -45,9 +40,6 @@ if (args.length === 0 && process.stdin.isTTY === true && process.stdout.isTTY ==
     process.stderr.write("Promotion unavailable or failed. Inspect source and any promotion journal before retrying.\n");
     process.exitCode = 2;
   }
-} else if (args.length === 3 && args[0] === "task" && args[1] === "recover" && args[2] !== undefined) {
-  const { recoverTaskCommand } = await import("./task-run.js");
-  process.exit(await recoverTaskCommand(args[2]));
 } else if (args.length === 3 && args[0] === "task" && args[1] === "start" && args[2] !== undefined) {
   const { runTaskStartCommand } = await import("./task-start.js");
   process.exit(await runTaskStartCommand(args[2]));
@@ -66,10 +58,8 @@ if (args.length === 0 && process.stdin.isTTY === true && process.stdout.isTTY ==
     process.stderr.write("Review or decision unavailable: check scope, fingerprint and existing decision.\n");
     process.exitCode = 2;
   }
-} else if (args[0] === "task" && args[1] === "run" && (args.length === 2 ||
-    args.length === 3 && args[2] !== "gentle-review" ||
-    args.length === 6 && args[2] === "gentle-review" && args[3] !== undefined && args[4] !== undefined && args[5] !== undefined)) {
-  if (args[2] === "gentle-review") {
+} else if (args.length === 6 && args[0] === "task" && args[1] === "run" && args[2] === "gentle-review" &&
+    args[3] !== undefined && args[4] !== undefined && args[5] !== undefined) {
     const { runGentleReviewHost } = await import("./gentle-review-host.js");
       try {
         const result = await runGentleReviewHost({ candidate: args[3] ?? "", executable: args[4] ?? "", lineage: args[5] ?? "" });
@@ -79,30 +69,6 @@ if (args.length === 0 && process.stdin.isTTY === true && process.stdout.isTTY ==
         process.stderr.write(`${error instanceof Error ? error.message : "Gentle relay failed"}\n`);
         process.exitCode = 2;
       }
-  } else {
-  if (args[2] === "coding-agent") {
-    const { runCodingAgentTaskCommand } = await import("./coding-agent-task.js");
-    process.exit(await runCodingAgentTaskCommand());
-  }
-  const { runTaskCommand } = await import("./task-run.js");
-  process.exit(await runTaskCommand(args[2]));
-  }
-} else if (args.length === 3 && args[0] === "task" && (args[1] === "prepare" || args[1] === "check") && args[2] !== undefined) {
-  const { CandidateTask, checkCandidateTask } = await import("./candidate-task.js");
-  try {
-    if (args[1] === "prepare") {
-      const task = await CandidateTask.prepare(args[2]);
-      try { process.stdout.write(JSON.stringify(task.describe(), null, 2) + "\n"); }
-      finally { task.close(); }
-    } else {
-      const result = await checkCandidateTask(args[2]);
-      process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-      process.exitCode = result.status === "passed" ? 0 : 1;
-    }
-  } catch {
-    process.stderr.write("Task unavailable, outside scope, or already prepared.\n");
-    process.exitCode = 2;
-  }
 } else if (args[0] === "candidate" && (args.length === 2 && ["create", "list", "clean"].includes(args[1] ?? "") ||
     args.length === 3 && args[1] === "abandon" && args[2] !== undefined ||
     args.length === 3 && args[1] === "inspect" && args[2] !== undefined)) {

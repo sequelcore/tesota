@@ -38,7 +38,7 @@ copy their workflow or treat their claims as evidence for Tesota.
 | Pi | `1dd2354052f7dd9fcdcc3097b87cf4b377853a74` | Runs with host authority by default and deliberately delegates isolation to Gondolin, containers, Sandbox Runtime or OpenShell instead of implementing a kernel. |
 | Gemini CLI | `3818efbbfbf8ef029ef53a6ab1093db39971ce83` | Uses restricted tokens, Job Objects and integrity levels on Windows, and containers as a cross-platform alternative. |
 | OpenCode | `3016830e253492ef41b6cc00dbed623e5989279b` | Permission decisions do not themselves sandbox its host shell; approval and technical confinement remain distinct concerns. |
-| Gentle Pi / Gentle AI | `db788aefa2cdbc3504ab7723c1f270ebbfe29caa` / `a440e791c342b69ca79f7759e697fc88c1272ca5` | Own UI and review/delegation behavior but do not supply Tesota's command-isolation boundary. |
+| Gentle Pi / Gentle AI | `db788aefa2cdbc3504ab7723c1f270ebbfe29caa` / `890ca948e3430abe8d586ed28773a1c7c9c7af65` (v2.8.0) | Own UI and review/delegation behavior but do not supply Tesota's command-isolation boundary. Gentle's remote-operation authorization and trusted-input controls do not widen Tesota's fixed local command policy. |
 | LemmaScript | `98b94126e37afb46903889b7b5d39347c6db559d` | Formal verification can strengthen selected predicates, but a proof tool is not an operating-system sandbox. |
 
 The principal published contracts were the

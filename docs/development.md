@@ -41,44 +41,47 @@ execution authority. See the [qualification record](../experiments/isolation/REA
 `candidate clean` removes only old rejected, abandoned or failed checkout directories while
 retaining their evidence. `candidate abandon <id|directory>` records an explicit
 operator decision for work that no longer needs review.
-`task prepare <directory>` and `task check <directory>` expose the default
-[registered task](tasks.md), also without model inference.
-`task run` creates a fresh candidate and runs the selected fixed task with the saved login;
-it is a separate live command and is never invoked by the normal check suite.
 `task propose <request>` uses the saved login for bounded read-only discovery over
-Tesota's committed baseline. It retains a proposal with no execution authority,
+the current repository's committed baseline. It retains a proposal with no execution authority,
 creates no candidate and never runs in the normal check suite. See
 [task proposals](proposals.md).
 `task start <proposal-id>` is the composable seam behind the shell continuation.
 It requires an interactive Windows terminal and admits only a current ready
-proposal for one existing Markdown file below `docs/`. Approval creates a fresh
-candidate; replay and resume are rejected. The first slice runs only Tesota's
-scope-integrity check and explicitly reports that the declarative repository
-check did not run. A later accept/reject question is bound to the escaped diff;
+proposal for one or two existing Markdown files below `docs/`. Approval creates
+a fresh candidate; replay and resume are rejected. The current check establishes
+scope integrity and explicitly leaves outcome correctness to human review. A
+later accept/reject question is bound to the escaped diff;
 acceptance invokes conflict-safe promotion without requiring another ID.
-`task recover <candidate>` explicitly retries a failed or incomplete registered
-task in a clean successor at the same baseline. It never resumes the prior model
-session or copies that candidate's working bytes or evidence.
 `task run gentle-review <candidate> <gentle-ai-executable> <lineage-id>`
 collects one reviewer slot currently offered by Gentle. The executable path
-must be absolute and identify the package-local, version-qualified Gentle AI
-binary. Tesota preserves the provider's prompt and binding, runs tool-free
+must be absolute and identify the stable Gentle AI 2.8.0 binary. After upgrading,
+run the provider-owned `gentle-ai sync` operation before review so its managed
+assets match the binary. Tesota negotiates capabilities protocol 2.5, verifies
+the executable's locally calculated SHA-256 against its self-report, requires
+the non-legacy features used by the qualified lifecycle and accepts only STATUS
+v7 with compact-v2 authority. Tesota preserves the provider's prompt and binding, runs tool-free
 Codex inference with the saved login, and submits only after the same binding
 is observed again. Run the command again for the next offered slot. Other
 provider transitions, including START consent and acknowledgement, remain
 explicit lifecycle operations; review never authorizes promotion.
+An approved terminal response returns its identity-bound per-lens reviewer
+evidence; an escalated status or closure returns the provider's canonical cause,
+finding IDs and available refuter outcomes. These are inspectable evidence, not
+acceptance or command authority. Tesota does not automatically run the offered
+acknowledgement.
 If model inference fails, the command submits nothing. Retry only through a new
 explicit command after bound status still offers the slot; this is capture
 re-entry, not reconstructed `review.recover` authority.
-Gentle's targeted validator launches a fixed `pi` process. The compiled
+Gentle's targeted validator launches a locked-down `pi` process. The compiled
 `dist/pi-review-relay.js` is Tesota's credential-preserving implementation of
-that process contract: it admits only the fixed tool-free argv and never copies
+that process contract: it admits the fixed tool-free argv and Gentle 2.8's
+optional model/thinking suffix only when it names Tesota's fixed reviewer route. It never copies
 OAuth credentials into Pi's default store. Gentle remains responsible for the
 isolated process, prompt and verdict admission.
 `task review <directory>` and `task decide <directory> <accept|reject> <review-sha256>`
 provide offline review and local decision recording; neither promotes code.
 `task promote <directory> <review-sha256>` explicitly applies an accepted
-promotable registered or admitted write set from the original source root
+admitted write set from the original source root
 after checking for conflicting source work.
 `verify <file.ts|file.js>` runs the [bounded check](verification.md); unsupported
 arguments print a diagnostic on stderr and exit 2.
@@ -118,17 +121,19 @@ copying its explanation into another file.
 | Content | Owner |
 | --- | --- |
 | Orientation and navigation | [README](../README.md) |
-| Product identity, name and purpose | [Identity](identity.md) |
+| Product identity, thesis, vocabulary and purpose | [Identity](identity.md) |
+| Public market comparison evidence | [Public positioning](references/public-positioning.md) |
 | Implemented structure and boundaries | [Architecture](architecture.md) |
 | Product direction and milestone status | [Roadmap](roadmap.md) |
 | Stable behavioral contracts and usage | [Verification](verification.md) |
+| Verifier selection criteria and research direction | [Verifier strategy](verifier-strategy.md) |
 | Authentication and private credential lifecycle | [Authentication](authentication.md) |
 | Candidate checkout creation and inspection | [Candidate checkouts](candidates.md) |
 | Task scope and documentation check | [Scoped candidate task](tasks.md) |
 | Read-only conversational discovery and proposal records | [Task proposals](proposals.md) |
 | Experimental guides and records | [experiments/](../experiments/README.md), grouped by capability |
 | Consequential decisions and rationale | `docs/decisions/`, linked from the relevant guide |
-| Selected upstream source and reuse | `docs/references/` |
+| Selected upstream source and reuse | `docs/references/`; [Kiln extraction](references/kiln-extraction.md) owns the current selective-recovery classification |
 | Bootstrap and toolchain records | [Project history](history/README.md) |
 | Agent working instructions | [AGENTS.md](../AGENTS.md); CLAUDE.md references it |
 

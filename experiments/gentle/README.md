@@ -462,3 +462,38 @@ recovery eligibility on the predecessor, so this experiment also does not claim
 that the provider enforces one global successor per predecessor; creating a
 second successor was deliberately not attempted. The candidate remains isolated,
 defective, outside its original task scope and without a Tesota decision.
+
+### Phase 20: Gentle AI 2.8 contract migration
+
+**Local adapter and real-binary capability qualification passed on 2026-09-13
+UTC; a live candidate review remains pending.** Tesota inspected official tag
+`v2.8.0` at release commit
+`890ca948e3430abe8d586ed28773a1c7c9c7af65`. The release retains provider bundle
+version `1.2.0`; its repository-independent review surface reports capabilities
+protocol `gentle-ai.review-integration.capabilities/v2.5` under the unchanged
+`gentle-ai.review-integration/v2` contract.
+
+The adapter now refuses Gentle 2.7 and legacy STATUS v5/v6 envelopes. It requires
+stable package version 2.8.0, STATUS v7, compact-v2 authority and every non-legacy
+capability used by Tesota's already-qualified immutable review, correction,
+validation and scope-change recovery paths. It calculates the supplied
+executable's SHA-256, compares it with the capabilities self-report and checks
+that identity around every later call. This establishes that negotiation and
+review use one local executable; it does not independently prove the binary came
+from the published signed release archive.
+
+Focused tests cover stale version and executable refusal, missing capabilities,
+legacy STATUS rejection, current binding revalidation, canonical escalation
+evidence, terminal per-lens reviewer results and the absence of automatic
+acknowledgement. A binary built from the official tag with version 2.8.0 passed
+the same capabilities and executable-digest parser on Windows. The Pi process
+relay also accepts Gentle 2.8's optional model/thinking routing only for Tesota's
+fixed `openai-codex/gpt-5.6-luna` and `off` route; alternate routing fails before
+reading the prompt.
+
+The release's SDD, general remote-operation and cross-runtime telemetry features
+are not imported into Tesota by this migration. Tesota has no general SDD or
+remote-command runtime and no managed subagent telemetry consumer. Adding those
+surfaces would create authority and lifecycle owners beyond the active increment;
+the release remains a reference until a concrete Tesota consumer can keep
+diagnostics observational and authority application-owned.

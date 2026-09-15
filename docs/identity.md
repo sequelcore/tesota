@@ -1,120 +1,179 @@
 # Identity and purpose
 
-Tesota is a local coding agent in development, built around verifiable changes
-and human control. It is intended for developers working on a repository who
-want help carrying a task through implementation, checking and review.
+**Tesota is an open-source, verification-first agent designed to carry work
+from intent to an inspectable result, with evidence bound to what it actually
+produced.**
 
-This page defines the product's direction. The [roadmap](roadmap.md) records
-progress toward it; the [architecture](architecture.md) describes what exists.
-Tesota executes a small application-owned registry of bounded tasks, including a two-file task;
-general operator-defined repository tasks are not yet supported.
+> **Work that carries its evidence.**
 
-## Why Tesota exists
+Software development is Tesota's first proving ground, not the limit of its
+identity. Today the implementation is local, terminal-first and intentionally
+narrow. The [architecture](architecture.md) describes what exists and the
+[roadmap](roadmap.md) records what must be demonstrated next.
 
-A useful coding agent needs to carry work through to a result someone can assess.
-That means understanding the requested change, acting within its scope, running
-relevant checks, correcting failures and explaining what remains uncertain.
-Tesota aims to make that complete development cycle dependable and understandable.
+## The thesis
 
-The intended experience begins in a local terminal. A developer gives Tesota a
-goal in ordinary language; naming files is optional. Tesota should first discover
-and show the proposed scope and checks without changing the repository, then ask
-for one task-sized approval before bounded execution. The developer follows its
-progress and receives a diff with the checks that apply to it. The developer
-should be able to see what changed, what was verified and what still needs
-judgment without reconstructing a conversation or trusting a model's declaration
-of success. The proposed contract is recorded in
-[decision 003](decisions/003-natural-language-task-experience.md).
+AI makes production abundant. Evidence remains scarce.
 
-The intended normal entry point is **Tesota Shell**, the interactive terminal
-experience opened by running `tesota` in the current repository. It uses a focused
-persistent terminal interface before Tesota broadens into general repository
-execution. Lifecycle subcommands remain available
-as composable and diagnostic seams, but the developer should not need to copy
-identifiers or drive each internal transition to complete an ordinary task.
+An agent can produce a persuasive answer, a polished change or a successful
+tool transcript without establishing that the result is correct, relevant,
+current or authorized to take effect. As agents gain tools and act with less
+continuous supervision, that gap matters more: an error can become a filesystem
+write, a message, a transaction or another consequential effect.
 
-### Target operator experience
+Tesota starts from a different premise: verification belongs inside the work
+loop. Where a requirement can be checked, the check should produce an explicit
+observation. A useful diagnostic should guide correction. A corrected result
+must receive fresh evidence. The person or policy responsible for adoption must
+be able to see what the evidence establishes and what still requires judgment.
 
-The eventual interaction should feel like a normal coding-agent conversation. For
-example, the developer should be able to open a terminal, run `tesota` and write:
+The goal is not to make agents infallible. It is to make their work inspectable,
+correctable and responsibly adoptable.
 
-> I would like to implement this feature. Research the topic in official
-> documentation, relevant products and established practices, then prepare an
-> issue with the proposed plan.
+## What verification-first means
 
-Tesota should understand that request without requiring file names or a task
-manifest. It should clarify only a consequential ambiguity, inspect the repository,
-research through explicitly admitted external tools, cite the sources that support
-its conclusions and prepare a reviewable issue draft. Before publishing anything
-to an issue tracker, it should show the proposed destination and exact content and
-ask for approval. Creating the issue is an external effect; repository discovery,
-research, issue drafting and publication therefore remain distinct operations with
-distinct evidence and authority.
+Verification is broader than formal proof and narrower than a declaration of
+quality. Depending on the task, evidence may come from tests, compilers, type
+systems, linters, policy checks, simulations, formal methods, independent review
+or human assessment. These sources answer different questions and retain their
+own limitations.
 
-Afterward, the same shell should allow a natural continuation such as “implement
-the approved plan.” That continuation should produce a new task-sized proposal and
-approval boundary before editing files or running checks. Conversation context may
-help interpret the request, but it must not silently carry write, command, network
-or publication authority from the earlier research turn.
+Tesota follows these principles:
 
-This is the product target, not the current feature set. Today Tesota can answer
-repository questions, clarify a request, retain a bounded proposal and execute only
-the documented fixed task slices. General web research, adaptive repository scope,
-issue-tracker publication and durable cross-task conversation remain future work
-on the [roadmap](roadmap.md).
+1. **Production is not proof.** Model completion does not establish task
+   completion.
+2. **Verification is part of execution.** Checks can guide work before the final
+   result, not merely reject it afterward.
+3. **Diagnostics are useful inputs.** A bounded failure can lead to correction
+   and renewed verification.
+4. **Evidence has a subject.** An observation identifies the result and relevant
+   conditions it describes.
+5. **Changed results need renewed evidence.** Old evidence remains historical;
+   it does not silently apply to new work.
+6. **Different claims need different verifiers.** No single check establishes
+   every property of a task.
+7. **Evidence informs decisions; it does not create authority.** A passing tool,
+   reviewer or model cannot silently approve its own result.
+8. **Failure states remain honest.** A finding, unavailable tool, timeout,
+   cancellation and uncertain effect are not interchangeable.
+9. **Verification is proportional.** The required evidence depends on the work,
+   its effects and the cost of being wrong.
+10. **Telemetry describes; it does not authorize.** Visibility can improve a
+    decision without becoming a permission source.
 
-Tesota is cross-surface by contract and TUI-first by product. Task authority,
-lifecycle validity and evidence meaning belong to the application rather than its
-renderer, so changing presentation cannot change what an action is allowed to do.
-Tesota Shell is the only interactive product surface currently planned. This
-principle does not commit the project to a GUI, web application, IDE extension,
-remote protocol or parity work for surfaces without a demonstrated consumer.
+The [verifier strategy](verifier-strategy.md) applies these principles to
+specific tools and qualification levels.
+
+## The Tesota lifecycle
+
+Tesota owns the relationship between intent, work, result, evidence and
+adoption. Engines and tools participate without owning that lifecycle.
+
+```text
+intent
+  -> admitted work
+  -> agent execution
+  -> candidate result
+  -> applicable verification
+  -> evidence and diagnostics
+  -> correction when needed
+  -> assessment
+  -> authorized adoption
+```
+
+A **candidate** is the result proposed for assessment or adoption. In the first
+software-development domain, it is an exact source state. Other domains may use
+different candidate forms, but they must preserve the same essential question:
+what exact result does this evidence describe?
+
+## Product scope
+
+Tesota is an agent, not a verifier catalog and not a new foundation model. Its
+eventual experience may include conversation, research, planning, tool use,
+creation, correction and adoption across more than one kind of work.
+
+Software development is the initial domain because it offers mature external
+oracles, consequential effects and concrete adoption boundaries. The intended
+developer experience is a normal agent conversation: describe an outcome,
+inspect the proposed scope and checks, let the agent work, then assess the exact
+change with its applicable evidence and limitations.
+
+The current product does not yet provide that general experience. It supports a
+proposal-backed bounded documentation task and qualified experiments. It does not
+support arbitrary repository work, general web research, unrestricted commands,
+issue publication or general-purpose non-code workflows. Public descriptions
+must preserve this distinction between thesis, direction and demonstrated
+behavior.
+
+## System roles
+
+The terms below describe different owners and must not be used interchangeably:
+
+| Term | Meaning in Tesota |
+| --- | --- |
+| **Tesota** | The product and agent that owns the work lifecycle |
+| `tesota` | The package and command identifier |
+| **Tesota Shell** | The current interactive terminal surface |
+| **Agent engine** | Model interaction, sessions, tool calls and agent-loop mechanics; Pi is the selected engine |
+| **Model** | The inference provider used by an engine for a particular operation |
+| **Verifier** | A tool that produces a bounded observation about a candidate |
+| **Reviewer** | An independent assessor; Gentle AI is the current optional provider |
+| **Acceptance** | A human or explicitly authorized policy decision about a candidate |
+| **Adoption** | The consequential act that makes an accepted result effective |
+
+Pi, Gentle AI and individual verifiers are credited integrations. None replaces
+Tesota's identity, and none gains Tesota-owned authority through integration.
+SDD, RDD and TDD are workflows or methodologies, not agent engines.
+
+## Audience and measure of success
+
+Tesota is initially for developers and maintainers who want AI assistance while
+keeping scope, checks, resulting changes and human decisions understandable.
+That audience is a hypothesis until ordinary use validates it.
+
+The first useful measure is not feature count. It is whether Tesota can produce
+an accepted improvement with applicable evidence while making intervention,
+elapsed time, observed consumption and unresolved limitations visible. Later
+domains need equivalent outcome measures before they become product promises.
+
+## Public language
+
+Public introductions lead with the kind of work Tesota enables, followed by its
+evidence relationship. They do not lead with internal state-machine terms.
+
+The canonical category is **verification-first agent**. In an explicitly
+software-development context, **verification-first coding agent** is a valid
+domain description, not the product's permanent boundary.
+
+The primary tagline is:
+
+> **Work that carries its evidence.**
+
+For the software-development domain, this contextual line is also valid:
+
+> **Build the change. Keep the evidence.**
+
+Tesota speaks with calm engineering precision. It explains what happened, what
+evidence applies and what remains unknown. It does not describe itself as safe,
+trusted, autonomous, production-ready or superior without evidence for the
+exact claim. The dated [public positioning review](references/public-positioning.md)
+records the external comparison behind this language, and
+[decision 006](decisions/006-public-product-identity.md) owns the positioning
+decision.
 
 ## Why the name
 
-The name is drawn from *Olneya tesota*, desert ironwood, also known as *palo fierro*.
-This Sonoran Desert tree has dense, durable wood and provides shelter that helps
-other plants establish themselves. The botanical reference is described by the
-[Arizona-Sonora Desert Museum](https://www.desertmuseum.org/programs/ifnm_ironwoodtree.php).
+The name comes from *Olneya tesota*, desert ironwood, also known as *palo
+fierro*. This Sonoran Desert tree has dense, durable wood and provides shelter
+that helps other plants establish themselves. The botanical reference is
+described by the [Arizona-Sonora Desert Museum](https://www.desertmuseum.org/programs/ifnm_ironwoodtree.php).
 
-For the project, that suggests a durable foundation that supports growth. This
-is the intended meaning of the name, not a literal translation or a claim that
-the software has already achieved that dependability.
+For the project, it suggests a durable foundation that supports growth. This is
+an intended association, not a claim that the software has already achieved
+that dependability. Botanical language does not become architecture vocabulary.
 
-Use **Tesota** as the product name and `tesota` for its package and command
-identity. Keep ordinary engineering terms in code: tasks, tools, verification and
-evidence. The tree explains the name; it does not supply an architecture vocabulary.
+## Identity work still open
 
-## What it aims to become
-
-Tesota aims to support a repeatable development cycle in which:
-
-- Work stays within the requested scope, with visible progress and interruptions.
-- Verification is part of implementation, and detected failures lead to correction.
-- Evidence refers to the code actually checked; later edits do not inherit an old pass.
-- The result makes its changes, checks, observed consumption and limitations clear.
-- Human acceptance remains a separate decision from model completion or passing checks.
-
-Its first proving ground is Tesota itself: a known usable version should help
-produce a small improvement to the next version, verify it and present it for
-acceptance. This is a concrete way to test the development cycle. The broader
-purpose is helping developers build and maintain software.
-
-Growth should follow actual use. A new capability earns its place by solving an
-observed problem while preserving the usable development cycle. The first measure
-of success is an accepted change supported by applicable evidence, with the
-required human intervention, elapsed time and observed consumption made visible.
-Feature count alone does not establish usefulness.
-
-## Its relationship to Kiln and Pi
-
-Tesota carries forward the original ambition to use an agent to help develop
-itself. [Kiln](references/kiln.md) supplies history, lessons and selected reference
-implementations. The [reconstruction decision](decisions/001-start-tesota.md)
-explains why work moved to a smaller incremental foundation.
-
-Pi supplies engine capabilities behind an integration boundary. Tesota owns the
-development experience and the meaning of its verification, evidence and task
-acceptance. Its identity is independent of the engine or model selected for an
-experiment. The [Pi decision](decisions/002-use-pi.md) records the current technical
-choice and its limits.
+Final visual identity, domain selection and social handles remain open.
+Professional trademark clearance has not been completed, so current use must
+not imply exclusive legal rights to the name.

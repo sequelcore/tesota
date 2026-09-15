@@ -1,7 +1,6 @@
 import { homedir } from "node:os";
-import { relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { realpath } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 import { conversationInputSchema, retainedConversationRequest, type AnswerTurn, type ClarificationTurn,
@@ -68,10 +67,8 @@ export function formatConversationTurn(turn: CompletedConversationTurn): string 
     `Baseline: ${turn.baseline}\nAuthority: none; nothing changed.\n`;
 }
 
-async function liveSource(): Promise<string | null> {
-  const source = await realpath(runRepositoryGit(process.cwd(), ["rev-parse", "--show-toplevel"]).trim());
-  const packageRoot = await realpath(fileURLToPath(new URL("..", import.meta.url)));
-  return relative(packageRoot, source) === "" ? source : null;
+async function liveSource(): Promise<string> {
+  return realpath(runRepositoryGit(process.cwd(), ["rev-parse", "--show-toplevel"]).trim());
 }
 
 export type ConversationCommandResult =
@@ -95,10 +92,6 @@ Promise<ConversationCommandResult> {
   try {
     if (cancellation.signal.aborted) throw new DOMException("cancelled", "AbortError");
     const source = await liveSource();
-    if (source === null) {
-      writeError("Live repository discovery currently supports only the Tesota repository root.\n");
-      return { status: "unavailable", exitCode: 2, reason: "unavailable" };
-    }
     if (cancellation.signal.aborted) throw new DOMException("cancelled", "AbortError");
     const models = await storedCodexModels(new CodexCredentials(), cancellation.signal);
     const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);

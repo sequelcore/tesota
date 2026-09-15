@@ -41,13 +41,8 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota candidate clean\n" +
     "       tesota candidate abandon <candidate-id|candidate-directory>\n" +
     "       tesota isolation qualify\n" +
-    "       tesota task prepare <candidate-directory>\n" +
-    "       tesota task check <candidate-directory>\n" +
     "       tesota task propose <request>\n" +
     "       tesota task start <proposal-id>\n" +
-    "       tesota task run [task-id]\n" +
-    "       tesota task recover <candidate-id|candidate-directory>\n" +
-    "       tesota task run coding-agent\n" +
     "       tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>\n" +
     "       tesota task review <candidate-id|candidate-directory>\n" +
     "       tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>\n" +
@@ -56,7 +51,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
   );
 });
 
-it.runIf(process.platform === "win32")("reports an unsupported Git repository before inference", () => {
+it.runIf(process.platform === "win32")("treats a repository without a committed baseline as unavailable", () => {
   const foreignRepository = mkdtempSync(join(tmpdir(), "tesota-cli-foreign-"));
   try {
     const initialized = spawnSync("git", ["init", "--quiet"], {
@@ -64,16 +59,16 @@ it.runIf(process.platform === "win32")("reports an unsupported Git repository be
     });
     expect(initialized.status).toBe(0);
     const result = run(["task", "propose", "Explain this repository"], foreignRepository);
-    expect(result.status).toBe(2);
+    expect(result.status).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toBe("Live repository discovery currently supports only the Tesota repository root.\n");
+    expect(result.stderr).toBe("Repository discovery unavailable or failed; nothing changed and no authority was created.\n");
   } finally {
     rmSync(foreignRepository, { recursive: true, force: true });
   }
 });
 
 it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["task", "run", "gentle-review"],
-  ["task", "propose"]])(
+  ["task", "propose"], ["task", "run", "unregistered"], ["task", "recover", "missing-candidate"]])(
   "rejects invalid compiled CLI arguments %j",
   (...args) => {
     const result = run(args);
@@ -82,17 +77,3 @@ it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["t
     expect(result.stderr).toBe("Invalid arguments. Use tesota --help.\n");
   },
 );
-
-it("rejects an unregistered task before candidate preparation", () => {
-  const result = run(["task", "run", "unregistered"]);
-  expect(result.status).toBe(2);
-  expect(result.stdout).toBe("");
-  expect(result.stderr).toBe("Unknown task id.\n");
-});
-
-it("reports unavailable task recovery without treating it as a task ID", () => {
-  const result = run(["task", "recover", "missing-candidate"]);
-  expect(result.status).toBe(2);
-  expect(result.stdout).toBe("");
-  expect(result.stderr).toBe("Task recovery unavailable. No predecessor state was changed.\n");
-});

@@ -32,12 +32,9 @@ function approved(answer: string): boolean { return /^(?:y|yes)$/iu.test(answer.
 function ignoreProgress(_progress: TaskStartProgress): void {}
 
 function proposalCard(grant: ProposalRunGrant): string {
-  const evidence = grant.kind === "proposal-code"
-    ? "Automatic evidence: scope integrity and the pinned pi-result-consistency behavior check."
-    : "Automatic evidence: scope integrity only. The repository check will not run in this first slice.";
   return `Proposed task\nObjective: ${grant.objective}\nWrite: ${grant.writeFiles.join(", ")}\n` +
     `Read: ${grant.readFiles.join(", ")}\nBaseline: ${grant.baseline}\n` +
-    evidence + "\n";
+    "Automatic evidence: scope integrity. Outcome correctness requires human review.\n";
 }
 
 async function append(file: Awaited<ReturnType<typeof open>>, value: object): Promise<void> {

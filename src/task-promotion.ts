@@ -3,7 +3,7 @@ import { lstat, open, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { inspectPromotionSource, readCandidateBaselineFiles } from "./candidate-checkout.js";
 import { inspectCandidateTask, taskWriteSetSha256 } from "./candidate-task.js";
-import { CANDIDATE_TASK_LIMITS } from "./candidate-task-definition.js";
+import { TASK_LIMITS } from "./task-contract.js";
 import { reviewTask } from "./task-review.js";
 
 interface CapturedFile { readonly bytes: Buffer; readonly mode: number }
@@ -18,19 +18,19 @@ interface PromotionFile {
 async function capture(path: string): Promise<CapturedFile> {
   const metadata = await lstat(path);
   if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 ||
-      metadata.size > CANDIDATE_TASK_LIMITS.fileBytes || relative(path, await realpath(path)) !== "") {
+      metadata.size > TASK_LIMITS.fileBytes || relative(path, await realpath(path)) !== "") {
     throw new Error("Promotion file unavailable");
   }
   const file = await open(path, "r");
   try {
-    const bytes = Buffer.alloc(CANDIDATE_TASK_LIMITS.fileBytes + 1);
+    const bytes = Buffer.alloc(TASK_LIMITS.fileBytes + 1);
     let length = 0;
     while (length < bytes.length) {
       const chunk = await file.read(bytes, length, bytes.length - length, null);
       if (chunk.bytesRead === 0) break;
       length += chunk.bytesRead;
     }
-    if (length > CANDIDATE_TASK_LIMITS.fileBytes) throw new Error("Promotion file exceeds bound");
+    if (length > TASK_LIMITS.fileBytes) throw new Error("Promotion file exceeds bound");
     return { bytes: bytes.subarray(0, length), mode: metadata.mode & 0o777 };
   } finally { await file.close(); }
 }
