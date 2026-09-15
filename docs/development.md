@@ -11,6 +11,7 @@ Run commands from the repository root.
 | --- | --- |
 | `bun run build` | Compile source to `dist/` |
 | `bun run typecheck` | Check source and test types |
+| `bun run test:fast` | Run deterministic in-worker tests for quick feedback; it launches no external process |
 | `bun run test` | Build, then run core and filesystem-heavy Vitest groups in isolated processes |
 | `bun run lint` | Check source and tests; no fixes, warnings rejected |
 | `bun run check` | Run the complete repository gate |
@@ -87,6 +88,11 @@ after checking for conflicting source work.
 arguments print a diagnostic on stderr and exit 2.
 
 Tests exercise real Oxlint, controlled Pi boundaries and compiled CLI processes.
+Use `test:fast` while changing pure orchestration or contracts, then run the
+smallest affected process-backed test file. The complete `test` command remains
+the qualification gate: new tests are excluded from the fast set until their
+implementation is explicitly confirmed not to launch Git, a compiler, a CLI, a
+verifier, a provider or another operating-system process.
 The repository lint configuration applies Oxlint's classic cyclomatic-complexity
 limit of 20 to every function in `src` and `tests`; it has no baseline or
 file-level exceptions and remains separate from the candidate verifier profile.

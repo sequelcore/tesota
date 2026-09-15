@@ -216,13 +216,23 @@ function validateTree(checkout: string, baseline: string): void {
   }
 }
 
-async function independentCheckout(directory: string): Promise<string> {
+interface IndependentCheckout {
+  readonly checkout: string;
+  readonly head: string;
+}
+
+async function independentCheckout(directory: string): Promise<IndependentCheckout> {
   const checkout = await plainDirectory(join(directory, "repo"));
   const dotGit = await plainDirectory(join(checkout, ".git"));
-  if (relative(checkout, git(checkout, ["rev-parse", "--show-toplevel"]).trim()) !== "" ||
-      relative(dotGit, git(checkout, ["rev-parse", "--absolute-git-dir"]).trim()) !== "" ||
-      resolve(checkout, git(checkout, ["rev-parse", "--git-common-dir"]).trim()) !== dotGit ||
-      git(checkout, ["remote"]).trim() !== "") throw new Error("Candidate Git storage is not independent");
+  const identity = git(checkout, ["rev-parse", "--show-toplevel", "--absolute-git-dir", "--git-common-dir",
+    "HEAD^{commit}"]).trimEnd().split(/\r?\n/u);
+  const [topLevel, gitDirectory, commonDirectory, head] = identity;
+  if (identity.length !== 4 || topLevel === undefined || gitDirectory === undefined ||
+      commonDirectory === undefined || head === undefined || relative(checkout, topLevel) !== "" ||
+      relative(dotGit, gitDirectory) !== "" || resolve(checkout, commonDirectory) !== dotGit ||
+      !isGitObjectId(head) || git(checkout, ["remote"]).trim() !== "") {
+    throw new Error("Candidate Git storage is not independent");
+  }
   for (const file of ["objects/info/alternates", "objects/info/http-alternates"]) {
     try { await lstat(join(dotGit, file)); } catch (error) {
       if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") continue;
@@ -230,7 +240,44 @@ async function independentCheckout(directory: string): Promise<string> {
     }
     throw new Error("Candidate object storage is shared");
   }
-  return checkout;
+  return { checkout, head };
+}
+
+function normalizedTrackedStatus(code: string): string {
+  const index = code[0];
+  const worktree = code[1];
+  const status = index !== undefined && index !== " " ? index : worktree;
+  if (status === undefined || status === " " || status === "?" || status === "!") {
+    throw new Error("Invalid Git status report");
+  }
+  return status;
+}
+
+function parseWorkingStatus(value: string, tracked: boolean): { status: string; path: string }[] {
+  const changes: { status: string; path: string }[] = [];
+  for (const entry of value.split("\0").filter(Boolean)) {
+    if (entry.length < 4 || entry[2] !== " ") throw new Error("Invalid Git status report");
+    const code = entry.slice(0, 2);
+    const path = entry.slice(3);
+    if (code === "??") changes.push({ status: "?", path });
+    else if (code === "!!") changes.push({ status: "!", path });
+    else if (tracked) changes.push({ status: normalizedTrackedStatus(code), path });
+  }
+  return changes;
+}
+
+function parseBaselineChanges(value: string): { status: string; path: string }[] {
+  const fields = value.split("\0");
+  fields.pop();
+  if (fields.length % 2 !== 0) throw new Error("Invalid Git change report");
+  const changes: { status: string; path: string }[] = [];
+  for (let index = 0; index < fields.length; index += 2) {
+    const status = fields[index];
+    const path = fields[index + 1];
+    if (status === undefined || path === undefined) throw new Error("Invalid Git change report");
+    changes.push({ status, path });
+  }
+  return changes;
 }
 
 async function prepareCandidatesRoot(path: string): Promise<string> {
@@ -271,9 +318,8 @@ async function cloneCandidate(
     validateTree(checkout, baseline);
     git(checkout, ["checkout", "--detach", baseline, "--"]);
     git(checkout, ["remote", "remove", "origin"]);
-    await independentCheckout(directory);
-    if (git(checkout, ["rev-parse", "HEAD"]).trim() !== baseline ||
-        git(checkout, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length !== 0) {
+    const identity = await independentCheckout(directory);
+    if (identity.head !== baseline || git(checkout, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length !== 0) {
       throw new Error("Candidate checkout mismatch");
     }
     await saveRecord(directory, { ...record, state: "ready" });
@@ -287,8 +333,13 @@ async function cloneCandidate(
 /** Clone committed HEAD only; preserve dirty source files, refs, config and worktree state. */
 export async function createCandidateCheckout(sourceDirectory: string,
   candidatesRoot: string = join(homedir(), ".tesota", "candidates")): Promise<CandidateCheckout> {
-  const source = await realpath(git(resolve(sourceDirectory), ["rev-parse", "--show-toplevel"]).trim());
-  const baseline = git(source, ["rev-parse", "--verify", "HEAD^{commit}"]).trim();
+  const identity = git(resolve(sourceDirectory), ["rev-parse", "--show-toplevel", "HEAD^{commit}"])
+    .trimEnd().split(/\r?\n/u);
+  const [topLevel, baseline] = identity;
+  if (identity.length !== 2 || topLevel === undefined || baseline === undefined) {
+    throw new Error("Invalid source identity");
+  }
+  const source = await realpath(topLevel);
   if (!isGitObjectId(baseline)) throw new Error("Invalid source revision");
   validateTree(source, baseline);
   const sourceDirty = git(source, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length !== 0;
@@ -315,25 +366,20 @@ export async function inspectCandidateCheckout(path: string, candidatesRoot?: st
   const directory = await plainDirectory(await resolveCandidateReference(path, candidatesRoot));
   const record = await readRecord(directory);
   if (record.state !== "ready") throw new Error(`Candidate is ${record.state}; retained at ${directory}`);
-  const checkout = await independentCheckout(directory);
+  const identity = await independentCheckout(directory);
+  const { checkout, head } = identity;
   const root = dirname(directory);
   if (contains(record.source, root) || contains(root, record.source) ||
       contains(record.source, checkout) || contains(checkout, record.source)) throw new Error("Candidate overlaps source");
-  const head = git(checkout, ["rev-parse", "--verify", "HEAD^{commit}"]).trim();
-  if (!isGitObjectId(head)) throw new Error("Invalid candidate revision");
-  const fields = git(checkout, ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-status", "-z", record.baseline, "--"]).split("\0");
-  fields.pop();
-  const changes: { status: string; path: string }[] = [];
-  for (let index = 0; index < fields.length; index += 2) {
-    const status = fields[index];
-    const changedPath = fields[index + 1];
-    if (status === undefined || changedPath === undefined) throw new Error("Invalid Git change report");
-    changes.push({ status, path: changedPath });
-  }
-  for (const name of git(checkout, ["ls-files", "--others", "--exclude-standard", "-z"]).split("\0").filter(Boolean)) changes.push({ status: "?", path: name });
-  for (const name of git(checkout, ["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"]).split("\0").filter(Boolean)) changes.push({ status: "!", path: name });
+  const status = git(checkout, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching",
+    "--no-renames"]);
+  const headChanged = head !== record.baseline;
+  const changes = headChanged
+    ? [...parseBaselineChanges(git(checkout, ["diff", "--no-ext-diff", "--no-textconv", "--no-renames",
+      "--name-status", "-z", record.baseline, "--"])), ...parseWorkingStatus(status, false)]
+    : parseWorkingStatus(status, true);
   return { directory, checkout, baseline: record.baseline, sourceDirty: record.sourceDirty,
-    provenance: "recorded_untrusted", head, headChanged: head !== record.baseline, changes };
+    provenance: "recorded_untrusted", head, headChanged, changes };
 }
 
 /** Bind an explicitly selected source to the candidate and reject target revision/index drift. */

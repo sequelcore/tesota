@@ -14,6 +14,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun run build && bun run test:run",
+    "test:fast": "vitest run --config tests/vitest.fast.config.ts",
     "test:run": "vitest run tests --exclude tests/candidate-checkout.test.ts --exclude tests/candidate-task.test.ts --maxWorkers=1 --no-file-parallelism --testTimeout=10000 && vitest run tests/candidate-checkout.test.ts --maxWorkers=1 --no-file-parallelism --testTimeout=10000 && vitest run tests/candidate-task.test.ts --maxWorkers=1 --no-file-parallelism --testTimeout=10000",
     "lint": "oxlint --config .oxlintrc.json --deny-warnings src tests",
     "formal:check": "lsc check --backend=dafny src/verification/invocation-admission.ts",

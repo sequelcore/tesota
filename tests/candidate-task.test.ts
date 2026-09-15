@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
 import { CandidateTask, checkCandidateTask } from "../src/candidate-task.js";
 import { decideTask, reviewTask } from "../src/task-review.js";
@@ -11,8 +11,9 @@ import { promoteTask } from "../src/task-promotion.js";
 import type { ProposalRunGrant } from "../src/proposal-admission.js";
 import { TASK_LIMITS } from "../src/task-contract.js";
 
-const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+let sharedRoot = "";
+let sharedSource = "";
+let sharedCandidates = "";
 
 function git(cwd: string, args: readonly string[]): string {
   const result = spawnSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args],
@@ -21,9 +22,8 @@ function git(cwd: string, args: readonly string[]): string {
   return result.stdout.trim();
 }
 
-async function fixture() {
+async function createSource(): Promise<{ root: string; source: string; candidates: string }> {
   const root = await mkdtemp(join(tmpdir(), "tesota-generic-task-test-"));
-  roots.push(root);
   const source = join(root, "source");
   await mkdir(join(source, "docs"), { recursive: true });
   await writeFile(join(source, "docs", "guide.md"), "# Guide\n\nOld text.\n");
@@ -32,7 +32,22 @@ async function fixture() {
   git(source, ["init", "--quiet"]); git(source, ["add", "."]);
   git(source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit",
     "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
-  const candidate = await createCandidateCheckout(source, join(root, "candidates"));
+  return { root, source, candidates: join(root, "candidates") };
+}
+
+beforeAll(async () => {
+  const created = await createSource();
+  sharedRoot = created.root; sharedSource = created.source; sharedCandidates = created.candidates;
+});
+afterAll(async () => {
+  if (sharedRoot !== "") await rm(sharedRoot, { recursive: true, force: true });
+});
+
+async function fixture(isolatedSource = false) {
+  const owned = isolatedSource ? await createSource() : undefined;
+  const source = owned?.source ?? sharedSource;
+  const candidates = owned?.candidates ?? sharedCandidates;
+  const candidate = await createCandidateCheckout(source, candidates);
   const grant: ProposalRunGrant = {
     kind: "documentation-change", proposalId: "b0e37d7c-f19f-4c0c-915c-e52aafea93e7",
     proposalSha256: "a".repeat(64), source, baseline: candidate.baseline,
@@ -41,7 +56,9 @@ async function fixture() {
     declaredChecks: ["scope-integrity"],
     verification: { scopeIntegrity: "application_owned", outcome: "human_review_required" },
   };
-  return { ...candidate, source, grant };
+  return { ...candidate, source, grant, cleanup: async () => {
+    if (owned !== undefined) await rm(owned.root, { recursive: true, force: true });
+  } };
 }
 
 it("derives the bounded tool contract from an approved generic grant", async () => {
@@ -101,24 +118,26 @@ it("rejects grant and persisted-plan tampering", async () => {
 });
 
 it("promotes only the exact accepted candidate bytes while preserving unrelated source state", async () => {
-  const current = await fixture();
-  const task = await CandidateTask.prepare(current.directory, current.grant);
-  const input = await task.read({ path: "docs/guide.md" });
-  await task.check();
-  await task.replace({ path: "docs/guide.md", expectedSha256: input.sha256, content: "# Guide\n\nClear text.\n" });
-  await task.check();
-  task.close();
-  const review = await reviewTask(current.directory);
-  await decideTask(current.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
-  const index = await readFile(join(current.source, ".git", "index"));
-  await writeFile(join(current.source, "README.md"), "operator work\n");
+  const current = await fixture(true);
+  try {
+    const task = await CandidateTask.prepare(current.directory, current.grant);
+    const input = await task.read({ path: "docs/guide.md" });
+    await task.check();
+    await task.replace({ path: "docs/guide.md", expectedSha256: input.sha256, content: "# Guide\n\nClear text.\n" });
+    await task.check();
+    task.close();
+    const review = await reviewTask(current.directory);
+    await decideTask(current.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
+    const index = await readFile(join(current.source, ".git", "index"));
+    await writeFile(join(current.source, "README.md"), "operator work\n");
 
-  const result = await promoteTask(current.directory, current.source, review.reviewSha256);
+    const result = await promoteTask(current.directory, current.source, review.reviewSha256);
 
-  expect(result).toMatchObject({ status: "applied", files: [{ path: "docs/guide.md" }] });
-  expect(await readFile(join(current.source, "docs", "guide.md"), "utf8")).toBe("# Guide\n\nClear text.\n");
-  expect(await readFile(join(current.source, "README.md"), "utf8")).toBe("operator work\n");
-  expect(await readFile(join(current.source, ".git", "index"))).toEqual(index);
-  expect(createHash("sha256").update("# Guide\n\nClear text.\n").digest("hex"))
-    .toBe(result.files[0]?.sourceSha256);
+    expect(result).toMatchObject({ status: "applied", files: [{ path: "docs/guide.md" }] });
+    expect(await readFile(join(current.source, "docs", "guide.md"), "utf8")).toBe("# Guide\n\nClear text.\n");
+    expect(await readFile(join(current.source, "README.md"), "utf8")).toBe("operator work\n");
+    expect(await readFile(join(current.source, ".git", "index"))).toEqual(index);
+    expect(createHash("sha256").update("# Guide\n\nClear text.\n").digest("hex"))
+      .toBe(result.files[0]?.sourceSha256);
+  } finally { await current.cleanup(); }
 }, 60_000);

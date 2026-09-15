@@ -41,6 +41,15 @@ function splitNull(value: string): string[] {
   return value.split("\0").filter((path) => path.length > 0);
 }
 
+function parseDirtyPaths(value: string): string[] {
+  const paths: string[] = [];
+  for (const entry of splitNull(value)) {
+    if (entry.length < 4 || entry[2] !== " ") throw new Error("Repository status invalid");
+    paths.push(entry.slice(3));
+  }
+  return paths;
+}
+
 function containsBinaryControls(content: string): boolean {
   for (const character of content) {
     const code = character.codePointAt(0) ?? 0;
@@ -203,15 +212,17 @@ class GitRepositoryDiscovery implements RepositoryDiscovery {
 
 /** Observe only committed blobs; dirty source bytes are named but never read into discovery. */
 export async function openRepositoryDiscovery(sourceDirectory: string): Promise<RepositoryDiscovery> {
-  const source = await realpath(runRepositoryGit(resolve(sourceDirectory), ["rev-parse", "--show-toplevel"]).trim());
+  const identity = runRepositoryGit(resolve(sourceDirectory), ["rev-parse", "--show-toplevel", "HEAD^{commit}"])
+    .trimEnd().split(/\r?\n/u);
+  const [topLevel, baseline] = identity;
+  if (identity.length !== 2 || topLevel === undefined || baseline === undefined) {
+    throw new Error("Repository identity invalid");
+  }
+  const source = await realpath(topLevel);
   assertNoRepositoryGitPrograms(source);
-  const baseline = runRepositoryGit(source, ["rev-parse", "--verify", "HEAD^{commit}"]).trim();
   if (!isGitObjectId(baseline)) throw new Error("Repository baseline invalid");
   const files = parseTree(runRepositoryGit(source, ["ls-tree", "-r", "-l", "-z", "--full-tree", baseline]));
-  const dirty = new Set([
-    ...splitNull(runRepositoryGit(source, ["diff", "--no-renames", "--name-only", "-z", baseline, "--"])),
-    ...splitNull(runRepositoryGit(source, ["diff", "--cached", "--no-renames", "--name-only", "-z", baseline, "--"])),
-    ...splitNull(runRepositoryGit(source, ["ls-files", "--others", "--exclude-standard", "-z"])),
-  ].filter((path) => validProposalPath(path) && !sensitivePath(path)));
+  const status = runRepositoryGit(source, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames"]);
+  const dirty = new Set(parseDirtyPaths(status).filter((path) => validProposalPath(path) && !sensitivePath(path)));
   return new GitRepositoryDiscovery(source, baseline, files, [...dirty].sort());
 }

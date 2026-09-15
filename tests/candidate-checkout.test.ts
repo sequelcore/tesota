@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, symlink, utimes } fro
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { abandonCandidate, cleanCandidateCheckouts, createCandidateCheckout, createCandidateSuccessor,
   inspectCandidateCheckout, listCandidateCheckouts } from "../src/candidate-checkout.js";
 
@@ -15,33 +15,46 @@ vi.mock("node:child_process", async (importOriginal) => {
 const originalChild = await vi.importActual<typeof childProcess>("node:child_process");
 
 const roots: string[] = [];
+let templateRoot = "";
+let templateSource = "";
+let templateBaseline = "";
 afterEach(async () => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
   vi.mocked(spawnSync).mockImplementation(originalChild.spawnSync);
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+afterAll(async () => {
+  if (templateRoot !== "") await rm(templateRoot, { recursive: true, force: true });
+});
 
 function git(cwd: string, args: string[], input?: string): string {
-  const result = spawnSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args],
+  const result = spawnSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+    "-c", "core.autocrlf=false", "-c", "user.name=Tesota test",
+    "-c", "user.email=test@example.invalid", ...args],
     { cwd, input, encoding: "utf8", windowsHide: true, timeout: 10_000, maxBuffer: 1024 * 1024 });
   if (result.status !== 0 || result.error !== undefined) throw new Error(result.stderr || "Test Git failed");
   return result.stdout;
 }
 
+beforeAll(async () => {
+  templateRoot = await mkdtemp(join(tmpdir(), "tesota-checkout-template-"));
+  templateSource = join(templateRoot, "source");
+  await mkdir(templateSource);
+  git(templateSource, ["init", "--quiet"]);
+  await writeFile(join(templateSource, "source.ts"), "export const value = 1;\n");
+  await writeFile(join(templateSource, ".gitignore"), "ignored/\n");
+  git(templateSource, ["add", "--", "source.ts", ".gitignore"]);
+  git(templateSource, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
+  templateBaseline = git(templateSource, ["rev-parse", "HEAD"]).trim();
+});
+
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "tesota-checkout-test-"));
   roots.push(root);
   const source = join(root, "source with spaces");
-  await mkdir(source);
-  git(source, ["init", "--quiet"]);
-  git(source, ["config", "user.name", "Tesota test"]);
-  git(source, ["config", "user.email", "test@example.invalid"]);
-  await writeFile(join(source, "source.ts"), "export const value = 1;\n");
-  await writeFile(join(source, ".gitignore"), "ignored/\n");
-  git(source, ["add", "--", "source.ts", ".gitignore"]);
-  git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
-  return { root, source, candidates: join(root, "candidates"), baseline: git(source, ["rev-parse", "HEAD"]).trim() };
+  git(templateSource, ["clone", "--quiet", "--no-local", "--no-hardlinks", "--", templateSource, source]);
+  return { root, source, candidates: join(root, "candidates"), baseline: templateBaseline };
 }
 
 it("creates an independent detached checkout and preserves dirty source files, refs, index and config", async () => {
@@ -71,6 +84,19 @@ it("creates an independent detached checkout and preserves dirty source files, r
   expect(await readFile(join(source, "source.ts"), "utf8")).toBe("operator work\n");
   await rm(join(source, ".git"), { recursive: true, force: true });
   expect((await inspectCandidateCheckout(created.directory)).head).toBe(baseline);
+});
+
+it("inspects a clean candidate with one bounded Git snapshot", async () => {
+  const { source, candidates } = await fixture();
+  const created = await createCandidateCheckout(source, candidates);
+  vi.mocked(spawnSync).mockClear();
+
+  await expect(inspectCandidateCheckout(created.directory)).resolves.toMatchObject({
+    baseline: created.baseline, headChanged: false, changes: [],
+  });
+
+  const gitCalls = vi.mocked(spawnSync).mock.calls.filter(([command]) => command === "git");
+  expect(gitCalls).toHaveLength(3);
 });
 
 it("creates a clean successor from the predecessor baseline without inheriting candidate or newer source bytes", async () => {
@@ -280,14 +306,18 @@ it("resolves candidate IDs and records explicit abandonment", async () => {
   await expect(abandonCandidate(id, candidates)).rejects.toThrow("cannot be abandoned");
 });
 
-it.each([
-  { version: 99 }, { source: "relative" }, { baseline: "--option" }, { sourceDirty: "false" },
-  { authority: "accepted" }, { state: "accepted" },
-])("rejects malformed or extra metadata fields: %j", async (mutation) => {
+it("rejects every malformed or extra metadata field", async () => {
   const { source, candidates } = await fixture();
   const created = await createCandidateCheckout(source, candidates);
   const path = join(created.directory, "checkout.json");
   const record = JSON.parse(await readFile(path, "utf8"));
-  await writeFile(path, JSON.stringify({ ...record, ...mutation }));
-  await expect(inspectCandidateCheckout(created.directory)).rejects.toThrow("Invalid candidate record");
+  const mutations = [
+    { version: 99 }, { source: "relative" }, { baseline: "--option" }, { sourceDirty: "false" },
+    { authority: "accepted" }, { state: "accepted" },
+  ];
+  for (const mutation of mutations) {
+    await writeFile(path, JSON.stringify({ ...record, ...mutation }));
+    await expect(inspectCandidateCheckout(created.directory), JSON.stringify(mutation))
+      .rejects.toThrow("Invalid candidate record");
+  }
 });

@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall,
   type FauxResponseStep } from "@earendil-works/pi-ai";
 import { discoverConversationTurn, formatConversationTurn } from "../src/conversation-turn.js";
@@ -12,39 +12,51 @@ import { runPiDiscovery } from "../src/integrations/pi-discovery.js";
 import { admitTaskProposal } from "../src/proposal-admission.js";
 
 const roots: string[] = [];
+let templateRoot = "";
+let templateSource = "";
 afterEach(async () => {
   vi.useRealTimers();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
+afterAll(async () => {
+  if (templateRoot !== "") await rm(templateRoot, { recursive: true, force: true });
+});
 
 function git(cwd: string, args: readonly string[]): string {
-  const result = spawnSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", ...args], {
+  const result = spawnSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+    "-c", "core.autocrlf=false", "-c", "user.name=Tesota test",
+    "-c", "user.email=test@example.invalid", ...args], {
     cwd, encoding: "utf8", windowsHide: true, shell: false, timeout: 10_000, maxBuffer: 1024 * 1024,
   });
   if (result.status !== 0 || result.error !== undefined) throw new Error(result.stderr || "Fixture Git failed");
   return result.stdout;
 }
 
+beforeAll(async () => {
+  templateRoot = await mkdtemp(join(tmpdir(), "tesota-proposal-template-"));
+  templateSource = join(templateRoot, "source");
+  await mkdir(join(templateSource, "docs"), { recursive: true });
+  await mkdir(join(templateSource, "src", "integrations"), { recursive: true });
+  await mkdir(join(templateSource, "tests"), { recursive: true });
+  await writeFile(join(templateSource, "README.md"), "# Fixture\n\nOld task wording.\n");
+  await writeFile(join(templateSource, "docs", "identity.md"), "# Identity\n\nA bounded coding agent.\n");
+  await writeFile(join(templateSource, "package.json"), '{"name":"tesota","scripts":{"check":"bounded"}}\n');
+  await writeFile(join(templateSource, "bun.lock"), "fixture lock\n");
+  await writeFile(join(templateSource, "tests", "contract.test.ts"), "export const obligation = true;\n");
+  await writeFile(join(templateSource, "src", "integrations", "pi-task.ts"), "export const result = true;\n");
+  await writeFile(join(templateSource, "src", "command-isolation.ts"), "export const boundary = true;\n");
+  await writeFile(join(templateSource, "tests", "pi-task-evidence.test.ts"), "// Existing focused checks.\n");
+  await writeFile(join(templateSource, ".env"), "SYNTHETIC_PRIVATE=never-disclose\n");
+  git(templateSource, ["init", "--quiet"]);
+  git(templateSource, ["add", "."]);
+  git(templateSource, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
+});
+
 async function fixture(): Promise<{ readonly root: string; readonly source: string; readonly proposals: string }> {
   const root = await mkdtemp(join(tmpdir(), "tesota-proposal-test-"));
   roots.push(root);
   const source = join(root, "source with spaces");
-  await mkdir(join(source, "docs"), { recursive: true });
-  await mkdir(join(source, "src", "integrations"), { recursive: true });
-  await mkdir(join(source, "tests"), { recursive: true });
-  await writeFile(join(source, "README.md"), "# Fixture\n\nOld task wording.\n");
-  await writeFile(join(source, "docs", "identity.md"), "# Identity\n\nA bounded coding agent.\n");
-  await writeFile(join(source, "package.json"), '{"name":"tesota","scripts":{"check":"bounded"}}\n');
-  await writeFile(join(source, "bun.lock"), "fixture lock\n");
-  await writeFile(join(source, "tests", "contract.test.ts"), "export const obligation = true;\n");
-  await writeFile(join(source, "src", "integrations", "pi-task.ts"), "export const result = true;\n");
-  await writeFile(join(source, "src", "command-isolation.ts"), "export const boundary = true;\n");
-  await writeFile(join(source, "tests", "pi-task-evidence.test.ts"), "// Existing focused checks.\n");
-  await writeFile(join(source, ".env"), "SYNTHETIC_PRIVATE=never-disclose\n");
-  git(source, ["init", "--quiet"]);
-  git(source, ["add", "."]);
-  git(source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit",
-    "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
+  git(templateSource, ["clone", "--quiet", "--no-local", "--no-hardlinks", "--", templateSource, source]);
   return { root, source, proposals: join(root, "proposals") };
 }
 
