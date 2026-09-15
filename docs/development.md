@@ -40,6 +40,13 @@ With no arguments in a non-interactive process, or with
 `help`, `--help` or `-h`, it prints help (exit 0).
 `candidate create` and `candidate inspect <id|directory>` prepare and inspect
 [independent checkouts](candidates.md); they do not invoke a model.
+`candidate check typecheck <id|directory>` prepares the sole admitted repository
+check profile and requires explicit interactive approval. It never evaluates a
+model-controlled command: only the exact canonical declaration is accepted and
+Tesota invokes its fixed TypeScript argv inside the pinned, network-disabled,
+read-only container policy. This Windows development slice requires Docker
+Desktop, the pinned image already present locally and a matching TypeScript
+installation in the source repository. It performs no install or image pull.
 `isolation qualify` runs the same fixed probe in the installed Codex Windows
 sandbox and a pinned Docker container. It selects a backend only when every
 filesystem, synthetic-credential, network, descendant and cancellation control

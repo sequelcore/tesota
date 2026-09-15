@@ -20,6 +20,11 @@ export interface IsolationInvocation {
   readonly env: NodeJS.ProcessEnv;
 }
 
+export interface TypecheckIsolationPaths {
+  readonly candidate: string;
+  readonly nodeModules: string;
+}
+
 export interface IsolationProbeReport {
   readonly sourceWrite: boolean;
   readonly siblingWriteDenied: boolean;
@@ -71,6 +76,37 @@ export function containerRunPolicyArgs(name: string): readonly string[] {
 export function containerRunPolicySha256(): string {
   const args = containerRunPolicyArgs("<runtime-name>");
   return createHash("sha256").update(JSON.stringify({ image: CONTAINER_IMAGE, args })).digest("hex");
+}
+
+function typecheckContainerArguments(paths: TypecheckIsolationPaths, name: string): readonly string[] {
+  return [
+    ...CONTAINER_ENGINE_ARGS, "run", "--name", name, "--rm", "--pull=never", "--network=none", "--read-only",
+    "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65534:65534", "--pids-limit=32",
+    "--memory=512m", "--memory-swap=512m", "--cpus=1", "--log-driver=none",
+    "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=32m",
+    "--mount", dockerMount(paths.candidate, "/workspace", true),
+    "--mount", dockerMount(paths.nodeModules, "/workspace/node_modules", true),
+    "--workdir", "/workspace", "--entrypoint=node", CONTAINER_IMAGE,
+    "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
+    "--pretty", "false", "-p", "tsconfig.json",
+  ];
+}
+
+/** Stable identity for the concrete repository typecheck containment policy. */
+export function typecheckContainerPolicySha256(): string {
+  return createHash("sha256").update(JSON.stringify(typecheckContainerArguments({
+    candidate: "<candidate>", nodeModules: "<node-modules>",
+  }, "<runtime-name>"))).digest("hex");
+}
+
+export function buildTypecheckContainerInvocation(paths: TypecheckIsolationPaths,
+  executable: string, name: string): IsolationInvocation {
+  return {
+    command: executable,
+    args: typecheckContainerArguments(paths, name),
+    cwd: paths.candidate,
+    env: safeHostEnvironment(),
+  };
 }
 
 export function buildContainerInvocation(

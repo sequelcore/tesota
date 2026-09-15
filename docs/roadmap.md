@@ -45,7 +45,7 @@ repository changes rather than representative usefulness. When live evaluation
 resumes, it must include refusals and failures; a small pilot will report counts
 and causes rather than a reliability percentage.
 
-### 2. Approved repository check profiles
+### 2. Approved repository check profiles — implementation active
 
 Admit one repository-owned build, typecheck or targeted-test command with exact
 executable, arguments, working directory, configuration, relevant inputs,
@@ -54,6 +54,19 @@ environment policy, timeout and settlement semantics.
 Explicitly unsupported in this increment: arbitrary manifests, installs,
 automatic network access, model-selected replacement checks and silent fallback
 to ambient executables.
+
+The first concrete profile now admits only the exact repository declaration
+`tsc --noEmit -p tsconfig.json`. After one-use local approval, Tesota invokes
+the matching installed TypeScript compiler with fixed arguments inside the
+pinned container policy. Candidate bytes, package configuration, tsconfig,
+lockfile, compiler installation, Docker executable, policy and limits are bound
+and re-observed. Check findings, operational failure, timeout, cancellation,
+unavailability and unconfirmed cleanup remain distinct.
+
+This does not complete the gate. Synthetic integration and settlement tests are
+retained in normal checks; live qualification remains deferred until the
+general code-task surface can exercise representative work. Build and targeted
+test profiles, including their no-tests semantics, are also still absent.
 
 Exit evidence: real positive, failing, missing-tool, no-tests, fatal-exit,
 timeout, cancellation, surviving-descendant and source-drift cases on each

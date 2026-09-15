@@ -4,7 +4,9 @@ import {
   assessIsolationProbe,
   buildCodexSandboxInvocation,
   buildContainerInvocation,
+  buildTypecheckContainerInvocation,
   containerRunPolicySha256,
+  typecheckContainerPolicySha256,
   type IsolationPaths,
   type IsolationProbeReport,
 } from "../src/command-isolation.js";
@@ -28,6 +30,24 @@ describe("command isolation qualification", () => {
   it("gives the shared container restrictions a stable evidence identity", () => {
     expect(containerRunPolicySha256()).toMatch(/^[a-f\d]{64}$/u);
     expect(containerRunPolicySha256()).toBe(containerRunPolicySha256());
+  });
+
+  it("isolates the repository typecheck from writes, network and host credentials", () => {
+    const invocation = buildTypecheckContainerInvocation({
+      candidate: "C:\\fixture\\candidate",
+      nodeModules: "C:\\fixture\\source\\node_modules",
+    }, "C:\\Program Files\\Docker\\docker.exe", "tesota-typecheck-fixed");
+    const serialized = invocation.args.join("\n");
+
+    expect(invocation.command).toBe("C:\\Program Files\\Docker\\docker.exe");
+    expect(serialized).toContain("--network=none");
+    expect(serialized).toContain("target=/workspace,readonly");
+    expect(serialized).toContain("target=/workspace/node_modules,readonly");
+    expect(serialized).toContain("/workspace/node_modules/typescript/bin/tsc");
+    expect(serialized).toContain("--noEmit\n--incremental\nfalse\n--pretty\nfalse\n-p\ntsconfig.json");
+    expect(serialized).not.toContain("TESOTA_QUALIFICATION_SECRET");
+    expect(typecheckContainerPolicySha256()).toMatch(/^[a-f\d]{64}$/u);
+    expect(typecheckContainerPolicySha256()).toBe(typecheckContainerPolicySha256());
   });
 
   it("rejects a reachable network control when its client cleanup is unconfirmed", () => {

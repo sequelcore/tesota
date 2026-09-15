@@ -8,6 +8,7 @@ Usage: tesota [--help | -h | help]
        tesota auth <login|status|logout>
        tesota candidate create
        tesota candidate inspect <candidate-id|candidate-directory>
+       tesota candidate check typecheck <candidate-id|candidate-directory>
        tesota candidate list
        tesota candidate clean
        tesota candidate abandon <candidate-id|candidate-directory>
@@ -96,6 +97,10 @@ if (args.length === 0 && process.stdin.isTTY === true && process.stdout.isTTY ==
     process.stderr.write(error instanceof Error && error.message.startsWith("Candidate ") ? `${error.message}\n` : "Candidate operation failed.\n");
     process.exitCode = 1;
   }
+} else if (args.length === 4 && args[0] === "candidate" && args[1] === "check" && args[2] === "typecheck" &&
+    args[3] !== undefined) {
+  const { runRepositoryTypecheckCommand } = await import("./repository-typecheck-command.js");
+  process.exit(await runRepositoryTypecheckCommand(args[3]));
 } else if (args.length === 2 && args[0] === "verify" && args[1] !== undefined) {
   const result = await runOxlint(configuredOxlint(process.cwd(), process.execPath), args[1]);
   process.stdout.write(`${JSON.stringify(result)}\n`);

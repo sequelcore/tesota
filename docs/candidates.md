@@ -22,6 +22,24 @@ To inspect one, use the directory returned by creation:
 bun start candidate inspect <candidate-id|candidate-directory>
 ```
 
+One concrete repository check can be prepared against a candidate:
+
+```sh
+tesota candidate check typecheck <candidate-id|candidate-directory>
+```
+
+The command accepts only a repository whose committed `package.json` declares
+the exact `tsc --noEmit -p tsconfig.json` typecheck and whose installed
+TypeScript version matches that declaration. It shows the candidate,
+configuration, lockfile, compiler installation, Docker executable, container
+policy and limits before asking for approval. Declining starts no process.
+
+Approval is one-use and in-memory. It runs Tesota's fixed compiler argv rather
+than executing the package script or a shell. The candidate and the source
+repository's `node_modules` are mounted read-only into the pinned container;
+network is disabled and host credentials are not mounted. The result is printed
+as issued evidence but is not acceptance or promotion authority.
+
 You normally do not need to open the candidate folder. List candidates by their
 stable ID and lifecycle status:
 

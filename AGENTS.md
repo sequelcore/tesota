@@ -2,7 +2,8 @@
 
 This pre-release package provides a CLI, development checks, bounded Oxlint
 verification, durable evidence recovery, independent candidate checkouts and
-one proposal-backed documentation task with bounded live execution, local review
+one approved contained repository typecheck profile, one proposal-backed
+documentation task with bounded live execution, local review
 decisions and guarded exact-file promotion.
 Separate Pi compatibility and live
 authentication, fixed verification-tool and isolated candidate-correction experiments

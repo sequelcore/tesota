@@ -44,6 +44,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota auth <login|status|logout>\n" +
     "       tesota candidate create\n" +
     "       tesota candidate inspect <candidate-id|candidate-directory>\n" +
+    "       tesota candidate check typecheck <candidate-id|candidate-directory>\n" +
     "       tesota candidate list\n" +
     "       tesota candidate clean\n" +
     "       tesota candidate abandon <candidate-id|candidate-directory>\n" +
@@ -57,6 +58,13 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota task promote <candidate-id|candidate-directory> <review-sha256>\n\n" +
     "Runs bounded verification and scoped repository tasks.\n",
   );
+});
+
+it("does not approve a repository typecheck in a non-interactive process", () => {
+  const result = run(["candidate", "check", "typecheck", "candidate"]);
+  expect(result.status).toBe(2);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).toBe("Repository typecheck requires an interactive Windows terminal. Nothing changed.\n");
 });
 
 it.runIf(process.platform === "win32")("treats a repository without a committed baseline as unavailable", () => {
@@ -75,7 +83,8 @@ it.runIf(process.platform === "win32")("treats a repository without a committed 
   }
 });
 
-it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["task", "run", "gentle-review"],
+it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["candidate", "check"],
+  ["candidate", "check", "typecheck"], ["candidate", "check", "unknown", "candidate"], ["task", "run", "gentle-review"],
   ["task", "propose"], ["task", "outcome"], ["task", "run", "unregistered"], ["task", "recover", "missing-candidate"]])(
   "rejects invalid compiled CLI arguments %j",
   (...args) => {

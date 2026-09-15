@@ -6,6 +6,50 @@ Build first with `bun run build`, then run from the repository root:
 bun --no-env-file dist/cli.js verify src/cli.ts
 ```
 
+## Approved repository typecheck
+
+`tesota candidate check typecheck <candidate>` is the first repository-owned
+check profile. Repository ownership is deliberately declarative: the committed
+package must name the exact `tsc --noEmit -p tsconfig.json` script, but Tesota
+does not execute that string. It invokes the observed matching TypeScript
+installation with its own fixed argv and no shell.
+
+Before approval, the command displays exact candidate content identity,
+configuration and lockfile digests, TypeScript version and a digest of the
+complete mounted dependency installation,
+Docker executable identity, pinned image, isolation-policy identity and resource
+limits. Approval is consumed for that invocation and is never reconstructed
+from output or disk state.
+
+The profile rejects candidate changes to `package.json`, `tsconfig.json` or
+`bun.lock`. Its initial configuration boundary also excludes inherited configs,
+project references and compiler plugins; these would introduce additional
+inputs or executable policy that this profile does not yet bind.
+
+The candidate and source `node_modules` mounts are read-only. The container has
+no network, added capabilities or mounted host credentials, uses a read-only
+root filesystem and starts from the pinned image without pulling. Output is
+bounded to 256 KiB and execution to 30 seconds. Timeout and cancellation request
+container removal; the result remains `unconfirmed` if Docker absence or client
+settlement cannot be observed.
+
+Dependency observation accepts at most 100,000 regular entries and 512 MiB in
+total, with no symbolic links or redirected package directories. This is a
+deliberately conservative whole-installation binding for the first consumer,
+not a claim that every future ecosystem should use the same limit.
+
+The typed outcomes are `passed`, `check_failed`, `unavailable`, `timed_out`,
+`cancelled` and `execution_failed`. Exit zero is a pass only with empty compiler
+output. Exit one requires diagnostics. Other apparently clean or inconsistent
+results fail closed. Candidate, configuration, lockfile, compiler installation
+complete dependency installation and Docker executable are re-observed after execution; drift invalidates the
+result. Issued evidence has `authority: none` and is not task acceptance.
+
+This concrete producer is not yet part of the model task loop and creates no
+generic verifier framework. Its live Docker qualification is intentionally
+pending until task-sized code work exists; current tests exercise admission,
+bindings, result interpretation and failure settlement with synthetic fixtures.
+
 The CLI and tests use `runOxlint` from `src/verification/oxlint.ts`. The trusted
 application configuration selects the absolute runtime and installed Oxlint
 1.82.0 entry, working directory and limits. CLI arguments select one existing

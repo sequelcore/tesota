@@ -40,6 +40,9 @@ result and a review never create authority.
 | `proposal-admission.ts` | Supported task policy and immutable run grant |
 | `task-contract.ts` | Shared task kind, budgets and grant-derived tool schemas |
 | `candidate-checkout.ts` | Independent candidate creation, inspection and lifecycle |
+| `repository-typecheck.ts` | Concrete TypeScript profile admission, input binding and result semantics |
+| `repository-typecheck-process.ts` | Docker client/container settlement and bounded output for that concrete profile |
+| `repository-typecheck-command.ts` | One-use local approval and CLI composition for the TypeScript profile |
 | `candidate-task.ts` | Candidate effects, plan binding and scope-integrity check |
 | `integrations/pi-task.ts` | Pi execution and correction evidence consistency |
 | `task-review.ts` | Exact-candidate review and local decision evidence |
@@ -76,14 +79,15 @@ which tools exist, their schemas, budgets and effects. Gentle is an optional
 review provider; Tesota preserves provider evidence but keeps acceptance and
 promotion local and distinct.
 
-Verifier integrations remain tool-specific. Oxlint and Dafny experiments do not
+Verifier integrations remain tool-specific. The repository TypeScript profile,
+Oxlint and Dafny experiments do not
 form a generic verifier abstraction. A new verifier enters the task runtime only
 after it has a concrete task consumer and satisfies the qualification policy in
 [verifier strategy](verifier-strategy.md).
 
 ## Current limitations
 
-The implementation does not yet admit source-code changes, repository commands,
+The implementation does not yet admit source-code changes, arbitrary repository commands,
 new/deleted files, arbitrary projects, general web tools, remote adoption or
 untrusted workloads. The [roadmap](roadmap.md) records the evidence required to
 broaden those boundaries.
