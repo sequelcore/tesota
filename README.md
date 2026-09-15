@@ -26,6 +26,7 @@ agent.
 | Available today | Boundary |
 | --- | --- |
 | **Tesota Shell** | Answers bounded repository questions, continues one clarification and retains supported task proposals |
+| Outcome accounting | Recovers first-check, correction, operator-decision and promotion facts for each started or declined proposal |
 | Candidate checkouts | Creates and inspects independent working copies from committed source revisions |
 | Approved tasks | Executes an admitted one- or two-file documentation change with grant-derived tools |
 | Verification evidence | Runs one bounded Oxlint profile with input binding and durable recovery |
@@ -54,6 +55,7 @@ bun link
 tesota
 tesota --help
 tesota task start <proposal-id>
+tesota task outcome <proposal-id>
 tesota isolation qualify
 tesota verify src/cli.ts
 ```

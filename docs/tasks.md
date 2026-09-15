@@ -53,6 +53,29 @@ target bytes and review identity still match.
 The lower-level `task review`, `task decide` and `task promote` commands expose
 the same boundaries for diagnosis. They do not bypass proposal admission.
 
+## Outcome accounting
+
+Every attempt to start an admitted proposal creates one `start.jsonl` outcome journal
+before asking for scope approval. Declining or cancelling is therefore retained
+alongside successful, failed, rejected and promoted paths. The exact proposal
+cannot be replayed after any such attempt.
+
+The journal owns the task-level chronology and references the candidate and
+review fingerprint. Candidate checks, the operator decision and promotion
+receipt keep their existing owners. Recovery rejects malformed records,
+impossible transitions, regressing timestamps and mismatched review
+fingerprints.
+
+The current execution producer reports elapsed milliseconds, first-check
+status, correction attempts, model invocations, tool calls and edits. It does
+not yet observe token usage or monetary cost, so both remain explicitly
+unavailable instead of being estimated. `tesota task outcome <proposal-id>`
+reloads the durable summary; Tesota Shell prints the same summary when a task
+reaches a recorded terminal outcome.
+
+Outcome records have `authority: none`. They describe what was observed and
+never authorize execution, acceptance or promotion.
+
 ## Deliberate omissions
 
 Tesota does not currently admit source-code edits, create/delete/rename effects,

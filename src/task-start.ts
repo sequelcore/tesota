@@ -1,11 +1,11 @@
-import { open } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { admitTaskProposal, type ProposalRunGrant } from "./proposal-admission.js";
 import { decideTask, reviewTask, type TaskReview } from "./task-review.js";
 import { promoteTask } from "./task-promotion.js";
 import { runProposalTask, type TaskRunResult } from "./task-run.js";
+import { createTaskOutcome, formatTaskOutcome, type TaskOutcomeJournal } from "./task-outcome.js";
 import { askTerminalQuestion, type PromptTerminal } from "./terminal-question.js";
 
 export type TaskStartProgress =
@@ -24,7 +24,7 @@ interface StartTaskDependencies {
   readonly review?: (directory: string) => Promise<TaskReview>;
   readonly decide?: typeof decideTask;
   readonly promote?: typeof promoteTask;
-  readonly record?: (file: Awaited<ReturnType<typeof open>>, value: object) => Promise<void>;
+  readonly createOutcome?: typeof createTaskOutcome;
   readonly report?: (progress: TaskStartProgress) => void;
 }
 
@@ -37,57 +37,61 @@ function proposalCard(grant: ProposalRunGrant): string {
     "Automatic evidence: scope integrity. Outcome correctness requires human review.\n";
 }
 
-async function append(file: Awaited<ReturnType<typeof open>>, value: object): Promise<void> {
-  await file.writeFile(JSON.stringify({ ...value, timestamp: new Date().toISOString() }) + "\n");
-  await file.sync();
+async function finishOutcome(journal: TaskOutcomeJournal,
+  event: Parameters<TaskOutcomeJournal["append"]>[0], write: (text: string) => void): Promise<void> {
+  await journal.append(event);
+  write(formatTaskOutcome(journal.current()));
 }
 
 /** One-shot proposal lifecycle. A started proposal cannot be replayed or resumed. */
 export async function startTask(dependencies: StartTaskDependencies): Promise<number> {
   const report = dependencies.report ?? ignoreProgress;
   const grant = await admitTaskProposal(dependencies);
-  dependencies.write(proposalCard(grant));
-  report({ phase: "awaiting_approval", operation: "proposal_scope" });
-  if (!approved(await dependencies.ask("Approve this scope and start isolated execution? [y/N] "))) {
-    dependencies.write("Proposal not started. Nothing changed.\n");
-    return 0;
-  }
-
-  const journal = await open(join(resolve(dependencies.proposalsRoot, grant.proposalId), "start.jsonl"), "wx", 0o600);
-  const record = dependencies.record ?? append;
+  const createOutcome = dependencies.createOutcome ?? createTaskOutcome;
+  const journal = await createOutcome(resolve(dependencies.proposalsRoot, grant.proposalId), {
+    proposalId: grant.proposalId, proposalSha256: grant.proposalSha256, baseline: grant.baseline,
+  });
   let promotionApplied = false;
   try {
-    await record(journal, { format: "tesota-proposal-start", version: 1, state: "started",
-      proposalId: grant.proposalId, proposalSha256: grant.proposalSha256, baseline: grant.baseline,
-      authority: "local_operator_approval" });
+    dependencies.write(proposalCard(grant));
+    report({ phase: "awaiting_approval", operation: "proposal_scope" });
+    if (!approved(await dependencies.ask("Approve this scope and start isolated execution? [y/N] "))) {
+      dependencies.write("Proposal not started. Nothing changed.\n");
+      await finishOutcome(journal, { state: "scope_declined" }, dependencies.write);
+      return 0;
+    }
+    await journal.append({ state: "execution_started" });
     report({ phase: "executing", operation: "candidate_task" });
     const execution = await (dependencies.execute ?? runProposalTask)(grant);
-    await record(journal, { state: "execution_finished", candidate: execution.candidate.directory,
-      outcome: execution.status });
+    await journal.append({ state: "execution_finished", candidate: execution.candidate.directory,
+      result: { status: execution.status, accounting: execution.accounting } });
     if (execution.status !== "passed") {
       dependencies.write(`Execution did not pass. Candidate retained: ${execution.candidate.directory}\n`);
-      await record(journal, { state: "finished", outcome: execution.status === "cancelled" ? "cancelled" : "execution_failed" });
+      await finishOutcome(journal, { state: "finished",
+        outcome: execution.status === "cancelled" ? "cancelled" : "execution_failed" }, dependencies.write);
       return execution.status === "cancelled" ? 130 : 1;
     }
 
     const review = await (dependencies.review ?? reviewTask)(execution.candidate.directory);
+    await journal.append({ state: "review_ready", reviewSha256: review.reviewSha256, checkStatus: review.check.status });
     dependencies.write(`\nCandidate review\nCheck: ${review.check.status}\nDiff (escaped JSON):\n${JSON.stringify(review.diff)}\n`);
     report({ phase: "ready_for_review", operation: "candidate_review" });
     const decision = approved(await dependencies.ask("Accept and promote these exact candidate bytes? [y/N] ")) ? "accept" : "reject";
     const decided = await (dependencies.decide ?? decideTask)(review.directory,
       { decision, reviewSha256: review.reviewSha256 });
+    await journal.append({ state: "decision_recorded", decision, reviewSha256: review.reviewSha256 });
     if (decision === "reject") {
       dependencies.write("Candidate rejected. Source was not changed.\n");
-      await record(journal, { state: "finished", outcome: "rejected", reviewSha256: review.reviewSha256 });
+      await finishOutcome(journal, { state: "finished", outcome: "rejected" }, dependencies.write);
       return 1;
     }
     if (decided.operatorDecision?.applicability !== "current") throw new Error("Decision became stale");
     report({ phase: "promoting", operation: "accepted_candidate" });
+    await journal.append({ state: "promotion_started", reviewSha256: review.reviewSha256 });
     const promotion = await (dependencies.promote ?? promoteTask)(review.directory, grant.source, review.reviewSha256);
     promotionApplied = true;
     try {
-      await record(journal, { state: "finished", outcome: "promoted", reviewSha256: review.reviewSha256,
-        files: promotion.files });
+      await finishOutcome(journal, { state: "finished", outcome: "promoted", files: promotion.files }, dependencies.write);
     } catch {
       dependencies.write("Promotion applied, but proposal start evidence is incomplete. Inspect the candidate promotion journal.\n");
       return 1;
@@ -95,7 +99,8 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<nu
     dependencies.write(`Promoted: ${promotion.files.map((file) => file.path).join(", ")}\n`);
     return 0;
   } catch (error) {
-    if (!promotionApplied) await record(journal, { state: "finished", outcome: "failed" }).catch(() => {});
+    if (!promotionApplied) await journal.append({ state: "finished",
+      outcome: error instanceof Error && error.name === "AbortError" ? "cancelled" : "failed" }).catch(() => {});
     throw error;
   } finally { await journal.close(); }
 }

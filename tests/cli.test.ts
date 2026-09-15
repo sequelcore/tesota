@@ -50,6 +50,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota isolation qualify\n" +
     "       tesota task propose <request>\n" +
     "       tesota task start <proposal-id>\n" +
+    "       tesota task outcome <proposal-id>\n" +
     "       tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>\n" +
     "       tesota task review <candidate-id|candidate-directory>\n" +
     "       tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>\n" +
@@ -75,7 +76,7 @@ it.runIf(process.platform === "win32")("treats a repository without a committed 
 });
 
 it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["task", "run", "gentle-review"],
-  ["task", "propose"], ["task", "run", "unregistered"], ["task", "recover", "missing-candidate"]])(
+  ["task", "propose"], ["task", "outcome"], ["task", "run", "unregistered"], ["task", "recover", "missing-candidate"]])(
   "rejects invalid compiled CLI arguments %j",
   (...args) => {
     const result = run(args);

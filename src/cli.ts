@@ -14,6 +14,7 @@ Usage: tesota [--help | -h | help]
        tesota isolation qualify
        tesota task propose <request>
        tesota task start <proposal-id>
+       tesota task outcome <proposal-id>
        tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>
        tesota task review <candidate-id|candidate-directory>
        tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>
@@ -45,6 +46,16 @@ if (args.length === 0 && process.stdin.isTTY === true && process.stdout.isTTY ==
 } else if (args.length === 3 && args[0] === "task" && args[1] === "start" && args[2] !== undefined) {
   const { runTaskStartCommand } = await import("./task-start.js");
   process.exit(await runTaskStartCommand(args[2]));
+} else if (args.length === 3 && args[0] === "task" && args[1] === "outcome" && args[2] !== undefined) {
+  const { homedir } = await import("node:os");
+  const { resolve } = await import("node:path");
+  const { formatTaskOutcome, loadProposalTaskOutcome } = await import("./task-outcome.js");
+  try {
+    process.stdout.write(formatTaskOutcome(await loadProposalTaskOutcome(resolve(homedir(), ".tesota", "proposals"), args[2])));
+  } catch {
+    process.stderr.write("Task outcome unavailable.\n");
+    process.exitCode = 2;
+  }
 } else if (args.length >= 3 && args[0] === "task" && args[1] === "propose") {
   const { runTaskProposalCommand } = await import("./conversation-turn.js");
   process.exit(await runTaskProposalCommand(args.slice(2).join(" ")));

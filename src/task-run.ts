@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { candidateDiff, createCandidateCheckout, type CandidateCheckout } from "./candidate-checkout.js";
 import { CandidateTask, checkCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
 import { validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
+import type { TaskExecutionAccounting } from "./task-outcome.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { PI_TASK_LIMITS, piTaskPasses, runPiTask, type PiTaskResult } from "./integrations/pi-task.js";
@@ -11,6 +12,7 @@ import { PI_TASK_LIMITS, piTaskPasses, runPiTask, type PiTaskResult } from "./in
 export interface TaskRunResult {
   readonly candidate: CandidateCheckout;
   readonly status: "passed" | "failed" | "cancelled";
+  readonly accounting: TaskExecutionAccounting;
 }
 
 export interface TaskRunHost {
@@ -24,6 +26,13 @@ function stdout(text: string): void { process.stdout.write(text); }
 function stderr(text: string): void { process.stderr.write(text); }
 function exitProcess(code: number): never { process.exit(code); }
 function ignore(): void {}
+
+function taskExecutionAccounting(session: PiTaskResult | null, startedAt: number): TaskExecutionAccounting {
+  return { elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)), firstCheck: session?.checks[0]?.status ?? "not_observed",
+    correctionAttempts: session?.edits ?? 0, modelInvocations: session?.modelInvocations ?? 0,
+    toolCalls: session?.toolCalls ?? 0, edits: session?.edits ?? 0,
+    consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } };
+}
 
 function resolvedHost(host: TaskRunHost): Required<Omit<TaskRunHost, "signal">> {
   return { write: host.write ?? stdout, writeError: host.writeError ?? stderr,
@@ -41,6 +50,7 @@ function relayCancellation(source: AbortSignal | undefined, target: AbortControl
 /** Execute only an in-memory grant already issued by proposal admission. */
 async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunGrant,
   host: TaskRunHost): Promise<TaskRunResult> {
+  const startedAt = performance.now();
   const cancellation = new AbortController();
   const { write, writeError, exitUnsettled } = resolvedHost(host);
   const interrupt = (): void => cancellation.abort();
@@ -101,10 +111,10 @@ async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunG
     write(status === "passed" ? "Task checks passed; diff retained for human review.\n" :
       status === "cancelled" ? "Task cancelled; retained state is available for inspection.\n" :
         "Task unaccepted; inspect the retained checks and diff.\n");
-    return { candidate, status };
+    return { candidate, status, accounting: taskExecutionAccounting(session, startedAt) };
   } catch {
     writeError("Task preparation or evidence persistence failed. No promotion occurred.\n");
-    return { candidate, status: "failed" };
+    return { candidate, status: "failed", accounting: taskExecutionAccounting(null, startedAt) };
   } finally {
     cancellation.abort();
     clearTimeout(watchdog);

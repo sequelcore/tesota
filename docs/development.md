@@ -60,6 +60,12 @@ a fresh candidate; replay and resume are rejected. The current check establishes
 scope integrity and explicitly leaves outcome correctness to human review. A
 later accept/reject question is bound to the escaped diff;
 acceptance invokes conflict-safe promotion without requiring another ID.
+`task outcome <proposal-id>` reloads the proposal-bound outcome journal. It
+reports elapsed time, first-check status, correction count, observed operation
+counts, operator decision and promotion state. Token usage and monetary cost are
+reported as unavailable because the current execution producer does not observe
+them. The outcome is evidence for inspection; it grants no execution, acceptance
+or promotion authority.
 `task run gentle-review <candidate> <gentle-ai-executable> <lineage-id>`
 collects one reviewer slot currently offered by Gentle. The executable path
 must be absolute and identify the stable Gentle AI 2.8.0 binary. After upgrading,
