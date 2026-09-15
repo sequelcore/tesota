@@ -18,7 +18,7 @@ Implemented today:
 - independent candidate checkouts and grant-derived read/write tools;
 - automatic scope-integrity evidence with explicit human-review limits;
 - exact-candidate review, local acceptance and guarded promotion;
-- durable outcome accounting and a derived cohort view for attempted supported proposals;
+- durable outcome accounting for started or declined supported proposals;
 - bounded Oxlint, Dafny, Pi, Gentle AI and isolation qualification slices.
 
 The ordinary task runtime contains no registered demos or Tesota-specific task
@@ -28,22 +28,22 @@ product routes. See [experiments](../experiments/README.md) and
 
 ## Next qualification gates
 
-### 1. Outcome accounting — implementation active
+### 1. Outcome accounting foundation — implemented
 
 Record first-pass result, correction attempts, operator intervention, elapsed
 time, known consumption, acceptance and promotion outcome for prospective tasks.
 Include refusals and failures.
 
-The supported documentation flow now records scope refusal, cancellation,
-failure, review decision and promotion; it also reports elapsed time and
-observed model, tool and edit counts. Token usage and cost remain explicitly
-unavailable. A repository-owned prospective pilot protocol and a projection
-that keeps invalid started journals visible now exist. The gate is not complete
-until the operator runs and evaluates the prospective ordinary-task cohort.
+The supported flow records scope refusal, cancellation, failure, review decision
+and promotion; it also reports elapsed time and observed model, tool and edit
+counts. Token usage and cost remain explicitly unavailable.
 
-Exit evidence: enough ordinary tasks to expose where coordination or weak checks
-prevent useful accepted outcomes. No reliability percentage is claimed from a
-small pilot.
+Prospective live evaluation is deferred until gates 2 and 3 admit ordinary
+repository checks and task-sized code changes. Exercising documentation-only
+work would measure a temporary product restriction and encourage artificial
+repository changes rather than representative usefulness. When live evaluation
+resumes, it must include refusals and failures; a small pilot will report counts
+and causes rather than a reliability percentage.
 
 ### 2. Approved repository check profiles
 

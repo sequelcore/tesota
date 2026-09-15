@@ -66,11 +66,6 @@ counts, operator decision and promotion state. Token usage and monetary cost are
 reported as unavailable because the current execution producer does not observe
 them. The outcome is evidence for inspection; it grants no execution, acceptance
 or promotion authority.
-`task outcomes` derives a newest-first summary from every started proposal
-journal. Proposals that were never attempted are omitted. A started journal
-that cannot be validated remains visible as `unavailable`; it is not silently
-dropped or interpreted as success. The summary exposes no task text or source
-path and creates no second outcome database.
 `task run gentle-review <candidate> <gentle-ai-executable> <lineage-id>`
 collects one reviewer slot currently offered by Gentle. The executable path
 must be absolute and identify the stable Gentle AI 2.8.0 binary. After upgrading,

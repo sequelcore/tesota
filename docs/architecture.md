@@ -45,7 +45,7 @@ result and a review never create authority.
 | `task-review.ts` | Exact-candidate review and local decision evidence |
 | `task-promotion.ts` | Accepted-byte validation and guarded source writes |
 | `task-start.ts` | One conversational approval-to-promotion workflow |
-| `task-outcome.ts` | Durable non-authoritative task outcome journal, recovery and derived cohort summaries |
+| `task-outcome.ts` | Durable non-authoritative task outcome journal, recovery and operator summary |
 | `gentle-review-host.ts` | Optional independent Gentle review integration |
 
 Each owner has a present consumer. The task contract contains no Tesota-specific

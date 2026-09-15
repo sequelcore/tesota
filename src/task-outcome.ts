@@ -1,5 +1,5 @@
-import { lstat, open, readdir, realpath } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { lstat, open, realpath } from "node:fs/promises";
+import { join, relative } from "node:path";
 import * as z from "zod";
 import { loadTaskProposal } from "./task-proposal.js";
 
@@ -101,8 +101,6 @@ export interface TaskOutcome {
   readonly proposalId: string;
   readonly proposalSha256: string;
   readonly baseline: string;
-  readonly recordedAt: string;
-  readonly updatedAt: string;
   readonly status: "awaiting_scope_approval" | Exclude<OutcomeEvent["state"], "finished"> |
     Extract<OutcomeEvent, { state: "finished" }>["outcome"];
   readonly lastPhase: TaskOutcomePhase;
@@ -118,10 +116,6 @@ export interface TaskOutcome {
   readonly authority: "none";
   readonly provenance: "recorded_untrusted";
 }
-
-export type TaskOutcomeListEntry =
-  | Readonly<{ availability: "available"; outcome: TaskOutcome }>
-  | Readonly<{ availability: "unavailable"; proposalId: string }>;
 
 function terminalInterruptionAllowed(previous: InitialEvent | OutcomeEvent, next: OutcomeEvent): boolean {
   return next.state === "finished" && (next.outcome === "failed" || next.outcome === "cancelled") &&
@@ -202,7 +196,6 @@ function project(events: readonly [InitialEvent, ...OutcomeEvent[]]): TaskOutcom
   const updated = Date.parse(last.timestamp);
   const status = last.state === "finished" ? last.outcome : last.state;
   return { proposalId: first.proposalId, proposalSha256: first.proposalSha256, baseline: first.baseline,
-    recordedAt: first.timestamp, updatedAt: last.timestamp,
     status, lastPhase: outcomePhase(events), terminal: declined || last.state === "finished",
     elapsedMs: Math.max(0, updated - started),
     candidate: executionEvent?.candidate ?? null, firstCheck: executionEvent?.result.accounting.firstCheck ?? "not_observed",
@@ -249,60 +242,6 @@ export async function loadProposalTaskOutcome(proposalsRoot: string, reference: 
   return outcome;
 }
 
-function missingPath(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
-}
-
-async function started(directory: string): Promise<boolean> {
-  try {
-    await lstat(join(directory, "start.jsonl"));
-    return true;
-  } catch (error) {
-    if (missingPath(error)) return false;
-    throw error;
-  }
-}
-
-/** Project started proposal journals without granting authority or hiding unreadable evidence. */
-export async function listProposalTaskOutcomes(proposalsRoot: string): Promise<readonly TaskOutcomeListEntry[]> {
-  const root = resolve(proposalsRoot);
-  let entries;
-  try {
-    const metadata = await lstat(root);
-    const actual = await realpath(root);
-    if (!metadata.isDirectory() || metadata.isSymbolicLink() || actual !== root) {
-      throw new Error("Task outcomes unavailable");
-    }
-    entries = await readdir(root, { withFileTypes: true });
-  } catch (error) {
-    if (missingPath(error)) return [];
-    throw new Error("Task outcomes unavailable");
-  }
-
-  const results: TaskOutcomeListEntry[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.isSymbolicLink() || !z.uuid().safeParse(entry.name).success) continue;
-    const directory = join(root, entry.name);
-    try {
-      if (!await started(directory)) continue;
-      results.push({ availability: "available", outcome: await loadProposalTaskOutcome(root, entry.name) });
-    } catch {
-      results.push({ availability: "unavailable", proposalId: entry.name });
-    }
-  }
-  return results.sort((left, right) => {
-    if (left.availability !== right.availability) return left.availability === "available" ? -1 : 1;
-    if (left.availability === "available" && right.availability === "available") {
-      return right.outcome.updatedAt.localeCompare(left.outcome.updatedAt) ||
-        left.outcome.proposalId.localeCompare(right.outcome.proposalId);
-    }
-    if (left.availability === "unavailable" && right.availability === "unavailable") {
-      return left.proposalId.localeCompare(right.proposalId);
-    }
-    return 0;
-  });
-}
-
 export async function createTaskOutcome(directory: string, identity: Readonly<{
   proposalId: string; proposalSha256: string; baseline: string;
 }>, now: () => Date = () => new Date()): Promise<TaskOutcomeJournal> {
@@ -335,21 +274,4 @@ export function formatTaskOutcome(outcome: TaskOutcome): string {
     `Last phase: ${outcome.lastPhase}\nFirst check: ${outcome.firstCheck}\nCorrections: ${outcome.correctionAttempts}\n${execution}` +
     `Decision: ${outcome.operator.decision}\nPromotion: ${outcome.promotion}\n${consumption}` +
     "Authority: none; this outcome cannot authorize execution, acceptance or promotion.\n";
-}
-
-export function formatTaskOutcomes(entries: readonly TaskOutcomeListEntry[]): string {
-  if (entries.length === 0) return "No task outcomes recorded.\n";
-  const row = (values: readonly string[]): string => values.map((value, index) =>
-    index === values.length - 1 ? value : value.padEnd([36, 23, 13, 5, 11, 12][index] ?? 0)).join("  ");
-  const header = row(["PROPOSAL", "OUTCOME", "FIRST CHECK", "FIXES", "DECISION", "PROMOTION", "ELAPSED"]);
-  const rows = entries.map((entry) => {
-    if (entry.availability === "unavailable") {
-      return row([entry.proposalId, "unavailable", "-", "-", "-", "-", "-"]);
-    }
-    const { outcome } = entry;
-    return row([outcome.proposalId, outcome.status, outcome.firstCheck, String(outcome.correctionAttempts),
-      outcome.operator.decision, outcome.promotion, `${outcome.elapsedMs} ms`]);
-  });
-  return `${header}\n${rows.join("\n")}\n\n` +
-    "Authority: none; listed outcomes cannot authorize execution, acceptance or promotion.\n";
 }
