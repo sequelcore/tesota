@@ -1,11 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
 const entry = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
+const packagePath = fileURLToPath(new URL("../package.json", import.meta.url));
 const env: NodeJS.ProcessEnv = {};
 for (const key of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"]) {
   const value = process.env[key];
@@ -26,6 +27,12 @@ function run(args: readonly string[], cwd?: string) {
   expect(result.signal).toBeNull();
   return result;
 }
+
+it("publishes the compiled CLI through the canonical tesota executable", () => {
+  const manifest: unknown = JSON.parse(readFileSync(packagePath, "utf8"));
+  expect(manifest).toMatchObject({ bin: { tesota: "dist/cli.js" } });
+  expect(readFileSync(entry, "utf8")).toMatch(/^#!\/usr\/bin\/env bun\r?\n/u);
+});
 
 it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (...args) => {
   const result = run(args);

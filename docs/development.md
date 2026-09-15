@@ -15,7 +15,14 @@ Run commands from the repository root.
 | `bun run test` | Build, then run core and filesystem-heavy Vitest groups in isolated processes |
 | `bun run lint` | Check source and tests; no fixes, warnings rejected |
 | `bun run check` | Run the complete repository gate |
+| `bun link` / `bun unlink` | Register or remove this checkout's global `tesota` development command |
 | `bun --no-env-file dist/cli.js isolation qualify` | Run the explicit live Windows isolation comparison; excluded from normal checks |
+
+The package-owned `tesota` binary targets `dist/cli.js` and runs through the
+pinned Bun runtime. Build before the first `bun link`; later `check` and `build`
+commands refresh the linked executable because the registration continues to
+point at this checkout. This is a reversible development link, not a release
+installation.
 
 With no arguments, the main CLI opens Tesota Shell when standard input, output and
 error are interactive terminals. It accepts a natural-language message. Bounded

@@ -50,12 +50,18 @@ Node runs development tools; Bun runs the compiled CLI.
 ```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run check
-bun --no-env-file dist/cli.js
-bun --no-env-file dist/cli.js --help
-bun --no-env-file dist/cli.js task start <proposal-id>
-bun --no-env-file dist/cli.js isolation qualify
-bun --no-env-file dist/cli.js verify src/cli.ts
+bun link
+tesota
+tesota --help
+tesota task start <proposal-id>
+tesota isolation qualify
+tesota verify src/cli.ts
 ```
+
+`bun link` registers this local checkout and its `tesota` executable in Bun's
+global bin directory; it does not install a registry release. The link follows
+this checkout, while `dist/` follows the most recent `bun run build` or
+`bun run check`. Run `bun unlink` here to remove the development registration.
 
 The argument-free command opens Tesota Shell only when all three
 standard streams are attached to a terminal. In a non-interactive process it

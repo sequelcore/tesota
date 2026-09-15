@@ -1,3 +1,5 @@
+#!/usr/bin/env bun
+
 import { configuredOxlint, runOxlint } from "./verification/oxlint.js";
 
 const help = `Tesota
