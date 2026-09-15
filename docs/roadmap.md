@@ -14,9 +14,9 @@ Implemented today:
 
 - interactive, bounded repository questions and one clarification;
 - retained, non-authoritative task proposals over a committed baseline;
-- operator-approved documentation changes to one or two existing files;
+- operator-approved TypeScript source changes to one or two existing files;
 - independent candidate checkouts and grant-derived read/write tools;
-- automatic scope-integrity evidence with explicit human-review limits;
+- automatic scope-integrity and contained TypeScript evidence with explicit human-review limits;
 - exact-candidate review, local acceptance and guarded promotion;
 - durable outcome accounting for started or declined supported proposals;
 - bounded Oxlint, Dafny, Pi, Gentle AI and isolation qualification slices.
@@ -63,7 +63,8 @@ lockfile, compiler installation, Docker executable, policy and limits are bound
 and re-observed. Check findings, operational failure, timeout, cancellation,
 unavailability and unconfirmed cleanup remain distinct.
 
-This does not complete the gate. Synthetic integration and settlement tests are
+The profile is now composed into the approved TypeScript task rather than existing
+only as a separate candidate command. This does not complete the gate. Synthetic integration and settlement tests are
 retained in normal checks; live qualification remains deferred until the
 general code-task surface can exercise representative work. Build and targeted
 test profiles, including their no-tests semantics, are also still absent.
@@ -72,7 +73,7 @@ Exit evidence: real positive, failing, missing-tool, no-tests, fatal-exit,
 timeout, cancellation, surviving-descendant and source-drift cases on each
 supported platform.
 
-### 3. Task-sized code changes
+### 3. Task-sized code changes — implementation active
 
 Extend the admitted grant to a small existing-file source/test write set whose
 repository checks were qualified in gate 2. Scope expansion returns to approval.
@@ -81,6 +82,14 @@ Dependency changes, migrations and gate weakening remain excluded.
 Exit evidence: prospective bug fixes and small features in external fixture
 repositories, with no unauthorized effects and independent residual-defect
 assessment.
+
+The first source-task contract now admits modification of one or two existing
+non-test, non-declaration `src/**/*.ts` files. Its immutable grant includes scope integrity and the exact
+contained TypeScript profile; the model cannot select a command or weaken its
+configuration. Tests, repository check configuration, dependency declarations and
+create/delete/rename effects remain excluded. Synthetic admission, correction,
+operational-failure, review and promotion tests are present. Live qualification
+and broader source/test task coverage remain open exit evidence.
 
 ### 4. Diagnostic correction
 

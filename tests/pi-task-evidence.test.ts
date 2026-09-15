@@ -3,11 +3,13 @@ import type { CandidateTaskCheck } from "../src/candidate-task.js";
 import { piTaskPasses, type PiTaskResult } from "../src/integrations/pi-task.js";
 
 const before: CandidateTaskCheck = {
-  task: "documentation-change", status: "check_failed", provenance: "issued", diagnostics: ["not changed"],
+  task: "typescript-change", status: "check_failed", provenance: "issued", diagnostics: ["not changed"], typecheck: null,
   baseline: "a".repeat(40), writeSetSha256: "1".repeat(64), taskAcceptance: "not_evaluated",
 };
 const after: CandidateTaskCheck = {
   ...before, status: "passed", writeSetSha256: "2".repeat(64),
+  typecheck: { profile: "typescript-no-emit/v1", status: "passed", reason: null, diagnostics: [], process: "exited",
+    container: "absent", binding: {} as never, authority: "none", provenance: "issued" },
 };
 const current: CandidateTaskCheck = { ...after, provenance: "recorded_untrusted" };
 const result: PiTaskResult = {

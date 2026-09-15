@@ -270,6 +270,12 @@ export async function runRepositoryTypecheck(profile: RepositoryTypecheckProfile
   return failedResult(profile, "execution_failed", "incoherent_compiler_result", observed.process, observed.container);
 }
 
+/** Compose the concrete profile; the caller remains responsible for task execution authority. */
+export async function checkRepositoryTypecheck(options: PrepareOptions,
+  signal?: AbortSignal): Promise<RepositoryTypecheckResult> {
+  return runRepositoryTypecheck(await prepareRepositoryTypecheck(options), executeRepositoryTypecheckContainer, signal);
+}
+
 export function formatRepositoryTypecheckProfile(profile: RepositoryTypecheckProfile): string {
   return `Repository check profile\nProfile: ${profile.profile}\nCandidate: ${profile.candidate.directory}\n` +
     `Baseline: ${profile.candidate.baseline}\nCandidate content: ${profile.candidate.contentSha256}\n` +

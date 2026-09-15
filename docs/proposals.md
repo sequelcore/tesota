@@ -11,7 +11,7 @@ After [authentication](authentication.md), build Tesota and run:
 
 ```sh
 bun start
-bun start task propose "Clarify the installation guide"
+bun start task propose "Change the task result without altering its public contract"
 ```
 
 The interactive shell chooses among an answer, one clarification or a proposal.
@@ -52,10 +52,11 @@ the record and rechecks its source, status, baseline, paths and supported policy
 
 ## Supported admission
 
-The current policy accepts one or two existing Markdown writes below `docs/`, up
-to eight allowed reads and exactly the `scope-integrity` check. Every write file
-must also be readable. Stale baselines, dirty admitted paths, sensitive paths and
-all other write shapes fail before candidate creation.
+The current policy accepts one or two existing non-test, non-declaration TypeScript writes below `src/`, up
+to eight allowed reads and exactly `scope-integrity` followed by
+`typescript-no-emit/v1`. Every write file must also be readable. Repository check
+configuration, dependency declarations, tests, create/delete/rename effects, stale baselines,
+dirty admitted paths, sensitive paths and all other write shapes fail before candidate creation.
 
 ```sh
 bun start task start <proposal-id>

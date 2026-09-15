@@ -5,23 +5,27 @@ admission and explicit operator approval can issue an execution grant.
 
 ```text
 request -> read-only proposal -> admission -> operator approval
-        -> isolated candidate -> scope check -> human review
+        -> isolated candidate -> scope + contained typecheck -> human review
         -> decision -> guarded promotion
 ```
 
 There is no application task registry and no special task for modifying Tesota.
 The current implementation accepts one deliberately narrow task kind:
-`documentation-change`.
+`typescript-change`.
 
 ## Current contract
 
-An admitted documentation change:
+An admitted TypeScript change:
 
-- writes one or two existing Markdown files below `docs/`;
+- writes one or two existing non-test, non-declaration `.ts` files below `src/`;
 - reads at most eight admitted repository files;
 - permits at most two whole-file replacements and three checks;
 - limits every exposed or replacement file to 64 KiB of valid UTF-8;
-- runs no repository command and gives the model no shell or network tool;
+- gives the model no shell or network tool and never accepts its choice of command;
+- runs only the fixed `typescript-no-emit/v1` profile in the pinned, read-only,
+  network-disabled container after an admitted file changes;
+- denies repository check configuration, dependency declaration, test and file-lifecycle changes;
+- rejects `@ts-ignore`, `@ts-nocheck` and `@ts-expect-error` in changed files so source-level suppression cannot manufacture a pass;
 - requires an initial check before the first replacement; and
 - remains subject to human review before promotion.
 
@@ -29,12 +33,18 @@ The persisted plan binds the approved proposal, committed baseline, read-input
 hashes, write set, limits and task definition. Reloading that plan can recheck a
 candidate, but cannot recreate editing authority.
 
-## What the automatic check proves
+## What the automatic checks prove
 
 `scope-integrity` establishes that at least one admitted file changed and that
-the candidate contains no unsupported path or change type. It does not establish
-that prose is accurate, useful or complete. The emitted diagnostic says so, and
-the task outcome is always `human_review_required`.
+the candidate contains no unsupported path or change type. Once content changes,
+`typescript-no-emit/v1` establishes that the exact bound candidate passed the
+repository's fixed no-emit TypeScript compilation under the recorded toolchain
+and isolation inputs. Compiler findings remain check failures; timeout,
+cancellation, unavailability and uncertain settlement close the task as
+operational failures instead of appearing as findings or success.
+
+Neither check establishes that requirements were understood or that behavior is
+correct. The task outcome is always `human_review_required`.
 
 This distinction is intentional:
 
@@ -46,9 +56,11 @@ This distinction is intentional:
 
 `task start <proposal-id>` presents the admitted scope before execution. If the
 operator approves it, Tesota creates a fresh candidate and runs the bounded Pi
-task. A passing scope check exposes the exact diff for an accept or reject
-decision. Promotion applies only the accepted write set when the source `HEAD`,
-target bytes and review identity still match.
+task. Passing current scope and typecheck evidence exposes the exact diff for an
+accept or reject decision. The review fingerprint binds the complete check
+evidence as well as the candidate bytes, so changed verifier inputs make a prior
+decision stale. Promotion applies only the accepted write set when the source
+`HEAD`, target bytes and review identity still match.
 
 The lower-level `task review`, `task decide` and `task promote` commands expose
 the same boundaries for diagnosis. They do not bypass proposal admission.
@@ -78,7 +90,7 @@ never authorize execution, acceptance or promotion.
 
 ## Deliberate omissions
 
-Tesota does not currently admit source-code edits, create/delete/rename effects,
+Tesota does not currently admit test edits, create/delete/rename effects,
 arbitrary task manifests, repository scripts, dependency changes or automatic
-acceptance. Those capabilities require qualified check profiles and explicit
+acceptance. Broader source work requires qualified check profiles and explicit
 effect contracts. The [roadmap](roadmap.md) owns that expansion.

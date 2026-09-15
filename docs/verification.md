@@ -18,8 +18,11 @@ Before approval, the command displays exact candidate content identity,
 configuration and lockfile digests, TypeScript version and a digest of the
 complete mounted dependency installation,
 Docker executable identity, pinned image, isolation-policy identity and resource
-limits. Approval is consumed for that invocation and is never reconstructed
-from output or disk state.
+limits. For the standalone command, approval is consumed for that invocation and
+is never reconstructed from output or disk state. The approved
+`typescript-change` task also names this exact profile in its immutable grant;
+that single scope approval authorizes its bounded check invocations without
+giving the model command choice.
 
 The profile rejects candidate changes to `package.json`, `tsconfig.json` or
 `bun.lock`. Its initial configuration boundary also excludes inherited configs,
@@ -45,10 +48,11 @@ results fail closed. Candidate, configuration, lockfile, compiler installation
 complete dependency installation and Docker executable are re-observed after execution; drift invalidates the
 result. Issued evidence has `authority: none` and is not task acceptance.
 
-This concrete producer is not yet part of the model task loop and creates no
-generic verifier framework. Its live Docker qualification is intentionally
-pending until task-sized code work exists; current tests exercise admission,
-bindings, result interpretation and failure settlement with synthetic fixtures.
+This concrete producer is part of the model task loop and creates no generic
+verifier framework. Its live Docker qualification is intentionally pending until
+the composed source-task flow is exercised on representative work; current tests
+exercise admission, bindings, result interpretation and failure settlement with
+synthetic fixtures.
 
 The CLI and tests use `runOxlint` from `src/verification/oxlint.ts`. The trusted
 application configuration selects the absolute runtime and installed Oxlint

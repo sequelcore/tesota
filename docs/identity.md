@@ -99,7 +99,7 @@ inspect the proposed scope and checks, let the agent work, then assess the exact
 change with its applicable evidence and limitations.
 
 The current product does not yet provide that general experience. It supports a
-proposal-backed bounded documentation task and qualified experiments. It does not
+proposal-backed bounded TypeScript source task and qualified experiments. It does not
 support arbitrary repository work, general web research, unrestricted commands,
 issue publication or general-purpose non-code workflows. Public descriptions
 must preserve this distinction between thesis, direction and demonstrated

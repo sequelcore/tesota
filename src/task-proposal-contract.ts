@@ -1,6 +1,7 @@
 import * as z from "zod";
+import { TASK_CHECKS } from "./task-contract.js";
 
-export const PROPOSAL_CHECKS = ["scope-integrity"] as const;
+export const PROPOSAL_CHECKS: typeof TASK_CHECKS = TASK_CHECKS;
 export const PROPOSAL_LIMITS: Readonly<{
   operations: number; listedFiles: number; searchMatches: number; fileBytes: number; scannedBytes: number; exposedBytes: number;
 }> = Object.freeze({ operations: 32, listedFiles: 512, searchMatches: 40,

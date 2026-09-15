@@ -2,7 +2,7 @@
 
 Tesota is a local, terminal-first, verification-first agent. The current system
 implements a narrow software-development slice: bounded repository discovery,
-an approved documentation change in an isolated candidate, explicit evidence,
+an approved TypeScript source change in an isolated candidate, explicit evidence,
 human review and guarded promotion.
 
 The architecture follows the lifecycle in [identity](identity.md). It does not
@@ -19,7 +19,7 @@ Tesota Shell
   -> operator approval
   -> CandidateTask (bounded effects in independent checkout)
   -> Pi (model loop and tool calls)
-  -> scope-integrity observation
+  -> scope-integrity + contained TypeScript observations
   -> TaskReview (exact diff and current evidence)
   -> operator decision
   -> TaskPromotion (conflict-safe adoption journal)
@@ -43,7 +43,7 @@ result and a review never create authority.
 | `repository-typecheck.ts` | Concrete TypeScript profile admission, input binding and result semantics |
 | `repository-typecheck-process.ts` | Docker client/container settlement and bounded output for that concrete profile |
 | `repository-typecheck-command.ts` | One-use local approval and CLI composition for the TypeScript profile |
-| `candidate-task.ts` | Candidate effects, plan binding and scope-integrity check |
+| `candidate-task.ts` | Candidate effects, plan binding and composition of scope integrity with the concrete TypeScript check |
 | `integrations/pi-task.ts` | Pi execution and correction evidence consistency |
 | `task-review.ts` | Exact-candidate review and local decision evidence |
 | `task-promotion.ts` | Accepted-byte validation and guarded source writes |
@@ -87,7 +87,7 @@ after it has a concrete task consumer and satisfies the qualification policy in
 
 ## Current limitations
 
-The implementation does not yet admit source-code changes, arbitrary repository commands,
-new/deleted files, arbitrary projects, general web tools, remote adoption or
+The implementation admits only modifications to one or two existing `src/**/*.ts` files. It does not admit test changes,
+new/deleted files, arbitrary repository commands or projects, general web tools, remote adoption or
 untrusted workloads. The [roadmap](roadmap.md) records the evidence required to
 broaden those boundaries.

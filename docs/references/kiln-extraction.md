@@ -45,7 +45,7 @@ small fragment that wins the matched experiment described in decision 005.
 ## Reconciled priorities
 
 The audit's `recover now` item—bounded diagnose, correct and recheck—has one
-narrow mechanism in Tesota: the approved documentation task supplies a failed
+narrow mechanism in Tesota: the approved TypeScript task supplies a failed
 scope diagnostic before editing and requires a fresh passing observation. The
 actual gap is outcome-relevant, repository-owned checks with the same bounded
 authority and evidence semantics.
@@ -53,8 +53,8 @@ authority and evidence semantics.
 | Priority | Capability | Current Tesota position | Next proof |
 | --- | --- | --- | --- |
 | P0 | Approved repository check profiles | One bounded standalone Oxlint profile exists outside the task runtime | Admit one repository-owned build, type or test profile with explicit command identity and effects |
-| P0 | Task-sized multi-file work | One generic proposal-backed documentation task admits up to two existing files | Complete an ordinary small code task with admitted effects and qualified checks |
-| P0 | Diagnostic correction | Implemented only for scope integrity in the documentation task | Correct a real repository check without changing or suppressing its oracle |
+| P0 | Task-sized multi-file work | One proposal-backed TypeScript task admits up to two existing source files | Complete an ordinary small code task with admitted effects and qualified checks |
+| P0 | Diagnostic correction | The TypeScript task can consume concrete compiler diagnostics; prospective qualification remains pending | Correct a real repository check without changing or suppressing its oracle |
 | P0 | Candidate-bound closeout | Review, decision and guarded promotion exist as separate seams | Present diff, applicable checks, limitations, decision and recovery as one operator task |
 | P0 | Pi resource admission | The full SDK experiment uses Pi's default resource discovery | Supply a Tesota-controlled loader before that experiment becomes a general runtime path |
 | P1 | Additional verifiers | A tool-specific strategy and research queue exist | Add only a verifier that detects an observed defect class and passes the native qualification contract |

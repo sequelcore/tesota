@@ -34,7 +34,7 @@ function ignoreProgress(_progress: TaskStartProgress): void {}
 function proposalCard(grant: ProposalRunGrant): string {
   return `Proposed task\nObjective: ${grant.objective}\nWrite: ${grant.writeFiles.join(", ")}\n` +
     `Read: ${grant.readFiles.join(", ")}\nBaseline: ${grant.baseline}\n` +
-    "Automatic evidence: scope integrity. Outcome correctness requires human review.\n";
+    "Automatic evidence: scope integrity and contained TypeScript no-emit. Outcome correctness requires human review.\n";
 }
 
 async function finishOutcome(journal: TaskOutcomeJournal,

@@ -66,7 +66,7 @@ export async function reviewTask(directory: string): Promise<TaskReview> {
   const reviewSha256 = digest(JSON.stringify({
     format: "tesota-task-review", version: 1, directory: candidate.directory,
     task: check.task, baseline: check.baseline, writeSetSha256: check.writeSetSha256,
-    checkStatus: check.status, diffSha256: digest(diff),
+    checkSha256: digest(JSON.stringify(check)), diffSha256: digest(diff),
   }));
   const record = await readDecision(candidate.directory);
   return { directory: candidate.directory, reviewSha256, check, diff, historicalAttempt: "not_evaluated",

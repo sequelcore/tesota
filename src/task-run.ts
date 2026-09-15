@@ -73,7 +73,8 @@ async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunG
     try {
       const executor: Record<string, string> = {};
       for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js", "task-contract.js",
-        "proposal-admission.js", "verification/invocation-admission.js", "integrations/pi-task.js",
+        "proposal-admission.js", "repository-typecheck.js", "repository-typecheck-process.js", "command-isolation.js",
+        "verification/invocation-admission.js", "integrations/pi-task.js",
         "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock"]) {
         executor[path] = createHash("sha256").update(await readFile(new URL(path, import.meta.url))).digest("hex");
       }
@@ -96,8 +97,8 @@ async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunG
         await writeFile(join(candidate.directory, "candidate.diff"), await candidateDiff(candidate.directory),
           { flag: "wx", mode: 0o600 });
         reviewSaved = true;
-        current = await checkCandidateTask(candidate.directory);
-        passed = session !== null && !cancellation.signal.aborted && piTaskPasses(session, current);
+        if (!cancellation.signal.aborted) current = await checkCandidateTask(candidate.directory, cancellation.signal);
+        passed = session !== null && current !== null && !cancellation.signal.aborted && piTaskPasses(session, current);
       } catch { passed = false; }
       try {
         await record.writeFile(JSON.stringify({ state: "finished", timestamp: new Date().toISOString(),

@@ -1,14 +1,11 @@
 # 003: Natural-language task experience
 
-Status: adopted incrementally. Read-only discovery and the argument-free
-conversational entry point are implemented and locally verified. The first narrow
-proposal-backed documentation lifecycle is also implemented locally: it admits
-one current Markdown target below `docs/`, asks for scope approval, uses an
-isolated candidate, presents an escaped diff, records a separate decision and can
-promote without copied lifecycle IDs. One stored-OAuth documentation lifecycle
-has completed. One clarification now continues against the same baseline with typed
-results and progress; stored-OAuth runs have qualified answer and proposal results
-after clarification plus invalidation after a real committed baseline change.
+Status: adopted incrementally; the documentation-only execution restriction was
+superseded by the first TypeScript source-task slice. Read-only discovery and the
+argument-free conversational entry point remain implemented. The historical
+documentation lifecycle below established scope approval, isolated candidates,
+escaped diff review, separate decisions and promotion without copied lifecycle
+IDs. The current supported contract is owned by [Approved tasks](../tasks.md).
 General repository execution remains open.
 
 ## Problem

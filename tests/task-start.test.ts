@@ -22,8 +22,8 @@ async function fixture() {
   roots.push(root);
   const source = join(root, "source");
   const proposalsRoot = join(root, "proposals");
-  await mkdir(join(source, "docs"), { recursive: true });
-  await writeFile(join(source, "docs", "guide.md"), "# Guide\n");
+  await mkdir(join(source, "src"), { recursive: true });
+  await writeFile(join(source, "src", "value.ts"), "export const value = 'old';\n");
   git(source, ["init", "--quiet"]); git(source, ["add", "."]);
   git(source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit",
     "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
@@ -33,10 +33,12 @@ async function fixture() {
   await mkdir(directory, { recursive: true });
   const record = {
     format: "tesota-task-proposal", version: 1, id, recordedAt: new Date().toISOString(), source, baseline,
-    request: "Explain the flow.", authority: "none", provenance: "model_proposed", status: "ready",
-    proposal: { objective: "Explain the flow in plain language.", completionConditions: ["A reader can follow it."],
-      readFiles: ["docs/guide.md"], writeFiles: ["docs/guide.md"], checks: ["scope-integrity"], uncertainties: [] },
+    request: "Change the value.", authority: "none", provenance: "model_proposed", status: "ready",
+    proposal: { objective: "Change the exported value.", completionConditions: ["The new value is exported."],
+      readFiles: ["src/value.ts"], writeFiles: ["src/value.ts"],
+      checks: ["scope-integrity", "typescript-no-emit/v1"], uncertainties: [] },
     dirtyPaths: [], dirtyConflicts: [], checks: [{ id: "scope-integrity",
+      definition: "application_owned_declarative_only", executable: false }, { id: "typescript-no-emit/v1",
       definition: "application_owned_declarative_only", executable: false }],
     discovery: { provider: "test", model: "test", inferenceTransport: "configured_provider",
       modelControlledNetwork: false, modelInvocations: 1, toolCalls: 1, operations: 1, exposedBytes: 8,
@@ -48,10 +50,12 @@ async function fixture() {
 }
 
 function passingReview(directory: string, baseline: string): TaskReview {
-  return { directory, reviewSha256: "b".repeat(64), diff: "diff --git a/docs/guide.md b/docs/guide.md\n+clear text\n",
+  return { directory, reviewSha256: "b".repeat(64), diff: "diff --git a/src/value.ts b/src/value.ts\n+new value\n",
     historicalAttempt: "not_evaluated", operatorDecision: null,
-    check: { task: "documentation-change", status: "passed", provenance: "recorded_untrusted", baseline,
+    check: { task: "typescript-change", status: "passed", provenance: "recorded_untrusted", baseline,
       writeSetSha256: "c".repeat(64), taskAcceptance: "not_evaluated",
+      typecheck: { profile: "typescript-no-emit/v1", status: "passed", reason: null, diagnostics: [], process: "exited",
+        container: "absent", binding: {} as never, authority: "none", provenance: "issued" },
       diagnostics: ["Scope integrity passed. Outcome correctness requires human review."] } };
 }
 
@@ -70,7 +74,7 @@ it("runs one approved proposal through execution, review, decision and promotion
     recordedAt: new Date().toISOString(), authority: "local_operator_assertion" as const },
   provenance: "recorded_untrusted" as const, applicability: "current" as const } }));
   const promote = vi.fn(async () => ({ status: "applied" as const, source: current.source,
-    files: [{ path: "docs/guide.md", sourceSha256: "d".repeat(64) }] }));
+    files: [{ path: "src/value.ts", sourceSha256: "d".repeat(64) }] }));
   const output: string[] = [];
   const progress: string[] = [];
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
@@ -170,7 +174,7 @@ it("reports an applied promotion without recording false failure when final star
       recordedAt: new Date().toISOString(), authority: "local_operator_assertion" as const },
     provenance: "recorded_untrusted" as const, applicability: "current" as const } }),
     promote: async () => ({ status: "applied" as const, source: current.source,
-      files: [{ path: "docs/guide.md", sourceSha256: "d".repeat(64) }] }),
+      files: [{ path: "src/value.ts", sourceSha256: "d".repeat(64) }] }),
     createOutcome: async (directory: string, identity: Parameters<typeof createTaskOutcome>[1]) => {
       const journal = await createTaskOutcome(directory, identity);
       return { ...journal, append: async (event: Parameters<typeof journal.append>[0]) => {

@@ -85,27 +85,27 @@ function proposalSteps(): FauxResponseStep[] {
     fauxAssistantMessage(fauxToolCall("tesota_list", { prefix: "" })),
     fauxAssistantMessage(fauxToolCall("tesota_search", { query: "task", prefix: "" })),
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "README.md" })),
-    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "docs/identity.md" })),
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
     fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
-      objective: "Clarify the natural-language task experience.",
-      completionConditions: ["The identity document describes the operator flow."],
-      readFiles: ["README.md", "docs/identity.md"],
-      writeFiles: ["docs/identity.md"],
-      checks: ["scope-integrity"],
+      objective: "Clarify the task execution result.",
+      completionConditions: ["The integration exposes the requested result."],
+      readFiles: ["README.md", "src/integrations/pi-task.ts"],
+      writeFiles: ["src/integrations/pi-task.ts"],
+      checks: ["scope-integrity", "typescript-no-emit/v1"],
       uncertainties: [],
     } })),
     fauxAssistantMessage("Proposal ready."),
   ];
 }
 
-function documentationProposalSteps(): FauxResponseStep[] {
+function typescriptProposalSteps(): FauxResponseStep[] {
   return [
-    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "docs/identity.md" })),
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
     fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
-      objective: "Clarify the documented operator experience.",
-      completionConditions: ["The explanation uses plain language."],
-      readFiles: ["docs/identity.md"], writeFiles: ["docs/identity.md"],
-      checks: ["scope-integrity"], uncertainties: [],
+      objective: "Change the task result.",
+      completionConditions: ["The new result remains type-correct."],
+      readFiles: ["src/integrations/pi-task.ts"], writeFiles: ["src/integrations/pi-task.ts"],
+      checks: ["scope-integrity", "typescript-no-emit/v1"], uncertainties: [],
     } })),
     fauxAssistantMessage("Proposal ready."),
   ];
@@ -174,7 +174,8 @@ it("produces and privately retains a non-authoritative proposal from bounded rea
   expect(created.record).toMatchObject({
     format: "tesota-task-proposal", version: 1, authority: "none", status: "ready",
     request: "Improve the task experience wording without requiring me to name files.",
-    proposal: { writeFiles: ["docs/identity.md"], checks: ["scope-integrity"] },
+    proposal: { writeFiles: ["src/integrations/pi-task.ts"],
+      checks: ["scope-integrity", "typescript-no-emit/v1"] },
     discovery: { modelInvocations: 6, toolCalls: 5, modelControlledNetwork: false },
   });
   expect(JSON.parse(await readFile(join(created.directory, "proposal.json"), "utf8"))).toEqual(created.record);
@@ -193,8 +194,8 @@ it("produces and privately retains a non-authoritative proposal from bounded rea
   }
   expect(await readFile(join(source, "README.md"), "utf8")).toContain("Old task wording");
   expect(formatTaskProposal(created)).toContain(
-    "Status: ready for review\nObjective: Clarify the natural-language task experience.\n" +
-    "Write: docs/identity.md\n",
+    "Status: ready for review\nObjective: Clarify the task execution result.\n" +
+    "Write: src/integrations/pi-task.ts\n",
   );
   expect(formatTaskProposal(created)).toContain("Authority: none; no candidate was created and nothing can execute this proposal.\n");
   expect(fake.stream).toHaveBeenCalledTimes(6);
@@ -205,24 +206,25 @@ it("produces and privately retains a non-authoritative proposal from bounded rea
   }
 });
 
-it("admits one current single-file documentation proposal without trusting it as authority", async () => {
+it("admits one current single-file TypeScript proposal without trusting it as authority", async () => {
   const { source, proposals } = await fixture();
-  const fake = fakeModel(documentationProposalSteps());
+  const fake = fakeModel(typescriptProposalSteps());
   const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
     request: "Clarify the operator experience.", model: fake.model, stream: fake.stream,
     signal: new AbortController().signal });
   await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id, sourceDirectory: source }))
     .resolves.toMatchObject({
-      kind: "documentation-change", proposalId: created.record.id, baseline: created.record.baseline,
-      objective: "Clarify the documented operator experience.", readFiles: ["docs/identity.md"],
-      writeFiles: ["docs/identity.md"],
-      verification: { scopeIntegrity: "application_owned", outcome: "human_review_required" },
+      kind: "typescript-change", proposalId: created.record.id, baseline: created.record.baseline,
+      objective: "Change the task result.", readFiles: ["src/integrations/pi-task.ts"],
+      writeFiles: ["src/integrations/pi-task.ts"],
+      verification: { scopeIntegrity: "application_owned", typecheck: "typescript-no-emit/v1",
+        outcome: "human_review_required" },
     });
 });
 
 it("rejects stale and unsupported proposal evidence before issuing a run grant", async () => {
   const { source, proposals } = await fixture();
-  const supported = fakeModel(documentationProposalSteps());
+  const supported = fakeModel(typescriptProposalSteps());
   const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
     request: "Clarify the operator experience.", model: supported.model, stream: supported.stream,
     signal: new AbortController().signal });
@@ -234,22 +236,37 @@ it("rejects stale and unsupported proposal evidence before issuing a run grant",
     .rejects.toThrow("stale");
 
   const unsupported = fakeModel([
-    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "README.md" })),
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
     fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
-      objective: "Rewrite the root readme.", completionConditions: ["The README changes."],
-      readFiles: ["README.md"], writeFiles: ["README.md"], checks: ["scope-integrity"], uncertainties: [],
+      objective: "Change the task result.", completionConditions: ["The result changes."],
+      readFiles: ["src/integrations/pi-task.ts"], writeFiles: ["src/integrations/pi-task.ts"],
+      checks: ["scope-integrity"], uncertainties: [],
     } })), fauxAssistantMessage("Proposal ready."),
   ]);
   const multi = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
-    request: "Change two files.", model: unsupported.model, stream: unsupported.stream,
+    request: "Change code without typechecking.", model: unsupported.model, stream: unsupported.stream,
     signal: new AbortController().signal });
   await expect(admitTaskProposal({ proposalsRoot: proposals, reference: multi.record.id, sourceDirectory: source }))
+    .rejects.toThrow("unsupported");
+
+  const legacyDocumentation = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "docs/identity.md" })),
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
+      objective: "Change documentation.", completionConditions: ["The document changes."],
+      readFiles: ["docs/identity.md"], writeFiles: ["docs/identity.md"],
+      checks: ["scope-integrity", "typescript-no-emit/v1"], uncertainties: [],
+    } })), fauxAssistantMessage("Proposal ready."),
+  ]);
+  const legacy = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "Change a document.", model: legacyDocumentation.model, stream: legacyDocumentation.stream,
+    signal: new AbortController().signal });
+  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: legacy.record.id, sourceDirectory: source }))
     .rejects.toThrow("unsupported");
 });
 
 it("reapplies discovery exclusions when retained proposal evidence is coherently rewritten", async () => {
   const { source, proposals } = await fixture();
-  const fake = fakeModel(documentationProposalSteps());
+  const fake = fakeModel(typescriptProposalSteps());
   const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
     request: "Clarify the operator experience.", model: fake.model, stream: fake.stream,
     signal: new AbortController().signal });
@@ -393,7 +410,7 @@ it("blocks a proposal whose admitted paths have excluded working changes", async
   const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals, request: "Clarify task wording",
     model: fake.model, stream: fake.stream, signal: new AbortController().signal });
   expect(created.record).toMatchObject({ status: "blocked_dirty", dirtyConflicts: ["README.md"] });
-  expect(created.record.proposal.writeFiles).toEqual(["docs/identity.md"]);
+  expect(created.record.proposal.writeFiles).toEqual(["src/integrations/pi-task.ts"]);
 });
 
 it("reports both sides of a staged rename so a deleted proposal input cannot look clean", async () => {

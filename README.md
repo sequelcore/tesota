@@ -29,7 +29,7 @@ agent.
 | Outcome accounting | Recovers first-check, correction, operator-decision and promotion facts for each started or declined proposal |
 | Candidate checkouts | Creates and inspects independent working copies from committed source revisions |
 | Repository typecheck | Prepares one exact no-emit TypeScript profile and runs it only after local approval in the pinned container policy |
-| Approved tasks | Executes an admitted one- or two-file documentation change with grant-derived tools |
+| Approved tasks | Executes an admitted one- or two-file non-test TypeScript source change with grant-derived tools and contained typecheck |
 | Verification evidence | Runs one bounded Oxlint profile with input binding and durable recovery |
 | Review and adoption | Records an exact-candidate decision and can promote an accepted write set after conflict checks |
 | Isolation qualification | Compares one fixed Windows command across the installed native sandbox and a pinned container policy |
@@ -38,7 +38,7 @@ Pi, Codex, Gentle AI, Oxlint and Dafny integrations have bounded experiments or
 qualified slices documented in [experiments](experiments/README.md) and the
 technical guides. They do not establish arbitrary task execution.
 
-Tesota does **not** currently support general repository work, unrestricted
+Tesota does **not** currently support general repository work, new or deleted files, unrestricted
 commands, arbitrary task manifests, general web research, untrusted workloads or
 non-code workflows. The [roadmap](docs/roadmap.md) owns demonstrated progress
 and remaining requirements.

@@ -91,7 +91,7 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
     name: "tesota_check", label: "Check task", description: "Run the executor-owned check for the selected task.",
     parameters: checkParameters, execute: async (id, args, toolSignal) => execute(async () => {
       taskCheckSchema.parse(args);
-      const check = await task.check();
+      const check = await task.check(toolSignal);
       checks.push(check);
       checkCalls.set(id, check);
       return check;

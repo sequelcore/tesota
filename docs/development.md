@@ -30,7 +30,7 @@ discovery can answer a repository question, ask one clarification or retain a
 proposal for a requested change. An answer returns to the prompt. A clarification
 answer continues the original request only against the same committed baseline;
 blank input ends the session or cancels the pending clarification. A ready supported
-documentation proposal continues to its explicit approval and review flow. The
+TypeScript source proposal continues to its explicit approval and review flow. The
 persistent renderer keeps the transcript, current phase, elapsed time and editor
 visible while the terminal resizes or scrolls. Ctrl+C cancels a pending prompt; in
 discovery or execution it reaches the application owner. Those observations and
@@ -62,9 +62,11 @@ creates no candidate and never runs in the normal check suite. See
 [task proposals](proposals.md).
 `task start <proposal-id>` is the composable seam behind the shell continuation.
 It requires an interactive Windows terminal and admits only a current ready
-proposal for one or two existing Markdown files below `docs/`. Approval creates
-a fresh candidate; replay and resume are rejected. The current check establishes
-scope integrity and explicitly leaves outcome correctness to human review. A
+proposal for one or two existing TypeScript files below `src/`. Approval creates
+a fresh candidate; replay and resume are rejected. The current checks establish
+scope integrity and run the exact contained `typescript-no-emit/v1` profile while
+explicitly leaving outcome correctness to human review. Repository check
+configuration, dependency declarations, test and file-lifecycle changes remain denied. A
 later accept/reject question is bound to the escaped diff;
 acceptance invokes conflict-safe promotion without requiring another ID.
 `task outcome <proposal-id>` reloads the proposal-bound outcome journal. It
@@ -155,7 +157,7 @@ copying its explanation into another file.
 | Verifier selection criteria and research direction | [Verifier strategy](verifier-strategy.md) |
 | Authentication and private credential lifecycle | [Authentication](authentication.md) |
 | Candidate checkout creation and inspection | [Candidate checkouts](candidates.md) |
-| Task scope and documentation check | [Scoped candidate task](tasks.md) |
+| Task scope and source checks | [Scoped candidate task](tasks.md) |
 | Read-only conversational discovery and proposal records | [Task proposals](proposals.md) |
 | Experimental guides and records | [experiments/](../experiments/README.md), grouped by capability |
 | Consequential decisions and rationale | `docs/decisions/`, linked from the relevant guide |

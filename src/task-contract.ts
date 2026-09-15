@@ -1,6 +1,8 @@
 import * as z from "zod";
 
-export const TASK_KIND = "documentation-change";
+export const TASK_KIND = "typescript-change";
+export const TASK_CHECKS: readonly ["scope-integrity", "typescript-no-emit/v1"] =
+  Object.freeze(["scope-integrity", "typescript-no-emit/v1"]);
 export const TASK_LIMITS: Readonly<{ reads: number; edits: number; checks: number; fileBytes: number }> =
   Object.freeze({ reads: 8, edits: 2, checks: 3, fileBytes: 64 * 1024 });
 

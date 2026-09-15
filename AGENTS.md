@@ -3,11 +3,11 @@
 This pre-release package provides a CLI, development checks, bounded Oxlint
 verification, durable evidence recovery, independent candidate checkouts and
 one approved contained repository typecheck profile, one proposal-backed
-documentation task with bounded live execution, local review
+TypeScript source task with bounded execution, local review
 decisions and guarded exact-file promotion.
 Separate Pi compatibility and live
 authentication, fixed verification-tool and isolated candidate-correction experiments
-exist; it does not yet execute general repository tasks.
+exist; it does not yet execute general repository tasks or qualify the new source-task flow live.
 Keep changes scoped to the active increment.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;
