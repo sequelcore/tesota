@@ -76,9 +76,21 @@ Windows-host/Docker-Linux qualification; failure, cancellation, timeout and
 cleanup paths remain synthetic, and dependency provisioning remains an explicit
 unqualified operator boundary. Build profiles remain absent.
 
+Docker is the only implemented protected environment for these repository-
+executing profiles, not a permanent product prerequisite. This gate will keep
+the container path and qualify one lower-friction OS-level local sandbox against
+an existing profile before introducing shared provider machinery. A future
+trusted host-native posture must be an explicit lower-assurance grant and cannot
+satisfy protected policy. Remote isolation remains deferred until a named
+workflow requires it. Selection must never silently downgrade after setup,
+startup or settlement failure; [decision 007](decisions/007-execution-environments.md)
+owns this direction.
+
 Exit evidence: real positive, failing, missing-tool, no-tests, fatal-exit,
 timeout, cancellation, surviving-descendant and source-drift cases on each
-supported platform.
+supported platform and execution environment. Qualification must also record
+setup friction, unsupported controls and whether the evidence producer remains
+protected from the workload it observes.
 
 ### 3. Task-sized code changes — implementation active
 

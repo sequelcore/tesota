@@ -1,6 +1,6 @@
 # Public positioning evidence
 
-Research cutoff: **2026-09-14**.
+Research cutoff: **2026-09-15**.
 
 This reference records the external evidence behind Tesota's public identity.
 It compares current first-party product language and selected verification work.
@@ -39,6 +39,39 @@ Across this sample, products repeatedly emphasize tool use, planning, persistent
 sessions, multiple surfaces, model or provider choice, extensibility, parallel
 execution and automation. These descriptions do not imply equivalent authority,
 isolation, evidence or recovery semantics.
+
+## Execution environments and isolation
+
+Current tools expose several execution mechanisms rather than treating one as
+the category definition:
+
+- [VS Code agents](https://code.visualstudio.com/docs/agents/run/approvals)
+  document approvals and terminal sandboxing as separate controls. Sandbox
+  support and enforcement vary by operating system, and elevation remains an
+  explicit transition rather than an invisible fallback.
+- [Claude Code](https://code.claude.com/docs/en/sandbox-environments) compares
+  OS sandboxing, sandbox runtimes, containers, virtual machines and cloud
+  environments. Its guidance positions OS sandboxing for everyday local work
+  and stronger isolation for unattended or untrusted execution; it does not
+  make Docker the only supported model.
+- [Gemini CLI](https://geminicli.com/docs/cli/sandbox/) documents platform-
+  dependent sandbox providers including Seatbelt, Docker or Podman, Windows
+  low-integrity execution, gVisor and LXC. The provider name alone does not
+  establish equivalent filesystem, network or credential protection.
+- [Pi's sandbox extension example](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/examples/extensions/sandbox/index.ts)
+  demonstrates replacing its normal shell tool with an OS-level Seatbelt or
+  bubblewrap boundary. This establishes an extension seam, not a product-wide
+  confinement guarantee.
+- [Vercel Sandbox](https://vercel.com/docs/sandbox) uses remote Firecracker
+  microVMs for untrusted code and agent workloads. That is a relevant future
+  execution environment, but it adds remote identity, credential, lifecycle and
+  infrastructure ownership that Tesota does not currently need.
+
+The supported market inference is narrow: low-friction local execution and
+stronger isolated execution can coexist behind explicit policy. The mechanisms
+are not interchangeable, and approval is not confinement. Tesota's architectural
+decision is recorded in
+[decision 007](../decisions/007-execution-environments.md).
 
 ## Why verification is becoming central
 

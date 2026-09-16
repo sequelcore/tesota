@@ -43,6 +43,10 @@ commands, arbitrary task manifests, general web research, untrusted workloads or
 non-code workflows. The [roadmap](docs/roadmap.md) owns demonstrated progress
 and remaining requirements.
 
+Docker is the current protected environment for the repository TypeScript and
+Vitest profiles, not a permanent product prerequisite. See the
+[execution-environment decision](docs/decisions/007-execution-environments.md).
+
 ## Get started
 
 Use Bun 1.4.2 and Node 24.15.0. [package.json](package.json) owns the toolchain

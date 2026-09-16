@@ -47,6 +47,9 @@ Tesota invokes its fixed TypeScript argv inside the pinned, network-disabled,
 read-only container policy. This Windows development slice requires Docker
 Desktop, the pinned image already present locally and a matching TypeScript
 installation in the source repository. It performs no install or image pull.
+That Docker requirement belongs to the current profile, not every Tesota
+operation; [decision 007](decisions/007-execution-environments.md) owns the
+long-term execution-environment policy.
 `isolation qualify` runs the same fixed probe in the installed Codex Windows
 sandbox and a pinned Docker container. It selects a backend only when every
 filesystem, synthetic-credential, network, descendant and cancellation control

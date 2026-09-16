@@ -60,9 +60,15 @@ Tesota follows these principles:
    its effects and the cost of being wrong.
 10. **Telemetry describes; it does not authorize.** Visibility can improve a
     decision without becoming a permission source.
+11. **Authority and confinement are different.** Approval determines which
+    effects may be attempted; the execution environment determines which
+    effects the process can actually perform. Neither substitutes for the
+    other.
 
 The [verifier strategy](verifier-strategy.md) applies these principles to
-specific tools and qualification levels.
+specific tools and qualification levels. [Decision 007](decisions/007-execution-environments.md)
+applies the distinction between authority and confinement to execution
+environments.
 
 ## The Tesota lifecycle
 
@@ -116,6 +122,7 @@ The terms below describe different owners and must not be used interchangeably:
 | **Tesota Shell** | The current interactive terminal surface |
 | **Agent engine** | Model interaction, sessions, tool calls and agent-loop mechanics; Pi is the selected engine |
 | **Model** | The inference provider used by an engine for a particular operation |
+| **Execution environment** | The concrete process boundary that applies filesystem, network, credential and process restrictions; it does not grant task authority |
 | **Verifier** | A tool that produces a bounded observation about a candidate |
 | **Reviewer** | An independent assessor; Gentle AI is the current optional provider |
 | **Acceptance** | A human or explicitly authorized policy decision about a candidate |

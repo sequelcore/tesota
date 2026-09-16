@@ -29,6 +29,20 @@ Authority moves downward from application policy and explicit operator action.
 Observations move upward from actual effects. Model output, telemetry, a verifier
 result and a review never create authority.
 
+Execution follows a separate chain:
+
+```text
+admitted effects and protection requirements
+  -> qualified execution environment selected before approval
+  -> exact environment and policy shown to the operator
+  -> bounded invocation
+  -> observed result and settlement bound into evidence
+```
+
+Approval permits an operation; the execution environment constrains its actual
+effects. A process does not become protected merely because it was approved,
+and an isolated process does not gain authority merely because it is confined.
+
 ## Canonical owners
 
 | Owner | Responsibility |
@@ -43,7 +57,7 @@ result and a review never create authority.
 | `repository-check-input.ts` | Bounded regular-file, dependency-installation and JSON observations shared by admitted repository checks |
 | `repository-container-process.ts` | Docker client/container settlement shared by the concrete TypeScript and Vitest profiles |
 | `repository-typecheck.ts` | Concrete TypeScript profile admission, input binding and result semantics |
-| `repository-typecheck-process.ts` | Docker client/container settlement and bounded output for that concrete profile |
+| `repository-typecheck-process.ts` | Fixed TypeScript process limits and composition with shared container settlement |
 | `repository-typecheck-command.ts` | One-use local approval and CLI composition for the TypeScript profile |
 | `repository-vitest.ts` | Concrete targeted Vitest profile admission, input binding and result semantics |
 | `repository-vitest-process.ts` | Fixed Vitest process limits and composition with shared container settlement |
@@ -89,9 +103,33 @@ form a generic verifier abstraction. A new verifier enters the task runtime only
 after it has a concrete task consumer and satisfies the qualification policy in
 [verifier strategy](verifier-strategy.md).
 
+## Execution environments
+
+The current repository TypeScript and Vitest profiles use a pinned Docker
+container because they can load candidate dependencies or execute candidate
+tests. Their container policy is part of their bound evidence. The native
+Oxlint profile occupies a narrower boundary: it reads a captured source file
+through fixed rules, loads no external plugins and executes no candidate code.
+Its process settlement is evidence, but it is not described as sandboxing.
+
+Docker is therefore the current protected provider for repository-executing
+checks, not a product-wide architectural requirement. The intended selection
+order is a qualified OS-level local sandbox when it satisfies the admitted
+policy, a qualified container when it is required or preferred, and an explicit
+trusted host-native posture only for grants that permit its lower assurance.
+Remote isolation remains deferred until a named workflow requires it.
+
+There is no silent downgrade. If the selected environment becomes unavailable
+or cannot confirm settlement, Tesota preserves that outcome instead of running
+the operation through a weaker environment. The complete rationale and future
+qualification boundary are in
+[decision 007](decisions/007-execution-environments.md).
+
 ## Current limitations
 
-The implementation admits only modifications to one or two existing `src/**/*.ts` files. It does not admit test changes,
+The implementation admits only modifications to one or two existing `src/**/*.ts` files. Its repository-executing
+checks currently require the qualified container path; no OS-sandboxed or
+trusted host-native repository-task provider is implemented. It does not admit test changes,
 new/deleted files, arbitrary repository commands or projects, general web tools, remote adoption or
 untrusted workloads. The [roadmap](roadmap.md) records the evidence required to
 broaden those boundaries.

@@ -6,6 +6,13 @@ Build first with `bun run build`, then run from the repository root:
 bun --no-env-file dist/cli.js verify src/cli.ts
 ```
 
+Each profile below owns both its check semantics and its currently qualified
+execution environment. Docker-backed and native profiles are not interchangeable:
+selection must satisfy the admitted policy before approval and evidence records
+the environment that actually ran. There is no fallback from a protected
+profile to host-native execution. The architectural rationale is in
+[decision 007](decisions/007-execution-environments.md).
+
 ## Approved repository typecheck
 
 `tesota candidate check typecheck <candidate>` is the first repository-owned
