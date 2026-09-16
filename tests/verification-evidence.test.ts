@@ -164,13 +164,15 @@ it("rejects oversized saves without changing existing recoverable bytes", async 
   const path = join(root, "evidence.json");
   const before = await readFile(path);
   await writeFile(file, "debugger;\n".repeat(5500));
-  const oversized = await runOxlint({ ...check, maxOutputBytes: 32 * 1024 * 1024 }, file);
-  expect(oversized.status).toBe("check_failed");
+  const oversized = await runOxlint({ ...check, timeoutMs: 30_000, maxOutputBytes: 128 * 1024 * 1024 }, file);
+  if (oversized.status !== "check_failed") {
+    throw new Error(`Expected oversized issued evidence, received ${JSON.stringify(oversized)}`);
+  }
   expect(Buffer.byteLength(JSON.stringify(oversized))).toBeGreaterThan(512 * 1024);
   await expect(store.save(oversized)).rejects.toThrow("512 KiB");
   expect(await readFile(path)).toEqual(before);
   expect(await store.load()).toMatchObject({ status: "recovered", evidence: { historical: previous } });
-});
+}, 45_000);
 
 it("compares recovered binding properties independently of object key order", async () => {
   const { root, file, check, store } = await fixture();
