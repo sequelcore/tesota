@@ -1,7 +1,7 @@
 name: Tesota checks
 on:
   push:
-    branches: [main, tesota/bootstrap]
+    branches: [main]
   pull_request:
 permissions:
   contents: read
