@@ -8,8 +8,9 @@ constitute a rerun of these results.
 ## Scope and provenance
 
 Historical source: `4257ee9fce034cfe8e50dce3dbe3afb12f468094`.
-This is not a verified functional baseline. The normal `tesota/bootstrap`
-branch starts at that exact commit. M1 adds only a private CLI scaffold and
+This is not a verified functional baseline. The temporary `tesota/bootstrap`
+branch started at that exact commit and was later promoted to `main`. M1 adds
+only a private CLI scaffold and
 development checks; no agent engine, authentication, task storage, or provider
 integration is implemented.
 

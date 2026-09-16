@@ -8,9 +8,9 @@ claim that the frozen Kiln branch is supported.
 
 | Field | Value |
 | --- | --- |
-| Repository | [`sequelcore/kiln`](https://github.com/sequelcore/kiln) |
+| Repository history | [`sequelcore/tesota`](https://github.com/sequelcore/tesota) |
 | Inspected branch | `dev` |
-| Inspected commit | [`9b604b105fbf3644328e187b862233660280b604`](https://github.com/sequelcore/kiln/commit/9b604b105fbf3644328e187b862233660280b604) |
+| Inspected commit | [`9b604b105fbf3644328e187b862233660280b604`](https://github.com/sequelcore/tesota/commit/9b604b105fbf3644328e187b862233660280b604) |
 | Commit date | 2026-09-09 07:43:34 UTC |
 | Research cutoff | 2026-09-14 |
 | Audit type | Selective read-only source, test, architecture and evidence review |

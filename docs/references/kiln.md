@@ -10,12 +10,13 @@ a pinned review of the frozen Kiln `dev` branch.
 
 ## Repository and fixed source
 
-Repository: [sequelcore/kiln](https://github.com/sequelcore/kiln).
-Tesota currently develops on `tesota/bootstrap` within that Git history; this
-does not imply a separate published Tesota repository or a completed rebranding.
+Repository history: [sequelcore/tesota](https://github.com/sequelcore/tesota).
+Tesota develops on `main`. The frozen `dev` branch and the
+`kiln-legacy-2026-09` tag preserve the final Kiln development state; they are
+references, not active development lines.
 
 The bootstrap source is
-[`4257ee9fce034cfe8e50dce3dbe3afb12f468094`](https://github.com/sequelcore/kiln/tree/4257ee9fce034cfe8e50dce3dbe3afb12f468094).
+[`4257ee9fce034cfe8e50dce3dbe3afb12f468094`](https://github.com/sequelcore/tesota/tree/4257ee9fce034cfe8e50dce3dbe3afb12f468094).
 It is historical provenance, not a verified functional baseline. The immutable
 [bootstrap inventory](../history/bootstrap-inventory.json) records original blob identities
 and dispositions. A coexisting Kiln checkout may have advanced beyond this source.
@@ -27,9 +28,9 @@ Repository links may require access. No current remote branch state is asserted.
 
 | Area | Fixed source | Current disposition |
 | --- | --- | --- |
-| Browser/device OAuth | [codex-oauth-auth.ts](https://github.com/sequelcore/kiln/blob/4257ee9fce034cfe8e50dce3dbe3afb12f468094/packages/runtime/src/agents/credential-acquisition/codex-oauth-auth.ts) | Studied for existing behavior and extraction dependencies; Tesota uses Pi authentication |
-| Codex transport | [codex-oauth.ts](https://github.com/sequelcore/kiln/blob/4257ee9fce034cfe8e50dce3dbe3afb12f468094/packages/runtime/src/agents/provider-adapters/codex-oauth.ts) | Studied for adapter dependencies; not ported |
-| Authentication regressions | [codex-oauth-auth.test.ts](https://github.com/sequelcore/kiln/blob/4257ee9fce034cfe8e50dce3dbe3afb12f468094/packages/runtime/tests/agents/credential-acquisition/codex-oauth-auth.test.ts) | Located as a future comparison source; not rerun or adopted |
+| Browser/device OAuth | [codex-oauth-auth.ts](https://github.com/sequelcore/tesota/blob/4257ee9fce034cfe8e50dce3dbe3afb12f468094/packages/runtime/src/agents/credential-acquisition/codex-oauth-auth.ts) | Studied for existing behavior and extraction dependencies; Tesota uses Pi authentication |
+| Codex transport | [codex-oauth.ts](https://github.com/sequelcore/tesota/blob/4257ee9fce034cfe8e50dce3dbe3afb12f468094/packages/runtime/src/agents/provider-adapters/codex-oauth.ts) | Studied for adapter dependencies; not ported |
+| Authentication regressions | [codex-oauth-auth.test.ts](https://github.com/sequelcore/tesota/blob/4257ee9fce034cfe8e50dce3dbe3afb12f468094/packages/runtime/tests/agents/credential-acquisition/codex-oauth-auth.test.ts) | Located as a future comparison source; not rerun or adopted |
 | Static analysis profile | `packages/runtime/src/verification/oxlint/oxlint-analyzer.ts` at `9b604b105fbf3644328e187b862233660280b604` | Five rules adapted into Tesota's owned `oxlint-static/v2` configuration; no implementation code copied |
 | Quality-gate loop | `packages/core/src/quality-gates/gate-runner.ts` and `verification-loop.ts` on the local `dev` branch | Studied as a bounded orchestration pattern; not adopted as a general runtime |
 

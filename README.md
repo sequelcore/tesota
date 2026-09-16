@@ -110,6 +110,8 @@ acceptance.
 The [reconstruction decision](docs/decisions/001-start-tesota.md) explains why
 development moved to a smaller implementation. [Kiln remains a reference](docs/references/kiln.md)
 for selected code, tests and lessons. Its roadmap does not define Tesota's scope.
+The [repository transition decision](docs/decisions/008-transition-repository-identity.md)
+records how the shared Git history preserves Kiln while `main` carries Tesota.
 
 The historical source is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`, not a
 verified functional baseline. The [bootstrap inventory](docs/history/bootstrap-inventory.json)

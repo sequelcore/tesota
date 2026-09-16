@@ -22,10 +22,11 @@ focus new implementation work on Tesota. Start with a minimal usable package and
 add bounded capabilities, each with observable behavior and proportionate checks.
 Do not require feature parity with Kiln before using Tesota.
 
-Preserve Git history and attribution. The bootstrap starts from
-`4257ee9fce034cfe8e50dce3dbe3afb12f468094` on the normal `tesota/bootstrap`
-branch. It replaces the application tree selectively; it does not create an
-unrelated history. The [inventory](../history/bootstrap-inventory.json) records inherited
+Preserve Git history and attribution. The bootstrap started from
+`4257ee9fce034cfe8e50dce3dbe3afb12f468094` on the temporary
+`tesota/bootstrap` branch before promotion to `main`. It replaced the application
+tree selectively; it did not create an unrelated history. The
+[inventory](../history/bootstrap-inventory.json) records inherited
 file dispositions. No Kiln implementation package was ported in the bootstrap.
 
 Treat Kiln as a coexisting [reference implementation](../references/kiln.md).
@@ -36,6 +37,8 @@ the boundary; the [Pi decision](002-use-pi.md) records that choice.
 The later [selective recovery decision](005-recover-kiln-selectively.md) confirms
 this direction while increasing the intended reuse of Kiln's contracts, adverse
 fixtures and failure knowledge. It does not authorize whole-package adoption.
+The [repository transition decision](008-transition-repository-identity.md)
+records the later public repository and branch disposition.
 
 ## Consequences
 
