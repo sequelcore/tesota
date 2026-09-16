@@ -141,36 +141,49 @@ it("rejects a selection whose Vitest positional filter would collect another con
     linuxX64NodeModules: current.linuxX64NodeModules })).rejects.toThrow("selection is ambiguous");
 });
 
-it("rejects unsupported declarations, configuration shapes, runner identities and protected oracle changes", async () => {
-  for (const current of [await fixture(fastConfiguration, "vitest run"),
-    await fixture(fastConfiguration.replace("maxWorkers: 4", "setupFiles: []")),
-    await fixture(fastConfiguration.replace("maxWorkers: 4", "globalSetup: './setup.ts'")),
-    await fixture(fastConfiguration.replace("maxWorkers: 4", "projects: []")),
-    await fixture(fastConfiguration.replace("testTimeout: 10_000", "plugins: []"))]) {
-    await expect(prepareRepositoryVitest({ candidate: current.candidate.directory, source: current.source,
-      selectedTests: ["tests/sample.test.ts"], runtime: await runtime(current.root),
-      linuxX64NodeModules: current.linuxX64NodeModules })).rejects.toThrow();
-  }
+it.each([
+  ["test script", fastConfiguration, "vitest run"],
+  ["setup files", fastConfiguration.replace("maxWorkers: 4", "setupFiles: []"), undefined],
+  ["global setup", fastConfiguration.replace("maxWorkers: 4", "globalSetup: './setup.ts'"), undefined],
+  ["projects", fastConfiguration.replace("maxWorkers: 4", "projects: []"), undefined],
+  ["plugins", fastConfiguration.replace("testTimeout: 10_000", "plugins: []"), undefined],
+] as const)("rejects unsupported %s", async (_name, configuration, script) => {
+  const current = await fixture(configuration, script);
+  await expect(prepareRepositoryVitest({ candidate: current.candidate.directory, source: current.source,
+    selectedTests: ["tests/sample.test.ts"], runtime: await runtime(current.root),
+    linuxX64NodeModules: current.linuxX64NodeModules })).rejects.toThrow();
+});
+
+it("rejects an unsupported Vitest identity", async () => {
   const current = await fixture();
   await writeFile(join(current.linuxX64NodeModules, "vitest", "package.json"), JSON.stringify({ name: "vitest", version: "4.0.0" }));
   await expect(prepareRepositoryVitest({ candidate: current.candidate.directory, source: current.source,
     selectedTests: ["tests/sample.test.ts"], runtime: await runtime(current.root), linuxX64NodeModules: current.linuxX64NodeModules }))
     .resolves.toMatchObject({ state: "unavailable", reason: "linux_x64_dependency_closure_unavailable" });
+});
+
+it("rejects a malformed Vite identity", async () => {
   const malformedRunner = await fixture();
   await writeFile(join(malformedRunner.linuxX64NodeModules, "vite", "package.json"), JSON.stringify({ name: "other", version: "7.2.0" }));
   await expect(prepareRepositoryVitest({ candidate: malformedRunner.candidate.directory, source: malformedRunner.source,
     selectedTests: ["tests/sample.test.ts"], runtime: await runtime(malformedRunner.root),
     linuxX64NodeModules: malformedRunner.linuxX64NodeModules })).resolves.toMatchObject({ state: "unavailable" });
+});
+
+it("rejects a test outside the configured selection", async () => {
   const unsupportedSelection = await fixture();
   await expect(prepareRepositoryVitest({ candidate: unsupportedSelection.candidate.directory, source: unsupportedSelection.source,
     selectedTests: ["tests/not-configured.test.ts"], runtime: await runtime(unsupportedSelection.root),
     linuxX64NodeModules: unsupportedSelection.linuxX64NodeModules })).rejects.toThrow();
+});
+
+it("rejects a protected oracle change", async () => {
   const protectedInput = await fixture();
   await writeFile(join(protectedInput.candidate.checkout, "tests", "sample.test.ts"), "changed\n");
   await expect(prepareRepositoryVitest({ candidate: protectedInput.candidate.directory, source: protectedInput.source,
     selectedTests: ["tests/sample.test.ts"], runtime: await runtime(protectedInput.root),
     linuxX64NodeModules: protectedInput.linuxX64NodeModules })).rejects.toThrow("candidate shape unsupported");
-}, 20_000);
+});
 
 it("does not issue a profile without the required Linux/x64 dependency closure", async () => {
   const current = await fixture();
