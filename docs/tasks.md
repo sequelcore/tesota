@@ -1,5 +1,9 @@
 # Approved tasks
 
+This is the technical contract for the current task runtime. In normal use,
+Tesota Shell composes these stages without asking the user to operate proposal
+or candidate IDs. See [using Tesota](using-tesota.md) for the product workflow.
+
 Tesota has one task lifecycle. A model may propose work, but only proposal
 admission and explicit operator approval can issue an execution grant.
 

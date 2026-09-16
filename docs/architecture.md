@@ -9,6 +9,21 @@ The architecture follows the lifecycle in [identity](identity.md). It does not
 define a universal agent, verifier or plugin framework ahead of concrete
 consumers.
 
+Product documentation uses the human sequence **Ask -> Work <-> Check <->
+Correct -> Review -> Apply**. The runtime needs more precise identities and
+state transitions:
+
+| User-facing idea | Internal owner |
+| --- | --- |
+| The work Tesota proposes and the access it needs | proposal admission and an immutable grant |
+| This result or this version | candidate identity and content binding |
+| Checks for this result | verification applicability and provenance |
+| Finished, active or not confirmed finished | outcome journal and settlement state |
+| Apply these changes | promotion bound to an accepted candidate |
+
+These terms are necessary for implementation and diagnosis. They are not
+prerequisites for ordinary use.
+
 ## Runtime flow
 
 ```text
@@ -97,6 +112,12 @@ which tools exist, their schemas, budgets and effects. Gentle is an optional
 review provider; Tesota preserves provider evidence but keeps acceptance and
 promotion local and distinct.
 
+Tesota-owned result and evidence identities do not depend on Pi being the
+permanent engine. A future engine or model route must qualify against the same
+relevant ownership and evidence boundaries before replacing an existing route.
+This preserves the right to evolve the engine without introducing a generic
+engine registry or making interchangeability a product feature.
+
 Verifier integrations remain tool-specific. The repository TypeScript profile,
 Oxlint and Dafny experiments do not
 form a generic verifier abstraction. A new verifier enters the task runtime only
@@ -131,5 +152,6 @@ The implementation admits only modifications to one or two existing `src/**/*.ts
 checks currently require the qualified container path; no OS-sandboxed or
 trusted host-native repository-task provider is implemented. It does not admit test changes,
 new/deleted files, arbitrary repository commands or projects, general web tools, remote adoption or
-untrusted workloads. The [roadmap](roadmap.md) records the evidence required to
-broaden those boundaries.
+untrusted workloads. The [roadmap](roadmap.md) owns the capability sequence;
+[qualification](qualification.md) records the evidence required to broaden
+those boundaries.

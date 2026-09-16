@@ -40,6 +40,21 @@ sessions, multiple surfaces, model or provider choice, extensibility, parallel
 execution and automation. These descriptions do not imply equivalent authority,
 isolation, evidence or recovery semantics.
 
+## Experience-first communication pattern
+
+The agent products in this sample generally introduce themselves in the order a
+new user evaluates them: what the product is, what work it helps accomplish,
+why it differs and how to begin. Implementation mechanics follow later.
+Claude Code, Codex, OpenCode, Aider, goose, Hermes and Gemini all lead with work
+or experience in their inspected public language. Pi is the relevant exception:
+it leads with a harness because the harness is the product it offers.
+
+Tesota uses Pi but is not Pi. Its public documentation should therefore lead
+with Tesota as an agent and the experience of working toward a result. Exact
+candidate identity, evidence provenance, authority and settlement remain
+essential differentiators and technical contracts, but they should not be the
+vocabulary a person must learn before trying the product.
+
 ## Execution environments and isolation
 
 Current tools expose several execution mechanisms rather than treating one as

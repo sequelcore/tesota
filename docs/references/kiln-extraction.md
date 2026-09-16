@@ -42,25 +42,22 @@ percentages of Kiln source code.
 No complete Kiln package is approved for copying. Literal reuse is limited to a
 small fragment that wins the matched experiment described in decision 005.
 
-## Reconciled priorities
+## Historical reconciliation
 
-The audit's `recover now` item—bounded diagnose, correct and recheck—has one
-narrow mechanism in Tesota: the approved TypeScript task supplies a failed
-scope diagnostic before editing and requires a fresh passing observation. The
-actual gap is outcome-relevant, repository-owned checks with the same bounded
-authority and evidence semantics.
+The original audit translated Kiln findings into the Tesota repository as it
+existed at the research cutoff. It identified bounded diagnose-correct-recheck,
+repository-owned checks, task-sized work, honest closeout and attenuated
+delegation as possible proving areas. That translation remains historical
+rationale, not a current priority queue.
 
-| Priority | Capability | Current Tesota position | Next proof |
-| --- | --- | --- | --- |
-| P0 | Approved repository check profiles | One bounded standalone Oxlint profile exists outside the task runtime | Admit one repository-owned build, type or test profile with explicit command identity and effects |
-| P0 | Task-sized multi-file work | One proposal-backed TypeScript task admits up to two existing source files | Complete an ordinary small code task with admitted effects and qualified checks |
-| P0 | Diagnostic correction | The TypeScript task can consume concrete compiler diagnostics; prospective qualification remains pending | Correct a real repository check without changing or suppressing its oracle |
-| P0 | Candidate-bound closeout | Review, decision and guarded promotion exist as separate seams | Present diff, applicable checks, limitations, decision and recovery as one operator task |
-| P0 | Pi resource admission | The full SDK experiment uses Pi's default resource discovery | Supply a Tesota-controlled loader before that experiment becomes a general runtime path |
-| P1 | Additional verifiers | A tool-specific strategy and research queue exist | Add only a verifier that detects an observed defect class and passes the native qualification contract |
-| P2 | Read-only child agent | No production child consumer exists | Compare sequential work with one attenuated, attributable scout before adding orchestration |
+The [roadmap](../roadmap.md) now owns product status and ordering in terms of
+continuous user capabilities. The [qualification criteria](../qualification.md)
+own the evidence required for those capabilities. When a roadmap task exposes a
+relevant failure mode, the classification below says which Kiln knowledge may
+be recovered and under what constraints.
 
-Memory, interchangeable engines and custom workflow frameworks remain deferred.
+Memory, interchangeable engines and custom workflow frameworks were deferred by
+the audit and remain outside its approved extraction scope.
 Tesota should expose optional capability providers only behind a stable authority,
 candidate, evidence, acceptance and promotion kernel. Methodologies such as SDD,
 RDD and TDD are policies or workflows; Gentle is a review provider; Pi is the
