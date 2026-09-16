@@ -84,7 +84,7 @@ async function validateStoreLocation(path: string, source: string): Promise<stri
 
 async function prepareStore(path: string, source: string): Promise<string> {
   const root = await validateStoreLocation(path, source);
-  await mkdir(root, { recursive: true, mode: 0o700 });
+  const created = await mkdir(root, { recursive: true, mode: 0o700 }) !== undefined;
   const actual = await plainDirectory(root);
   const info = await lstat(actual);
   if (process.platform === "win32") {
@@ -101,9 +101,14 @@ async function prepareStore(path: string, source: string): Promise<string> {
     execFileSync(executablePath, ["-NoProfile", "-NonInteractive", "-Command",
       `$ErrorActionPreference='Stop'; $directory=[System.IO.DirectoryInfo]::new('${escaped}'); ` +
       `$owner=$directory.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Owner); ` +
-      `$acl=$directory.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access); ` +
       `$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User; ` +
-      `if($owner.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value){throw 'Unexpected owner'}; ` +
+      `$current=$owner.GetOwner([System.Security.Principal.SecurityIdentifier]); ` +
+      `if($current.Value -ne $sid.Value){` +
+      `if(-not $${created ? "true" : "false"}){throw 'Unexpected owner'}; ` +
+      `$owner.SetOwner($sid); $directory.SetAccessControl($owner); ` +
+      `$owner=$directory.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Owner); ` +
+      `if($owner.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value){throw 'Cannot establish owner'}}; ` +
+      `$acl=$directory.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access); ` +
       `$acl.SetAccessRuleProtection($true,$false); ` +
       `foreach($entry in @($acl.Access)){$acl.RemoveAccessRuleSpecific($entry)}; ` +
       `$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow'); ` +

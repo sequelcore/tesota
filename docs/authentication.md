@@ -38,6 +38,9 @@ polling, token exchange and refresh; Tesota owns storage and presentation.
 
 Credentials are JSON protected by filesystem permissions, not encryption at rest.
 On Windows, storage checks the directory owner and restricts its ACL to that user.
+When an elevated process creates a new directory with an administrative default
+owner, Tesota assigns that newly created directory to the current user before
+locking its ACL; it never takes ownership of a pre-existing directory.
 On Unix, the directory must belong to the current user with mode 0700, and files
 use mode 0600. Applications running as the same user can access this storage.
 Credential contents, raw provider failures and temporary codes are excluded from
