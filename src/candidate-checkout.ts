@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { lstat, mkdir, open, readFile, realpath, readdir, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -27,6 +27,13 @@ export interface CheckoutInspection extends CandidateCheckout {
   readonly head: string;
   readonly headChanged: boolean;
   readonly changes: readonly { readonly status: string; readonly path: string }[];
+}
+
+export interface CandidateContentBinding {
+  readonly directory: string;
+  readonly checkout: string;
+  readonly baseline: string;
+  readonly contentSha256: string;
 }
 
 export type CandidateLifecycleStatus = "active" | "awaiting-review" | "accepted" | "rejected" | "abandoned" | "failed" | "invalid";
@@ -207,6 +214,18 @@ export async function abandonCandidate(path: string, candidatesRoot?: string): P
   const result = (await listCandidateCheckouts(dirname(candidate.directory))).find((summary) => summary.directory === candidate.directory);
   if (result === undefined) throw new Error("Candidate abandonment unavailable");
   return result;
+}
+
+/** Bind an inspectable candidate while leaving each profile to own its protected input policy. */
+export async function bindCandidateCheckoutContent(candidateDirectory: string,
+  isProtectedPath: (path: string) => boolean): Promise<CandidateContentBinding> {
+  const inspection = await inspectCandidateCheckout(candidateDirectory);
+  if (inspection.headChanged || inspection.changes.some((change) => change.status !== "M" || isProtectedPath(change.path))) {
+    throw new Error("Repository check candidate shape unsupported");
+  }
+  return Object.freeze({ directory: inspection.directory, checkout: inspection.checkout, baseline: inspection.baseline,
+    contentSha256: createHash("sha256").update(JSON.stringify({ baseline: inspection.baseline,
+      diff: await candidateDiff(inspection.directory) })).digest("hex") });
 }
 
 function validateTree(checkout: string, baseline: string): void {

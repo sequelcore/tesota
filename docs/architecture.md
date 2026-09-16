@@ -40,9 +40,13 @@ result and a review never create authority.
 | `proposal-admission.ts` | Supported task policy and immutable run grant |
 | `task-contract.ts` | Shared task kind, budgets and grant-derived tool schemas |
 | `candidate-checkout.ts` | Independent candidate creation, inspection and lifecycle |
+| `repository-check-input.ts` | Bounded regular-file, dependency-installation and JSON observations shared by admitted repository checks |
+| `repository-container-process.ts` | Docker client/container settlement shared by the concrete TypeScript and Vitest profiles |
 | `repository-typecheck.ts` | Concrete TypeScript profile admission, input binding and result semantics |
 | `repository-typecheck-process.ts` | Docker client/container settlement and bounded output for that concrete profile |
 | `repository-typecheck-command.ts` | One-use local approval and CLI composition for the TypeScript profile |
+| `repository-vitest.ts` | Concrete targeted Vitest profile admission, input binding and result semantics |
+| `repository-vitest-process.ts` | Fixed Vitest process limits and composition with shared container settlement |
 | `candidate-task.ts` | Candidate effects, plan binding and composition of scope integrity with the concrete TypeScript check |
 | `integrations/pi-task.ts` | Pi execution and correction evidence consistency |
 | `task-review.ts` | Exact-candidate review and local decision evidence |

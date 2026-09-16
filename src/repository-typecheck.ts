@@ -1,10 +1,11 @@
-import { createHash, randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { lstat, open, readdir, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import * as z from "zod";
-import { candidateDiff, inspectCandidateCheckout, inspectPromotionSource } from "./candidate-checkout.js";
-import { CONTAINER_IMAGE, buildTypecheckContainerInvocation, typecheckContainerPolicySha256 } from "./command-isolation.js";
+import { bindCandidateCheckoutContent, inspectPromotionSource } from "./candidate-checkout.js";
+import { CONTAINER_IMAGE, buildTypecheckContainerInvocation, containerRuntimeIsOutside, resolveContainerRuntime,
+  type ContainerRuntimeIdentity, typecheckContainerPolicySha256 } from "./command-isolation.js";
+import { dependencyInstallationSha256, parseRepositoryJson, readRepositoryInput, repositoryInputDirectory,
+  sha256 } from "./repository-check-input.js";
 import { REPOSITORY_TYPECHECK_LIMITS, executeRepositoryTypecheckContainer,
   type RepositoryTypecheckExecutor } from "./repository-typecheck-process.js";
 
@@ -51,114 +52,15 @@ export type RepositoryTypecheckResult = Readonly<{
   provenance: "issued";
 }>;
 
-interface RuntimeIdentity { readonly executable: string; readonly executableSha256: string }
 interface PrepareOptions {
   readonly candidate: string;
   readonly source: string;
-  readonly runtime?: RuntimeIdentity;
+  readonly runtime?: ContainerRuntimeIdentity;
 }
 const issued = new WeakSet<object>();
 
-function digest(bytes: Uint8Array | string): string {
-  return createHash("sha256").update(bytes).digest("hex");
-}
-
-function contains(parent: string, child: string): boolean {
-  const difference = relative(parent, child);
-  return difference === "" || !isAbsolute(difference) && difference !== ".." && !difference.startsWith(`..${sep}`);
-}
-
-async function readRegular(path: string, maximumBytes: number): Promise<Buffer> {
-  const absolute = resolve(path);
-  const metadata = await lstat(absolute);
-  if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 || metadata.size > maximumBytes ||
-      relative(absolute, await realpath(absolute)) !== "") throw new Error("Repository typecheck input unavailable");
-  const file = await open(absolute, "r");
-  try {
-    const bytes = Buffer.alloc(maximumBytes + 1);
-    let length = 0;
-    while (length < bytes.length) {
-      const read = await file.read(bytes, length, bytes.length - length, null);
-      if (read.bytesRead === 0) break;
-      length += read.bytesRead;
-    }
-    if (length > maximumBytes) throw new Error("Repository typecheck input unavailable");
-    return bytes.subarray(0, length);
-  } finally { await file.close(); }
-}
-
-async function plainDirectory(path: string): Promise<string> {
-  const absolute = resolve(path);
-  const metadata = await lstat(absolute);
-  const actual = await realpath(absolute);
-  if (!metadata.isDirectory() || metadata.isSymbolicLink() || relative(absolute, actual) !== "") {
-    throw new Error("Repository typecheck directory redirected");
-  }
-  return actual;
-}
-
-async function dependencyInstallationSha256(root: string): Promise<string> {
-  const contents: [string, string][] = [];
-  let bytes = 0;
-  let entriesObserved = 0;
-  const visit = async (directory: string, prefix: string): Promise<void> => {
-    const entries = (await readdir(directory, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name));
-    for (const entry of entries) {
-      entriesObserved += 1;
-      if (entriesObserved > 100_000) throw new Error("Dependency installation exceeds bound");
-      const path = join(directory, entry.name);
-      const name = `${prefix}/${entry.name}`;
-      if (entry.isDirectory() && !entry.isSymbolicLink()) await visit(path, name);
-      else if (entry.isFile() && !entry.isSymbolicLink()) {
-        const content = await readRegular(path, 128 * 1024 * 1024);
-        bytes += content.length;
-        if (bytes > 512 * 1024 * 1024) throw new Error("Dependency installation exceeds bound");
-        contents.push([name, digest(content)]);
-      } else throw new Error("Unsupported dependency installation entry");
-    }
-  };
-  await visit(root, "node_modules");
-  return digest(JSON.stringify(contents));
-}
-
-function safeJson(bytes: Buffer): unknown {
-  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-}
-
-async function systemExecutable(name: string, protectedPaths: readonly string[]): Promise<string> {
-  if (process.platform !== "win32") throw new Error("Repository typecheck currently requires Windows Docker Desktop");
-  const systemRoot = process.env["SystemRoot"];
-  if (systemRoot === undefined || !isAbsolute(systemRoot)) throw new Error("Windows system directory unavailable");
-  const where = resolve(systemRoot, "System32", "where.exe");
-  const whereMetadata = await lstat(where);
-  if (!whereMetadata.isFile() || whereMetadata.isSymbolicLink() || relative(where, await realpath(where)) !== "" ||
-      protectedPaths.some((path) => contains(path, where))) throw new Error("Windows executable resolver unavailable");
-  const result = execFileSync(where, [name], { encoding: "utf8", windowsHide: true, timeout: 5_000,
-    maxBuffer: 16 * 1024 }).split(/\r?\n/u).filter(Boolean);
-  const executable = resolve(result[0] ?? "");
-  if (!isAbsolute(result[0] ?? "") || protectedPaths.some((path) => contains(path, executable))) {
-    throw new Error("Repository typecheck runtime unavailable");
-  }
-  return executable;
-}
-
-async function runtimeIdentity(protectedPaths: readonly string[]): Promise<RuntimeIdentity> {
-  const executable = await systemExecutable("docker.exe", protectedPaths);
-  const metadata = await lstat(executable);
-  if (!metadata.isFile() || metadata.isSymbolicLink() || relative(executable, await realpath(executable)) !== "") {
-    throw new Error("Repository typecheck runtime unavailable");
-  }
-  return { executable, executableSha256: digest(await readRegular(executable, 128 * 1024 * 1024)) };
-}
-
 async function candidateBinding(candidateDirectory: string): Promise<RepositoryTypecheckProfile["candidate"]> {
-  const inspection = await inspectCandidateCheckout(candidateDirectory);
-  if (inspection.headChanged || inspection.changes.some((change) =>
-    change.status !== "M" || protectedInputs.has(change.path))) {
-    throw new Error("Repository typecheck candidate shape unsupported");
-  }
-  return { directory: inspection.directory, checkout: inspection.checkout, baseline: inspection.baseline,
-    contentSha256: digest(JSON.stringify({ baseline: inspection.baseline, diff: await candidateDiff(inspection.directory) })) };
+  return await bindCandidateCheckoutContent(candidateDirectory, (path) => protectedInputs.has(path));
 }
 
 /** Admit one concrete, shell-free typecheck profile from repository declarations and observed installed inputs. */
@@ -167,25 +69,24 @@ export async function prepareRepositoryTypecheck(options: PrepareOptions): Promi
   const sourceIdentity = await inspectPromotionSource(candidate.directory, options.source, "package.json");
   if (sourceIdentity.head !== candidate.baseline) throw new Error("Repository typecheck source baseline changed");
   const source = sourceIdentity.source;
-  const packageBytes = await readRegular(join(candidate.checkout, "package.json"), 128 * 1024);
-  const tsconfigBytes = await readRegular(join(candidate.checkout, "tsconfig.json"), 128 * 1024);
-  const lockfileBytes = await readRegular(join(candidate.checkout, "bun.lock"), 8 * 1024 * 1024);
-  const declared = packageSchema.parse(safeJson(packageBytes));
-  tsconfigSchema.parse(safeJson(tsconfigBytes));
-  const nodeModules = await plainDirectory(join(source, "node_modules"));
-  const typescriptRoot = await plainDirectory(join(nodeModules, "typescript"));
-  const installed = installedPackageSchema.parse(safeJson(await readRegular(join(typescriptRoot, "package.json"), 128 * 1024)));
+  const packageBytes = await readRepositoryInput(join(candidate.checkout, "package.json"), 128 * 1024);
+  const tsconfigBytes = await readRepositoryInput(join(candidate.checkout, "tsconfig.json"), 128 * 1024);
+  const lockfileBytes = await readRepositoryInput(join(candidate.checkout, "bun.lock"), 8 * 1024 * 1024);
+  const declared = packageSchema.parse(parseRepositoryJson(packageBytes));
+  tsconfigSchema.parse(parseRepositoryJson(tsconfigBytes));
+  const nodeModules = await repositoryInputDirectory(join(source, "node_modules"));
+  const typescriptRoot = await repositoryInputDirectory(join(nodeModules, "typescript"));
+  const installed = installedPackageSchema.parse(parseRepositoryJson(await readRepositoryInput(join(typescriptRoot, "package.json"), 128 * 1024)));
   if (installed.version !== declared.devDependencies.typescript) throw new Error("Installed TypeScript does not match repository declaration");
-  const runtime = options.runtime ?? await runtimeIdentity([source, candidate.directory, candidate.checkout]);
-  if (!isAbsolute(runtime.executable) || !digestPattern.test(runtime.executableSha256) ||
-      [source, candidate.directory, candidate.checkout].some((path) => contains(path, runtime.executable))) {
+  const runtime = options.runtime ?? await resolveContainerRuntime([source, candidate.directory, candidate.checkout]);
+  if (!digestPattern.test(runtime.executableSha256) || !containerRuntimeIsOutside(runtime, [source, candidate.directory, candidate.checkout])) {
     throw new Error("Repository typecheck runtime unavailable");
   }
   const profile: RepositoryTypecheckProfile = {
     profile: REPOSITORY_TYPECHECK_PROFILE,
     candidate,
-    repository: { script: REPOSITORY_TYPECHECK_SCRIPT, packageJsonSha256: digest(packageBytes),
-      tsconfigSha256: digest(tsconfigBytes), lockfileSha256: digest(lockfileBytes) },
+    repository: { script: REPOSITORY_TYPECHECK_SCRIPT, packageJsonSha256: sha256(packageBytes),
+      tsconfigSha256: sha256(tsconfigBytes), lockfileSha256: sha256(lockfileBytes) },
     verifier: { packageVersion: installed.version, installationSha256: await dependencyInstallationSha256(nodeModules) },
     isolation: { image: CONTAINER_IMAGE, policySha256: typecheckContainerPolicySha256(),
       executable: runtime.executable, executableSha256: runtime.executableSha256, nodeModules },
@@ -220,16 +121,16 @@ function failedResult(profile: RepositoryTypecheckProfile, status: RepositoryTyp
 
 async function inputsRemainCurrent(profile: RepositoryTypecheckProfile): Promise<boolean> {
   const candidate = await candidateBinding(profile.candidate.directory);
-  const packageBytes = await readRegular(join(candidate.checkout, "package.json"), 128 * 1024);
-  const tsconfigBytes = await readRegular(join(candidate.checkout, "tsconfig.json"), 128 * 1024);
-  const lockfileBytes = await readRegular(join(candidate.checkout, "bun.lock"), 8 * 1024 * 1024);
-  const nodeModules = await plainDirectory(profile.isolation.nodeModules);
-  const typescriptRoot = await plainDirectory(join(nodeModules, "typescript"));
-  const installed = installedPackageSchema.parse(safeJson(await readRegular(join(typescriptRoot, "package.json"), 128 * 1024)));
-  const executableSha256 = digest(await readRegular(profile.isolation.executable, 128 * 1024 * 1024));
+  const packageBytes = await readRepositoryInput(join(candidate.checkout, "package.json"), 128 * 1024);
+  const tsconfigBytes = await readRepositoryInput(join(candidate.checkout, "tsconfig.json"), 128 * 1024);
+  const lockfileBytes = await readRepositoryInput(join(candidate.checkout, "bun.lock"), 8 * 1024 * 1024);
+  const nodeModules = await repositoryInputDirectory(profile.isolation.nodeModules);
+  const typescriptRoot = await repositoryInputDirectory(join(nodeModules, "typescript"));
+  const installed = installedPackageSchema.parse(parseRepositoryJson(await readRepositoryInput(join(typescriptRoot, "package.json"), 128 * 1024)));
+  const executableSha256 = sha256(await readRepositoryInput(profile.isolation.executable, 128 * 1024 * 1024));
   return candidate.contentSha256 === profile.candidate.contentSha256 &&
-    digest(packageBytes) === profile.repository.packageJsonSha256 && digest(tsconfigBytes) === profile.repository.tsconfigSha256 &&
-    digest(lockfileBytes) === profile.repository.lockfileSha256 &&
+    sha256(packageBytes) === profile.repository.packageJsonSha256 && sha256(tsconfigBytes) === profile.repository.tsconfigSha256 &&
+    sha256(lockfileBytes) === profile.repository.lockfileSha256 &&
     installed.version === profile.verifier.packageVersion &&
     await dependencyInstallationSha256(nodeModules) === profile.verifier.installationSha256 &&
     executableSha256 === profile.isolation.executableSha256;
@@ -239,6 +140,10 @@ export async function runRepositoryTypecheck(profile: RepositoryTypecheckProfile
   executor: RepositoryTypecheckExecutor = executeRepositoryTypecheckContainer,
   signal?: AbortSignal): Promise<RepositoryTypecheckResult> {
   if (!issued.has(profile)) throw new Error("Repository typecheck profile was not issued");
+  if (signal?.aborted === true) return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
+  if (!await inputsRemainCurrent(profile).catch(() => false)) {
+    return failedResult(profile, "execution_failed", "input_drift", "not_started", "absent");
+  }
   const name = `tesota-typecheck-${randomUUID()}`;
   const invocation = buildTypecheckContainerInvocation({ candidate: profile.candidate.checkout,
     nodeModules: profile.isolation.nodeModules }, profile.isolation.executable, name);

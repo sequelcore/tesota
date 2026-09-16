@@ -1,4 +1,8 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { lstat, realpath } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
+import { readRepositoryInput, sha256 } from "./repository-check-input.js";
 
 export const CONTAINER_IMAGE = "node@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f";
 export const CONTAINER_ENGINE_ARGS: readonly ["--host", "npipe:////./pipe/dockerDesktopLinuxEngine"] =
@@ -20,10 +24,27 @@ export interface IsolationInvocation {
   readonly env: NodeJS.ProcessEnv;
 }
 
+export interface ContainerRuntimeIdentity {
+  readonly executable: string;
+  readonly executableSha256: string;
+}
+
 export interface TypecheckIsolationPaths {
   readonly candidate: string;
   readonly nodeModules: string;
 }
+
+export interface VitestIsolationPaths {
+  readonly candidate: string;
+  readonly linuxX64NodeModules: string;
+  readonly selectedTests: readonly string[];
+}
+
+export const VITEST_SEMANTIC_ARGUMENTS = [
+  "run", "--config", "tests/vitest.fast.config.ts", "--reporter", "json", "--no-file-parallelism",
+  "--maxWorkers", "1", "--pool", "forks", "--environment", "node", "--isolate", "--testTimeout", "10000",
+  "--hookTimeout", "10000", "--configLoader", "runner", "--cache=false", "--no-color",
+] as const;
 
 export interface IsolationProbeReport {
   readonly sourceWrite: boolean;
@@ -61,6 +82,37 @@ function dockerMount(source: string, target: string, readonly = false): string {
 
 function portableWindowsPath(path: string): string {
   return path.replaceAll("\\", "/");
+}
+
+function contains(parent: string, child: string): boolean {
+  const difference = relative(parent, child);
+  return difference === "" || !isAbsolute(difference) && difference !== ".." && !difference.startsWith(`..${sep}`);
+}
+
+/** Resolve the local Docker client without accepting a candidate-controlled executable. */
+export async function resolveContainerRuntime(protectedPaths: readonly string[]): Promise<ContainerRuntimeIdentity> {
+  if (process.platform !== "win32") throw new Error("Repository checks currently require Windows Docker Desktop");
+  const systemRoot = process.env["SystemRoot"];
+  if (systemRoot === undefined || !isAbsolute(systemRoot)) throw new Error("Windows system directory unavailable");
+  const where = resolve(systemRoot, "System32", "where.exe");
+  const whereMetadata = await lstat(where);
+  if (!whereMetadata.isFile() || whereMetadata.isSymbolicLink() || relative(where, await realpath(where)) !== "" ||
+      protectedPaths.some((path) => contains(path, where))) throw new Error("Windows executable resolver unavailable");
+  const result = execFileSync(where, ["docker.exe"], { encoding: "utf8", windowsHide: true, timeout: 5_000,
+    maxBuffer: 16 * 1024 }).split(/\r?\n/u).filter(Boolean);
+  const executable = resolve(result[0] ?? "");
+  if (!isAbsolute(result[0] ?? "") || protectedPaths.some((path) => contains(path, executable))) {
+    throw new Error("Repository check runtime unavailable");
+  }
+  const metadata = await lstat(executable);
+  if (!metadata.isFile() || metadata.isSymbolicLink() || relative(executable, await realpath(executable)) !== "") {
+    throw new Error("Repository check runtime unavailable");
+  }
+  return { executable, executableSha256: sha256(await readRepositoryInput(executable, 128 * 1024 * 1024)) };
+}
+
+export function containerRuntimeIsOutside(runtime: ContainerRuntimeIdentity, protectedPaths: readonly string[]): boolean {
+  return isAbsolute(runtime.executable) && protectedPaths.every((path) => !contains(path, runtime.executable));
 }
 
 export function containerRunPolicyArgs(name: string): readonly string[] {
@@ -107,6 +159,31 @@ export function buildTypecheckContainerInvocation(paths: TypecheckIsolationPaths
     cwd: paths.candidate,
     env: safeHostEnvironment(),
   };
+}
+
+function vitestContainerArguments(paths: VitestIsolationPaths, name: string): readonly string[] {
+  return [
+    ...CONTAINER_ENGINE_ARGS, "run", "--name", name, "--rm", "--pull=never", "--network=none", "--read-only",
+    "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65534:65534", "--pids-limit=32",
+    "--memory=512m", "--memory-swap=512m", "--cpus=1", "--log-driver=none",
+    "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=32m",
+    "--mount", dockerMount(paths.candidate, "/workspace/repository", true),
+    "--mount", dockerMount(paths.linuxX64NodeModules, "/workspace/node_modules", true),
+    "--workdir", "/workspace/repository", "--entrypoint=node", CONTAINER_IMAGE,
+    "/workspace/node_modules/vitest/vitest.mjs", ...VITEST_SEMANTIC_ARGUMENTS, ...paths.selectedTests,
+  ];
+}
+
+/** Stable identity for the concrete repository Vitest containment policy. */
+export function vitestContainerPolicySha256(): string {
+  return createHash("sha256").update(JSON.stringify(vitestContainerArguments({
+    candidate: "<candidate>", linuxX64NodeModules: "<linux-x64-node-modules>", selectedTests: ["<selected-test>"],
+  }, "<runtime-name>"))).digest("hex");
+}
+
+export function buildVitestContainerInvocation(paths: VitestIsolationPaths,
+  executable: string, name: string): IsolationInvocation {
+  return { command: executable, args: vitestContainerArguments(paths, name), cwd: paths.candidate, env: safeHostEnvironment() };
 }
 
 export function buildContainerInvocation(

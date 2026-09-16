@@ -5,8 +5,10 @@ import {
   buildCodexSandboxInvocation,
   buildContainerInvocation,
   buildTypecheckContainerInvocation,
+  buildVitestContainerInvocation,
   containerRunPolicySha256,
   typecheckContainerPolicySha256,
+  vitestContainerPolicySha256,
   type IsolationPaths,
   type IsolationProbeReport,
 } from "../src/command-isolation.js";
@@ -48,6 +50,28 @@ describe("command isolation qualification", () => {
     expect(serialized).not.toContain("TESOTA_QUALIFICATION_SECRET");
     expect(typecheckContainerPolicySha256()).toMatch(/^[a-f\d]{64}$/u);
     expect(typecheckContainerPolicySha256()).toBe(typecheckContainerPolicySha256());
+  });
+
+  it("isolates the fixed Vitest runner from writes, network and ambient credentials", () => {
+    const invocation = buildVitestContainerInvocation({ candidate: "C:\\fixture\\candidate",
+      linuxX64NodeModules: "C:\\fixture\\linux-x64-node_modules", selectedTests: ["tests/repository-vitest.test.ts"] },
+    "C:\\Program Files\\Docker\\docker.exe", "tesota-vitest-fixed");
+    const serialized = invocation.args.join("\n");
+
+    expect(invocation.command).toBe("C:\\Program Files\\Docker\\docker.exe");
+    expect(serialized).toContain("--network=none");
+    expect(serialized).toContain("target=/workspace/repository,readonly");
+    expect(serialized).toContain("target=/workspace/node_modules,readonly");
+    expect(serialized).not.toContain("/workspace/node_modules/.vite");
+    expect(serialized).toContain("/workspace/node_modules/vitest/vitest.mjs");
+    expect(serialized).toContain("--reporter\njson");
+    expect(serialized).toContain("--configLoader\nrunner");
+    expect(serialized).toContain("--cache=false");
+    expect(serialized).toContain("tests/repository-vitest.test.ts");
+    expect(serialized).not.toContain("TESOTA_QUALIFICATION_SECRET");
+    expect(invocation.env["TESOTA_QUALIFICATION_SECRET"]).toBeUndefined();
+    expect(vitestContainerPolicySha256()).toMatch(/^[a-f\d]{64}$/u);
+    expect(vitestContainerPolicySha256()).toBe(vitestContainerPolicySha256());
   });
 
   it("rejects a reachable network control when its client cleanup is unconfirmed", () => {

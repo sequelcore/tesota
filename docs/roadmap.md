@@ -66,8 +66,15 @@ unavailability and unconfirmed cleanup remain distinct.
 The profile is now composed into the approved TypeScript task rather than existing
 only as a separate candidate command. This does not complete the gate. Synthetic integration and settlement tests are
 retained in normal checks; live qualification remains deferred until the
-general code-task surface can exercise representative work. Build and targeted
-test profiles, including their no-tests semantics, are also still absent.
+general code-task surface can exercise representative work. A separate
+`vitest-targeted/v1` producer now admits the repository's fixed fast-test
+declaration and selected configured tests with explicit no-tests semantics only
+when an already provisioned Linux/x64 dependency closure is available; it does
+not reuse a Windows installation or install/pull at execution time. It is not yet
+composed into a task lifecycle. Its bounded positive path has one real
+Windows-host/Docker-Linux qualification; failure, cancellation, timeout and
+cleanup paths remain synthetic, and dependency provisioning remains an explicit
+unqualified operator boundary. Build profiles remain absent.
 
 Exit evidence: real positive, failing, missing-tool, no-tests, fatal-exit,
 timeout, cancellation, surviving-descendant and source-drift cases on each

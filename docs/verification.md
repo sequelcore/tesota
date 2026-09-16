@@ -44,15 +44,83 @@ not a claim that every future ecosystem should use the same limit.
 The typed outcomes are `passed`, `check_failed`, `unavailable`, `timed_out`,
 `cancelled` and `execution_failed`. Exit zero is a pass only with empty compiler
 output. Exit one requires diagnostics. Other apparently clean or inconsistent
-results fail closed. Candidate, configuration, lockfile, compiler installation
-complete dependency installation and Docker executable are re-observed after execution; drift invalidates the
-result. Issued evidence has `authority: none` and is not task acceptance.
+results fail closed. Candidate, configuration, lockfile, compiler installation,
+complete dependency installation and Docker executable are re-observed immediately
+before dispatch and again after execution; drift invalidates the result. These
+observations do not lock mutable inputs, so a concurrent mutation can still occur
+after the pre-dispatch check. Issued evidence has `authority: none` and is not
+task acceptance.
 
 This concrete producer is part of the model task loop and creates no generic
 verifier framework. Its live Docker qualification is intentionally pending until
 the composed source-task flow is exercised on representative work; current tests
 exercise admission, bindings, result interpretation and failure settlement with
 synthetic fixtures.
+
+## Protected targeted Vitest profile
+
+`vitest-targeted/v1` is a separate, repository-owned producer. It is not yet a
+CLI command, task-grant check or correction-loop input. Its sole admitted
+declaration is the committed `test:fast` script
+`vitest run --config tests/vitest.fast.config.ts`; Tesota never executes that
+string. The application selects one or more exact test files from the committed
+fast-test configuration, then invokes the observed Vitest entry with its own
+fixed argv, JSON reporter, fork pool, isolation and one-worker policy.
+Admission models Vitest's case-insensitive substring semantics for positional
+file filters and rejects a selection if those arguments would collect any
+other configured test. Exact result membership remains a second, post-execution
+check rather than the first point at which over-collection is detected.
+
+The configuration parser accepts only the current declarative fast-test shape:
+one `vitest/config` import, explicit test-file include list, worker limit and
+test timeout. Setup files, global setup, projects, plugins, alternate runner
+settings and any other configuration shape are unsupported. Candidate changes to
+tests, snapshots, manifests, lockfiles, TypeScript or Vitest configuration are
+rejected, so the task model cannot weaken the selected oracle.
+
+The binding covers candidate bytes, package declaration, lockfile, configuration
+and selected-test hashes, installed Vitest and Vite identities, the runner entry,
+the complete mounted Linux/x64 dependency installation, Docker executable,
+containment policy and exact semantic invocation. A Windows `node_modules` tree
+is never treated as portable: admission requires a separately provisioned
+Linux/x64 closure, including the Linux Rolldown binding used by the admitted
+runner. The producer observes and binds that closure's complete content,
+package identities, native target metadata and declared Vitest version. It does
+not provision the closure or establish that its entire dependency graph was
+derived from the candidate lockfile, so evidence labels its provenance
+`operator_provisioned_unqualified`; supplying it is an application/operator
+trust boundary, not a model-controlled input. The producer neither installs
+dependencies nor pulls images. Without that closure, preparation returns
+`linux_x64_dependency_closure_unavailable` and issues no profile.
+
+The pinned container mounts the candidate and Linux/x64 closure as read-only
+sibling trees, has no network or mounted host credentials, and provides only a
+bounded `/tmp` tmpfs. The fixed invocation uses Vite's `runner` configuration
+loader and disables persistent Vitest caching, so attempted writes to the
+candidate or dependency installation fail instead of mutating bound inputs. Its
+client and container settlement remain independent observations.
+
+The producer distinguishes `passed`, `check_failed`, `no_tests`, `unavailable`,
+`timed_out`, `cancelled` and `execution_failed`. A pass requires an exit-zero,
+strictly parsed Vitest 4 JSON report whose collection exactly matches the bound
+test files and whose tests all passed. Empty, malformed, truncated, oversized,
+wrong-shape or contradictory output fails closed; a nonzero result never passes.
+Recognized failed assertions receive a capped diagnostic projection. A pass also
+requires coherent suite, test, file, exit, signal and snapshot counters; nested
+suites are accepted through normalized reported file membership rather than a
+suite-count/file-count equality. A selected file with zero assertions is
+`no_tests`, not a pass. Bound inputs are re-observed immediately before dispatch
+and after execution; this prevents known stale input from starting the process but
+does not create a filesystem lock against concurrent mutation.
+
+The positive path was exercised on September 15, 2026 through Docker Desktop's
+Linux/amd64 daemon and the pinned image: a minimal committed TypeScript fixture,
+an operator-provisioned Linux/x64 closure, the real Vitest 4.1.11/Vite 8.2.2
+runner and one selected test produced issued `passed` evidence with confirmed
+client exit and container absence. This qualifies that bounded positive path;
+it does not qualify dependency provenance, every failure/cleanup path, another
+platform or composition into the task lifecycle. Deterministic tests remain the
+evidence for admission, result interpretation and injected settlement cases.
 
 The CLI and tests use `runOxlint` from `src/verification/oxlint.ts`. The trusted
 application configuration selects the absolute runtime and installed Oxlint

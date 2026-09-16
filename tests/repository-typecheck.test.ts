@@ -131,13 +131,26 @@ it("invalidates a result when candidate bytes change during execution", async ()
   const current = await fixture();
   const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
     source: current.source, runtime: await runtime(current.root) });
-  const mutating: RepositoryTypecheckExecutor = async () => {
+  const mutating = vi.fn<RepositoryTypecheckExecutor>(async () => {
     await writeFile(join(current.candidate.checkout, "src", "value.ts"), "export const value: string = 'changed';\n");
     return { status: "closed", exitCode: 0, signal: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0),
       process: "exited", container: "absent" };
-  };
+  });
   await expect(runRepositoryTypecheck(profile, mutating)).resolves.toMatchObject({ status: "execution_failed",
     reason: "input_drift" });
+  expect(mutating).toHaveBeenCalledOnce();
+});
+
+it("does not dispatch a stale TypeScript profile", async () => {
+  const current = await fixture();
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  await writeFile(join(current.source, "node_modules", "typescript", "bin", "tsc"), "changed compiler fixture\n");
+  const executor = vi.fn<RepositoryTypecheckExecutor>(passed);
+
+  await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "execution_failed",
+    reason: "input_drift", process: "not_started", container: "absent" });
+  expect(executor).not.toHaveBeenCalled();
 });
 
 it("invalidates a result when the observed compiler installation changes", async () => {
