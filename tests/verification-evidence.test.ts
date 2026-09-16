@@ -163,7 +163,7 @@ it("rejects oversized saves without changing existing recoverable bytes", async 
   await store.save(previous);
   const path = join(root, "evidence.json");
   const before = await readFile(path);
-  await writeFile(file, "debugger;\n".repeat(5500));
+  await writeFile(file, `const ${"a".repeat(600 * 1024)} = 1;\n`);
   const oversized = await runOxlint({ ...check, timeoutMs: 30_000, maxOutputBytes: 128 * 1024 * 1024 }, file);
   if (oversized.status !== "check_failed") {
     throw new Error(`Expected oversized issued evidence, received ${JSON.stringify(oversized)}`);
