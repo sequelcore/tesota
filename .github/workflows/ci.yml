@@ -14,13 +14,22 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: package.json
-      - uses: oven-sh/setup-bun@v2
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Prepare test temporary directory
+        run: node -e "require('node:fs').mkdirSync(process.env.TESOTA_TEST_TEMP, { recursive: true })"
+        env:
+          TESOTA_TEST_TEMP: ${{ github.workspace }}/.tesota-test-temp
       - run: bun --no-env-file run check
+        env:
+          TEMP: ${{ github.workspace }}/.tesota-test-temp
+          TMP: ${{ github.workspace }}/.tesota-test-temp
+          TMPDIR: ${{ github.workspace }}/.tesota-test-temp
       - run: bun --no-env-file dist/cli.js --help

@@ -79,6 +79,7 @@ async function runLiveConversation(rawInput: ConversationInput,
   allowedOutcome: DiscoveryOutcome, writeError: (text: string) => void = (text) => { process.stderr.write(text); },
   hostSignal?: AbortSignal):
 Promise<ConversationCommandResult> {
+  hostSignal?.throwIfAborted();
   if (process.platform !== "win32") {
     writeError("Live repository discovery is currently supported on Windows.\n");
     return { status: "unavailable", exitCode: 2, reason: "unavailable" };

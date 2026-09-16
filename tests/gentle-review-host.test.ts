@@ -1,12 +1,13 @@
 import { access, readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
 import { runGentleReviewHost } from "../src/gentle-review-host.js";
 import type { GentleProcessRequest } from "../src/integrations/gentle-process.js";
 
 const hash = (character: string): string => `sha256:${character.repeat(64)}`;
 const tree = "a".repeat(40);
-const candidate = "C:\\candidates\\one\\repo";
-const executable = "C:\\tools\\gentle-ai.exe";
+const candidate = resolve("candidates", "one", "repo");
+const executable = resolve("tools", process.platform === "win32" ? "gentle-ai.exe" : "gentle-ai");
 const lineage = "review-test-1";
 const executableDigest = hash("9");
 
