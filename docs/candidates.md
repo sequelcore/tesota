@@ -4,6 +4,11 @@ A candidate checkout is a separate copy of a committed repository revision.
 It is preparation for a real task; it does not yet grant model editing,
 execution or promotion permissions.
 
+The normal shell presents this as the result being worked on; users do not need
+to manage candidate IDs for a supported conversational task. This document is
+the technical and recovery reference. See [using Tesota](using-tesota.md) for
+the user workflow.
+
 From the source repository, build Tesota and create a candidate:
 
 ```sh
@@ -130,7 +135,7 @@ checkout do not establish issuance authority, verification or human acceptance.
 The record contains local paths and belongs in operator state, not tracked
 project documentation.
 
-## Limits and next increment
+## Limits and roadmap relationship
 
 Each Git command has a 60-second timeout and an 8 MiB captured-output bound.
 There is no aggregate creation deadline or disk quota in this increment. Cleanup
@@ -145,6 +150,6 @@ Record replacement is not a power-loss durability guarantee.
 
 The first [scoped task](tasks.md) defines allowed files, replacement limits and a
 fixed scope-plus-TypeScript check. Its live command creates a new candidate for each
-attempt. See the [roadmap](roadmap.md). The earlier
+attempt. The [roadmap](roadmap.md) owns any expansion. The earlier
 [one-file correction exercise](../experiments/codex/candidate.md) remains a
 separate, deliberately narrow experiment.

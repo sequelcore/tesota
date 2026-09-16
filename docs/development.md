@@ -153,18 +153,20 @@ copying its explanation into another file.
 | --- | --- |
 | Orientation and navigation | [README](../README.md) |
 | Product identity, thesis, vocabulary and purpose | [Identity](identity.md) |
+| Complete supported user workflow and current limitations | [Using Tesota](using-tesota.md) |
 | Public market comparison evidence | [Public positioning](references/public-positioning.md) |
 | Implemented structure and boundaries | [Architecture](architecture.md) |
-| Product direction and milestone status | [Roadmap](roadmap.md) |
+| Product direction, current status and priority | [Roadmap](roadmap.md), as the sole owner |
+| Evidence required to qualify roadmap capabilities | [Qualification](qualification.md) |
 | Stable behavioral contracts and usage | [Verification](verification.md) |
-| Verifier selection criteria and research direction | [Verifier strategy](verifier-strategy.md) |
+| Verifier selection and qualification criteria; not product priority | [Verifier strategy](verifier-strategy.md) |
 | Authentication and private credential lifecycle | [Authentication](authentication.md) |
 | Candidate checkout creation and inspection | [Candidate checkouts](candidates.md) |
 | Task scope and source checks | [Scoped candidate task](tasks.md) |
 | Read-only conversational discovery and proposal records | [Task proposals](proposals.md) |
 | Experimental guides and records | [experiments/](../experiments/README.md), grouped by capability |
 | Consequential decisions and rationale | `docs/decisions/`, linked from the relevant guide |
-| Selected upstream source and reuse | `docs/references/`; [Kiln extraction](references/kiln-extraction.md) owns the current selective-recovery classification |
+| Selected upstream source and reuse | `docs/references/`; [Kiln extraction](references/kiln-extraction.md) owns the dated selective-recovery classification, not current priorities |
 | Bootstrap and toolchain records | [Project history](history/README.md) |
 | Agent working instructions | [AGENTS.md](../AGENTS.md); CLAUDE.md references it |
 

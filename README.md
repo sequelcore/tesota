@@ -2,126 +2,176 @@
 
 **An open-source, verification-first agent.**
 
-Tesota is designed to carry work from intent to an inspectable result, with
-evidence bound to what it actually produced. Software development is its first
-proving ground: an engineering task should become an exact, reviewable change
-whose applicable checks and remaining limitations are clear.
+Describe what you need and work with Tesota toward a result you can inspect,
+correct and decide whether to use. Tesota keeps applicable checks connected to
+the exact result they describe and shows what those checks establish, what they
+do not establish and whether the result has been applied.
 
 > **Work that carries its evidence.**
 
-The project is prepared for public source development under Apache-2.0. The
-package remains marked `private` to prevent accidental registry publication
-while its commands and evidence contracts are pre-release. No stable API or
-general untrusted-workload security guarantee is offered yet.
+Software development is Tesota's first proving ground, not the permanent limit
+of the product. The current implementation is pre-release, local,
+terminal-first and deliberately narrow.
 
-Read [Identity and purpose](docs/identity.md) for the thesis, product vocabulary,
-scope and name.
+## The experience
 
-## Current state
+The intended product experience starts with an ordinary request:
 
-Tesota is pre-release and intentionally narrow. Its current implementation
-demonstrates parts of the software-development lifecycle rather than a general
-agent.
+```text
+cd my-project
+tesota
 
-| Available today | Boundary |
-| --- | --- |
-| **Tesota Shell** | Answers bounded repository questions, continues one clarification and retains supported task proposals |
-| Outcome accounting | Recovers first-check, correction, operator-decision and promotion facts for each started or declined proposal |
-| Candidate checkouts | Creates and inspects independent working copies from committed source revisions |
-| Repository typecheck | Prepares one exact no-emit TypeScript profile and runs it only after local approval in the pinned container policy |
-| Approved tasks | Executes an admitted one- or two-file non-test TypeScript source change with grant-derived tools and contained typecheck |
-| Verification evidence | Runs one bounded Oxlint profile with input binding and durable recovery |
-| Review and adoption | Records an exact-candidate decision and can promote an accepted write set after conflict checks |
-| Isolation qualification | Compares one fixed Windows command across the installed native sandbox and a pinned container policy |
+> Fix the session timeout bug.
+```
 
-Pi, Codex, Gentle AI, Oxlint and Dafny integrations have bounded experiments or
-qualified slices documented in [experiments](experiments/README.md) and the
-technical guides. They do not establish arbitrary task execution.
+Tesota first inspects a committed repository baseline through a bounded,
+read-only view. It can answer a repository question, ask one clarification or
+propose supported work. For a supported change, the same shell shows the
+proposed scope and checks, asks for approval, works in an independent checkout,
+presents the exact diff and current evidence, and asks whether to apply the
+result. The normal path does not require copying proposal, candidate or review
+IDs.
 
-Tesota does **not** currently support general repository work, new or deleted files, unrestricted
-commands, arbitrary task manifests, general web research, untrusted workloads or
-non-code workflows. The [roadmap](docs/roadmap.md) owns demonstrated progress
-and remaining requirements.
+That continuous experience is not complete yet. A supported task currently ends
+after its review decision, and a user cannot request a semantic revision such
+as "change this part" without starting again. The [roadmap](docs/roadmap.md)
+defines those user-facing gaps.
 
-Docker is the current protected environment for the repository TypeScript and
-Vitest profiles, not a permanent product prerequisite. See the
-[execution-environment decision](docs/decisions/007-execution-environments.md).
+## Why verification-first
 
-## Get started
+Producing an answer or a change does not establish that it is correct. Tesota
+keeps the work and its evidence connected so a user can answer four practical
+questions:
 
-Use Bun 1.4.2 and Node 24.15.0. [package.json](package.json) owns the toolchain
-selection and commands; [bun.lock](bun.lock) fixes dependency resolution.
-Node runs development tools; Bun runs the compiled CLI.
+1. What exact result exists?
+2. Which checks ran against this result, and under what conditions?
+3. What do those checks leave unknown?
+4. Was this result only reviewed, or was it actually applied?
+
+A useful summary is specific instead of collapsing those distinctions into a
+single "verified" badge:
+
+```text
+Changed:
+- src/auth.ts
+- src/session.ts
+
+Checked:
+PASS TypeScript profile for this exact result
+
+Not established:
+- requested runtime behavior
+- full integration suite
+
+Changed since checking: No
+Application: Not applied; awaiting review
+```
+
+This is the product model, not a claim that the current shell renders this exact
+summary. The current interface exposes the same underlying distinctions through
+its proposal, check, review and outcome records.
+
+## What works today
+
+Tesota currently supports a small but real software-development slice:
+
+- ask bounded questions about the committed repository and continue one
+  clarification;
+- describe a small change without naming internal lifecycle IDs;
+- propose and approve a change to one or two existing non-test TypeScript files
+  below `src/`;
+- let the agent work in an independent checkout with grant-derived tools;
+- run scope-integrity and the repository's admitted no-emit TypeScript profile;
+- use bounded diagnostics for the current correction loop;
+- review the exact diff and evidence before accepting or rejecting it;
+- apply accepted bytes only after conflict checks; and
+- inspect retained outcome history after a completed, declined or interrupted
+  attempt.
+
+Pi is the current agent engine. Codex is the configured model route for
+the supported live flow. Neither is Tesota's product identity. Engines, models,
+reviewers and verifiers participate behind Tesota-owned work, evidence and
+adoption boundaries.
+
+## Try the supported workflow
+
+Tesota is not published to a package registry. Use Bun 1.4.2 and Node 24.15.0
+from a source checkout:
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run check
 bun link
-tesota
-tesota --help
-tesota candidate check typecheck <candidate-id>
-tesota task start <proposal-id>
-tesota task outcome <proposal-id>
-tesota isolation qualify
-tesota verify src/cli.ts
+tesota auth login
 ```
 
-`bun link` registers this local checkout and its `tesota` executable in Bun's
-global bin directory; it does not install a registry release. The link follows
-this checkout, while `dist/` follows the most recent `bun run build` or
-`bun run check`. Run `bun unlink` here to remove the development registration.
+Then open a supported TypeScript repository and start the shell:
 
-The argument-free command opens Tesota Shell only when all three
-standard streams are attached to a terminal. In a non-interactive process it
-prints help and performs no inference.
+```sh
+cd my-project
+tesota
+```
 
-**Tesota Shell** is the surface name. **Tesota** remains the product and agent
-name; "TUI" describes the terminal-rendering technology and is not part of either
-name.
+Ask a repository question or describe a small change. Tesota will stop without
+editing when the request, repository shape, working state or required check is
+outside the current boundary. A supported change still requires explicit scope
+approval and a separate review decision before application.
 
-`check` builds, typechecks source and tests, runs tests including compiled CLI
-behavior, and runs Oxlint without fixes. Repository lint enforces classic
-cyclomatic complexity at maximum 20 across `src` and `tests`. These checks use
-no live provider or OAuth credentials. A passing verification command covers
-one file and nine lint rules; it does not establish general correctness or task
-acceptance.
+The current repository TypeScript check requires Docker Desktop, the pinned
+image already present locally and a matching installed TypeScript dependency.
+Tesota performs no dependency install or image pull. See
+[Using Tesota](docs/using-tesota.md) for the complete current path and its
+failure and recovery boundaries.
 
-## Documentation map
+`bun link` points the global `tesota` command at this checkout. Run `bun unlink`
+here to remove it.
 
-| Read | Purpose |
+## Current limits
+
+Tesota does **not** currently support arbitrary repository work, test edits, new
+or deleted files, unrestricted commands, dependency changes, general web
+research, untrusted workloads or non-code workflows. It does not offer a stable
+API or a general security guarantee. Its supported repository task is narrower
+than the long-term product thesis.
+
+Bounded Oxlint, Dafny, Gentle AI and isolation experiments provide evidence for
+specific mechanisms. They do not establish arbitrary task execution or general
+product utility. The next important proof is ordinary usefulness on
+preselected external tasks, including failures and refusals.
+
+## Go deeper
+
+| Read | Question answered |
 | --- | --- |
-| [Identity and purpose](docs/identity.md) | What Tesota is, why it exists and why it has this name |
-| [Public positioning review](docs/references/public-positioning.md) | Evidence behind Tesota's position among coding and general-purpose agents |
-| [Development](docs/development.md) | Setup, checks, contribution and documentation conventions |
-| [Architecture](docs/architecture.md) | Implemented modules, responsibilities and boundaries |
-| [Roadmap](docs/roadmap.md) | Product goal, current status and open requirements |
-| [Verification](docs/verification.md) | CLI outcomes, input binding and evidence recovery |
-| [Verifier strategy](docs/verifier-strategy.md) | Native-integration criteria, evidence standard and researched verifier queue |
-| [Kiln extraction reference](docs/references/kiln-extraction.md) | Pinned audit, selective-reuse policy and reconciled extraction priorities |
-| [Authentication](docs/authentication.md) | One-time Codex login, saved credentials and logout |
-| [Candidate checkouts](docs/candidates.md) | Separate committed working copies, inspection and incomplete state |
-| [Approved tasks](docs/tasks.md) | Grant-derived scope, bounded operations, evidence and promotion |
-| [Task proposals](docs/proposals.md) | Read-only conversational discovery and non-authoritative proposal records |
-| [Experiments](experiments/README.md) | Pi and Codex guides, recorded outcomes and limitations |
-| [Project history](docs/history/README.md) | Bootstrap provenance and toolchain validation |
+| [Using Tesota](docs/using-tesota.md) | How does one complete supported workflow behave today? |
+| [Identity and purpose](docs/identity.md) | What product is Tesota trying to become, and why verification-first? |
+| [Roadmap](docs/roadmap.md) | Which useful user capability is next, and what evidence would demonstrate it? |
+| [Qualification](docs/qualification.md) | What engineering evidence must support a milestone claim? |
+| [Architecture](docs/architecture.md) | How do the internal lifecycle, authority and evidence owners work? |
+| [Development](docs/development.md) | How do contributors build, test and document the repository? |
+| [Task contract](docs/tasks.md) | What exact task scope, checks, review and application rules are implemented? |
+| [Proposals](docs/proposals.md) | How does bounded read-only discovery produce non-authoritative proposals? |
+| [Candidates](docs/candidates.md) | How are independent working copies created, inspected and retained? |
+| [Verification](docs/verification.md) | What does each implemented check observe and bind? |
+| [Verifier strategy](docs/verifier-strategy.md) | How are possible verifier integrations evaluated? |
+| [Experiments](experiments/README.md) | Which bounded mechanisms have retained experimental evidence? |
 
 ## Origin and license
 
-The [reconstruction decision](docs/decisions/001-start-tesota.md) explains why
-development moved to a smaller implementation. [Kiln remains a reference](docs/references/kiln.md)
-for selected code, tests and lessons. Its roadmap does not define Tesota's scope.
-The [repository transition decision](docs/decisions/008-transition-repository-identity.md)
-records how the shared Git history preserves Kiln while `main` carries Tesota.
+Tesota emerged from a deliberate reset of Kiln. The lesson was not that Kiln
+had no value; it was that infrastructure and scope expanded faster than
+demonstrated everyday usefulness. Tesota preserves Kiln's strongest failure
+knowledge and invariants while recovering infrastructure only for a current
+consumer and measured problem.
 
-The historical source is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`, not a
-verified functional baseline. The [bootstrap inventory](docs/history/bootstrap-inventory.json)
-records inherited file dispositions. No Kiln implementation package was ported.
-The protected [`kiln-legacy-2026-09`](https://github.com/sequelcore/tesota/tree/kiln-legacy-2026-09)
-tag fixes the final Kiln development state; the current `dev` branch belongs to
-Tesota.
+The [reconstruction decision](docs/decisions/001-start-tesota.md) records that
+direction. The protected
+[`kiln-legacy-2026-09`](https://github.com/sequelcore/tesota/tree/kiln-legacy-2026-09)
+tag fixes the final Kiln development state; the active `main` and `dev` branches
+belong to Tesota. The [Kiln reference](docs/references/kiln.md) explains how
+historical code and tests may be studied without inheriting Kiln's roadmap.
 
-The package is unpublished and pre-release. [LICENSE](LICENSE) and [NOTICE](NOTICE)
-retain Apache-2.0 attribution; current dependency licenses remain in their
-installed packages. Historical Kiln assets and tool binaries are absent. See
+The project is prepared for public development under Apache-2.0. Preserve
+[LICENSE](LICENSE), [NOTICE](NOTICE) and retained third-party notices. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for contribution expectations and
-[SECURITY.md](SECURITY.md) for private vulnerability reporting guidance.
+[SECURITY.md](SECURITY.md) for private vulnerability reporting.

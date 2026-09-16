@@ -1,44 +1,100 @@
 # Identity and purpose
 
-**Tesota is an open-source, verification-first agent designed to carry work
-from intent to an inspectable result, with evidence bound to what it actually
-produced.**
+**Tesota is an open-source, verification-first agent.**
+
+Describe what you need and work with Tesota toward a result you can inspect,
+correct and choose to use.
 
 > **Work that carries its evidence.**
 
-Software development is Tesota's first proving ground, not the limit of its
-identity. Today the implementation is local, terminal-first and intentionally
-narrow. The [architecture](architecture.md) describes what exists and the
-[roadmap](roadmap.md) records what must be demonstrated next.
+The intended experience is a normal agent conversation. Tesota should keep the
+scope, checks, authority and work history understandable without requiring the
+user to operate an internal lifecycle. Software development is the first
+proving ground for that experience, not the permanent limit of the product.
 
-## The thesis
+## Product scope
 
-AI makes production abundant. Evidence remains scarce.
+Tesota's destination, next proof and current implementation are deliberately
+different:
 
-An agent can produce a persuasive answer, a polished change or a successful
-tool transcript without establishing that the result is correct, relevant,
-current or authorized to take effect. As agents gain tools and act with less
-continuous supervision, that gap matters more: an error can become a filesystem
-write, a message, a transaction or another consequential effect.
+| Horizon | Meaning |
+| --- | --- |
+| **Implemented today** | A local, terminal-first pre-release that can answer bounded repository questions and attempt one narrow class of TypeScript source changes with explicit approval, checks, review and application. |
+| **Next demonstrated capability** | Complete one small repository change in one continuous conversation, including useful correction and a return to a useful prompt. |
+| **Long-term thesis** | An agent for research, planning, creation, tool use and other consequential work, where each domain defines its result, applicable evidence, effects and adoption boundary. |
 
-Tesota starts from a different premise: verification belongs inside the work
-loop. Where a requirement can be checked, the check should produce an explicit
-observation. A useful diagnostic should guide correction. A corrected result
-must receive fresh evidence. The person or policy responsible for adoption must
-be able to see what the evidence establishes and what still requires judgment.
+Tesota does not yet support arbitrary repository work, general web research,
+unrestricted commands, issue publication or general-purpose non-code
+workflows. The [roadmap](roadmap.md) is the sole owner of current product status
+and priority. The [architecture](architecture.md) describes the implementation
+that exists.
 
-The goal is not to make agents infallible. It is to make their work inspectable,
-correctable and responsibly adoptable.
+## The experience
 
-## What verification-first means
+The user-facing mental model is:
 
-Verification is broader than formal proof and narrower than a declaration of
-quality. Depending on the task, evidence may come from tests, compilers, type
-systems, linters, policy checks, simulations, formal methods, independent review
-or human assessment. These sources answer different questions and retain their
-own limitations.
+```text
+Ask -> Work <-> Check <-> Correct -> Review -> Apply
+```
 
-Tesota follows these principles:
+This is a flexible conversation, not six mandatory ceremonies. A read-only
+question can end with an answer. A check can happen before, during or after an
+edit. Correction can follow a diagnostic or human feedback. Applying a result
+is a separate consequential action, and earlier effects may also require their
+own authority.
+
+The current implementation still exposes some seams in this experience. A
+supported change can move from a natural-language request through approval,
+work, checks, review and application without the user copying internal IDs, but
+semantic revision and conversational continuation after the task are not yet
+implemented. [Using Tesota](using-tesota.md) documents the exact supported
+workflow without presenting the destination as current behavior.
+
+## Why verification-first
+
+AI makes production abundant. Evidence remains scarce. A persuasive answer, a
+polished change or a successful tool transcript does not by itself establish
+that the result is correct, current or authorized to take effect.
+
+Verification-first means that Tesota keeps four commitments visible:
+
+1. **Checks state what they establish.** A typecheck, test, review and policy
+   check answer different questions.
+2. **Evidence stays attached to an exact result.** If the result changes, old
+   evidence remains history and the affected claims need checking again.
+3. **Unknowns remain explicit.** Passing one check does not become a universal
+   declaration that the work is “verified.”
+4. **Evidence informs a decision; it does not grant authority.** Producing,
+   checking, accepting and applying a result are distinct facts.
+
+A useful summary should therefore look like this:
+
+```text
+Changed:
+- src/auth.ts
+- src/session.ts
+
+Checked:
+✓ TypeScript profile passed for this result
+
+Not established:
+- requested runtime behavior
+- full integration suite
+
+Changed since checking:
+No
+
+Application:
+Not applied; awaiting review
+```
+
+This is an explanatory target, not a claim that the current shell renders this
+exact summary. What matters is that the claim, result, conditions and remaining
+unknowns are available to the user.
+
+## Enduring principles
+
+The simpler product story does not weaken the lifecycle beneath it:
 
 1. **Production is not proof.** Model completion does not establish task
    completion.
@@ -46,107 +102,69 @@ Tesota follows these principles:
    result, not merely reject it afterward.
 3. **Diagnostics are useful inputs.** A bounded failure can lead to correction
    and renewed verification.
-4. **Evidence has a subject.** An observation identifies the result and relevant
-   conditions it describes.
+4. **Evidence has a subject.** An observation identifies the exact result and
+   relevant conditions it describes.
 5. **Changed results need renewed evidence.** Old evidence remains historical;
    it does not silently apply to new work.
 6. **Different claims need different verifiers.** No single check establishes
    every property of a task.
-7. **Evidence informs decisions; it does not create authority.** A passing tool,
-   reviewer or model cannot silently approve its own result.
+7. **Evidence does not create authority.** A passing tool, reviewer or model
+   cannot silently approve or apply its own result.
 8. **Failure states remain honest.** A finding, unavailable tool, timeout,
    cancellation and uncertain effect are not interchangeable.
-9. **Verification is proportional.** The required evidence depends on the work,
-   its effects and the cost of being wrong.
+9. **Verification is proportional.** Required evidence depends on the work, its
+   effects and the cost of being wrong.
 10. **Telemetry describes; it does not authorize.** Visibility can improve a
     decision without becoming a permission source.
 11. **Authority and confinement are different.** Approval determines which
-    effects may be attempted; the execution environment determines which
-    effects the process can actually perform. Neither substitutes for the
-    other.
+    effects may be attempted; the execution environment limits which effects a
+    process can perform. Neither substitutes for the other.
 
-The [verifier strategy](verifier-strategy.md) applies these principles to
-specific tools and qualification levels. [Decision 007](decisions/007-execution-environments.md)
-applies the distinction between authority and confinement to execution
-environments.
+Recovery can reconstruct durable facts but cannot recreate expired authority.
+A cancellation request is not confirmed settlement. Acceptance is not
+application. Any delegated authority must remain within the authority of its
+parent. These are product invariants even when the interface uses ordinary
+language such as “still active,” “could not confirm completion” or “apply these
+changes.”
 
-## The Tesota lifecycle
+The [verification reference](verification.md), [architecture](architecture.md)
+and [qualification criteria](qualification.md) retain the precise contracts.
 
-Tesota owns the relationship between intent, work, result, evidence and
-adoption. Engines and tools participate without owning that lifecycle.
+## Product, engine and model
 
-```text
-intent
-  -> admitted work
-  -> agent execution
-  -> candidate result
-  -> applicable verification
-  -> evidence and diagnostics
-  -> correction when needed
-  -> assessment
-  -> authorized adoption
-```
+Tesota is the product and the agent. Pi is the current agent engine: it provides
+session, model-interaction and tool-loop mechanics. A model is one component of
+an execution route. Neither Pi nor a particular model is Tesota's identity.
 
-A **candidate** is the result proposed for assessment or adoption. In the first
-software-development domain, it is an exact source state. Other domains may use
-different candidate forms, but they must preserve the same essential question:
-what exact result does this evidence describe?
+**The work and its evidence can outlive the engine.** Tesota should preserve
+the right to change models or engines when a replacement route is justified and
+qualified. Changing engines is not itself the product, and the current roadmap
+does not promise an engine registry, universal session migration, automatic
+model routing, account pools, silent provider failover or a native Tesota
+engine.
 
-## Product scope
-
-Tesota is an agent, not a verifier catalog and not a new foundation model. Its
-eventual experience may include conversation, research, planning, tool use,
-creation, correction and adoption across more than one kind of work.
-
-Software development is the initial domain because it offers mature external
-oracles, consequential effects and concrete adoption boundaries. The intended
-developer experience is a normal agent conversation: describe an outcome,
-inspect the proposed scope and checks, let the agent work, then assess the exact
-change with its applicable evidence and limitations.
-
-The current product does not yet provide that general experience. It supports a
-proposal-backed bounded TypeScript source task and qualified experiments. It does not
-support arbitrary repository work, general web research, unrestricted commands,
-issue publication or general-purpose non-code workflows. Public descriptions
-must preserve this distinction between thesis, direction and demonstrated
-behavior.
-
-## System roles
-
-The terms below describe different owners and must not be used interchangeably:
-
-| Term | Meaning in Tesota |
-| --- | --- |
-| **Tesota** | The product and agent that owns the work lifecycle |
-| `tesota` | The package and command identifier |
-| **Tesota Shell** | The current interactive terminal surface |
-| **Agent engine** | Model interaction, sessions, tool calls and agent-loop mechanics; Pi is the selected engine |
-| **Model** | The inference provider used by an engine for a particular operation |
-| **Execution environment** | The concrete process boundary that applies filesystem, network, credential and process restrictions; it does not grant task authority |
-| **Verifier** | A tool that produces a bounded observation about a candidate |
-| **Reviewer** | An independent assessor; Gentle AI is the current optional provider |
-| **Acceptance** | A human or explicitly authorized policy decision about a candidate |
-| **Adoption** | The consequential act that makes an accepted result effective |
-
-Pi, Gentle AI and individual verifiers are credited integrations. None replaces
-Tesota's identity, and none gains Tesota-owned authority through integration.
-SDD, RDD and TDD are workflows or methodologies, not agent engines.
+Pi, Gentle AI and individual verifiers are credited integrations. They do not
+gain Tesota-owned authority through integration. The architecture explains the
+boundaries among the agent engine, execution environment, verifier and reviewer.
 
 ## Audience and measure of success
 
 Tesota is initially for developers and maintainers who want AI assistance while
-keeping scope, checks, resulting changes and human decisions understandable.
-That audience is a hypothesis until ordinary use validates it.
+keeping scope, resulting changes, applicable checks and human decisions
+understandable. That audience remains a hypothesis until ordinary use validates
+it.
 
-The first useful measure is not feature count. It is whether Tesota can produce
-an accepted improvement with applicable evidence while making intervention,
-elapsed time, observed consumption and unresolved limitations visible. Later
-domains need equivalent outcome measures before they become product promises.
+The first useful measure is not feature count. It is whether a person can
+complete a worthwhile task with acceptable residual defects and reasonable
+setup, intervention, elapsed time and review burden. Later domains need their
+own result, evidence, effect and adoption definitions before becoming product
+promises.
 
 ## Public language
 
-Public introductions lead with the kind of work Tesota enables, followed by its
-evidence relationship. They do not lead with internal state-machine terms.
+Public introductions lead with what Tesota is, what a person can do with it and
+why its evidence relationship matters. Internal lifecycle terms follow only
+when a reader needs implementation detail.
 
 The canonical category is **verification-first agent**. In an explicitly
 software-development context, **verification-first coding agent** is a valid
@@ -164,9 +182,9 @@ Tesota speaks with calm engineering precision. It explains what happened, what
 evidence applies and what remains unknown. It does not describe itself as safe,
 trusted, autonomous, production-ready or superior without evidence for the
 exact claim. The dated [public positioning review](references/public-positioning.md)
-records the external comparison behind this language, and
-[decision 006](decisions/006-public-product-identity.md) owns the positioning
-decision.
+records the external comparison behind this language. [Decision 006](decisions/006-public-product-identity.md)
+records the original positioning decision, and [decision 010](decisions/010-center-public-docs-on-user-experience.md)
+records the experience-first documentation hierarchy.
 
 ## Why the name
 
@@ -178,8 +196,6 @@ described by the [Arizona-Sonora Desert Museum](https://www.desertmuseum.org/pro
 For the project, it suggests a durable foundation that supports growth. This is
 an intended association, not a claim that the software has already achieved
 that dependability. Botanical language does not become architecture vocabulary.
-
-## Identity work still open
 
 Final visual identity, domain selection and social handles remain open.
 Professional trademark clearance has not been completed, so current use must

@@ -1,158 +1,188 @@
 # Roadmap
 
-Tesota's product goal is a normal agent experience in which useful work arrives
-with applicable evidence and a clear adoption decision. Software development is
-the first proving ground; it is not the permanent boundary of the product.
+This document is the sole owner of Tesota's current product status and
+priorities. The roadmap advances user capabilities; internal mechanisms and
+qualification work are subordinate to those outcomes.
 
-The roadmap expands only after the preceding boundary is useful and qualified.
-Feature count, internal state-machine breadth and benchmark headlines are not
-completion criteria.
+Tesota's next proof is ordinary usefulness: a person opens the agent, describes
+worthwhile work and reaches an inspectable result without learning the internal
+lifecycle. Software development is the first proving ground, not the permanent
+product boundary.
 
-## Current baseline
+The engineering question for each increment is:
 
-Implemented today:
+> **What is the smallest change that lets a real user complete one more
+> worthwhile task without weakening an essential invariant?**
 
-- interactive, bounded repository questions and one clarification;
-- retained, non-authoritative task proposals over a committed baseline;
-- operator-approved TypeScript source changes to one or two existing files;
-- independent candidate checkouts and grant-derived read/write tools;
-- automatic scope-integrity and contained TypeScript evidence with explicit human-review limits;
-- exact-candidate review, local acceptance and guarded promotion;
-- durable outcome accounting for started or declined supported proposals;
-- bounded Oxlint, Dafny, Pi, Gentle AI and isolation qualification slices.
+## Implemented baseline
 
-The ordinary task runtime contains no registered demos or Tesota-specific task
-definition. Historical experiments remain evidence of mechanisms, not active
-product routes. See [experiments](../experiments/README.md) and
-[project history](history/README.md).
+The pre-release currently supports:
 
-## Next qualification gates
+- a natural-language terminal session for bounded repository questions, one
+  clarification and one narrow class of TypeScript source changes;
+- an understandable proposed scope and explicit approval before write authority
+  exists;
+- isolated work on one or two existing non-test, non-declaration
+  `src/**/*.ts` files;
+- bounded source reads, replacements and checks under a cumulative task budget;
+- scope-integrity and contained TypeScript checks tied to the exact result;
+- an exact diff, human acceptance or rejection and conflict-safe application;
+- durable outcome facts for supported work that starts or is declined; and
+- lower-level inspection, recovery and qualification commands for contributors.
 
-### 1. Outcome accounting foundation — implemented
+The current supported change flow still ends after review or application. It
+cannot accept a semantic revision such as “change this part,” resume an
+interrupted task, or return the user to a useful prompt after the change. Its
+Docker-backed TypeScript route has synthetic coverage but has not completed a
+prospective live qualification on representative external tasks. These gaps
+define the active milestone.
 
-Record first-pass result, correction attempts, operator intervention, elapsed
-time, known consumption, acceptance and promotion outcome for prospective tasks.
-Include refusals and failures.
+Historical experiments demonstrate mechanisms, not active product routes. See
+[experiments](../experiments/README.md) and [project history](history/README.md).
 
-The supported flow records scope refusal, cancellation, failure, review decision
-and promotion; it also reports elapsed time and observed model, tool and edit
-counts. Token usage and cost remain explicitly unavailable.
+## Milestone 1 — Complete a small repository change from one conversation
 
-Prospective live evaluation is deferred until gates 2 and 3 admit ordinary
-repository checks and task-sized code changes. Exercising documentation-only
-work would measure a temporary product restriction and encourage artificial
-repository changes rather than representative usefulness. When live evaluation
-resumes, it must include refusals and failures; a small pilot will report counts
-and causes rather than a reliability percentage.
+**Status: active.**
 
-### 2. Approved repository check profiles — implementation active
+A user can:
 
-Admit one repository-owned build, typecheck or targeted-test command with exact
-executable, arguments, working directory, configuration, relevant inputs,
-environment policy, timeout and settlement semantics.
+- open Tesota and describe a small change;
+- understand the work Tesota proposes and the access it needs;
+- authorize the supported effects without coordinating internal IDs;
+- let Tesota work within that boundary;
+- inspect the exact result and the checks that apply to it;
+- see what those checks do not establish;
+- decide whether to apply the result; and
+- return to a useful prompt afterward.
 
-Explicitly unsupported in this increment: arbitrary manifests, installs,
-automatic network access, model-selected replacement checks and silent fallback
-to ambient executables.
+The implementation may remain limited to the current small TypeScript subset.
+Breadth is not part of this milestone.
 
-The first concrete profile now admits only the exact repository declaration
-`tsc --noEmit -p tsconfig.json`. After one-use local approval, Tesota invokes
-the matching installed TypeScript compiler with fixed arguments inside the
-pinned container policy. Candidate bytes, package configuration, tsconfig,
-lockfile, compiler installation, Docker executable, policy and limits are bound
-and re-observed. Check findings, operational failure, timeout, cancellation,
-unavailability and unconfirmed cleanup remain distinct.
+Already present are conversational discovery, approval, isolated work, bounded
+diagnostic-driven edits, exact-result checks, diff review and guarded
+application. Remaining work is to close the conversational loop, present check
+claims and unknowns more directly, remove recovery IDs from the ordinary path
+and qualify the whole experience on representative work.
 
-The profile is now composed into the approved TypeScript task rather than existing
-only as a separate candidate command. This does not complete the gate. Synthetic integration and settlement tests are
-retained in normal checks; live qualification remains deferred until the
-general code-task surface can exercise representative work. A separate
-`vitest-targeted/v1` producer now admits the repository's fixed fast-test
-declaration and selected configured tests with explicit no-tests semantics only
-when an already provisioned Linux/x64 dependency closure is available; it does
-not reuse a Windows installation or install/pull at execution time. It is not yet
-composed into a task lifecycle. Its bounded positive path has one real
-Windows-host/Docker-Linux qualification; failure, cancellation, timeout and
-cleanup paths remain synthetic, and dependency provisioning remains an explicit
-unqualified operator boundary. Build profiles remain absent.
+Completion evidence is defined in [qualification](qualification.md). Passing
+component checks alone does not complete the milestone.
 
-Docker is the only implemented protected environment for these repository-
-executing profiles, not a permanent product prerequisite. This gate will keep
-the container path and qualify one lower-friction OS-level local sandbox against
-an existing profile before introducing shared provider machinery. A future
-trusted host-native posture must be an explicit lower-assurance grant and cannot
-satisfy protected policy. Remote isolation remains deferred until a named
-workflow requires it. Selection must never silently downgrade after setup,
-startup or settlement failure; [decision 007](decisions/007-execution-environments.md)
-owns this direction.
+## Milestone 2 — Correct the work without restarting
 
-Exit evidence: real positive, failing, missing-tool, no-tests, fatal-exit,
-timeout, cancellation, surviving-descendant and source-drift cases on each
-supported platform and execution environment. Qualification must also record
-setup friction, unsupported controls and whether the evidence producer remains
-protected from the workload it observes.
+A user can continue the same task when a check finds a problem or when the user
+says, for example, “change this part.” Tesota preserves useful task context,
+produces a new exact result and renews every affected check.
 
-### 3. Task-sized code changes — implementation active
+The product and its evidence must distinguish:
 
-Extend the admitted grant to a small existing-file source/test write set whose
-repository checks were qualified in gate 2. Scope expansion returns to approval.
-Dependency changes, migrations and gate weakening remain excluded.
+- **initial implementation** — producing the first inspectable result;
+- **diagnostic-driven repair** — responding to a concrete failed check or
+  diagnostic; and
+- **user-requested semantic revision** — changing an otherwise reviewable
+  result because the user wants a different outcome.
 
-Exit evidence: prospective bug fixes and small features in external fixture
-repositories, with no unauthorized effects and independent residual-defect
-assessment.
+An edit is not automatically a correction. Current counters that describe tool
+operations remain observable implementation data; they must not be presented as
+these user-level outcomes until the runtime can distinguish them.
 
-The first source-task contract now admits modification of one or two existing
-non-test, non-declaration `src/**/*.ts` files. Its immutable grant includes scope integrity and the exact
-contained TypeScript profile; the model cannot select a command or weaken its
-configuration. Tests, repository check configuration, dependency declarations and
-create/delete/rename effects remain excluded. Synthetic admission, correction,
-operational-failure, review and promotion tests are present. Live qualification
-and broader source/test task coverage remain open exit evidence.
+Completion requires evidence that correction improves accepted-task completion
+or reduces user effort without increasing independently assessed residual
+defects. Unsuccessful attempts, new failures, elapsed time and intervention stay
+visible.
 
-### 4. Diagnostic correction
+## Milestone 3 — Understand and recover the state of work
 
-Allow at most two correction attempts under one cumulative task budget. Every
-candidate change receives a new identity and fresh applicability assessment.
-The agent cannot modify its own grant or authoritative check definition.
+After an interruption, a user can learn in ordinary language:
 
-Exit evidence: higher accepted-task completion or lower operator effort without
-increased held-out defects, including the cost of unsuccessful corrections.
+- which exact result exists;
+- which checks apply to it and what remains unknown;
+- whether work is still active, ended or has uncertain settlement;
+- whether a result was accepted or applied;
+- what must be repeated; and
+- which authority has expired and cannot be reconstructed.
 
-### 5. Recoverable closeout
+The user does not reconstruct that story from proposal, candidate or review IDs.
+Those identities remain available for precise diagnosis and technical
+interfaces.
 
-Make execution, evidence persistence, review settlement and promotion recovery
-explicit without exposing internal identifiers in the normal shell experience.
+Completion requires restart tests at each durable boundary, including
+wrong-result review, stale acceptance, lost application acknowledgement,
+cancellation with surviving descendants and uncertain effects. Recovery must
+never replay an uncertain effect as though it did not happen or recreate old
+authority.
 
-Exit evidence: restart tests at every durable boundary, wrong-candidate review,
-stale acceptance and lost promotion acknowledgement. Uncertain effects must not
-be replayed as though nothing happened.
+## Milestone 4 — Broaden useful coding work from observed blockers
 
-### 6. Task-relevant verifier breadth
+Tesota expands a restriction only when prospective tasks show that it blocks
+worthwhile work and the expansion preserves the essential invariants.
 
-Select browser/accessibility, security, property-based, design-system or formal
-checks only in response to observed task needs. Reuse external engines and keep
-their evidence semantics distinct.
+Possible responses include existing tests, a slightly larger write set, one
+file-lifecycle operation, another check profile or a lower-friction execution
+environment. These are examples, not commitments. The observed task corpus and
+residual-defect review determine which one, if any, is next.
 
-Exit evidence: unique useful findings or lower residual defects justify each
-integration's runtime, maintenance and false-positive cost.
+Each expansion must identify its user need, new effects, authority boundary,
+applicable evidence, failure behavior and maintenance cost. A new verifier or
+execution provider is justified by useful findings or reduced burden, not by
+integration count.
 
-### 7. Optional delegated work
+## Prospective usefulness evaluation
 
-The first possible subagent is a read-only scout with a strict subset of parent
-authority, attributable output, no grandchildren and no acceptance or promotion
-power.
+Milestone decisions use a small prospective evaluation before any evaluation
+platform is built.
 
-Exit evidence: a sequential-versus-delegated comparison demonstrates net value
-and passes escalation, cancellation and stale-parent tests. Otherwise delegation
-does not enter the product.
+Select tasks before seeing Tesota's results. Use external repositories without
+altering them to fit the product. Include small bugs, small features and bounded
+refactorings, along with refusals and failures. A manual record is sufficient
+until its burden or ambiguity demonstrates the need for tooling.
 
-## Deferred by evidence
+For every selected task, record:
 
-No current milestone includes a universal control plane, model gateway, account
-pool, memory graph, generic verifier framework, marketplace, GUI parity or
-autonomous team system. These are reconsidered only when a named consumer and a
-measured problem justify their ownership cost.
+- support coverage and refusal or failure cause;
+- whether the outcome was accepted and applied;
+- independently assessed residual defects;
+- user intervention and clarification;
+- diagnostic repair and user-requested revision;
+- elapsed time;
+- inference and tool cost when the runtime can observe them honestly;
+- setup burden; and
+- review burden.
 
-The [Kiln extraction reference](references/kiln-extraction.md) preserves relevant
-failure knowledge without making Kiln's architecture or roadmap normative.
+Report counts and causes for a small corpus rather than manufacturing a
+reliability percentage. Preselecting tasks and retaining negative outcomes are
+requirements, not optional reporting polish.
+
+## Long-term direction
+
+Tesota may grow from coding into research, planning, creation, broader tool use
+and other consequential work. This is a direction, not a checklist for a
+“general agent.”
+
+Before a new domain becomes a product commitment, it must demonstrate:
+
+- a real user need;
+- what constitutes the exact result;
+- which evidence is applicable and what it cannot establish;
+- which effects require authority and confinement; and
+- how review and adoption work in that domain.
+
+The coding lifecycle is not automatically universal. Its invariants may endure
+while its candidate form, checks, effects and adoption boundary change.
+
+## Deferred until justified
+
+No current milestone includes a universal model gateway, account pool,
+cross-harness configuration projection, universal verifier framework,
+autonomous teams, orchestration graphs, GUI parity, marketplace or plugin
+platform, generic execution-provider abstraction, automatic model router,
+silent provider failover or native Tesota engine.
+
+Preserve the right to change models and engines; do not make changing engines
+the product. Reconsider infrastructure only when a current consumer and a
+measured problem justify its ownership cost.
+
+The [Kiln extraction reference](references/kiln-extraction.md) preserves the
+failure knowledge behind this restraint. The lesson is not that Kiln was wrong;
+it is that infrastructure and scope expanded faster than demonstrated everyday
+usefulness. Recover that failure knowledge aggressively. Recover infrastructure
+only when present evidence justifies it.
