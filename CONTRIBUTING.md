@@ -50,6 +50,22 @@ contribution gate.
 Do not commit generated `dist/`, dependency directories, local environment
 files or retained live-run artifacts.
 
+## Branch workflow
+
+`main` is the stable default branch and `dev` is the protected integration
+branch. Start ordinary `feature/*`, `fix/*` and documentation branches from
+`dev`, then open a pull request back to `dev`. Both protected branches require
+the repository checks to pass; direct pushes, force pushes and deletion are not
+part of the normal workflow.
+
+Promote an integrated increment with a pull request from `dev` to `main` and a
+merge commit so the long-lived branch ancestry remains explicit. A production
+hotfix starts from `main`, returns to `main` through a pull request, and is then
+merged back into `dev` promptly. Delete short-lived branches after merge.
+
+The protected [`kiln-legacy-2026-09`](https://github.com/sequelcore/tesota/tree/kiln-legacy-2026-09)
+tag, not `dev`, is the canonical final Kiln development reference.
+
 ## Pull requests
 
 Explain the user-visible outcome, important design decision, verification run

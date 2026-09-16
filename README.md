@@ -116,6 +116,9 @@ records how the shared Git history preserves Kiln while `main` carries Tesota.
 The historical source is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`, not a
 verified functional baseline. The [bootstrap inventory](docs/history/bootstrap-inventory.json)
 records inherited file dispositions. No Kiln implementation package was ported.
+The protected [`kiln-legacy-2026-09`](https://github.com/sequelcore/tesota/tree/kiln-legacy-2026-09)
+tag fixes the final Kiln development state; the current `dev` branch belongs to
+Tesota.
 
 The package is unpublished and pre-release. [LICENSE](LICENSE) and [NOTICE](NOTICE)
 retain Apache-2.0 attribution; current dependency licenses remain in their
