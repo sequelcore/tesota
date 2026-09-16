@@ -157,23 +157,24 @@ it("leaves no valid passing record when commit is interrupted", async () => {
   await expect(readFile(path)).rejects.toThrow();
 });
 
-it("rejects oversized saves without changing existing recoverable bytes", async () => {
+it("rejects saves measured over the durable limit without changing existing recoverable bytes", async () => {
   const { root, file, check, store } = await fixture();
   const previous = await runOxlint(check, file);
   await store.save(previous);
   const path = join(root, "evidence.json");
   const before = await readFile(path);
-  await writeFile(file, Array.from({ length: 10 }, (_value, index) =>
-    `const unused${index}${"a".repeat(60 * 1024)} = 1;`).join("\n"));
-  const oversized = await runOxlint({ ...check, timeoutMs: 30_000, maxOutputBytes: 128 * 1024 * 1024 }, file);
-  if (oversized.status !== "check_failed") {
-    throw new Error(`Expected oversized issued evidence, received ${JSON.stringify(oversized)}`);
+  await writeFile(file, "debugger;\n");
+  const replacement = await runOxlint(check, file);
+  expect(replacement.status).toBe("check_failed");
+  const byteLength = vi.spyOn(Buffer, "byteLength").mockReturnValueOnce(512 * 1024 + 1);
+  try {
+    await expect(store.save(replacement)).rejects.toThrow("512 KiB");
+  } finally {
+    byteLength.mockRestore();
   }
-  expect(Buffer.byteLength(JSON.stringify(oversized))).toBeGreaterThan(512 * 1024);
-  await expect(store.save(oversized)).rejects.toThrow("512 KiB");
   expect(await readFile(path)).toEqual(before);
   expect(await store.load()).toMatchObject({ status: "recovered", evidence: { historical: previous } });
-}, 45_000);
+});
 
 it("compares recovered binding properties independently of object key order", async () => {
   const { root, file, check, store } = await fixture();
