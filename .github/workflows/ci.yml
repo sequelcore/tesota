@@ -24,7 +24,8 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile --ignore-scripts
       - name: Prepare test temporary directory
-        run: node -e "require('node:fs').mkdirSync(process.env.TESOTA_TEST_TEMP, { recursive: true })"
+        run: >-
+          node -e "require('node:fs').mkdirSync(process.env.TESOTA_TEST_TEMP, { recursive: true })"
         env:
           TESOTA_TEST_TEMP: ${{ github.workspace }}/.tesota-test-temp
       - run: bun --no-env-file run check
