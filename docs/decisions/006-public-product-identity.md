@@ -1,7 +1,8 @@
 # 006: Present Tesota as a verification-first agent
 
-Status: adopted public positioning. Visual identity and trademark clearance
-remain open.
+Status: adopted public category and tagline. The message hierarchy is refined
+by [decision 010](010-center-public-docs-on-user-experience.md). Visual identity
+and trademark clearance remain open.
 
 ## Context
 
@@ -51,7 +52,7 @@ Public surfaces must state that software development is the first proving
 ground and distinguish the long-term thesis from the current pre-release,
 bounded implementation.
 
-## Message hierarchy
+## Original message hierarchy
 
 Public communication follows this order:
 
@@ -68,6 +69,9 @@ Public communication follows this order:
 Architecture supports the claim but is not the opening pitch. Terms such as
 authority revision, lineage and settlement belong in technical documentation
 when the reader needs them.
+
+Decision 010 later moves the ordinary agent experience ahead of outcome and
+mechanism language while preserving this category, tagline and claim boundary.
 
 ## Voice and claims
 

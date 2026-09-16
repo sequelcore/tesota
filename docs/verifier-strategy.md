@@ -1,5 +1,9 @@
 # Verifier strategy
 
+This document owns verifier selection and qualification criteria. It does not
+set current product priority; the [roadmap](roadmap.md) does. Research
+candidates become implementation work only when observed tasks justify them.
+
 The [product identity](identity.md) defines why Tesota is verification-first.
 This document turns that thesis into selection and qualification criteria for
 executable verifiers. In the initial software-development domain, a trusted
@@ -8,10 +12,10 @@ boundary, the agent receives bounded diagnostics, and a corrected candidate is
 checked again. Evidence informs assessment; it never grants acceptance or
 adoption authority.
 
-This document owns the criteria and research direction for expanding Tesota's
-verifier portfolio. It does not declare unimplemented integrations. The current
-[verification contract](verification.md), [architecture](architecture.md) and
-[roadmap](roadmap.md) remain authoritative for implemented behavior and status.
+This document owns the criteria and research candidates for expanding Tesota's
+verifier portfolio. It does not declare unimplemented integrations. The
+[verification contract](verification.md) and [architecture](architecture.md)
+own implemented behavior; the [roadmap](roadmap.md) owns status and priority.
 
 ## Evidence portfolio
 
@@ -117,35 +121,28 @@ Tesota has three complementary integrations with retained evidence:
 | Capability | Current evidence | Status boundary |
 | --- | --- | --- |
 | [Oxlint](verification.md) | A selected nine-rule profile, exact input binding, durable recovery and correction experiments | Native only for the implemented single-file profile; not general repository linting |
-| [LemmaScript/Dafny](roadmap.md#formal-correction-loop) | A seeded proof failure for the production-used invocation predicate was corrected and reverified | Corrective for one bounded formal property; not whole-program correctness |
+| [LemmaScript/Dafny](qualification.md) | A seeded proof failure for the production-used invocation predicate was corrected and reverified | Corrective for one bounded formal property; not whole-program correctness |
 | [Gentle AI](../experiments/gentle/README.md) | Candidate-bound review, immutable settlement, correction and one scope-change recovery path were qualified; the 2.8.0 capability boundary is enforced | Native bounded review provider; review evidence is not a mathematical verifier or acceptance authority |
 
 These tools establish the integration thesis, not the final portfolio. New
 verifiers must add a distinct useful oracle or materially improve correction
 economics; feature count is not a selection criterion.
 
-## Research queue
+## Research candidates
 
-The queue below records candidates, not commitments. Priority reflects fit with
-Tesota's next supported task classes and the quality of the available machine
-interface as of 2026-09-14.
+The table records possible tools, not commitments or ordering. A candidate is
+selected only when the roadmap's prospective task corpus exposes a defect class
+or burden that the tool could address.
 
-| Priority | Candidate | Why it merits qualification | Principal risk or open question | Intended next evidence |
-| --- | --- | --- | --- | --- |
-| A | Repository-owned compiler, type-checker and test gates | These are usually the closest executable expression of the repository's own contract. TypeScript supports check-only operation; Cargo exposes versioned metadata and structured compiler messages. | Commands may execute plugins, build scripts, tests or descendants. Text output and scope semantics vary by ecosystem. | Admit one fixed TypeScript gate and one structured non-TypeScript gate under the qualified command boundary; measure correction and stale-result handling. |
-| A | `@shadcn/lint` through Oxlint | It encodes component-specific Tailwind contracts and produces agent-oriented remediation using the actual component, variant and theme context. Its authors report more than 150 agent task runs and mostly one-round correction. | The published evaluation is author-run and task-specific; its Oxlint JavaScript plugin API is alpha. Zero lint violations does not prove usable UI. | Run paired Tailwind tasks in an external UI repository, retain first drafts and every correction, measure violations, visual/behavioral regressions, cost and operator intervention. |
-| B | Semgrep | Custom rules, JSON and SARIF make security and repository policy findings machine-consumable across several languages. | Rule quality determines signal; some capabilities and data-flow modes differ between community and commercial engines. Suppressions and target discovery affect coverage. | Qualify a small pinned local rule set against real defect fixtures, path escapes, suppressions, malformed output and timeout. |
-| B | Playwright plus axe-core | Playwright exposes JSON/JUnit results and traces for browser behavior; axe-core adds machine-detectable accessibility findings inside that runtime. Together they cover failures static source checks cannot observe. | Browser checks are stateful and can be flaky. Automated accessibility checks cover only machine-detectable rules and cannot establish overall usability or accessibility. | Qualify one deterministic user journey and seeded accessibility defect in a pinned browser image; measure retries, trace binding and false passes. |
-| B | Ruff and Rust/Cargo/Clippy ecosystem adapters | Ruff offers explicit rule selection and JSON fix applicability for Python. Cargo emits stable versioned metadata and JSON compiler messages for Rust tooling. They are strong candidates for proving that the contract works beyond TypeScript. | Repository configuration, generated code, unsafe fixes, procedural macros and build scripts complicate scope and effects. | Select one external Python or Rust repository only after the general-task stage admits its repository-owned gate. |
-| C | fast-check and mutation testing with Stryker | Property-based tests return small counterexamples; mutation testing evaluates whether the existing tests can detect injected faults. These can improve the oracle rather than only test the candidate. | The repository must own meaningful properties; randomness must be seeded and retained. Mutation runs can be expensive and are poorly suited to every correction turn. | Compare example-only and property-based correction on one invariant; use mutation testing as a scheduled qualification gate, not an automatic per-edit check. |
-| C | CodeQL/SARIF and OSV-Scanner evidence import | SARIF provides a common static-analysis interchange, while OSV-Scanner checks lockfiles and SBOMs against known vulnerability records. These can contribute security evidence generated locally or in CI. | Imported reports need trustworthy candidate, configuration and producer binding. Vulnerability data changes over time; some scans use network or execute language tooling. | First qualify historical evidence ingestion and explicit freshness semantics; do not treat a SARIF upload or an empty current database response as acceptance. |
-
-The first new experiment should be `@shadcn/lint` because it tests the specific
-claim that agent-oriented, repository-specific diagnostics reduce correction
-cost. It should run in a Tailwind repository, not in Tesota's current non-UI
-package. The first architectural expansion should still be the governed
-repository-check boundary, because that is how Tesota can reuse the strongest
-oracle a project already owns without making model text executable.
+| Candidate | Why it may merit qualification | Principal risk or open question | Possible evidence |
+| --- | --- | --- | --- |
+| Repository-owned compiler, type-checker and test gates | These are often the closest executable expression of the repository's own contract. | Commands may execute plugins, build scripts, tests or descendants. Text output and scope semantics vary by ecosystem. | Admit one fixed gate only after tasks require it; measure correction and stale-result handling. |
+| `@shadcn/lint` through Oxlint | It encodes component-specific Tailwind contracts and produces agent-oriented remediation using component, variant and theme context. | Its published evaluation is author-run and task-specific; the Oxlint JavaScript plugin API is alpha. Zero violations does not prove usable UI. | If UI tasks justify it, run paired external-repository tasks and retain violations, visual or behavioral regressions, cost and intervention. |
+| Semgrep | Custom rules, JSON and SARIF can make security and repository-policy findings machine-consumable across several languages. | Rule quality determines signal; capabilities vary by engine mode, and suppressions and target discovery affect coverage. | Qualify a small pinned local rule set against real defect fixtures, escapes, suppressions, malformed output and timeout. |
+| Playwright plus axe-core | Browser behavior and machine-detectable accessibility findings cover failures static source checks cannot observe. | Browser checks are stateful and can be flaky; automated rules do not establish overall usability or accessibility. | Qualify one deterministic journey and seeded defect in a pinned browser image when a supported task requires it. |
+| Ruff or Rust/Cargo/Clippy adapters | Structured language tooling could test whether the contract extends beyond TypeScript. | Generated code, unsafe fixes, procedural macros and build scripts complicate effects and scope. | Select one external repository only after supported work demonstrates the need. |
+| fast-check or mutation testing | Counterexamples and mutation scores can improve the oracle rather than only test a candidate. | Meaningful properties must be repository-owned; randomness needs retained seeds, and mutation runs can be expensive. | Compare example-only and property-based correction for an observed invariant. |
+| CodeQL/SARIF or OSV-Scanner evidence import | Existing security evidence may be reusable when provenance and freshness are explicit. | Reports need trustworthy result, configuration and producer binding; vulnerability data changes over time. | Qualify historical ingestion and freshness semantics before treating an empty report as evidence. |
 
 ## Experiment record
 

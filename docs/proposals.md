@@ -65,7 +65,9 @@ bun start task start <proposal-id>
 The shell invokes this seam directly for a ready supported proposal, so normal
 interactive use does not require copying an identifier. The operator sees the
 objective, files, baseline and evidence limitation before deciding whether to
-start. Declining creates neither candidate nor start journal.
+start. A start journal is created before that decision so the declined outcome
+is retained. Declining records `scope_declined` and creates no candidate or
+execution authority.
 
 Once approved, the [task contract](tasks.md) owns execution, review and guarded
 promotion. A proposal that is structurally ready is not necessarily correct,

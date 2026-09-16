@@ -1,5 +1,12 @@
 # Verification
 
+Verification evidence answers a bounded question about an exact result under
+recorded conditions. It should show the claim checked, the result it describes,
+its provenance and limits, and whether the result changed afterward. A passing
+profile is not a universal “verified” state and does not authorize acceptance
+or application. See [using Tesota](using-tesota.md) for the user-facing
+workflow; this page defines the technical profiles and evidence behavior.
+
 Build first with `bun run build`, then run from the repository root:
 
 ```sh
