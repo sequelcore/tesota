@@ -124,6 +124,10 @@ form a generic verifier abstraction. A new verifier enters the task runtime only
 after it has a concrete task consumer and satisfies the qualification policy in
 [verifier strategy](verifier-strategy.md).
 
+The admission policy for bounded capability research, including its separation
+from runtime adoption, is recorded in
+[decision 011](decisions/011-evidence-gated-capabilities.md).
+
 ## Execution environments
 
 The current repository TypeScript and Vitest profiles use a pinned Docker
