@@ -97,11 +97,16 @@ The review should answer four separate questions:
 3. What remains unestablished or needs human judgment?
 4. Has the result been applied to the working repository?
 
-Today Tesota shows the exact diff, recorded check outcomes and the limits of
-the current TypeScript profile. That profile can establish that the admitted
-TypeScript invocation passed for the bound result and conditions. It does not
-establish the requested runtime behavior, a complete integration suite or
-universal correctness.
+Today Tesota lists the changed files, names scope integrity and the contained
+TypeScript profile separately, states that the candidate has not yet been
+applied and keeps requested behavior, completion conditions and the full
+integration suite explicitly unestablished. It then shows the escaped exact
+diff. The terminal outcome distinguishes applied, not applied and unconfirmed
+application.
+
+The TypeScript profile can establish that the admitted invocation passed for
+the bound result and conditions. It does not establish requested behavior,
+completion conditions, a complete integration suite or universal correctness.
 
 Accepting a result records a human decision. Application is a separate,
 conflict-checked effect. Rejecting it retains the evidence without changing the

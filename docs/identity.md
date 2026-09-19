@@ -75,22 +75,20 @@ Changed:
 - src/session.ts
 
 Checked:
-✓ TypeScript profile passed for this result
+PASS Scope integrity: only admitted files changed
+PASS TypeScript no-emit: this exact result passed typescript-no-emit/v1
 
 Not established:
-- requested runtime behavior
+- requested behavior and completion conditions
 - full integration suite
 
-Changed since checking:
-No
-
-Application:
-Not applied; awaiting review
+Changed since checking: No
+Application: Not applied; awaiting your decision
 ```
 
-This is an explanatory target, not a claim that the current shell renders this
-exact summary. What matters is that the claim, result, conditions and remaining
-unknowns are available to the user.
+The current shell renders this structure for its supported TypeScript task. The
+specific checks and unknowns must change when a later task has a different
+evidence contract.
 
 ## Enduring principles
 

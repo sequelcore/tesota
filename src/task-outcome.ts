@@ -265,6 +265,14 @@ export async function createTaskOutcome(directory: string, identity: Readonly<{
   };
 }
 
+function applicationSummary(promotion: TaskOutcome["promotion"]): string {
+  switch (promotion) {
+    case "applied": return "Applied";
+    case "unconfirmed": return "Unconfirmed; inspect retained evidence before retrying";
+    case "not_reached": return "Not applied";
+  }
+}
+
 export function formatTaskOutcome(outcome: TaskOutcome): string {
   const execution = outcome.execution === null ? "Execution: not observed\n" :
     `Execution: ${outcome.execution.modelInvocations} model invocations, ${outcome.execution.toolCalls} tool calls, ${outcome.execution.edits} edits\n`;
@@ -272,6 +280,6 @@ export function formatTaskOutcome(outcome: TaskOutcome): string {
     "Consumption: operation counts only; token usage and cost unavailable.\n";
   return `\nTask outcome\nOutcome: ${outcome.status}\nElapsed: ${outcome.elapsedMs} ms\n` +
     `Last phase: ${outcome.lastPhase}\nFirst check: ${outcome.firstCheck}\nCorrections: ${outcome.correctionAttempts}\n${execution}` +
-    `Decision: ${outcome.operator.decision}\nPromotion: ${outcome.promotion}\n${consumption}` +
-    "Authority: none; this outcome cannot authorize execution, acceptance or promotion.\n";
+    `Decision: ${outcome.operator.decision}\nApplication: ${applicationSummary(outcome.promotion)}\n${consumption}` +
+    "Authority: none; this outcome cannot authorize execution, acceptance or application.\n";
 }

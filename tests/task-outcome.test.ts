@@ -43,6 +43,7 @@ it("recovers a promoted task with separate execution, decision and adoption fact
     promotion: "applied", authority: "none", provenance: "recorded_untrusted" });
   expect(formatTaskOutcome(outcome)).toContain("Outcome: promoted\nElapsed: 1200 ms\nLast phase: promotion_started\n" +
     "First check: check_failed\nCorrections: 1\n");
+  expect(formatTaskOutcome(outcome)).toContain("Application: Applied\n");
 });
 
 it("records a declined proposal without creating execution authority and rejects replay", async () => {
@@ -50,9 +51,30 @@ it("records a declined proposal without creating execution authority and rejects
   const journal = await createTaskOutcome(directory, identity);
   await journal.append({ state: "scope_declined" });
   await journal.close();
-  await expect(loadTaskOutcome(directory)).resolves.toMatchObject({ status: "scope_declined", terminal: true,
+  const outcome = await loadTaskOutcome(directory);
+  expect(outcome).toMatchObject({ status: "scope_declined", terminal: true,
     candidate: null, operator: { scopeApproval: "declined", decision: "not_reached" }, promotion: "not_reached" });
+  expect(formatTaskOutcome(outcome)).toContain("Application: Not applied\n");
   await expect(createTaskOutcome(directory, identity)).rejects.toThrow();
+});
+
+it("reports unconfirmed application without implying that no write occurred", async () => {
+  const directory = await fixture();
+  const journal = await createTaskOutcome(directory, identity);
+  await journal.append({ state: "execution_started" });
+  await journal.append({ state: "execution_finished", candidate: "candidate-1", result: {
+    status: "passed", accounting: { elapsedMs: 100, firstCheck: "check_failed", correctionAttempts: 1,
+      modelInvocations: 1, toolCalls: 2, edits: 1,
+      consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } },
+  } });
+  await journal.append({ state: "review_ready", reviewSha256: "c".repeat(64), checkStatus: "passed" });
+  await journal.append({ state: "decision_recorded", decision: "accept", reviewSha256: "c".repeat(64) });
+  await journal.append({ state: "promotion_started", reviewSha256: "c".repeat(64) });
+
+  expect(formatTaskOutcome(journal.current())).toContain(
+    "Application: Unconfirmed; inspect retained evidence before retrying\n",
+  );
+  await journal.close();
 });
 
 it("rejects malformed, excess and impossible recovered histories", async () => {

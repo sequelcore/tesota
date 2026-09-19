@@ -43,6 +43,24 @@ function proposalCard(grant: ProposalRunGrant): string {
     "Automatic evidence: scope integrity and contained TypeScript no-emit. Outcome correctness requires human review.\n";
 }
 
+function formatTaskReview(review: TaskReview): string {
+  const typecheck = review.check.typecheck;
+  if (review.changedFiles.length === 0 || review.check.status !== "passed" || typecheck?.status !== "passed") {
+    throw new Error("Candidate review evidence unavailable");
+  }
+  return "\nCandidate review\n\n" +
+    `Changed:\n${review.changedFiles.map((path) => `- ${path}`).join("\n")}\n\n` +
+    "Checked:\n" +
+    "PASS Scope integrity: only admitted files changed\n" +
+    `PASS TypeScript no-emit: this exact result passed ${typecheck.profile}\n\n` +
+    "Not established:\n" +
+    "- requested behavior and completion conditions\n" +
+    "- full integration suite\n\n" +
+    "Changed since checking: No\n" +
+    "Application: Not applied; awaiting your decision\n\n" +
+    `Diff (escaped JSON):\n${JSON.stringify(review.diff)}\n`;
+}
+
 async function finishOutcome(journal: TaskOutcomeJournal,
   event: Parameters<TaskOutcomeJournal["append"]>[0], write: (text: string) => void): Promise<void> {
   await journal.append(event);
@@ -81,7 +99,7 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
 
     const review = await (dependencies.review ?? reviewTask)(execution.candidate.directory);
     await journal.append({ state: "review_ready", reviewSha256: review.reviewSha256, checkStatus: review.check.status });
-    dependencies.write(`\nCandidate review\nCheck: ${review.check.status}\nDiff (escaped JSON):\n${JSON.stringify(review.diff)}\n`);
+    dependencies.write(formatTaskReview(review));
     report({ phase: "ready_for_review", operation: "candidate_review" });
     const decision = approved(await dependencies.ask("Accept and promote these exact candidate bytes? [y/N] ")) ? "accept" : "reject";
     const decided = await (dependencies.decide ?? decideTask)(review.directory,

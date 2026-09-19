@@ -58,19 +58,19 @@ Changed:
 - src/session.ts
 
 Checked:
-PASS TypeScript profile for this exact result
+PASS Scope integrity: only admitted files changed
+PASS TypeScript no-emit: this exact result passed typescript-no-emit/v1
 
 Not established:
-- requested runtime behavior
+- requested behavior and completion conditions
 - full integration suite
 
 Changed since checking: No
-Application: Not applied; awaiting review
+Application: Not applied; awaiting your decision
 ```
 
-This is the product model, not a claim that the current shell renders this exact
-summary. The current interface exposes the same underlying distinctions through
-its proposal, check, review and outcome records.
+The current shell renders this structure before the application decision and
+reports the terminal application state in the retained task outcome.
 
 ## What works today
 
