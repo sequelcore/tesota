@@ -117,16 +117,45 @@ it("continues a ready proposal into the approval flow without asking for its id"
   expect(output.at(-1)).toBe("Tesota session ended. Nothing changed.\n");
 });
 
-it.each([
-  { status: "cancelled" as const, exitCode: 130 as const },
-  { status: "unsettled" as const, exitCode: 1 as const, outcome: "promotion_unconfirmed" as const },
-])("ends the shell when task settlement does not allow another request", async (startResult) => {
+it("returns to a fresh prompt after task cancellation is settled", async () => {
+  const answers = ["Update the guide", ""];
+  const ask = vi.fn(async () => answers.shift() ?? "");
+
+  const result = await runTesotaShell({ write: () => {}, ask, discover: async () => proposalResult(),
+    start: async () => ({ status: "settled", exitCode: 130, outcome: "cancelled" }) });
+
+  expect(result).toBe(0);
+  expect(ask).toHaveBeenCalledTimes(2);
+});
+
+it("returns to a fresh prompt after read-only cancellation is settled", async () => {
+  const answers = ["Inspect the repository", ""];
+  const ask = vi.fn(async () => answers.shift() ?? "");
+
+  const result = await runTesotaShell({ write: () => {}, ask,
+    discover: async () => ({ status: "cancelled", exitCode: 130, settlement: "observed" }), start: vi.fn() });
+
+  expect(result).toBe(0);
+  expect(ask).toHaveBeenCalledTimes(2);
+});
+
+it("ends the shell when read-only cancellation remains unconfirmed", async () => {
+  const ask = vi.fn(async () => "Inspect the repository");
+
+  const result = await runTesotaShell({ write: () => {}, ask,
+    discover: async () => ({ status: "unsettled", exitCode: 1, reason: "discovery_unconfirmed" }), start: vi.fn() });
+
+  expect(result).toBe(1);
+  expect(ask).toHaveBeenCalledOnce();
+});
+
+it("ends the shell when task settlement remains unconfirmed", async () => {
   const ask = vi.fn(async () => "Update the guide");
 
   const result = await runTesotaShell({ write: () => {}, ask, discover: async () => proposalResult(),
-    start: async () => startResult });
+    start: async () => ({ status: "unsettled", exitCode: 1, outcome: "promotion_unconfirmed" }) });
 
-  expect(result).toBe(startResult.exitCode);
+  expect(result).toBe(1);
   expect(ask).toHaveBeenCalledOnce();
 });
 

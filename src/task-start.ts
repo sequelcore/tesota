@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { admitTaskProposal, type ProposalRunGrant } from "./proposal-admission.js";
 import { decideTask, reviewTask, type TaskReview } from "./task-review.js";
-import { promoteTask } from "./task-promotion.js";
+import { promoteTask, PromotionNotAppliedError } from "./task-promotion.js";
 import { runProposalTask, type TaskRunResult } from "./task-run.js";
 import { createTaskOutcome, formatTaskOutcome, type TaskOutcomeJournal } from "./task-outcome.js";
 import { askTerminalQuestion, type PromptTerminal } from "./terminal-question.js";
@@ -15,10 +15,9 @@ export type TaskStartProgress =
   | Readonly<{ phase: "promoting"; operation: "accepted_candidate" }>;
 
 export type TaskStartResult =
-  | Readonly<{ status: "settled"; exitCode: 0 | 1;
-    outcome: "scope_declined" | "execution_failed" | "rejected" | "promoted" }>
-  | Readonly<{ status: "cancelled"; exitCode: 130 }>
-  | Readonly<{ status: "unsettled"; exitCode: 1; outcome: "promotion_unconfirmed" }>;
+  | Readonly<{ status: "settled"; exitCode: 0 | 1 | 130;
+    outcome: "scope_declined" | "execution_failed" | "cancelled" | "rejected" | "promotion_not_applied" | "promoted" }>
+  | Readonly<{ status: "unsettled"; exitCode: 1; outcome: "execution_unconfirmed" | "promotion_unconfirmed" }>;
 
 interface StartTaskDependencies {
   readonly proposalsRoot: string;
@@ -36,6 +35,7 @@ interface StartTaskDependencies {
 
 function approved(answer: string): boolean { return /^(?:y|yes)$/iu.test(answer.trim()); }
 function ignoreProgress(_progress: TaskStartProgress): void {}
+function aborted(error: unknown): boolean { return error instanceof Error && error.name === "AbortError"; }
 
 function proposalCard(grant: ProposalRunGrant): string {
   return `Proposed task\nObjective: ${grant.objective}\nWrite: ${grant.writeFiles.join(", ")}\n` +
@@ -67,6 +67,54 @@ async function finishOutcome(journal: TaskOutcomeJournal,
   write(formatTaskOutcome(journal.current()));
 }
 
+async function completedExecution(execution: TaskRunResult, journal: TaskOutcomeJournal,
+  write: (text: string) => void): Promise<TaskStartResult | null> {
+  if (execution.status === "unsettled") {
+    write("Execution settlement is unconfirmed. Inspect retained evidence before retrying.\n");
+    write(formatTaskOutcome(journal.current()));
+    return { status: "unsettled", exitCode: 1, outcome: "execution_unconfirmed" };
+  }
+  await journal.append({ state: "execution_finished", candidate: execution.candidate.directory,
+    result: { status: execution.status, accounting: execution.accounting } });
+  if (execution.status === "passed") return null;
+  write(`Execution did not pass. Candidate retained: ${execution.candidate.directory}\n`);
+  const outcome = execution.status === "cancelled" ? "cancelled" : "execution_failed";
+  await finishOutcome(journal, { state: "finished", outcome }, write);
+  return outcome === "cancelled" ? { status: "settled", exitCode: 130, outcome } :
+    { status: "settled", exitCode: 1, outcome };
+}
+
+async function promoteAcceptedTask(review: TaskReview, decided: TaskReview, source: string, journal: TaskOutcomeJournal,
+  report: (progress: TaskStartProgress) => void, promote: typeof promoteTask, write: (text: string) => void): Promise<TaskStartResult> {
+  if (decided.operatorDecision?.applicability !== "current") throw new Error("Decision became stale");
+  report({ phase: "promoting", operation: "accepted_candidate" });
+  await journal.append({ state: "promotion_started", reviewSha256: review.reviewSha256 });
+  try {
+    const promotion = await promote(review.directory, source, review.reviewSha256);
+    try {
+      await finishOutcome(journal, { state: "finished", outcome: "promoted", files: promotion.files }, write);
+    } catch {
+      write("Promotion applied, but proposal start evidence is incomplete. Inspect the candidate promotion journal.\n");
+      return { status: "unsettled", exitCode: 1, outcome: "promotion_unconfirmed" };
+    }
+    write(`Promoted: ${promotion.files.map((file) => file.path).join(", ")}\n`);
+    return { status: "settled", exitCode: 0, outcome: "promoted" };
+  } catch (error) {
+    if (error instanceof PromotionNotAppliedError) {
+      try {
+        await finishOutcome(journal, { state: "finished", outcome: "promotion_not_applied" }, write);
+      } catch {
+        write("Promotion was not applied, but proposal start evidence is incomplete. Inspect the candidate promotion journal.\n");
+        return { status: "unsettled", exitCode: 1, outcome: "promotion_unconfirmed" };
+      }
+      write("Promotion was not applied. Source was not changed.\n");
+      return { status: "settled", exitCode: 1, outcome: "promotion_not_applied" };
+    }
+    write("Promotion settlement is unconfirmed. Inspect retained evidence before retrying.\n");
+    return { status: "unsettled", exitCode: 1, outcome: "promotion_unconfirmed" };
+  }
+}
+
 /** One-shot proposal lifecycle. A started proposal cannot be replayed or resumed. */
 export async function startTask(dependencies: StartTaskDependencies): Promise<TaskStartResult> {
   const report = dependencies.report ?? ignoreProgress;
@@ -75,7 +123,6 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
   const journal = await createOutcome(resolve(dependencies.proposalsRoot, grant.proposalId), {
     proposalId: grant.proposalId, proposalSha256: grant.proposalSha256, baseline: grant.baseline,
   });
-  let promotionApplied = false;
   try {
     dependencies.write(proposalCard(grant));
     report({ phase: "awaiting_approval", operation: "proposal_scope" });
@@ -87,15 +134,8 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
     await journal.append({ state: "execution_started" });
     report({ phase: "executing", operation: "candidate_task" });
     const execution = await (dependencies.execute ?? runProposalTask)(grant);
-    await journal.append({ state: "execution_finished", candidate: execution.candidate.directory,
-      result: { status: execution.status, accounting: execution.accounting } });
-    if (execution.status !== "passed") {
-      dependencies.write(`Execution did not pass. Candidate retained: ${execution.candidate.directory}\n`);
-      await finishOutcome(journal, { state: "finished",
-        outcome: execution.status === "cancelled" ? "cancelled" : "execution_failed" }, dependencies.write);
-      return execution.status === "cancelled" ? { status: "cancelled", exitCode: 130 } :
-        { status: "settled", exitCode: 1, outcome: "execution_failed" };
-    }
+    const executionResult = await completedExecution(execution, journal, dependencies.write);
+    if (executionResult !== null) return executionResult;
 
     const review = await (dependencies.review ?? reviewTask)(execution.candidate.directory);
     await journal.append({ state: "review_ready", reviewSha256: review.reviewSha256, checkStatus: review.check.status });
@@ -110,22 +150,13 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
       await finishOutcome(journal, { state: "finished", outcome: "rejected" }, dependencies.write);
       return { status: "settled", exitCode: 1, outcome: "rejected" };
     }
-    if (decided.operatorDecision?.applicability !== "current") throw new Error("Decision became stale");
-    report({ phase: "promoting", operation: "accepted_candidate" });
-    await journal.append({ state: "promotion_started", reviewSha256: review.reviewSha256 });
-    const promotion = await (dependencies.promote ?? promoteTask)(review.directory, grant.source, review.reviewSha256);
-    promotionApplied = true;
-    try {
-      await finishOutcome(journal, { state: "finished", outcome: "promoted", files: promotion.files }, dependencies.write);
-    } catch {
-      dependencies.write("Promotion applied, but proposal start evidence is incomplete. Inspect the candidate promotion journal.\n");
-      return { status: "unsettled", exitCode: 1, outcome: "promotion_unconfirmed" };
-    }
-    dependencies.write(`Promoted: ${promotion.files.map((file) => file.path).join(", ")}\n`);
-    return { status: "settled", exitCode: 0, outcome: "promoted" };
+    return await promoteAcceptedTask(review, decided, grant.source, journal, report, dependencies.promote ?? promoteTask, dependencies.write);
   } catch (error) {
-    if (!promotionApplied) await journal.append({ state: "finished",
-      outcome: error instanceof Error && error.name === "AbortError" ? "cancelled" : "failed" }).catch(() => {});
+    if (aborted(error)) {
+      await finishOutcome(journal, { state: "finished", outcome: "cancelled" }, dependencies.write);
+      return { status: "settled", exitCode: 130, outcome: "cancelled" };
+    }
+    await journal.append({ state: "finished", outcome: "failed" }).catch(() => {});
     throw error;
   } finally { await journal.close(); }
 }

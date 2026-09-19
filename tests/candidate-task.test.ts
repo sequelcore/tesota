@@ -144,10 +144,11 @@ it("returns compiler diagnostics but closes the task on an operational typecheck
   await unavailableTask.replace({ path: "src/value.ts", expectedSha256: unavailableInput.sha256,
     content: "export const value = 'new';\n" });
   vi.mocked(checkRepositoryTypecheck).mockResolvedValueOnce(typecheckResult("timed_out"));
-  const cancellation = new AbortController();
-  await expect(unavailableTask.check(cancellation.signal)).rejects.toThrow("denied");
+  const unavailableCheck = await unavailableTask.check();
+  expect(unavailableCheck).toMatchObject({ status: "check_failed", outcome: "operational_failed", settlement: "unconfirmed",
+    diagnostics: [expect.stringContaining("settlement is unconfirmed")], typecheck: { status: "timed_out", process: "unconfirmed" } });
   expect(checkRepositoryTypecheck).toHaveBeenLastCalledWith({ candidate: unavailable.directory,
-    source: unavailable.source }, cancellation.signal);
+    source: unavailable.source }, undefined);
   await expect(unavailableTask.read({ path: "src/value.ts" })).rejects.toThrow("closed");
 });
 
@@ -218,6 +219,8 @@ it("promotes only the exact accepted candidate bytes while preserving unrelated 
     const result = await promoteTask(current.directory, current.source, review.reviewSha256);
 
     expect(result).toMatchObject({ status: "applied", files: [{ path: "src/value.ts" }] });
+    const promotion = await readFile(join(current.directory, "promotion.jsonl"), "utf8");
+    expect(promotion.indexOf('"state":"source_write_started"')).toBeLessThan(promotion.indexOf('"state":"applied"'));
     expect(await readFile(join(current.source, "src", "value.ts"), "utf8")).toBe("export const value = 'new';\n");
     expect(await readFile(join(current.source, "README.md"), "utf8")).toBe("operator work\n");
     expect(await readFile(join(current.source, ".git", "index"))).toEqual(index);
@@ -225,3 +228,14 @@ it("promotes only the exact accepted candidate bytes while preserving unrelated 
       .toBe(result.files[0]?.sourceSha256);
   } finally { await current.cleanup(); }
 }, 60_000);
+
+it("classifies a rejected promotion before source writing as not applied", async () => {
+  const current = await fixture(true);
+  try {
+    const before = await readFile(join(current.source, "src", "value.ts"), "utf8");
+    await expect(promoteTask(current.directory, current.source, "a".repeat(64))).rejects.toMatchObject({
+      name: "PromotionNotAppliedError",
+    });
+    expect(await readFile(join(current.source, "src", "value.ts"), "utf8")).toBe(before);
+  } finally { await current.cleanup(); }
+});

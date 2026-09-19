@@ -18,6 +18,8 @@ export interface PiTaskResult {
   readonly checksSuppliedToModel: number;
   readonly finalCheckSuppliedToModel: boolean;
   readonly deadlineExpired: boolean;
+  /** A terminal model event does not settle an earlier repository effect. */
+  readonly settlement: "observed" | "unconfirmed";
   readonly denied: boolean;
   readonly terminalStopReason: AssistantMessage["stopReason"] | null;
   readonly taskAcceptance: "not_evaluated";
@@ -51,6 +53,7 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
   let terminalStopReason: AssistantMessage["stopReason"] | null = null;
   let terminalObserved = false;
   let promptFailed = false;
+  let unconfirmedEffect = false;
   let settle: () => void = () => {};
   const settled = new Promise<void>((resolve) => { settle = resolve; });
   let settlementTimer: ReturnType<typeof setTimeout> | undefined;
@@ -94,6 +97,10 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
       const check = await task.check(toolSignal);
       checks.push(check);
       checkCalls.set(id, check);
+      if (check.settlement === "unconfirmed") {
+        unconfirmedEffect = true;
+        task.close();
+      }
       return check;
     }, toolSignal),
   };
@@ -108,7 +115,7 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
       const schema = context.toolCall.name === "tesota_read" ? taskReadSchema :
         context.toolCall.name === "tesota_replace" ? taskEditSchema :
         context.toolCall.name === "tesota_check" ? taskCheckSchema : undefined;
-      if (closed || denied || signal.aborted || deadlineExpired || toolCalls > PI_TASK_LIMITS.toolCalls ||
+      if (closed || denied || unconfirmedEffect || signal.aborted || deadlineExpired || toolCalls > PI_TASK_LIMITS.toolCalls ||
           schema === undefined || !schema.safeParse(context.args).success) {
         denied = true;
         denialStage ??= "tool_request";
@@ -118,7 +125,7 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
       return undefined;
     },
     streamFn: (requested, context, options) => {
-      if (closed || denied || signal.aborted || deadlineExpired ||
+      if (closed || denied || unconfirmedEffect || signal.aborted || deadlineExpired ||
           canAdmitInvocation("inference", modelInvocations, PI_TASK_LIMITS.modelInvocations) !== "allow") {
         denied = true;
         denialStage ??= "model_admission";
@@ -164,13 +171,14 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
     else void agent.prompt(JSON.stringify(description)).then(settle, () => { promptFailed = true; settle(); });
     await settled;
     closed = true;
-    const status: PiTaskResult["status"] = !terminalObserved ? "unsettled" :
+    const settlement: PiTaskResult["settlement"] = terminalObserved && !unconfirmedEffect ? "observed" : "unconfirmed";
+    const status: PiTaskResult["status"] = settlement === "unconfirmed" ? "unsettled" :
       signal.aborted || terminalStopReason === "aborted" ? "aborted" :
       denied || deadlineExpired || promptFailed || agent.state.errorMessage !== undefined || terminalStopReason !== "stop" ? "failed" : "completed";
     const last = checks.at(-1);
     return { ...(denialStage === undefined ? {} : { denialStage }), ...(deniedTool === undefined ? {} : { deniedTool }),
       status, modelInvocations, toolCalls, edits, checks: [...checks], checksSuppliedToModel: supplied.size,
-      finalCheckSuppliedToModel: last !== undefined && supplied.has(last), deadlineExpired, denied,
+      finalCheckSuppliedToModel: last !== undefined && supplied.has(last), deadlineExpired, settlement, denied,
       terminalStopReason, taskAcceptance: "not_evaluated" };
   } finally {
     closed = true;
@@ -195,17 +203,20 @@ export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck):
   const validChecks = [
     checks.length === 2 || checks.length === 3,
     first?.status === "check_failed",
+    first?.outcome === "check_failed",
     last?.status === "passed",
+    last?.outcome === "passed",
     first?.writeSetSha256 !== last?.writeSetSha256,
-    checks.every((check) => first !== undefined && check.provenance === "issued" &&
+    checks.every((check) => first !== undefined && check.provenance === "issued" && check.settlement === "observed" &&
       check.taskAcceptance === "not_evaluated" && check.task === first.task && check.baseline === first.baseline &&
       typeof check.writeSetSha256 === "string" && check.writeSetSha256.length > 0),
-    checks.length === 2 || checks[1]?.status === "check_failed",
+    checks.length === 2 || checks[1]?.status === "check_failed" && checks[1]?.outcome === "check_failed",
     result.checksSuppliedToModel === checks.length,
     result.finalCheckSuppliedToModel,
   ].every(Boolean);
   return [
     result.status === "completed",
+    result.settlement === "observed",
     result.terminalStopReason === "stop",
     !result.denied,
     !result.deadlineExpired,
@@ -215,6 +226,8 @@ export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck):
     current.task === last?.task,
     current.baseline === last?.baseline,
     current.status === "passed",
+    current.outcome === "passed",
+    current.settlement === "observed",
     current.provenance === "recorded_untrusted",
     current.taskAcceptance === "not_evaluated",
     current.writeSetSha256 === last?.writeSetSha256,

@@ -21,6 +21,14 @@ async function runShellRequest(dependencies: TesotaShellDependencies, request: s
     dependencies.write("\n");
     report({ phase: "discovering", operation: "repository_discovery" });
     const result = await dependencies.discover(input);
+    if (result.status === "cancelled") {
+      dependencies.write("Repository discovery cancelled. Nothing changed.\n");
+      return { exitCode: result.exitCode, continue: true };
+    }
+    if (result.status === "unsettled") {
+      dependencies.write("Repository discovery settlement is unconfirmed. End this session before retrying.\n");
+      return { exitCode: result.exitCode, continue: false };
+    }
     if (result.status === "unavailable") {
       if (result.reason === "baseline_changed") {
         dependencies.write("The committed baseline changed during clarification. Start a new request. Nothing changed.\n");

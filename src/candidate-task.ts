@@ -30,6 +30,9 @@ type TaskFiles = Readonly<Record<string, string>>;
 
 export interface CandidateTaskCheck extends TaskOracleResult {
   readonly task: typeof TASK_KIND;
+  /** The automatic-check outcome is separate from whether its process effects settled. */
+  readonly outcome: "passed" | "check_failed" | "operational_failed";
+  readonly settlement: "observed" | "unconfirmed";
   readonly provenance: "issued" | "recorded_untrusted";
   readonly baseline: string;
   readonly writeSetSha256: string;
@@ -141,18 +144,32 @@ function checkScope(files: TaskFiles, plan: TaskPlan, grant: ProposalRunGrant): 
 
 async function checkTask(directory: string, files: TaskFiles, plan: TaskPlan,
   grant: ProposalRunGrant, signal?: AbortSignal):
-Promise<{ readonly oracle: TaskOracleResult; readonly typecheck: RepositoryTypecheckResult | null }> {
+Promise<{ readonly oracle: TaskOracleResult; readonly outcome: CandidateTaskCheck["outcome"];
+  readonly settlement: CandidateTaskCheck["settlement"]; readonly typecheck: RepositoryTypecheckResult | null }> {
   if (signal?.aborted === true) throw new DOMException("cancelled", "AbortError");
   const scope = checkScope(files, plan, grant);
-  if (scope.status === "check_failed") return { oracle: scope, typecheck: null };
-  const typecheck = await checkRepositoryTypecheck({ candidate: directory, source: grant.source }, signal);
-  if (typecheck.status !== "passed" && typecheck.status !== "check_failed") {
-    throw new Error(`Repository typecheck ${typecheck.status}`);
+  if (scope.status === "check_failed") {
+    return { oracle: scope, outcome: "check_failed", settlement: "observed", typecheck: null };
   }
-  return typecheck.status === "passed"
-    ? { oracle: { status: "passed", diagnostics: [...scope.diagnostics,
-      "TypeScript no-emit check passed. Outcome correctness requires human review."] }, typecheck }
-    : { oracle: { status: "check_failed", diagnostics: [...typecheck.diagnostics] }, typecheck };
+  const typecheck = await checkRepositoryTypecheck({ candidate: directory, source: grant.source }, signal);
+  const settlement = typecheck.process === "unconfirmed" || typecheck.container === "unconfirmed" ? "unconfirmed" : "observed";
+  if (settlement === "unconfirmed") {
+    return { oracle: { status: "check_failed", diagnostics: [
+      "TypeScript no-emit settlement is unconfirmed.",
+    ] }, outcome: "operational_failed", settlement, typecheck };
+  }
+  if (typecheck.status === "passed") {
+    return { oracle: { status: "passed", diagnostics: [...scope.diagnostics,
+      "TypeScript no-emit check passed. Outcome correctness requires human review."] },
+    outcome: "passed", settlement, typecheck };
+  }
+  if (typecheck.status === "check_failed") {
+    return { oracle: { status: "check_failed", diagnostics: [...typecheck.diagnostics] },
+      outcome: "check_failed", settlement, typecheck };
+  }
+  return { oracle: { status: "check_failed", diagnostics: [
+    `TypeScript no-emit did not complete: ${typecheck.status}.`,
+  ] }, outcome: "operational_failed", settlement, typecheck };
 }
 
 /** An execution handle derived from one immutable, operator-approved grant. */
@@ -254,14 +271,17 @@ export class CandidateTask {
   }
 
   async check(signal?: AbortSignal): Promise<CandidateTaskCheck> {
-    return this.#operation(async ({ files }) => {
+    const result = await this.#operation<CandidateTaskCheck>(async ({ files }) => {
       if (this.#checks >= TASK_LIMITS.checks) throw new Error("Check budget exceeded");
       this.#checks += 1;
       const checked = await checkTask(this.#directory, files, this.#plan, this.#grant, signal);
-      return { ...checked.oracle, task: TASK_KIND, provenance: "issued", typecheck: checked.typecheck,
+      return { ...checked.oracle, outcome: checked.outcome, settlement: checked.settlement,
+        task: TASK_KIND, provenance: "issued", typecheck: checked.typecheck,
         baseline: this.#plan.baseline, writeSetSha256: taskWriteSetSha256(files, this.#grant.writeFiles),
-        taskAcceptance: "not_evaluated" };
+        taskAcceptance: "not_evaluated" as const };
     });
+    if (result.outcome === "operational_failed") this.close();
+    return result;
   }
 }
 
@@ -287,7 +307,8 @@ export async function inspectCandidateTask(directory: string): Promise<{
 export async function checkCandidateTask(directory: string, signal?: AbortSignal): Promise<CandidateTaskCheck> {
   const loaded = await loadCandidateTask(directory);
   const checked = await checkTask(directory, loaded.files, loaded.plan, loaded.grant, signal);
-  return { ...checked.oracle, task: TASK_KIND, typecheck: checked.typecheck,
+  return { ...checked.oracle, outcome: checked.outcome, settlement: checked.settlement,
+    task: TASK_KIND, typecheck: checked.typecheck,
     provenance: "recorded_untrusted", baseline: loaded.plan.baseline,
     writeSetSha256: taskWriteSetSha256(loaded.files, loaded.grant.writeFiles), taskAcceptance: "not_evaluated" };
 }

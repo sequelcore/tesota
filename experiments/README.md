@@ -16,6 +16,9 @@ The [Oxlint qualification](oxlint/README.md) records the measured selection of
 five Kiln `dev` rules and the rejection of noisy structural limits.
 The [command isolation qualification](isolation/README.md) compares one native
 Windows sandbox with the pinned container selected for the next bounded code task.
+The [supported task qualification](supported-task/README.md) freezes the first
+prospective external-repository corpus and the live evidence required before
+the active one-conversation milestone can close.
 
 ## Retained artifacts
 

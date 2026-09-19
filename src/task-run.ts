@@ -11,7 +11,7 @@ import { PI_TASK_LIMITS, piTaskPasses, runPiTask, type PiTaskResult } from "./in
 
 export interface TaskRunResult {
   readonly candidate: CandidateCheckout;
-  readonly status: "passed" | "failed" | "cancelled";
+  readonly status: "passed" | "failed" | "cancelled" | "unsettled";
   readonly accounting: TaskExecutionAccounting;
 }
 
@@ -19,12 +19,10 @@ export interface TaskRunHost {
   readonly signal?: AbortSignal;
   readonly write?: (text: string) => void;
   readonly writeError?: (text: string) => void;
-  readonly exitUnsettled?: (code: number) => never;
 }
 
 function stdout(text: string): void { process.stdout.write(text); }
 function stderr(text: string): void { process.stderr.write(text); }
-function exitProcess(code: number): never { process.exit(code); }
 function ignore(): void {}
 
 function taskExecutionAccounting(session: PiTaskResult | null, startedAt: number): TaskExecutionAccounting {
@@ -35,8 +33,7 @@ function taskExecutionAccounting(session: PiTaskResult | null, startedAt: number
 }
 
 function resolvedHost(host: TaskRunHost): Required<Omit<TaskRunHost, "signal">> {
-  return { write: host.write ?? stdout, writeError: host.writeError ?? stderr,
-    exitUnsettled: host.exitUnsettled ?? exitProcess };
+  return { write: host.write ?? stdout, writeError: host.writeError ?? stderr };
 }
 
 function relayCancellation(source: AbortSignal | undefined, target: AbortController): () => void {
@@ -47,78 +44,115 @@ function relayCancellation(source: AbortSignal | undefined, target: AbortControl
   return () => { source.removeEventListener("abort", abort); };
 }
 
+interface RecordedTaskAttempt {
+  readonly session: PiTaskResult | null;
+  readonly current: CandidateTaskCheck | null;
+  readonly reviewSaved: boolean;
+  readonly passed: boolean;
+}
+
+async function executorSha256(): Promise<Record<string, string>> {
+  const executor: Record<string, string> = {};
+  for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js", "task-contract.js",
+    "proposal-admission.js", "repository-typecheck.js", "repository-typecheck-process.js", "command-isolation.js",
+    "verification/invocation-admission.js", "integrations/pi-task.js",
+    "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock"]) {
+    executor[path] = createHash("sha256").update(await readFile(new URL(path, import.meta.url))).digest("hex");
+  }
+  return executor;
+}
+
+async function executeTaskSession(candidate: CandidateCheckout, grant: ProposalRunGrant,
+  signal: AbortSignal): Promise<PiTaskResult> {
+  let task: CandidateTask | undefined;
+  try {
+    task = await CandidateTask.prepare(candidate.directory, grant);
+    const models = await storedCodexModels(new CodexCredentials(), signal);
+    const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
+    if (model?.api !== "openai-codex-responses") throw new Error("Task model unavailable");
+    return await runPiTask(task, model, (requested, context, options) =>
+      models.streamSimple(requested, context, options), signal);
+  } finally { task?.close(); }
+}
+
+function finalCheckPermitted(session: PiTaskResult | null, signal: AbortSignal): boolean {
+  return session?.status === "completed" && session.settlement === "observed" && !signal.aborted;
+}
+
+function taskRunStatus(session: PiTaskResult | null, signal: AbortSignal,
+  passed: boolean, reviewSaved: boolean): TaskRunResult["status"] {
+  if (session?.settlement === "unconfirmed") return "unsettled";
+  if (signal.aborted) return "cancelled";
+  return passed && reviewSaved ? "passed" : "failed";
+}
+
+function attemptRecordOutcome(session: PiTaskResult | null, passed: boolean, reviewSaved: boolean): "passed" | "failed" | "unsettled" {
+  return passed && reviewSaved ? "passed" : session?.settlement === "unconfirmed" ? "unsettled" : "failed";
+}
+
+function taskRunMessage(status: TaskRunResult["status"]): string {
+  if (status === "passed") return "Task checks passed; diff retained for human review.\n";
+  if (status === "unsettled") return "Task settlement unconfirmed; inspect the retained attempt.\n";
+  if (status === "cancelled") return "Task cancelled; retained state is available for inspection.\n";
+  return "Task unaccepted; inspect the retained checks and diff.\n";
+}
+
+async function recordTaskAttempt(candidate: CandidateCheckout, grant: ProposalRunGrant,
+  signal: AbortSignal, writeError: (text: string) => void): Promise<RecordedTaskAttempt> {
+  const record = await open(join(candidate.directory, "attempt.jsonl"), "wx", 0o600);
+  let session: PiTaskResult | null = null;
+  let current: CandidateTaskCheck | null = null;
+  let reviewSaved = false;
+  let passed = false;
+  try {
+    await record.writeFile(JSON.stringify({ format: "tesota-task-attempt", version: 1, state: "started",
+      timestamp: new Date().toISOString(), baseline: candidate.baseline, sourceDirty: candidate.sourceDirty,
+      executor: await executorSha256(), model: LIVE_CODEX_MODEL_ID, limits: PI_TASK_LIMITS,
+      taskAcceptance: "not_evaluated" }) + "\n");
+    await record.sync();
+    if (signal.aborted) throw new Error("Task interrupted");
+    session = await executeTaskSession(candidate, grant, signal);
+  } catch {
+    writeError("Task attempt did not complete successfully; retained state is available for inspection.\n");
+  } finally {
+    try {
+      await writeFile(join(candidate.directory, "candidate.diff"), await candidateDiff(candidate.directory),
+        { flag: "wx", mode: 0o600 });
+      reviewSaved = true;
+      if (finalCheckPermitted(session, signal)) current = await checkCandidateTask(candidate.directory, signal);
+      passed = session !== null && current !== null && !signal.aborted && piTaskPasses(session, current);
+    } catch { passed = false; }
+    try {
+      await record.writeFile(JSON.stringify({ state: "finished", timestamp: new Date().toISOString(),
+        outcome: attemptRecordOutcome(session, passed, reviewSaved), session, current, reviewSaved,
+        taskAcceptance: "not_evaluated" }) + "\n");
+      await record.sync();
+    } finally { await record.close(); }
+  }
+  return { session, current, reviewSaved, passed };
+}
+
 /** Execute only an in-memory grant already issued by proposal admission. */
 async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunGrant,
   host: TaskRunHost): Promise<TaskRunResult> {
   const startedAt = performance.now();
   const cancellation = new AbortController();
-  const { write, writeError, exitUnsettled } = resolvedHost(host);
+  const { write, writeError } = resolvedHost(host);
   const interrupt = (): void => cancellation.abort();
   const stopRelayingCancellation = relayCancellation(host.signal, cancellation);
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", interrupt);
-  const watchdog = setTimeout(() => {
-    cancellation.abort();
-    writeError("Task settlement unconfirmed; inspect the retained attempt.\n");
-    exitUnsettled(1);
-  }, 360_000);
   try {
     write(`Task candidate: ${candidate.directory}\n`);
-    const record = await open(join(candidate.directory, "attempt.jsonl"), "wx", 0o600);
-    let task: CandidateTask | undefined;
-    let session: PiTaskResult | null = null;
-    let current: CandidateTaskCheck | null = null;
-    let reviewSaved = false;
-    let passed = false;
-    try {
-      const executor: Record<string, string> = {};
-      for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js", "task-contract.js",
-        "proposal-admission.js", "repository-typecheck.js", "repository-typecheck-process.js", "command-isolation.js",
-        "verification/invocation-admission.js", "integrations/pi-task.js",
-        "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock"]) {
-        executor[path] = createHash("sha256").update(await readFile(new URL(path, import.meta.url))).digest("hex");
-      }
-      await record.writeFile(JSON.stringify({ format: "tesota-task-attempt", version: 1, state: "started",
-        timestamp: new Date().toISOString(), baseline: candidate.baseline, sourceDirty: candidate.sourceDirty,
-        executor, model: LIVE_CODEX_MODEL_ID, limits: PI_TASK_LIMITS, taskAcceptance: "not_evaluated" }) + "\n");
-      await record.sync();
-      if (cancellation.signal.aborted) throw new Error("Task interrupted");
-      task = await CandidateTask.prepare(candidate.directory, grant);
-      const models = await storedCodexModels(new CodexCredentials(), cancellation.signal);
-      const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
-      if (model?.api !== "openai-codex-responses") throw new Error("Task model unavailable");
-      session = await runPiTask(task, model, (requested, context, options) =>
-        models.streamSimple(requested, context, options), cancellation.signal);
-    } catch {
-      writeError("Task attempt did not complete successfully; retained state is available for inspection.\n");
-    } finally {
-      task?.close();
-      try {
-        await writeFile(join(candidate.directory, "candidate.diff"), await candidateDiff(candidate.directory),
-          { flag: "wx", mode: 0o600 });
-        reviewSaved = true;
-        if (!cancellation.signal.aborted) current = await checkCandidateTask(candidate.directory, cancellation.signal);
-        passed = session !== null && current !== null && !cancellation.signal.aborted && piTaskPasses(session, current);
-      } catch { passed = false; }
-      try {
-        await record.writeFile(JSON.stringify({ state: "finished", timestamp: new Date().toISOString(),
-          outcome: passed && reviewSaved ? "passed" : "failed", session, current, reviewSaved,
-          taskAcceptance: "not_evaluated" }) + "\n");
-        await record.sync();
-      } finally { await record.close(); }
-    }
-    const status: TaskRunResult["status"] = cancellation.signal.aborted ? "cancelled" :
-      passed && reviewSaved ? "passed" : "failed";
-    write(status === "passed" ? "Task checks passed; diff retained for human review.\n" :
-      status === "cancelled" ? "Task cancelled; retained state is available for inspection.\n" :
-        "Task unaccepted; inspect the retained checks and diff.\n");
-    return { candidate, status, accounting: taskExecutionAccounting(session, startedAt) };
+    const attempt = await recordTaskAttempt(candidate, grant, cancellation.signal, writeError);
+    const status = taskRunStatus(attempt.session, cancellation.signal, attempt.passed, attempt.reviewSaved);
+    write(taskRunMessage(status));
+    return { candidate, status, accounting: taskExecutionAccounting(attempt.session, startedAt) };
   } catch {
     writeError("Task preparation or evidence persistence failed. No promotion occurred.\n");
     return { candidate, status: "failed", accounting: taskExecutionAccounting(null, startedAt) };
   } finally {
     cancellation.abort();
-    clearTimeout(watchdog);
     process.removeListener("SIGINT", interrupt);
     process.removeListener("SIGTERM", interrupt);
     stopRelayingCancellation();
