@@ -36,6 +36,7 @@ the active one-conversation milestone can close.
 | [Denied candidate attempt](codex/evidence/candidate-denied.json) | Admission rejected requests; zero edits or checks; invocation budget stopped the session |
 | [Candidate newline mismatch](codex/evidence/candidate-newline.json) | Correction and checks completed; version 2's final-newline assertion rejected the source |
 | [Passing candidate correction](codex/evidence/candidate-passed.json) | One edit, two issued checks and review diff saved; previous evidence stale, final evidence applicable |
+| [Live TypeScript matrix](supported-task/evidence/windows-2026-09-19-typecheck.json) | Controlled Windows/Docker positive, finding, unavailable, fatal-exit, timeout, cancellation and drift outcomes after the sibling-mount correction |
 | [Codex history](codex/history.md) | Source scouting, historical checks and diagnostic findings |
 
 Verification and synthetic Pi review closure was reported in the development conversation and

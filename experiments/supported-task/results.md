@@ -94,3 +94,42 @@ installation. A later prospective run requires a newly frozen protocol revision;
 these three attempts must not be retried under the original protocol. The
 provider route remains an external prerequisite and must not be bypassed through
 silent model fallback.
+
+## Follow-up live qualification
+
+On 2026-09-19, the operator replaced the exhausted account through Tesota's
+documented logout/login flow. A new `live:codex` run used the fixed
+`openai-codex/gpt-5.6-luna` route and passed both bounded probes: stored
+authentication resolved, both requests received HTTP 200, the normal turn
+returned the exact expected token, and the abort probe observed an `aborted`
+terminal. Both effects had observed settlement, no tools ran and no fallback was
+used. The ignored raw version 9 record remains in operator-private state with
+SHA-256 `07d6d33cf34c0eec99f8489538966325a3d27267ca9a57a4e5bcc5a9f2915cef`.
+
+Live probing then exposed a container-layout defect: Docker could not create the
+nested `/workspace/node_modules` mountpoint inside the read-only candidate
+mount. Commit `93266254523946fb539113d36631b2d585a71c2a` moved the dependency
+snapshot to the read-only sibling mount `/dependencies/node_modules` and rejects
+a Windows-only TypeScript 7 installation before approval. The supported setup
+now requires the exact Linux/x64 TypeScript package from the committed lockfile.
+
+The controlled matrix was repeated against that exact commit on Windows x64,
+Bun 1.4.2, Node 24.15.0 and Docker 29.8.0. Its sanitized record is
+[windows-2026-09-19-typecheck.json](evidence/windows-2026-09-19-typecheck.json).
+
+| Required case | Follow-up result |
+| --- | --- |
+| Positive | Real TypeScript 7.0.2 returned `passed`; process exited and the container was absent. |
+| Compiler finding | A candidate-only type error returned one structured TS2322 diagnostic and `check_failed`; settlement was observed. |
+| Missing tool | Removing Docker from executable resolution failed before profile issuance; no install or pull occurred. |
+| Fatal exit | A controlled bound compiler installation exited outside the finding contract and returned `execution_failed`; settlement was observed. |
+| Timeout | A controlled nonterminating compiler exceeded 30 seconds and returned `timed_out`; process exit and container absence were observed. |
+| Cancellation | The same controlled compiler was cancelled after dispatch and returned `cancelled`; process exit and container absence were observed. |
+| Surviving descendant | `isolation qualify` passed every Docker control on the same platform and image. |
+| Source drift | Candidate bytes changed after profile preparation; dispatch did not start and the result was `input_drift`. |
+
+This completes the controlled live TypeScript-profile matrix for the declared
+Windows/Docker environment. It does not repair or replace the original negative
+corpus. Milestone 1 remains active until a newly frozen prospective external
+corpus supplies successful end-to-end usefulness evidence through the ordinary
+conversation, review and application path.
