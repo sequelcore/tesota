@@ -24,7 +24,7 @@ function git(cwd: string, args: readonly string[]): string {
   return result.stdout;
 }
 
-async function fixture(script = "tsc --noEmit -p tsconfig.json"): Promise<{
+async function fixture(script = "tsc --noEmit -p tsconfig.json", typescriptVersion = "7.0.2"): Promise<{
   readonly root: string; readonly source: string; readonly candidate: Awaited<ReturnType<typeof createCandidateCheckout>>;
 }> {
   const root = await mkdtemp(join(tmpdir(), "tesota-typecheck-test-"));
@@ -32,7 +32,7 @@ async function fixture(script = "tsc --noEmit -p tsconfig.json"): Promise<{
   const source = join(root, "source");
   await mkdir(join(source, "src"), { recursive: true });
   await writeFile(join(source, "package.json"), JSON.stringify({ scripts: { typecheck: script },
-    devDependencies: { typescript: "7.0.2" } }, null, 2) + "\n");
+    devDependencies: { typescript: typescriptVersion } }, null, 2) + "\n");
   await writeFile(join(source, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true },
     include: ["src/**/*.ts"] }, null, 2) + "\n");
   await writeFile(join(source, "bun.lock"), "lockfile fixture\n");
@@ -42,12 +42,17 @@ async function fixture(script = "tsc --noEmit -p tsconfig.json"): Promise<{
   git(source, ["add", "--", ".gitignore", "package.json", "tsconfig.json", "bun.lock", "src/value.ts"]);
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
   await mkdir(join(source, "node_modules", "typescript", "bin"), { recursive: true });
-  await mkdir(join(source, "node_modules", "@typescript", "typescript-linux-x64"), { recursive: true });
   await writeFile(join(source, "node_modules", "typescript", "package.json"),
-    JSON.stringify({ name: "typescript", version: "7.0.2" }) + "\n");
+    JSON.stringify({ name: "typescript", version: typescriptVersion,
+      optionalDependencies: typescriptVersion.startsWith("7.")
+        ? { "@typescript/typescript-linux-x64": typescriptVersion }
+        : undefined }) + "\n");
   await writeFile(join(source, "node_modules", "typescript", "bin", "tsc"), "compiler fixture\n");
-  await writeFile(join(source, "node_modules", "@typescript", "typescript-linux-x64", "package.json"),
-    JSON.stringify({ name: "@typescript/typescript-linux-x64", version: "7.0.2" }) + "\n");
+  if (typescriptVersion.startsWith("7.")) {
+    await mkdir(join(source, "node_modules", "@typescript", "typescript-linux-x64"), { recursive: true });
+    await writeFile(join(source, "node_modules", "@typescript", "typescript-linux-x64", "package.json"),
+      JSON.stringify({ name: "@typescript/typescript-linux-x64", version: typescriptVersion }) + "\n");
+  }
   const candidate = await createCandidateCheckout(source, join(root, "candidates"));
   return { root, source, candidate };
 }
@@ -201,6 +206,15 @@ it("rejects a Windows-only TypeScript installation before issuing the Docker pro
   await expect(prepareRepositoryTypecheck({ candidate: current.candidate.directory,
     source: current.source, runtime: await runtime(current.root) }))
     .rejects.toThrow("TypeScript Linux/x64 closure unavailable");
+});
+
+it("admits a portable JavaScript TypeScript installation without a platform package", async () => {
+  const current = await fixture("tsc --noEmit -p tsconfig.json", "6.0.3");
+
+  await expect(prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) })).resolves.toMatchObject({
+    verifier: { packageVersion: "6.0.3" },
+  });
 });
 
 it("rejects candidate changes to the authoritative check definition", async () => {

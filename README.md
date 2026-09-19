@@ -120,8 +120,9 @@ outside the current boundary. A supported change still requires explicit scope
 approval and a separate review decision before application.
 
 The current repository TypeScript check requires Docker Desktop, the pinned
-image already present locally and a matching Linux/x64 TypeScript closure in
-the target repository's `node_modules`, including
+image already present locally and a matching TypeScript closure in the target
+repository's `node_modules`. When the installed TypeScript package declares a
+Linux/x64 platform package, the closure must include
 `@typescript/typescript-linux-x64` at the declared TypeScript version. Tesota
 performs no dependency install or image pull. See
 [Using Tesota](docs/using-tesota.md) for the complete current path and its

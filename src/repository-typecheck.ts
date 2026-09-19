@@ -18,7 +18,12 @@ const packageSchema = z.object({
   scripts: z.object({ typecheck: z.literal(REPOSITORY_TYPECHECK_SCRIPT) }),
   devDependencies: z.object({ typescript: z.string().regex(/^\d+\.\d+\.\d+$/u) }),
 });
-const installedPackageSchema = z.object({ name: z.literal("typescript"), version: z.string().regex(/^\d+\.\d+\.\d+$/u) });
+const installedPackageSchema = z.object({
+  name: z.literal("typescript"),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/u),
+  dependencies: z.record(z.string(), z.string()).optional(),
+  optionalDependencies: z.record(z.string(), z.string()).optional(),
+});
 const installedLinuxPackageSchema = z.object({ name: z.literal("@typescript/typescript-linux-x64"),
   version: z.string().regex(/^\d+\.\d+\.\d+$/u) });
 const tsconfigSchema = z.object({
@@ -82,13 +87,18 @@ export async function prepareRepositoryTypecheck(options: PrepareOptions): Promi
   const installed = installedPackageSchema.parse(parseRepositoryJson(await readDependencyInstallationInput(
     join(typescriptRoot, "package.json"), 128 * 1024)));
   if (installed.version !== declared.devDependencies.typescript) throw new Error("Installed TypeScript does not match repository declaration");
-  let linuxPackage: z.infer<typeof installedLinuxPackageSchema>;
-  try {
-    const linuxPackageRoot = await repositoryInputDirectory(join(nodeModules, "@typescript", "typescript-linux-x64"));
-    linuxPackage = installedLinuxPackageSchema.parse(parseRepositoryJson(await readDependencyInstallationInput(
-      join(linuxPackageRoot, "package.json"), 128 * 1024)));
-  } catch { throw new Error("TypeScript Linux/x64 closure unavailable"); }
-  if (linuxPackage.version !== installed.version) throw new Error("TypeScript Linux/x64 closure version mismatch");
+  const linuxPackageName = "@typescript/typescript-linux-x64";
+  const linuxDependency = installed.optionalDependencies?.[linuxPackageName] ?? installed.dependencies?.[linuxPackageName];
+  if (linuxDependency !== undefined) {
+    if (linuxDependency !== installed.version) throw new Error("TypeScript Linux/x64 declaration mismatch");
+    let linuxPackage: z.infer<typeof installedLinuxPackageSchema>;
+    try {
+      const linuxPackageRoot = await repositoryInputDirectory(join(nodeModules, "@typescript", "typescript-linux-x64"));
+      linuxPackage = installedLinuxPackageSchema.parse(parseRepositoryJson(await readDependencyInstallationInput(
+        join(linuxPackageRoot, "package.json"), 128 * 1024)));
+    } catch { throw new Error("TypeScript Linux/x64 closure unavailable"); }
+    if (linuxPackage.version !== installed.version) throw new Error("TypeScript Linux/x64 closure version mismatch");
+  }
   const runtime = options.runtime ?? await resolveContainerRuntime([source, candidate.directory, candidate.checkout]);
   if (!digestPattern.test(runtime.executableSha256) || !containerRuntimeIsOutside(runtime, [source, candidate.directory, candidate.checkout])) {
     throw new Error("Repository typecheck runtime unavailable");

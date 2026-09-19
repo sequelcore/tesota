@@ -110,8 +110,9 @@ Live probing then exposed a container-layout defect: Docker could not create the
 nested `/workspace/node_modules` mountpoint inside the read-only candidate
 mount. Commit `93266254523946fb539113d36631b2d585a71c2a` moved the dependency
 snapshot to the read-only sibling mount `/dependencies/node_modules` and rejects
-a Windows-only TypeScript 7 installation before approval. The supported setup
-now requires the exact Linux/x64 TypeScript package from the committed lockfile.
+a Windows-only TypeScript 7 installation before approval. A subsequent
+correction limits that platform-package requirement to TypeScript releases that
+declare it; portable JavaScript compiler releases remain admissible.
 
 The controlled matrix was repeated against that exact commit on Windows x64,
 Bun 1.4.2, Node 24.15.0 and Docker 29.8.0. Its sanitized record is

@@ -39,8 +39,10 @@ package must name the exact `tsc --noEmit -p tsconfig.json` script, but Tesota
 does not execute that string. It invokes the observed matching TypeScript
 installation with its own fixed argv and no shell. On the supported Windows
 host and Linux-container route, admission also requires
-`@typescript/typescript-linux-x64` at the same exact version. A default
-Windows-only install is rejected before approval.
+`@typescript/typescript-linux-x64` at the same exact version when the installed
+TypeScript package declares that platform dependency. Portable JavaScript
+releases require no platform package; a platform-specific Windows-only install
+is rejected before approval.
 
 Before approval, the command displays exact candidate content identity,
 configuration and lockfile digests, TypeScript version and a digest of the

@@ -21,17 +21,19 @@ bun link
 ```
 
 The current change workflow also requires Git and Docker Desktop on Windows,
-the pinned verification image already present locally and a matching Linux/x64
-TypeScript closure in the target repository. Prepare that closure in an
+the pinned verification image already present locally and a matching TypeScript
+closure in the target repository. Prepare that closure in an
 independent checkout with the repository's committed lockfile:
 
 ```powershell
 bun install --frozen-lockfile --ignore-scripts --os=linux --cpu=x64
 ```
 
-The resulting `node_modules` must contain both `typescript` and
-`@typescript/typescript-linux-x64` at the exact declared version. This closure
-is for the Linux container and may not run repository tools directly on the
+The resulting `node_modules` must contain `typescript` at the exact declared
+version. If that installed package declares `@typescript/typescript-linux-x64`,
+the closure must contain that package at the same version. Portable JavaScript
+TypeScript releases have no platform package; platform-specific releases must
+be prepared for Linux/x64 and may not run repository tools directly on the
 Windows host. Tesota does not install dependencies or pull an image while
 working. Docker belongs to the current protected TypeScript route; it is not
 intended as a permanent prerequisite for every Tesota task.
