@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import type { CandidateTaskCheck } from "../src/candidate-task.js";
-import { piTaskPasses, type PiTaskResult } from "../src/integrations/pi-task.js";
+import { PI_TASK_LIMITS, piTaskPasses, type PiTaskResult } from "../src/integrations/pi-task.js";
 
 const before: CandidateTaskCheck = {
   task: "typescript-change", status: "check_failed", outcome: "check_failed", settlement: "observed",
@@ -18,6 +18,10 @@ const result: PiTaskResult = {
   checks: [before, after], checksSuppliedToModel: 2, finalCheckSuppliedToModel: true,
   deadlineExpired: false, denied: false, terminalStopReason: "stop", settlement: "observed", taskAcceptance: "not_evaluated",
 };
+
+it("keeps a finite task window that accommodates the qualified Windows profile", () => {
+  expect(PI_TASK_LIMITS.sessionMs).toBe(300_000);
+});
 
 it("accepts consistent completed task evidence", () => {
   expect(piTaskPasses(result, current)).toBe(true);

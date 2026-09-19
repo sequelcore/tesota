@@ -98,7 +98,10 @@ export type DependencyInstallationSnapshot =
 
 async function copyDependencyFile(destination: string, content: Buffer): Promise<void> {
   const file = await open(destination, "wx", 0o444);
-  try { await file.writeFile(content); await file.sync(); }
+  // This is an ephemeral verifier input, not a durable record. The complete
+  // snapshot is reread and hash-checked before dispatch, so per-file fsync
+  // would add latency without strengthening the accepted bytes.
+  try { await file.writeFile(content); }
   finally { await file.close(); }
   await readRepositoryInput(destination, MAXIMUM_DEPENDENCY_FILE_BYTES);
 }

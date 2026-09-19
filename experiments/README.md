@@ -39,6 +39,7 @@ the active one-conversation milestone can close.
 | [Live TypeScript matrix](supported-task/evidence/windows-2026-09-19-typecheck.json) | Controlled Windows/Docker positive, finding, unavailable, fatal-exit, timeout, cancellation and drift outcomes after the sibling-mount correction |
 | [Supported-task follow-up](supported-task/follow-up.md) | Prospective post-correction external task frozen before its one ordinary-flow attempt |
 | [Second supported-task follow-up](supported-task/follow-up-2.md) | New external task frozen after the first follow-up exposed a discovery-prefix rejection |
+| [Third supported-task follow-up](supported-task/follow-up-3.md) | Distinct external task frozen after the second follow-up exposed the cumulative task deadline |
 | [Codex history](codex/history.md) | Source scouting, historical checks and diagnostic findings |
 
 Verification and synthetic Pi review closure was reported in the development conversation and

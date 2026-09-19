@@ -33,6 +33,11 @@ An admitted TypeScript change:
 - requires an initial check before the first replacement; and
 - remains subject to human review before promotion.
 
+The complete model-and-check session has a five-minute cumulative deadline.
+Individual container checks retain their separate 30-second execution limit;
+dependency binding and snapshot preparation occur inside the cumulative task
+window.
+
 The persisted plan binds the approved proposal, committed baseline, read-input
 hashes, write set, limits and task definition. Reloading that plan can recheck a
 candidate, but cannot recreate editing authority.

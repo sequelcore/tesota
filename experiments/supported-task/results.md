@@ -141,6 +141,24 @@ proposal. That diagnostic establishes route/schema compatibility only. A
 [second prospective follow-up](follow-up-2.md) was frozen before its distinct
 external request was submitted.
 
+The second follow-up produced a ready one-file proposal and received explicit
+scope approval. The model changed `src/backends.ts` exactly once to filter empty
+IDs, retain a first-seen `Set`, append only unseen IDs and stop after 512 unique
+values. Its initial pre-edit scope check was observed and correctly reported no
+change. The final TypeScript check began, but the cumulative 180-second task
+deadline expired during the Windows dependency snapshot. The attempt retained
+`status: unsettled`, four model invocations, four tool calls, one edit, an
+unconfirmed settlement and no current applicable check. The source remained
+unchanged, no container survived, and the candidate-owned snapshot was retained
+because cleanup was not established inside the task boundary. The candidate is
+not reviewable, acceptable or promotable and the task is not retried.
+
+The snapshot is ephemeral and fully reread and hash-checked before dispatch, so
+per-file durability sync was removed without weakening byte validation. A
+standalone repetition still required roughly two minutes for the 1,490-file
+closure on this Windows filesystem. The cumulative task deadline is therefore
+now five minutes while the container execution deadline remains 30 seconds.
+
 The controlled matrix was repeated against that exact commit on Windows x64,
 Bun 1.4.2, Node 24.15.0 and Docker 29.8.0. Its sanitized record is
 [windows-2026-09-19-typecheck.json](evidence/windows-2026-09-19-typecheck.json).
