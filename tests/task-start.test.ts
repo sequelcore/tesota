@@ -185,6 +185,20 @@ it("settles a known execution cancellation without promotion", async () => {
   expect(await readFile(join(current.directory, "start.jsonl"), "utf8")).toContain('"outcome":"cancelled"');
 });
 
+it("returns a settled lifecycle failure after recording its terminal outcome", async () => {
+  const current = await fixture();
+  const output: string[] = [];
+
+  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, ask: async () => "yes", write: (text) => output.push(text),
+    execute: async () => { throw new Error("synthetic pre-execution failure"); } })).resolves.toEqual({
+      status: "settled", exitCode: 1, outcome: "failed",
+    });
+
+  expect(await readFile(join(current.directory, "start.jsonl"), "utf8")).toContain('"outcome":"failed"');
+  expect(output.join("")).toContain("Task outcome\nOutcome: failed");
+});
+
 it("retains an unsettled execution without recording a terminal outcome", async () => {
   const current = await fixture();
   const candidate = { directory: "unsettled-candidate", checkout: "unsettled-checkout",

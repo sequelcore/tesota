@@ -122,6 +122,32 @@ it("retains the candidate-owned snapshot when container settlement is unconfirme
   expect((await lstat(snapshot ?? "")).isDirectory()).toBe(true);
 });
 
+it("removes the dependency snapshot when cancellation settles before process dispatch", async () => {
+  const current = await fixture();
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  const executor: RepositoryTypecheckExecutor = async () => ({ status: "failed", reason: "cancelled",
+    process: "not_started", container: "absent" });
+
+  await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "cancelled",
+    reason: "cancelled", process: "not_started", container: "absent" });
+  expect((await readdir(current.candidate.directory))
+    .some((name) => name.startsWith(".tesota-typecheck-dependencies-"))).toBe(false);
+});
+
+it("removes the dependency snapshot when process spawn fails before dispatch", async () => {
+  const current = await fixture();
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  const executor: RepositoryTypecheckExecutor = async () => ({ status: "failed", reason: "spawn_failed",
+    process: "not_started", container: "absent" });
+
+  await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "unavailable",
+    reason: "spawn_failed", process: "not_started", container: "absent" });
+  expect((await readdir(current.candidate.directory))
+    .some((name) => name.startsWith(".tesota-typecheck-dependencies-"))).toBe(false);
+});
+
 it("rejects a symbolic-link dependency before approval", async () => {
   const current = await fixture();
   await symlink(join(current.source, "node_modules", "typescript", "bin", "tsc"),

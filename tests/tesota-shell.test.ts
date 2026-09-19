@@ -128,6 +128,17 @@ it("returns to a fresh prompt after task cancellation is settled", async () => {
   expect(ask).toHaveBeenCalledTimes(2);
 });
 
+it("returns to a fresh prompt after a lifecycle failure is settled", async () => {
+  const answers = ["Update the guide", ""];
+  const ask = vi.fn(async () => answers.shift() ?? "");
+
+  const result = await runTesotaShell({ write: () => {}, ask, discover: async () => proposalResult(),
+    start: async () => ({ status: "settled", exitCode: 1, outcome: "failed" }) });
+
+  expect(result).toBe(0);
+  expect(ask).toHaveBeenCalledTimes(2);
+});
+
 it("returns to a fresh prompt after read-only cancellation is settled", async () => {
   const answers = ["Inspect the repository", ""];
   const ask = vi.fn(async () => answers.shift() ?? "");

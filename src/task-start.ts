@@ -16,7 +16,8 @@ export type TaskStartProgress =
 
 export type TaskStartResult =
   | Readonly<{ status: "settled"; exitCode: 0 | 1 | 130;
-    outcome: "scope_declined" | "execution_failed" | "cancelled" | "rejected" | "promotion_not_applied" | "promoted" }>
+    outcome: "scope_declined" | "execution_failed" | "cancelled" | "rejected" | "promotion_not_applied" | "promoted" |
+      "failed" }>
   | Readonly<{ status: "unsettled"; exitCode: 1; outcome: "execution_unconfirmed" | "promotion_unconfirmed" }>;
 
 interface StartTaskDependencies {
@@ -161,8 +162,10 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
       await finishOutcome(journal, { state: "finished", outcome: "cancelled" }, dependencies.write);
       return { status: "settled", exitCode: 130, outcome: "cancelled" };
     }
-    await journal.append({ state: "finished", outcome: "failed" }).catch(() => {});
-    throw error;
+    try {
+      await finishOutcome(journal, { state: "finished", outcome: "failed" }, dependencies.write);
+      return { status: "settled", exitCode: 1, outcome: "failed" };
+    } catch { throw error; }
   } finally { await journal.close(); }
 }
 

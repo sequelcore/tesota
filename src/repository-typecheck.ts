@@ -127,7 +127,7 @@ interface SnapshotExecution {
 }
 
 function snapshotSettled(process: RepositoryTypecheckResult["process"], container: RepositoryTypecheckResult["container"]): boolean {
-  return process === "exited" && container === "absent";
+  return process !== "unconfirmed" && container === "absent";
 }
 
 async function inputsRemainCurrent(profile: RepositoryTypecheckProfile): Promise<boolean> {
