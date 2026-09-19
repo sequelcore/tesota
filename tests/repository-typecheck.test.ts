@@ -42,9 +42,12 @@ async function fixture(script = "tsc --noEmit -p tsconfig.json"): Promise<{
   git(source, ["add", "--", ".gitignore", "package.json", "tsconfig.json", "bun.lock", "src/value.ts"]);
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
   await mkdir(join(source, "node_modules", "typescript", "bin"), { recursive: true });
+  await mkdir(join(source, "node_modules", "@typescript", "typescript-linux-x64"), { recursive: true });
   await writeFile(join(source, "node_modules", "typescript", "package.json"),
     JSON.stringify({ name: "typescript", version: "7.0.2" }) + "\n");
   await writeFile(join(source, "node_modules", "typescript", "bin", "tsc"), "compiler fixture\n");
+  await writeFile(join(source, "node_modules", "@typescript", "typescript-linux-x64", "package.json"),
+    JSON.stringify({ name: "@typescript/typescript-linux-x64", version: "7.0.2" }) + "\n");
   const candidate = await createCandidateCheckout(source, join(root, "candidates"));
   return { root, source, candidate };
 }
@@ -70,7 +73,7 @@ it("admits the canonical repository declaration and binds the isolated compiler 
     repository: { script: "tsc --noEmit -p tsconfig.json" },
     verifier: { packageVersion: "7.0.2" },
     isolation: { image: expect.stringMatching(/^node@sha256:/u), executableSha256: expect.stringMatching(/^[a-f\d]{64}$/u) },
-    command: ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
+    command: ["node", "/dependencies/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
       "--pretty", "false", "-p", "tsconfig.json"],
     authority: "local_operator_approval_required" });
   expect(profile.candidate.contentSha256).toMatch(/^[a-f\d]{64}$/u);
@@ -90,7 +93,7 @@ it("accepts a hardlinked Bun dependency only by mounting an exclusive copied sna
     source: current.source, runtime: await runtime(current.root) });
   expect((await readdir(current.candidate.directory)).some((name) => name.startsWith(".tesota-typecheck-dependencies-"))).toBe(false);
   const executor = vi.fn<RepositoryTypecheckExecutor>(async (invocation) => {
-    const mount = invocation.args.find((argument) => argument.includes("target=/workspace/node_modules,readonly"));
+    const mount = invocation.args.find((argument) => argument.includes("target=/dependencies/node_modules,readonly"));
     expect(mount).toBeDefined();
     const snapshot = /source=([^,]+)/u.exec(mount ?? "")?.[1];
     expect(snapshot).toBeDefined();
@@ -112,7 +115,7 @@ it("retains the candidate-owned snapshot when container settlement is unconfirme
     source: current.source, runtime: await runtime(current.root) });
   let snapshot: string | undefined;
   const executor: RepositoryTypecheckExecutor = async (invocation) => {
-    const mount = invocation.args.find((argument) => argument.includes("target=/workspace/node_modules,readonly"));
+    const mount = invocation.args.find((argument) => argument.includes("target=/dependencies/node_modules,readonly"));
     snapshot = /source=([^,]+)/u.exec(mount ?? "")?.[1];
     return { status: "failed", reason: "cleanup_unconfirmed", process: "unconfirmed", container: "unconfirmed", pid: 42 };
   };
@@ -188,6 +191,16 @@ it("rejects unsupported scripts and does not silently select another command", a
   const current = await fixture("eslint .");
   await expect(prepareRepositoryTypecheck({ candidate: current.candidate.directory,
     source: current.source, runtime: await runtime(current.root) })).rejects.toThrow();
+});
+
+it("rejects a Windows-only TypeScript installation before issuing the Docker profile", async () => {
+  const current = await fixture();
+  await rm(join(current.source, "node_modules", "@typescript", "typescript-linux-x64"),
+    { recursive: true, force: true });
+
+  await expect(prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) }))
+    .rejects.toThrow("TypeScript Linux/x64 closure unavailable");
 });
 
 it("rejects candidate changes to the authoritative check definition", async () => {

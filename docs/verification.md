@@ -37,7 +37,10 @@ profile to host-native execution. The architectural rationale is in
 check profile. Repository ownership is deliberately declarative: the committed
 package must name the exact `tsc --noEmit -p tsconfig.json` script, but Tesota
 does not execute that string. It invokes the observed matching TypeScript
-installation with its own fixed argv and no shell.
+installation with its own fixed argv and no shell. On the supported Windows
+host and Linux-container route, admission also requires
+`@typescript/typescript-linux-x64` at the same exact version. A default
+Windows-only install is rejected before approval.
 
 Before approval, the command displays exact candidate content identity,
 configuration and lockfile digests, TypeScript version and a digest of the
@@ -56,7 +59,10 @@ inputs or executable policy that this profile does not yet bind.
 
 After approval, Tesota copies the approved dependency installation into a
 bounded candidate-owned snapshot, rehashes it against the approved digest and
-mounts that snapshot as read-only `node_modules`. Regular hardlinks in a Bun
+mounts that snapshot as read-only `/dependencies/node_modules`, beside the
+read-only candidate mount at `/workspace`. Keeping the mounts as siblings lets
+Docker create both mountpoints without writing inside the candidate mount.
+Regular hardlinks in a Bun
 installation are accepted as source inputs, but the mounted snapshot contains
 only independently copied regular files. The candidate mount is also read-only.
 The container has no network, added capabilities or mounted host credentials,

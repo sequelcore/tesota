@@ -19,6 +19,8 @@ const packageSchema = z.object({
   devDependencies: z.object({ typescript: z.string().regex(/^\d+\.\d+\.\d+$/u) }),
 });
 const installedPackageSchema = z.object({ name: z.literal("typescript"), version: z.string().regex(/^\d+\.\d+\.\d+$/u) });
+const installedLinuxPackageSchema = z.object({ name: z.literal("@typescript/typescript-linux-x64"),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/u) });
 const tsconfigSchema = z.object({
   extends: z.never().optional(),
   references: z.never().optional(),
@@ -35,7 +37,7 @@ export interface RepositoryTypecheckProfile {
   readonly verifier: { readonly packageVersion: string; readonly installationSha256: string };
   readonly isolation: { readonly image: typeof CONTAINER_IMAGE; readonly policySha256: string;
     readonly executable: string; readonly executableSha256: string; readonly nodeModules: string };
-  readonly command: readonly ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental",
+  readonly command: readonly ["node", "/dependencies/node_modules/typescript/bin/tsc", "--noEmit", "--incremental",
     "false", "--pretty", "false", "-p", "tsconfig.json"];
   readonly limits: typeof REPOSITORY_TYPECHECK_LIMITS;
   readonly authority: "local_operator_approval_required";
@@ -80,6 +82,13 @@ export async function prepareRepositoryTypecheck(options: PrepareOptions): Promi
   const installed = installedPackageSchema.parse(parseRepositoryJson(await readDependencyInstallationInput(
     join(typescriptRoot, "package.json"), 128 * 1024)));
   if (installed.version !== declared.devDependencies.typescript) throw new Error("Installed TypeScript does not match repository declaration");
+  let linuxPackage: z.infer<typeof installedLinuxPackageSchema>;
+  try {
+    const linuxPackageRoot = await repositoryInputDirectory(join(nodeModules, "@typescript", "typescript-linux-x64"));
+    linuxPackage = installedLinuxPackageSchema.parse(parseRepositoryJson(await readDependencyInstallationInput(
+      join(linuxPackageRoot, "package.json"), 128 * 1024)));
+  } catch { throw new Error("TypeScript Linux/x64 closure unavailable"); }
+  if (linuxPackage.version !== installed.version) throw new Error("TypeScript Linux/x64 closure version mismatch");
   const runtime = options.runtime ?? await resolveContainerRuntime([source, candidate.directory, candidate.checkout]);
   if (!digestPattern.test(runtime.executableSha256) || !containerRuntimeIsOutside(runtime, [source, candidate.directory, candidate.checkout])) {
     throw new Error("Repository typecheck runtime unavailable");
@@ -92,7 +101,7 @@ export async function prepareRepositoryTypecheck(options: PrepareOptions): Promi
     verifier: { packageVersion: installed.version, installationSha256: await dependencyInstallationSha256(nodeModules, true) },
     isolation: { image: CONTAINER_IMAGE, policySha256: typecheckContainerPolicySha256(),
       executable: runtime.executable, executableSha256: runtime.executableSha256, nodeModules },
-    command: ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
+    command: ["node", "/dependencies/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
       "--pretty", "false", "-p", "tsconfig.json"],
     limits: REPOSITORY_TYPECHECK_LIMITS,
     authority: "local_operator_approval_required",

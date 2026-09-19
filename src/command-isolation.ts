@@ -137,9 +137,9 @@ function typecheckContainerArguments(paths: TypecheckIsolationPaths, name: strin
     "--memory=512m", "--memory-swap=512m", "--cpus=1", "--log-driver=none",
     "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=32m",
     "--mount", dockerMount(paths.candidate, "/workspace", true),
-    "--mount", dockerMount(paths.nodeModules, "/workspace/node_modules", true),
+    "--mount", dockerMount(paths.nodeModules, "/dependencies/node_modules", true),
     "--workdir", "/workspace", "--entrypoint=node", CONTAINER_IMAGE,
-    "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
+    "/dependencies/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
     "--pretty", "false", "-p", "tsconfig.json",
   ];
 }
