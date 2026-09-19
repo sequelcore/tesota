@@ -21,6 +21,7 @@ const requestSchema = z.strictObject({ decision: decisionSchema.shape.decision, 
 export interface TaskReview {
   readonly directory: string;
   readonly reviewSha256: string;
+  readonly changedFiles: readonly string[];
   readonly check: CandidateTaskCheck;
   readonly diff: string;
   readonly historicalAttempt: "not_evaluated";
@@ -69,7 +70,9 @@ export async function reviewTask(directory: string): Promise<TaskReview> {
     checkSha256: digest(JSON.stringify(check)), diffSha256: digest(diff),
   }));
   const record = await readDecision(candidate.directory);
-  return { directory: candidate.directory, reviewSha256, check, diff, historicalAttempt: "not_evaluated",
+  const currentCandidate = await inspectCandidateCheckout(candidate.directory);
+  return { directory: candidate.directory, reviewSha256,
+    changedFiles: currentCandidate.changes.map((change) => change.path).sort(), check, diff, historicalAttempt: "not_evaluated",
     operatorDecision: record === null ? null : { record, provenance: "recorded_untrusted",
       applicability: record.reviewSha256 === reviewSha256 ? "current" : "stale" } };
 }

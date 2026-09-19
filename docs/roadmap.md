@@ -62,9 +62,8 @@ Breadth is not part of this milestone.
 Already present are conversational discovery, approval, isolated work, bounded
 diagnostic-driven edits, exact-result checks, diff review and guarded
 application. Remaining work is to complete the conversational loop for every
-known-settlement path, present check claims and unknowns more directly, remove
-recovery IDs from the ordinary path and qualify the whole experience on
-representative work.
+known-settlement path, remove recovery IDs from the ordinary path and qualify
+the whole experience on representative work.
 
 Completion evidence is defined in [qualification](qualification.md). Passing
 component checks alone does not complete the milestone.

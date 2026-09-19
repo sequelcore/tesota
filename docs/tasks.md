@@ -63,8 +63,13 @@ operator approves it, Tesota creates a fresh candidate and runs the bounded Pi
 task. Passing current scope and typecheck evidence exposes the exact diff for an
 accept or reject decision. The review fingerprint binds the complete check
 evidence as well as the candidate bytes, so changed verifier inputs make a prior
-decision stale. Promotion applies only the accepted write set when the source
-`HEAD`, target bytes and review identity still match.
+decision stale. Before the decision, the shell lists the exact changed files,
+states the separate scope-integrity and TypeScript claims, names the behavioral
+and integration unknowns, and reports that application has not occurred.
+Promotion applies only the accepted write set when the source `HEAD`, target
+bytes and review identity still match. The terminal outcome reports application
+as applied, not applied or unconfirmed without changing the durable outcome
+schema.
 
 The lower-level `task review`, `task decide` and `task promote` commands expose
 the same boundaries for diagnosis. They do not bypass proposal admission.

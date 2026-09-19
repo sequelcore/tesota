@@ -50,7 +50,8 @@ async function fixture() {
 }
 
 function passingReview(directory: string, baseline: string): TaskReview {
-  return { directory, reviewSha256: "b".repeat(64), diff: "diff --git a/src/value.ts b/src/value.ts\n+new value\n",
+  return { directory, reviewSha256: "b".repeat(64), changedFiles: ["src/value.ts"],
+    diff: "diff --git a/src/value.ts b/src/value.ts\n+new value\n",
     historicalAttempt: "not_evaluated", operatorDecision: null,
     check: { task: "typescript-change", status: "passed", provenance: "recorded_untrusted", baseline,
       writeSetSha256: "c".repeat(64), taskAcceptance: "not_evaluated",
@@ -86,7 +87,18 @@ it("runs one approved proposal through execution, review, decision and promotion
   expect(execute).toHaveBeenCalledOnce();
   expect(decide).toHaveBeenCalledWith(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
   expect(promote).toHaveBeenCalledWith(candidate.directory, current.source, review.reviewSha256);
-  expect(output.join("")).toContain("Outcome correctness requires human review");
+  expect(output.join("")).toContain(
+    "Candidate review\n\n" +
+    "Changed:\n- src/value.ts\n\n" +
+    "Checked:\n" +
+    "PASS Scope integrity: only admitted files changed\n" +
+    "PASS TypeScript no-emit: this exact result passed typescript-no-emit/v1\n\n" +
+    "Not established:\n" +
+    "- requested behavior and completion conditions\n" +
+    "- full integration suite\n\n" +
+    "Changed since checking: No\n" +
+    "Application: Not applied; awaiting your decision\n",
+  );
   expect(output.join("")).toContain(JSON.stringify(review.diff));
   expect(progress).toEqual(["awaiting_approval:proposal_scope", "executing:candidate_task",
     "ready_for_review:candidate_review", "promoting:accepted_candidate"]);

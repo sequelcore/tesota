@@ -165,6 +165,7 @@ it("makes a review stale when the bound typecheck evidence changes", async () =>
   vi.mocked(checkRepositoryTypecheck).mockResolvedValue(typecheckResult("passed", "second"));
   const second = await reviewTask(current.directory);
 
+  expect(first.changedFiles).toEqual(["src/value.ts"]);
   expect(second.reviewSha256).not.toBe(first.reviewSha256);
   expect(second.check.writeSetSha256).toBe(first.check.writeSetSha256);
 });
