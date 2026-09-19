@@ -14,6 +14,12 @@ export type TaskStartProgress =
   | Readonly<{ phase: "ready_for_review"; operation: "candidate_review" }>
   | Readonly<{ phase: "promoting"; operation: "accepted_candidate" }>;
 
+export type TaskStartResult =
+  | Readonly<{ status: "settled"; exitCode: 0 | 1;
+    outcome: "scope_declined" | "execution_failed" | "rejected" | "promoted" }>
+  | Readonly<{ status: "cancelled"; exitCode: 130 }>
+  | Readonly<{ status: "unsettled"; exitCode: 1; outcome: "promotion_unconfirmed" }>;
+
 interface StartTaskDependencies {
   readonly proposalsRoot: string;
   readonly sourceDirectory: string;
@@ -44,7 +50,7 @@ async function finishOutcome(journal: TaskOutcomeJournal,
 }
 
 /** One-shot proposal lifecycle. A started proposal cannot be replayed or resumed. */
-export async function startTask(dependencies: StartTaskDependencies): Promise<number> {
+export async function startTask(dependencies: StartTaskDependencies): Promise<TaskStartResult> {
   const report = dependencies.report ?? ignoreProgress;
   const grant = await admitTaskProposal(dependencies);
   const createOutcome = dependencies.createOutcome ?? createTaskOutcome;
@@ -58,7 +64,7 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<nu
     if (!approved(await dependencies.ask("Approve this scope and start isolated execution? [y/N] "))) {
       dependencies.write("Proposal not started. Nothing changed.\n");
       await finishOutcome(journal, { state: "scope_declined" }, dependencies.write);
-      return 0;
+      return { status: "settled", exitCode: 0, outcome: "scope_declined" };
     }
     await journal.append({ state: "execution_started" });
     report({ phase: "executing", operation: "candidate_task" });
@@ -69,7 +75,8 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<nu
       dependencies.write(`Execution did not pass. Candidate retained: ${execution.candidate.directory}\n`);
       await finishOutcome(journal, { state: "finished",
         outcome: execution.status === "cancelled" ? "cancelled" : "execution_failed" }, dependencies.write);
-      return execution.status === "cancelled" ? 130 : 1;
+      return execution.status === "cancelled" ? { status: "cancelled", exitCode: 130 } :
+        { status: "settled", exitCode: 1, outcome: "execution_failed" };
     }
 
     const review = await (dependencies.review ?? reviewTask)(execution.candidate.directory);
@@ -83,7 +90,7 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<nu
     if (decision === "reject") {
       dependencies.write("Candidate rejected. Source was not changed.\n");
       await finishOutcome(journal, { state: "finished", outcome: "rejected" }, dependencies.write);
-      return 1;
+      return { status: "settled", exitCode: 1, outcome: "rejected" };
     }
     if (decided.operatorDecision?.applicability !== "current") throw new Error("Decision became stale");
     report({ phase: "promoting", operation: "accepted_candidate" });
@@ -94,10 +101,10 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<nu
       await finishOutcome(journal, { state: "finished", outcome: "promoted", files: promotion.files }, dependencies.write);
     } catch {
       dependencies.write("Promotion applied, but proposal start evidence is incomplete. Inspect the candidate promotion journal.\n");
-      return 1;
+      return { status: "unsettled", exitCode: 1, outcome: "promotion_unconfirmed" };
     }
     dependencies.write(`Promoted: ${promotion.files.map((file) => file.path).join(", ")}\n`);
-    return 0;
+    return { status: "settled", exitCode: 0, outcome: "promoted" };
   } catch (error) {
     if (!promotionApplied) await journal.append({ state: "finished",
       outcome: error instanceof Error && error.name === "AbortError" ? "cancelled" : "failed" }).catch(() => {});
@@ -119,9 +126,10 @@ export async function runTaskStartCommand(reference: string,
     return 2;
   }
   try {
-    return await startTask({ proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
+    const result = await startTask({ proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
       sourceDirectory: process.cwd(), reference, ask: askTaskStartQuestion,
       write: (text) => { process.stdout.write(text); }, ...(report === undefined ? {} : { report }) });
+    return result.exitCode;
   } catch (error) {
     const cancelled = error instanceof Error && error.name === "AbortError";
     process.stderr.write(cancelled ? "Task start cancelled. No promotion occurred.\n" :

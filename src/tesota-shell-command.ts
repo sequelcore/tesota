@@ -6,13 +6,13 @@ import type { ConversationInput } from "./conversation-turn-contract.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { runTesotaShell } from "./tesota-shell.js";
 import { createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
-import { startTask, type TaskStartProgress } from "./task-start.js";
+import { startTask, type TaskStartProgress, type TaskStartResult } from "./task-start.js";
 import { runProposalTask } from "./task-run.js";
 
 export interface TesotaShellCommandDependencies {
   readonly surface: TesotaShellTerminal;
   readonly discover: (input: ConversationInput) => Promise<ConversationCommandResult>;
-  readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void) => Promise<number>;
+  readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void) => Promise<TaskStartResult>;
 }
 
 export function createProcessTesotaShell(cwd: string = process.cwd()): TesotaShellCommandDependencies {

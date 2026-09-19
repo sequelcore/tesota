@@ -1,13 +1,13 @@
 import { formatConversationTurn, type ConversationCommandResult } from "./conversation-turn.js";
 import type { ConversationInput } from "./conversation-turn-contract.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
-import type { TaskStartProgress } from "./task-start.js";
+import type { TaskStartProgress, TaskStartResult } from "./task-start.js";
 
 export interface TesotaShellDependencies {
   readonly write: (text: string) => void;
   readonly ask: (prompt: string) => Promise<string>;
   readonly discover: (input: ConversationInput) => Promise<ConversationCommandResult>;
-  readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void) => Promise<number>;
+  readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void) => Promise<TaskStartResult>;
   readonly report?: (progress: TesotaShellProgress) => void;
 }
 
@@ -55,7 +55,8 @@ async function runShellRequest(dependencies: TesotaShellDependencies, request: s
       return { exitCode: result.exitCode, continue: false };
     }
     dependencies.write("Proposal ready. Execution still requires your approval.\n");
-    return { exitCode: await dependencies.start(result.turn.proposedTask.record.id, report), continue: false };
+    const started = await dependencies.start(result.turn.proposedTask.record.id, report);
+    return { exitCode: started.exitCode, continue: started.status === "settled" };
   }
 }
 

@@ -80,7 +80,9 @@ it("runs one approved proposal through execution, review, decision and promotion
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
     reference: current.id, ask: vi.fn().mockResolvedValueOnce("yes").mockResolvedValueOnce("yes"),
     write: (text) => output.push(text), report: (event) => progress.push(`${event.phase}:${event.operation}`),
-    execute, review: async () => review, decide, promote })).resolves.toBe(0);
+    execute, review: async () => review, decide, promote })).resolves.toEqual({
+      status: "settled", exitCode: 0, outcome: "promoted",
+    });
   expect(execute).toHaveBeenCalledOnce();
   expect(decide).toHaveBeenCalledWith(candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
   expect(promote).toHaveBeenCalledWith(candidate.directory, current.source, review.reviewSha256);
@@ -95,11 +97,39 @@ it("runs one approved proposal through execution, review, decision and promotion
   });
 });
 
+it("settles a rejected candidate without promotion", async () => {
+  const current = await fixture();
+  const candidate = { directory: join(current.directory, "candidate"), checkout: join(current.directory, "repo"),
+    baseline: current.baseline, sourceDirty: false };
+  const review = passingReview(candidate.directory, current.baseline);
+  const decide = vi.fn(async () => ({ ...review, operatorDecision: { record: {
+    format: "tesota-task-decision" as const, version: 1 as const, decision: "reject" as const,
+    reviewSha256: review.reviewSha256, recordedAt: new Date().toISOString(),
+    authority: "local_operator_assertion" as const }, provenance: "recorded_untrusted" as const,
+  applicability: "current" as const } }));
+  const promote = vi.fn();
+
+  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, ask: vi.fn().mockResolvedValueOnce("yes").mockResolvedValueOnce("no"),
+    write: () => {}, execute: async () => ({ candidate, status: "passed", accounting }),
+    review: async () => review, decide, promote })).resolves.toEqual({
+      status: "settled", exitCode: 1, outcome: "rejected",
+    });
+
+  expect(decide).toHaveBeenCalledWith(candidate.directory, { decision: "reject", reviewSha256: review.reviewSha256 });
+  expect(promote).not.toHaveBeenCalled();
+  await expect(loadProposalTaskOutcome(current.proposalsRoot, current.id)).resolves.toMatchObject({
+    status: "rejected", terminal: true, promotion: "not_reached",
+  });
+});
+
 it("records scope refusal without granting execution and rejects replay of the exact proposal", async () => {
   const current = await fixture();
   const execute = vi.fn();
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
-    reference: current.id, ask: async () => "no", write: () => {}, execute })).resolves.toBe(0);
+    reference: current.id, ask: async () => "no", write: () => {}, execute })).resolves.toEqual({
+      status: "settled", exitCode: 0, outcome: "scope_declined",
+    });
   expect(execute).not.toHaveBeenCalled();
   expect(await readFile(join(current.directory, "start.jsonl"), "utf8")).toContain('"state":"scope_declined"');
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
@@ -112,7 +142,9 @@ it("records scope refusal without granting execution and rejects replay of the e
   const failed = vi.fn(async () => ({ candidate, status: "failed" as const, accounting }));
   const options = { proposalsRoot: retry.proposalsRoot, sourceDirectory: retry.source,
     reference: retry.id, ask: async () => "yes", write: () => {}, execute: failed };
-  await expect(startTask(options)).resolves.toBe(1);
+  await expect(startTask(options)).resolves.toEqual({
+    status: "settled", exitCode: 1, outcome: "execution_failed",
+  });
   await expect(startTask(options)).rejects.toThrow();
   expect(failed).toHaveBeenCalledOnce();
 });
@@ -133,7 +165,9 @@ it("releases each task-start prompt and maps cancellation without promotion", as
   const output: string[] = [];
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
     reference: current.id, ask: async () => "yes", write: (text) => output.push(text),
-    execute: async () => ({ candidate, status: "cancelled", accounting }) })).resolves.toBe(130);
+    execute: async () => ({ candidate, status: "cancelled", accounting }) })).resolves.toEqual({
+      status: "cancelled", exitCode: 130,
+    });
   expect(output.join("")).toContain("Execution did not pass");
   expect(await readFile(join(current.directory, "start.jsonl"), "utf8")).toContain('"outcome":"cancelled"');
 });
@@ -184,7 +218,9 @@ it("reports an applied promotion without recording false failure when final star
       } };
     },
   };
-  await expect(startTask(options)).resolves.toBe(1);
+  await expect(startTask(options)).resolves.toEqual({
+    status: "unsettled", exitCode: 1, outcome: "promotion_unconfirmed",
+  });
   expect(records.some((record) => record["outcome"] === "failed")).toBe(false);
   expect(output.join("")).toContain("Promotion applied, but proposal start evidence is incomplete");
   await expect(loadProposalTaskOutcome(current.proposalsRoot, current.id)).resolves.toMatchObject({
