@@ -37,13 +37,15 @@ The pre-release currently supports:
 - durable outcome facts for supported work that starts or is declined; and
 - lower-level inspection, recovery and qualification commands for contributors.
 
-The current supported change flow returns to a useful prompt after scope
-decline, failed execution, candidate rejection or confirmed application. It
-still ends on cancellation, lifecycle failure or unconfirmed application
-settlement, and it cannot accept a semantic revision such as “change this
-part” or resume an interrupted task. Its Docker-backed TypeScript route has
-synthetic coverage but has not completed a prospective live qualification on
-representative external tasks. These gaps define the active milestone.
+The current supported change flow returns to a useful prompt after every
+known-settled outcome, including scope decline, cancellation, failed execution,
+candidate rejection and confirmed application. It ends when execution or
+application settlement is unconfirmed, and it cannot accept a semantic revision
+such as “change this part” or resume an interrupted task. Its first prospective
+external corpus produced three pre-proposal discovery failures, while the fixed
+model route independently returned HTTP 429. The Docker-backed TypeScript route
+also still lacks the complete live outcome matrix. These evidence gaps define
+the active milestone.
 
 Historical experiments demonstrate mechanisms, not active product routes. See
 [experiments](../experiments/README.md) and [project history](history/README.md).
@@ -67,10 +69,11 @@ The implementation may remain limited to the current small TypeScript subset.
 Breadth is not part of this milestone.
 
 Already present are conversational discovery, approval, isolated work, bounded
-diagnostic-driven edits, exact-result checks, diff review and guarded
-application. Remaining work is to complete the conversational loop for every
-known-settlement path, remove recovery IDs from the ordinary path and qualify
-the whole experience on representative work.
+diagnostic-driven edits, exact-result checks, diff review, guarded application,
+ordinary-path continuation after known settlement and fail-closed termination
+when settlement is uncertain. Remaining work is prospective successful evidence
+on a newly frozen representative corpus and the complete live TypeScript-profile
+outcome matrix.
 
 Completion evidence is defined in [qualification](qualification.md). Passing
 component checks alone does not complete the milestone.

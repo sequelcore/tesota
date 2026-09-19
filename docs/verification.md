@@ -41,7 +41,7 @@ installation with its own fixed argv and no shell.
 
 Before approval, the command displays exact candidate content identity,
 configuration and lockfile digests, TypeScript version and a digest of the
-complete mounted dependency installation,
+complete source dependency installation,
 Docker executable identity, pinned image, isolation-policy identity and resource
 limits. For the standalone command, approval is consumed for that invocation and
 is never reconstructed from output or disk state. The approved
@@ -54,17 +54,23 @@ The profile rejects candidate changes to `package.json`, `tsconfig.json` or
 project references and compiler plugins; these would introduce additional
 inputs or executable policy that this profile does not yet bind.
 
-The candidate and source `node_modules` mounts are read-only. The container has
-no network, added capabilities or mounted host credentials, uses a read-only
-root filesystem and starts from the pinned image without pulling. Output is
-bounded to 256 KiB and execution to 30 seconds. Timeout and cancellation request
-container removal; the result remains `unconfirmed` if Docker absence or client
-settlement cannot be observed.
+After approval, Tesota copies the approved dependency installation into a
+bounded candidate-owned snapshot, rehashes it against the approved digest and
+mounts that snapshot as read-only `node_modules`. Regular hardlinks in a Bun
+installation are accepted as source inputs, but the mounted snapshot contains
+only independently copied regular files. The candidate mount is also read-only.
+The container has no network, added capabilities or mounted host credentials,
+uses a read-only root filesystem and starts from the pinned image without
+pulling. Output is bounded to 256 KiB and execution to 30 seconds. Timeout and
+cancellation request container removal; the result remains `unconfirmed` if
+Docker absence or client settlement cannot be observed.
 
-Dependency observation accepts at most 100,000 regular entries and 512 MiB in
-total, with no symbolic links or redirected package directories. This is a
-deliberately conservative whole-installation binding for the first consumer,
-not a claim that every future ecosystem should use the same limit.
+Dependency observation and snapshotting accept at most 100,000 regular entries,
+128 MiB per file and 512 MiB in total, with no symbolic links or redirected
+package directories. A snapshot is removed only after both process exit and
+container absence are observed; uncertain settlement retains it for recovery.
+This is a deliberately conservative whole-installation binding for the first
+consumer, not a claim that every future ecosystem should use the same limit.
 
 The typed outcomes are `passed`, `check_failed`, `unavailable`, `timed_out`,
 `cancelled` and `execution_failed`. Exit zero is a pass only with empty compiler
