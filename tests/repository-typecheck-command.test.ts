@@ -15,7 +15,7 @@ const profile: RepositoryTypecheckProfile = {
     executableSha256: "3".repeat(64), nodeModules: "C:\\source\\node_modules" },
   command: ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
     "--pretty", "false", "-p", "tsconfig.json"],
-  limits: { timeoutMs: 30_000, maxOutputBytes: 262_144, terminationWaitMs: 2_000 },
+  limits: { timeoutMs: 60_000, maxOutputBytes: 262_144, terminationWaitMs: 2_000 },
   authority: "local_operator_approval_required",
 };
 

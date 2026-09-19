@@ -157,7 +157,31 @@ The snapshot is ephemeral and fully reread and hash-checked before dispatch, so
 per-file durability sync was removed without weakening byte validation. A
 standalone repetition still required roughly two minutes for the 1,490-file
 closure on this Windows filesystem. The cumulative task deadline is therefore
-now five minutes while the container execution deadline remains 30 seconds.
+now five minutes.
+
+The [third prospective follow-up](follow-up-3.md) then produced a ready one-file
+proposal and received explicit scope approval. The model changed
+`src/response.ts` exactly once to require the score probability object to have
+the same cardinality as the criteria and every zero-based criterion key. Its
+initial no-change check and its post-edit TypeScript check both settled; the
+post-edit check passed and was supplied back to the model before an observed
+terminal stop. The independently required current check repeated the same
+bound profile, but its compiler process exceeded the 30-second execution limit
+and returned `timed_out`. The durable outcome is therefore `execution_failed`,
+with six model invocations, five tool calls, one edit, one correction, observed
+settlement, no decision and no application. The source remained unchanged and
+no container survived. This candidate is not reviewable or promotable and the
+task is not retried.
+
+That run showed two final harness defects. A cold compiler execution can exceed
+30 seconds even when the same bound profile passed earlier, so the execution
+limit is now 60 seconds. Dependency hashing and snapshot copying now observe
+the task cancellation signal between bounded reads and entries; a cancelled
+snapshot is classified as `cancelled` rather than remaining an opaque
+operation. The five-minute agent budget is unchanged.
+
+A [fourth prospective follow-up](follow-up-4.md) was frozen before its distinct
+external request was submitted.
 
 The controlled matrix was repeated against that exact commit on Windows x64,
 Bun 1.4.2, Node 24.15.0 and Docker 29.8.0. Its sanitized record is
@@ -169,7 +193,7 @@ Bun 1.4.2, Node 24.15.0 and Docker 29.8.0. Its sanitized record is
 | Compiler finding | A candidate-only type error returned one structured TS2322 diagnostic and `check_failed`; settlement was observed. |
 | Missing tool | Removing Docker from executable resolution failed before profile issuance; no install or pull occurred. |
 | Fatal exit | A controlled bound compiler installation exited outside the finding contract and returned `execution_failed`; settlement was observed. |
-| Timeout | A controlled nonterminating compiler exceeded 30 seconds and returned `timed_out`; process exit and container absence were observed. |
+| Timeout | A controlled nonterminating compiler exceeded the then-current 30-second limit and returned `timed_out`; process exit and container absence were observed. |
 | Cancellation | The same controlled compiler was cancelled after dispatch and returned `cancelled`; process exit and container absence were observed. |
 | Surviving descendant | `isolation qualify` passed every Docker control on the same platform and image. |
 | Source drift | Candidate bytes changed after profile preparation; dispatch did not start and the result was `input_drift`. |

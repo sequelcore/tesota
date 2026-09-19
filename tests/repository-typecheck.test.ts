@@ -293,6 +293,41 @@ it("does not dispatch when the candidate dependency snapshot mismatches its appr
   expect(executor).not.toHaveBeenCalled();
 });
 
+it("reports cancellation when dependency snapshot creation observes the task signal", async () => {
+  const current = await fixture();
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  const cancellation = new AbortController();
+  const snapshot = vi.spyOn(repositoryCheckInput, "snapshotDependencyInstallation")
+    .mockImplementation(async (_source, _candidate, _digest, _name, signal) => {
+      cancellation.abort();
+      expect(signal).toBe(cancellation.signal);
+      return Object.freeze({ state: "cancelled" });
+    });
+  const executor = vi.fn<RepositoryTypecheckExecutor>(passed);
+
+  await expect(runRepositoryTypecheck(profile, executor, cancellation.signal)).resolves.toMatchObject({
+    status: "cancelled", reason: "cancelled", process: "not_started", container: "absent",
+  });
+  expect(snapshot).toHaveBeenCalledOnce();
+  expect(executor).not.toHaveBeenCalled();
+});
+
+it("removes a dependency snapshot cancelled before its first copied entry", async () => {
+  const current = await fixture();
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  const cancellation = new AbortController();
+  cancellation.abort();
+
+  await expect(repositoryCheckInput.snapshotDependencyInstallation(profile.isolation.nodeModules,
+    current.candidate.directory, profile.verifier.installationSha256,
+    ".tesota-typecheck-dependencies-00000000-0000-0000-0000-000000000000", cancellation.signal))
+    .resolves.toEqual({ state: "cancelled" });
+  expect((await readdir(current.candidate.directory))
+    .some((name) => name.startsWith(".tesota-typecheck-dependencies-"))).toBe(false);
+});
+
 it("invalidates a result when the observed compiler installation changes", async () => {
   const current = await fixture();
   const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,

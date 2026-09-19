@@ -149,7 +149,9 @@ function snapshotSettled(process: RepositoryTypecheckResult["process"], containe
   return process !== "unconfirmed" && container === "absent";
 }
 
-async function inputsRemainCurrent(profile: RepositoryTypecheckProfile): Promise<boolean> {
+function signalAborted(signal?: AbortSignal): boolean { return signal?.aborted === true; }
+
+async function inputsRemainCurrent(profile: RepositoryTypecheckProfile, signal?: AbortSignal): Promise<boolean> {
   const candidate = await candidateBinding(profile.candidate.directory);
   const packageBytes = await readRepositoryInput(join(candidate.checkout, "package.json"), 128 * 1024);
   const tsconfigBytes = await readRepositoryInput(join(candidate.checkout, "tsconfig.json"), 128 * 1024);
@@ -163,7 +165,7 @@ async function inputsRemainCurrent(profile: RepositoryTypecheckProfile): Promise
     sha256(packageBytes) === profile.repository.packageJsonSha256 && sha256(tsconfigBytes) === profile.repository.tsconfigSha256 &&
     sha256(lockfileBytes) === profile.repository.lockfileSha256 &&
     installed.version === profile.verifier.packageVersion &&
-    await dependencyInstallationSha256(nodeModules, true) === profile.verifier.installationSha256 &&
+    await dependencyInstallationSha256(nodeModules, true, signal) === profile.verifier.installationSha256 &&
     executableSha256 === profile.isolation.executableSha256;
 }
 
@@ -181,10 +183,16 @@ async function executeSnapshotTypecheck(profile: RepositoryTypecheckProfile, sna
   let output: readonly string[];
   try { output = diagnostics(observed.stdout, observed.stderr); }
   catch { return { result: failedResult(profile, "execution_failed", "invalid_output", observed.process, observed.container), snapshotSettled: settled }; }
-  if (await dependencyInstallationSha256(snapshotDirectory) !== profile.verifier.installationSha256) {
+  if (await dependencyInstallationSha256(snapshotDirectory, false, signal).catch(() => "") !== profile.verifier.installationSha256) {
+    if (signalAborted(signal)) {
+      return { result: failedResult(profile, "cancelled", "cancelled", observed.process, observed.container), snapshotSettled: settled };
+    }
     return { result: failedResult(profile, "execution_failed", "dependency_snapshot_drift", observed.process, observed.container), snapshotSettled: settled };
   }
-  if (!await inputsRemainCurrent(profile).catch(() => false)) {
+  if (!await inputsRemainCurrent(profile, signal).catch(() => false)) {
+    if (signalAborted(signal)) {
+      return { result: failedResult(profile, "cancelled", "cancelled", observed.process, observed.container), snapshotSettled: settled };
+    }
     return { result: failedResult(profile, "execution_failed", "input_drift", observed.process, observed.container), snapshotSettled: settled };
   }
   if (observed.signal !== null || observed.exitCode === null) {
@@ -207,14 +215,16 @@ export async function runRepositoryTypecheck(profile: RepositoryTypecheckProfile
   executor: RepositoryTypecheckExecutor = executeRepositoryTypecheckContainer,
   signal?: AbortSignal): Promise<RepositoryTypecheckResult> {
   if (!issued.has(profile)) throw new Error("Repository typecheck profile was not issued");
-  if (signal?.aborted === true) return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
-  if (!await inputsRemainCurrent(profile).catch(() => false)) {
+  if (signalAborted(signal)) return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
+  if (!await inputsRemainCurrent(profile, signal).catch(() => false)) {
+    if (signalAborted(signal)) return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
     return failedResult(profile, "execution_failed", "input_drift", "not_started", "absent");
   }
   const name = `tesota-typecheck-${randomUUID()}`;
   const snapshot = await snapshotDependencyInstallation(profile.isolation.nodeModules, profile.candidate.directory,
-    profile.verifier.installationSha256, `.tesota-typecheck-dependencies-${randomUUID()}`);
+    profile.verifier.installationSha256, `.tesota-typecheck-dependencies-${randomUUID()}`, signal);
   if (snapshot.state !== "ready") {
+    if (snapshot.state === "cancelled") return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
     return snapshot.state === "mismatch"
       ? failedResult(profile, "execution_failed", "dependency_snapshot_mismatch", "not_started", "absent")
       : failedResult(profile, "unavailable", "dependency_snapshot_unavailable", "not_started", "absent");

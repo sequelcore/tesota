@@ -1,7 +1,9 @@
 # Supported task qualification
 
-The frozen post-correction case is recorded separately in the
-[follow-up protocol](follow-up.md); it does not rewrite this original corpus.
+The frozen post-correction cases are recorded separately in the
+[first](follow-up.md), [second](follow-up-2.md), [third](follow-up-3.md) and
+[fourth](follow-up-4.md) follow-up protocols; they do not rewrite this original
+corpus.
 
 This record freezes a small prospective evaluation of Tesota's supported
 TypeScript source-task flow. Selection happened on 2026-09-19 before any task
