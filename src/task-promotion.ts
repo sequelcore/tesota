@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, open, realpath, rename, unlink } from "node:fs/promises";
+import { lstat, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { inspectPromotionSource, readCandidateBaselineFiles } from "./candidate-checkout.js";
 import { inspectCandidateTask, taskWriteSetSha256 } from "./candidate-task.js";
 import { TASK_LIMITS } from "./task-contract.js";
-import { reviewTask } from "./task-review.js";
+import { reviewTask, TaskReviewUnsettledError } from "./task-review.js";
 
 interface CapturedFile { readonly bytes: Buffer; readonly mode: number }
 interface PromotionFile {
@@ -13,6 +13,22 @@ interface PromotionFile {
   readonly before: CapturedFile;
   readonly replacement: CapturedFile;
   readonly temporary: string;
+}
+
+/** The promotion receipt proves no source-write attempt began. */
+export class PromotionNotAppliedError extends Error {
+  constructor() {
+    super("Promotion was not applied");
+    this.name = "PromotionNotAppliedError";
+  }
+}
+
+/** A source-write attempt or its acknowledgement may have escaped this process. */
+export class PromotionUncertainError extends Error {
+  constructor() {
+    super("Promotion settlement is unconfirmed");
+    this.name = "PromotionUncertainError";
+  }
 }
 
 async function capture(path: string): Promise<CapturedFile> {
@@ -84,8 +100,10 @@ async function validatePromotionInputs(directory: string, source: string, head: 
   }
 }
 
-async function applyPromotionFiles(files: readonly PromotionFile[], applied: string[]): Promise<void> {
+async function applyPromotionFiles(files: readonly PromotionFile[], applied: string[],
+  markSourceWriteStarted: (path: string) => Promise<void>): Promise<void> {
   for (const entry of files) {
+    await markSourceWriteStarted(entry.path);
     await rename(entry.temporary, entry.target);
     applied.push(entry.path);
   }
@@ -94,32 +112,43 @@ async function applyPromotionFiles(files: readonly PromotionFile[], applied: str
   }
 }
 
+function failedPromotionState(sourceWriteStarted: boolean, applied: readonly string[], fileCount: number): string {
+  if (!sourceWriteStarted) return "not_applied";
+  if (applied.length === fileCount) return "applied_unconfirmed";
+  return applied.length === 0 ? "application_unconfirmed" : "partially_applied";
+}
+
 /** Explicit invocation grants this bounded write set; recovered acceptance alone grants nothing. */
 export async function promoteTask(directory: string, sourceDirectory: string, reviewSha256: string): Promise<{
   status: "applied";
   source: string;
   files: readonly { readonly path: string; readonly sourceSha256: string }[];
 }> {
-  if (!/^[a-f0-9]{64}$/.test(reviewSha256)) throw new Error("Invalid review fingerprint");
-  const review = await reviewTask(directory);
-  const task = await inspectCandidateTask(review.directory);
-  const accepted = task.promotable && review.reviewSha256 === reviewSha256 && review.check.status === "passed" &&
-    review.operatorDecision?.applicability === "current" && review.operatorDecision.record.decision === "accept";
-  if (!accepted) throw new Error("Promotion requires the current accepted review");
-
-  const prepared = await preparePromotionFiles(review.directory, sourceDirectory, task.writeFiles);
-  const { files } = prepared;
-  if (capturedWriteSetSha256(files) !== review.check.writeSetSha256) throw new Error("Candidate changed");
-
-  const journal = await open(join(review.directory, "promotion.jsonl"), "wx", 0o600);
+  let journal: FileHandle | undefined;
   const temporaryFiles: string[] = [];
   const applied: string[] = [];
+  let fileCount = 0;
+  let sourceWriteStarted = false;
   try {
-    await journal.writeFile(JSON.stringify({ format: "tesota-task-promotion", version: 2, state: "started",
+    if (!/^[a-f0-9]{64}$/.test(reviewSha256)) throw new Error("Invalid review fingerprint");
+    const review = await reviewTask(directory);
+    const task = await inspectCandidateTask(review.directory);
+    const accepted = task.promotable && review.reviewSha256 === reviewSha256 && review.check.status === "passed" &&
+      review.operatorDecision?.applicability === "current" && review.operatorDecision.record.decision === "accept";
+    if (!accepted) throw new Error("Promotion requires the current accepted review");
+
+    const prepared = await preparePromotionFiles(review.directory, sourceDirectory, task.writeFiles);
+    const { files } = prepared;
+    fileCount = files.length;
+    if (capturedWriteSetSha256(files) !== review.check.writeSetSha256) throw new Error("Candidate changed");
+
+    const promotionJournal = await open(join(review.directory, "promotion.jsonl"), "wx", 0o600);
+    journal = promotionJournal;
+    await promotionJournal.writeFile(JSON.stringify({ format: "tesota-task-promotion", version: 2, state: "started",
       source: prepared.source, head: prepared.head, reviewSha256,
       files: files.map((file) => ({ path: file.path, beforeSha256: hash(file.before.bytes),
         afterSha256: hash(file.replacement.bytes) })) }) + "\n");
-    await journal.sync();
+    await promotionJournal.sync();
     await writeTemporaryFiles(files, temporaryFiles);
     const latest = await reviewTask(review.directory);
     if (latest.reviewSha256 !== reviewSha256 || latest.operatorDecision?.record.decision !== "accept" ||
@@ -127,17 +156,27 @@ export async function promoteTask(directory: string, sourceDirectory: string, re
       throw new Error("Promotion inputs changed");
     }
     await validatePromotionInputs(review.directory, prepared.source, prepared.head, files);
-    await applyPromotionFiles(files, applied);
+    await applyPromotionFiles(files, applied, async (path) => {
+      if (sourceWriteStarted) return;
+      await promotionJournal.writeFile(JSON.stringify({ state: "source_write_started", path }) + "\n");
+      await promotionJournal.sync();
+      sourceWriteStarted = true;
+    });
     const resultFiles = files.map((file) => ({ path: file.path, sourceSha256: hash(file.replacement.bytes) }));
-    await journal.writeFile(JSON.stringify({ state: "applied", files: resultFiles }) + "\n");
-    await journal.sync();
+    await promotionJournal.writeFile(JSON.stringify({ state: "applied", files: resultFiles }) + "\n");
+    await promotionJournal.sync();
     return { status: "applied", source: prepared.source, files: resultFiles };
-  } catch {
-    const state = applied.length === 0 ? "not_applied" : applied.length === files.length ? "applied_unconfirmed" : "partially_applied";
-    await journal.writeFile(JSON.stringify({ state, applied }) + "\n").then(() => journal.sync()).catch(() => {});
-    throw new Error("Promotion failed; inspect source and promotion journal before recovery");
+  } catch (error) {
+    const state = failedPromotionState(sourceWriteStarted, applied, fileCount);
+    if (journal !== undefined) {
+      const currentJournal = journal;
+      await currentJournal.writeFile(JSON.stringify({ state, applied }) + "\n").then(() => currentJournal.sync()).catch(() => {});
+    }
+    throw sourceWriteStarted || error instanceof TaskReviewUnsettledError
+      ? new PromotionUncertainError()
+      : new PromotionNotAppliedError();
   } finally {
-    await journal.close();
+    await journal?.close();
     await Promise.all(temporaryFiles.map((path) => unlink(path).catch(() => {})));
   }
 }

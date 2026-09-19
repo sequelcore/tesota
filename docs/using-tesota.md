@@ -112,10 +112,11 @@ Accepting a result records a human decision. Application is a separate,
 conflict-checked effect. Rejecting it retains the evidence without changing the
 source repository.
 
-After scope decline, failed execution, candidate rejection or confirmed
-application, Tesota reports the retained outcome and returns to a new prompt.
-Cancellation, a lifecycle failure or unconfirmed application settlement still
-ends the session so that a new request cannot conceal uncertain effects.
+After any known-settled outcome, including scope decline, cancellation, failed
+execution, candidate rejection or confirmed application, Tesota reports the
+retained outcome and returns to a new prompt. Unconfirmed execution or
+application settlement ends the session so that a new request cannot conceal
+uncertain effects.
 Tesota does not yet accept semantic feedback such as “keep the fix but change
 this part” within the same task. That is a later roadmap capability.
 

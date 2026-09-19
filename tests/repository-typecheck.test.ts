@@ -1,12 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
 import { REPOSITORY_TYPECHECK_PROFILE, formatRepositoryTypecheckProfile, prepareRepositoryTypecheck,
   runRepositoryTypecheck } from "../src/repository-typecheck.js";
+import * as repositoryCheckInput from "../src/repository-check-input.js";
 import type { RepositoryTypecheckExecutor } from "../src/repository-typecheck-process.js";
 
 const roots: string[] = [];
@@ -77,6 +78,85 @@ it("admits the canonical repository declaration and binds the isolated compiler 
   expect(formatRepositoryTypecheckProfile(profile)).toContain("candidate and dependencies read-only; network denied");
 });
 
+it("accepts a hardlinked Bun dependency only by mounting an exclusive copied snapshot", async () => {
+  const current = await fixture();
+  const compiler = join(current.source, "node_modules", "typescript", "bin", "tsc");
+  const manifest = join(current.source, "node_modules", "typescript", "package.json");
+  await link(compiler, join(current.source, "typescript-hardlink-source"));
+  await link(manifest, join(current.source, "typescript-hardlink-manifest-source"));
+  expect((await lstat(compiler)).nlink).toBeGreaterThan(1);
+  expect((await lstat(manifest)).nlink).toBeGreaterThan(1);
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  expect((await readdir(current.candidate.directory)).some((name) => name.startsWith(".tesota-typecheck-dependencies-"))).toBe(false);
+  const executor = vi.fn<RepositoryTypecheckExecutor>(async (invocation) => {
+    const mount = invocation.args.find((argument) => argument.includes("target=/workspace/node_modules,readonly"));
+    expect(mount).toBeDefined();
+    const snapshot = /source=([^,]+)/u.exec(mount ?? "")?.[1];
+    expect(snapshot).toBeDefined();
+    expect(snapshot).not.toBe(profile.isolation.nodeModules);
+    expect(snapshot).toMatch(new RegExp(`^${current.candidate.directory.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&")}`));
+    expect((await lstat(join(snapshot ?? "", "typescript", "bin", "tsc"))).nlink).toBe(1);
+    return { status: "closed", exitCode: 0, signal: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0),
+      process: "exited", container: "absent" };
+  });
+
+  await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "passed", reason: null });
+  expect(executor).toHaveBeenCalledOnce();
+  expect((await readdir(current.candidate.directory)).some((name) => name.startsWith(".tesota-typecheck-dependencies-"))).toBe(false);
+});
+
+it("retains the candidate-owned snapshot when container settlement is unconfirmed", async () => {
+  const current = await fixture();
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  let snapshot: string | undefined;
+  const executor: RepositoryTypecheckExecutor = async (invocation) => {
+    const mount = invocation.args.find((argument) => argument.includes("target=/workspace/node_modules,readonly"));
+    snapshot = /source=([^,]+)/u.exec(mount ?? "")?.[1];
+    return { status: "failed", reason: "cleanup_unconfirmed", process: "unconfirmed", container: "unconfirmed", pid: 42 };
+  };
+
+  await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "execution_failed",
+    reason: "cleanup_unconfirmed", process: "unconfirmed", container: "unconfirmed" });
+  expect((await lstat(snapshot ?? "")).isDirectory()).toBe(true);
+});
+
+it("removes the dependency snapshot when cancellation settles before process dispatch", async () => {
+  const current = await fixture();
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  const executor: RepositoryTypecheckExecutor = async () => ({ status: "failed", reason: "cancelled",
+    process: "not_started", container: "absent" });
+
+  await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "cancelled",
+    reason: "cancelled", process: "not_started", container: "absent" });
+  expect((await readdir(current.candidate.directory))
+    .some((name) => name.startsWith(".tesota-typecheck-dependencies-"))).toBe(false);
+});
+
+it("removes the dependency snapshot when process spawn fails before dispatch", async () => {
+  const current = await fixture();
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  const executor: RepositoryTypecheckExecutor = async () => ({ status: "failed", reason: "spawn_failed",
+    process: "not_started", container: "absent" });
+
+  await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "unavailable",
+    reason: "spawn_failed", process: "not_started", container: "absent" });
+  expect((await readdir(current.candidate.directory))
+    .some((name) => name.startsWith(".tesota-typecheck-dependencies-"))).toBe(false);
+});
+
+it("rejects a symbolic-link dependency before approval", async () => {
+  const current = await fixture();
+  await symlink(join(current.source, "node_modules", "typescript", "bin", "tsc"),
+    join(current.source, "node_modules", "typescript", "bin", "redirect"), "file");
+
+  await expect(prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) })).rejects.toThrow("Unsupported dependency installation entry");
+});
+
 it("maps coherent compiler outcomes without collapsing operational failures", async () => {
   const current = await fixture();
   const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
@@ -102,7 +182,7 @@ it("maps coherent compiler outcomes without collapsing operational failures", as
   await expect(runRepositoryTypecheck(profile, async () => ({ status: "closed", exitCode: 1, signal: null,
     stdout: Buffer.from("fatal runtime failure\n"), stderr: Buffer.alloc(0), process: "exited", container: "absent" })))
     .resolves.toMatchObject({ status: "execution_failed", reason: "incoherent_compiler_result" });
-});
+}, 20_000);
 
 it("rejects unsupported scripts and does not silently select another command", async () => {
   const current = await fixture("eslint .");
@@ -150,6 +230,35 @@ it("does not dispatch a stale TypeScript profile", async () => {
 
   await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "execution_failed",
     reason: "input_drift", process: "not_started", container: "absent" });
+  expect(executor).not.toHaveBeenCalled();
+});
+
+it("does not dispatch when a hardlinked source dependency drifts", async () => {
+  const current = await fixture();
+  const compiler = join(current.source, "node_modules", "typescript", "bin", "tsc");
+  const alias = join(current.source, "typescript-hardlink-source");
+  await link(compiler, alias);
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  await writeFile(alias, "changed compiler fixture\n");
+  const executor = vi.fn<RepositoryTypecheckExecutor>(passed);
+
+  await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "execution_failed",
+    reason: "input_drift", process: "not_started", container: "absent" });
+  expect(executor).not.toHaveBeenCalled();
+});
+
+it("does not dispatch when the candidate dependency snapshot mismatches its approved installation", async () => {
+  const current = await fixture();
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  const snapshot = vi.spyOn(repositoryCheckInput, "snapshotDependencyInstallation")
+    .mockResolvedValue(Object.freeze({ state: "mismatch" }));
+  const executor = vi.fn<RepositoryTypecheckExecutor>(passed);
+
+  await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "execution_failed",
+    reason: "dependency_snapshot_mismatch", process: "not_started", container: "absent" });
+  expect(snapshot).toHaveBeenCalledOnce();
   expect(executor).not.toHaveBeenCalled();
 });
 

@@ -70,11 +70,12 @@ own authority.
 
 The current implementation still exposes some seams in this experience. A
 supported change can move from a natural-language request through approval,
-work, checks, review and application without the user copying internal IDs, but
-semantic revision is not yet implemented, and cancellation, lifecycle failure
-or unconfirmed application settlement still ends the session. [Using
-Tesota](using-tesota.md) documents the exact supported workflow without
-presenting the destination as current behavior.
+work, checks, review and application without the user copying internal IDs.
+Known-settled cancellation and lifecycle failure return to a fresh prompt;
+unconfirmed execution or application settlement ends the session. Semantic
+revision is not yet implemented. [Using Tesota](using-tesota.md) documents the
+exact supported workflow without presenting the destination as current
+behavior.
 
 ## Why verification-first
 
