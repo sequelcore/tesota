@@ -125,6 +125,22 @@ against follow-up baseline `3960a9be66ec531748b05b4e5ffb60e2d98c4a12`
 returned `passed`, with the process exited, container absent and no diagnostics.
 No follow-up task had been submitted to the model when this preflight completed.
 
+The first follow-up request was then entered once through Tesota Shell. Discovery
+ended in about four seconds before a proposal, repository operation, candidate
+or authority existed. A separate controlled local fixture reproduced the cause:
+the fixed Luna route issued `tesota_list` with the natural safe prefix `src/`,
+while `proposalListSchema` accepted only `src` without a trailing slash. The
+tool call was rejected before execution (`operations: 0`, `exposedBytes: 0`),
+and the terminal was an observed error. The external request is not retried.
+
+The corrected prefix contract accepts either a valid path or the same path with
+one trailing slash, while continuing to reject absolute, empty-component and
+parent-traversal forms. The controlled fixture then completed with four model
+invocations, three admitted tool calls, a terminal stop and one valid task
+proposal. That diagnostic establishes route/schema compatibility only. A
+[second prospective follow-up](follow-up-2.md) was frozen before its distinct
+external request was submitted.
+
 The controlled matrix was repeated against that exact commit on Windows x64,
 Bun 1.4.2, Node 24.15.0 and Docker 29.8.0. Its sanitized record is
 [windows-2026-09-19-typecheck.json](evidence/windows-2026-09-19-typecheck.json).

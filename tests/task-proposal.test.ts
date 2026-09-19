@@ -131,6 +131,9 @@ it("reads only committed regular blobs and reports source changes without modify
     "src/command-isolation.ts", "src/integrations/pi-task.ts", "tests/contract.test.ts",
     "tests/pi-task-evidence.test.ts",
   ]);
+  expect((await discovery.list({ prefix: "src/" })).files).toEqual([
+    "src/command-isolation.ts", "src/integrations/pi-task.ts",
+  ]);
   expect((await discovery.read({ path: "README.md" })).content).toContain("Old task wording");
   await expect(discovery.read({ path: ".env" })).rejects.toThrow("denied");
   await expect(discovery.read({ path: "binary.dat" })).rejects.toThrow();

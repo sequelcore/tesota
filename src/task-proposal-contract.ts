@@ -26,6 +26,8 @@ export function modelTextSchema(maximumLength: number): z.ZodString {
 }
 
 const pathSchema = z.string().min(1).max(512).refine((path) => validProposalPath(path));
+const prefixSchema = z.string().max(512).refine((prefix) => prefix === "" || validProposalPath(prefix) ||
+  prefix.endsWith("/") && validProposalPath(prefix.slice(0, -1)));
 const sentenceSchema = modelTextSchema(1_000);
 const conditionSchema = modelTextSchema(500);
 export interface TaskProposal {
@@ -56,7 +58,7 @@ export const taskProposalSchema: z.ZodType<TaskProposal> = z.strictObject({
 });
 
 export const proposalListSchema: z.ZodType<{ readonly prefix: string }> =
-  z.strictObject({ prefix: pathSchema.or(z.literal("")) });
+  z.strictObject({ prefix: prefixSchema });
 export const proposalSearchSchema: z.ZodType<{ readonly query: string; readonly prefix: string }> =
-  z.strictObject({ query: z.string().min(1).max(200), prefix: pathSchema.or(z.literal("")) });
+  z.strictObject({ query: z.string().min(1).max(200), prefix: prefixSchema });
 export const proposalReadSchema: z.ZodType<{ readonly path: string }> = z.strictObject({ path: pathSchema });

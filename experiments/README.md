@@ -38,6 +38,7 @@ the active one-conversation milestone can close.
 | [Passing candidate correction](codex/evidence/candidate-passed.json) | One edit, two issued checks and review diff saved; previous evidence stale, final evidence applicable |
 | [Live TypeScript matrix](supported-task/evidence/windows-2026-09-19-typecheck.json) | Controlled Windows/Docker positive, finding, unavailable, fatal-exit, timeout, cancellation and drift outcomes after the sibling-mount correction |
 | [Supported-task follow-up](supported-task/follow-up.md) | Prospective post-correction external task frozen before its one ordinary-flow attempt |
+| [Second supported-task follow-up](supported-task/follow-up-2.md) | New external task frozen after the first follow-up exposed a discovery-prefix rejection |
 | [Codex history](codex/history.md) | Source scouting, historical checks and diagnostic findings |
 
 Verification and synthetic Pi review closure was reported in the development conversation and
