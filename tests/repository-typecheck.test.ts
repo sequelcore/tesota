@@ -78,7 +78,7 @@ it("admits the canonical repository declaration and binds the isolated compiler 
     repository: { script: "tsc --noEmit -p tsconfig.json" },
     verifier: { packageVersion: "7.0.2" },
     isolation: { image: expect.stringMatching(/^node@sha256:/u), executableSha256: expect.stringMatching(/^[a-f\d]{64}$/u) },
-    command: ["node", "/dependencies/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
+    command: ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
       "--pretty", "false", "-p", "tsconfig.json"],
     authority: "local_operator_approval_required" });
   expect(profile.candidate.contentSha256).toMatch(/^[a-f\d]{64}$/u);
@@ -98,7 +98,7 @@ it("accepts a hardlinked Bun dependency only by mounting an exclusive copied sna
     source: current.source, runtime: await runtime(current.root) });
   expect((await readdir(current.candidate.directory)).some((name) => name.startsWith(".tesota-typecheck-dependencies-"))).toBe(false);
   const executor = vi.fn<RepositoryTypecheckExecutor>(async (invocation) => {
-    const mount = invocation.args.find((argument) => argument.includes("target=/dependencies/node_modules,readonly"));
+    const mount = invocation.args.find((argument) => argument.includes("target=/workspace/node_modules,readonly"));
     expect(mount).toBeDefined();
     const snapshot = /source=([^,]+)/u.exec(mount ?? "")?.[1];
     expect(snapshot).toBeDefined();
@@ -120,7 +120,7 @@ it("retains the candidate-owned snapshot when container settlement is unconfirme
     source: current.source, runtime: await runtime(current.root) });
   let snapshot: string | undefined;
   const executor: RepositoryTypecheckExecutor = async (invocation) => {
-    const mount = invocation.args.find((argument) => argument.includes("target=/dependencies/node_modules,readonly"));
+    const mount = invocation.args.find((argument) => argument.includes("target=/workspace/node_modules,readonly"));
     snapshot = /source=([^,]+)/u.exec(mount ?? "")?.[1];
     return { status: "failed", reason: "cleanup_unconfirmed", process: "unconfirmed", container: "unconfirmed", pid: 42 };
   };
@@ -172,6 +172,10 @@ it("maps coherent compiler outcomes without collapsing operational failures", as
   await expect(runRepositoryTypecheck(profile, passed)).resolves.toMatchObject({ status: "passed", reason: null,
     diagnostics: [], process: "exited", container: "absent", authority: "none", provenance: "issued" });
   await expect(runRepositoryTypecheck(profile, async () => ({ status: "closed", exitCode: 1, signal: null,
+    stdout: Buffer.from("src/value.ts(1,14): error TS2322: invalid\n"), stderr: Buffer.alloc(0),
+    process: "exited", container: "absent" }))).resolves.toMatchObject({ status: "check_failed",
+    reason: "diagnostics", diagnostics: ["src/value.ts(1,14): error TS2322: invalid"] });
+  await expect(runRepositoryTypecheck(profile, async () => ({ status: "closed", exitCode: 2, signal: null,
     stdout: Buffer.from("src/value.ts(1,14): error TS2322: invalid\n"), stderr: Buffer.alloc(0),
     process: "exited", container: "absent" }))).resolves.toMatchObject({ status: "check_failed",
     reason: "diagnostics", diagnostics: ["src/value.ts(1,14): error TS2322: invalid"] });

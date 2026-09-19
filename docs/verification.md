@@ -61,15 +61,17 @@ inputs or executable policy that this profile does not yet bind.
 
 After approval, Tesota copies the approved dependency installation into a
 bounded candidate-owned snapshot, rehashes it against the approved digest and
-mounts that snapshot as read-only `/dependencies/node_modules`, beside the
-read-only candidate mount at `/workspace`. Keeping the mounts as siblings lets
-Docker create both mountpoints without writing inside the candidate mount.
+mounts that snapshot as read-only `/workspace/node_modules`, beside the
+read-only candidate mount at `/workspace/repository`. Keeping the mounts as
+siblings lets Docker create both mountpoints without writing inside the
+candidate while preserving TypeScript's ancestor-based module lookup.
 Regular hardlinks in a Bun
 installation are accepted as source inputs, but the mounted snapshot contains
 only independently copied regular files. The candidate mount is also read-only.
 The container has no network, added capabilities or mounted host credentials,
 uses a read-only root filesystem and starts from the pinned image without
-pulling. Output is bounded to 256 KiB and execution to 30 seconds. Timeout and
+pulling. The fixed Node process receives a 384 MiB old-space ceiling inside the
+512 MiB container limit. Output is bounded to 256 KiB and execution to 30 seconds. Timeout and
 cancellation request container removal; the result remains `unconfirmed` if
 Docker absence or client settlement cannot be observed.
 

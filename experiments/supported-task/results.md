@@ -109,10 +109,21 @@ SHA-256 `07d6d33cf34c0eec99f8489538966325a3d27267ca9a57a4e5bcc5a9f2915cef`.
 Live probing then exposed a container-layout defect: Docker could not create the
 nested `/workspace/node_modules` mountpoint inside the read-only candidate
 mount. Commit `93266254523946fb539113d36631b2d585a71c2a` moved the dependency
-snapshot to the read-only sibling mount `/dependencies/node_modules` and rejects
-a Windows-only TypeScript 7 installation before approval. A subsequent
-correction limits that platform-package requirement to TypeScript releases that
-declare it; portable JavaScript compiler releases remain admissible.
+snapshot outside the candidate's read-only mount and rejects a Windows-only
+TypeScript 7 installation before approval. A subsequent correction limits that
+platform-package requirement to TypeScript releases that declare it. Live
+external preflight then showed that `/dependencies/node_modules` was outside
+TypeScript's module-resolution ancestry; the corrected sibling layout is now
+`/workspace/repository` and `/workspace/node_modules`, preserving dependency
+lookup without nesting a mount inside the candidate.
+
+The same frozen SysOne preflight then exposed Node's automatic heap ceiling:
+under the 512 MiB container limit, TypeScript exhausted a roughly 256 MiB heap
+and exited fatally. The fixed policy now sets a 384 MiB old-space ceiling while
+retaining the 512 MiB container limit. Repeating the exact standalone profile
+against follow-up baseline `3960a9be66ec531748b05b4e5ffb60e2d98c4a12`
+returned `passed`, with the process exited, container absent and no diagnostics.
+No follow-up task had been submitted to the model when this preflight completed.
 
 The controlled matrix was repeated against that exact commit on Windows x64,
 Bun 1.4.2, Node 24.15.0 and Docker 29.8.0. Its sanitized record is
@@ -129,8 +140,10 @@ Bun 1.4.2, Node 24.15.0 and Docker 29.8.0. Its sanitized record is
 | Surviving descendant | `isolation qualify` passed every Docker control on the same platform and image. |
 | Source drift | Candidate bytes changed after profile preparation; dispatch did not start and the result was `input_drift`. |
 
-This completes the controlled live TypeScript-profile matrix for the declared
-Windows/Docker environment. It does not repair or replace the original negative
-corpus. Milestone 1 remains active until a newly frozen prospective external
-corpus supplies successful end-to-end usefulness evidence through the ordinary
-conversation, review and application path.
+This completed the controlled live TypeScript-profile matrix for the then-current
+Windows/Docker command. It does not repair or replace the original negative
+corpus. The later mount, exit-code and fixed-heap corrections change the exact
+command and policy binding, so the controlled matrix must be refreshed against
+the final implementation. Milestone 1 also remains active until the newly
+frozen prospective external task supplies successful end-to-end usefulness
+evidence through the ordinary conversation, review and application path.

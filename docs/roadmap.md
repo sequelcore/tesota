@@ -44,9 +44,10 @@ application settlement is unconfirmed, and it cannot accept a semantic revision
 such as “change this part” or resume an interrupted task. Its first prospective
 external corpus produced three pre-proposal discovery failures. A later
 fixed-route probe passed with a replacement account, and the Docker-backed
-TypeScript route completed its controlled live outcome matrix. The missing
-evidence is now a successful, newly frozen prospective external corpus through
-the ordinary product flow.
+TypeScript route completed a controlled live outcome matrix. External preflight
+then required a corrected final mount and memory policy, so that exact matrix
+must be refreshed. A successful, newly frozen prospective external task through
+the ordinary product flow also remains missing.
 
 Historical experiments demonstrate mechanisms, not active product routes. See
 [experiments](../experiments/README.md) and [project history](history/README.md).
@@ -72,10 +73,9 @@ Breadth is not part of this milestone.
 Already present are conversational discovery, approval, isolated work, bounded
 diagnostic-driven edits, exact-result checks, diff review, guarded application,
 ordinary-path continuation after known settlement and fail-closed termination
-when settlement is uncertain. The controlled live TypeScript-profile matrix is
-complete for the declared Windows/Docker environment. Remaining work is
-prospective successful evidence on a newly frozen representative external
-corpus.
+when settlement is uncertain. Remaining work is a refreshed controlled live
+TypeScript-profile matrix for the final Windows/Docker command and prospective
+successful evidence on the newly frozen external task.
 
 Completion evidence is defined in [qualification](qualification.md). Passing
 component checks alone does not complete the milestone.

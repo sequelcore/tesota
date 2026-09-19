@@ -42,7 +42,7 @@ export interface RepositoryTypecheckProfile {
   readonly verifier: { readonly packageVersion: string; readonly installationSha256: string };
   readonly isolation: { readonly image: typeof CONTAINER_IMAGE; readonly policySha256: string;
     readonly executable: string; readonly executableSha256: string; readonly nodeModules: string };
-  readonly command: readonly ["node", "/dependencies/node_modules/typescript/bin/tsc", "--noEmit", "--incremental",
+  readonly command: readonly ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental",
     "false", "--pretty", "false", "-p", "tsconfig.json"];
   readonly limits: typeof REPOSITORY_TYPECHECK_LIMITS;
   readonly authority: "local_operator_approval_required";
@@ -111,7 +111,7 @@ export async function prepareRepositoryTypecheck(options: PrepareOptions): Promi
     verifier: { packageVersion: installed.version, installationSha256: await dependencyInstallationSha256(nodeModules, true) },
     isolation: { image: CONTAINER_IMAGE, policySha256: typecheckContainerPolicySha256(),
       executable: runtime.executable, executableSha256: runtime.executableSha256, nodeModules },
-    command: ["node", "/dependencies/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
+    command: ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
       "--pretty", "false", "-p", "tsconfig.json"],
     limits: REPOSITORY_TYPECHECK_LIMITS,
     authority: "local_operator_approval_required",
@@ -193,7 +193,7 @@ async function executeSnapshotTypecheck(profile: RepositoryTypecheckProfile, sna
   if (observed.exitCode === 0 && output.length === 0) {
     return { result: Object.freeze({ ...failedResult(profile, "passed", "passed", observed.process, observed.container), reason: null }), snapshotSettled: settled };
   }
-  if (observed.exitCode === 1 && output.some((line) => /\berror TS\d+:/u.test(line))) {
+  if ((observed.exitCode === 1 || observed.exitCode === 2) && output.some((line) => /\berror TS\d+:/u.test(line))) {
     return { result: Object.freeze({ ...failedResult(profile, "check_failed", "diagnostics", observed.process, observed.container),
       diagnostics: Object.freeze([...output]) }), snapshotSettled: settled };
   }

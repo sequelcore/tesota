@@ -43,10 +43,10 @@ describe("command isolation qualification", () => {
 
     expect(invocation.command).toBe("C:\\Program Files\\Docker\\docker.exe");
     expect(serialized).toContain("--network=none");
-    expect(serialized).toContain("target=/workspace,readonly");
-    expect(serialized).toContain("target=/dependencies/node_modules,readonly");
-    expect(serialized).toContain("/dependencies/node_modules/typescript/bin/tsc");
-    expect(serialized).not.toContain("target=/workspace/node_modules,readonly");
+    expect(serialized).toContain("target=/workspace/repository,readonly");
+    expect(serialized).toContain("target=/workspace/node_modules,readonly");
+    expect(serialized).toContain("/workspace/node_modules/typescript/bin/tsc");
+    expect(serialized).toContain("NODE_OPTIONS=--max-old-space-size=384");
     expect(serialized).toContain("--noEmit\n--incremental\nfalse\n--pretty\nfalse\n-p\ntsconfig.json");
     expect(serialized).not.toContain("TESOTA_QUALIFICATION_SECRET");
     expect(typecheckContainerPolicySha256()).toMatch(/^[a-f\d]{64}$/u);
