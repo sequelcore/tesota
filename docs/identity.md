@@ -21,6 +21,7 @@ different:
 | --- | --- |
 | **Implemented today** | A local, terminal-first pre-release that can answer bounded repository questions and attempt one narrow class of TypeScript source changes with explicit approval, checks, review and application. |
 | **Next demonstrated capability** | Complete one small repository change in one continuous conversation, including useful correction and a return to a useful prompt. |
+| **Coding destination** | A verification-first coding agent capable of broad, real repository work while preserving explicit authority, exact-result evidence, visible unknowns, human acceptance and guarded application. |
 | **Long-term thesis** | An agent for research, planning, creation, tool use and other consequential work, where each domain defines its result, applicable evidence, effects and adoption boundary. |
 
 Tesota does not yet support arbitrary repository work, general web research,
@@ -28,6 +29,30 @@ unrestricted commands, issue publication or general-purpose non-code
 workflows. The [roadmap](roadmap.md) is the sole owner of current product status
 and priority. The [architecture](architecture.md) describes the implementation
 that exists.
+
+## Coding breadth and product identity
+
+Broad coding capability is a product destination. Tesota should grow from its
+current narrow change into a useful range of everyday repository work. That
+breadth must be demonstrated on representative tasks through support coverage,
+residual defects, intervention, elapsed time, cost and refusal causes. A feature
+list or the label “general coding agent” does not establish it.
+
+Verification-first behavior is the product identity. Tesota is not an
+unrestricted coding loop with checks added afterward. As its task range grows,
+it must continue to keep authority explicit, bind evidence to the exact result,
+use diagnostics for bounded correction, preserve unknowns and separate checks,
+review, acceptance and application.
+
+Pi can continue to provide model interaction, tool use and agent-loop mechanics.
+Tesota owns how that work is admitted, evidenced, reviewed and applied. Reaching
+broad coding usefulness does not require rebuilding a native agent engine or
+copying another coding product's architecture.
+
+This is an intended direction, not a claim that the current implementation
+matches broad coding agents, a delivery schedule or permission to relax a
+restriction without evidence. The roadmap governs the order in which breadth is
+earned.
 
 ## The experience
 
@@ -46,9 +71,10 @@ own authority.
 The current implementation still exposes some seams in this experience. A
 supported change can move from a natural-language request through approval,
 work, checks, review and application without the user copying internal IDs, but
-semantic revision and conversational continuation after the task are not yet
-implemented. [Using Tesota](using-tesota.md) documents the exact supported
-workflow without presenting the destination as current behavior.
+semantic revision is not yet implemented, and cancellation, lifecycle failure
+or unconfirmed application settlement still ends the session. [Using
+Tesota](using-tesota.md) documents the exact supported workflow without
+presenting the destination as current behavior.
 
 ## Why verification-first
 

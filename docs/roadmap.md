@@ -9,6 +9,13 @@ worthwhile work and reaches an inspectable result without learning the internal
 lifecycle. Software development is the first proving ground, not the permanent
 product boundary.
 
+Broad, real coding capability is an intended product destination;
+verification-first behavior remains the identity and constraint. The roadmap
+does not treat breadth as parity with another product, a feature-count target or
+permission for unrestricted execution. It must be earned through representative
+task evidence while preserving explicit authority, exact-result evidence,
+visible unknowns and guarded application.
+
 The engineering question for each increment is:
 
 > **What is the smallest change that lets a real user complete one more
@@ -112,10 +119,13 @@ cancellation with surviving descendants and uncertain effects. Recovery must
 never replay an uncertain effect as though it did not happen or recreate old
 authority.
 
-## Milestone 4 — Broaden useful coding work from observed blockers
+## Milestone 4 — Broaden toward representative coding work
 
-Tesota expands a restriction only when prospective tasks show that it blocks
-worthwhile work and the expansion preserves the essential invariants.
+Milestones 1–3 establish a complete, correctable and recoverable lifecycle for
+the narrow task. Milestone 4 deliberately expands that lifecycle toward broad,
+real coding work. Tesota expands a restriction only when prospective tasks show
+that it blocks worthwhile work and the expansion preserves the essential
+invariants.
 
 Possible responses include existing tests, a slightly larger write set, one
 file-lifecycle operation, another check profile or a lower-friction execution
@@ -126,6 +136,14 @@ Each expansion must identify its user need, new effects, authority boundary,
 applicable evidence, failure behavior and maintenance cost. A new verifier or
 execution provider is justified by useful findings or reduced burden, not by
 integration count.
+
+Broad coding usefulness is demonstrated when a preselected, representative task
+corpus shows that ordinary bugs, features and refactorings can usually reach an
+inspectable outcome, while refusals become bounded, explainable exceptions.
+Support coverage alone is insufficient: residual defects, correction and
+intervention burden, elapsed time, cost, review burden and failure causes remain
+part of the claim. No single new tool, language, file operation or repository-
+understanding mechanism completes this milestone by itself.
 
 ## Prospective usefulness evaluation
 
@@ -155,9 +173,14 @@ requirements, not optional reporting polish.
 
 ## Long-term direction
 
-Tesota may grow from coding into research, planning, creation, broader tool use
-and other consequential work. This is a direction, not a checklist for a
-“general agent.”
+Tesota first aims to make its verification-first lifecycle useful across broad,
+real coding work. That is a coding-capability direction, not a change to the
+canonical **verification-first agent** category or a claim that broad capability
+exists today.
+
+Beyond coding, Tesota may grow into research, planning, creation, broader tool
+use and other consequential work. This further direction is not a checklist for
+a “general agent.”
 
 Before a new domain becomes a product commitment, it must demonstrate:
 
