@@ -107,10 +107,12 @@ Accepting a result records a human decision. Application is a separate,
 conflict-checked effect. Rejecting it retains the evidence without changing the
 source repository.
 
-The current change flow ends after that decision. It does not yet accept
-semantic feedback such as “keep the fix but change this part,” and it does not
-return to a new conversational prompt. Those are roadmap capabilities, not
-current behavior.
+After scope decline, failed execution, candidate rejection or confirmed
+application, Tesota reports the retained outcome and returns to a new prompt.
+Cancellation, a lifecycle failure or unconfirmed application settlement still
+ends the session so that a new request cannot conceal uncertain effects.
+Tesota does not yet accept semantic feedback such as “keep the fix but change
+this part” within the same task. That is a later roadmap capability.
 
 ## Inspect or recover work
 
@@ -147,7 +149,7 @@ currently:
 - make arbitrary repository changes;
 - run model-selected shell commands or install dependencies;
 - edit tests or create, delete or rename files in the supported task;
-- continue a change conversation after review;
+- continue the same task with semantic feedback after review;
 - accept user-requested semantic revision of a result;
 - resume an interrupted task; or
 - claim that the live end-to-end workflow is qualified across representative

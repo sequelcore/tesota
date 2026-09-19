@@ -30,12 +30,13 @@ The pre-release currently supports:
 - durable outcome facts for supported work that starts or is declined; and
 - lower-level inspection, recovery and qualification commands for contributors.
 
-The current supported change flow still ends after review or application. It
-cannot accept a semantic revision such as “change this part,” resume an
-interrupted task, or return the user to a useful prompt after the change. Its
-Docker-backed TypeScript route has synthetic coverage but has not completed a
-prospective live qualification on representative external tasks. These gaps
-define the active milestone.
+The current supported change flow returns to a useful prompt after scope
+decline, failed execution, candidate rejection or confirmed application. It
+still ends on cancellation, lifecycle failure or unconfirmed application
+settlement, and it cannot accept a semantic revision such as “change this
+part” or resume an interrupted task. Its Docker-backed TypeScript route has
+synthetic coverage but has not completed a prospective live qualification on
+representative external tasks. These gaps define the active milestone.
 
 Historical experiments demonstrate mechanisms, not active product routes. See
 [experiments](../experiments/README.md) and [project history](history/README.md).
@@ -60,9 +61,10 @@ Breadth is not part of this milestone.
 
 Already present are conversational discovery, approval, isolated work, bounded
 diagnostic-driven edits, exact-result checks, diff review and guarded
-application. Remaining work is to close the conversational loop, present check
-claims and unknowns more directly, remove recovery IDs from the ordinary path
-and qualify the whole experience on representative work.
+application. Remaining work is to complete the conversational loop for every
+known-settlement path, present check claims and unknowns more directly, remove
+recovery IDs from the ordinary path and qualify the whole experience on
+representative work.
 
 Completion evidence is defined in [qualification](qualification.md). Passing
 component checks alone does not complete the milestone.

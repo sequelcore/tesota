@@ -32,10 +32,11 @@ presents the exact diff and current evidence, and asks whether to apply the
 result. The normal path does not require copying proposal, candidate or review
 IDs.
 
-That continuous experience is not complete yet. A supported task currently ends
-after its review decision, and a user cannot request a semantic revision such
-as "change this part" without starting again. The [roadmap](docs/roadmap.md)
-defines those user-facing gaps.
+That continuous experience is not complete yet. After a settled task, the shell
+returns to a new prompt, but a user cannot request a semantic revision such as
+"change this part" within the same task. Cancellation and uncertain application
+settlement still end the session. The [roadmap](docs/roadmap.md) defines those
+user-facing gaps.
 
 ## Why verification-first
 
