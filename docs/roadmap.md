@@ -47,7 +47,10 @@ fixed-route probe passed with a replacement account, and the Docker-backed
 TypeScript route completed a controlled live outcome matrix. External preflight
 then required a corrected final mount and memory policy, so that exact matrix
 must be refreshed. A successful, newly frozen prospective external task through
-the ordinary product flow also remains missing.
+the ordinary product flow also remains missing. Its latest fresh preflight was
+cancelled cleanly before compiler dispatch and exposed a remaining usability
+blocker: whole-installation dependency copying and rehashing takes multiple
+minutes on the qualification filesystem.
 
 Historical experiments demonstrate mechanisms, not active product routes. See
 [experiments](../experiments/README.md) and [project history](history/README.md).
@@ -76,6 +79,9 @@ ordinary-path continuation after known settlement and fail-closed termination
 when settlement is uncertain. Remaining work is a refreshed controlled live
 TypeScript-profile matrix for the final Windows/Docker command and prospective
 successful evidence on the newly frozen external task.
+The external task must not be attempted again until the dependency-input
+preflight cost is reduced without weakening its binding or cancellation
+semantics.
 
 Completion evidence is defined in [qualification](qualification.md). Passing
 component checks alone does not complete the milestone.

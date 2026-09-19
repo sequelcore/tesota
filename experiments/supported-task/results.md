@@ -183,6 +183,25 @@ operation. The five-minute agent budget is unchanged.
 A [fourth prospective follow-up](follow-up-4.md) was frozen before its distinct
 external request was submitted.
 
+Its fresh SysOne checkout matched baseline
+`862beb481157bfd5f53893bfea612610b23b29a0`, was clean and received the exact
+frozen Linux/x64 dependency closure. The standalone 60-second profile was then
+approved as a preflight, but it was manually cancelled while copying and
+hashing the 1,490-file dependency installation, before process dispatch. The
+issued result was `cancelled`, with `process: not_started`, `container: absent`
+and no diagnostics. Cancellation removed the partial candidate-owned snapshot;
+no container survived and the source remained clean. The request was never
+submitted to discovery or task execution, so no model invocation, proposal,
+write authority, edit, review decision or application exists for this
+follow-up.
+
+This interruption confirms that cancellation now settles correctly, but also
+that the whole-installation copy-and-rehash design is not usable enough for the
+ordinary milestone path on the qualification filesystem. Increasing execution
+or session deadlines does not correct that pre-dispatch cost. The next live
+attempt remains blocked on a bounded verifier-input design that preserves the
+exact dependency binding without repeating this multi-minute preflight.
+
 The controlled matrix was repeated against that exact commit on Windows x64,
 Bun 1.4.2, Node 24.15.0 and Docker 29.8.0. Its sanitized record is
 [windows-2026-09-19-typecheck.json](evidence/windows-2026-09-19-typecheck.json).
