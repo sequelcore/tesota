@@ -54,11 +54,26 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
   let terminalObserved = false;
   let promptFailed = false;
   let unconfirmedEffect = false;
+  const activeChecks = new Set<Promise<void>>();
   let settle: () => void = () => {};
   const settled = new Promise<void>((resolve) => { settle = resolve; });
   let settlementTimer: ReturnType<typeof setTimeout> | undefined;
+  let settlementDeadline: number | undefined;
   const description = task.describe();
   const { read: taskReadSchema, replace: taskEditSchema, check: taskCheckSchema } = task.requestSchemas();
+
+  async function waitForActiveChecks(): Promise<void> {
+    const pending = [...activeChecks];
+    if (pending.length === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const waitMs = Math.max(0, (settlementDeadline ?? Date.now() + PI_TASK_LIMITS.settlementMs) - Date.now());
+    const observed = await Promise.race([
+      Promise.all(pending).then(() => true),
+      new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), waitMs); }),
+    ]);
+    clearTimeout(timer);
+    if (!observed) unconfirmedEffect = true;
+  }
 
   async function execute(action: () => Promise<unknown>, toolSignal?: AbortSignal) {
     try {
@@ -93,15 +108,23 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
   const checkTool: AgentTool<typeof checkParameters> = {
     name: "tesota_check", label: "Check task", description: "Run the executor-owned check for the selected task.",
     parameters: checkParameters, execute: async (id, args, toolSignal) => execute(async () => {
-      taskCheckSchema.parse(args);
-      const check = await task.check(toolSignal);
-      checks.push(check);
-      checkCalls.set(id, check);
-      if (check.settlement === "unconfirmed") {
-        unconfirmedEffect = true;
-        task.close();
+      let settleCheck: () => void = () => {};
+      const tracked = new Promise<void>((resolve) => { settleCheck = resolve; });
+      activeChecks.add(tracked);
+      try {
+        taskCheckSchema.parse(args);
+        const check = await task.check(toolSignal);
+        checks.push(check);
+        checkCalls.set(id, check);
+        if (check.settlement === "unconfirmed") {
+          unconfirmedEffect = true;
+          task.close();
+        }
+        return check;
+      } finally {
+        activeChecks.delete(tracked);
+        settleCheck();
       }
-      return check;
     }, toolSignal),
   };
   const agent = new Agent({
@@ -161,6 +184,7 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
   function abort(): void {
     task.close();
     if (settlementTimer !== undefined) return;
+    settlementDeadline = Date.now() + PI_TASK_LIMITS.settlementMs;
     settlementTimer = setTimeout(settle, PI_TASK_LIMITS.settlementMs);
     agent.abort();
   }
@@ -170,6 +194,7 @@ export async function runPiTask(task: CandidateTask, model: Model<Api>, stream: 
     if (signal.aborted) abort();
     else void agent.prompt(JSON.stringify(description)).then(settle, () => { promptFailed = true; settle(); });
     await settled;
+    await waitForActiveChecks();
     closed = true;
     const settlement: PiTaskResult["settlement"] = terminalObserved && !unconfirmedEffect ? "observed" : "unconfirmed";
     const status: PiTaskResult["status"] = settlement === "unconfirmed" ? "unsettled" :

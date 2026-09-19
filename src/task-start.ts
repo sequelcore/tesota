@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { admitTaskProposal, type ProposalRunGrant } from "./proposal-admission.js";
-import { decideTask, reviewTask, type TaskReview } from "./task-review.js";
+import { decideTask, reviewTask, TaskReviewUnsettledError, type TaskReview } from "./task-review.js";
 import { promoteTask, PromotionNotAppliedError } from "./task-promotion.js";
 import { runProposalTask, type TaskRunResult } from "./task-run.js";
 import { createTaskOutcome, formatTaskOutcome, type TaskOutcomeJournal } from "./task-outcome.js";
@@ -152,6 +152,11 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
     }
     return await promoteAcceptedTask(review, decided, grant.source, journal, report, dependencies.promote ?? promoteTask, dependencies.write);
   } catch (error) {
+    if (error instanceof TaskReviewUnsettledError) {
+      dependencies.write("Review settlement is unconfirmed. Inspect retained evidence before retrying.\n");
+      dependencies.write(formatTaskOutcome(journal.current()));
+      return { status: "unsettled", exitCode: 1, outcome: "execution_unconfirmed" };
+    }
     if (aborted(error)) {
       await finishOutcome(journal, { state: "finished", outcome: "cancelled" }, dependencies.write);
       return { status: "settled", exitCode: 130, outcome: "cancelled" };

@@ -4,7 +4,7 @@ import { dirname, join, relative } from "node:path";
 import { inspectPromotionSource, readCandidateBaselineFiles } from "./candidate-checkout.js";
 import { inspectCandidateTask, taskWriteSetSha256 } from "./candidate-task.js";
 import { TASK_LIMITS } from "./task-contract.js";
-import { reviewTask } from "./task-review.js";
+import { reviewTask, TaskReviewUnsettledError } from "./task-review.js";
 
 interface CapturedFile { readonly bytes: Buffer; readonly mode: number }
 interface PromotionFile {
@@ -166,13 +166,15 @@ export async function promoteTask(directory: string, sourceDirectory: string, re
     await promotionJournal.writeFile(JSON.stringify({ state: "applied", files: resultFiles }) + "\n");
     await promotionJournal.sync();
     return { status: "applied", source: prepared.source, files: resultFiles };
-  } catch {
+  } catch (error) {
     const state = failedPromotionState(sourceWriteStarted, applied, fileCount);
     if (journal !== undefined) {
       const currentJournal = journal;
       await currentJournal.writeFile(JSON.stringify({ state, applied }) + "\n").then(() => currentJournal.sync()).catch(() => {});
     }
-    throw sourceWriteStarted ? new PromotionUncertainError() : new PromotionNotAppliedError();
+    throw sourceWriteStarted || error instanceof TaskReviewUnsettledError
+      ? new PromotionUncertainError()
+      : new PromotionNotAppliedError();
   } finally {
     await journal?.close();
     await Promise.all(temporaryFiles.map((path) => unlink(path).catch(() => {})));

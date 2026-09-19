@@ -223,14 +223,15 @@ export class CandidateTask {
       this.#grant.writeFiles as [string, ...string[]]);
   }
 
-  async #operation<T>(action: (snapshot: { checkout: string; files: TaskFiles }) => Promise<T>): Promise<T> {
+  async #operation<T>(action: (snapshot: { checkout: string; files: TaskFiles }) => Promise<T>,
+    retainAfterClose: (result: T) => boolean = () => false): Promise<T> {
     if (this.#closed || this.#busy) { this.#closed = true; throw new Error("Task is closed or busy"); }
     this.#busy = true;
     try {
       const snapshot = await observe(this.#directory, this.#plan, this.#grant);
       if (this.#closed || !sameFiles(snapshot.files, this.#current)) throw new Error("Task source changed externally");
       const result = await action(snapshot);
-      if (this.#closed) throw new Error("Task closed");
+      if (this.#closed && !retainAfterClose(result)) throw new Error("Task closed");
       return result;
     } catch { this.#closed = true; throw new Error("Task operation denied or unavailable"); }
     finally { this.#busy = false; }
@@ -279,7 +280,7 @@ export class CandidateTask {
         task: TASK_KIND, provenance: "issued", typecheck: checked.typecheck,
         baseline: this.#plan.baseline, writeSetSha256: taskWriteSetSha256(files, this.#grant.writeFiles),
         taskAcceptance: "not_evaluated" as const };
-    });
+    }, (check) => check.settlement === "unconfirmed");
     if (result.outcome === "operational_failed") this.close();
     return result;
   }

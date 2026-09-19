@@ -49,6 +49,8 @@ interface RecordedTaskAttempt {
   readonly current: CandidateTaskCheck | null;
   readonly reviewSaved: boolean;
   readonly passed: boolean;
+  readonly settlement: "observed" | "unconfirmed";
+  readonly evidencePersisted: boolean;
 }
 
 async function executorSha256(): Promise<Record<string, string>> {
@@ -79,15 +81,20 @@ function finalCheckPermitted(session: PiTaskResult | null, signal: AbortSignal):
   return session?.status === "completed" && session.settlement === "observed" && !signal.aborted;
 }
 
-function taskRunStatus(session: PiTaskResult | null, signal: AbortSignal,
-  passed: boolean, reviewSaved: boolean): TaskRunResult["status"] {
-  if (session?.settlement === "unconfirmed") return "unsettled";
-  if (signal.aborted) return "cancelled";
-  return passed && reviewSaved ? "passed" : "failed";
+function combinedSettlement(session: PiTaskResult | null,
+  current: CandidateTaskCheck | null): RecordedTaskAttempt["settlement"] {
+  return session?.settlement === "unconfirmed" || current?.settlement === "unconfirmed" ? "unconfirmed" : "observed";
 }
 
-function attemptRecordOutcome(session: PiTaskResult | null, passed: boolean, reviewSaved: boolean): "passed" | "failed" | "unsettled" {
-  return passed && reviewSaved ? "passed" : session?.settlement === "unconfirmed" ? "unsettled" : "failed";
+function taskRunStatus(attempt: RecordedTaskAttempt, signal: AbortSignal): TaskRunResult["status"] {
+  if (attempt.settlement === "unconfirmed") return "unsettled";
+  if (signal.aborted) return "cancelled";
+  return attempt.evidencePersisted && attempt.passed && attempt.reviewSaved ? "passed" : "failed";
+}
+
+function attemptRecordOutcome(settlement: RecordedTaskAttempt["settlement"], passed: boolean,
+  reviewSaved: boolean): "passed" | "failed" | "unsettled" {
+  return settlement === "unconfirmed" ? "unsettled" : passed && reviewSaved ? "passed" : "failed";
 }
 
 function taskRunMessage(status: TaskRunResult["status"]): string {
@@ -104,6 +111,8 @@ async function recordTaskAttempt(candidate: CandidateCheckout, grant: ProposalRu
   let current: CandidateTaskCheck | null = null;
   let reviewSaved = false;
   let passed = false;
+  let evidencePersisted = true;
+  let settlement: RecordedTaskAttempt["settlement"] = "observed";
   try {
     await record.writeFile(JSON.stringify({ format: "tesota-task-attempt", version: 1, state: "started",
       timestamp: new Date().toISOString(), baseline: candidate.baseline, sourceDirty: candidate.sourceDirty,
@@ -122,14 +131,17 @@ async function recordTaskAttempt(candidate: CandidateCheckout, grant: ProposalRu
       if (finalCheckPermitted(session, signal)) current = await checkCandidateTask(candidate.directory, signal);
       passed = session !== null && current !== null && !signal.aborted && piTaskPasses(session, current);
     } catch { passed = false; }
+    settlement = combinedSettlement(session, current);
     try {
       await record.writeFile(JSON.stringify({ state: "finished", timestamp: new Date().toISOString(),
-        outcome: attemptRecordOutcome(session, passed, reviewSaved), session, current, reviewSaved,
+        outcome: attemptRecordOutcome(settlement, passed, reviewSaved), session, current, reviewSaved,
         taskAcceptance: "not_evaluated" }) + "\n");
       await record.sync();
-    } finally { await record.close(); }
+    } catch { evidencePersisted = false; }
+    try { await record.close(); } catch { evidencePersisted = false; }
+    if (!evidencePersisted) writeError("Task attempt evidence persistence is incomplete; inspect the retained candidate.\n");
   }
-  return { session, current, reviewSaved, passed };
+  return { session, current, reviewSaved, passed, settlement, evidencePersisted };
 }
 
 /** Execute only an in-memory grant already issued by proposal admission. */
@@ -145,7 +157,7 @@ async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunG
   try {
     write(`Task candidate: ${candidate.directory}\n`);
     const attempt = await recordTaskAttempt(candidate, grant, cancellation.signal, writeError);
-    const status = taskRunStatus(attempt.session, cancellation.signal, attempt.passed, attempt.reviewSaved);
+    const status = taskRunStatus(attempt, cancellation.signal);
     write(taskRunMessage(status));
     return { candidate, status, accounting: taskExecutionAccounting(attempt.session, startedAt) };
   } catch {

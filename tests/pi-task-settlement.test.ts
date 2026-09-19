@@ -60,3 +60,24 @@ it("preserves an unconfirmed check effect and blocks a later task check", async 
   expect(task.check).toHaveBeenCalledTimes(2);
   expect(task.close).toHaveBeenCalled();
 });
+
+it("reports an active check as unconfirmed when cancellation cannot observe its settlement", async () => {
+  const task = {
+    describe: () => description,
+    requestSchemas: () => taskRequestSchemas(["src/value.ts"], ["src/value.ts"]),
+    read: vi.fn(),
+    replace: vi.fn(),
+    check: vi.fn(async () => await new Promise<CandidateTaskCheck>((_resolve) => undefined)),
+    close: vi.fn(),
+  } as unknown as CandidateTask;
+  const faux = fauxProvider({ models: [{ id: "offline", name: "Offline" }] });
+  faux.setResponses([fauxAssistantMessage(fauxToolCall("tesota_check", {}))]);
+  const cancellation = new AbortController();
+
+  const running = runPiTask(task, faux.getModel(), faux.provider.streamSimple, cancellation.signal);
+  await vi.waitFor(() => expect(task.check).toHaveBeenCalledOnce());
+  cancellation.abort();
+
+  await expect(running).resolves.toMatchObject({ status: "unsettled", settlement: "unconfirmed" });
+  expect(task.close).toHaveBeenCalled();
+}, 10_000);
