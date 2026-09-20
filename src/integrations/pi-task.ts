@@ -232,6 +232,8 @@ export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck):
     last?.status === "passed",
     last?.outcome === "passed",
     first?.writeSetSha256 !== last?.writeSetSha256,
+    typeof first?.sourceInputsSha256 === "string" && /^[a-f0-9]{64}$/u.test(first.sourceInputsSha256),
+    checks.every((check) => check.sourceInputsSha256 === first?.sourceInputsSha256),
     checks.every((check) => first !== undefined && check.provenance === "issued" && check.settlement === "observed" &&
       check.taskAcceptance === "not_evaluated" && check.task === first.task && check.baseline === first.baseline &&
       typeof check.writeSetSha256 === "string" && check.writeSetSha256.length > 0),
@@ -256,5 +258,6 @@ export function piTaskPasses(result: PiTaskResult, current: CandidateTaskCheck):
     current.provenance === "recorded_untrusted",
     current.taskAcceptance === "not_evaluated",
     current.writeSetSha256 === last?.writeSetSha256,
+    current.sourceInputsSha256 === last?.sourceInputsSha256,
   ].every(Boolean);
 }

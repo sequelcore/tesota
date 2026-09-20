@@ -32,7 +32,9 @@ presents the exact diff and current evidence, and asks whether to apply the
 result. The normal path does not require copying proposal, candidate or review
 IDs.
 
-That continuous experience is not complete yet. After a known-settled task,
+That bounded flow has completed a prospective Windows/Docker evaluation with
+human acceptance and exact-byte application; see the
+[qualification record](experiments/supported-task/results.md). After a known-settled task,
 including cancellation or a lifecycle failure before uncertain effects, the
 shell returns to a new prompt. Unconfirmed execution or application settlement
 ends the session, and a user cannot request a semantic revision such as "change

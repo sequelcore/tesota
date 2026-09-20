@@ -23,15 +23,18 @@ async function readBoundedRegularFile(path: string, maximumBytes: number, allowH
       relative(absolute, await realpath(absolute)) !== "") throw new Error("Repository check input unavailable");
   const file = await open(absolute, "r");
   try {
-    const bytes = Buffer.alloc(maximumBytes + 1);
+    // Reserve one extra byte to detect growth without allocating the policy
+    // maximum for every small dependency. A changing input must be retried.
+    const bytes = Buffer.alloc(metadata.size + 1);
     let length = 0;
     while (length < bytes.length) {
       throwIfAborted(signal);
-      const read = await file.read(bytes, length, bytes.length - length, null);
+      const read = await file.read(bytes, length, Math.min(bytes.length - length, 64 * 1024), null);
       if (read.bytesRead === 0) break;
       length += read.bytesRead;
     }
-    if (length > maximumBytes) throw new Error("Repository check input unavailable");
+    throwIfAborted(signal);
+    if (length !== metadata.size) throw new Error("Repository check input unavailable");
     return bytes.subarray(0, length);
   } finally { await file.close(); }
 }

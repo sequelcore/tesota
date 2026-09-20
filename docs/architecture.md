@@ -77,6 +77,7 @@ and an isolated process does not gain authority merely because it is confined.
 | `repository-vitest.ts` | Concrete targeted Vitest profile admission, input binding and result semantics |
 | `repository-vitest-process.ts` | Fixed Vitest process limits and composition with shared container settlement |
 | `candidate-task.ts` | Candidate effects, plan binding and composition of scope integrity with the concrete TypeScript check |
+| `task-source.ts` | Bounded blob/worktree representation admission and exact source-target observations for guarded promotion |
 | `integrations/pi-task.ts` | Pi execution and correction evidence consistency |
 | `task-review.ts` | Exact-candidate review and local decision evidence |
 | `task-promotion.ts` | Accepted-byte validation and guarded source writes |

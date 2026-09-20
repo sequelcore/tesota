@@ -98,7 +98,9 @@ export async function decideTask(directory: string, request: unknown): Promise<T
   const review = await reviewTask(directory);
   if (review.operatorDecision !== null) throw new Error("A decision already exists");
   if (args.reviewSha256 !== review.reviewSha256) throw new Error("Review is stale");
-  if (args.decision === "accept" && review.check.status !== "passed") throw new Error("Acceptance requires a passing current check");
+  if (args.decision === "accept" && (review.check.status !== "passed" || review.check.sourceInputsSha256 === null)) {
+    throw new Error("Acceptance requires a passing current check and an admitted source binding");
+  }
   const record: TaskDecision = { format: "tesota-task-decision", version: 1, decision: args.decision,
     reviewSha256: review.reviewSha256, recordedAt: new Date().toISOString(), authority: "local_operator_assertion" };
   const file = await open(join(review.directory, "decision.json"), "wx", 0o600);

@@ -237,3 +237,231 @@ command and policy binding, so the controlled matrix must be refreshed against
 the final implementation. Milestone 1 also remains active until the newly
 frozen prospective external task supplies successful end-to-end usefulness
 evidence through the ordinary conversation, review and application path.
+
+## Bounded reader repair and refreshed profile
+
+The reader now allocates the observed file size plus one byte, rejects a
+different observed length, and checks cancellation between reads of at most
+64 KiB. The per-file and installation bounds, hardlink policy, complete hash
+walks and copied-snapshot validation remain in place. Nine focused regressions
+cover empty and small inputs, multi-read inputs, the exact size bound,
+oversized inputs, growth, truncation, hardlinks, cancellation and cleanup.
+The complete `bun run check` passed on Windows from the canonical checkout
+path: 391 tests, compilation, typechecking and lint. An initial invocation from
+a differently cased Windows path failed 21 existing compiled-path/mock tests;
+those failures did not recur from the canonical path.
+
+Three model-free preflights used the unchanged fourth-follow-up SysOne checkout
+and its existing 1,490-file dependency installation. Temporary wrappers around
+the compiled functions measured wall time with `performance.now()`. They did
+not change profile arguments or remove checks. Bun 1.4.2 executed the harness;
+the host also had Node 24.15.0 and Docker 29.8.0. The first sample had no explicit
+cache warmup; samples two and three reused source dependencies with fresh
+candidates and fresh snapshots. Repository tests ran concurrently. These are
+local phase observations, not an isolated benchmark or a measured speedup over
+the old reader.
+
+| Phase, seconds | First | Second | Third |
+| --- | ---: | ---: | ---: |
+| Preparation, including first dependency hash | 18.036 | 2.226 | 2.043 |
+| Pre-dispatch source validation | 1.664 | 1.582 | 1.344 |
+| Copying, including per-file rereads | 24.303 | 12.284 | 11.300 |
+| Snapshot validation before dispatch | 0.959 | 0.814 | 0.782 |
+| Compiler invocation and settlement | 27.376 | 24.853 | 24.284 |
+| Snapshot validation after execution | 0.877 | 0.860 | 0.876 |
+| Source validation after execution | 1.493 | 1.420 | 1.492 |
+| Total, including snapshot setup and cleanup | 75.006 | 44.308 | 42.402 |
+
+All three returned `passed`, with the client exited, container absent, and no
+retained dependency snapshot. Copying remains material, but these complete
+checks justify proceeding to the frozen task without changing the five-minute
+task budget or adopting snapshot reuse. The original allocation analysis is
+still a source-derived count, not measured physical memory or elapsed-time
+attribution.
+
+A fourth warm preflight, after the repository gate and task execution had
+settled, measured snapshot cleanup separately: 0.231 seconds. Its total was
+37.824 seconds, including 9.991 seconds of copying and 21.694 seconds of
+compiler invocation and settlement. It also passed and removed its snapshot.
+The shell was idle at the human decision prompt during this sample.
+
+The [refreshed live matrix](evidence/windows-2026-09-19-reader-repair.json)
+uses the uninstrumented final implementation and records its source hashes.
+A temporary repository used the existing portable TypeScript 6.0.3 compiler;
+controlled entrypoint substitutions exercised fatal exit, timeout and
+cancellation. Passing, compiler finding, missing tool, fatal exit, timeout,
+cancellation and source-drift cases returned their expected classifications.
+All dispatched processes exited and their containers and dependency snapshots
+were absent afterward. The Docker isolation qualification passed all controls,
+including descendant settlement. The separate native Windows probe failed its
+effective root-read prerequisite; it does not qualify a native provider.
+
+These observations qualify the exercised Windows/Docker route. They do not
+establish external-task acceptance, application, independent delivery review or
+Milestone 1 completion.
+
+The frozen fourth follow-up was then submitted once through the ordinary
+Tesota Shell. The implementing assistant entered scope approval under the
+user's instruction to proceed; this interaction is recorded separately from
+the later human acceptance decision. Tesota changed only `src/backends.ts`,
+adding the absent-limits guard. Execution completed in 153.016 seconds with
+five model invocations, four tool calls and one edit. The first no-change
+scope check failed as expected, and the post-edit and independently current
+TypeScript checks passed with observed settlement. Preparing review performed
+two further checks and reached the normal acceptance prompt 232.595 seconds
+after execution started.
+
+The [prospective observation](evidence/windows-2026-09-19-fourth-follow-up.json)
+retains exact result and review digests. Static inspection of the diff, parsing
+schema and `probeLimits` caller found the requested guard and unchanged positive
+mapping. This is an assessment by the implementing assistant, not an independent
+delivery review or a behavioral test. The runtime correction counter is one;
+the single edit implemented the original request, so that counter does not
+establish diagnostic repair. Token usage and cost remain unavailable.
+The human accepted this exact candidate after seeing the guard and passing
+checks. Acceptance was relayed to the waiting shell. The guarded promotion then
+returned `promotion_not_applied`, with the source unchanged, no source-write
+attempt and no surviving check container or dependency snapshot. The shell
+returned to its ordinary prompt and exited normally on blank input. The retained
+outcome reports 602.167 seconds from the approval prompt through settlement,
+including operator wait and the repeated review and promotion checks.
+
+Read-only diagnosis found the next blocker. `core.autocrlf=true` produced a
+clean CRLF source worktree, while `readCandidateBaselineFiles` returns the LF
+Git blob. Source identity, regular-file and hardlink checks pass. The worktree
+file is 12,768 bytes; its baseline is 12,395 bytes. Replacing CRLF with LF in
+memory makes the bytes exactly equal. `preparePromotionFiles` compares the raw
+worktree bytes with that blob and therefore rejects the source as changed,
+before creating a promotion journal. The diagnostic is reconstructed from the
+read-only preconditions because the public promotion error omits its cause.
+
+The fourth follow-up remains a failed application outcome and is not retried or
+adapted. This failure required distinguishing an admitted source worktree's
+exact bytes from the committed blob without weakening drift detection or
+running repository-defined filters. Normalizing the external repository to fit
+the current implementation would invalidate this prospective evidence.
+
+### Source worktree binding repair (2026-09-19, Windows)
+
+Version 2 task plans capture exact source-target hashes and modes before editing
+and bind them into checks and review acceptance. Initial candidate bytes are
+recorded separately. Admission permits exact committed bytes or uniform CRLF
+conversion of an LF-only text blob; it does not execute repository-defined
+filters. Promotion compares the source with its admitted raw bytes and mode,
+then applies exactly the accepted candidate bytes without normalizing them.
+Legacy version 1 plans remain inspectable and checkable but cannot acquire a
+new acceptance or be promoted by reconstructing missing admission evidence.
+
+The [controlled regression](evidence/windows-2026-09-19-source-binding.json)
+used a temporary TypeScript repository with committed `text eol=crlf`
+attributes, a clean CRLF worktree and an LF Git blob. It ran the actual Docker
+typecheck, review, local decision and promotion paths without a model. The
+unchanged candidate first failed the required-change check; the edited
+candidate passed. Synthetic local acceptance then led to `applied`, with exact
+accepted bytes in the source, observed process settlement, no surviving check
+container and no retained dependency snapshot. Total elapsed time was 125.338
+seconds; this is a local integration observation, not a benchmark.
+
+Tests additionally cover CRLF admission with and without committed attributes,
+real and line-ending-only source drift, mode drift, stale acceptance after a
+binding change, and fail-closed legacy plans. This controlled result does not
+count as human acceptance, a prospective external-task success, independent
+delivery review or Milestone 1 completion. The fourth follow-up remains negative
+and was not replayed.
+
+Final local verification passed `bun run check`: 406 tests across 34 files,
+TypeScript compilation, compiled CLI checks and lint. `git diff --check` also
+passed. An intermittent cancellation test exposed a one-second polling limit
+around real Git work; its startup synchronization now waits for verifier entry
+explicitly, retaining the existing test deadline and cancellation assertions.
+
+## User-requested post-repair retry
+
+After the frozen fourth follow-up had ended, the user explicitly requested
+another attempt at the same absent-limits change. A new ordinary shell proposal
+and version 2 candidate were created against the unchanged source baseline;
+the old proposal, decision and failed outcome were not reused or rewritten.
+The [separate retry record](evidence/windows-2026-09-19-user-retry.json) retains
+the new lifecycle. The candidate passed the fixed checks, the user accepted its
+exact result, and guarded promotion applied only `src/backends.ts`. A raw hash
+comparison confirmed the source matched the accepted candidate. The shell
+returned to its useful prompt and exited normally.
+
+Execution took 160.356 seconds; total recorded time was 1,006.150 seconds,
+including human wait and repeated checks. The result used five model
+invocations, four tool calls and one edit. Tokens and cost remain unavailable.
+This is a known-task diagnostic success, not a replacement prospective success
+or independent delivery review. The original fourth follow-up remains negative.
+The [fifth follow-up](follow-up-5.md) defines the next distinct prospective case.
+
+## Fifth prospective follow-up: HTTP byte-budget validation
+
+The [frozen protocol](follow-up-5.md) and evaluator-only oracle were fixed
+before submission. The new source checkout came from committed public history,
+not from the earlier edited worktree. Its frozen dependency install disabled
+scripts and omitted optional packages. The real Docker preflight passed with
+observed settlement. The first candidate-creation observation reported dirty
+source, but subsequent status and diff were empty and the task-start record
+confirmed a clean source. No tracked file was edited to make the task fit.
+
+The [observation](evidence/windows-2026-09-19-fifth-follow-up.json) records a
+ready one-file proposal and scope approval entered under the user's instruction
+to continue. The model added only a non-negative-safe-integer guard at the
+start of `readBoundedText` in `src/http.ts`. Execution took 101.923 seconds,
+with five model invocations, four tool calls and one edit. Initial unchanged
+scope correctly failed; post-edit and independently current TypeScript checks
+passed. The ordinary shell reached the exact-result acceptance prompt.
+
+The frozen behavioral oracle failed all 12 invalid-limit cases against the
+baseline and passed its six preservation cases. Against the candidate it passed
+all 18 cases. The candidate file hash was confirmed unchanged at review. Plain
+Node type stripping initially could not load the baseline parameter property;
+the evaluator command was corrected before submission to use Node 24.15.0's
+experimental type transformation. This is disclosed evaluator setup, not a
+product-path change or a task retry. No full SysOne integration or release gate
+was run. Tesota's complete repository gate ran concurrently, so elapsed values
+are not an isolated performance comparison. That gate passed all 406 tests,
+typechecking, compilation and lint; `git diff --check` also passed. Frozen
+protocol, oracle and implementation hashes still matched at closeout.
+
+The user accepted the exact guard after seeing its diff and evidence. The normal
+shell recorded that decision, repeated the current checks and applied only
+`src/http.ts`. Its raw SHA-256 matched the accepted candidate, and all 18 oracle
+cases passed again against the applied source. The shell returned to its useful
+prompt and exited normally. Total recorded time was 1,163.954 seconds, including
+human wait and repeated checks; it is not execution-only latency.
+
+This supplies the distinct prospective accepted-and-applied result missing from
+the earlier attempts, without erasing their negative outcomes. The user later
+reported that an anonymous external reviewer reviewed the work and found it
+satisfactory, and explicitly requested recording that review without an
+identity. This is an operator-reported favorable review, not an independently
+inspected review artifact. No findings were reported; the exact inspected
+revision and coverage of the final local changes were not confirmed.
+
+The user subsequently confirmed that the anonymous review covered the final
+local changes and requested closure. The review is therefore recorded as
+operator-attested and applicable to those changes, with no reported findings.
+The observation retains the implementation hashes rather than inventing a
+reviewed commit. The review text, reviewer tools and identity were not supplied.
+PR #135 had no formal GitHub review at inspection; its visible comments covered
+earlier revisions. The later protocol's one maintainer-coordinated external
+review is satisfied by the user's report and explicit coverage confirmation;
+this does not manufacture a formal GitHub approval or merge authority.
+
+## Milestone 1 qualification closure
+
+Qualification is complete for the exercised narrow Windows/Docker route:
+the refreshed live profile matrix, 406-test local gate, prospectively selected
+HTTP-budget task, 18-case behavioral oracle, explicit human acceptance,
+exact-byte application and return to a useful prompt are retained above.
+External review applicability is operator-attested, not independently verified.
+Earlier failures and the diagnostic retry remain separate observations.
+
+The fifth protocol and oracle were hash-frozen locally before submission, not
+committed before execution; the retained freeze and runtime timestamps disclose
+that provenance. This is a bounded feasibility conclusion, not a representative
+reliability rate, SysOne release qualification or cross-platform live claim.
+Publishing the delivery candidate, passing its required Ubuntu/Windows CI and
+the maintainer's merge decision remain separate delivery steps. Milestone 2
+is the next product increment; semantic revision is still unsupported.

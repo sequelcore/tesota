@@ -54,7 +54,7 @@ function passingReview(directory: string, baseline: string): TaskReview {
     diff: "diff --git a/src/value.ts b/src/value.ts\n+new value\n",
     historicalAttempt: "not_evaluated", operatorDecision: null,
     check: { task: "typescript-change", status: "passed", outcome: "passed", settlement: "observed",
-      provenance: "recorded_untrusted", baseline,
+      provenance: "recorded_untrusted", baseline, sourceInputsSha256: "d".repeat(64),
       writeSetSha256: "c".repeat(64), taskAcceptance: "not_evaluated",
       typecheck: { profile: "typescript-no-emit/v1", status: "passed", reason: null, diagnostics: [], process: "exited",
         container: "absent", binding: {} as never, authority: "none", provenance: "issued" },

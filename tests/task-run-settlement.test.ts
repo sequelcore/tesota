@@ -82,7 +82,7 @@ function piResult(settlement: PiTaskResult["settlement"], status: PiTaskResult["
 
 function check(settlement: CandidateTaskCheck["settlement"]): CandidateTaskCheck {
   return { task: "typescript-change", status: "check_failed", outcome: "operational_failed", settlement,
-    provenance: "recorded_untrusted", diagnostics: ["settlement unconfirmed"], typecheck: null,
+    provenance: "recorded_untrusted", diagnostics: ["settlement unconfirmed"], typecheck: null, sourceInputsSha256: "d".repeat(64),
     baseline: "a".repeat(40), writeSetSha256: "c".repeat(64), taskAcceptance: "not_evaluated" };
 }
 

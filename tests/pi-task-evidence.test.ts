@@ -4,7 +4,7 @@ import { PI_TASK_LIMITS, piTaskPasses, type PiTaskResult } from "../src/integrat
 
 const before: CandidateTaskCheck = {
   task: "typescript-change", status: "check_failed", outcome: "check_failed", settlement: "observed",
-  provenance: "issued", diagnostics: ["not changed"], typecheck: null,
+  provenance: "issued", diagnostics: ["not changed"], typecheck: null, sourceInputsSha256: "d".repeat(64),
   baseline: "a".repeat(40), writeSetSha256: "1".repeat(64), taskAcceptance: "not_evaluated",
 };
 const after: CandidateTaskCheck = {
@@ -30,6 +30,13 @@ it("accepts consistent completed task evidence", () => {
 it("rejects incomplete delivery or a stale current check", () => {
   expect(piTaskPasses({ ...result, finalCheckSuppliedToModel: false }, current)).toBe(false);
   expect(piTaskPasses(result, { ...current, writeSetSha256: "3".repeat(64) })).toBe(false);
+});
+
+it("rejects changed or absent source bindings across execution evidence", () => {
+  expect(piTaskPasses(result, { ...current, sourceInputsSha256: "e".repeat(64) })).toBe(false);
+  expect(piTaskPasses({ ...result, checks: [{ ...before, sourceInputsSha256: "e".repeat(64) }, after] }, current)).toBe(false);
+  expect(piTaskPasses({ ...result, checks: [{ ...before, sourceInputsSha256: null },
+    { ...after, sourceInputsSha256: null }] }, { ...current, sourceInputsSha256: null })).toBe(false);
 });
 
 it("rejects a result whose session or checks have unconfirmed settlement", () => {

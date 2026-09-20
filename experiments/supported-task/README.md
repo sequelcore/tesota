@@ -2,7 +2,7 @@
 
 The frozen post-correction cases are recorded separately in the
 [first](follow-up.md), [second](follow-up-2.md), [third](follow-up-3.md) and
-[fourth](follow-up-4.md) follow-up protocols; they do not rewrite this original
+[fourth](follow-up-4.md) and [fifth](follow-up-5.md) follow-up protocols; they do not rewrite this original
 corpus.
 
 This record freezes a small prospective evaluation of Tesota's supported
@@ -107,6 +107,11 @@ hashes, result status and process/container settlement. Synthetic regression
 tests remain separate evidence and cannot replace these live rows.
 
 ## Independent review and closure
+
+The three-review arrangement below belongs to the original corpus. The later
+follow-up protocols supersede it with one maintainer-coordinated delivery PR
+review selected by the operator; Tesota does not request additional reviews.
+Task-result acceptance and delivery review remain separate decisions.
 
 The delivery pull request receives three visible reviews:
 

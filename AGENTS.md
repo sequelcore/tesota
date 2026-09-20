@@ -7,7 +7,8 @@ TypeScript source task with bounded execution, local review
 decisions and guarded exact-file promotion.
 Separate Pi compatibility and live
 authentication, fixed verification-tool and isolated candidate-correction experiments
-exist; it does not yet execute general repository tasks or qualify the new source-task flow live.
+exist. The bounded source-task flow has Windows/Docker live qualification;
+this does not establish general repository-task support or cross-platform live qualification.
 Keep changes scoped to the active increment.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;

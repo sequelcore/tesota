@@ -24,7 +24,7 @@ function check(outcome: CandidateTaskCheck["outcome"], settlement: CandidateTask
       profile: "typescript-no-emit/v1", status: "timed_out", reason: "timeout", diagnostics: [], process: "unconfirmed",
       container: "absent", binding: {} as never, authority: "none", provenance: "issued",
     }, baseline: "a".repeat(40), writeSetSha256: outcome === "check_failed" ? "1".repeat(64) : "2".repeat(64),
-    taskAcceptance: "not_evaluated",
+    taskAcceptance: "not_evaluated", sourceInputsSha256: "d".repeat(64),
   };
 }
 

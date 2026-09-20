@@ -55,7 +55,8 @@ interface RecordedTaskAttempt {
 
 async function executorSha256(): Promise<Record<string, string>> {
   const executor: Record<string, string> = {};
-  for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js", "task-contract.js",
+  for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js", "task-contract.js", "task-source.js",
+    "repository-check-input.js",
     "proposal-admission.js", "repository-typecheck.js", "repository-typecheck-process.js", "command-isolation.js",
     "verification/invocation-admission.js", "integrations/pi-task.js",
     "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock"]) {

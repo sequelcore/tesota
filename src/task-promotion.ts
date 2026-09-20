@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { inspectPromotionSource, readCandidateBaselineFiles } from "./candidate-checkout.js";
+import { inspectPromotionSource } from "./candidate-checkout.js";
 import { inspectCandidateTask, taskWriteSetSha256 } from "./candidate-task.js";
 import { TASK_LIMITS } from "./task-contract.js";
-import { reviewTask, TaskReviewUnsettledError } from "./task-review.js";
+import { reviewTask, TaskReviewUnsettledError, type TaskReview } from "./task-review.js";
+import type { TaskSourceInputs } from "./task-source.js";
 
 interface CapturedFile { readonly bytes: Buffer; readonly mode: number }
 interface PromotionFile {
@@ -60,8 +61,7 @@ function capturedWriteSetSha256(files: readonly PromotionFile[]): string {
 }
 
 async function preparePromotionFiles(directory: string, sourceDirectory: string,
-  paths: readonly string[]): Promise<{ source: string; head: string; files: readonly PromotionFile[] }> {
-  const baseline = await readCandidateBaselineFiles(directory, paths);
+  paths: readonly string[], sourceInputs: TaskSourceInputs): Promise<{ source: string; head: string; files: readonly PromotionFile[] }> {
   const files: PromotionFile[] = [];
   let sourceRoot = "";
   let sourceHead = "";
@@ -70,11 +70,11 @@ async function preparePromotionFiles(directory: string, sourceDirectory: string,
     sourceRoot ||= source.source;
     sourceHead ||= source.head;
     if (source.source !== sourceRoot || source.head !== sourceHead) throw new Error("Promotion source changed");
-    const original = baseline.files[path];
+    const original = sourceInputs[path];
     if (original === undefined) throw new Error("Promotion baseline unavailable");
     const target = join(source.source, path);
     const before = await capture(target);
-    if (!before.bytes.equals(Buffer.from(original))) throw new Error("Source file changed");
+    if (hash(before.bytes) !== original.sha256 || before.mode !== original.mode) throw new Error("Source file changed");
     files.push({ path, target, before, replacement: await capture(join(directory, "repo", path)),
       temporary: join(dirname(target), ".tesota-promotion-" + randomUUID() + ".tmp") });
   }
@@ -118,6 +118,16 @@ function failedPromotionState(sourceWriteStarted: boolean, applied: readonly str
   return applied.length === 0 ? "application_unconfirmed" : "partially_applied";
 }
 
+function acceptedSourceInputs(review: TaskReview, task: Awaited<ReturnType<typeof inspectCandidateTask>>,
+  reviewSha256: string): TaskSourceInputs {
+  if (!task.promotable || task.sourceInputs === null || review.reviewSha256 !== reviewSha256 || review.check.status !== "passed" ||
+      review.operatorDecision?.applicability !== "current" || review.operatorDecision.record.decision !== "accept" ||
+      hash(Buffer.from(JSON.stringify(task.sourceInputs))) !== review.check.sourceInputsSha256) {
+    throw new Error("Promotion requires the current accepted review and source binding");
+  }
+  return task.sourceInputs;
+}
+
 /** Explicit invocation grants this bounded write set; recovered acceptance alone grants nothing. */
 export async function promoteTask(directory: string, sourceDirectory: string, reviewSha256: string): Promise<{
   status: "applied";
@@ -133,11 +143,8 @@ export async function promoteTask(directory: string, sourceDirectory: string, re
     if (!/^[a-f0-9]{64}$/.test(reviewSha256)) throw new Error("Invalid review fingerprint");
     const review = await reviewTask(directory);
     const task = await inspectCandidateTask(review.directory);
-    const accepted = task.promotable && review.reviewSha256 === reviewSha256 && review.check.status === "passed" &&
-      review.operatorDecision?.applicability === "current" && review.operatorDecision.record.decision === "accept";
-    if (!accepted) throw new Error("Promotion requires the current accepted review");
-
-    const prepared = await preparePromotionFiles(review.directory, sourceDirectory, task.writeFiles);
+    const sourceInputs = acceptedSourceInputs(review, task, reviewSha256);
+    const prepared = await preparePromotionFiles(review.directory, sourceDirectory, task.writeFiles, sourceInputs);
     const { files } = prepared;
     fileCount = files.length;
     if (capturedWriteSetSha256(files) !== review.check.writeSetSha256) throw new Error("Candidate changed");

@@ -6,6 +6,8 @@ import { inspectCandidateCheckout, readCandidateBaselineFiles } from "./candidat
 import { validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
 import { checkRepositoryTypecheck, type RepositoryTypecheckResult } from "./repository-typecheck.js";
 import { TASK_CHECKS, TASK_KIND, TASK_LIMITS, taskRequestSchemas, type TaskOracleResult } from "./task-contract.js";
+import { captureTaskSourceInputs, matchesTaskBaseline, taskSourceInputsSchema, validateTaskSourceInputs,
+  type TaskSourceInputs } from "./task-source.js";
 
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 const baselineSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u);
@@ -20,11 +22,15 @@ const contractSchema = z.strictObject({
   effects: z.tuple([z.literal("read_candidate"), z.literal("replace_candidate_file"), z.literal("run_task_check")]),
   promotion: z.literal("allowed"),
 });
-const planSchema = z.strictObject({
-  format: z.literal("tesota-candidate-task"), version: z.literal(1), task: z.literal(TASK_KIND),
+const planShape = {
+  format: z.literal("tesota-candidate-task"), task: z.literal(TASK_KIND),
   definitionSha256: hashSchema, contract: contractSchema, baseline: baselineSchema,
   inputs: z.record(z.string(), hashSchema), grant: z.unknown(),
-});
+};
+const planSchema = z.discriminatedUnion("version", [
+  z.strictObject({ ...planShape, version: z.literal(1) }),
+  z.strictObject({ ...planShape, version: z.literal(2), sourceInputs: taskSourceInputsSchema }),
+]);
 type TaskPlan = z.infer<typeof planSchema>;
 type TaskFiles = Readonly<Record<string, string>>;
 
@@ -36,6 +42,7 @@ export interface CandidateTaskCheck extends TaskOracleResult {
   readonly provenance: "issued" | "recorded_untrusted";
   readonly baseline: string;
   readonly writeSetSha256: string;
+  readonly sourceInputsSha256: string | null;
   readonly typecheck: RepositoryTypecheckResult | null;
   readonly taskAcceptance: "not_evaluated";
 }
@@ -69,8 +76,17 @@ function instructionsFor(grant: ProposalRunGrant): string {
     "\nChange only the admitted files. The automatic checks establish scope integrity and TypeScript compilation, not outcome correctness.";
 }
 
-function definitionSha256(grant: ProposalRunGrant, contract: z.infer<typeof contractSchema>): string {
+function definitionSha256(grant: ProposalRunGrant, contract: z.infer<typeof contractSchema>,
+  binding?: Pick<Extract<TaskPlan, { version: 2 }>, "inputs" | "sourceInputs">): string {
+  if (binding !== undefined) {
+    return hash(JSON.stringify({ task: TASK_KIND, version: 2, grant, contract,
+      instructions: instructionsFor(grant), inputs: binding.inputs, sourceInputs: binding.sourceInputs }));
+  }
   return hash(JSON.stringify({ task: TASK_KIND, version: 1, grant, contract, instructions: instructionsFor(grant) }));
+}
+
+function sourceInputsSha256(plan: TaskPlan): string | null {
+  return plan.version === 2 ? hash(JSON.stringify(plan.sourceInputs)) : null;
 }
 
 async function readText(path: string): Promise<string> {
@@ -108,7 +124,8 @@ function validatePlan(value: unknown): { plan: TaskPlan; grant: ProposalRunGrant
   const plan = planSchema.parse(value);
   const grant = validateProposalRunGrant(plan.grant);
   const contract = contractFor(grant);
-  if (grant.baseline !== plan.baseline || plan.definitionSha256 !== definitionSha256(grant, contract) ||
+  if (grant.baseline !== plan.baseline || plan.definitionSha256 !== definitionSha256(grant, contract,
+    plan.version === 2 ? plan : undefined) ||
       JSON.stringify(plan.contract) !== JSON.stringify(contract) ||
       Object.keys(plan.inputs).length !== grant.readFiles.length ||
       !grant.readFiles.every((path) => plan.inputs[path] !== undefined)) throw new Error("Task plan invalid");
@@ -195,18 +212,24 @@ export class CandidateTask {
       throw new Error("Task requires the approved unchanged baseline");
     }
     const snapshot = await readCandidateBaselineFiles(directory, grant.readFiles);
-    const inputs: Record<string, string> = Object.fromEntries(grant.readFiles.map((path) => {
-      const content = snapshot.files[path];
-      if (content === undefined) throw new Error("Missing task input");
-      return [path, hash(content)];
-    }));
+    const initial: Record<string, string> = {};
+    const inputs: Record<string, string> = {};
+    for (const path of grant.readFiles) {
+      const baseline = snapshot.files[path];
+      const content = await readText(join(inspection.checkout, path));
+      if (baseline === undefined || !matchesTaskBaseline(hash(content), baseline)) throw new Error("Task input differs from baseline");
+      initial[path] = content;
+      inputs[path] = hash(content);
+    }
     const contract = contractFor(grant);
-    const plan = planSchema.parse({ format: "tesota-candidate-task", version: 1, task: TASK_KIND,
-      definitionSha256: definitionSha256(grant, contract), contract, baseline: grant.baseline, inputs, grant });
+    const sourceInputs = await captureTaskSourceInputs(directory, grant.source, grant.writeFiles, snapshot.files);
+    const plan = planSchema.parse({ format: "tesota-candidate-task", version: 2, task: TASK_KIND,
+      definitionSha256: definitionSha256(grant, contract, { inputs, sourceInputs }), contract, baseline: grant.baseline,
+      inputs, sourceInputs, grant });
     const file = await open(join(inspection.directory, "task.json"), "wx", 0o600);
     try { await file.writeFile(JSON.stringify(plan, null, 2) + "\n", "utf8"); await file.sync(); }
     finally { await file.close(); }
-    return new CandidateTask(inspection.directory, plan, grant, snapshot.files);
+    return new CandidateTask(inspection.directory, plan, grant, initial);
   }
 
   describe(): CandidateTaskDescription {
@@ -279,6 +302,7 @@ export class CandidateTask {
       return { ...checked.oracle, outcome: checked.outcome, settlement: checked.settlement,
         task: TASK_KIND, provenance: "issued", typecheck: checked.typecheck,
         baseline: this.#plan.baseline, writeSetSha256: taskWriteSetSha256(files, this.#grant.writeFiles),
+        sourceInputsSha256: sourceInputsSha256(this.#plan),
         taskAcceptance: "not_evaluated" as const };
     }, (check) => check.settlement === "unconfirmed");
     if (result.outcome === "operational_failed") this.close();
@@ -289,19 +313,28 @@ export class CandidateTask {
 async function loadCandidateTask(directory: string): Promise<{ plan: TaskPlan; grant: ProposalRunGrant; files: TaskFiles }> {
   const parsed = validatePlan(JSON.parse(await readText(join(directory, "task.json"))));
   const baseline = await readCandidateBaselineFiles(directory, parsed.grant.readFiles);
-  if (baseline.baseline !== parsed.plan.baseline || !parsed.grant.readFiles.every((path) =>
-    hash(baseline.files[path] ?? "") === parsed.plan.inputs[path])) throw new Error("Task baseline changed");
+  if (baseline.baseline !== parsed.plan.baseline || !parsed.grant.readFiles.every((path) => {
+    const content = baseline.files[path];
+    const digest = parsed.plan.inputs[path];
+    return content !== undefined && digest !== undefined && (parsed.plan.version === 2
+      ? matchesTaskBaseline(digest, content) : hash(content) === digest);
+  })) throw new Error("Task baseline changed");
+  if (parsed.plan.version === 2) {
+    validateTaskSourceInputs(parsed.plan.sourceInputs, parsed.grant.writeFiles, baseline.files);
+  }
   const snapshot = await observe(directory, parsed.plan, parsed.grant);
   return { ...parsed, files: snapshot.files };
 }
 
 export async function inspectCandidateTask(directory: string): Promise<{
-  task: typeof TASK_KIND; baseline: string; writeSetSha256: string; writeFiles: readonly string[]; promotable: true;
+  task: typeof TASK_KIND; baseline: string; writeSetSha256: string; writeFiles: readonly string[];
+  sourceInputs: TaskSourceInputs | null; promotable: boolean;
 }> {
   const loaded = await loadCandidateTask(directory);
   return { task: TASK_KIND, baseline: loaded.plan.baseline,
     writeSetSha256: taskWriteSetSha256(loaded.files, loaded.grant.writeFiles),
-    writeFiles: [...loaded.grant.writeFiles], promotable: true };
+    writeFiles: [...loaded.grant.writeFiles],
+    sourceInputs: loaded.plan.version === 2 ? loaded.plan.sourceInputs : null, promotable: loaded.plan.version === 2 };
 }
 
 /** Rechecking persisted evidence never reopens editing authority. */
@@ -311,5 +344,6 @@ export async function checkCandidateTask(directory: string, signal?: AbortSignal
   return { ...checked.oracle, outcome: checked.outcome, settlement: checked.settlement,
     task: TASK_KIND, typecheck: checked.typecheck,
     provenance: "recorded_untrusted", baseline: loaded.plan.baseline,
-    writeSetSha256: taskWriteSetSha256(loaded.files, loaded.grant.writeFiles), taskAcceptance: "not_evaluated" };
+    writeSetSha256: taskWriteSetSha256(loaded.files, loaded.grant.writeFiles),
+    sourceInputsSha256: sourceInputsSha256(loaded.plan), taskAcceptance: "not_evaluated" };
 }

@@ -175,3 +175,9 @@ currently:
 
 See the [roadmap](roadmap.md) for capability priorities and
 [qualification](qualification.md) for the evidence required to advance them.
+
+The narrow request-to-application flow has one successful prospective
+Windows/Docker case with explicit human acceptance. Its retained failures,
+behavioral checks and operator-reported external review are documented in the
+[qualification results](../experiments/supported-task/results.md). This is not
+a claim of representative reliability or live qualification on other platforms.

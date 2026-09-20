@@ -4,10 +4,10 @@ This document is the sole owner of Tesota's current product status and
 priorities. The roadmap advances user capabilities; internal mechanisms and
 qualification work are subordinate to those outcomes.
 
-Tesota's next proof is ordinary usefulness: a person opens the agent, describes
-worthwhile work and reaches an inspectable result without learning the internal
-lifecycle. Software development is the first proving ground, not the permanent
-product boundary.
+Tesota has demonstrated one bounded request-to-application flow on Windows with
+Docker. Its next product proof is useful correction without restarting the task.
+Software development is the first proving ground, not the permanent product
+boundary. One successful prospective case does not establish broad reliability.
 
 Broad, real coding capability is an intended product destination;
 verification-first behavior remains the identity and constraint. The roadmap
@@ -44,22 +44,29 @@ application settlement is unconfirmed, and it cannot accept a semantic revision
 such as “change this part” or resume an interrupted task. Its first prospective
 external corpus produced three pre-proposal discovery failures. A later
 fixed-route probe passed with a replacement account, and the Docker-backed
-TypeScript route completed a controlled live outcome matrix. External preflight
-then required a corrected final mount and memory policy, so that exact matrix
-must be refreshed. A successful, newly frozen prospective external task through
-the ordinary product flow also remains missing. Its latest fresh preflight was
-cancelled cleanly before compiler dispatch and exposed a remaining usability
-blocker: dependency preparation takes multiple minutes on the qualification
-filesystem. Subsequent inspection found that the bounded reader reserves its
-128 MiB per-file maximum for every dependency, including small files. The
-contribution of copying, hashing and filesystem behavior remains unmeasured.
+TypeScript route completed a controlled live outcome matrix. After correcting
+the final mount, memory policy and dependency reader, that matrix was refreshed
+against the current implementation. The reader now allocates by observed file
+size while retaining byte bounds, cancellation and complete snapshot checks.
+Three model-free external preflights passed in 75.0, 44.3 and 42.4 seconds;
+copying remains material. The [qualification record](../experiments/supported-task/results.md)
+retains phase measurements and their limits. The frozen external task reached
+the ordinary shell's review prompt with passing checks and one scoped edit.
+Human acceptance was recorded, but promotion rejected the clean CRLF source
+worktree because the then-current code compared those bytes with an LF committed
+blob. The source remained unchanged and the shell returned to a useful prompt.
+After source-byte binding was corrected, a distinct frozen task completed the
+ordinary flow with human acceptance and exact-byte application. Earlier failures
+remain part of the record.
 
 Historical experiments demonstrate mechanisms, not active product routes. See
 [experiments](../experiments/README.md) and [project history](history/README.md).
 
 ## Milestone 1 — Complete a small repository change from one conversation
 
-**Status: active.**
+**Status: qualification complete for the bounded Windows/Docker scope;
+delivery through PR #135.** Required current-head CI and maintainer merge remain
+delivery gates, not implied by this qualification record.
 
 A user can:
 
@@ -78,13 +85,31 @@ Breadth is not part of this milestone.
 Already present are conversational discovery, approval, isolated work, bounded
 diagnostic-driven edits, exact-result checks, diff review, guarded application,
 ordinary-path continuation after known settlement and fail-closed termination
-when settlement is uncertain. Remaining work is a refreshed controlled live
-TypeScript-profile matrix for the final Windows/Docker command and prospective
-successful evidence on the newly frozen external task. The external task must
-not be attempted again until the dependency reader is corrected and phase
-measurements show that preflight cost is usable without weakening input binding
-or cancellation semantics. The existing Docker profile remains the frozen
-Milestone 1 environment. Qualifying an OS-sandboxed local default is the next
+when settlement is uncertain. The bounded reader repair, measured preflight and
+refreshed Windows/Docker profile matrix are complete. Version 2 task plans now
+bind admitted source worktree bytes separately from committed blob bytes.
+A controlled Windows/Docker regression applied exact accepted bytes over a
+clean CRLF source without executing repository-defined filters. Regression
+tests retain exact source-drift and stale-acceptance rejection. Legacy plans
+without that admission binding remain inspectable but cannot be promoted.
+The failed fourth follow-up is retained. A later user-requested retry applied
+the known absent-limits fix; it remains separate diagnostic evidence.
+The distinct, prospectively frozen fifth follow-up then passed the fixed
+checks and its 18-case behavioral oracle. The human accepted its exact result,
+the ordinary shell applied only `src/http.ts`, and the applied bytes matched
+the accepted candidate before the shell returned to a useful prompt.
+
+An anonymous external review is recorded as favorable based on the user's
+report, with no findings reported. The user explicitly confirmed coverage of
+the final local changes and authorized the closure process. This is
+operator-attested review applicability, not an independently inspected report
+or a formal GitHub approval. The evidence record binds the reviewed local
+implementation by file hashes; no reviewer identity or reviewed commit is
+invented. Delivery follows the later protocol's one maintainer-coordinated
+review, not the original corpus's superseded three-review arrangement.
+
+The existing Docker profile remains the frozen Milestone 1 environment.
+Qualifying an OS-sandboxed local default is the next
 separately owned execution-environment increment described by
 [decision 007](decisions/007-execution-environments.md), not a silent change to
 this milestone.
@@ -93,6 +118,8 @@ Completion evidence is defined in [qualification](qualification.md). Passing
 component checks alone does not complete the milestone.
 
 ## Milestone 2 — Correct the work without restarting
+
+**Status: next; not yet implemented or qualified.**
 
 A user can continue the same task when a check finds a problem or when the user
 says, for example, “change this part.” Tesota preserves useful task context,
