@@ -39,8 +39,10 @@ including cancellation or a lifecycle failure before uncertain effects, the
 shell returns to a new prompt. Unconfirmed execution or application settlement
 ends the session. After one settled passing result, a user may request one
 bounded semantic correction in the same task; this mechanism is implemented but
-not yet prospectively qualified. The [roadmap](docs/roadmap.md) defines the
-remaining user-facing gaps.
+not yet prospectively qualified. The [roadmap](docs/roadmap.md) prioritizes a
+continuous source-and-test workflow that reuses more of Pi's session capabilities.
+That broader flow is planned; the supported behavior remains the bounded task
+described here.
 
 ## Why verification-first
 

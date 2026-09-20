@@ -45,7 +45,7 @@ mock.module("@earendil-works/pi-ai", () => ({
       return undefined;
     };
     models.streamSimple = (_model, context, options) => {
-      if (!authenticated || context.tools.length !== 0 || ++calls > 2) throw new Error("Invalid probe dispatch");
+      if (!authenticated || pi.getCurrentTools(context.messages).length !== 0 || ++calls > 2) throw new Error("Invalid probe dispatch");
       const events = pi.createAssistantMessageEventStream();
       const tool = scenario === (calls === 1 ? "normal_tool" : "abort_tool");
       const message = pi.fauxAssistantMessage(tool ? pi.fauxToolCall("unavailable", {}) :

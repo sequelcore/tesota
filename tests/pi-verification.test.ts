@@ -1,7 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
-import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall,
+import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools,
   type Context, type FauxResponseStep } from "@earendil-works/pi-ai";
 import { PI_VERIFICATION_LIMITS, runPiSession, type PiSessionResult } from "../src/integrations/pi.js";
 import { configuredOxlint, runOxlint } from "../src/verification/oxlint.js";
@@ -21,8 +21,8 @@ function provider(steps: FauxResponseStep[]) {
   const stream = vi.fn<typeof faux.provider.streamSimple>((model, context, options) => {
     contexts.push({ ...context, messages: structuredClone(context.messages) });
     expect(options).toMatchObject({ maxRetries: 0, transport: "sse", cacheRetention: "none" });
-    expect(context.tools?.map((tool) => tool.name)).toEqual(["tesota_verify"]);
-    expect(context.tools?.[0]?.parameters).toMatchObject({ properties: { input: { const: VERIFICATION_FIXTURE } } });
+    expect(getCurrentTools(context.messages).map((tool) => tool.name)).toEqual(["tesota_verify"]);
+    expect(getCurrentTools(context.messages)[0]?.parameters).toMatchObject({ properties: { input: { const: VERIFICATION_FIXTURE } } });
     return faux.provider.streamSimple(model, context, options);
   });
   return { model: faux.getModel(), stream, contexts };

@@ -30,7 +30,35 @@ Synthetic tests establish deterministic contracts. Live qualification
 establishes only the exercised environment and route. Prospective task results
 establish usefulness only for the selected corpus and evaluation method.
 
-## Milestone 1 evidence
+## Qualifying an increment
+
+Select the capability and new effects under test, then apply the relevant
+requirements below. These sections describe evidence obligations, not a serial
+roadmap. Do not claim full recovery or broad coding support from one successful
+session. Preserve the earlier numbered milestone records as historical evidence.
+
+For a Pi dependency or session migration, first preserve the existing supported
+behavior through `bun run check` and focused integration checks. Assess new
+resources, tools or environments separately; package compatibility does not
+qualify new effects.
+
+## Continuous conversation and context
+
+Exercise multiple related requests, user feedback and cancellation during work.
+When compaction or transcript restoration is supported, demonstrate that useful
+context survives and the visible result/check/application state is reconstructed
+from canonical records. Verify that restored messages, resource declarations
+and old tool closures cannot restore expired authority. Replacing a session must
+not lose event subscriptions or bypass cumulative budgets, including any added
+model calls used for context management.
+
+Explicit resource selection must exclude unadmitted configuration, extensions
+and tool provisioning. A session-completion event alone cannot establish that
+tool effects or subprocess descendants have settled.
+
+## Complete change and application
+
+This retains the outcome requirements used for the historical Milestone 1.
 
 To qualify one complete small repository change from one conversation:
 
@@ -51,7 +79,29 @@ source-drift cases on every supported platform and execution environment. Each
 record must include setup friction, unsupported controls and whether the
 evidence producer remained protected from the workload it observed.
 
-## Milestone 2 evidence
+## Source and regression tests
+
+Choose the task and expected behavior before execution. For a supported bug fix,
+show that the regression test detects the original defect and passes against the
+corrected result. Review that the test expresses the requested behavior and that
+existing required assertions have not been removed or weakened to obtain a pass.
+This behavioral oracle is separate from the agent's claim of completion.
+
+Test edits and any admitted file creation must be covered through proposal,
+scope, candidate changes, check inputs, review and application. Bind the exact
+tests, configuration, relevant dependencies and execution conditions. Editing a
+test must not silently change the authorized check selection or configuration.
+Missing tests, skipped required cases, incomplete reports and fatal exits cannot
+become success. Recheck after correction and reject stale acceptance or source
+drift at application.
+
+Use the actual external repository configuration; an unsupported setup is a
+recorded refusal or a separately implemented profile expansion. Extending Vitest
+does not qualify arbitrary test frameworks or repository commands.
+
+## Correction
+
+This retains the outcome requirements of the historical Milestone 2.
 
 Correction qualification must separately exercise:
 
@@ -65,7 +115,9 @@ grant or authoritative check definition. Evaluation compares accepted outcomes,
 residual defects, intervention, elapsed time and unsuccessful correction cost
 with the no-correction baseline.
 
-## Milestone 3 evidence
+## Interruption recovery
+
+This retains the outcome requirements of the historical Milestone 3.
 
 Recovery qualification restarts the product at every durable boundary. It
 includes work interrupted before and after a result, check persistence, wrong-

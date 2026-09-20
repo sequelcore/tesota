@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
-import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall, type AssistantMessage } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools, type AssistantMessage } from "@earendil-works/pi-ai";
 import { browserOnlyAuth, LIVE_CODEX_EXPECTED_TOKEN, LIVE_LIMITS, liveProbePasses,
   classifyLiveOAuthFailure, observeLiveBrowserLaunch, runLiveOAuthLogin, runLiveCodexTurn,
   type LiveCodexExperimentResult, type LiveCodexTurnResult } from "../src/integrations/pi-live.js";
@@ -24,7 +24,7 @@ function controlled(abortProbe = false) {
   const started = new Promise<AbortSignal>((resolve) => { opened = resolve; });
   let calls = 0;
   const invoke = vi.fn<StreamFn>((_model, context, options) => {
-    expect(context.tools).toEqual([]);
+    expect(getCurrentTools(context.messages)).toEqual([]);
     expect(options).toMatchObject({ maxRetries: 0, transport: "sse", maxTokens: 64 });
     if (options?.signal === undefined) throw new Error("Missing Pi signal");
     opened(options.signal);

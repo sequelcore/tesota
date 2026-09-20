@@ -15,8 +15,8 @@ second OAuth protocol implementation. Tesota supplies the app-owned storage
 adapter required by Pi's public credential contract.
 
 The bootstrap selected `@earendil-works/pi-agent-core` and
-`@earendil-works/pi-ai` at 0.85.1. Tesota now also uses the public
-`@earendil-works/pi-coding-agent` SDK at 0.85.1 as a bounded host; it does not
+`@earendil-works/pi-ai` at 0.85.1. Tesota also includes the public
+`@earendil-works/pi-coding-agent` SDK as a bounded host adapter; it does not
 delegate candidate authority or acceptance to the application. The current selections are owned by
 [package.json](../../package.json) and [bun.lock](../../bun.lock). The full Pi
 coding-agent SDK is embedded only behind [the Tesota host](../architecture.md);
