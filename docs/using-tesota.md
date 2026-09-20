@@ -22,9 +22,21 @@ bun link
 
 The current change workflow also requires Git and Docker Desktop on Windows,
 the pinned verification image already present locally and a matching TypeScript
-installation in the target repository. It does not install dependencies or pull
-an image while working. Docker belongs to the current protected TypeScript
-route; it is not intended as a permanent prerequisite for every Tesota task.
+closure in the target repository. Prepare that closure in an
+independent checkout with the repository's committed lockfile:
+
+```powershell
+bun install --frozen-lockfile --ignore-scripts --os=linux --cpu=x64
+```
+
+The resulting `node_modules` must contain `typescript` at the exact declared
+version. If that installed package declares `@typescript/typescript-linux-x64`,
+the closure must contain that package at the same version. Portable JavaScript
+TypeScript releases have no platform package; platform-specific releases must
+be prepared for Linux/x64 and may not run repository tools directly on the
+Windows host. Tesota does not install dependencies or pull an image while
+working. Docker belongs to the current protected TypeScript route; it is not
+intended as a permanent prerequisite for every Tesota task.
 
 Authenticate the current Codex model route once:
 
@@ -97,20 +109,28 @@ The review should answer four separate questions:
 3. What remains unestablished or needs human judgment?
 4. Has the result been applied to the working repository?
 
-Today Tesota shows the exact diff, recorded check outcomes and the limits of
-the current TypeScript profile. That profile can establish that the admitted
-TypeScript invocation passed for the bound result and conditions. It does not
-establish the requested runtime behavior, a complete integration suite or
-universal correctness.
+Today Tesota lists the changed files, names scope integrity and the contained
+TypeScript profile separately, states that the candidate has not yet been
+applied and keeps requested behavior, completion conditions and the full
+integration suite explicitly unestablished. It then shows the escaped exact
+diff. The terminal outcome distinguishes applied, not applied and unconfirmed
+application.
+
+The TypeScript profile can establish that the admitted invocation passed for
+the bound result and conditions. It does not establish requested behavior,
+completion conditions, a complete integration suite or universal correctness.
 
 Accepting a result records a human decision. Application is a separate,
 conflict-checked effect. Rejecting it retains the evidence without changing the
 source repository.
 
-The current change flow ends after that decision. It does not yet accept
-semantic feedback such as “keep the fix but change this part,” and it does not
-return to a new conversational prompt. Those are roadmap capabilities, not
-current behavior.
+After any known-settled outcome, including scope decline, cancellation, failed
+execution, candidate rejection or confirmed application, Tesota reports the
+retained outcome and returns to a new prompt. Unconfirmed execution or
+application settlement ends the session so that a new request cannot conceal
+uncertain effects.
+Tesota does not yet accept semantic feedback such as “keep the fix but change
+this part” within the same task. That is a later roadmap capability.
 
 ## Inspect or recover work
 
@@ -147,7 +167,7 @@ currently:
 - make arbitrary repository changes;
 - run model-selected shell commands or install dependencies;
 - edit tests or create, delete or rename files in the supported task;
-- continue a change conversation after review;
+- continue the same task with semantic feedback after review;
 - accept user-requested semantic revision of a result;
 - resume an interrupted task; or
 - claim that the live end-to-end workflow is qualified across representative
@@ -155,3 +175,9 @@ currently:
 
 See the [roadmap](roadmap.md) for capability priorities and
 [qualification](qualification.md) for the evidence required to advance them.
+
+The narrow request-to-application flow has one successful prospective
+Windows/Docker case with explicit human acceptance. Its retained failures,
+behavioral checks and operator-reported external review are documented in the
+[qualification results](../experiments/supported-task/results.md). This is not
+a claim of representative reliability or live qualification on other platforms.

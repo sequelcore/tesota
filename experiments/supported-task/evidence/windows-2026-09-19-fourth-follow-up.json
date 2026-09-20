@@ -1,0 +1,76 @@
+{
+  "format": "tesota-supported-task-prospective-observation",
+  "version": 1,
+  "provenance": "sanitized_projection_of_local_outcome_and_attempt_journals",
+  "protocol": "../follow-up-4.md",
+  "baseline": "862beb481157bfd5f53893bfea612610b23b29a0",
+  "implementation": {
+    "src/repository-check-input.ts": "f25f1d48e28155474e43463259332cd751c6934acb005270cef622de8cd974ee",
+    "src/repository-typecheck.ts": "d8f8493a6bbeb96559c0fd80c964b789a867d9de1fc0202040f8cfe5b16de45a",
+    "src/repository-typecheck-process.ts": "2f874e7dfc2fcfeef9e09ba35d52b1d1163fafb3cdfe65d21b4462029c9a73e0",
+    "src/repository-container-process.ts": "7afb0d3d98ae5a6d0157597e57c9c4cd0ad4a0f072bff16707b96ff84b06426e",
+    "src/command-isolation.ts": "b05e47ca9f2b3c3b0cff0631befca4f91bdee8ccf4a7d09e85930507da76a777"
+  },
+  "surface": "ordinary Tesota Shell, driven through a terminal by the implementing assistant",
+  "scopeApproval": "entered by the assistant under the user's instruction to proceed",
+  "state": "promotion_not_applied",
+  "humanDecision": "accept",
+  "application": "not_applied",
+  "elapsed": {
+    "executionMs": 153016,
+    "approvalPromptToReviewReadyMs": 246264,
+    "executionStartToReviewReadyMs": 232595,
+    "totalMs": 602167,
+    "promotionMs": 78904
+  },
+  "observations": {
+    "modelInvocations": 5,
+    "toolCalls": 4,
+    "edits": 1,
+    "firstCheck": "check_failed: no admitted file changed",
+    "runtimeCorrectionCounter": 1,
+    "semanticRevision": "none observed",
+    "diagnosticRepair": "not established; the sole edit implemented the original request",
+    "tokenUsage": "unavailable",
+    "cost": "unavailable"
+  },
+  "result": {
+    "changedFiles": [
+      "src/backends.ts"
+    ],
+    "writeSetSha256": "90c698cb939e7014e74f37a25eb2d844a7ebdc56c59fdaa9e381b074165eeaf4",
+    "reviewSha256": "b576473b7b5bf22056be9c987c6e85be7e1428ba638802afa2b568dec9a610df",
+    "typecheck": "passed",
+    "process": "exited",
+    "container": "absent",
+    "settlement": "observed",
+    "sourceChanged": false,
+    "returnedToUsefulPrompt": true
+  },
+  "assessment": {
+    "reviewer": "implementing assistant, separate from the product task model",
+    "method": "static inspection of the exact diff, schema and probeLimits caller",
+    "finding": "The guard returns null when both parsed supported limits are absent; the existing positive mapping and null-preserving caller remain unchanged.",
+    "limits": [
+      "No independent executable behavioral test or full integration suite",
+      "Not an independent delivery review"
+    ]
+  },
+  "promotionDiagnosis": {
+    "provenance": "read_only_reconstruction_of_the_promotion_preconditions",
+    "promotable": true,
+    "sourceIdentityPassed": true,
+    "sourceRegular": true,
+    "sourceLinks": 1,
+    "redirected": false,
+    "sourceBytes": 12768,
+    "baselineBytes": 12395,
+    "sourceSha256": "a7338bc6c3cc3a0b38e71e086e82b68b77435201f9c40c8340d99a2d17ed2ba7",
+    "baselineSha256": "c3e57f0e846aade99caa3ea7c2cba9cd7b79d3a777646cbc3a1ca57fc50fd5c3",
+    "rawEqual": false,
+    "equalAfterCrlfToLf": true,
+    "cause": "The clean source worktree uses CRLF while its committed baseline uses LF; preparePromotionFiles compares raw bytes and rejects them as Source file changed.",
+    "promotionJournalCreated": false,
+    "sourceWriteAttempted": false
+  }
+}

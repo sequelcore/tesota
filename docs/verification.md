@@ -7,7 +7,18 @@ profile is not a universal “verified” state and does not authorize acceptanc
 or application. See [using Tesota](using-tesota.md) for the user-facing
 workflow; this page defines the technical profiles and evidence behavior.
 
-Build first with `bun run build`, then run from the repository root:
+## Current check and review paths
+
+The current integrations answer different questions and do not share authority.
+Use the maintained section linked from each row for the complete contract.
+
+| Integration | Purpose | Prerequisites | Command | Output | Evidence subject | Current participation and limits |
+| --- | --- | --- | --- | --- | --- | --- |
+| [Oxlint `oxlint-static/v3`](#oxlint-single-file-static-profile) | Run Tesota's fixed nine-rule static check against one JavaScript or TypeScript file. | Build the CLI; use the linked `tesota` command or the compiled CLI from this checkout. The repository install supplies Oxlint 1.82.0. | `tesota verify <file.ts\|file.js>` | One JSON result on stdout; exit 0 for `passed`, 1 for `check_failed`, 2 for `execution_failed`. | A byte-exact snapshot of the selected file plus the fixed profile, execution limits and observed verifier installation. | Standalone CLI path. It is not the repository TypeScript check used by the current source task, does not establish runtime behavior and is not a sandbox. |
+| [LemmaScript and Dafny](#standalone-lemmascript-and-dafny-formal-check) | Prove the annotated invocation-budget predicate used by Tesota. | Repository dependencies install LemmaScript 0.6.1; Dafny must also be installed and available to LemmaScript. | `bun run formal:check` | LemmaScript generation/additions-only validation and Dafny verification output; this is not a Tesota evidence record. | `canAdmitInvocation` and its three annotated postconditions under LemmaScript's TypeScript-to-Dafny model. | Standalone contributor check. It is not part of `bun run check`, is not candidate-bound and does not establish whole-program correctness or confinement. |
+| [Gentle AI](#gentle-ai-review-provider) | Collect one currently offered independent reviewer slot for an existing candidate and lineage. | Existing candidate; absolute stable Gentle AI 2.8.0 executable with synced provider assets; an existing lineage whose status offers the reviewer slot; saved Codex login for Tesota's fixed reviewer route. | `tesota task run gentle-review <candidate> <gentle-ai-executable> <lineage-id>` | JSON relay result: `submitted` or `provider_transition_required`, plus provider or closure evidence when available. | The provider-bound candidate target, lineage, authority revision and selected review lens. | Optional review provider, not an automatic step in the supported task flow. The command does not start a lineage, acknowledge a closure, accept a candidate or promote source bytes; provider approval is not proof of correctness. |
+
+For the standalone Oxlint path, build first with `bun run build`, then run from the repository root:
 
 ```sh
 bun --no-env-file dist/cli.js verify src/cli.ts
@@ -26,11 +37,16 @@ profile to host-native execution. The architectural rationale is in
 check profile. Repository ownership is deliberately declarative: the committed
 package must name the exact `tsc --noEmit -p tsconfig.json` script, but Tesota
 does not execute that string. It invokes the observed matching TypeScript
-installation with its own fixed argv and no shell.
+installation with its own fixed argv and no shell. On the supported Windows
+host and Linux-container route, admission also requires
+`@typescript/typescript-linux-x64` at the same exact version when the installed
+TypeScript package declares that platform dependency. Portable JavaScript
+releases require no platform package; a platform-specific Windows-only install
+is rejected before approval.
 
 Before approval, the command displays exact candidate content identity,
 configuration and lockfile digests, TypeScript version and a digest of the
-complete mounted dependency installation,
+complete source dependency installation,
 Docker executable identity, pinned image, isolation-policy identity and resource
 limits. For the standalone command, approval is consumed for that invocation and
 is never reconstructed from output or disk state. The approved
@@ -43,17 +59,28 @@ The profile rejects candidate changes to `package.json`, `tsconfig.json` or
 project references and compiler plugins; these would introduce additional
 inputs or executable policy that this profile does not yet bind.
 
-The candidate and source `node_modules` mounts are read-only. The container has
-no network, added capabilities or mounted host credentials, uses a read-only
-root filesystem and starts from the pinned image without pulling. Output is
-bounded to 256 KiB and execution to 30 seconds. Timeout and cancellation request
-container removal; the result remains `unconfirmed` if Docker absence or client
-settlement cannot be observed.
+After approval, Tesota copies the approved dependency installation into a
+bounded candidate-owned snapshot, rehashes it against the approved digest and
+mounts that snapshot as read-only `/workspace/node_modules`, beside the
+read-only candidate mount at `/workspace/repository`. Keeping the mounts as
+siblings lets Docker create both mountpoints without writing inside the
+candidate while preserving TypeScript's ancestor-based module lookup.
+Regular hardlinks in a Bun
+installation are accepted as source inputs, but the mounted snapshot contains
+only independently copied regular files. The candidate mount is also read-only.
+The container has no network, added capabilities or mounted host credentials,
+uses a read-only root filesystem and starts from the pinned image without
+pulling. The fixed Node process receives a 384 MiB old-space ceiling inside the
+512 MiB container limit. Output is bounded to 256 KiB and execution to 60 seconds. Timeout and
+cancellation request container removal; the result remains `unconfirmed` if
+Docker absence or client settlement cannot be observed.
 
-Dependency observation accepts at most 100,000 regular entries and 512 MiB in
-total, with no symbolic links or redirected package directories. This is a
-deliberately conservative whole-installation binding for the first consumer,
-not a claim that every future ecosystem should use the same limit.
+Dependency observation and snapshotting accept at most 100,000 regular entries,
+128 MiB per file and 512 MiB in total, with no symbolic links or redirected
+package directories. A snapshot is removed only after both process exit and
+container absence are observed; uncertain settlement retains it for recovery.
+This is a deliberately conservative whole-installation binding for the first
+consumer, not a claim that every future ecosystem should use the same limit.
 
 The typed outcomes are `passed`, `check_failed`, `unavailable`, `timed_out`,
 `cancelled` and `execution_failed`. Exit zero is a pass only with empty compiler
@@ -135,6 +162,14 @@ client exit and container absence. This qualifies that bounded positive path;
 it does not qualify dependency provenance, every failure/cleanup path, another
 platform or composition into the task lifecycle. Deterministic tests remain the
 evidence for admission, result interpretation and injected settlement cases.
+
+## Oxlint single-file static profile
+
+`bun run lint` and `tesota verify` are different surfaces. `bun run lint` uses
+Tesota's repository lint configuration across `src` and `tests` as a contributor
+gate. `tesota verify <file.ts|file.js>` runs the fixed single-file
+`oxlint-static/v3` profile described here and does not reuse the repository lint
+configuration.
 
 The CLI and tests use `runOxlint` from `src/verification/oxlint.ts`. The trusted
 application configuration selects the absolute runtime and installed Oxlint
@@ -260,6 +295,79 @@ and `oxlint-static/v2` records remain structurally recoverable, but they are
 stale against the current `oxlint-static/v3` profile and cannot supply current
 verification. The storage API is explicit; the CLI prints the verification
 result without saving it through this store.
+
+## Standalone LemmaScript and Dafny formal check
+
+`bun run formal:check` runs the package script
+`lsc check --backend=dafny src/verification/invocation-admission.ts`.
+The repository pins LemmaScript 0.6.1 and Node 24.15.0. LemmaScript's
+[tagged 0.6.1 setup documentation](https://github.com/midspiral/LemmaScript/blob/v0.6.1/README.md#setup)
+requires Dafny 4.x or later for this backend. Tesota does not install or pin a
+Dafny executable, so a contributor must make a compatible Dafny installation
+available to the `lsc` process. This command is deliberately separate from
+`bun run check`.
+
+The source predicate is
+[`canAdmitInvocation`](../src/verification/invocation-admission.ts). Its
+annotations require these three properties:
+
+- negative `used` or non-positive `limit` implies `deny`;
+- `used >= limit` implies `deny`; and
+- non-negative `used`, positive `limit` and `used < limit` imply `allow`.
+
+For the Dafny backend, LemmaScript 0.6.1 generates
+[`invocation-admission.dfy.gen`](../src/verification/invocation-admission.dfy.gen),
+checks that the maintained
+[`invocation-admission.dfy`](../src/verification/invocation-admission.dfy)
+contains only permitted proof additions relative to generated code, and invokes
+Dafny verification. The current maintained Dafny file is byte-for-byte the same
+as the generated file; there are no handwritten proof additions. The command's
+tool output and generated files are contributor evidence only. It does not emit
+a Tesota candidate-bound verification record.
+
+The proof is bounded by the translation model. LemmaScript maps TypeScript
+`number` to mathematical Dafny `int` for this source, so the proof is not a
+claim about every IEEE-754 JavaScript number behavior. It also maps
+`InvocationPhase` to a closed Dafny datatype containing only `inference` and
+`verification`; therefore the proof does not establish the runtime fallback
+branch for an invalid phase value outside that TypeScript type. Proving these
+postconditions does not establish whole-program correctness, user intent,
+operating-system isolation or that arbitrary task candidates receive formal
+verification.
+
+## Gentle AI review provider
+
+Gentle AI is an optional **review provider**, not a mathematical verifier.
+The operational command is documented in
+[development](development.md#toolchain-and-checks):
+
+`tesota task run gentle-review <candidate> <gentle-ai-executable> <lineage-id>`
+
+The command requires an existing candidate and provider lineage. The executable
+path must be absolute and identify the stable Gentle AI 2.8.0 binary; after a
+provider upgrade, run the provider-owned `gentle-ai sync` operation before
+review so its managed assets match that binary. Tesota negotiates review
+capabilities protocol 2.5, checks the executable's locally calculated SHA-256
+against the provider self-report, requires STATUS v7 with `compact-v2`
+authority, and verifies that the offered candidate target, lineage and reviewer
+slot still match before submitting a result.
+
+When a reviewer slot is offered, Tesota materializes the provider-owned prompt,
+runs tool-free Codex inference through Tesota's saved login and fixed reviewer
+route, then re-reads provider status before submission. The CLI prints a JSON
+relay result. `submitted` means the offered reviewer result was submitted;
+`provider_transition_required` means the current provider state offers no
+reviewer slot for this command. When the provider returns a closure, Tesota can
+project identity-bound reviewer findings or escalation evidence for inspection.
+
+This command is intentionally only one operation in the provider lifecycle. It
+does **not** create or start a lineage, perform provider START consent, run an
+offered acknowledgement, record Tesota's human accept/reject decision or
+promote source bytes. A Gentle closure state of `approved` is provider review
+evidence, not Tesota acceptance, application authority or proof of correctness.
+The retained [Gentle experiments](../experiments/gentle/README.md) are
+historical qualification evidence; they do not replace these current usage
+instructions or the [roadmap](roadmap.md) as the owner of product status.
 
 See [architecture](architecture.md) for ownership and [experiments](../experiments/README.md)
 for recorded validation.

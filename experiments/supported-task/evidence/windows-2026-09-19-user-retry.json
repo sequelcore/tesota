@@ -1,0 +1,74 @@
+{
+  "format": "tesota-supported-task-user-requested-retry",
+  "version": 1,
+  "qualification": "diagnostic-only; known task rerun at explicit user request, not prospective evidence",
+  "priorObservation": "windows-2026-09-19-fourth-follow-up.json",
+  "events": [
+    {
+      "format": "tesota-task-outcome",
+      "version": 2,
+      "state": "awaiting_scope_approval",
+      "proposalId": "d598681e-ea94-470c-add2-33f010273c37",
+      "proposalSha256": "4b4e5a31e0fe2b44b07b7ab78d688f3bcfc6f19f2d0c87e05b5937915ccbe993",
+      "baseline": "862beb481157bfd5f53893bfea612610b23b29a0",
+      "timestamp": "2026-09-20T01:47:06.010Z",
+      "authority": "none"
+    },
+    {
+      "state": "execution_started",
+      "timestamp": "2026-09-20T01:47:47.199Z"
+    },
+    {
+      "state": "execution_finished",
+      "timestamp": "2026-09-20T01:50:28.486Z",
+      "result": {
+        "status": "passed",
+        "accounting": {
+          "elapsedMs": 160356,
+          "firstCheck": "check_failed",
+          "correctionAttempts": 1,
+          "modelInvocations": 5,
+          "toolCalls": 4,
+          "edits": 1,
+          "consumption": {
+            "status": "partial",
+            "tokenUsage": "unavailable",
+            "cost": "unavailable"
+          }
+        }
+      }
+    },
+    {
+      "state": "review_ready",
+      "timestamp": "2026-09-20T01:51:47.050Z",
+      "reviewSha256": "97c27389ea14a3e0a620645643deddccf0948c0db76083362e4ad4fafa0d72b5",
+      "checkStatus": "passed"
+    },
+    {
+      "state": "decision_recorded",
+      "timestamp": "2026-09-20T02:01:47.044Z",
+      "decision": "accept",
+      "reviewSha256": "97c27389ea14a3e0a620645643deddccf0948c0db76083362e4ad4fafa0d72b5"
+    },
+    {
+      "state": "promotion_started",
+      "timestamp": "2026-09-20T02:01:47.046Z",
+      "reviewSha256": "97c27389ea14a3e0a620645643deddccf0948c0db76083362e4ad4fafa0d72b5"
+    },
+    {
+      "state": "finished",
+      "timestamp": "2026-09-20T02:03:52.160Z",
+      "outcome": "promoted",
+      "files": [
+        {
+          "path": "src/backends.ts",
+          "sourceSha256": "01e8afc5456abb5207a7612206190b9654f9c601ad2dfe91b7b46b446162bca2"
+        }
+      ]
+    }
+  ],
+  "exactAcceptedBytesConfirmed": true,
+  "returnedToUsefulPrompt": true,
+  "shellExitCode": 0,
+  "assessment": "Only src/backends.ts changed; no full integration or independent delivery review is claimed."
+}

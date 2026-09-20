@@ -15,8 +15,15 @@ Run commands from the repository root.
 | `bun run test` | Build, then run core and filesystem-heavy Vitest groups in isolated processes |
 | `bun run lint` | Check source and tests; no fixes, warnings rejected |
 | `bun run check` | Run the complete repository gate |
+| `bun run formal:check` | Run the standalone LemmaScript/Dafny proof for the invocation-admission predicate; requires external Dafny and is not part of `bun run check` |
 | `bun link` / `bun unlink` | Register or remove this checkout's global `tesota` development command |
 | `bun --no-env-file dist/cli.js isolation qualify` | Run the explicit live Windows isolation comparison; excluded from normal checks |
+
+The [verification reference](verification.md#current-check-and-review-paths) is the
+task-oriented map for Oxlint, the standalone LemmaScript/Dafny formal check and
+the optional Gentle review provider. It records each path's prerequisites,
+evidence subject, participation in the supported flow and limitations.
+`bun run check` does not invoke `formal:check` or a live review provider.
 
 The package-owned `tesota` binary targets `dist/cli.js` and runs through the
 pinned Bun runtime. Build before the first `bun link`; later `check` and `build`
@@ -46,7 +53,12 @@ model-controlled command: only the exact canonical declaration is accepted and
 Tesota invokes its fixed TypeScript argv inside the pinned, network-disabled,
 read-only container policy. This Windows development slice requires Docker
 Desktop, the pinned image already present locally and a matching TypeScript
-installation in the source repository. It performs no install or image pull.
+closure in the source repository. Provision it from the committed
+lockfile with `bun install --frozen-lockfile --ignore-scripts --os=linux
+--cpu=x64`; when TypeScript declares a platform package, the closure must
+include `@typescript/typescript-linux-x64` at the declared TypeScript version.
+Portable JavaScript TypeScript releases do not declare that package. Tesota
+performs no install or image pull.
 That Docker requirement belongs to the current profile, not every Tesota
 operation; [decision 007](decisions/007-execution-environments.md) owns the
 long-term execution-environment policy.
@@ -79,17 +91,21 @@ reported as unavailable because the current execution producer does not observe
 them. The outcome is evidence for inspection; it grants no execution, acceptance
 or promotion authority.
 `task run gentle-review <candidate> <gentle-ai-executable> <lineage-id>`
-collects one reviewer slot currently offered by Gentle. The executable path
-must be absolute and identify the stable Gentle AI 2.8.0 binary. After upgrading,
+collects one reviewer slot currently offered by Gentle. It requires an existing
+candidate and an existing provider lineage whose current status offers that
+slot; the command does not create or start a lineage. The executable path must
+be absolute and identify the stable Gentle AI 2.8.0 binary. After upgrading,
 run the provider-owned `gentle-ai sync` operation before review so its managed
 assets match the binary. Tesota negotiates capabilities protocol 2.5, verifies
 the executable's locally calculated SHA-256 against its self-report, requires
 the non-legacy features used by the qualified lifecycle and accepts only STATUS
-v7 with compact-v2 authority. Tesota preserves the provider's prompt and binding, runs tool-free
-Codex inference with the saved login, and submits only after the same binding
-is observed again. Run the command again for the next offered slot. Other
-provider transitions, including START consent and acknowledgement, remain
-explicit lifecycle operations; review never authorizes promotion.
+v7 with compact-v2 authority. Tesota preserves the provider's prompt and binding,
+runs tool-free Codex inference with the saved login, and submits only after the
+same binding is observed again. Run the command again for the next offered
+slot. START consent, acknowledgement, Tesota human acceptance and source
+promotion remain separate operations; review never authorizes promotion. See
+[Gentle AI review provider](verification.md#gentle-ai-review-provider) for the
+evidence and authority boundary.
 An approved terminal response returns its identity-bound per-lens reviewer
 evidence; an escalated status or closure returns the provider's canonical cause,
 finding IDs and available refuter outcomes. These are inspectable evidence, not
@@ -109,8 +125,9 @@ provide offline review and local decision recording; neither promotes code.
 `task promote <directory> <review-sha256>` explicitly applies an accepted
 admitted write set from the original source root
 after checking for conflicting source work.
-`verify <file.ts|file.js>` runs the [bounded check](verification.md); unsupported
-arguments print a diagnostic on stderr and exit 2.
+`verify <file.ts|file.js>` runs the
+[Oxlint single-file static profile](verification.md#oxlint-single-file-static-profile);
+unsupported arguments print a diagnostic on stderr and exit 2.
 
 Tests exercise real Oxlint, controlled Pi boundaries and compiled CLI processes.
 Use `test:fast` while changing pure orchestration or contracts, then run the

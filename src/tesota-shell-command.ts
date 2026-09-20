@@ -6,27 +6,34 @@ import type { ConversationInput } from "./conversation-turn-contract.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { runTesotaShell } from "./tesota-shell.js";
 import { createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
-import { startTask, type TaskStartProgress } from "./task-start.js";
+import { startTask, type TaskStartProgress, type TaskStartResult } from "./task-start.js";
 import { runProposalTask } from "./task-run.js";
 
 export interface TesotaShellCommandDependencies {
   readonly surface: TesotaShellTerminal;
   readonly discover: (input: ConversationInput) => Promise<ConversationCommandResult>;
-  readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void) => Promise<number>;
+  readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void) => Promise<TaskStartResult>;
 }
 
 export function createProcessTesotaShell(cwd: string = process.cwd()): TesotaShellCommandDependencies {
-  const cancellation = new AbortController();
+  let activeOperation: AbortController | undefined;
   const tui = new TuiAltScreen(new ProcessTerminal(), false, undefined, { mouse: true });
-  const interrupt = (): void => {
-    cancellation.abort();
-    process.emit("SIGINT");
+  const interrupt = (): void => { activeOperation?.abort(); };
+  const runOperation = async <T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+    if (activeOperation !== undefined) throw new Error("Tesota Shell operation already active");
+    const cancellation = new AbortController();
+    activeOperation = cancellation;
+    try { return await operation(cancellation.signal); }
+    finally {
+      if (activeOperation === cancellation) activeOperation = undefined;
+    }
   };
   const surface = createTesotaShellTerminal({ cwd, tui, interrupt });
   return {
     surface,
-    discover: (input) => runRepositoryConversationForShell(input, (text) => { surface.write(text); }, cancellation.signal),
-    start: (proposalId, report) => startTask({
+    discover: (input) => runOperation((signal) =>
+      runRepositoryConversationForShell(input, (text) => { surface.write(text); }, signal)),
+    start: (proposalId, report) => runOperation((signal) => startTask({
       proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
       sourceDirectory: cwd,
       reference: proposalId,
@@ -34,15 +41,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd()): TesotaShe
       write: (text) => { surface.write(text); },
       report,
       execute: (grant) => runProposalTask(grant, {
-        signal: cancellation.signal,
+        signal,
         write: (text) => { surface.write(text); },
         writeError: (text) => { surface.write(text); },
-        exitUnsettled: (code) => {
-          surface.stop();
-          process.exit(code);
-        },
       }),
-    }),
+    })),
   };
 }
 

@@ -9,5 +9,5 @@ it("honors retained shell cancellation before repository discovery starts", asyn
     { request: "Inspect the repository" },
     () => {},
     cancellation.signal,
-  )).rejects.toMatchObject({ name: "AbortError" });
+  )).resolves.toEqual({ status: "cancelled", exitCode: 130, settlement: "observed" });
 });

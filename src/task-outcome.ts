@@ -24,7 +24,7 @@ interface ExecutionResult {
 
 interface InitialEvent {
   readonly format: "tesota-task-outcome";
-  readonly version: 1;
+  readonly version: 1 | 2;
   readonly state: "awaiting_scope_approval";
   readonly proposalId: string;
   readonly proposalSha256: string;
@@ -41,7 +41,7 @@ type OutcomeEvent =
   | Readonly<{ state: "decision_recorded"; timestamp: string; decision: "accept" | "reject"; reviewSha256: string }>
   | Readonly<{ state: "promotion_started"; timestamp: string; reviewSha256: string }>
   | Readonly<{ state: "finished"; timestamp: string;
-    outcome: "execution_failed" | "cancelled" | "rejected" | "promoted" | "failed";
+    outcome: "execution_failed" | "cancelled" | "rejected" | "promoted" | "promotion_not_applied" | "failed";
     files?: readonly { readonly path: string; readonly sourceSha256: string }[] | undefined }>;
 
 const accountingSchema: z.ZodType<TaskExecutionAccounting> = z.strictObject({
@@ -60,7 +60,7 @@ const executionResultSchema: z.ZodType<ExecutionResult> = z.strictObject({
 }).refine(({ status, accounting }) => accounting.correctionAttempts <= accounting.edits &&
   (status !== "passed" || accounting.firstCheck === "check_failed" && accounting.correctionAttempts > 0));
 const initialSchema: z.ZodType<InitialEvent> = z.strictObject({
-  format: z.literal("tesota-task-outcome"), version: z.literal(1), state: z.literal("awaiting_scope_approval"),
+  format: z.literal("tesota-task-outcome"), version: z.union([z.literal(1), z.literal(2)]), state: z.literal("awaiting_scope_approval"),
   proposalId: z.uuid(), proposalSha256: digestSchema, baseline: objectIdSchema, timestamp: timestampSchema,
   authority: z.literal("none"),
 });
@@ -75,7 +75,7 @@ const eventSchema: z.ZodType<OutcomeEvent> = z.discriminatedUnion("state", [
     decision: z.enum(["accept", "reject"]), reviewSha256: digestSchema }),
   z.strictObject({ state: z.literal("promotion_started"), timestamp: timestampSchema, reviewSha256: digestSchema }),
   z.strictObject({ state: z.literal("finished"), timestamp: timestampSchema,
-    outcome: z.enum(["execution_failed", "cancelled", "rejected", "promoted", "failed"]),
+    outcome: z.enum(["execution_failed", "cancelled", "rejected", "promoted", "promotion_not_applied", "failed"]),
     files: z.array(z.strictObject({ path: z.string().min(1).max(1024), sourceSha256: digestSchema })).max(2).optional() }),
 ]);
 
@@ -86,7 +86,7 @@ export type TaskOutcomeEventInput =
   | Readonly<{ state: "review_ready"; reviewSha256: string; checkStatus: "passed" | "check_failed" }>
   | Readonly<{ state: "decision_recorded"; decision: "accept" | "reject"; reviewSha256: string }>
   | Readonly<{ state: "promotion_started"; reviewSha256: string }>
-  | Readonly<{ state: "finished"; outcome: "execution_failed" | "cancelled" | "rejected" | "promoted" | "failed";
+  | Readonly<{ state: "finished"; outcome: "execution_failed" | "cancelled" | "rejected" | "promoted" | "promotion_not_applied" | "failed";
     files?: readonly { readonly path: string; readonly sourceSha256: string }[] }>;
 
 export interface TaskOutcomeJournal {
@@ -112,14 +112,15 @@ export interface TaskOutcome {
   readonly execution: TaskExecutionAccounting | null;
   readonly operator: Readonly<{ scopeApproval: "pending" | "approved" | "declined";
     decision: "not_reached" | "accept" | "reject" }>;
-  readonly promotion: "not_reached" | "unconfirmed" | "applied";
+  readonly promotion: "not_reached" | "not_applied" | "unconfirmed" | "applied";
   readonly authority: "none";
   readonly provenance: "recorded_untrusted";
 }
 
-function terminalInterruptionAllowed(previous: InitialEvent | OutcomeEvent, next: OutcomeEvent): boolean {
+function terminalInterruptionAllowed(previous: InitialEvent | OutcomeEvent, next: OutcomeEvent, version: 1 | 2): boolean {
   return next.state === "finished" && (next.outcome === "failed" || next.outcome === "cancelled") &&
-    next.files === undefined && previous.state !== "finished" && previous.state !== "scope_declined";
+    next.files === undefined && previous.state !== "finished" && previous.state !== "scope_declined" &&
+    (version === 1 || previous.state !== "promotion_started");
 }
 
 function executionFinishedTransition(previous: Extract<OutcomeEvent, { state: "execution_finished" }>,
@@ -136,17 +137,19 @@ function decisionTransition(previous: Extract<OutcomeEvent, { state: "decision_r
   return next.state === "finished" && next.outcome === "rejected" && next.files === undefined;
 }
 
-function transitionAllowed(previous: InitialEvent | OutcomeEvent, next: OutcomeEvent): boolean {
+function transitionAllowed(previous: InitialEvent | OutcomeEvent, next: OutcomeEvent, version: 1 | 2): boolean {
   if (Date.parse(next.timestamp) < Date.parse(previous.timestamp)) return false;
-  if (terminalInterruptionAllowed(previous, next)) return true;
+  if (next.state === "finished" && next.outcome === "promotion_not_applied" && version === 1) return false;
+  if (terminalInterruptionAllowed(previous, next, version)) return true;
   switch (previous.state) {
     case "awaiting_scope_approval": return next.state === "scope_declined" || next.state === "execution_started";
     case "execution_started": return next.state === "execution_finished";
     case "execution_finished": return executionFinishedTransition(previous, next);
     case "review_ready": return next.state === "decision_recorded" && next.reviewSha256 === previous.reviewSha256;
     case "decision_recorded": return decisionTransition(previous, next);
-    case "promotion_started": return next.state === "finished" && next.outcome === "promoted" &&
-      next.files !== undefined && next.files.length > 0;
+    case "promotion_started": return next.state === "finished" &&
+      (next.outcome === "promoted" && next.files !== undefined && next.files.length > 0 ||
+        next.outcome === "promotion_not_applied" && next.files === undefined);
     default: return false;
   }
 }
@@ -157,7 +160,7 @@ function parseEvents(values: readonly unknown[]): readonly [InitialEvent, ...Out
   let previous: InitialEvent | OutcomeEvent = first;
   for (const value of values.slice(1)) {
     const event = eventSchema.parse(value);
-    if (!transitionAllowed(previous, event)) throw new Error("Invalid task outcome transition");
+    if (!transitionAllowed(previous, event, first.version)) throw new Error("Invalid task outcome transition");
     events.push(event);
     previous = event;
   }
@@ -179,8 +182,9 @@ function scopeApproval(events: readonly [InitialEvent, ...OutcomeEvent[]], last:
 }
 
 function promotionState(events: readonly [InitialEvent, ...OutcomeEvent[]], last: InitialEvent | OutcomeEvent):
-"not_reached" | "unconfirmed" | "applied" {
+"not_reached" | "not_applied" | "unconfirmed" | "applied" {
   if (last.state === "finished" && last.outcome === "promoted") return "applied";
+  if (last.state === "finished" && last.outcome === "promotion_not_applied") return "not_applied";
   return events.some((event) => event.state === "promotion_started") ? "unconfirmed" : "not_reached";
 }
 
@@ -246,7 +250,7 @@ export async function createTaskOutcome(directory: string, identity: Readonly<{
   proposalId: string; proposalSha256: string; baseline: string;
 }>, now: () => Date = () => new Date()): Promise<TaskOutcomeJournal> {
   const path = join(directory, "start.jsonl");
-  const initial = initialSchema.parse({ format: "tesota-task-outcome", version: 1,
+  const initial = initialSchema.parse({ format: "tesota-task-outcome", version: 2,
     state: "awaiting_scope_approval", ...identity, timestamp: now().toISOString(), authority: "none" });
   const file = await open(path, "wx", 0o600);
   const events: [InitialEvent, ...OutcomeEvent[]] = [initial];
@@ -265,6 +269,15 @@ export async function createTaskOutcome(directory: string, identity: Readonly<{
   };
 }
 
+function applicationSummary(promotion: TaskOutcome["promotion"]): string {
+  switch (promotion) {
+    case "applied": return "Applied";
+    case "not_applied": return "Not applied";
+    case "unconfirmed": return "Unconfirmed; inspect retained evidence before retrying";
+    case "not_reached": return "Not applied";
+  }
+}
+
 export function formatTaskOutcome(outcome: TaskOutcome): string {
   const execution = outcome.execution === null ? "Execution: not observed\n" :
     `Execution: ${outcome.execution.modelInvocations} model invocations, ${outcome.execution.toolCalls} tool calls, ${outcome.execution.edits} edits\n`;
@@ -272,6 +285,6 @@ export function formatTaskOutcome(outcome: TaskOutcome): string {
     "Consumption: operation counts only; token usage and cost unavailable.\n";
   return `\nTask outcome\nOutcome: ${outcome.status}\nElapsed: ${outcome.elapsedMs} ms\n` +
     `Last phase: ${outcome.lastPhase}\nFirst check: ${outcome.firstCheck}\nCorrections: ${outcome.correctionAttempts}\n${execution}` +
-    `Decision: ${outcome.operator.decision}\nPromotion: ${outcome.promotion}\n${consumption}` +
-    "Authority: none; this outcome cannot authorize execution, acceptance or promotion.\n";
+    `Decision: ${outcome.operator.decision}\nApplication: ${applicationSummary(outcome.promotion)}\n${consumption}` +
+    "Authority: none; this outcome cannot authorize execution, acceptance or application.\n";
 }

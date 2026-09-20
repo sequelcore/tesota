@@ -21,6 +21,28 @@ class ConversationBaselineChangedError extends Error {
   constructor() { super("Clarification baseline changed"); }
 }
 
+class ConversationDiscoveryFailed extends Error {
+  readonly status: Exclude<PiDiscoveryResult["status"], "completed">;
+  constructor(status: Exclude<PiDiscoveryResult["status"], "completed">) {
+    super("Repository discovery did not complete");
+    this.status = status;
+  }
+}
+
+function signalAborted(signal?: AbortSignal): boolean { return signal?.aborted === true; }
+
+function cancelledDiscoveryResult(error: unknown, cancellation: AbortSignal,
+  writeError: (text: string) => void): ConversationCommandResult | null {
+  if (error instanceof ConversationDiscoveryFailed) {
+    if (error.status === "unsettled") {
+      writeError("Repository discovery settlement is unconfirmed; no authority was created.\n");
+      return { status: "unsettled", exitCode: 1, reason: "discovery_unconfirmed" };
+    }
+    if (error.status === "aborted") return { status: "cancelled", exitCode: 130, settlement: "observed" };
+  }
+  return cancellation.aborted ? { status: "cancelled", exitCode: 130, settlement: "observed" } : null;
+}
+
 export async function discoverConversationTurn(options: {
   readonly sourceDirectory: string;
   readonly proposalsRoot: string;
@@ -43,7 +65,9 @@ export async function discoverConversationTurn(options: {
   } finally {
     discovery.close();
   }
-  if (result.status !== "completed" || result.outcome === null) throw new Error("Repository discovery failed");
+  if (result.status !== "completed" || result.outcome === null) {
+    throw new ConversationDiscoveryFailed(result.status === "completed" ? "failed" : result.status);
+  }
   if (result.outcome.kind === "answer") {
     return { kind: "answer", answer: result.outcome, baseline: description.baseline };
   }
@@ -73,20 +97,22 @@ async function liveSource(): Promise<string> {
 
 export type ConversationCommandResult =
   | Readonly<{ status: "completed"; exitCode: number; turn: CompletedConversationTurn }>
-  | Readonly<{ status: "unavailable"; exitCode: number; reason: "baseline_changed" | "unavailable" }>;
+  | Readonly<{ status: "unavailable"; exitCode: number; reason: "baseline_changed" | "unavailable" }>
+  | Readonly<{ status: "cancelled"; exitCode: 130; settlement: "observed" }>
+  | Readonly<{ status: "unsettled"; exitCode: 1; reason: "discovery_unconfirmed" }>;
 
 async function runLiveConversation(rawInput: ConversationInput,
   allowedOutcome: DiscoveryOutcome, writeError: (text: string) => void = (text) => { process.stderr.write(text); },
   hostSignal?: AbortSignal):
 Promise<ConversationCommandResult> {
-  hostSignal?.throwIfAborted();
+  if (signalAborted(hostSignal)) return { status: "cancelled", exitCode: 130, settlement: "observed" };
   if (process.platform !== "win32") {
     writeError("Live repository discovery is currently supported on Windows.\n");
     return { status: "unavailable", exitCode: 2, reason: "unavailable" };
   }
   const cancellation = new AbortController();
   const interrupt = (): void => cancellation.abort();
-  if (hostSignal?.aborted === true) cancellation.abort();
+  if (signalAborted(hostSignal)) cancellation.abort();
   hostSignal?.addEventListener("abort", interrupt, { once: true });
   process.once("SIGINT", interrupt);
   process.once("SIGTERM", interrupt);
@@ -104,7 +130,8 @@ Promise<ConversationCommandResult> {
     return { status: "completed",
       exitCode: turn.kind === "task_proposal" && turn.proposedTask.record.status !== "ready" ? 1 : 0, turn };
   } catch (error) {
-    if (cancellation.signal.aborted) throw new DOMException("cancelled", "AbortError");
+    const cancelled = cancelledDiscoveryResult(error, cancellation.signal, writeError);
+    if (cancelled !== null) return cancelled;
     if (error instanceof ConversationBaselineChangedError) {
       return { status: "unavailable", exitCode: 1, reason: "baseline_changed" };
     }

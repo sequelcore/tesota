@@ -1,0 +1,133 @@
+{
+  "format": "tesota-source-binding-qualification",
+  "version": 1,
+  "timestamp": "2026-09-20T01:25:10.140Z",
+  "kind": "controlled model-free live Docker regression; synthetic local acceptance",
+  "implementation": {
+    "src/candidate-task.ts": "cd33545bcdf9c74f07247d9e4100e574c2e0190db0ddc23154487a3602ba4fc7",
+    "src/task-source.ts": "5f5900f20ab31248596f171fd4a0fb67b6335ef7953a379a1da7c3d938012feb",
+    "src/task-review.ts": "1067c6f5288113adc9e281444b6d4461e93e33558e423c458294b62721e0ec98",
+    "src/task-promotion.ts": "edac17460c5ca83352237561a9fd59e6fde86b0c5ffb328e72286943f8b2a92c",
+    "src/task-run.ts": "a1168afb175f43efac8df506667924698ddc94a130779f638ed634901ae9c796",
+    "src/repository-check-input.ts": "f25f1d48e28155474e43463259332cd751c6934acb005270cef622de8cd974ee"
+  },
+  "baseline": "4029c75d3ac24ae208ddc79a20dd9be833a08628",
+  "sourceBeforeSha256": "3d8ec84b7393a36ef981d2d4e42d4807bc2c0477e9b15c42a29f16ca670ee723",
+  "candidateInitiallyCrlf": true,
+  "firstCheck": "check_failed",
+  "check": {
+    "status": "passed",
+    "diagnostics": [
+      "Scope integrity passed for src/value.ts.",
+      "TypeScript no-emit check passed. Outcome correctness requires human review."
+    ],
+    "outcome": "passed",
+    "settlement": "observed",
+    "task": "typescript-change",
+    "provenance": "issued",
+    "typecheck": {
+      "profile": "typescript-no-emit/v1",
+      "status": "passed",
+      "reason": null,
+      "diagnostics": [],
+      "process": "exited",
+      "container": "absent",
+      "binding": {
+        "profile": "typescript-no-emit/v1",
+        "candidate": {
+          "baseline": "4029c75d3ac24ae208ddc79a20dd9be833a08628",
+          "contentSha256": "710b92f9f9a039eef582ca1c022a0acfb3e3f7350cda3bf09c225c272e4ae754"
+        },
+        "repository": {
+          "script": "tsc --noEmit -p tsconfig.json",
+          "packageJsonSha256": "827992b7772d5370eb7cf2b7461b3a646caa4c1e9b377e883d54732b201e6bb9",
+          "tsconfigSha256": "49110665cf67b1f01999a207dc61920e584420005ed10ea2bbf954ce2c6285ad",
+          "lockfileSha256": "10d320d3f49e8e72fd4363ef65ecfb0bc61cb11473a4b3ad64c71ecaf8ff2afc"
+        },
+        "verifier": {
+          "packageVersion": "6.0.3",
+          "installationSha256": "1ce9a5c331b0054d9e3c7ec49ed5afbbe592a7451c56309dde8b1a6879954768"
+        },
+        "isolation": {
+          "image": "node@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f",
+          "policySha256": "5469d6bb385fecbb05249caf2dd8e1f5ebc7bcf2b616f82b054c003aad5cf7ae",
+          "executableSha256": "46d8a5bd7523c575fb276a75296ab19abb9bf277d334169c665e521e46dbc2a4"
+        },
+        "command": [
+          "node",
+          "/workspace/node_modules/typescript/bin/tsc",
+          "--noEmit",
+          "--incremental",
+          "false",
+          "--pretty",
+          "false",
+          "-p",
+          "tsconfig.json"
+        ],
+        "limits": {
+          "timeoutMs": 60000,
+          "maxOutputBytes": 262144,
+          "terminationWaitMs": 2000
+        }
+      },
+      "authority": "none",
+      "provenance": "issued"
+    },
+    "baseline": "4029c75d3ac24ae208ddc79a20dd9be833a08628",
+    "writeSetSha256": "e90e908fd047e3d6eacc3f9353d4ec919a2147bcf3657a89ebfc4f6222300960",
+    "sourceInputsSha256": "cc1700f2ae6b4006ad40de151b31dc79a1d0eaa9cf02446b1fa565c451bab133",
+    "taskAcceptance": "not_evaluated"
+  },
+  "reviewSha256": "cbaf1c84cb2cf73d2b4f28211ff574f1000f8da0d61f066889194c4e163f3bd2",
+  "promotion": {
+    "status": "applied",
+    "files": [
+      {
+        "path": "src/value.ts",
+        "sourceSha256": "38363639f9207677dbba32776b2e328271ea961eece72738d5d73af9523b9571"
+      }
+    ]
+  },
+  "exactAcceptedBytesApplied": true,
+  "elapsedMs": 125338.24699999999,
+  "snapshotRetained": false,
+  "journal": [
+    {
+      "format": "tesota-task-promotion",
+      "version": 2,
+      "state": "started",
+      "head": "4029c75d3ac24ae208ddc79a20dd9be833a08628",
+      "reviewSha256": "cbaf1c84cb2cf73d2b4f28211ff574f1000f8da0d61f066889194c4e163f3bd2",
+      "files": [
+        {
+          "path": "src/value.ts",
+          "beforeSha256": "3d8ec84b7393a36ef981d2d4e42d4807bc2c0477e9b15c42a29f16ca670ee723",
+          "afterSha256": "38363639f9207677dbba32776b2e328271ea961eece72738d5d73af9523b9571"
+        }
+      ]
+    },
+    {
+      "state": "source_write_started",
+      "path": "src/value.ts"
+    },
+    {
+      "state": "applied",
+      "files": [
+        {
+          "path": "src/value.ts",
+          "sourceSha256": "38363639f9207677dbba32776b2e328271ea961eece72738d5d73af9523b9571"
+        }
+      ]
+    }
+  ],
+  "sourceBefore": {
+    "gitStatusClean": true,
+    "gitEol": "i/lf w/crlf attr/text eol=crlf"
+  },
+  "limitations": [
+    "Controlled synthetic repository; no model and no human acceptance.",
+    "Does not qualify a prospective external task or complete Milestone 1.",
+    "Machine-local paths omitted; timestamps use UTC.",
+    "Local elapsed observation, not an isolated performance benchmark."
+  ]
+}

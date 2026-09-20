@@ -121,8 +121,8 @@ Tesota has three complementary integrations with retained evidence:
 | Capability | Current evidence | Status boundary |
 | --- | --- | --- |
 | [Oxlint](verification.md) | A selected nine-rule profile, exact input binding, durable recovery and correction experiments | Native only for the implemented single-file profile; not general repository linting |
-| [LemmaScript/Dafny](qualification.md) | A seeded proof failure for the production-used invocation predicate was corrected and reverified | Corrective for one bounded formal property; not whole-program correctness |
-| [Gentle AI](../experiments/gentle/README.md) | Candidate-bound review, immutable settlement, correction and one scope-change recovery path were qualified; the 2.8.0 capability boundary is enforced | Native bounded review provider; review evidence is not a mathematical verifier or acceptance authority |
+| [LemmaScript/Dafny](verification.md#standalone-lemmascript-and-dafny-formal-check) | A seeded proof failure for the production-used invocation predicate was corrected and reverified | Corrective for one bounded formal property; not whole-program correctness |
+| [Gentle AI](verification.md#gentle-ai-review-provider) | Candidate-bound review, immutable settlement, correction and one scope-change recovery path were qualified in the [historical experiment record](../experiments/gentle/README.md); the 2.8.0 capability boundary is enforced | Native bounded review provider; review evidence is not a mathematical verifier or acceptance authority |
 
 These tools establish the integration thesis, not the final portfolio. New
 verifiers must add a distinct useful oracle or materially improve correction

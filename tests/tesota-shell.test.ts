@@ -99,17 +99,75 @@ it("reports a blocked proposal without claiming executable progress", async () =
 
 it("continues a ready proposal into the approval flow without asking for its id", async () => {
   const output: string[] = [];
-  const start = vi.fn(async (_id: string, _report: (progress: TaskStartProgress) => void) => 0);
+  const start = vi.fn(async (_id: string, _report: (progress: TaskStartProgress) => void) =>
+    ({ status: "settled" as const, exitCode: 0 as const, outcome: "promoted" as const }));
+  const answers = ["Update the guide", ""];
+  const ask = vi.fn(async () => answers.shift() ?? "");
   const progress: TesotaShellProgress[] = [];
   const result = await runTesotaShell({ write: (text) => output.push(text),
-    ask: async () => "Update the guide", discover: async () => proposalResult(), start: async (id, report) => {
+    ask, discover: async () => proposalResult(), start: async (id, report) => {
       report({ phase: "executing", operation: "candidate_task" });
       return start(id, report);
     }, report: (event) => { progress.push(event); } });
   expect(result).toBe(0);
+  expect(ask).toHaveBeenCalledTimes(2);
   expect(start).toHaveBeenCalledWith("9877887d-1475-4439-a0a6-c1c85091fc9e", expect.any(Function));
   expect(progress).toContainEqual({ phase: "executing", operation: "candidate_task" });
   expect(output.join("")).toContain("Proposal ready. Execution still requires your approval.\n");
+  expect(output.at(-1)).toBe("Tesota session ended. Nothing changed.\n");
+});
+
+it("returns to a fresh prompt after task cancellation is settled", async () => {
+  const answers = ["Update the guide", ""];
+  const ask = vi.fn(async () => answers.shift() ?? "");
+
+  const result = await runTesotaShell({ write: () => {}, ask, discover: async () => proposalResult(),
+    start: async () => ({ status: "settled", exitCode: 130, outcome: "cancelled" }) });
+
+  expect(result).toBe(0);
+  expect(ask).toHaveBeenCalledTimes(2);
+});
+
+it("returns to a fresh prompt after a lifecycle failure is settled", async () => {
+  const answers = ["Update the guide", ""];
+  const ask = vi.fn(async () => answers.shift() ?? "");
+
+  const result = await runTesotaShell({ write: () => {}, ask, discover: async () => proposalResult(),
+    start: async () => ({ status: "settled", exitCode: 1, outcome: "failed" }) });
+
+  expect(result).toBe(0);
+  expect(ask).toHaveBeenCalledTimes(2);
+});
+
+it("returns to a fresh prompt after read-only cancellation is settled", async () => {
+  const answers = ["Inspect the repository", ""];
+  const ask = vi.fn(async () => answers.shift() ?? "");
+
+  const result = await runTesotaShell({ write: () => {}, ask,
+    discover: async () => ({ status: "cancelled", exitCode: 130, settlement: "observed" }), start: vi.fn() });
+
+  expect(result).toBe(0);
+  expect(ask).toHaveBeenCalledTimes(2);
+});
+
+it("ends the shell when read-only cancellation remains unconfirmed", async () => {
+  const ask = vi.fn(async () => "Inspect the repository");
+
+  const result = await runTesotaShell({ write: () => {}, ask,
+    discover: async () => ({ status: "unsettled", exitCode: 1, reason: "discovery_unconfirmed" }), start: vi.fn() });
+
+  expect(result).toBe(1);
+  expect(ask).toHaveBeenCalledOnce();
+});
+
+it("ends the shell when task settlement remains unconfirmed", async () => {
+  const ask = vi.fn(async () => "Update the guide");
+
+  const result = await runTesotaShell({ write: () => {}, ask, discover: async () => proposalResult(),
+    start: async () => ({ status: "unsettled", exitCode: 1, outcome: "promotion_unconfirmed" }) });
+
+  expect(result).toBe(1);
+  expect(ask).toHaveBeenCalledOnce();
 });
 
 it("continues one clarification in the same shell session without granting authority", async () => {

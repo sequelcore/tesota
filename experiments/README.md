@@ -16,6 +16,9 @@ The [Oxlint qualification](oxlint/README.md) records the measured selection of
 five Kiln `dev` rules and the rejection of noisy structural limits.
 The [command isolation qualification](isolation/README.md) compares one native
 Windows sandbox with the pinned container selected for the next bounded code task.
+The [supported task qualification](supported-task/README.md) freezes the first
+prospective external-repository corpus and the live evidence required before
+the active one-conversation milestone can close.
 
 ## Retained artifacts
 
@@ -33,6 +36,10 @@ Windows sandbox with the pinned container selected for the next bounded code tas
 | [Denied candidate attempt](codex/evidence/candidate-denied.json) | Admission rejected requests; zero edits or checks; invocation budget stopped the session |
 | [Candidate newline mismatch](codex/evidence/candidate-newline.json) | Correction and checks completed; version 2's final-newline assertion rejected the source |
 | [Passing candidate correction](codex/evidence/candidate-passed.json) | One edit, two issued checks and review diff saved; previous evidence stale, final evidence applicable |
+| [Live TypeScript matrix](supported-task/evidence/windows-2026-09-19-typecheck.json) | Controlled Windows/Docker positive, finding, unavailable, fatal-exit, timeout, cancellation and drift outcomes after the sibling-mount correction |
+| [Supported-task follow-up](supported-task/follow-up.md) | Prospective post-correction external task frozen before its one ordinary-flow attempt |
+| [Second supported-task follow-up](supported-task/follow-up-2.md) | New external task frozen after the first follow-up exposed a discovery-prefix rejection |
+| [Third supported-task follow-up](supported-task/follow-up-3.md) | Distinct external task frozen after the second follow-up exposed the cumulative task deadline |
 | [Codex history](codex/history.md) | Source scouting, historical checks and diagnostic findings |
 
 Verification and synthetic Pi review closure was reported in the development conversation and
