@@ -83,7 +83,10 @@ scope integrity and run the exact contained `typescript-no-emit/v1` profile whil
 explicitly leaving outcome correctness to human review. Repository check
 configuration, dependency declarations, test and file-lifecycle changes remain denied. A
 later accept/reject question is bound to the escaped diff;
-acceptance invokes conflict-safe promotion without requiring another ID.
+acceptance invokes conflict-safe promotion without requiring another ID. At the
+first passing review, the operator may instead request one bounded semantic
+correction, approve it separately, review fresh R1 evidence and make a final
+accept/reject decision. Failed or uncertain R1 never falls back to R0.
 `task outcome <proposal-id>` reloads the proposal-bound outcome journal. It
 reports elapsed time, first-check status, correction count, observed operation
 counts, operator decision and promotion state. Token usage and monetary cost are

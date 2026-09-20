@@ -13,6 +13,7 @@ import type { ProposalRunGrant } from "../src/proposal-admission.js";
 import { TASK_LIMITS } from "../src/task-contract.js";
 import { checkRepositoryTypecheck, type RepositoryTypecheckResult } from "../src/repository-typecheck.js";
 import { runPiTask } from "../src/integrations/pi-task.js";
+import { recordSemanticRevision, semanticRevisionSha256 } from "../src/semantic-revision.js";
 
 vi.mock("../src/repository-typecheck.js", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
@@ -119,6 +120,45 @@ it("requires a check before editing and binds replacement to current bytes", asy
     diagnostics: expect.arrayContaining([expect.stringContaining("human review")]),
     typecheck: { profile: "typescript-no-emit/v1", status: "passed" } });
 }, 30_000);
+
+it("permanently denies every R0 capability after settlement without closing R1", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const r0 = task.beginExecution();
+  const r0Description = r0.describe();
+  const observed = await r0.read({ path: "src/value.ts" });
+  const r0Check = await r0.check();
+  r0.close();
+  await expect(r0.read({ path: "src/value.ts" })).rejects.toThrow("expired");
+  const r1 = task.beginExecution({ cause: "semantic_revision", refinement: "Use the alternate wording.",
+    parentReviewSha256: "b".repeat(64), parentWriteSetSha256: "d".repeat(64),
+    parentCheckSha256: "e".repeat(64), effectiveCriteriaSha256: "c".repeat(64),
+    parentEvidence: r0Check,
+    remainingBudget: { reads: 7, edits: 2, checks: 2, modelInvocations: 6, toolCalls: 7, activeMs: 1000 } });
+  const r1Description = r1.describe();
+  const { executionCause: r0Cause, semanticRevision: r0Revision, ...r0Contract } = r0Description;
+  const { executionCause: r1Cause, semanticRevision: r1Revision, ...r1Contract } = r1Description;
+
+  expect(r0Cause).toBe("initial_implementation");
+  expect(r0Revision).toBeUndefined();
+  expect(r1Cause).toBe("semantic_revision");
+  expect(r1Revision).toMatchObject({ refinement: "Use the alternate wording.",
+    parentEvidence: r0Check,
+    remainingBudget: { reads: 7, edits: 2, checks: 2, modelInvocations: 6, toolCalls: 7, activeMs: 1000 } });
+  expect(r1Contract).toEqual(r0Contract);
+  expect(r1.requestSchemas().read.safeParse({ path: "README.md" }).success).toBe(false);
+  expect(r1.requestSchemas().replace.safeParse({ path: "src/reference.ts", expectedSha256: observed.sha256,
+    content: "export const reference = 2;\n" }).success).toBe(false);
+  await expect(r0.read({ path: "src/value.ts" })).rejects.toThrow("expired");
+  await expect(r0.replace({ path: "src/value.ts", expectedSha256: observed.sha256,
+    content: "export const value = 'stale';\n" })).rejects.toThrow("expired");
+  await expect(r0.check()).rejects.toThrow("expired");
+  await expect(r1.read({ path: "src/value.ts" })).resolves.toMatchObject({ sha256: observed.sha256 });
+  await expect(r1.check()).resolves.toMatchObject({ baseline: r0Check.baseline,
+    sourceInputsSha256: r0Check.sourceInputsSha256, typecheck: r0Check.typecheck });
+  r1.close();
+  task.close();
+});
 
 it("rejects an external write and does not reopen a persisted task for editing", async () => {
   const current = await fixture();
@@ -252,7 +292,50 @@ it("makes a review stale when the bound typecheck evidence changes", async () =>
   expect(first.changedFiles).toEqual(["src/value.ts"]);
   expect(second.reviewSha256).not.toBe(first.reviewSha256);
   expect(second.check.writeSetSha256).toBe(first.check.writeSetSha256);
-});
+}, 20_000);
+
+it("gives an R1 no-op fresh semantic review identity without claiming changed correction bytes", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const input = await task.read({ path: "src/value.ts" });
+  await task.check();
+  await task.replace({ path: "src/value.ts", expectedSha256: input.sha256,
+    content: "export const value = 'new';\n" });
+  await task.check();
+  task.close();
+  const r0 = await reviewTask(current.directory);
+  const timestamp = new Date().toISOString();
+  await writeFile(join(current.directory, "candidate.diff"), r0.diff);
+  await writeFile(join(current.directory, "attempt.jsonl"), [
+    { format: "tesota-task-attempt", version: 1, state: "started", timestamp },
+    { state: "finished", timestamp, outcome: "passed", session: {}, current: r0.check, reviewSaved: true,
+      taskAcceptance: "not_evaluated" },
+  ].map((event) => JSON.stringify(event)).join("\n") + "\n");
+  const description = task.describe();
+  const revision = await recordSemanticRevision(current.directory, {
+    taskDefinitionSha256: description.definitionSha256, parentReviewSha256: r0.reviewSha256,
+    parentWriteSetSha256: r0.check.writeSetSha256,
+    parentCheckSha256: createHash("sha256").update(JSON.stringify(r0.check)).digest("hex"),
+    refinement: "Keep the exact bytes but clarify the semantic criterion.",
+  });
+  await writeFile(join(current.directory, "candidate-r1.diff"), r0.diff);
+  await writeFile(join(current.directory, "attempt-r1.jsonl"), [
+    { format: "tesota-task-attempt", version: 2, state: "started", timestamp, baseline: current.baseline,
+      sourceDirty: false, executor: {}, model: "offline", limits: {}, taskAcceptance: "not_evaluated",
+      executionCause: "semantic_revision", revisionSha256: semanticRevisionSha256(revision),
+      parentReviewSha256: r0.reviewSha256 },
+    { state: "finished", timestamp, outcome: "passed", session: { status: "completed", settlement: "observed",
+      executionCause: "semantic_revision", finalCheckSuppliedToModel: true, taskAcceptance: "not_evaluated" },
+    current: r0.check, reviewSaved: true,
+      taskAcceptance: "not_evaluated" },
+  ].map((event) => JSON.stringify(event)).join("\n") + "\n");
+
+  const r1 = await reviewTask(current.directory);
+  expect(r1.reviewSha256).not.toBe(r0.reviewSha256);
+  expect(r1.check.writeSetSha256).toBe(r0.check.writeSetSha256);
+  expect(r1.historicalAttempt).toBe("semantic_revision_passed");
+  expect(r1.operatorDecision).toBeNull();
+}, 20_000);
 
 it("rejects grant and persisted-plan tampering", async () => {
   const current = await fixture();

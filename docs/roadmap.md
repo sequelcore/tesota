@@ -119,7 +119,15 @@ component checks alone does not complete the milestone.
 
 ## Milestone 2 — Correct the work without restarting
 
-**Status: next; not yet implemented or qualified.**
+**Status: M2a implemented for one bounded semantic correction; Milestone 2 is
+not yet prospectively qualified.**
+
+The implemented M2a slice permits one explicitly approved semantic revision of
+a settled, passing R0 result in the same candidate. It preserves cumulative
+budgets, rotates generation-bound live authority, renews exact-result evidence
+and requires a fresh final decision. It does not establish usefulness,
+representative reliability or complete Milestone 2; the prospective evaluation
+below remains outstanding.
 
 A user can continue the same task when a check finds a problem or when the user
 says, for example, “change this part.” Tesota preserves useful task context,

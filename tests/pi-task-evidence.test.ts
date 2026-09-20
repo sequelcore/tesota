@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
 import type { CandidateTaskCheck } from "../src/candidate-task.js";
-import { PI_TASK_LIMITS, piTaskPasses, type PiTaskResult } from "../src/integrations/pi-task.js";
+import { PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses,
+  type PiTaskResult } from "../src/integrations/pi-task.js";
 
 const before: CandidateTaskCheck = {
   task: "typescript-change", status: "check_failed", outcome: "check_failed", settlement: "observed",
@@ -17,6 +19,8 @@ const result: PiTaskResult = {
   status: "completed", modelInvocations: 5, toolCalls: 4, edits: 1,
   checks: [before, after], checksSuppliedToModel: 2, finalCheckSuppliedToModel: true,
   deadlineExpired: false, denied: false, terminalStopReason: "stop", settlement: "observed", taskAcceptance: "not_evaluated",
+  executionCause: "initial_implementation", activeMs: 100,
+  editCauses: [{ cause: "initial_implementation" }],
 };
 
 it("keeps a finite task window that accommodates the qualified Windows profile", () => {
@@ -25,6 +29,21 @@ it("keeps a finite task window that accommodates the qualified Windows profile",
 
 it("accepts consistent completed task evidence", () => {
   expect(piTaskPasses(result, current)).toBe(true);
+});
+
+it("accepts a fresh passing no-op R1 without fabricating an initial failure or edit", () => {
+  const revision: PiTaskResult = { ...result, executionCause: "semantic_revision", edits: 0, editCauses: [],
+    checks: [after], checksSuppliedToModel: 1 };
+  expect(piSemanticRevisionPasses(revision, current)).toBe(true);
+});
+
+it("keeps initial implementation, semantic revision and diagnostic repair causes distinct", () => {
+  const diagnostic = { ...before, writeSetSha256: "4".repeat(64) };
+  expect(piTaskPasses({ ...result, editCauses: [{ cause: "semantic_revision" }] }, current)).toBe(false);
+  expect(piTaskPasses({ ...result, edits: 2, checks: [before, diagnostic, after],
+    checksSuppliedToModel: 3, editCauses: [{ cause: "initial_implementation" },
+      { cause: "diagnostic_repair", failedCheckSha256: createHash("sha256").update(JSON.stringify(diagnostic)).digest("hex") }] },
+  current)).toBe(true);
 });
 
 it("rejects incomplete delivery or a stale current check", () => {

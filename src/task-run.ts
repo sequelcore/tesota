@@ -1,18 +1,38 @@
 import { createHash } from "node:crypto";
-import { open, readFile, writeFile } from "node:fs/promises";
+import { open, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import * as z from "zod";
 import { candidateDiff, createCandidateCheckout, type CandidateCheckout } from "./candidate-checkout.js";
 import { CandidateTask, checkCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
+import { TASK_LIMITS } from "./task-contract.js";
 import { validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
 import type { TaskExecutionAccounting } from "./task-outcome.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
-import { PI_TASK_LIMITS, piTaskPasses, runPiTask, type PiTaskResult } from "./integrations/pi-task.js";
+import { createPiTaskBudget, PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses, runPiTask,
+  type PiTaskBudget, type PiTaskResult } from "./integrations/pi-task.js";
+import { effectiveCriteriaSha256, parseSemanticRefinement, recordSemanticRevision, semanticRevisionSha256,
+  type SemanticRevision } from "./semantic-revision.js";
 
 export interface TaskRunResult {
   readonly candidate: CandidateCheckout;
   readonly status: "passed" | "failed" | "cancelled" | "unsettled";
   readonly accounting: TaskExecutionAccounting;
+  readonly correction?: TaskCorrectionAuthority | null;
+}
+
+export interface TaskCorrectionRequest {
+  readonly refinement: string;
+  readonly parentReviewSha256: string;
+  readonly parentWriteSetSha256: string;
+  readonly parentCheckSha256: string;
+}
+
+export interface TaskCorrectionAuthority {
+  available(): boolean;
+  criteria(refinement: string): Readonly<{ refinementSha256: string; effectiveCriteriaSha256: string }>;
+  run(request: TaskCorrectionRequest): Promise<TaskRunResult>;
+  close(): void;
 }
 
 export interface TaskRunHost {
@@ -25,10 +45,43 @@ function stdout(text: string): void { process.stdout.write(text); }
 function stderr(text: string): void { process.stderr.write(text); }
 function ignore(): void {}
 
-function taskExecutionAccounting(session: PiTaskResult | null, startedAt: number): TaskExecutionAccounting {
-  return { elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)), firstCheck: session?.checks[0]?.status ?? "not_observed",
-    correctionAttempts: session?.edits ?? 0, modelInvocations: session?.modelInvocations ?? 0,
-    toolCalls: session?.toolCalls ?? 0, edits: session?.edits ?? 0,
+interface TaskCauseAccounting {
+  initialImplementation: boolean;
+  diagnosticRepairs: number;
+  semanticRevision: boolean;
+}
+
+function recordExecutionCauses(accounting: TaskCauseAccounting, session: PiTaskResult | null): void {
+  if (session === null) return;
+  if (session.executionCause === "initial_implementation") accounting.initialImplementation = true;
+  if (session.executionCause === "semantic_revision") accounting.semanticRevision = true;
+  accounting.diagnosticRepairs += session.editCauses.filter((cause) => cause.cause === "diagnostic_repair").length;
+}
+
+function observedUsage(usage: ReturnType<CandidateTask["usage"]> | undefined): ReturnType<CandidateTask["usage"]> {
+  return usage ?? { reads: 0, edits: 0, checks: 0 };
+}
+
+function sessionAccounting(session: PiTaskResult | null): Readonly<{
+  firstCheck: TaskExecutionAccounting["firstCheck"]; modelInvocations: number; toolCalls: number;
+  edits: number; activeMs: number;
+}> {
+  if (session === null) return { firstCheck: "not_observed", modelInvocations: 0, toolCalls: 0, edits: 0, activeMs: 0 };
+  return { firstCheck: session.checks[0]?.status ?? "not_observed", modelInvocations: session.modelInvocations,
+    toolCalls: session.toolCalls, edits: session.edits, activeMs: session.activeMs };
+}
+
+function taskExecutionAccounting(session: PiTaskResult | null, startedAt: number,
+  causes: TaskCauseAccounting, hostChecks: number,
+  usage?: ReturnType<CandidateTask["usage"]>): TaskExecutionAccounting {
+  const current = observedUsage(usage);
+  const observed = sessionAccounting(session);
+  const edits = usage === undefined ? observed.edits : current.edits;
+  return { elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)), firstCheck: observed.firstCheck,
+    correctionAttempts: edits, modelInvocations: observed.modelInvocations,
+    toolCalls: observed.toolCalls, edits,
+    causes: { ...causes },
+    resources: { reads: current.reads, checks: current.checks, hostChecks, activeMs: observed.activeMs },
     consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } };
 }
 
@@ -51,11 +104,13 @@ interface RecordedTaskAttempt {
   readonly passed: boolean;
   readonly settlement: "observed" | "unconfirmed";
   readonly evidencePersisted: boolean;
+  readonly hostChecks: number;
 }
 
 async function executorSha256(): Promise<Record<string, string>> {
   const executor: Record<string, string> = {};
   for (const path of ["task-run.js", "candidate-checkout.js", "candidate-task.js", "task-contract.js", "task-source.js",
+    "semantic-revision.js",
     "repository-check-input.js",
     "proposal-admission.js", "repository-typecheck.js", "repository-typecheck-process.js", "command-isolation.js",
     "verification/invocation-admission.js", "integrations/pi-task.js",
@@ -65,17 +120,36 @@ async function executorSha256(): Promise<Record<string, string>> {
   return executor;
 }
 
-async function executeTaskSession(candidate: CandidateCheckout, grant: ProposalRunGrant,
-  signal: AbortSignal): Promise<PiTaskResult> {
-  let task: CandidateTask | undefined;
+async function executeTaskSession(task: CandidateTask, context: SemanticRevision | null,
+  parentEvidence: CandidateTaskCheck | null, budget: PiTaskBudget, signal: AbortSignal): Promise<PiTaskResult> {
+  const usage = task.usage();
+  const remainingBudget = {
+    reads: Math.max(0, TASK_LIMITS.reads - usage.reads), edits: Math.max(0, TASK_LIMITS.edits - usage.edits),
+    checks: Math.max(0, TASK_LIMITS.checks - usage.checks),
+    modelInvocations: Math.max(0, PI_TASK_LIMITS.modelInvocations - budget.modelInvocations),
+    toolCalls: Math.max(0, PI_TASK_LIMITS.toolCalls - budget.toolCalls),
+    activeMs: Math.max(0, PI_TASK_LIMITS.sessionMs - budget.activeMs),
+  };
+  let capability;
+  if (context === null) capability = task.beginExecution();
+  else {
+    if (parentEvidence === null) throw new Error("Semantic revision parent evidence unavailable");
+    capability = task.beginExecution({
+      cause: "semantic_revision", refinement: context.refinement,
+      parentReviewSha256: context.parentReviewSha256,
+      parentWriteSetSha256: context.parentWriteSetSha256,
+      parentCheckSha256: context.parentCheckSha256,
+      effectiveCriteriaSha256: context.effectiveCriteriaSha256,
+      parentEvidence, remainingBudget,
+    });
+  }
   try {
-    task = await CandidateTask.prepare(candidate.directory, grant);
     const models = await storedCodexModels(new CodexCredentials(), signal);
     const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
     if (model?.api !== "openai-codex-responses") throw new Error("Task model unavailable");
-    return await runPiTask(task, model, (requested, context, options) =>
-      models.streamSimple(requested, context, options), signal);
-  } finally { task?.close(); }
+    return await runPiTask(capability, model, (requested, modelContext, options) =>
+      models.streamSimple(requested, modelContext, options), signal, budget);
+  } finally { capability.close(); }
 }
 
 function finalCheckPermitted(session: PiTaskResult | null, signal: AbortSignal): boolean {
@@ -105,32 +179,49 @@ function taskRunMessage(status: TaskRunResult["status"]): string {
   return "Task unaccepted; inspect the retained checks and diff.\n";
 }
 
-async function recordTaskAttempt(candidate: CandidateCheckout, grant: ProposalRunGrant,
-  signal: AbortSignal, writeError: (text: string) => void): Promise<RecordedTaskAttempt> {
-  const record = await open(join(candidate.directory, "attempt.jsonl"), "wx", 0o600);
+function attemptPasses(revision: SemanticRevision | null, session: PiTaskResult | null,
+  current: CandidateTaskCheck | null, signal: AbortSignal): boolean {
+  if (session === null || current === null || signal.aborted) return false;
+  return revision === null ? piTaskPasses(session, current) : piSemanticRevisionPasses(session, current);
+}
+
+async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTask, budget: PiTaskBudget,
+  revision: SemanticRevision | null, parentEvidence: CandidateTaskCheck | null, signal: AbortSignal,
+  writeError: (text: string) => void): Promise<RecordedTaskAttempt> {
+  const suffix = revision === null ? "" : "-r1";
+  const finalRecordPath = join(candidate.directory, `attempt${suffix}.jsonl`);
+  const recordPath = revision === null ? finalRecordPath : join(candidate.directory, "attempt-r1.partial");
+  const record = await open(recordPath, "wx", 0o600);
   let session: PiTaskResult | null = null;
   let current: CandidateTaskCheck | null = null;
   let reviewSaved = false;
   let passed = false;
   let evidencePersisted = true;
   let settlement: RecordedTaskAttempt["settlement"] = "observed";
+  let hostChecks = 0;
   try {
-    await record.writeFile(JSON.stringify({ format: "tesota-task-attempt", version: 1, state: "started",
+    await record.writeFile(JSON.stringify({ format: "tesota-task-attempt", version: revision === null ? 1 : 2, state: "started",
       timestamp: new Date().toISOString(), baseline: candidate.baseline, sourceDirty: candidate.sourceDirty,
       executor: await executorSha256(), model: LIVE_CODEX_MODEL_ID, limits: PI_TASK_LIMITS,
-      taskAcceptance: "not_evaluated" }) + "\n");
+      taskAcceptance: "not_evaluated", executionCause: revision === null ? "initial_implementation" : "semantic_revision",
+      ...(revision === null ? {} : { revisionSha256: semanticRevisionSha256(revision),
+        parentReviewSha256: revision.parentReviewSha256 }) }) + "\n");
     await record.sync();
     if (signal.aborted) throw new Error("Task interrupted");
-    session = await executeTaskSession(candidate, grant, signal);
+    session = await executeTaskSession(task, revision, parentEvidence, budget, signal);
   } catch {
     writeError("Task attempt did not complete successfully; retained state is available for inspection.\n");
   } finally {
     try {
-      await writeFile(join(candidate.directory, "candidate.diff"), await candidateDiff(candidate.directory),
+      await writeFile(join(candidate.directory, revision === null ? "candidate.diff" : "candidate-r1.diff"),
+        await candidateDiff(candidate.directory),
         { flag: "wx", mode: 0o600 });
       reviewSaved = true;
-      if (finalCheckPermitted(session, signal)) current = await checkCandidateTask(candidate.directory, signal);
-      passed = session !== null && current !== null && !signal.aborted && piTaskPasses(session, current);
+      if (finalCheckPermitted(session, signal)) {
+        hostChecks += 1;
+        current = await checkCandidateTask(candidate.directory, signal);
+      }
+      passed = attemptPasses(revision, session, current, signal);
     } catch { passed = false; }
     settlement = combinedSettlement(session, current);
     try {
@@ -140,35 +231,165 @@ async function recordTaskAttempt(candidate: CandidateCheckout, grant: ProposalRu
       await record.sync();
     } catch { evidencePersisted = false; }
     try { await record.close(); } catch { evidencePersisted = false; }
+    if (revision !== null && evidencePersisted) {
+      try { await rename(recordPath, finalRecordPath); } catch { evidencePersisted = false; }
+    }
     if (!evidencePersisted) writeError("Task attempt evidence persistence is incomplete; inspect the retained candidate.\n");
   }
-  return { session, current, reviewSaved, passed, settlement, evidencePersisted };
+  return { session, current, reviewSaved, passed, settlement, evidencePersisted, hostChecks };
+}
+
+const revisionAttemptStartedSchema = z.strictObject({
+  format: z.literal("tesota-task-attempt"), version: z.literal(2), state: z.literal("started"),
+  timestamp: z.iso.datetime(), baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u),
+  sourceDirty: z.boolean(), executor: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/u)),
+  model: z.string().min(1), limits: z.unknown(), taskAcceptance: z.literal("not_evaluated"),
+  executionCause: z.literal("semantic_revision"), revisionSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  parentReviewSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+});
+const revisionAttemptFinishedSchema = z.strictObject({
+  state: z.literal("finished"), timestamp: z.iso.datetime(), outcome: z.enum(["passed", "failed", "unsettled"]),
+  session: z.unknown(), current: z.unknown(), reviewSaved: z.boolean(), taskAcceptance: z.literal("not_evaluated"),
+});
+
+const revisionSessionSchema = z.object({ status: z.literal("completed"), settlement: z.literal("observed"),
+  executionCause: z.literal("semantic_revision"), finalCheckSuppliedToModel: z.literal(true),
+  taskAcceptance: z.literal("not_evaluated") });
+const revisionCurrentSchema = z.object({ status: z.literal("passed"), outcome: z.literal("passed"),
+  settlement: z.literal("observed"), provenance: z.literal("recorded_untrusted"),
+  taskAcceptance: z.literal("not_evaluated"), writeSetSha256: z.string().regex(/^[a-f0-9]{64}$/u) });
+
+export async function inspectSemanticRevisionAttempt(directory: string, revision: SemanticRevision): Promise<{
+  readonly session: unknown; readonly current: unknown;
+}> {
+  const path = join(directory, "attempt-r1.jsonl");
+  const file = await open(path, "r");
+  try {
+    const bytes = Buffer.alloc(1024 * 1024 + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const result = await file.read(bytes, length, bytes.length - length, null);
+      if (result.bytesRead === 0) break;
+      length += result.bytesRead;
+    }
+    if (length > 1024 * 1024) throw new Error("Semantic revision attempt exceeds bound");
+    const lines = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length)).split("\n").filter(Boolean);
+    if (lines.length !== 2) throw new Error("Semantic revision attempt incomplete");
+    const started = revisionAttemptStartedSchema.parse(JSON.parse(lines[0] ?? "null"));
+    const finished = revisionAttemptFinishedSchema.parse(JSON.parse(lines[1] ?? "null"));
+    if (started.revisionSha256 !== semanticRevisionSha256(revision) ||
+        started.parentReviewSha256 !== revision.parentReviewSha256 ||
+        Date.parse(finished.timestamp) < Date.parse(started.timestamp) || finished.outcome !== "passed" || !finished.reviewSaved) {
+      throw new Error("Semantic revision attempt invalid");
+    }
+    revisionSessionSchema.parse(finished.session);
+    revisionCurrentSchema.parse(finished.current);
+    return { session: finished.session, current: finished.current };
+  } finally { await file.close(); }
+}
+
+function correctionBudgetAvailable(task: CandidateTask, budget: PiTaskBudget): boolean {
+  const usage = task.usage();
+  return usage.reads < TASK_LIMITS.reads && usage.edits < TASK_LIMITS.edits && usage.checks < TASK_LIMITS.checks &&
+    budget.modelInvocations + 4 <= PI_TASK_LIMITS.modelInvocations &&
+    budget.toolCalls + 3 <= PI_TASK_LIMITS.toolCalls && budget.activeMs < PI_TASK_LIMITS.sessionMs;
+}
+
+async function runPhase(candidate: CandidateCheckout, task: CandidateTask, budget: PiTaskBudget,
+  revision: SemanticRevision | null, parentEvidence: CandidateTaskCheck | null,
+  host: TaskRunHost, writeError: (text: string) => void): Promise<RecordedTaskAttempt> {
+  const cancellation = new AbortController();
+  const interrupt = (): void => cancellation.abort();
+  const stopRelayingCancellation = relayCancellation(host.signal, cancellation);
+  process.once("SIGINT", interrupt);
+  process.once("SIGTERM", interrupt);
+  try {
+    return await recordTaskAttempt(candidate, task, budget, revision, parentEvidence, cancellation.signal, writeError);
+  } finally {
+    cancellation.abort();
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", interrupt);
+    stopRelayingCancellation();
+  }
 }
 
 /** Execute only an in-memory grant already issued by proposal admission. */
 async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunGrant,
   host: TaskRunHost): Promise<TaskRunResult> {
   const startedAt = performance.now();
-  const cancellation = new AbortController();
   const { write, writeError } = resolvedHost(host);
-  const interrupt = (): void => cancellation.abort();
-  const stopRelayingCancellation = relayCancellation(host.signal, cancellation);
-  process.once("SIGINT", interrupt);
-  process.once("SIGTERM", interrupt);
+  let task: CandidateTask | undefined;
+  const causes: TaskCauseAccounting = { initialImplementation: false, diagnosticRepairs: 0, semanticRevision: false };
+  let hostChecks = 0;
   try {
     write(`Task candidate: ${candidate.directory}\n`);
-    const attempt = await recordTaskAttempt(candidate, grant, cancellation.signal, writeError);
-    const status = taskRunStatus(attempt, cancellation.signal);
+    task = await CandidateTask.prepare(candidate.directory, grant);
+    const budget = createPiTaskBudget();
+    const attempt = await runPhase(candidate, task, budget, null, null, host, writeError);
+    hostChecks += attempt.hostChecks;
+    recordExecutionCauses(causes, attempt.session);
+    const status = taskRunStatus(attempt, host.signal ?? new AbortController().signal);
     write(taskRunMessage(status));
-    return { candidate, status, accounting: taskExecutionAccounting(attempt.session, startedAt) };
+    if (status !== "passed") {
+      task.close();
+      return { candidate, status, accounting: taskExecutionAccounting(attempt.session, startedAt, causes,
+        hostChecks, task.usage()),
+        correction: null };
+    }
+    let consumed = false;
+    const authority: TaskCorrectionAuthority = {
+      available: () => !consumed && task !== undefined && correctionBudgetAvailable(task, budget),
+      criteria: (refinement) => {
+        if (consumed || task === undefined) throw new Error("Semantic correction unavailable");
+        const parsed = parseSemanticRefinement(refinement);
+        return { refinementSha256: createHash("sha256").update(parsed).digest("hex"),
+          effectiveCriteriaSha256: effectiveCriteriaSha256(task.describe().definitionSha256, parsed) };
+      },
+      close: (): void => { consumed = true; task?.close(); },
+      run: async (request): Promise<TaskRunResult> => {
+        if (consumed || task === undefined || !correctionBudgetAvailable(task, budget)) {
+          task?.close();
+          throw new Error("Semantic correction unavailable within remaining task budget");
+        }
+        consumed = true;
+        const description = task.describe();
+        let revision: SemanticRevision;
+        try {
+          if (attempt.current === null || request.parentWriteSetSha256 !== attempt.current.writeSetSha256 ||
+              request.parentCheckSha256 !== createHash("sha256").update(JSON.stringify(attempt.current)).digest("hex")) {
+            throw new Error("Semantic correction parent evidence invalid");
+          }
+          revision = await recordSemanticRevision(candidate.directory, {
+            taskDefinitionSha256: description.definitionSha256,
+            parentReviewSha256: request.parentReviewSha256,
+            parentWriteSetSha256: request.parentWriteSetSha256,
+            parentCheckSha256: request.parentCheckSha256,
+            refinement: request.refinement,
+          });
+          const revised = await runPhase(candidate, task, budget, revision, attempt.current, host, writeError);
+          hostChecks += revised.hostChecks;
+          recordExecutionCauses(causes, revised.session);
+          const revisedStatus = taskRunStatus(revised, host.signal ?? new AbortController().signal);
+          write(taskRunMessage(revisedStatus));
+          task.close();
+          return { candidate, status: revisedStatus,
+            accounting: taskExecutionAccounting(revised.session, startedAt, causes, hostChecks, task.usage()),
+            correction: null };
+        } catch (error) {
+          task.close();
+          throw error;
+        }
+      },
+    };
+    return { candidate, status, accounting: taskExecutionAccounting(attempt.session, startedAt, causes,
+      hostChecks, task.usage()),
+      correction: authority };
   } catch {
+    task?.close();
     writeError("Task preparation or evidence persistence failed. No promotion occurred.\n");
-    return { candidate, status: "failed", accounting: taskExecutionAccounting(null, startedAt) };
-  } finally {
-    cancellation.abort();
-    process.removeListener("SIGINT", interrupt);
-    process.removeListener("SIGTERM", interrupt);
-    stopRelayingCancellation();
+    return { candidate, status: "failed", accounting: taskExecutionAccounting(null, startedAt, causes,
+      hostChecks, task?.usage()),
+      correction: null };
   }
 }
 

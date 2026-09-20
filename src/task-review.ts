@@ -3,7 +3,9 @@ import { lstat, open, realpath } from "node:fs/promises";
 import { join, relative } from "node:path";
 import * as z from "zod";
 import { candidateDiff, inspectCandidateCheckout } from "./candidate-checkout.js";
-import { checkCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
+import { checkCandidateTask, inspectCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
+import { readSemanticRevision, type SemanticRevision } from "./semantic-revision.js";
+import { inspectSemanticRevisionAttempt } from "./task-run.js";
 
 const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const decisionSchema: z.ZodObject<{
@@ -24,7 +26,7 @@ export interface TaskReview {
   readonly changedFiles: readonly string[];
   readonly check: CandidateTaskCheck;
   readonly diff: string;
-  readonly historicalAttempt: "not_evaluated";
+  readonly historicalAttempt: "not_evaluated" | "semantic_revision_passed";
   readonly operatorDecision: {
     readonly record: TaskDecision;
     readonly provenance: "recorded_untrusted";
@@ -48,6 +50,56 @@ function requireSettledCheck(check: CandidateTaskCheck): CandidateTaskCheck {
 }
 
 function digest(text: string): string { return createHash("sha256").update(text).digest("hex"); }
+function ignoreCheck(): void {}
+
+async function readBoundedText(path: string, maximum: number): Promise<string> {
+  const metadata = await lstat(path);
+  if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 || metadata.size > maximum ||
+      relative(path, await realpath(path)) !== "") throw new Error("Review evidence unavailable");
+  const file = await open(path, "r");
+  try {
+    const bytes = Buffer.alloc(maximum + 1);
+    let length = 0;
+    while (length < bytes.length) {
+      const result = await file.read(bytes, length, bytes.length - length, null);
+      if (result.bytesRead === 0) break;
+      length += result.bytesRead;
+    }
+    if (length > maximum) throw new Error("Review evidence unavailable");
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length));
+  } finally { await file.close(); }
+}
+
+const parentAttemptFinishedSchema = z.strictObject({
+  state: z.literal("finished"), timestamp: z.iso.datetime(), outcome: z.literal("passed"), session: z.unknown(),
+  current: z.object({ task: z.literal("typescript-change"), baseline: z.string(), writeSetSha256: digestSchema,
+    sourceInputsSha256: digestSchema, settlement: z.literal("observed") }),
+  reviewSaved: z.literal(true), taskAcceptance: z.literal("not_evaluated"),
+});
+
+async function validateRevisionParent(directory: string, revision: SemanticRevision): Promise<void> {
+  const attemptLines = (await readBoundedText(join(directory, "attempt.jsonl"), 1024 * 1024))
+    .split("\n").filter(Boolean);
+  if (attemptLines.length !== 2) throw new Error("R0 attempt evidence unavailable");
+  const finished = parentAttemptFinishedSchema.parse(JSON.parse(attemptLines[1] ?? "null"));
+  const rawFinished: unknown = JSON.parse(attemptLines[1] ?? "null");
+  if (typeof rawFinished !== "object" || rawFinished === null || !("current" in rawFinished)) {
+    throw new Error("R0 attempt evidence unavailable");
+  }
+  const rawCheck = rawFinished.current;
+  const diff = await readBoundedText(join(directory, "candidate.diff"), 256 * 1024);
+  const parentReviewSha256 = digest(JSON.stringify({
+    format: "tesota-task-review", version: 1, directory,
+    task: finished.current.task, baseline: finished.current.baseline,
+    writeSetSha256: finished.current.writeSetSha256,
+    checkSha256: digest(JSON.stringify(rawCheck)), diffSha256: digest(diff),
+  }));
+  if (revision.parentReviewSha256 !== parentReviewSha256 ||
+      revision.parentWriteSetSha256 !== finished.current.writeSetSha256 ||
+      revision.parentCheckSha256 !== digest(JSON.stringify(rawCheck))) {
+    throw new Error("Semantic revision parent identity invalid");
+  }
+}
 
 async function readDecision(directory: string): Promise<TaskDecision | null> {
   const path = join(directory, "decision.json");
@@ -73,29 +125,54 @@ async function readDecision(directory: string): Promise<TaskDecision | null> {
 }
 
 /** Fresh checks and a freshly generated diff; saved success claims are never acceptance inputs. */
-export async function reviewTask(directory: string): Promise<TaskReview> {
+export async function reviewTask(directory: string, observeCheck: () => void = ignoreCheck): Promise<TaskReview> {
   const candidate = await inspectCandidateCheckout(directory);
+  const revision = await readSemanticRevision(candidate.directory);
+  let revisionAttempt: Awaited<ReturnType<typeof inspectSemanticRevisionAttempt>> | null = null;
+  if (revision !== null) {
+    await validateRevisionParent(candidate.directory, revision);
+    revisionAttempt = await inspectSemanticRevisionAttempt(candidate.directory, revision);
+  }
+  observeCheck();
   const check = requireSettledCheck(await checkCandidateTask(candidate.directory));
+  if (revisionAttempt !== null && JSON.stringify(revisionAttempt.current) !== JSON.stringify(check)) {
+    throw new Error("Semantic revision check identity invalid");
+  }
   const diff = await candidateDiff(candidate.directory);
+  if (revision !== null && await readBoundedText(join(candidate.directory, "candidate-r1.diff"), 256 * 1024) !== diff) {
+    throw new Error("Semantic revision diff identity invalid");
+  }
+  observeCheck();
   const current = requireSettledCheck(await checkCandidateTask(candidate.directory));
   if (JSON.stringify(check) !== JSON.stringify(current)) throw new Error("Candidate changed during review");
-  const reviewSha256 = digest(JSON.stringify({
+  const task = await inspectCandidateTask(candidate.directory);
+  if (revision !== null && revision.taskDefinitionSha256 !== task.definitionSha256) {
+    throw new Error("Semantic revision task identity invalid");
+  }
+  const ordinaryIdentity = {
     format: "tesota-task-review", version: 1, directory: candidate.directory,
     task: check.task, baseline: check.baseline, writeSetSha256: check.writeSetSha256,
     checkSha256: digest(JSON.stringify(check)), diffSha256: digest(diff),
+  } as const;
+  const reviewSha256 = digest(JSON.stringify(revision === null ? ordinaryIdentity : {
+    ...ordinaryIdentity, version: 2, revision: "R1", effectiveCriteriaSha256: revision.effectiveCriteriaSha256,
+    parentReviewSha256: revision.parentReviewSha256, parentWriteSetSha256: revision.parentWriteSetSha256,
+    parentCheckSha256: revision.parentCheckSha256, taskDefinitionSha256: revision.taskDefinitionSha256,
   }));
   const record = await readDecision(candidate.directory);
   const currentCandidate = await inspectCandidateCheckout(candidate.directory);
   return { directory: candidate.directory, reviewSha256,
-    changedFiles: currentCandidate.changes.map((change) => change.path).sort(), check, diff, historicalAttempt: "not_evaluated",
+    changedFiles: currentCandidate.changes.map((change) => change.path).sort(), check, diff,
+    historicalAttempt: revision === null ? "not_evaluated" : "semantic_revision_passed",
     operatorDecision: record === null ? null : { record, provenance: "recorded_untrusted",
       applicability: record.reviewSha256 === reviewSha256 ? "current" : "stale" } };
 }
 
 /** Explicit local CLI assertion only. This API is never exposed as a model tool. */
-export async function decideTask(directory: string, request: unknown): Promise<TaskReview> {
+export async function decideTask(directory: string, request: unknown,
+  observeCheck: () => void = ignoreCheck): Promise<TaskReview> {
   const args = requestSchema.parse(request);
-  const review = await reviewTask(directory);
+  const review = await reviewTask(directory, observeCheck);
   if (review.operatorDecision !== null) throw new Error("A decision already exists");
   if (args.reviewSha256 !== review.reviewSha256) throw new Error("Review is stale");
   if (args.decision === "accept" && (review.check.status !== "passed" || review.check.sourceInputsSha256 === null)) {
@@ -107,5 +184,5 @@ export async function decideTask(directory: string, request: unknown): Promise<T
   try { await file.writeFile(JSON.stringify(record, null, 2) + "\n", "utf8"); await file.sync(); }
   finally { await file.close(); }
   // A late edit cannot be reported as a currently applicable decision.
-  return reviewTask(review.directory);
+  return reviewTask(review.directory, observeCheck);
 }

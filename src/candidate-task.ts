@@ -59,6 +59,47 @@ export interface CandidateTaskDescription {
   readonly checks: typeof TASK_CHECKS;
   readonly outcome: "human_review_required";
   readonly limits: typeof TASK_LIMITS;
+  readonly executionCause?: "initial_implementation" | "semantic_revision";
+  readonly semanticRevision?: Readonly<{
+    refinement: string;
+    parentReviewSha256: string;
+    parentWriteSetSha256: string;
+    parentCheckSha256: string;
+    effectiveCriteriaSha256: string;
+    parentEvidence: CandidateTaskCheck;
+    remainingBudget: Readonly<{
+      reads: number; edits: number; checks: number; modelInvocations: number; toolCalls: number; activeMs: number;
+    }>;
+  }>;
+}
+
+export interface CandidateTaskUsage {
+  readonly reads: number;
+  readonly edits: number;
+  readonly checks: number;
+}
+
+export interface CandidateTaskExecution {
+  describe(): CandidateTaskDescription;
+  requestSchemas(): ReturnType<typeof taskRequestSchemas>;
+  read(request: unknown): Promise<{ content: string; sha256: string }>;
+  replace(request: unknown): Promise<void>;
+  check(signal?: AbortSignal): Promise<CandidateTaskCheck>;
+  usage(): CandidateTaskUsage;
+  close(freeze?: boolean): void;
+}
+
+export interface SemanticExecutionContext {
+  readonly cause: "semantic_revision";
+  readonly refinement: string;
+  readonly parentReviewSha256: string;
+  readonly parentWriteSetSha256: string;
+  readonly parentCheckSha256: string;
+  readonly effectiveCriteriaSha256: string;
+  readonly parentEvidence: CandidateTaskCheck;
+  readonly remainingBudget: Readonly<{
+    reads: number; edits: number; checks: number; modelInvocations: number; toolCalls: number; activeMs: number;
+  }>;
 }
 
 function hash(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex"); }
@@ -200,6 +241,8 @@ export class CandidateTask {
   #checks = 0;
   #closed = false;
   #busy = false;
+  #generation = 0;
+  #activeGeneration: number | null = null;
 
   private constructor(directory: string, plan: TaskPlan, grant: ProposalRunGrant, initial: TaskFiles) {
     this.#directory = directory; this.#plan = plan; this.#grant = grant; this.#current = initial;
@@ -241,41 +284,86 @@ export class CandidateTask {
 
   close(): void { this.#closed = true; }
 
+  usage(): CandidateTaskUsage {
+    return { reads: this.#reads, edits: this.#edits, checks: this.#checks };
+  }
+
+  beginExecution(context?: SemanticExecutionContext): CandidateTaskExecution {
+    if (this.#closed || this.#busy || this.#activeGeneration !== null) throw new Error("Task execution unavailable");
+    const generation = this.#generation + 1;
+    this.#generation = generation;
+    this.#activeGeneration = generation;
+    return {
+      describe: (): CandidateTaskDescription => {
+        const description = this.describe();
+        return context === undefined ? { ...description, executionCause: "initial_implementation" } : {
+          ...description, executionCause: context.cause,
+          semanticRevision: { refinement: context.refinement, parentReviewSha256: context.parentReviewSha256,
+            parentWriteSetSha256: context.parentWriteSetSha256, parentCheckSha256: context.parentCheckSha256,
+            effectiveCriteriaSha256: context.effectiveCriteriaSha256, parentEvidence: context.parentEvidence,
+            remainingBudget: context.remainingBudget },
+        };
+      },
+      requestSchemas: () => this.requestSchemas(),
+      read: (request) => this.#read(request, generation),
+      replace: (request) => this.#replace(request, generation),
+      check: (signal) => this.#check(signal, generation),
+      usage: () => this.usage(),
+      close: (freeze = false): void => {
+        if (this.#activeGeneration === generation) this.#activeGeneration = null;
+        if (freeze) this.#closed = true;
+      },
+    };
+  }
+
   requestSchemas(): ReturnType<typeof taskRequestSchemas> {
     return taskRequestSchemas(this.#grant.readFiles as [string, ...string[]],
       this.#grant.writeFiles as [string, ...string[]]);
   }
 
   async #operation<T>(action: (snapshot: { checkout: string; files: TaskFiles }) => Promise<T>,
-    retainAfterClose: (result: T) => boolean = () => false): Promise<T> {
+    retainAfterClose: (result: T) => boolean = () => false, generation?: number): Promise<T> {
+    if (generation !== undefined && generation !== this.#activeGeneration) throw new Error("Task capability expired");
     if (this.#closed || this.#busy) { this.#closed = true; throw new Error("Task is closed or busy"); }
     this.#busy = true;
     try {
       const snapshot = await observe(this.#directory, this.#plan, this.#grant);
-      if (this.#closed || !sameFiles(snapshot.files, this.#current)) throw new Error("Task source changed externally");
+      if (this.#closed || generation !== undefined && generation !== this.#activeGeneration ||
+          !sameFiles(snapshot.files, this.#current)) throw new Error("Task source changed externally");
       const result = await action(snapshot);
-      if (this.#closed && !retainAfterClose(result)) throw new Error("Task closed");
+      if ((this.#closed || generation !== undefined && generation !== this.#activeGeneration) && !retainAfterClose(result)) {
+        throw new Error("Task closed");
+      }
       return result;
     } catch { this.#closed = true; throw new Error("Task operation denied or unavailable"); }
     finally { this.#busy = false; }
   }
 
   async read(request: unknown): Promise<{ content: string; sha256: string }> {
+    return this.#read(request);
+  }
+
+  async #read(request: unknown, generation?: number): Promise<{ content: string; sha256: string }> {
     return this.#operation(async ({ checkout }) => {
       const args = this.requestSchemas().read.parse(request);
       if (this.#reads >= TASK_LIMITS.reads) throw new Error("Read budget exceeded");
       this.#reads += 1;
       const content = await readText(join(checkout, args.path));
       return { content, sha256: hash(content) };
-    });
+    }, undefined, generation);
   }
 
   async replace(request: unknown): Promise<void> {
+    return this.#replace(request);
+  }
+
+  async #replace(request: unknown, generation?: number): Promise<void> {
     return this.#operation(async ({ checkout, files }) => {
       const args = this.requestSchemas().replace.parse(request);
       const currentContent = files[args.path];
       if (currentContent === undefined || this.#checks === 0 || this.#edits >= TASK_LIMITS.edits ||
           args.expectedSha256 !== hash(currentContent)) throw new Error("Edit denied");
+      this.#edits += 1;
       const target = join(checkout, args.path);
       const temporary = join(this.#directory, `.tesota-${randomUUID()}.tmp`);
       const file = await open(temporary, "wx", 0o600);
@@ -287,14 +375,18 @@ export class CandidateTask {
         if (this.#closed || !sameFiles(current.files, files) ||
             relative(dirname(target), await realpath(dirname(target))) !== "") throw new Error("Task changed during edit");
         await rename(temporary, target);
-        this.#current = { ...files, [args.path]: args.content }; this.#edits += 1;
+        this.#current = { ...files, [args.path]: args.content };
         const updated = await observe(this.#directory, this.#plan, this.#grant);
         if (!sameFiles(updated.files, this.#current)) throw new Error("Task write mismatch");
       } finally { await unlink(temporary).catch(() => {}); }
-    });
+    }, undefined, generation);
   }
 
   async check(signal?: AbortSignal): Promise<CandidateTaskCheck> {
+    return this.#check(signal);
+  }
+
+  async #check(signal?: AbortSignal, generation?: number): Promise<CandidateTaskCheck> {
     const result = await this.#operation<CandidateTaskCheck>(async ({ files }) => {
       if (this.#checks >= TASK_LIMITS.checks) throw new Error("Check budget exceeded");
       this.#checks += 1;
@@ -304,7 +396,7 @@ export class CandidateTask {
         baseline: this.#plan.baseline, writeSetSha256: taskWriteSetSha256(files, this.#grant.writeFiles),
         sourceInputsSha256: sourceInputsSha256(this.#plan),
         taskAcceptance: "not_evaluated" as const };
-    }, (check) => check.settlement === "unconfirmed");
+    }, (check) => check.settlement === "unconfirmed", generation);
     if (result.outcome === "operational_failed") this.close();
     return result;
   }
@@ -327,11 +419,11 @@ async function loadCandidateTask(directory: string): Promise<{ plan: TaskPlan; g
 }
 
 export async function inspectCandidateTask(directory: string): Promise<{
-  task: typeof TASK_KIND; baseline: string; writeSetSha256: string; writeFiles: readonly string[];
+  task: typeof TASK_KIND; baseline: string; definitionSha256: string; writeSetSha256: string; writeFiles: readonly string[];
   sourceInputs: TaskSourceInputs | null; promotable: boolean;
 }> {
   const loaded = await loadCandidateTask(directory);
-  return { task: TASK_KIND, baseline: loaded.plan.baseline,
+  return { task: TASK_KIND, baseline: loaded.plan.baseline, definitionSha256: loaded.plan.definitionSha256,
     writeSetSha256: taskWriteSetSha256(loaded.files, loaded.grant.writeFiles),
     writeFiles: [...loaded.grant.writeFiles],
     sourceInputs: loaded.plan.version === 2 ? loaded.plan.sourceInputs : null, promotable: loaded.plan.version === 2 };

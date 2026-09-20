@@ -78,6 +78,32 @@ it("reports an active check as unconfirmed when cancellation cannot observe its 
   await vi.waitFor(() => expect(task.check).toHaveBeenCalledOnce());
   cancellation.abort();
 
-  await expect(running).resolves.toMatchObject({ status: "unsettled", settlement: "unconfirmed" });
+  await expect(running).resolves.toMatchObject({ status: "unsettled", settlement: "unconfirmed",
+    modelInvocations: 1, toolCalls: 1 });
   expect(task.close).toHaveBeenCalled();
+}, 10_000);
+
+it.each(["tesota_read", "tesota_replace"] as const)("reports an active %s effect as unconfirmed", async (tool) => {
+  const never = async (): Promise<never> => await new Promise<never>((_resolve) => undefined);
+  const task = {
+    describe: () => description,
+    requestSchemas: () => taskRequestSchemas(["src/value.ts"], ["src/value.ts"]),
+    read: vi.fn(never),
+    replace: vi.fn(never),
+    check: vi.fn(),
+    close: vi.fn(),
+  } as unknown as CandidateTask;
+  const faux = fauxProvider({ models: [{ id: "offline", name: "Offline" }] });
+  faux.setResponses([fauxAssistantMessage(tool === "tesota_read"
+    ? fauxToolCall(tool, { path: "src/value.ts" })
+    : fauxToolCall(tool, { path: "src/value.ts", expectedSha256: "a".repeat(64), content: "new" }))]);
+  const cancellation = new AbortController();
+
+  const running = runPiTask(task, faux.getModel(), faux.provider.streamSimple, cancellation.signal);
+  await vi.waitFor(() => expect(tool === "tesota_read" ? task.read : task.replace).toHaveBeenCalledOnce());
+  cancellation.abort();
+
+  await expect(running).resolves.toMatchObject({ status: "unsettled", settlement: "unconfirmed",
+    modelInvocations: 1, toolCalls: 1 });
+  expect(task.close).toHaveBeenCalledWith(true);
 }, 10_000);

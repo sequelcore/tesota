@@ -77,7 +77,7 @@ it("reports unconfirmed application without implying that no write occurred", as
   await journal.close();
 });
 
-it("keeps a historical v1 generic promotion failure unconfirmed while writing explicit v2 receipts", async () => {
+it("keeps a historical v1 generic promotion failure unconfirmed while writing explicit v3 receipts", async () => {
   const directory = await fixture();
   const timestamp = "2026-09-15T00:00:00.000Z";
   const accounting = { elapsedMs: 100, firstCheck: "check_failed", correctionAttempts: 1,
@@ -99,7 +99,7 @@ it("keeps a historical v1 generic promotion failure unconfirmed while writing ex
 
   const next = await fixture();
   const journal = await createTaskOutcome(next, identity);
-  expect(await readFile(join(next, "start.jsonl"), "utf8")).toContain('"version":2');
+  expect(await readFile(join(next, "start.jsonl"), "utf8")).toContain('"version":3');
   await journal.close();
 });
 
@@ -116,5 +116,96 @@ it("rejects malformed, excess and impossible recovered histories", async () => {
     extra: true }) + "\n");
   await expect(loadTaskOutcome(directory)).rejects.toThrow("Task outcome unavailable");
   await writeFile(path, "{\n");
+  await expect(loadTaskOutcome(directory)).rejects.toThrow("Task outcome unavailable");
+});
+
+it("accepts one R0 to R1 chronology with a passing no-op revision", async () => {
+  const directory = await fixture();
+  const journal = await createTaskOutcome(directory, identity);
+  const r0 = "c".repeat(64);
+  const noOpAccounting = { elapsedMs: 200, firstCheck: "passed" as const, correctionAttempts: 0,
+    modelInvocations: 5, toolCalls: 6, edits: 1,
+    resources: { reads: 2, checks: 3, hostChecks: 2, activeMs: 100 },
+    consumption: { status: "partial" as const, tokenUsage: "unavailable" as const, cost: "unavailable" as const } };
+  await journal.append({ state: "execution_started" });
+  await journal.append({ state: "execution_finished", candidate: "candidate-1", result: {
+    status: "passed", accounting: { ...noOpAccounting, firstCheck: "check_failed", correctionAttempts: 1 },
+  } });
+  await journal.append({ state: "review_ready", reviewSha256: r0, checkStatus: "passed", hostChecks: 3 });
+  await journal.append({ state: "correction_approved", parentReviewSha256: r0,
+    refinementSha256: "d".repeat(64), effectiveCriteriaSha256: "e".repeat(64), hostChecks: 5 });
+  await journal.append({ state: "revision_started", parentReviewSha256: r0, hostChecks: 5 });
+  await journal.append({ state: "revision_finished", candidate: "candidate-1", parentReviewSha256: r0,
+    result: { status: "passed", accounting: noOpAccounting }, hostChecks: 6 });
+  await journal.append({ state: "review_ready", revision: "R1", parentReviewSha256: r0,
+    reviewSha256: "f".repeat(64), checkStatus: "passed", hostChecks: 8 });
+  await expect(journal.append({ state: "correction_approved", parentReviewSha256: "f".repeat(64),
+    refinementSha256: "1".repeat(64), effectiveCriteriaSha256: "2".repeat(64) })).rejects.toThrow();
+  await journal.append({ state: "decision_recorded", decision: "reject", reviewSha256: "f".repeat(64),
+    hostChecks: 12 });
+  await expect(journal.append({ state: "finished", outcome: "rejected", hostChecks: 11 })).rejects.toThrow();
+  await journal.append({ state: "finished", outcome: "rejected", hostChecks: 12 });
+  await journal.close();
+  await expect(loadTaskOutcome(directory)).resolves.toMatchObject({ status: "rejected", candidate: "candidate-1",
+    execution: { ...noOpAccounting, resources: { ...noOpAccounting.resources, hostChecks: 12 } },
+    operator: { decision: "reject" } });
+});
+
+it("rejects parent mismatch, a second correction, timestamp regression and excess R1 events", async () => {
+  const directory = await fixture();
+  const timestamp = "2026-09-20T00:00:00.000Z";
+  const later = "2026-09-20T00:00:01.000Z";
+  const initial = { format: "tesota-task-outcome", version: 3, state: "awaiting_scope_approval", ...identity,
+    timestamp, authority: "none" };
+  const accounting = { elapsedMs: 100, firstCheck: "check_failed", correctionAttempts: 1,
+    modelInvocations: 3, toolCalls: 4, edits: 1,
+    consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } };
+  const r0 = "c".repeat(64);
+  const prefix = [initial, { state: "execution_started", timestamp },
+    { state: "execution_finished", timestamp, candidate: "candidate", result: { status: "passed", accounting } },
+    { state: "review_ready", timestamp, reviewSha256: r0, checkStatus: "passed" }];
+  const path = join(directory, "start.jsonl");
+  await writeFile(path, [...prefix, { state: "correction_approved", timestamp: later,
+    parentReviewSha256: "9".repeat(64), refinementSha256: "d".repeat(64),
+    effectiveCriteriaSha256: "e".repeat(64) }].map((event) => JSON.stringify(event)).join("\n") + "\n");
+  await expect(loadTaskOutcome(directory)).rejects.toThrow("Task outcome unavailable");
+  await writeFile(path, [...prefix, { state: "correction_approved", timestamp: later, parentReviewSha256: r0,
+    refinementSha256: "d".repeat(64), effectiveCriteriaSha256: "e".repeat(64) },
+  { state: "revision_started", timestamp, parentReviewSha256: r0 }].map((event) => JSON.stringify(event)).join("\n") + "\n");
+  await expect(loadTaskOutcome(directory)).rejects.toThrow("Task outcome unavailable");
+  await writeFile(path, Array.from({ length: 13 }, () => JSON.stringify(initial)).join("\n") + "\n");
+  await expect(loadTaskOutcome(directory)).rejects.toThrow("Task outcome unavailable");
+});
+
+it("preserves v2 R0 semantics and rejects correction after a final decision", async () => {
+  const directory = await fixture();
+  const timestamp = "2026-09-20T00:00:00.000Z";
+  const accounting = { elapsedMs: 100, firstCheck: "check_failed", correctionAttempts: 1,
+    modelInvocations: 3, toolCalls: 4, edits: 1,
+    consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } };
+  const r0 = "c".repeat(64);
+  const history = [
+    { format: "tesota-task-outcome", version: 2, state: "awaiting_scope_approval", ...identity,
+      timestamp, authority: "none" },
+    { state: "execution_started", timestamp },
+    { state: "execution_finished", timestamp, candidate: "candidate", result: { status: "passed", accounting } },
+    { state: "review_ready", timestamp, reviewSha256: r0, checkStatus: "passed" },
+    { state: "decision_recorded", timestamp, decision: "reject", reviewSha256: r0 },
+    { state: "finished", timestamp, outcome: "rejected" },
+  ];
+  const path = join(directory, "start.jsonl");
+  await writeFile(path, history.map((event) => JSON.stringify(event)).join("\n") + "\n");
+  await expect(loadTaskOutcome(directory)).resolves.toMatchObject({ status: "rejected", operator: { decision: "reject" } });
+  const broadenedLegacy: unknown[] = [history[0], history[1],
+    { state: "execution_finished", timestamp, candidate: "candidate", result: { status: "passed",
+      accounting: { ...accounting,
+        causes: { initialImplementation: true, diagnosticRepairs: 1, semanticRevision: false } } } },
+    ...history.slice(3)];
+  await writeFile(path, broadenedLegacy.map((event) => JSON.stringify(event)).join("\n") + "\n");
+  await expect(loadTaskOutcome(directory)).rejects.toThrow("Task outcome unavailable");
+  const invalid: unknown[] = [{ ...history[0], version: 3 }, ...history.slice(1, 5),
+    { state: "correction_approved", timestamp, parentReviewSha256: r0,
+      refinementSha256: "d".repeat(64), effectiveCriteriaSha256: "e".repeat(64) }];
+  await writeFile(path, invalid.map((event) => JSON.stringify(event)).join("\n") + "\n");
   await expect(loadTaskOutcome(directory)).rejects.toThrow("Task outcome unavailable");
 });
