@@ -195,12 +195,25 @@ submitted to discovery or task execution, so no model invocation, proposal,
 write authority, edit, review decision or application exists for this
 follow-up.
 
-This interruption confirms that cancellation now settles correctly, but also
-that the whole-installation copy-and-rehash design is not usable enough for the
-ordinary milestone path on the qualification filesystem. Increasing execution
-or session deadlines does not correct that pre-dispatch cost. The next live
-attempt remains blocked on a bounded verifier-input design that preserves the
-exact dependency binding without repeating this multi-minute preflight.
+This interruption confirms that cancellation now settles correctly. Later
+static inspection found a more specific competing explanation for the latency:
+the bounded reader allocates its 128 MiB per-file maximum plus one byte for every
+dependency, even when the file is small. For 1,490 files, one complete walk
+therefore requests about 186 GiB of cumulative zero-filled allocations. The
+successful prepare-and-check path contains seven complete dependency reads, or
+about 1.27 TiB of cumulative requested allocation. These figures are a source
+trace, not simultaneous resident memory, physical I/O or a measured attribution
+of elapsed time. [Node documents](https://nodejs.org/api/buffer.html#static-method-bufferallocsize-fill-encoding)
+that `Buffer.alloc(size)` creates a zero-filled buffer of the requested size.
+
+The observed multi-minute preflight remains valid, but it does not establish
+that Docker or whole-installation snapshots are the primary cause. Increasing
+execution or session deadlines does not correct the reader. The next live
+attempt remains blocked on a bounded reader repair followed by model-free phase
+measurements of preparation, source validation, copying, snapshot validation,
+compiler execution, post-validation and cleanup. The initial repair retains all
+existing safety passes; snapshot reuse is considered only if measurements show
+that copying remains material afterward.
 
 The controlled matrix was repeated against that exact commit on Windows x64,
 Bun 1.4.2, Node 24.15.0 and Docker 29.8.0. Its sanitized record is

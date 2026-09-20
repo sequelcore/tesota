@@ -49,8 +49,10 @@ then required a corrected final mount and memory policy, so that exact matrix
 must be refreshed. A successful, newly frozen prospective external task through
 the ordinary product flow also remains missing. Its latest fresh preflight was
 cancelled cleanly before compiler dispatch and exposed a remaining usability
-blocker: whole-installation dependency copying and rehashing takes multiple
-minutes on the qualification filesystem.
+blocker: dependency preparation takes multiple minutes on the qualification
+filesystem. Subsequent inspection found that the bounded reader reserves its
+128 MiB per-file maximum for every dependency, including small files. The
+contribution of copying, hashing and filesystem behavior remains unmeasured.
 
 Historical experiments demonstrate mechanisms, not active product routes. See
 [experiments](../experiments/README.md) and [project history](history/README.md).
@@ -78,10 +80,14 @@ diagnostic-driven edits, exact-result checks, diff review, guarded application,
 ordinary-path continuation after known settlement and fail-closed termination
 when settlement is uncertain. Remaining work is a refreshed controlled live
 TypeScript-profile matrix for the final Windows/Docker command and prospective
-successful evidence on the newly frozen external task.
-The external task must not be attempted again until the dependency-input
-preflight cost is reduced without weakening its binding or cancellation
-semantics.
+successful evidence on the newly frozen external task. The external task must
+not be attempted again until the dependency reader is corrected and phase
+measurements show that preflight cost is usable without weakening input binding
+or cancellation semantics. The existing Docker profile remains the frozen
+Milestone 1 environment. Qualifying an OS-sandboxed local default is the next
+separately owned execution-environment increment described by
+[decision 007](decisions/007-execution-environments.md), not a silent change to
+this milestone.
 
 Completion evidence is defined in [qualification](qualification.md). Passing
 component checks alone does not complete the milestone.
