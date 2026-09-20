@@ -66,8 +66,31 @@ const accounting: TaskExecutionAccounting = { elapsedMs: 100, firstCheck: "check
   resources: { reads: 1, checks: 2, hostChecks: 1, activeMs: 50 },
   consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } };
 
-function observeChecks(observe: (() => void) | undefined, count: number): void {
-  for (let index = 0; index < count; index += 1) observe?.();
+function hostCheckOracle() {
+  let observed = 0;
+  return {
+    record: (): void => { observed += 1; },
+    relay: (observe: (() => void) | undefined, count: number): void => {
+      for (let index = 0; index < count; index += 1) {
+        observed += 1;
+        observe?.();
+      }
+    },
+    observed: (): number => observed,
+  };
+}
+
+function expectHostChecksNeverRegress(history: string): void {
+  const recorded = history.trim().split("\n").flatMap((line): number[] => {
+    const event: unknown = JSON.parse(line);
+    if (typeof event !== "object" || event === null || !("hostChecks" in event)) return [];
+    const hostChecks = event.hostChecks;
+    return typeof hostChecks === "number" ? [hostChecks] : [];
+  });
+  expect(recorded.length).toBeGreaterThan(0);
+  for (const [index, value] of recorded.entries()) {
+    if (index > 0) expect(value).toBeGreaterThanOrEqual(recorded[index - 1] ?? 0);
+  }
 }
 
 it("runs one approved proposal through execution, review, decision and promotion without copied lifecycle ids", async () => {
@@ -75,16 +98,20 @@ it("runs one approved proposal through execution, review, decision and promotion
   const candidate = { directory: join(current.directory, "candidate"), checkout: join(current.directory, "repo"),
     baseline: current.baseline, sourceDirty: false };
   const review = passingReview(candidate.directory, current.baseline);
-  const execute = vi.fn(async () => ({ candidate, status: "passed" as const, accounting }));
+  const hostChecks = hostCheckOracle();
+  const execute = vi.fn(async () => {
+    hostChecks.record();
+    return { candidate, status: "passed" as const, accounting };
+  });
   const decide = vi.fn(async (_directory: string, _request: unknown, observe?: () => void) => {
-    observeChecks(observe, 4);
+    hostChecks.relay(observe, 4);
     return { ...review, operatorDecision: { record: { format: "tesota-task-decision" as const,
     version: 1 as const, decision: "accept" as const, reviewSha256: review.reviewSha256,
     recordedAt: new Date().toISOString(), authority: "local_operator_assertion" as const },
     provenance: "recorded_untrusted" as const, applicability: "current" as const } };
   });
   const promote = vi.fn(async (_directory: string, _source: string, _review: string, observe?: () => void) => {
-    observeChecks(observe, 4);
+    hostChecks.relay(observe, 4);
     return { status: "applied" as const, source: current.source,
       files: [{ path: "src/value.ts", sourceSha256: "d".repeat(64) }] };
   });
@@ -94,7 +121,7 @@ it("runs one approved proposal through execution, review, decision and promotion
     reference: current.id, ask: vi.fn().mockResolvedValueOnce("yes").mockResolvedValueOnce("yes"),
     write: (text) => output.push(text), report: (event) => progress.push(`${event.phase}:${event.operation}`),
     execute, review: async (_directory: string, observe?: () => void) => {
-      observeChecks(observe, 2); return review;
+      hostChecks.relay(observe, 2); return review;
     }, decide, promote })).resolves.toEqual({
       status: "settled", exitCode: 0, outcome: "promoted",
     });
@@ -117,12 +144,16 @@ it("runs one approved proposal through execution, review, decision and promotion
   expect(output.join("")).toContain(JSON.stringify(review.diff));
   expect(progress).toEqual(["awaiting_approval:proposal_scope", "executing:candidate_task",
     "ready_for_review:candidate_review", "promoting:accepted_candidate"]);
-  expect(await readFile(join(current.directory, "start.jsonl"), "utf8")).toContain('"outcome":"promoted"');
-  expect(output.join("")).toContain("First check: check_failed\nCorrections: 1");
-  await expect(loadProposalTaskOutcome(current.proposalsRoot, current.id)).resolves.toMatchObject({
-    status: "promoted", proposalId: current.id, candidate: candidate.directory,
-    execution: { resources: { hostChecks: 11 } },
-  });
+  const history = await readFile(join(current.directory, "start.jsonl"), "utf8");
+  expect(history).toContain('"outcome":"promoted"');
+  expectHostChecksNeverRegress(history);
+  expect(output.join("")).toContain(
+    "First check: check_failed\nExecution operations: 3 model invocations, 4 tool calls, 1 edit",
+  );
+  expect(output.join("")).not.toContain("Corrections:");
+  const outcome = await loadProposalTaskOutcome(current.proposalsRoot, current.id);
+  expect(outcome).toMatchObject({ status: "promoted", proposalId: current.id, candidate: candidate.directory });
+  expect(outcome.execution?.resources?.hostChecks).toBe(hostChecks.observed());
 });
 
 it("runs one approved semantic correction through a fresh R1 review and promotes only R1", async () => {
@@ -136,26 +167,30 @@ it("runs one approved semantic correction through a fresh R1 review and promotes
   const revisedAccounting = { ...accounting, elapsedMs: 180, modelInvocations: 6, toolCalls: 7, edits: 2,
     resources: { reads: accounting.resources?.reads ?? 0, checks: accounting.resources?.checks ?? 0,
       hostChecks: 2, activeMs: accounting.resources?.activeMs ?? 0 } };
+  const hostChecks = hostCheckOracle();
   const correction = {
     available: vi.fn(() => true),
     criteria: vi.fn(() => ({ refinementSha256: "1".repeat(64), effectiveCriteriaSha256: "2".repeat(64) })),
-    run: vi.fn(async () => ({ candidate, status: "passed" as const, accounting: revisedAccounting, correction: null })),
+    run: vi.fn(async () => {
+      hostChecks.record();
+      return { candidate, status: "passed" as const, accounting: revisedAccounting, correction: null };
+    }),
     close: vi.fn(),
   };
   const reviews = vi.fn(async (_directory: string, observe?: () => void) => {
-    observeChecks(observe, 2);
+    hostChecks.relay(observe, 2);
     const call = reviews.mock.calls.length;
     return call < 3 ? r0 : r1;
   });
   const decide = vi.fn(async (_directory: string, _request: unknown, observe?: () => void) => {
-    observeChecks(observe, 4);
+    hostChecks.relay(observe, 4);
     return { ...r1, operatorDecision: { record: {
     format: "tesota-task-decision" as const, version: 1 as const, decision: "accept" as const,
     reviewSha256: r1.reviewSha256, recordedAt: new Date().toISOString(), authority: "local_operator_assertion" as const,
     }, provenance: "recorded_untrusted" as const, applicability: "current" as const } };
   });
   const promote = vi.fn(async (_directory: string, _source: string, _review: string, observe?: () => void) => {
-    observeChecks(observe, 4);
+    hostChecks.relay(observe, 4);
     return { status: "applied" as const, source: current.source,
       files: [{ path: "src/value.ts", sourceSha256: "3".repeat(64) }] };
   });
@@ -163,8 +198,10 @@ it("runs one approved semantic correction through a fresh R1 review and promotes
     .mockResolvedValueOnce("Use the alternate wording.").mockResolvedValueOnce("yes").mockResolvedValueOnce("yes");
 
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
-    reference: current.id, ask, write: () => {}, execute: async () => ({ candidate, status: "passed", accounting,
-      correction }), review: reviews, decide, promote })).resolves.toEqual({
+    reference: current.id, ask, write: () => {}, execute: async () => {
+      hostChecks.record();
+      return { candidate, status: "passed" as const, accounting, correction };
+    }, review: reviews, decide, promote })).resolves.toEqual({
     status: "settled", exitCode: 0, outcome: "promoted",
   });
 
@@ -179,9 +216,9 @@ it("runs one approved semantic correction through a fresh R1 review and promotes
   expect(history).toContain('"state":"correction_approved"');
   expect(history).toContain('"state":"revision_finished"');
   expect(history).not.toContain('"decision":"accept","reviewSha256":"' + r0.reviewSha256);
-  await expect(loadProposalTaskOutcome(current.proposalsRoot, current.id)).resolves.toMatchObject({
-    execution: { resources: { hostChecks: 16 } },
-  });
+  expectHostChecksNeverRegress(history);
+  const outcome = await loadProposalTaskOutcome(current.proposalsRoot, current.id);
+  expect(outcome.execution?.resources?.hostChecks).toBe(hostChecks.observed());
 });
 
 it.each([
@@ -213,8 +250,9 @@ it("settles a rejected candidate without promotion", async () => {
   const candidate = { directory: join(current.directory, "candidate"), checkout: join(current.directory, "repo"),
     baseline: current.baseline, sourceDirty: false };
   const review = passingReview(candidate.directory, current.baseline);
+  const hostChecks = hostCheckOracle();
   const decide = vi.fn(async (_directory: string, _request: unknown, observe?: () => void) => {
-    observeChecks(observe, 4);
+    hostChecks.relay(observe, 4);
     return { ...review, operatorDecision: { record: {
     format: "tesota-task-decision" as const, version: 1 as const, decision: "reject" as const,
     reviewSha256: review.reviewSha256, recordedAt: new Date().toISOString(),
@@ -225,9 +263,12 @@ it("settles a rejected candidate without promotion", async () => {
 
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
     reference: current.id, ask: vi.fn().mockResolvedValueOnce("yes").mockResolvedValueOnce("no"),
-    write: () => {}, execute: async () => ({ candidate, status: "passed", accounting }),
+    write: () => {}, execute: async () => {
+      hostChecks.record();
+      return { candidate, status: "passed" as const, accounting };
+    },
     review: async (_directory: string, observe?: () => void) => {
-      observeChecks(observe, 2); return review;
+      hostChecks.relay(observe, 2); return review;
     }, decide, promote })).resolves.toEqual({
       status: "settled", exitCode: 1, outcome: "rejected",
     });
@@ -235,10 +276,11 @@ it("settles a rejected candidate without promotion", async () => {
   expect(decide).toHaveBeenCalledWith(candidate.directory,
     { decision: "reject", reviewSha256: review.reviewSha256 }, expect.any(Function));
   expect(promote).not.toHaveBeenCalled();
-  await expect(loadProposalTaskOutcome(current.proposalsRoot, current.id)).resolves.toMatchObject({
-    status: "rejected", terminal: true, promotion: "not_reached",
-    execution: { resources: { hostChecks: 7 } },
-  });
+  const history = await readFile(join(current.directory, "start.jsonl"), "utf8");
+  expectHostChecksNeverRegress(history);
+  const outcome = await loadProposalTaskOutcome(current.proposalsRoot, current.id);
+  expect(outcome).toMatchObject({ status: "rejected", terminal: true, promotion: "not_reached" });
+  expect(outcome.execution?.resources?.hostChecks).toBe(hostChecks.observed());
 });
 
 it("records scope refusal without granting execution and rejects replay of the exact proposal", async () => {

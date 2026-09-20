@@ -387,7 +387,9 @@ function applicationSummary(promotion: TaskOutcome["promotion"]): string {
 
 export function formatTaskOutcome(outcome: TaskOutcome): string {
   const execution = outcome.execution === null ? "Execution: not observed\n" :
-    `Execution: ${outcome.execution.modelInvocations} model invocations, ${outcome.execution.toolCalls} tool calls, ${outcome.execution.edits} edits\n`;
+    `Execution operations: ${outcome.execution.modelInvocations} model invocations, ` +
+    `${outcome.execution.toolCalls} tool calls, ${outcome.execution.edits} ` +
+    `edit${outcome.execution.edits === 1 ? "" : "s"}\n`;
   const consumption = outcome.execution === null ? "Consumption: unavailable.\n" :
     "Consumption: operation counts only; token usage and cost unavailable.\n";
   const causes = outcome.execution?.causes === undefined ? "" :
@@ -397,7 +399,7 @@ export function formatTaskOutcome(outcome: TaskOutcome): string {
   const hostChecks = outcome.execution?.resources === undefined ? "" :
     `Host checks observed: ${outcome.execution.resources.hostChecks}\n`;
   return `\nTask outcome\nOutcome: ${outcome.status}\nElapsed: ${outcome.elapsedMs} ms\n` +
-    `Last phase: ${outcome.lastPhase}\nFirst check: ${outcome.firstCheck}\nCorrections: ${outcome.correctionAttempts}\n${execution}` +
+    `Last phase: ${outcome.lastPhase}\nFirst check: ${outcome.firstCheck}\n${execution}` +
     `${causes}${hostChecks}Decision: ${outcome.operator.decision}\nApplication: ${applicationSummary(outcome.promotion)}\n${consumption}` +
     "Authority: none; this outcome cannot authorize execution, acceptance or application.\n";
 }

@@ -15,6 +15,34 @@ import { checkRepositoryTypecheck, type RepositoryTypecheckResult } from "../src
 import { runPiTask } from "../src/integrations/pi-task.js";
 import { recordSemanticRevision, semanticRevisionSha256 } from "../src/semantic-revision.js";
 
+const candidateRename = vi.hoisted(() => ({
+  active: false,
+  afterTemporaryClose: null as (() => Promise<void>) | null,
+  dispatches: 0,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...original,
+    open: async (path: string, flags: string, mode?: number) => {
+      const opened = await original.open(path, flags, mode);
+      if (!candidateRename.active || flags !== "wx" || !path.includes(".tesota-")) return opened;
+      return {
+        writeFile: opened.writeFile.bind(opened),
+        sync: opened.sync.bind(opened),
+        close: async () => {
+          await opened.close();
+          await candidateRename.afterTemporaryClose?.();
+        },
+      };
+    },
+    rename: async (from: string, to: string) => {
+      if (candidateRename.active && from.includes(".tesota-")) candidateRename.dispatches += 1;
+      await original.rename(from, to);
+    },
+  };
+});
+
 vi.mock("../src/repository-typecheck.js", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
   return { ...original, checkRepositoryTypecheck: vi.fn(async () => ({
@@ -32,8 +60,17 @@ function typecheckResult(status: "passed" | "check_failed" | "timed_out", identi
 
 beforeEach(() => {
   vi.clearAllMocks();
+  candidateRename.active = false;
+  candidateRename.afterTemporaryClose = null;
+  candidateRename.dispatches = 0;
   vi.mocked(checkRepositoryTypecheck).mockResolvedValue(typecheckResult("passed"));
 });
+
+function deferred(): Readonly<{ promise: Promise<void>; resolve: () => void }> {
+  let resolve = (): void => {};
+  const promise = new Promise<void>((settle) => { resolve = settle; });
+  return { promise, resolve };
+}
 
 let sharedRoot = "";
 let sharedSource = "";
@@ -158,6 +195,33 @@ it("permanently denies every R0 capability after settlement without closing R1",
     sourceInputsSha256: r0Check.sourceInputsSha256, typecheck: r0Check.typecheck });
   r1.close();
   task.close();
+});
+
+it("denies a candidate rename when R0 is revoked after temporary preparation", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const r0 = task.beginExecution();
+  const observed = await r0.read({ path: "src/value.ts" });
+  await r0.check();
+  const prepared = deferred();
+  const release = deferred();
+  candidateRename.active = true;
+  candidateRename.afterTemporaryClose = async () => {
+    prepared.resolve();
+    await release.promise;
+  };
+
+  const replacing = r0.replace({ path: "src/value.ts", expectedSha256: observed.sha256,
+    content: "export const value = 'revoked';\n" });
+  await prepared.promise;
+  r0.close();
+  release.resolve();
+
+  await expect(replacing).rejects.toThrow("denied");
+  expect(candidateRename.dispatches).toBe(0);
+  await expect(readFile(join(current.checkout, "src", "value.ts"), "utf8"))
+    .resolves.toBe("export const value = 'old';\n");
+  await expect(r0.read({ path: "src/value.ts" })).rejects.toThrow("expired");
 });
 
 it("rejects an external write and does not reopen a persisted task for editing", async () => {

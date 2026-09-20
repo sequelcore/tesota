@@ -321,6 +321,12 @@ export class CandidateTask {
       this.#grant.writeFiles as [string, ...string[]]);
   }
 
+  #requireCurrentGeneration(generation?: number): void {
+    if (this.#closed || generation !== undefined && generation !== this.#activeGeneration) {
+      throw new Error("Task capability expired");
+    }
+  }
+
   async #operation<T>(action: (snapshot: { checkout: string; files: TaskFiles }) => Promise<T>,
     retainAfterClose: (result: T) => boolean = () => false, generation?: number): Promise<T> {
     if (generation !== undefined && generation !== this.#activeGeneration) throw new Error("Task capability expired");
@@ -368,12 +374,19 @@ export class CandidateTask {
       const temporary = join(this.#directory, `.tesota-${randomUUID()}.tmp`);
       const file = await open(temporary, "wx", 0o600);
       try {
-        try { await file.writeFile(args.content, "utf8"); await file.sync(); } finally { await file.close(); }
+        try {
+          this.#requireCurrentGeneration(generation);
+          await file.writeFile(args.content, "utf8");
+          this.#requireCurrentGeneration(generation);
+          await file.sync();
+        } finally { await file.close(); }
       } catch { await unlink(temporary).catch(() => {}); throw new Error("Write failed"); }
       try {
+        this.#requireCurrentGeneration(generation);
         const current = await observe(this.#directory, this.#plan, this.#grant);
         if (this.#closed || !sameFiles(current.files, files) ||
             relative(dirname(target), await realpath(dirname(target))) !== "") throw new Error("Task changed during edit");
+        this.#requireCurrentGeneration(generation);
         await rename(temporary, target);
         this.#current = { ...files, [args.path]: args.content };
         const updated = await observe(this.#directory, this.#plan, this.#grant);

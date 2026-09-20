@@ -88,11 +88,11 @@ first passing review, the operator may instead request one bounded semantic
 correction, approve it separately, review fresh R1 evidence and make a final
 accept/reject decision. Failed or uncertain R1 never falls back to R0.
 `task outcome <proposal-id>` reloads the proposal-bound outcome journal. It
-reports elapsed time, first-check status, correction count, observed operation
-counts, operator decision and promotion state. Token usage and monetary cost are
-reported as unavailable because the current execution producer does not observe
-them. The outcome is evidence for inspection; it grants no execution, acceptance
-or promotion authority.
+reports elapsed time, first-check status, observed edit and other operation
+counts, explicit execution causes, operator decision and promotion state. Token
+usage and monetary cost are reported as unavailable because the current
+execution producer does not observe them. The outcome is evidence for inspection;
+it grants no execution, acceptance or promotion authority.
 `task run gentle-review <candidate> <gentle-ai-executable> <lineage-id>`
 collects one reviewer slot currently offered by Gentle. It requires an existing
 candidate and an existing provider lineage whose current status offers that

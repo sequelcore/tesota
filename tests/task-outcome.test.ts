@@ -27,6 +27,7 @@ it("recovers a promoted task with separate execution, decision and adoption fact
   await journal.append({ state: "execution_finished", candidate: "candidate-1", result: {
     status: "passed", accounting: { elapsedMs: 400, firstCheck: "check_failed", correctionAttempts: 1,
       modelInvocations: 3, toolCalls: 4, edits: 1,
+      causes: { initialImplementation: true, diagnosticRepairs: 0, semanticRevision: false },
       consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } },
   } });
   await journal.append({ state: "review_ready", reviewSha256: "c".repeat(64), checkStatus: "passed" });
@@ -41,9 +42,13 @@ it("recovers a promoted task with separate execution, decision and adoption fact
     candidate: "candidate-1", firstCheck: "check_failed", correctionAttempts: 1,
     operator: { scopeApproval: "approved", decision: "accept" },
     promotion: "applied", authority: "none", provenance: "recorded_untrusted" });
-  expect(formatTaskOutcome(outcome)).toContain("Outcome: promoted\nElapsed: 1200 ms\nLast phase: promotion_started\n" +
-    "First check: check_failed\nCorrections: 1\n");
-  expect(formatTaskOutcome(outcome)).toContain("Application: Applied\n");
+  const formatted = formatTaskOutcome(outcome);
+  expect(formatted).toContain("Outcome: promoted\nElapsed: 1200 ms\nLast phase: promotion_started\n" +
+    "First check: check_failed\nExecution operations: 3 model invocations, 4 tool calls, 1 edit\n");
+  expect(formatted).toContain("Execution causes: initial implementation observed; diagnostic repairs 0; " +
+    "semantic revision not current\n");
+  expect(formatted).not.toContain("Corrections:");
+  expect(formatted).toContain("Application: Applied\n");
 });
 
 it("records a declined proposal without creating execution authority and rejects replay", async () => {
@@ -141,13 +146,15 @@ it("accepts one R0 to R1 chronology with a passing no-op revision", async () => 
     reviewSha256: "f".repeat(64), checkStatus: "passed", hostChecks: 8 });
   await expect(journal.append({ state: "correction_approved", parentReviewSha256: "f".repeat(64),
     refinementSha256: "1".repeat(64), effectiveCriteriaSha256: "2".repeat(64) })).rejects.toThrow();
+  const finalHostChecks = 12;
   await journal.append({ state: "decision_recorded", decision: "reject", reviewSha256: "f".repeat(64),
-    hostChecks: 12 });
-  await expect(journal.append({ state: "finished", outcome: "rejected", hostChecks: 11 })).rejects.toThrow();
-  await journal.append({ state: "finished", outcome: "rejected", hostChecks: 12 });
+    hostChecks: finalHostChecks });
+  await expect(journal.append({ state: "finished", outcome: "rejected", hostChecks: finalHostChecks - 1 }))
+    .rejects.toThrow();
+  await journal.append({ state: "finished", outcome: "rejected", hostChecks: finalHostChecks });
   await journal.close();
   await expect(loadTaskOutcome(directory)).resolves.toMatchObject({ status: "rejected", candidate: "candidate-1",
-    execution: { ...noOpAccounting, resources: { ...noOpAccounting.resources, hostChecks: 12 } },
+    execution: { ...noOpAccounting, resources: { ...noOpAccounting.resources, hostChecks: finalHostChecks } },
     operator: { decision: "reject" } });
 });
 
@@ -195,7 +202,11 @@ it("preserves v2 R0 semantics and rejects correction after a final decision", as
   ];
   const path = join(directory, "start.jsonl");
   await writeFile(path, history.map((event) => JSON.stringify(event)).join("\n") + "\n");
-  await expect(loadTaskOutcome(directory)).resolves.toMatchObject({ status: "rejected", operator: { decision: "reject" } });
+  const legacy = await loadTaskOutcome(directory);
+  expect(legacy).toMatchObject({ status: "rejected", operator: { decision: "reject" } });
+  expect(formatTaskOutcome(legacy)).toContain("Execution operations: 3 model invocations, 4 tool calls, 1 edit\n");
+  expect(formatTaskOutcome(legacy)).not.toContain("Corrections:");
+  expect(formatTaskOutcome(legacy)).not.toContain("Execution causes:");
   const broadenedLegacy: unknown[] = [history[0], history[1],
     { state: "execution_finished", timestamp, candidate: "candidate", result: { status: "passed",
       accounting: { ...accounting,
