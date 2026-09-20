@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   usage: { reads: 0, edits: 0, checks: 0 },
   budget: null as null | "model" | "tool" | "time",
   r1Failure: null as null | "write" | "sync" | "close",
+  beginExecutions: 0,
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -51,14 +52,40 @@ vi.mock("../src/candidate-checkout.js", () => ({
 }));
 
 const currentCheck = vi.hoisted(() => ({ value: null as CandidateTaskCheck | null }));
+const parentAdmission = vi.hoisted(() => ({
+  calls: 0,
+  pauseOnCall: 0,
+  entered: null as (() => void) | null,
+  release: null as Promise<void> | null,
+  candidateIdentity: "candidate-r0",
+  attemptIdentity: "attempt-r0",
+  checkIdentity: "check-r0",
+  admittedIdentity: "",
+}));
 vi.mock("../src/candidate-task.js", () => ({
   CandidateTask: { prepare: vi.fn(async () => ({
-    beginExecution: vi.fn(() => ({ close: vi.fn() })),
+    beginExecution: vi.fn(() => { state.beginExecutions += 1; return { close: vi.fn() }; }),
     usage: vi.fn(() => state.usage),
     describe: vi.fn(() => ({ definitionSha256: "e".repeat(64) })),
     close: vi.fn(),
   }) as unknown as CandidateTask) },
   checkCandidateTask: vi.fn(async () => currentCheck.value),
+}));
+
+vi.mock("../src/task-review.js", () => ({
+  validateCorrectionParent: vi.fn(async () => {
+    parentAdmission.calls += 1;
+    if (parentAdmission.calls === parentAdmission.pauseOnCall) {
+      parentAdmission.entered?.();
+      if (parentAdmission.release !== null) await parentAdmission.release;
+    }
+    const identity = JSON.stringify([parentAdmission.candidateIdentity, parentAdmission.attemptIdentity,
+      parentAdmission.checkIdentity]);
+    if (parentAdmission.calls === 1) parentAdmission.admittedIdentity = identity;
+    else if (identity !== parentAdmission.admittedIdentity) throw new Error("Semantic correction parent evidence invalid");
+    if (currentCheck.value === null) throw new Error("Semantic correction parent evidence invalid");
+    return { check: currentCheck.value, attemptSha256: "9".repeat(64) };
+  }),
 }));
 
 const session = vi.hoisted(() => ({ value: null as PiTaskResult | null }));
@@ -127,6 +154,11 @@ beforeEach(() => {
   state.failure = null; state.writes = []; state.writeCalls = 0; state.syncCalls = 0;
   state.usage = { reads: 0, edits: 0, checks: 0 }; state.budget = null;
   state.r1Failure = null;
+  state.beginExecutions = 0;
+  parentAdmission.calls = 0; parentAdmission.pauseOnCall = 0;
+  parentAdmission.entered = null; parentAdmission.release = null;
+  parentAdmission.candidateIdentity = "candidate-r0"; parentAdmission.attemptIdentity = "attempt-r0";
+  parentAdmission.checkIdentity = "check-r0"; parentAdmission.admittedIdentity = "";
   session.value = piResult("observed", "completed");
   currentCheck.value = check("unconfirmed");
 });
@@ -169,6 +201,34 @@ it.runIf(process.platform === "win32")("denies mismatched live R0 parent evidenc
   await expect(initial.correction?.run({ ...correctionRequest(), parentCheckSha256: "f".repeat(64) }))
     .rejects.toThrow("parent evidence");
   expect(vi.mocked(runPiTask)).toHaveBeenCalledTimes(1);
+});
+
+it.runIf(process.platform === "win32").each([
+  "candidate/result bytes", "retained R0 diff/attempt lineage", "applicable check/source/configuration",
+] as const)("revalidates %s after approval and denies stale R1 before dispatch", async (boundary) => {
+  currentCheck.value = { ...check("observed"), status: "passed", outcome: "passed", diagnostics: ["passed"] };
+  session.value = piResult("observed", "completed");
+  const initial = await runProposalTask(grant, { write: () => {}, writeError: () => {} });
+  let markEntered: (() => void) | undefined;
+  let release: (() => void) | undefined;
+  const entered = new Promise<void>((resolve) => { markEntered = resolve; });
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  parentAdmission.pauseOnCall = 2;
+  parentAdmission.entered = () => { markEntered?.(); };
+  parentAdmission.release = released;
+
+  const running = initial.correction?.run(correctionRequest());
+  await entered;
+  if (boundary === "candidate/result bytes") parentAdmission.candidateIdentity = "candidate-r0-drifted";
+  if (boundary === "retained R0 diff/attempt lineage") parentAdmission.attemptIdentity = "attempt-r0-drifted";
+  if (boundary === "applicable check/source/configuration") parentAdmission.checkIdentity = "check-r0-drifted";
+  release?.();
+
+  await expect(running).resolves.toMatchObject({ status: "failed", correction: null });
+  expect(vi.mocked(runPiTask)).toHaveBeenCalledTimes(1);
+  expect(state.beginExecutions).toBe(1);
+  expect(state.writes.filter((record) => record.includes('"state":"finished"')).at(-1))
+    .toContain('"outcome":"failed"');
 });
 
 it.runIf(process.platform === "win32").each(["write", "sync", "close"] as const)(

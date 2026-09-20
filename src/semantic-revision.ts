@@ -15,6 +15,7 @@ interface SemanticRevisionRecord {
   readonly parentReviewSha256: string;
   readonly parentWriteSetSha256: string;
   readonly parentCheckSha256: string;
+  readonly parentAttemptSha256: string;
   readonly refinement: string;
   readonly refinementSha256: string;
   readonly effectiveCriteriaSha256: string;
@@ -31,6 +32,7 @@ const semanticRevisionSchema: z.ZodType<SemanticRevisionRecord> = z.strictObject
   parentReviewSha256: digestSchema,
   parentWriteSetSha256: digestSchema,
   parentCheckSha256: digestSchema,
+  parentAttemptSha256: digestSchema,
   refinement: refinementSchema,
   refinementSha256: digestSchema,
   effectiveCriteriaSha256: digestSchema,
@@ -46,6 +48,7 @@ export interface SemanticRevisionRequest {
   readonly parentReviewSha256: string;
   readonly parentWriteSetSha256: string;
   readonly parentCheckSha256: string;
+  readonly parentAttemptSha256: string;
   readonly refinement: string;
   readonly approvedAt?: string;
 }
@@ -89,6 +92,7 @@ export async function recordSemanticRevision(directory: string, request: Semanti
     parentReviewSha256: request.parentReviewSha256,
     parentWriteSetSha256: request.parentWriteSetSha256,
     parentCheckSha256: request.parentCheckSha256,
+    parentAttemptSha256: request.parentAttemptSha256,
     refinement,
     refinementSha256: sha256(refinement),
     effectiveCriteriaSha256: effectiveCriteriaSha256(request.taskDefinitionSha256, refinement),

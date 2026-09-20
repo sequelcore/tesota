@@ -93,6 +93,9 @@ accept, reject or request-one-correction choice. A correction requires bounded
 user refinement and separate approval, keeps the same candidate, repository,
 baseline, paths, tools and profiles, and uses a fresh disposable Pi agent. It
 does not create `decision.json`; only the final R1 accept/reject choice does.
+The live correction authority revalidates the exact R0 review, retained attempt
+and diff, current candidate/task/source/check inputs, and absence of a final
+decision immediately before it creates R1 authority and dispatches provider work.
 The review fingerprint binds the complete check
 evidence as well as the candidate bytes, so changed verifier inputs make a prior
 decision stale. R1 extends that identity with its effective semantic criteria,
@@ -123,7 +126,10 @@ fingerprints.
 
 `semantic-revision.json` is the bounded, single-use, authority-free R1 fact.
 The original `attempt.jsonl` and `candidate.diff` remain immutable; R1 uses
-`attempt-r1.jsonl` and `candidate-r1.diff`. A generation-bound in-memory
+`attempt-r1.jsonl` and `candidate-r1.diff`. The revision binds the digest of
+the complete retained R0 attempt, and review accepts an R1 pass only when both
+attempt files are bounded regular single-link files with complete, ordered,
+internally consistent records for that exact R0-to-R1 lineage. A generation-bound in-memory
 capability is the only execution authority. Persisted plans, attempts, revision
 facts and reviews cannot recreate it, and any unconfirmed callback settlement
 permanently blocks R1.

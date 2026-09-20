@@ -16,6 +16,7 @@ async function fixture(): Promise<string> {
 const request = {
   taskDefinitionSha256: "a".repeat(64), parentReviewSha256: "b".repeat(64),
   parentWriteSetSha256: "c".repeat(64), parentCheckSha256: "d".repeat(64),
+  parentAttemptSha256: "e".repeat(64),
   refinement: "Keep the existing scope, but use the alternate wording.",
   approvedAt: "2026-09-20T00:00:00.000Z",
 };

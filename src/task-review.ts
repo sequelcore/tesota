@@ -4,8 +4,9 @@ import { join, relative } from "node:path";
 import * as z from "zod";
 import { candidateDiff, inspectCandidateCheckout } from "./candidate-checkout.js";
 import { checkCandidateTask, inspectCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
-import { readSemanticRevision, type SemanticRevision } from "./semantic-revision.js";
-import { inspectSemanticRevisionAttempt } from "./task-run.js";
+import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
+import { PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses, type PiTaskResult } from "./integrations/pi-task.js";
+import { readSemanticRevision, semanticRevisionSha256, type SemanticRevision } from "./semantic-revision.js";
 
 const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const decisionSchema: z.ZodObject<{
@@ -19,6 +20,84 @@ const decisionSchema: z.ZodObject<{
 });
 type TaskDecision = z.infer<typeof decisionSchema>;
 const requestSchema = z.strictObject({ decision: decisionSchema.shape.decision, reviewSha256: digestSchema });
+
+const limitsSchema = z.strictObject({
+  modelInvocations: z.literal(PI_TASK_LIMITS.modelInvocations),
+  toolCalls: z.literal(PI_TASK_LIMITS.toolCalls),
+  sessionMs: z.literal(PI_TASK_LIMITS.sessionMs),
+  settlementMs: z.literal(PI_TASK_LIMITS.settlementMs),
+  outputTokens: z.literal(PI_TASK_LIMITS.outputTokens),
+});
+const typecheckSchema = z.strictObject({
+  profile: z.literal("typescript-no-emit/v1"),
+  status: z.enum(["passed", "check_failed", "unavailable", "execution_failed", "timed_out", "cancelled"]),
+  reason: z.string().nullable(), diagnostics: z.array(z.string()),
+  process: z.enum(["not_started", "exited", "unconfirmed"]), container: z.enum(["absent", "unconfirmed"]),
+  binding: z.unknown(), authority: z.literal("none"), provenance: z.literal("issued"),
+});
+const checkShape = {
+  status: z.enum(["passed", "check_failed"]), diagnostics: z.array(z.string()),
+  outcome: z.enum(["passed", "check_failed", "operational_failed"]),
+  settlement: z.enum(["observed", "unconfirmed"]), task: z.literal("typescript-change"),
+  typecheck: typecheckSchema.nullable(), baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u),
+  writeSetSha256: digestSchema, sourceInputsSha256: digestSchema, taskAcceptance: z.literal("not_evaluated"),
+};
+const issuedCheckSchema = z.strictObject({ ...checkShape, provenance: z.literal("issued") });
+const recordedCheckSchema = z.strictObject({ ...checkShape, provenance: z.literal("recorded_untrusted") });
+const editCauseSchema = z.discriminatedUnion("cause", [
+  z.strictObject({ cause: z.enum(["initial_implementation", "semantic_revision"]) }),
+  z.strictObject({ cause: z.literal("diagnostic_repair"), failedCheckSha256: digestSchema }),
+]);
+const sessionSchema = z.strictObject({
+  status: z.enum(["completed", "failed", "aborted", "unsettled"]),
+  modelInvocations: z.number().int().nonnegative().max(PI_TASK_LIMITS.modelInvocations),
+  toolCalls: z.number().int().nonnegative().max(PI_TASK_LIMITS.toolCalls),
+  edits: z.number().int().nonnegative(), checks: z.array(issuedCheckSchema).max(3),
+  checksSuppliedToModel: z.number().int().nonnegative(), finalCheckSuppliedToModel: z.boolean(),
+  deadlineExpired: z.boolean(), settlement: z.enum(["observed", "unconfirmed"]), denied: z.boolean(),
+  terminalStopReason: z.string().min(1).nullable(), taskAcceptance: z.literal("not_evaluated"),
+  executionCause: z.enum(["initial_implementation", "semantic_revision"]),
+  activeMs: z.number().int().nonnegative().max(PI_TASK_LIMITS.sessionMs), editCauses: z.array(editCauseSchema),
+  denialStage: z.enum(["tool_request", "tool_operation", "tool_result", "model_admission"]).optional(),
+  deniedTool: z.enum(["tesota_read", "tesota_replace", "tesota_check", "unknown"]).optional(),
+});
+const executorSchema = z.strictObject(Object.fromEntries([
+  "task-run.js", "candidate-checkout.js", "candidate-task.js", "task-contract.js", "task-source.js",
+  "semantic-revision.js", "repository-check-input.js", "proposal-admission.js", "repository-typecheck.js",
+  "repository-typecheck-process.js", "command-isolation.js", "verification/invocation-admission.js",
+  "integrations/pi-task.js", "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock",
+].map((path) => [path, digestSchema])));
+const attemptBaseStartedShape = {
+  format: z.literal("tesota-task-attempt"), state: z.literal("started"), timestamp: z.iso.datetime(),
+  baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u), sourceDirty: z.boolean(),
+  executor: executorSchema, model: z.literal(LIVE_CODEX_MODEL_ID), limits: limitsSchema,
+  taskAcceptance: z.literal("not_evaluated"),
+};
+const initialAttemptStartedSchema = z.strictObject({ ...attemptBaseStartedShape, version: z.literal(1),
+  executionCause: z.literal("initial_implementation") });
+const revisionAttemptStartedSchema = z.strictObject({ ...attemptBaseStartedShape, version: z.literal(2),
+  executionCause: z.literal("semantic_revision"), revisionSha256: digestSchema,
+  parentReviewSha256: digestSchema, parentAttemptSha256: digestSchema });
+const attemptFinishedSchema = z.strictObject({
+  state: z.literal("finished"), timestamp: z.iso.datetime(), outcome: z.enum(["passed", "failed", "unsettled"]),
+  session: sessionSchema.nullable(), current: recordedCheckSchema.nullable(), reviewSaved: z.boolean(),
+  taskAcceptance: z.literal("not_evaluated"),
+});
+
+interface InspectedAttempt {
+  readonly sha256: string;
+  readonly started: z.infer<typeof initialAttemptStartedSchema> | z.infer<typeof revisionAttemptStartedSchema>;
+  readonly finished: z.infer<typeof attemptFinishedSchema>;
+  readonly rawCurrent: unknown;
+}
+
+function sessionChecksMatchCurrent(session: z.infer<typeof sessionSchema>, current: z.infer<typeof recordedCheckSchema>): boolean {
+  const last = session.checks.at(-1);
+  return last !== undefined && session.checksSuppliedToModel === session.checks.length &&
+    session.checks.every((check) => check.task === current.task && check.baseline === current.baseline &&
+      check.sourceInputsSha256 === current.sourceInputsSha256) &&
+    JSON.stringify({ ...last, provenance: "recorded_untrusted" }) === JSON.stringify(current);
+}
 
 export interface TaskReview {
   readonly directory: string;
@@ -70,35 +149,109 @@ async function readBoundedText(path: string, maximum: number): Promise<string> {
   } finally { await file.close(); }
 }
 
-const parentAttemptFinishedSchema = z.strictObject({
-  state: z.literal("finished"), timestamp: z.iso.datetime(), outcome: z.literal("passed"), session: z.unknown(),
-  current: z.object({ task: z.literal("typescript-change"), baseline: z.string(), writeSetSha256: digestSchema,
-    sourceInputsSha256: digestSchema, settlement: z.literal("observed") }),
-  reviewSaved: z.literal(true), taskAcceptance: z.literal("not_evaluated"),
-});
+async function inspectAttempt(directory: string, name: "attempt.jsonl" | "attempt-r1.jsonl",
+  startedSchema: typeof initialAttemptStartedSchema | typeof revisionAttemptStartedSchema): Promise<InspectedAttempt> {
+  const text = await readBoundedText(join(directory, name), 1024 * 1024);
+  if (!text.endsWith("\n") || text.includes("\r")) throw new Error("Task attempt evidence unavailable");
+  const lines = text.slice(0, -1).split("\n");
+  if (lines.length !== 2 || lines.some((line) => line.length === 0)) throw new Error("Task attempt evidence unavailable");
+  const started = startedSchema.parse(JSON.parse(lines[0] ?? "null"));
+  const rawFinished = z.record(z.string(), z.unknown()).parse(JSON.parse(lines[1] ?? "null"));
+  const finished = attemptFinishedSchema.parse(rawFinished);
+  if (Date.parse(finished.timestamp) < Date.parse(started.timestamp)) throw new Error("Task attempt evidence unavailable");
+  return { sha256: digest(text), started, finished, rawCurrent: rawFinished["current"] };
+}
 
-async function validateRevisionParent(directory: string, revision: SemanticRevision): Promise<void> {
-  const attemptLines = (await readBoundedText(join(directory, "attempt.jsonl"), 1024 * 1024))
-    .split("\n").filter(Boolean);
-  if (attemptLines.length !== 2) throw new Error("R0 attempt evidence unavailable");
-  const finished = parentAttemptFinishedSchema.parse(JSON.parse(attemptLines[1] ?? "null"));
-  const rawFinished: unknown = JSON.parse(attemptLines[1] ?? "null");
-  if (typeof rawFinished !== "object" || rawFinished === null || !("current" in rawFinished)) {
+async function inspectInitialAttempt(directory: string): Promise<InspectedAttempt> {
+  const attempt = await inspectAttempt(directory, "attempt.jsonl", initialAttemptStartedSchema);
+  const session = attempt.finished.session;
+  const current = attempt.finished.current;
+  if (attempt.finished.outcome !== "passed" || !attempt.finished.reviewSaved || session === null || current === null ||
+      session.executionCause !== "initial_implementation" || session.checks.some((check) =>
+        check.baseline !== attempt.started.baseline) || current.baseline !== attempt.started.baseline ||
+      !sessionChecksMatchCurrent(session, current) ||
+      !piTaskPasses(session as PiTaskResult, current as CandidateTaskCheck)) {
     throw new Error("R0 attempt evidence unavailable");
   }
-  const rawCheck = rawFinished.current;
-  const diff = await readBoundedText(join(directory, "candidate.diff"), 256 * 1024);
-  const parentReviewSha256 = digest(JSON.stringify({
+  return attempt;
+}
+
+export async function inspectSemanticRevisionAttempt(directory: string, revision: SemanticRevision): Promise<{
+  readonly session: PiTaskResult; readonly current: unknown;
+}> {
+  const attempt = await inspectAttempt(directory, "attempt-r1.jsonl", revisionAttemptStartedSchema);
+  const started = revisionAttemptStartedSchema.parse(attempt.started);
+  const session = attempt.finished.session;
+  const current = attempt.finished.current;
+  if (attempt.finished.outcome !== "passed" || !attempt.finished.reviewSaved || session === null || current === null ||
+      started.revisionSha256 !== semanticRevisionSha256(revision) ||
+      started.parentReviewSha256 !== revision.parentReviewSha256 ||
+      started.parentAttemptSha256 !== revision.parentAttemptSha256 ||
+      session.executionCause !== "semantic_revision" || session.checks.some((check) =>
+        check.baseline !== started.baseline) || current.baseline !== started.baseline ||
+      !sessionChecksMatchCurrent(session, current) ||
+      !piSemanticRevisionPasses(session as PiTaskResult, current as CandidateTaskCheck)) {
+    throw new Error("Semantic revision attempt invalid");
+  }
+  return { session: session as PiTaskResult, current: attempt.rawCurrent };
+}
+
+function parentReviewSha256(directory: string, current: CandidateTaskCheck, rawCheck: unknown, diff: string): string {
+  return digest(JSON.stringify({
     format: "tesota-task-review", version: 1, directory,
-    task: finished.current.task, baseline: finished.current.baseline,
-    writeSetSha256: finished.current.writeSetSha256,
+    task: current.task, baseline: current.baseline, writeSetSha256: current.writeSetSha256,
     checkSha256: digest(JSON.stringify(rawCheck)), diffSha256: digest(diff),
   }));
-  if (revision.parentReviewSha256 !== parentReviewSha256 ||
-      revision.parentWriteSetSha256 !== finished.current.writeSetSha256 ||
-      revision.parentCheckSha256 !== digest(JSON.stringify(rawCheck))) {
+}
+
+async function validateRevisionParent(directory: string, revision: SemanticRevision): Promise<void> {
+  const attempt = await inspectInitialAttempt(directory);
+  const current = attempt.finished.current;
+  if (current === null) throw new Error("R0 attempt evidence unavailable");
+  const diff = await readBoundedText(join(directory, "candidate.diff"), 256 * 1024);
+  if (revision.parentAttemptSha256 !== attempt.sha256 ||
+      revision.parentReviewSha256 !== parentReviewSha256(directory, current as CandidateTaskCheck, attempt.rawCurrent, diff) ||
+      revision.parentWriteSetSha256 !== current.writeSetSha256 ||
+      revision.parentCheckSha256 !== digest(JSON.stringify(attempt.rawCurrent))) {
     throw new Error("Semantic revision parent identity invalid");
   }
+}
+
+export interface CorrectionParentIdentity {
+  readonly parentReviewSha256: string;
+  readonly parentWriteSetSha256: string;
+  readonly parentCheckSha256: string;
+  readonly parentAttemptSha256: string;
+  readonly taskDefinitionSha256: string;
+  readonly revisionSha256?: string;
+}
+
+export async function validateCorrectionParent(directory: string, expected: CorrectionParentIdentity,
+  observeCheck: () => void = ignoreCheck): Promise<{ readonly check: CandidateTaskCheck;
+    readonly attemptSha256: string }> {
+  const candidate = await inspectCandidateCheckout(directory);
+  const attempt = await inspectInitialAttempt(candidate.directory);
+  const retained = await readBoundedText(join(candidate.directory, "candidate.diff"), 256 * 1024);
+  observeCheck();
+  const first = requireSettledCheck(await checkCandidateTask(candidate.directory));
+  const task = await inspectCandidateTask(candidate.directory);
+  const currentDiff = await candidateDiff(candidate.directory);
+  observeCheck();
+  const second = requireSettledCheck(await checkCandidateTask(candidate.directory));
+  const recorded = attempt.finished.current;
+  const revision = await readSemanticRevision(candidate.directory);
+  const decision = await readDecision(candidate.directory);
+  if (recorded === null || JSON.stringify(first) !== JSON.stringify(second) ||
+      JSON.stringify(attempt.rawCurrent) !== JSON.stringify(second) || retained !== currentDiff || decision !== null ||
+      task.definitionSha256 !== expected.taskDefinitionSha256 || candidate.baseline !== attempt.started.baseline ||
+      expected.parentReviewSha256 !== parentReviewSha256(candidate.directory, second, second, retained) ||
+      expected.parentWriteSetSha256 !== second.writeSetSha256 ||
+      expected.parentCheckSha256 !== digest(JSON.stringify(second)) ||
+      expected.parentAttemptSha256 !== attempt.sha256 || (expected.revisionSha256 === undefined ? revision !== null :
+        revision === null || semanticRevisionSha256(revision) !== expected.revisionSha256)) {
+    throw new Error("Semantic correction parent evidence invalid");
+  }
+  return { check: second, attemptSha256: attempt.sha256 };
 }
 
 async function readDecision(directory: string): Promise<TaskDecision | null> {

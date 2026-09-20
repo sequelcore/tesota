@@ -40,8 +40,9 @@ The pre-release currently supports:
 The current supported change flow returns to a useful prompt after every
 known-settled outcome, including scope decline, cancellation, failed execution,
 candidate rejection and confirmed application. It ends when execution or
-application settlement is unconfirmed, and it cannot accept a semantic revision
-such as “change this part” or resume an interrupted task. Its first prospective
+application settlement is unconfirmed. One bounded semantic correction mechanism
+is implemented but remains prospectively unqualified; interrupted-task restart or
+resume and the broader Milestone 2 capability remain unsupported. Its first prospective
 external corpus produced three pre-proposal discovery failures. A later
 fixed-route probe passed with a replacement account, and the Docker-backed
 TypeScript route completed a controlled live outcome matrix. After correcting
