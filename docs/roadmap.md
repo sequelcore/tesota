@@ -40,8 +40,9 @@ The pre-release currently supports:
 The current supported change flow returns to a useful prompt after every
 known-settled outcome, including scope decline, cancellation, failed execution,
 candidate rejection and confirmed application. It ends when execution or
-application settlement is unconfirmed, and it cannot accept a semantic revision
-such as “change this part” or resume an interrupted task. Its first prospective
+application settlement is unconfirmed. One bounded semantic correction mechanism
+is implemented but remains prospectively unqualified; interrupted-task restart or
+resume and the broader Milestone 2 capability remain unsupported. Its first prospective
 external corpus produced three pre-proposal discovery failures. A later
 fixed-route probe passed with a replacement account, and the Docker-backed
 TypeScript route completed a controlled live outcome matrix. After correcting
@@ -119,7 +120,15 @@ component checks alone does not complete the milestone.
 
 ## Milestone 2 — Correct the work without restarting
 
-**Status: next; not yet implemented or qualified.**
+**Status: M2a implemented for one bounded semantic correction; Milestone 2 is
+not yet prospectively qualified.**
+
+The implemented M2a slice permits one explicitly approved semantic revision of
+a settled, passing R0 result in the same candidate. It preserves cumulative
+budgets, rotates generation-bound live authority, renews exact-result evidence
+and requires a fresh final decision. It does not establish usefulness,
+representative reliability or complete Milestone 2; the prospective evaluation
+below remains outstanding.
 
 A user can continue the same task when a check finds a problem or when the user
 says, for example, “change this part.” Tesota preserves useful task context,

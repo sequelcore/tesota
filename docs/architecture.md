@@ -36,6 +36,7 @@ Tesota Shell
   -> Pi (model loop and tool calls)
   -> scope-integrity + contained TypeScript observations
   -> TaskReview (exact diff and current evidence)
+  -> optional one-use SemanticRevision (authority-free R1 lineage)
   -> operator decision
   -> TaskPromotion (conflict-safe adoption journal)
 ```
@@ -80,6 +81,7 @@ and an isolated process does not gain authority merely because it is confined.
 | `task-source.ts` | Bounded blob/worktree representation admission and exact source-target observations for guarded promotion |
 | `integrations/pi-task.ts` | Pi execution and correction evidence consistency |
 | `task-review.ts` | Exact-candidate review and local decision evidence |
+| `semantic-revision.ts` | Bounded authority-free R1 refinement and parent identity |
 | `task-promotion.ts` | Accepted-byte validation and guarded source writes |
 | `task-start.ts` | One conversational approval-to-promotion workflow |
 | `task-outcome.ts` | Durable non-authoritative task outcome journal, recovery and operator summary |

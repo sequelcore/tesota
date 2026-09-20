@@ -16,6 +16,7 @@ const configuration: ViteUserConfig = defineConfig({
       "tests/pi-review-relay.test.ts",
       "tests/pi-task-evidence.test.ts",
       "tests/repository-typecheck-command.test.ts",
+      "tests/semantic-revision.test.ts",
       "tests/task-outcome.test.ts",
       "tests/tesota-shell-command.test.ts",
       "tests/tesota-shell-terminal.test.ts",

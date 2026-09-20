@@ -37,9 +37,10 @@ human acceptance and exact-byte application; see the
 [qualification record](experiments/supported-task/results.md). After a known-settled task,
 including cancellation or a lifecycle failure before uncertain effects, the
 shell returns to a new prompt. Unconfirmed execution or application settlement
-ends the session, and a user cannot request a semantic revision such as "change
-this part" within the same task. The [roadmap](docs/roadmap.md) defines those
-user-facing gaps.
+ends the session. After one settled passing result, a user may request one
+bounded semantic correction in the same task; this mechanism is implemented but
+not yet prospectively qualified. The [roadmap](docs/roadmap.md) defines the
+remaining user-facing gaps.
 
 ## Why verification-first
 

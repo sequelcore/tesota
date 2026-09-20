@@ -10,7 +10,8 @@ admission and explicit operator approval can issue an execution grant.
 ```text
 request -> read-only proposal -> admission -> operator approval
         -> isolated candidate -> scope + contained typecheck -> human review
-        -> decision -> guarded promotion
+        -> accept/reject, or one approved semantic correction
+        -> fresh checks + fresh review -> final decision -> guarded promotion
 ```
 
 There is no application task registry and no special task for modifying Tesota.
@@ -37,6 +38,10 @@ The complete model-and-check session has a five-minute cumulative deadline.
 Individual container checks retain their separate 60-second execution limit;
 dependency binding and snapshot preparation occur inside the cumulative task
 window.
+Those limits are task-wide across the initial R0 execution and the optional R1
+semantic revision. A fresh Pi agent receives only the remaining model, tool,
+read, edit, check and active-time budget; attempted consequential work is not
+refunded after cancellation or uncertain settlement.
 
 The version-2 persisted plan binds the approved proposal, committed baseline,
 initial candidate read-input hashes, exact source-target hashes and modes,
@@ -84,9 +89,18 @@ This distinction is intentional:
 `task start <proposal-id>` presents the admitted scope before execution. If the
 operator approves it, Tesota creates a fresh candidate and runs the bounded Pi
 task. Passing current scope and typecheck evidence exposes the exact diff for an
-accept or reject decision. The review fingerprint binds the complete check
+accept, reject or request-one-correction choice. A correction requires bounded
+user refinement and separate approval, keeps the same candidate, repository,
+baseline, paths, tools and profiles, and uses a fresh disposable Pi agent. It
+does not create `decision.json`; only the final R1 accept/reject choice does.
+The live correction authority revalidates the exact R0 review, retained attempt
+and diff, current candidate/task/source/check inputs, and absence of a final
+decision immediately before it creates R1 authority and dispatches provider work.
+The review fingerprint binds the complete check
 evidence as well as the candidate bytes, so changed verifier inputs make a prior
-decision stale. Before the decision, the shell lists the exact changed files,
+decision stale. R1 extends that identity with its effective semantic criteria,
+exact R0 parent and revision identity, so even unchanged bytes require a fresh
+review and decision. Before the decision, the shell lists the exact changed files,
 states the separate scope-integrity and TypeScript claims, names the behavioral
 and integration unknowns, and reports that application has not occurred.
 Promotion applies only the accepted write set when the source revision checks,
@@ -110,10 +124,32 @@ receipt keep their existing owners. Recovery rejects malformed records,
 impossible transitions, regressing timestamps and mismatched review
 fingerprints.
 
+`semantic-revision.json` is the bounded, single-use, authority-free R1 fact.
+The original `attempt.jsonl` and `candidate.diff` remain immutable; R1 uses
+`attempt-r1.jsonl` and `candidate-r1.diff`. The revision binds the digest of
+the complete retained R0 attempt, and review accepts an R1 pass only when both
+attempt files are bounded regular single-link files with complete, ordered,
+internally consistent records for that exact R0-to-R1 lineage. Review compares
+R1 cumulative model invocations, tool calls and active time with the parsed,
+digest-bound R0 session. R1 must account for at least the invocation requesting
+its checks and a later invocation receiving their results, and one tool call
+per retained edit/check. Multiple tools may share a model response; no fixed
+transcript or preceding read is required. Active time may stay equal because
+the producer rounds phase milliseconds and caps cumulative time. Phase-local
+edits and checks must together fit the existing task-wide ceilings. The attempt
+format does not retain read counts or tool ordering, so these checks establish
+lower bounds, not complete reconstruction of resource use.
+A generation-bound in-memory
+capability is the only execution authority. Persisted plans, attempts, revision
+facts and reviews cannot recreate it, and any unconfirmed callback settlement
+permanently blocks R1.
+
 The current execution producer reports elapsed milliseconds, first-check
-status, correction attempts, model invocations, tool calls and edits. It does
-not yet observe token usage or monetary cost, so both remain explicitly
-unavailable instead of being estimated. `tesota task outcome <proposal-id>`
+status, explicit execution causes, model invocations, tool calls, repository
+reads, edits, model-loop checks, active execution time and host-side final,
+review, decision and promotion checks. Host checks are observable accounting,
+not a new product ceiling. It does not yet observe token usage or monetary
+cost, so both remain explicitly unavailable instead of being estimated. `tesota task outcome <proposal-id>`
 reloads the durable summary; Tesota Shell prints the same summary when a task
 reaches a recorded terminal outcome.
 

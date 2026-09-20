@@ -129,7 +129,8 @@ function acceptedSourceInputs(review: TaskReview, task: Awaited<ReturnType<typeo
 }
 
 /** Explicit invocation grants this bounded write set; recovered acceptance alone grants nothing. */
-export async function promoteTask(directory: string, sourceDirectory: string, reviewSha256: string): Promise<{
+export async function promoteTask(directory: string, sourceDirectory: string, reviewSha256: string,
+  observeCheck?: () => void): Promise<{
   status: "applied";
   source: string;
   files: readonly { readonly path: string; readonly sourceSha256: string }[];
@@ -141,7 +142,7 @@ export async function promoteTask(directory: string, sourceDirectory: string, re
   let sourceWriteStarted = false;
   try {
     if (!/^[a-f0-9]{64}$/.test(reviewSha256)) throw new Error("Invalid review fingerprint");
-    const review = await reviewTask(directory);
+    const review = await reviewTask(directory, observeCheck);
     const task = await inspectCandidateTask(review.directory);
     const sourceInputs = acceptedSourceInputs(review, task, reviewSha256);
     const prepared = await preparePromotionFiles(review.directory, sourceDirectory, task.writeFiles, sourceInputs);
@@ -157,7 +158,7 @@ export async function promoteTask(directory: string, sourceDirectory: string, re
         afterSha256: hash(file.replacement.bytes) })) }) + "\n");
     await promotionJournal.sync();
     await writeTemporaryFiles(files, temporaryFiles);
-    const latest = await reviewTask(review.directory);
+    const latest = await reviewTask(review.directory, observeCheck);
     if (latest.reviewSha256 !== reviewSha256 || latest.operatorDecision?.record.decision !== "accept" ||
         latest.operatorDecision.applicability !== "current" || latest.check.writeSetSha256 !== capturedWriteSetSha256(files)) {
       throw new Error("Promotion inputs changed");

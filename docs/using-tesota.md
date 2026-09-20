@@ -91,6 +91,12 @@ The current source-task contract allows:
 - scope-integrity checking and the fixed `typescript-no-emit/v1` profile; and
 - human review of the escaped exact diff before application.
 
+After a passing initial result, the review offers accept, reject or one semantic
+correction. The correction must stay inside the original scope, receives an
+explicit approval, uses the remaining task-wide budget and produces fresh R1
+checks and review identity. A no-op R1 is allowed when truthful, but still needs
+a fresh final decision because its semantic criteria changed.
+
 It excludes tests, dependency and check configuration, file creation, deletion
 or renaming, migrations, arbitrary shell commands and network access. The model
 cannot select a replacement check or weaken its configuration.
@@ -129,8 +135,8 @@ execution, candidate rejection or confirmed application, Tesota reports the
 retained outcome and returns to a new prompt. Unconfirmed execution or
 application settlement ends the session so that a new request cannot conceal
 uncertain effects.
-Tesota does not yet accept semantic feedback such as “keep the fix but change
-this part” within the same task. That is a later roadmap capability.
+If R1 fails, is cancelled or has unconfirmed settlement, Tesota does not offer
+the earlier R0 result as a fallback. Only final accepted R1 bytes can be applied.
 
 ## Inspect or recover work
 
@@ -144,10 +150,11 @@ tesota candidate inspect <id-or-directory>
 tesota task outcome <proposal-id>
 ```
 
-The outcome record reports elapsed time, observed model, tool and edit counts,
-the first-check result, the review decision and application state. Token usage
-and monetary cost remain unavailable because the current producer does not
-observe them.
+The outcome record reports elapsed time, observed model, tool, read, edit,
+model-loop check and host-side check counts, the first-check result, execution
+causes, the review decision and application state. Host checks are reported as
+work rather than limited by a new ceiling. Token usage and monetary cost remain
+unavailable because the current producer does not observe them.
 
 Interrupted work cannot yet be resumed. Durable facts can be inspected, but
 recovery does not recreate expired approval or execution authority. If Tesota
@@ -167,8 +174,7 @@ currently:
 - make arbitrary repository changes;
 - run model-selected shell commands or install dependencies;
 - edit tests or create, delete or rename files in the supported task;
-- continue the same task with semantic feedback after review;
-- accept user-requested semantic revision of a result;
+- request more than one semantic correction in the same task;
 - resume an interrupted task; or
 - claim that the live end-to-end workflow is qualified across representative
   external repositories.

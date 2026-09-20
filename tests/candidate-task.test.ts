@@ -1,18 +1,49 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import * as z from "zod";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
-import { CandidateTask, checkCandidateTask, inspectCandidateTask } from "../src/candidate-task.js";
-import { decideTask, reviewTask } from "../src/task-review.js";
+import { CandidateTask, checkCandidateTask, inspectCandidateTask, type CandidateTaskCheck } from "../src/candidate-task.js";
+import { decideTask, reviewTask, validateCorrectionParent } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
 import type { ProposalRunGrant } from "../src/proposal-admission.js";
 import { TASK_LIMITS } from "../src/task-contract.js";
 import { checkRepositoryTypecheck, type RepositoryTypecheckResult } from "../src/repository-typecheck.js";
-import { runPiTask } from "../src/integrations/pi-task.js";
+import { createPiTaskBudget, PI_TASK_LIMITS, runPiTask, type PiTaskResult } from "../src/integrations/pi-task.js";
+import { LIVE_CODEX_MODEL_ID } from "../src/integrations/pi-live.js";
+import { recordSemanticRevision, semanticRevisionSha256 } from "../src/semantic-revision.js";
+
+const candidateRename = vi.hoisted(() => ({
+  active: false,
+  afterTemporaryClose: null as (() => Promise<void>) | null,
+  dispatches: 0,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...original,
+    open: async (path: string, flags: string, mode?: number) => {
+      const opened = await original.open(path, flags, mode);
+      if (!candidateRename.active || flags !== "wx" || !path.includes(".tesota-")) return opened;
+      return {
+        writeFile: opened.writeFile.bind(opened),
+        sync: opened.sync.bind(opened),
+        close: async () => {
+          await opened.close();
+          await candidateRename.afterTemporaryClose?.();
+        },
+      };
+    },
+    rename: async (from: string, to: string) => {
+      if (candidateRename.active && from.includes(".tesota-")) candidateRename.dispatches += 1;
+      await original.rename(from, to);
+    },
+  };
+});
 
 vi.mock("../src/repository-typecheck.js", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
@@ -31,8 +62,17 @@ function typecheckResult(status: "passed" | "check_failed" | "timed_out", identi
 
 beforeEach(() => {
   vi.clearAllMocks();
+  candidateRename.active = false;
+  candidateRename.afterTemporaryClose = null;
+  candidateRename.dispatches = 0;
   vi.mocked(checkRepositoryTypecheck).mockResolvedValue(typecheckResult("passed"));
 });
+
+function deferred(): Readonly<{ promise: Promise<void>; resolve: () => void }> {
+  let resolve = (): void => {};
+  const promise = new Promise<void>((settle) => { resolve = settle; });
+  return { promise, resolve };
+}
 
 let sharedRoot = "";
 let sharedSource = "";
@@ -86,6 +126,84 @@ async function fixture(isolatedSource = false, crlfAttributes = false) {
   } };
 }
 
+function issued(check: CandidateTaskCheck): CandidateTaskCheck {
+  return { ...check, provenance: "issued" };
+}
+
+function r0Session(current: CandidateTaskCheck): PiTaskResult {
+  const before: CandidateTaskCheck = { ...issued(current), status: "check_failed", outcome: "check_failed",
+    diagnostics: ["No admitted file changed."], typecheck: null, writeSetSha256: "1".repeat(64) };
+  return { status: "completed", modelInvocations: 4, toolCalls: 3, edits: 1,
+    checks: [before, issued(current)], checksSuppliedToModel: 2, finalCheckSuppliedToModel: true,
+    deadlineExpired: false, settlement: "observed", denied: false, terminalStopReason: "stop",
+    taskAcceptance: "not_evaluated", executionCause: "initial_implementation", activeMs: 100,
+    editCauses: [{ cause: "initial_implementation" }] };
+}
+
+function r1Session(current: CandidateTaskCheck): PiTaskResult {
+  return { status: "completed", modelInvocations: 6, toolCalls: 4, edits: 0,
+    checks: [issued(current)], checksSuppliedToModel: 1, finalCheckSuppliedToModel: true,
+    deadlineExpired: false, settlement: "observed", denied: false, terminalStopReason: "stop",
+    taskAcceptance: "not_evaluated", executionCause: "semantic_revision", activeMs: 150, editCauses: [] };
+}
+
+function attemptStarted(version: 1 | 2, baseline: string, timestamp: string, revision?: Readonly<{
+  sha256: string; parentReviewSha256: string; parentAttemptSha256: string;
+}>): Record<string, unknown> {
+  const executor = Object.fromEntries([
+    "task-run.js", "candidate-checkout.js", "candidate-task.js", "task-contract.js", "task-source.js",
+    "semantic-revision.js", "repository-check-input.js", "proposal-admission.js", "repository-typecheck.js",
+    "repository-typecheck-process.js", "command-isolation.js", "verification/invocation-admission.js",
+    "integrations/pi-task.js", "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock",
+  ].map((path) => [path, "8".repeat(64)]));
+  return { format: "tesota-task-attempt", version, state: "started", timestamp, baseline,
+    sourceDirty: false, executor, model: LIVE_CODEX_MODEL_ID, limits: PI_TASK_LIMITS,
+    taskAcceptance: "not_evaluated", executionCause: version === 1 ? "initial_implementation" : "semantic_revision",
+    ...(revision === undefined ? {} : { revisionSha256: revision.sha256,
+      parentReviewSha256: revision.parentReviewSha256, parentAttemptSha256: revision.parentAttemptSha256 }) };
+}
+
+function attemptText(started: Record<string, unknown>, session: PiTaskResult,
+  current: CandidateTaskCheck, timestamp: string): string {
+  return [started, { state: "finished", timestamp, outcome: "passed", session, current, reviewSaved: true,
+    taskAcceptance: "not_evaluated" }].map((event) => JSON.stringify(event)).join("\n") + "\n";
+}
+
+async function retainedParentFixture() {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const input = await task.read({ path: "src/value.ts" });
+  await task.check();
+  await task.replace({ path: "src/value.ts", expectedSha256: input.sha256,
+    content: "export const value = 'new';\n" });
+  await task.check();
+  task.close();
+  const r0 = await reviewTask(current.directory);
+  const timestamp = new Date().toISOString();
+  await writeFile(join(current.directory, "candidate.diff"), r0.diff);
+  const r0Attempt = attemptText(attemptStarted(1, current.baseline, timestamp), r0Session(r0.check), r0.check, timestamp);
+  await writeFile(join(current.directory, "attempt.jsonl"), r0Attempt);
+  const parentAttemptSha256 = createHash("sha256").update(r0Attempt).digest("hex");
+  return { current, task, r0, timestamp, r0Attempt, parentAttemptSha256 };
+}
+
+async function retainedRevisionFixture() {
+  const parent = await retainedParentFixture();
+  const { current, task, r0, timestamp, parentAttemptSha256 } = parent;
+  const revision = await recordSemanticRevision(current.directory, {
+    taskDefinitionSha256: task.describe().definitionSha256, parentReviewSha256: r0.reviewSha256,
+    parentWriteSetSha256: r0.check.writeSetSha256,
+    parentCheckSha256: createHash("sha256").update(JSON.stringify(r0.check)).digest("hex"),
+    parentAttemptSha256, refinement: "Keep the exact bytes but clarify the semantic criterion.",
+  });
+  await writeFile(join(current.directory, "candidate-r1.diff"), r0.diff);
+  const r1Attempt = attemptText(attemptStarted(2, current.baseline, timestamp, {
+    sha256: semanticRevisionSha256(revision), parentReviewSha256: r0.reviewSha256, parentAttemptSha256,
+  }), r1Session(r0.check), r0.check, timestamp);
+  await writeFile(join(current.directory, "attempt-r1.jsonl"), r1Attempt);
+  return { ...parent, revision, r1Attempt };
+}
+
 it("derives the bounded tool contract from an approved TypeScript grant", async () => {
   const current = await fixture();
   const task = await CandidateTask.prepare(current.directory, current.grant);
@@ -119,6 +237,72 @@ it("requires a check before editing and binds replacement to current bytes", asy
     diagnostics: expect.arrayContaining([expect.stringContaining("human review")]),
     typecheck: { profile: "typescript-no-emit/v1", status: "passed" } });
 }, 30_000);
+
+it("permanently denies every R0 capability after settlement without closing R1", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const r0 = task.beginExecution();
+  const r0Description = r0.describe();
+  const observed = await r0.read({ path: "src/value.ts" });
+  const r0Check = await r0.check();
+  r0.close();
+  await expect(r0.read({ path: "src/value.ts" })).rejects.toThrow("expired");
+  const r1 = task.beginExecution({ cause: "semantic_revision", refinement: "Use the alternate wording.",
+    parentReviewSha256: "b".repeat(64), parentWriteSetSha256: "d".repeat(64),
+    parentCheckSha256: "e".repeat(64), effectiveCriteriaSha256: "c".repeat(64),
+    parentEvidence: r0Check,
+    remainingBudget: { reads: 7, edits: 2, checks: 2, modelInvocations: 6, toolCalls: 7, activeMs: 1000 } });
+  const r1Description = r1.describe();
+  const { executionCause: r0Cause, semanticRevision: r0Revision, ...r0Contract } = r0Description;
+  const { executionCause: r1Cause, semanticRevision: r1Revision, ...r1Contract } = r1Description;
+
+  expect(r0Cause).toBe("initial_implementation");
+  expect(r0Revision).toBeUndefined();
+  expect(r1Cause).toBe("semantic_revision");
+  expect(r1Revision).toMatchObject({ refinement: "Use the alternate wording.",
+    parentEvidence: r0Check,
+    remainingBudget: { reads: 7, edits: 2, checks: 2, modelInvocations: 6, toolCalls: 7, activeMs: 1000 } });
+  expect(r1Contract).toEqual(r0Contract);
+  expect(r1.requestSchemas().read.safeParse({ path: "README.md" }).success).toBe(false);
+  expect(r1.requestSchemas().replace.safeParse({ path: "src/reference.ts", expectedSha256: observed.sha256,
+    content: "export const reference = 2;\n" }).success).toBe(false);
+  await expect(r0.read({ path: "src/value.ts" })).rejects.toThrow("expired");
+  await expect(r0.replace({ path: "src/value.ts", expectedSha256: observed.sha256,
+    content: "export const value = 'stale';\n" })).rejects.toThrow("expired");
+  await expect(r0.check()).rejects.toThrow("expired");
+  await expect(r1.read({ path: "src/value.ts" })).resolves.toMatchObject({ sha256: observed.sha256 });
+  await expect(r1.check()).resolves.toMatchObject({ baseline: r0Check.baseline,
+    sourceInputsSha256: r0Check.sourceInputsSha256, typecheck: r0Check.typecheck });
+  r1.close();
+  task.close();
+});
+
+it("denies a candidate rename when R0 is revoked after temporary preparation", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const r0 = task.beginExecution();
+  const observed = await r0.read({ path: "src/value.ts" });
+  await r0.check();
+  const prepared = deferred();
+  const release = deferred();
+  candidateRename.active = true;
+  candidateRename.afterTemporaryClose = async () => {
+    prepared.resolve();
+    await release.promise;
+  };
+
+  const replacing = r0.replace({ path: "src/value.ts", expectedSha256: observed.sha256,
+    content: "export const value = 'revoked';\n" });
+  await prepared.promise;
+  r0.close();
+  release.resolve();
+
+  await expect(replacing).rejects.toThrow("denied");
+  expect(candidateRename.dispatches).toBe(0);
+  await expect(readFile(join(current.checkout, "src", "value.ts"), "utf8"))
+    .resolves.toBe("export const value = 'old';\n");
+  await expect(r0.read({ path: "src/value.ts" })).rejects.toThrow("expired");
+});
 
 it("rejects an external write and does not reopen a persisted task for editing", async () => {
   const current = await fixture();
@@ -252,7 +436,235 @@ it("makes a review stale when the bound typecheck evidence changes", async () =>
   expect(first.changedFiles).toEqual(["src/value.ts"]);
   expect(second.reviewSha256).not.toBe(first.reviewSha256);
   expect(second.check.writeSetSha256).toBe(first.check.writeSetSha256);
-});
+}, 20_000);
+
+it.each(["no-op", "batched edit and check"])(
+  "composes a real offline CandidateTask through R0, admitted R1 %s and fresh durable review", async (revisionWork) => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const budget = createPiTaskBudget();
+  const oldContent = "export const value = 'old';\n";
+  const r0Provider = fauxProvider({ models: [{ id: "offline", name: "Offline" }] });
+  r0Provider.setResponses([
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/value.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage(fauxToolCall("tesota_replace", { path: "src/value.ts",
+      expectedSha256: createHash("sha256").update(oldContent).digest("hex"),
+      content: "export const value = 'new';\n" })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage("done"),
+  ]);
+  const r0Capability = task.beginExecution();
+  const r0Session = await runPiTask(r0Capability, r0Provider.getModel(), r0Provider.provider.streamSimple,
+    new AbortController().signal, budget);
+  r0Capability.close();
+  const r0Current = await checkCandidateTask(current.directory);
+  const timestamp = new Date().toISOString();
+  const r0Diff = await import("../src/candidate-checkout.js").then(({ candidateDiff }) => candidateDiff(current.directory));
+  await writeFile(join(current.directory, "candidate.diff"), r0Diff);
+  const r0Attempt = attemptText(attemptStarted(1, current.baseline, timestamp), r0Session, r0Current, timestamp);
+  await writeFile(join(current.directory, "attempt.jsonl"), r0Attempt);
+  const r0 = await reviewTask(current.directory);
+  const parent = await validateCorrectionParent(current.directory, {
+    parentReviewSha256: r0.reviewSha256, parentWriteSetSha256: r0.check.writeSetSha256,
+    parentCheckSha256: createHash("sha256").update(JSON.stringify(r0.check)).digest("hex"),
+    parentAttemptSha256: createHash("sha256").update(r0Attempt).digest("hex"),
+    taskDefinitionSha256: task.describe().definitionSha256,
+  });
+  const revision = await recordSemanticRevision(current.directory, {
+    taskDefinitionSha256: task.describe().definitionSha256, parentReviewSha256: r0.reviewSha256,
+    parentWriteSetSha256: r0.check.writeSetSha256,
+    parentCheckSha256: createHash("sha256").update(JSON.stringify(r0.check)).digest("hex"),
+    parentAttemptSha256: parent.attemptSha256, refinement: "Keep the new value and clarify the criterion.",
+  });
+  const r1Provider = fauxProvider({ models: [{ id: "offline", name: "Offline" }] });
+  r1Provider.setResponses([
+    fauxAssistantMessage(revisionWork === "no-op" ? [fauxToolCall("tesota_check", {})] : [
+      fauxToolCall("tesota_replace", { path: "src/value.ts",
+        expectedSha256: createHash("sha256").update("export const value = 'new';\n").digest("hex"),
+        content: "export const value = 'revised';\n" }), fauxToolCall("tesota_check", {}),
+    ]), fauxAssistantMessage("done"),
+  ]);
+  const r1Capability = task.beginExecution({ cause: "semantic_revision", refinement: revision.refinement,
+    parentReviewSha256: revision.parentReviewSha256, parentWriteSetSha256: revision.parentWriteSetSha256,
+    parentCheckSha256: revision.parentCheckSha256, effectiveCriteriaSha256: revision.effectiveCriteriaSha256,
+    parentEvidence: parent.check,
+    remainingBudget: { reads: 7, edits: 1, checks: 1,
+      modelInvocations: PI_TASK_LIMITS.modelInvocations - budget.modelInvocations,
+      toolCalls: PI_TASK_LIMITS.toolCalls - budget.toolCalls,
+      activeMs: PI_TASK_LIMITS.sessionMs - budget.activeMs } });
+  const r1Session = await runPiTask(r1Capability, r1Provider.getModel(), r1Provider.provider.streamSimple,
+    new AbortController().signal, budget);
+  r1Capability.close();
+  const r1Current = await checkCandidateTask(current.directory);
+  const r1Diff = await import("../src/candidate-checkout.js").then(({ candidateDiff }) => candidateDiff(current.directory));
+  await writeFile(join(current.directory, "candidate-r1.diff"), r1Diff);
+  await writeFile(join(current.directory, "attempt-r1.jsonl"), attemptText(
+    attemptStarted(2, current.baseline, timestamp, { sha256: semanticRevisionSha256(revision),
+      parentReviewSha256: r0.reviewSha256, parentAttemptSha256: parent.attemptSha256 }),
+    r1Session, r1Current, new Date().toISOString()));
+
+  const r1 = await reviewTask(current.directory);
+  expect(r0Session).toMatchObject({ status: "completed", executionCause: "initial_implementation" });
+  expect(r1Session).toMatchObject({ status: "completed", executionCause: "semantic_revision" });
+  expect(r1.historicalAttempt).toBe("semantic_revision_passed");
+  expect(r1.reviewSha256).not.toBe(r0.reviewSha256);
+  expect(budget.modelInvocations).toBeGreaterThan(r0Session.modelInvocations);
+  expect(r1Session.modelInvocations - r0Session.modelInvocations).toBe(2);
+  expect(r1Session.toolCalls - r0Session.toolCalls).toBe(revisionWork === "no-op" ? 1 : 2);
+}, 30_000);
+
+it("gives an R1 no-op fresh semantic review identity without claiming changed correction bytes", async () => {
+  const { current, r0 } = await retainedRevisionFixture();
+
+  const r1 = await reviewTask(current.directory);
+  expect(r1.reviewSha256).not.toBe(r0.reviewSha256);
+  expect(r1.check.writeSetSha256).toBe(r0.check.writeSetSha256);
+  expect(r1.historicalAttempt).toBe("semantic_revision_passed");
+  expect(r1.operatorDecision).toBeNull();
+}, 20_000);
+
+it("rejects all-zero R1 consumption with otherwise valid retained evidence", async () => {
+  const { current, r0, revision, timestamp, parentAttemptSha256 } = await retainedRevisionFixture();
+  await expect(reviewTask(current.directory)).resolves.toMatchObject({ historicalAttempt: "semantic_revision_passed" });
+  await writeFile(join(current.directory, "attempt-r1.jsonl"), attemptText(
+    attemptStarted(2, current.baseline, timestamp, { sha256: semanticRevisionSha256(revision),
+      parentReviewSha256: r0.reviewSha256, parentAttemptSha256 }),
+    { ...r1Session(r0.check), modelInvocations: 0, toolCalls: 0, activeMs: 0 }, r0.check, timestamp));
+  await expect(reviewTask(current.directory)).rejects.toThrow("Semantic revision resource evidence invalid");
+}, 20_000);
+
+it.each([
+  ["zero model invocations", { modelInvocations: 0 }],
+  ["zero tool calls", { toolCalls: 0 }],
+  ["zero active time", { activeMs: 0 }],
+  ["nonzero model regression", { modelInvocations: 3 }],
+  ["nonzero tool regression", { toolCalls: 2 }],
+  ["nonzero time regression", { activeMs: 99 }],
+  ["unchanged model consumption", { modelInvocations: 4 }],
+  ["only one new model invocation", { modelInvocations: 5 }],
+  ["unchanged tool consumption", { toolCalls: 3 }],
+  ["tool delta omitting a claimed edit", { edits: 1, editCauses: [{ cause: "semantic_revision" }] }],
+] satisfies ReadonlyArray<readonly [string, Partial<PiTaskResult>]>)(
+  "rejects R1 %s without changing bytes, checks or lineage", async (_name, mutation) => {
+    const { current, r0, revision, timestamp, parentAttemptSha256 } = await retainedRevisionFixture();
+    await writeFile(join(current.directory, "attempt-r1.jsonl"), attemptText(
+      attemptStarted(2, current.baseline, timestamp, { sha256: semanticRevisionSha256(revision),
+        parentReviewSha256: r0.reviewSha256, parentAttemptSha256 }),
+      { ...r1Session(r0.check), ...mutation }, r0.check, timestamp));
+    vi.mocked(checkRepositoryTypecheck).mockClear();
+    await expect(reviewTask(current.directory)).rejects.toThrow("Semantic revision resource evidence invalid");
+    expect(checkRepositoryTypecheck).not.toHaveBeenCalled();
+  }, 20_000);
+
+it("accepts R1 rounded-time equality and minimum no-op resource increments", async () => {
+  const { current, r0, revision, timestamp, parentAttemptSha256 } = await retainedRevisionFixture();
+  await writeFile(join(current.directory, "attempt-r1.jsonl"), attemptText(
+    attemptStarted(2, current.baseline, timestamp, { sha256: semanticRevisionSha256(revision),
+      parentReviewSha256: r0.reviewSha256, parentAttemptSha256 }),
+    { ...r1Session(r0.check), activeMs: r0Session(r0.check).activeMs }, r0.check, timestamp));
+  await expect(reviewTask(current.directory)).resolves.toMatchObject({ historicalAttempt: "semantic_revision_passed" });
+}, 20_000);
+
+it.each([0, 2])("rejects aggregate phase consumption with %i R1 edits and two R1 checks", async (edits) => {
+  const { current, r0, revision, timestamp, parentAttemptSha256 } = await retainedRevisionFixture();
+  const failed: CandidateTaskCheck = { status: "check_failed", diagnostics: ["TypeScript check failed."],
+    outcome: "check_failed", settlement: "observed", task: r0.check.task, typecheck: typecheckResult("check_failed"),
+    baseline: r0.check.baseline, writeSetSha256: "2".repeat(64), sourceInputsSha256: r0.check.sourceInputsSha256,
+    taskAcceptance: "not_evaluated", provenance: "issued" };
+  const session: PiTaskResult = { ...r1Session(r0.check), toolCalls: 9, edits,
+    checks: [edits === 0 ? issued(r0.check) : failed, issued(r0.check)], checksSuppliedToModel: 2,
+    editCauses: edits === 0 ? [] : [{ cause: "semantic_revision" }, { cause: "diagnostic_repair",
+      failedCheckSha256: createHash("sha256").update(JSON.stringify(failed)).digest("hex") }] };
+  await writeFile(join(current.directory, "attempt-r1.jsonl"), attemptText(
+    attemptStarted(2, current.baseline, timestamp, { sha256: semanticRevisionSha256(revision),
+      parentReviewSha256: r0.reviewSha256, parentAttemptSha256 }), session, r0.check, timestamp));
+  await expect(reviewTask(current.directory)).rejects.toThrow("Semantic revision resource evidence invalid");
+}, 20_000);
+
+const revisionEvidenceFailures = [
+  "altered R0 start record",
+  "altered R0 finish record",
+  "incomplete R0 attempt",
+  "skeletal R1 session",
+  "missing R1 accounting field",
+  "partial R1 attempt",
+  "extra R1 attempt record",
+  "R1 attempt symlink",
+  "R1 attempt hardlink",
+  "mismatched R0 attempt digest",
+  "R1 attempt from another revision",
+  "R1 attempt from another parent",
+  "partial semantic revision",
+  "partial R1 diff",
+] as const;
+
+async function applyRevisionEvidenceFailure(failure: (typeof revisionEvidenceFailures)[number], directory: string,
+  r0Attempt: string, r1Attempt: string): Promise<void> {
+  const parse = (text: string): [Record<string, unknown>, Record<string, unknown>] => {
+    const lines = text.trimEnd().split("\n").map((line) => z.record(z.string(), z.unknown()).parse(JSON.parse(line)));
+    const parsed = z.tuple([z.record(z.string(), z.unknown()), z.record(z.string(), z.unknown())]).parse(lines);
+    return parsed;
+  };
+  const serialize = (lines: readonly Record<string, unknown>[]): string =>
+    lines.map((line) => JSON.stringify(line)).join("\n") + "\n";
+  const r0Path = join(directory, "attempt.jsonl");
+  const r1Path = join(directory, "attempt-r1.jsonl");
+  switch (failure) {
+    case "altered R0 start record": {
+      const lines = parse(r0Attempt); lines[0]["model"] = "substituted";
+      await writeFile(r0Path, serialize(lines)); return;
+    }
+    case "altered R0 finish record": {
+      const lines = parse(r0Attempt); const session = z.record(z.string(), z.unknown()).parse(lines[1]["session"]);
+      session["activeMs"] = z.number().parse(session["activeMs"]) + 1;
+      lines[1]["session"] = session; await writeFile(r0Path, serialize(lines)); return;
+    }
+    case "incomplete R0 attempt": await writeFile(r0Path, r0Attempt.split("\n")[0] + "\n"); return;
+    case "skeletal R1 session": {
+      const lines = parse(r1Attempt); lines[1]["session"] = {
+        status: "completed", settlement: "observed", executionCause: "semantic_revision",
+        finalCheckSuppliedToModel: true, taskAcceptance: "not_evaluated",
+      }; await writeFile(r1Path, serialize(lines)); return;
+    }
+    case "missing R1 accounting field": {
+      const lines = parse(r1Attempt); const session = z.record(z.string(), z.unknown()).parse(lines[1]["session"]);
+      delete session["toolCalls"]; lines[1]["session"] = session; await writeFile(r1Path, serialize(lines)); return;
+    }
+    case "partial R1 attempt": await writeFile(r1Path, r1Attempt.split("\n")[0] + "\n"); return;
+    case "extra R1 attempt record":
+      await writeFile(r1Path, r1Attempt + JSON.stringify({ state: "unexpected" }) + "\n"); return;
+    case "R1 attempt symlink":
+    case "R1 attempt hardlink": {
+      const substitute = join(directory, `substitute-${failure === "R1 attempt symlink" ? "symlink" : "hardlink"}.jsonl`);
+      await writeFile(substitute, r1Attempt); await rm(r1Path);
+      if (failure === "R1 attempt symlink") await symlink(substitute, r1Path, "file");
+      else await link(substitute, r1Path);
+      return;
+    }
+    case "mismatched R0 attempt digest": {
+      const path = join(directory, "semantic-revision.json");
+      const revision = JSON.parse(await readFile(path, "utf8")); revision.parentAttemptSha256 = "6".repeat(64);
+      await writeFile(path, JSON.stringify(revision, null, 2) + "\n"); return;
+    }
+    case "R1 attempt from another revision":
+    case "R1 attempt from another parent": {
+      const lines = parse(r1Attempt);
+      lines[0][failure === "R1 attempt from another revision" ? "revisionSha256" : "parentReviewSha256"] =
+        failure === "R1 attempt from another revision" ? "5".repeat(64) : "7".repeat(64);
+      await writeFile(r1Path, serialize(lines)); return;
+    }
+    case "partial semantic revision":
+      await writeFile(join(directory, "semantic-revision.json"), "{\"format\":\"tesota-semantic-revision\""); return;
+    case "partial R1 diff": await writeFile(join(directory, "candidate-r1.diff"), "partial diff\n");
+  }
+}
+
+it.each(revisionEvidenceFailures)("rejects %s before claiming a passed semantic revision", async (failure) => {
+  const { current, r0Attempt, r1Attempt } = await retainedRevisionFixture();
+  await applyRevisionEvidenceFailure(failure, current.directory, r0Attempt, r1Attempt);
+  await expect(reviewTask(current.directory)).rejects.toThrow();
+}, 30_000);
 
 it("rejects grant and persisted-plan tampering", async () => {
   const current = await fixture();
