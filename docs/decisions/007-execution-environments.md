@@ -53,6 +53,22 @@ consumer and qualification evidence:
    higher-risk work. It requires a named product consumer before Tesota owns
    remote lifecycle, credentials or infrastructure.
 
+The long-term execution flow is policy-first:
+
+```text
+approved task and authority
+  -> execution requirements
+  -> qualified provider selected before execution
+  -> provider-specific observation and settlement
+  -> exact-result evidence
+  -> human review and guarded application
+```
+
+Requirements name readable and writable roots, network and credential policy,
+process and descendant containment, platform, resources, cancellation and
+settlement. Provider selection is not a model decision. A repository-supplied
+environment description is untrusted input and cannot expand those requirements.
+
 Selection fails closed. If no qualified environment satisfies the admitted
 policy, the operation is unavailable. Tesota must not silently fall back from a
 protected environment to trusted host-native execution, including after setup,
@@ -73,6 +89,40 @@ These are conceptual requirements, not a new generic runner schema. Shared code
 is introduced only after a second implemented provider exposes stable common
 semantics.
 
+## Environment and verifier inputs
+
+Confinement and verifier-input identity are separate properties. A sandbox
+limits what a command can observe or change; it does not by itself establish
+which dependency bytes were used. A snapshot or content manifest can bind those
+bytes; it does not by itself confine the command. Each profile must state which
+properties it requires and retain both in its evidence.
+
+Interactive work should prepare one task-owned environment and immutable
+dependency input, then reuse them for that task's checks while rebinding every
+check to the current candidate bytes. The environment and its inputs are not
+reused after unconfirmed settlement. Cross-task content-addressed caching is
+deferred until measurements demonstrate a need and its poisoning, concurrency,
+invalidation, recovery and cleanup obligations have explicit owners.
+
+The design should reuse established environment formats without treating them
+as authority:
+
+- [OCI](https://opencontainers.org/) image, runtime and distribution
+  specifications are the portable container boundary; Docker Desktop is one
+  current implementation, not Tesota's durable contract.
+- The [Development Container Specification](https://containers.dev/) is a
+  reusable description of a local or cloud development environment. Its image,
+  mounts, lifecycle commands, network and secrets still require admission under
+  Tesota's policy.
+- Exact-result records may use the subject, materials, invocation and
+  environment concepts from [SLSA provenance](https://slsa.dev/spec/v1.2/provenance)
+  without claiming SLSA compliance or replacing Tesota's authority, settlement
+  and unknown-state fields.
+
+This direction does not authorize a universal executor, provider registry or
+proprietary repository environment format. Those abstractions wait for concrete
+consumers and qualified implementations.
+
 ## Current application
 
 - `typescript-no-emit/v1` and `vitest-targeted/v1` remain container-specific
@@ -89,6 +139,20 @@ The next implementation question is whether an OS-level local sandbox can
 satisfy one existing repository profile with less setup friction while retaining
 the profile's required evidence. Tesota will qualify that concrete provider
 before extracting a shared execution abstraction.
+
+That qualification follows the current milestone repair rather than replacing
+it. The existing bounded dependency reader must first avoid maximum-size
+allocation for every small file, preserve its byte and cancellation invariants,
+and expose phase measurements. If the corrected Docker profile becomes usable,
+Milestone 1 qualification remains on its already frozen environment. Native
+sandbox qualification is then a separately owned increment against the same
+real TypeScript consumer, not a lighter probe.
+
+A native provider must prove exact filesystem roots, external aliases and
+reparse points, local and external network policy, inherited credential
+exclusion, toolchain access, child-process settlement, cancellation, resource
+limits, startup failure and cleanup. Its setup and repeated-check latency are
+part of qualification. No provider is selected from documentation claims alone.
 
 ## Rejected alternatives
 

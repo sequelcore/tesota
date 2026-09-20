@@ -20,7 +20,7 @@ different:
 | Horizon | Meaning |
 | --- | --- |
 | **Implemented today** | A local, terminal-first pre-release that can answer bounded repository questions and attempt one narrow class of TypeScript source changes with explicit approval, checks, review and application. |
-| **Next demonstrated capability** | Complete one small repository change in one continuous conversation, including useful correction and a return to a useful prompt. |
+| **Next demonstrated capability** | Correct or revise a supported task without restarting, with fresh exact-result evidence and explicit cumulative budgets. |
 | **Coding destination** | A verification-first coding agent capable of broad, real repository work while preserving explicit authority, exact-result evidence, visible unknowns, human acceptance and guarded application. |
 | **Long-term thesis** | An agent for research, planning, creation, tool use and other consequential work, where each domain defines its result, applicable evidence, effects and adoption boundary. |
 
@@ -70,11 +70,12 @@ own authority.
 
 The current implementation still exposes some seams in this experience. A
 supported change can move from a natural-language request through approval,
-work, checks, review and application without the user copying internal IDs, but
-semantic revision is not yet implemented, and cancellation, lifecycle failure
-or unconfirmed application settlement still ends the session. [Using
-Tesota](using-tesota.md) documents the exact supported workflow without
-presenting the destination as current behavior.
+work, checks, review and application without the user copying internal IDs.
+Known-settled cancellation and lifecycle failure return to a fresh prompt;
+unconfirmed execution or application settlement ends the session. Semantic
+revision is not yet implemented. [Using Tesota](using-tesota.md) documents the
+exact supported workflow without presenting the destination as current
+behavior.
 
 ## Why verification-first
 

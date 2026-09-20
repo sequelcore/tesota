@@ -131,6 +131,9 @@ it("reads only committed regular blobs and reports source changes without modify
     "src/command-isolation.ts", "src/integrations/pi-task.ts", "tests/contract.test.ts",
     "tests/pi-task-evidence.test.ts",
   ]);
+  expect((await discovery.list({ prefix: "src/" })).files).toEqual([
+    "src/command-isolation.ts", "src/integrations/pi-task.ts",
+  ]);
   expect((await discovery.read({ path: "README.md" })).content).toContain("Old task wording");
   await expect(discovery.read({ path: ".env" })).rejects.toThrow("denied");
   await expect(discovery.read({ path: "binary.dat" })).rejects.toThrow();
@@ -342,7 +345,7 @@ it("binds one clarification answer to a continued proposal and disallows another
   ]);
   await expect(discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
     input: clarified, allowedOutcome: "conversation", model: repeated.model, stream: repeated.stream,
-    signal: new AbortController().signal })).rejects.toThrow("failed");
+    signal: new AbortController().signal })).rejects.toThrow("did not complete");
 });
 
 it("rejects an oversized retained clarification request before inference", async () => {
@@ -385,7 +388,7 @@ it("rejects an answer that cites a baseline file it did not observe", async () =
 
   await expect(discoverConversationTurn({ sourceDirectory: source, proposalsRoot: proposals,
     input: { request: "What is Tesota?" }, allowedOutcome: "conversation", model: fake.model, stream: fake.stream,
-    signal: new AbortController().signal })).rejects.toThrow("failed");
+    signal: new AbortController().signal })).rejects.toThrow("did not complete");
   await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
@@ -398,7 +401,7 @@ it("rejects an answer from the explicit proposal-only command contract", async (
   ]);
 
   await expect(proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals, request: "Explain the README",
-    model: fake.model, stream: fake.stream, signal: new AbortController().signal })).rejects.toThrow("failed");
+    model: fake.model, stream: fake.stream, signal: new AbortController().signal })).rejects.toThrow("did not complete");
   await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
@@ -434,13 +437,13 @@ it("rejects unobserved paths, malformed or mutating tools without retaining prop
     } })),
   ]);
   await expect(proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals, request: "Change identity",
-    model: unobserved.model, stream: unobserved.stream, signal: new AbortController().signal })).rejects.toThrow("failed");
+    model: unobserved.model, stream: unobserved.stream, signal: new AbortController().signal })).rejects.toThrow("did not complete");
 
   const mutating = fakeModel([fauxAssistantMessage(fauxToolCall("tesota_replace", {
     path: "README.md", content: "SYNTHETIC_PRIVATE",
   }))]);
   await expect(proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals, request: "Change README",
-    model: mutating.model, stream: mutating.stream, signal: new AbortController().signal })).rejects.toThrow("failed");
+    model: mutating.model, stream: mutating.stream, signal: new AbortController().signal })).rejects.toThrow("did not complete");
   await expect(readFile(join(source, "README.md"), "utf8")).resolves.toContain("Old task wording");
   await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
 });

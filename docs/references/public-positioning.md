@@ -1,6 +1,6 @@
 # Public positioning evidence
 
-Research cutoff: **2026-09-15**.
+Research cutoff: **2026-09-19**.
 
 This reference records the external evidence behind Tesota's public identity.
 It compares current first-party product language and selected verification work.
@@ -73,6 +73,11 @@ the category definition:
   dependent sandbox providers including Seatbelt, Docker or Podman, Windows
   low-integrity execution, gVisor and LXC. The provider name alone does not
   establish equivalent filesystem, network or credential protection.
+- [Codex 0.155.1](https://github.com/openai/codex/blob/rust-v0.155.1/codex-rs/core/README.md#windows)
+  distinguishes legacy full-read Windows policies from elevated split-filesystem
+  policies with exact readable and writable roots. This makes an older failed
+  full-read comparison insufficient to judge the current exact-root provider;
+  it does not qualify that provider for Tesota.
 - [Pi's sandbox extension example](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/examples/extensions/sandbox/index.ts)
   demonstrates replacing its normal shell tool with an OS-level Seatbelt or
   bubblewrap boundary. This establishes an extension seam, not a product-wide
@@ -87,6 +92,20 @@ stronger isolated execution can coexist behind explicit policy. The mechanisms
 are not interchangeable, and approval is not confinement. Tesota's architectural
 decision is recorded in
 [decision 007](../decisions/007-execution-environments.md).
+
+Container use also converges on reusable environments rather than rebuilding a
+private dependency universe for every command. Gemini mounts the workspace into
+its Docker or Podman sandbox and describes startup overhead as small after the
+initial build. The open [Development Container Specification](https://containers.dev/)
+exists so local tools, cloud environments and CI can reuse a development
+definition, while [OCI](https://opencontainers.org/) standardizes container
+images, runtimes and distribution independently of Docker.
+
+These sources and public issue reports are not a representative community
+survey. They support only a directional inference: users benefit from low setup
+friction, fast repeated feedback, reuse of repository-owned environments,
+cross-platform choices and explicit protection differences. They do not
+establish one universally preferred provider or a measured ranking of demand.
 
 ## Why verification is becoming central
 

@@ -33,9 +33,32 @@ An admitted TypeScript change:
 - requires an initial check before the first replacement; and
 - remains subject to human review before promotion.
 
-The persisted plan binds the approved proposal, committed baseline, read-input
-hashes, write set, limits and task definition. Reloading that plan can recheck a
+The complete model-and-check session has a five-minute cumulative deadline.
+Individual container checks retain their separate 60-second execution limit;
+dependency binding and snapshot preparation occur inside the cumulative task
+window.
+
+The version-2 persisted plan binds the approved proposal, committed baseline,
+initial candidate read-input hashes, exact source-target hashes and modes,
+write set, limits and task definition. Reloading that plan can recheck a
 candidate, but cannot recreate editing authority.
+
+Git's [text and end-of-line attributes](https://git-scm.com/docs/gitattributes)
+can give a worktree different bytes from its committed blob. Before editing,
+Tesota admits either the exact blob bytes or the uniform CRLF representation
+of an LF-only UTF-8 text blob. This bounded rule also applies to the initial
+candidate inputs, including checkouts affected by `eol=crlf`. Mixed or other
+transformed representations are not inferred. No Git filters are executed.
+
+The original source bytes remain a distinct observation: after capture, even
+an LF/CRLF-only change is source drift. Their hashes and modes participate in
+the task definition and check evidence, so rebinding them invalidates the
+review fingerprint. Candidate replacements are applied exactly as reviewed;
+promotion does not convert their line endings.
+
+Version-1 plans remain inspectable and checkable, but their missing source
+observations are never reconstructed from the present worktree. They cannot
+receive a new acceptance or be promoted. A fresh approved task is required.
 
 ## What the automatic checks prove
 
@@ -66,8 +89,8 @@ evidence as well as the candidate bytes, so changed verifier inputs make a prior
 decision stale. Before the decision, the shell lists the exact changed files,
 states the separate scope-integrity and TypeScript claims, names the behavioral
 and integration unknowns, and reports that application has not occurred.
-Promotion applies only the accepted write set when the source `HEAD`, target
-bytes and review identity still match. The terminal outcome reports application
+Promotion applies only the accepted write set when the source revision checks,
+captured target bytes and modes, and review identity still match. The terminal outcome reports application
 as applied, not applied or unconfirmed without changing the durable outcome
 schema.
 

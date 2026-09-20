@@ -32,10 +32,13 @@ presents the exact diff and current evidence, and asks whether to apply the
 result. The normal path does not require copying proposal, candidate or review
 IDs.
 
-That continuous experience is not complete yet. After a settled task, the shell
-returns to a new prompt, but a user cannot request a semantic revision such as
-"change this part" within the same task. Cancellation and uncertain application
-settlement still end the session. The [roadmap](docs/roadmap.md) defines those
+That bounded flow has completed a prospective Windows/Docker evaluation with
+human acceptance and exact-byte application; see the
+[qualification record](experiments/supported-task/results.md). After a known-settled task,
+including cancellation or a lifecycle failure before uncertain effects, the
+shell returns to a new prompt. Unconfirmed execution or application settlement
+ends the session, and a user cannot request a semantic revision such as "change
+this part" within the same task. The [roadmap](docs/roadmap.md) defines those
 user-facing gaps.
 
 ## Why verification-first
@@ -119,8 +122,11 @@ outside the current boundary. A supported change still requires explicit scope
 approval and a separate review decision before application.
 
 The current repository TypeScript check requires Docker Desktop, the pinned
-image already present locally and a matching installed TypeScript dependency.
-Tesota performs no dependency install or image pull. See
+image already present locally and a matching TypeScript closure in the target
+repository's `node_modules`. When the installed TypeScript package declares a
+Linux/x64 platform package, the closure must include
+`@typescript/typescript-linux-x64` at the declared TypeScript version. Tesota
+performs no dependency install or image pull. See
 [Using Tesota](docs/using-tesota.md) for the complete current path and its
 failure and recovery boundaries.
 

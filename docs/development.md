@@ -53,7 +53,12 @@ model-controlled command: only the exact canonical declaration is accepted and
 Tesota invokes its fixed TypeScript argv inside the pinned, network-disabled,
 read-only container policy. This Windows development slice requires Docker
 Desktop, the pinned image already present locally and a matching TypeScript
-installation in the source repository. It performs no install or image pull.
+closure in the source repository. Provision it from the committed
+lockfile with `bun install --frozen-lockfile --ignore-scripts --os=linux
+--cpu=x64`; when TypeScript declares a platform package, the closure must
+include `@typescript/typescript-linux-x64` at the declared TypeScript version.
+Portable JavaScript TypeScript releases do not declare that package. Tesota
+performs no install or image pull.
 That Docker requirement belongs to the current profile, not every Tesota
 operation; [decision 007](decisions/007-execution-environments.md) owns the
 long-term execution-environment policy.

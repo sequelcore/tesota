@@ -1,0 +1,121 @@
+{
+  "format": "tesota-supported-task-live-qualification",
+  "version": 1,
+  "timestamp": "2026-09-19T21:05:07.776Z",
+  "provenance": "sanitized_projection_of_operator_local_machine_evidence",
+  "codeCommit": "93266254523946fb539113d36631b2d585a71c2a",
+  "implementation": {
+    "src/command-isolation.ts": "2fbc8bdcdc3e125f65ec4703a33a77748c5b37f795a26ad58dc1845debf28f05",
+    "src/repository-typecheck.ts": "a47b0178adc9cebd35f34fe478c63482339c7771d17e9382cd825d419741f4b7",
+    "src/repository-typecheck-process.ts": "56a599e2134d8cab4e15038c5511dad99a19ad5ff3d8d51ab5328273b8c3bd00",
+    "src/repository-check-input.ts": "7b05bff7e6bfed83061da6a843cc2549cfb56d73ab5d7888e148e16d1100ede7",
+    "temporaryProducerSha256": "e5152c534845440e4712f3d2c5e6e578bfdd1cc3c898b3d2ab020fbd08f846b7"
+  },
+  "operatorPrivateRawRecordSha256": "2384fbe2e3cb8c301bb9da05add97b669eb2b442e34ab0429d30012584bf4337",
+  "platform": {
+    "os": "windows",
+    "architecture": "x64",
+    "node": "24.15.0",
+    "bun": "1.4.2",
+    "docker": "29.8.0"
+  },
+  "profile": {
+    "id": "typescript-no-emit/v1",
+    "typescript": "7.0.2",
+    "image": "node@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f",
+    "policySha256": "7372c03b1fec10d4daccd6ad12aa24ba48288bcc9f6469af4bca548c79b6452e",
+    "dockerExecutableSha256": "46d8a5bd7523c575fb276a75296ab19abb9bf277d334169c665e521e46dbc2a4",
+    "command": [
+      "node",
+      "/dependencies/node_modules/typescript/bin/tsc",
+      "--noEmit",
+      "--incremental",
+      "false",
+      "--pretty",
+      "false",
+      "-p",
+      "tsconfig.json"
+    ],
+    "limits": {
+      "timeoutMs": 30000,
+      "maxOutputBytes": 262144,
+      "terminationWaitMs": 2000
+    },
+    "fixture": {
+      "commit": "154802fae38df9590c87061d49d2043d83c5178e",
+      "packageJsonSha256": "7328d9e657cc74b2f72e14cb50fe404ddcf423b6946e47b7788a15b0427d0360",
+      "tsconfigSha256": "f8a4738c6ecb52481d9f29eeb26c4f51383bd30e17afa215c65b919b6b3b053a",
+      "lockfileSha256": "ad6902fbd12442aafae658d0b6e38483c7c6610ea05022331a39bc9215eb2393",
+      "realCompilerInstallationSha256": "2abda71ebfbea38bcca03d2d3eabd0e849638300d599969f73e03855276bcd45"
+    }
+  },
+  "cases": [
+    {
+      "case": "positive",
+      "status": "passed",
+      "reason": null,
+      "process": "exited",
+      "container": "absent",
+      "candidateContentSha256": "aeb2ce0858a4ccae9dbaed6c4732bef407fd528a594b814e6a2903678cd48ac7"
+    },
+    {
+      "case": "compiler_finding",
+      "status": "check_failed",
+      "reason": "diagnostics",
+      "process": "exited",
+      "container": "absent",
+      "candidateContentSha256": "5b274c40f7acd0a099cc02e94095a85929acefd1db0da4dbcc5776c9c802b3cd",
+      "diagnostic": "src/value.ts(1,14): error TS2322: Type 'number' is not assignable to type 'string'."
+    },
+    {
+      "case": "missing_tool",
+      "status": "unavailable",
+      "reason": "docker_not_found_before_profile",
+      "process": "not_started",
+      "container": "absent"
+    },
+    {
+      "case": "fatal_exit",
+      "status": "execution_failed",
+      "reason": "incoherent_compiler_result",
+      "process": "exited",
+      "container": "absent",
+      "controlledCompilerInstallationSha256": "e2a61f6236d363166cf6641ca50b5a4a8aba8abb038448ba228e23c648e14a5f"
+    },
+    {
+      "case": "timeout",
+      "status": "timed_out",
+      "reason": "timeout",
+      "process": "exited",
+      "container": "absent",
+      "controlledCompilerInstallationSha256": "34591d9ae1c97f2499025f2640deec18cd09c88677dba59af890010a0ddaff36"
+    },
+    {
+      "case": "cancellation",
+      "status": "cancelled",
+      "reason": "cancelled",
+      "process": "exited",
+      "container": "absent",
+      "controlledCompilerInstallationSha256": "34591d9ae1c97f2499025f2640deec18cd09c88677dba59af890010a0ddaff36"
+    },
+    {
+      "case": "source_drift",
+      "status": "execution_failed",
+      "reason": "input_drift",
+      "process": "not_started",
+      "container": "absent",
+      "candidateContentSha256": "aeb2ce0858a4ccae9dbaed6c4732bef407fd528a594b814e6a2903678cd48ac7"
+    }
+  ],
+  "survivingDescendant": {
+    "source": "isolation qualify on the same platform and image",
+    "selected": "docker-container",
+    "status": "passed",
+    "failedControls": []
+  },
+  "limitations": [
+    "The fixture is controlled and does not establish usefulness on an external repository.",
+    "The temporary producer is identified by hash but is not retained as product code.",
+    "The Linux/x64 dependency closure was provisioned by the operator and its derivation was not independently reproduced."
+  ]
+}

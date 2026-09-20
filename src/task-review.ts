@@ -32,6 +32,21 @@ export interface TaskReview {
   } | null;
 }
 
+/** A review check may still own an unresolved external process or container. */
+export class TaskReviewUnsettledError extends Error {
+  readonly check: CandidateTaskCheck;
+  constructor(check: CandidateTaskCheck) {
+    super("Task review settlement is unconfirmed");
+    this.name = "TaskReviewUnsettledError";
+    this.check = check;
+  }
+}
+
+function requireSettledCheck(check: CandidateTaskCheck): CandidateTaskCheck {
+  if (check.settlement === "unconfirmed") throw new TaskReviewUnsettledError(check);
+  return check;
+}
+
 function digest(text: string): string { return createHash("sha256").update(text).digest("hex"); }
 
 async function readDecision(directory: string): Promise<TaskDecision | null> {
@@ -60,9 +75,9 @@ async function readDecision(directory: string): Promise<TaskDecision | null> {
 /** Fresh checks and a freshly generated diff; saved success claims are never acceptance inputs. */
 export async function reviewTask(directory: string): Promise<TaskReview> {
   const candidate = await inspectCandidateCheckout(directory);
-  const check = await checkCandidateTask(candidate.directory);
+  const check = requireSettledCheck(await checkCandidateTask(candidate.directory));
   const diff = await candidateDiff(candidate.directory);
-  const current = await checkCandidateTask(candidate.directory);
+  const current = requireSettledCheck(await checkCandidateTask(candidate.directory));
   if (JSON.stringify(check) !== JSON.stringify(current)) throw new Error("Candidate changed during review");
   const reviewSha256 = digest(JSON.stringify({
     format: "tesota-task-review", version: 1, directory: candidate.directory,
@@ -83,7 +98,9 @@ export async function decideTask(directory: string, request: unknown): Promise<T
   const review = await reviewTask(directory);
   if (review.operatorDecision !== null) throw new Error("A decision already exists");
   if (args.reviewSha256 !== review.reviewSha256) throw new Error("Review is stale");
-  if (args.decision === "accept" && review.check.status !== "passed") throw new Error("Acceptance requires a passing current check");
+  if (args.decision === "accept" && (review.check.status !== "passed" || review.check.sourceInputsSha256 === null)) {
+    throw new Error("Acceptance requires a passing current check and an admitted source binding");
+  }
   const record: TaskDecision = { format: "tesota-task-decision", version: 1, decision: args.decision,
     reviewSha256: review.reviewSha256, recordedAt: new Date().toISOString(), authority: "local_operator_assertion" };
   const file = await open(join(review.directory, "decision.json"), "wx", 0o600);

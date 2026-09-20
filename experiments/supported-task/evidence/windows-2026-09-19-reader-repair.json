@@ -1,0 +1,149 @@
+{
+  "format": "tesota-supported-task-live-qualification",
+  "version": 1,
+  "timestamp": "2026-09-20T00:47:44.185Z",
+  "provenance": "sanitized_projection_of_local_tool_observations",
+  "codeCommit": "507bbce3e40501922bf40ab8880f637b7ebeda82",
+  "workingTreeChange": "bounded dependency reader repair; implementation hashes identify the tested bytes",
+  "temporaryProducerSha256": "49a092c33e5437e64d1bbfc0f8be297f5b3dbce011c8c4a2230019aa855472c5",
+  "implementation": {
+    "src/repository-check-input.ts": "f25f1d48e28155474e43463259332cd751c6934acb005270cef622de8cd974ee",
+    "src/repository-typecheck.ts": "d8f8493a6bbeb96559c0fd80c964b789a867d9de1fc0202040f8cfe5b16de45a",
+    "src/repository-typecheck-process.ts": "2f874e7dfc2fcfeef9e09ba35d52b1d1163fafb3cdfe65d21b4462029c9a73e0",
+    "src/repository-container-process.ts": "7afb0d3d98ae5a6d0157597e57c9c4cd0ad4a0f072bff16707b96ff84b06426e",
+    "src/command-isolation.ts": "b05e47ca9f2b3c3b0cff0631befca4f91bdee8ccf4a7d09e85930507da76a777"
+  },
+  "platform": {
+    "os": "windows",
+    "architecture": "x64",
+    "node": "24.15.0",
+    "bun": "1.4.2",
+    "docker": "29.8.0"
+  },
+  "profile": {
+    "id": "typescript-no-emit/v1",
+    "typescript": "6.0.3",
+    "image": "node@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f",
+    "policySha256": "5469d6bb385fecbb05249caf2dd8e1f5ebc7bcf2b616f82b054c003aad5cf7ae",
+    "command": [
+      "node",
+      "/workspace/node_modules/typescript/bin/tsc",
+      "--noEmit",
+      "--incremental",
+      "false",
+      "--pretty",
+      "false",
+      "-p",
+      "tsconfig.json"
+    ],
+    "limits": {
+      "timeoutMs": 60000,
+      "maxOutputBytes": 262144,
+      "terminationWaitMs": 2000
+    },
+    "fixture": {
+      "baseline": "a9c0819b0c6c108604c277c63a88d60ffa3c1a9f",
+      "kind": "temporary_controlled_repository",
+      "lockfile": "synthetic; no installation performed",
+      "compiler": "existing portable TypeScript installation; controlled entrypoint substitutions for fatal, timeout and cancellation"
+    }
+  },
+  "cases": [
+    {
+      "case": "positive",
+      "elapsedMs": 12802.6121,
+      "status": "passed",
+      "reason": null,
+      "process": "exited",
+      "container": "absent",
+      "diagnostics": [],
+      "snapshotRetained": false,
+      "candidateContentSha256": "ef3e7d2b68efc057925e42a2a628603737f93c70101053c1d3062846fdebd066",
+      "installationSha256": "1ce9a5c331b0054d9e3c7ec49ed5afbbe592a7451c56309dde8b1a6879954768"
+    },
+    {
+      "case": "finding",
+      "elapsedMs": 11400.0068,
+      "status": "check_failed",
+      "reason": "diagnostics",
+      "process": "exited",
+      "container": "absent",
+      "diagnostics": [
+        "src/value.ts(1,14): error TS2322: Type 'number' is not assignable to type 'string'."
+      ],
+      "snapshotRetained": false,
+      "candidateContentSha256": "8a7fc3fd0c5bd3351d6abaa6061dde69dd90b4043e9cbc25e8eddddceddef3fa",
+      "installationSha256": "1ce9a5c331b0054d9e3c7ec49ed5afbbe592a7451c56309dde8b1a6879954768"
+    },
+    {
+      "case": "fatal",
+      "elapsedMs": 5104.519,
+      "status": "execution_failed",
+      "reason": "incoherent_compiler_result",
+      "process": "exited",
+      "container": "absent",
+      "diagnostics": [],
+      "snapshotRetained": false,
+      "candidateContentSha256": "ef3e7d2b68efc057925e42a2a628603737f93c70101053c1d3062846fdebd066",
+      "installationSha256": "a8fcaeb6e78c7d6a8779f001d7b8fda32f76845144aa696709dc190bc8d9ff4f"
+    },
+    {
+      "case": "timeout",
+      "elapsedMs": 63792.927500000005,
+      "status": "timed_out",
+      "reason": "timeout",
+      "process": "exited",
+      "container": "absent",
+      "diagnostics": [],
+      "snapshotRetained": false,
+      "candidateContentSha256": "ef3e7d2b68efc057925e42a2a628603737f93c70101053c1d3062846fdebd066",
+      "installationSha256": "ea165f9f6e9e0a4c1a54034e78ef6bac1a41b1bf4aedf24fa43121012e382763"
+    },
+    {
+      "case": "cancellation",
+      "elapsedMs": 8644.49609999999,
+      "status": "cancelled",
+      "reason": "cancelled",
+      "process": "exited",
+      "container": "absent",
+      "diagnostics": [],
+      "snapshotRetained": false,
+      "candidateContentSha256": "ef3e7d2b68efc057925e42a2a628603737f93c70101053c1d3062846fdebd066",
+      "installationSha256": "ea165f9f6e9e0a4c1a54034e78ef6bac1a41b1bf4aedf24fa43121012e382763"
+    },
+    {
+      "case": "source_drift",
+      "elapsedMs": 1457.0035000000062,
+      "status": "execution_failed",
+      "reason": "input_drift",
+      "process": "not_started",
+      "container": "absent",
+      "diagnostics": [],
+      "snapshotRetained": false,
+      "candidateContentSha256": "ef3e7d2b68efc057925e42a2a628603737f93c70101053c1d3062846fdebd066",
+      "installationSha256": "1ce9a5c331b0054d9e3c7ec49ed5afbbe592a7451c56309dde8b1a6879954768"
+    },
+    {
+      "kind": "missing_tool",
+      "status": "unavailable",
+      "process": "not_started",
+      "container": "absent"
+    }
+  ],
+  "isolation": {
+    "docker": {
+      "status": "passed",
+      "failedControls": []
+    },
+    "native": {
+      "status": "failed",
+      "diagnostic": "elevated Windows sandbox requires effective :root read access"
+    }
+  },
+  "limits": [
+    "Windows/Docker only",
+    "Controlled operational matrix is not prospective task success or human acceptance",
+    "Cancellation requested five seconds after executor invocation",
+    "No dependency install or image pull"
+  ]
+}

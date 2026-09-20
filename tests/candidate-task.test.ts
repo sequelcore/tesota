@@ -1,16 +1,18 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
-import { CandidateTask, checkCandidateTask } from "../src/candidate-task.js";
+import { CandidateTask, checkCandidateTask, inspectCandidateTask } from "../src/candidate-task.js";
 import { decideTask, reviewTask } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
 import type { ProposalRunGrant } from "../src/proposal-admission.js";
 import { TASK_LIMITS } from "../src/task-contract.js";
 import { checkRepositoryTypecheck, type RepositoryTypecheckResult } from "../src/repository-typecheck.js";
+import { runPiTask } from "../src/integrations/pi-task.js";
 
 vi.mock("../src/repository-typecheck.js", async (importOriginal) => {
   const original = await importOriginal<Record<string, unknown>>();
@@ -43,13 +45,14 @@ function git(cwd: string, args: readonly string[]): string {
   return result.stdout.trim();
 }
 
-async function createSource(): Promise<{ root: string; source: string; candidates: string }> {
+async function createSource(crlfAttributes = false): Promise<{ root: string; source: string; candidates: string }> {
   const root = await mkdtemp(join(tmpdir(), "tesota-generic-task-test-"));
   const source = join(root, "source");
   await mkdir(join(source, "src"), { recursive: true });
   await writeFile(join(source, "src", "value.ts"), "export const value = 'old';\n");
   await writeFile(join(source, "src", "reference.ts"), "export const reference = 'context';\n");
   await writeFile(join(source, "README.md"), "untouched\n");
+  if (crlfAttributes) await writeFile(join(source, ".gitattributes"), "src/*.ts text eol=crlf\n");
   git(source, ["init", "--quiet"]); git(source, ["add", "."]);
   git(source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit",
     "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
@@ -64,8 +67,8 @@ afterAll(async () => {
   if (sharedRoot !== "") await rm(sharedRoot, { recursive: true, force: true });
 });
 
-async function fixture(isolatedSource = false) {
-  const owned = isolatedSource ? await createSource() : undefined;
+async function fixture(isolatedSource = false, crlfAttributes = false) {
+  const owned = isolatedSource ? await createSource(crlfAttributes) : undefined;
   const source = owned?.source ?? sharedSource;
   const candidates = owned?.candidates ?? sharedCandidates;
   const candidate = await createCandidateCheckout(source, candidates);
@@ -144,12 +147,93 @@ it("returns compiler diagnostics but closes the task on an operational typecheck
   await unavailableTask.replace({ path: "src/value.ts", expectedSha256: unavailableInput.sha256,
     content: "export const value = 'new';\n" });
   vi.mocked(checkRepositoryTypecheck).mockResolvedValueOnce(typecheckResult("timed_out"));
-  const cancellation = new AbortController();
-  await expect(unavailableTask.check(cancellation.signal)).rejects.toThrow("denied");
+  const unavailableCheck = await unavailableTask.check();
+  expect(unavailableCheck).toMatchObject({ status: "check_failed", outcome: "operational_failed", settlement: "unconfirmed",
+    diagnostics: [expect.stringContaining("settlement is unconfirmed")], typecheck: { status: "timed_out", process: "unconfirmed" } });
   expect(checkRepositoryTypecheck).toHaveBeenLastCalledWith({ candidate: unavailable.directory,
-    source: unavailable.source }, cancellation.signal);
+    source: unavailable.source }, undefined);
   await expect(unavailableTask.read({ path: "src/value.ts" })).rejects.toThrow("closed");
 });
+
+it("preserves an unconfirmed check that finishes after task authority closes", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const input = await task.read({ path: "src/value.ts" });
+  await task.check();
+  await task.replace({ path: "src/value.ts", expectedSha256: input.sha256,
+    content: "export const value = 'new';\n" });
+  vi.mocked(checkRepositoryTypecheck).mockClear();
+  let release: ((result: RepositoryTypecheckResult) => void) | undefined;
+  let markEntered: (() => void) | undefined;
+  const entered = new Promise<void>((resolve) => { markEntered = resolve; });
+  vi.mocked(checkRepositoryTypecheck).mockImplementationOnce(async () => await new Promise((resolve) => {
+    release = resolve;
+    markEntered?.();
+  }));
+
+  const running = task.check();
+  await entered;
+  expect(checkRepositoryTypecheck).toHaveBeenCalledOnce();
+  task.close();
+  release?.(typecheckResult("timed_out"));
+
+  await expect(running).resolves.toMatchObject({ outcome: "operational_failed", settlement: "unconfirmed",
+    typecheck: { status: "timed_out", process: "unconfirmed" } });
+  await expect(task.read({ path: "src/value.ts" })).rejects.toThrow("closed");
+}, 20_000);
+
+it("keeps an in-flight real task check unsettled when Pi cancellation closes authority", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const close = vi.spyOn(task, "close");
+  let release: ((result: RepositoryTypecheckResult) => void) | undefined;
+  let markEntered: (() => void) | undefined;
+  const entered = new Promise<void>((resolve) => { markEntered = resolve; });
+  vi.mocked(checkRepositoryTypecheck).mockImplementationOnce(async () => await new Promise((resolve) => {
+    release = resolve;
+    markEntered?.();
+  }));
+  const oldContent = "export const value = 'old';\n";
+  const faux = fauxProvider({ models: [{ id: "offline", name: "Offline" }] });
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/value.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage(fauxToolCall("tesota_replace", { path: "src/value.ts",
+      expectedSha256: createHash("sha256").update(oldContent).digest("hex"),
+      content: "export const value = 'new';\n" })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+  ]);
+  const cancellation = new AbortController();
+
+  const running = runPiTask(task, faux.getModel(), faux.provider.streamSimple, cancellation.signal);
+  await entered;
+  expect(checkRepositoryTypecheck).toHaveBeenCalledOnce();
+  cancellation.abort();
+  await vi.waitFor(() => expect(close).toHaveBeenCalled());
+  const early = await Promise.race([
+    running.then((result) => ({ kind: "result" as const, result })),
+    new Promise<{ kind: "pending" }>((resolve) => setTimeout(() => resolve({ kind: "pending" }), 25)),
+  ]);
+  release?.(typecheckResult("timed_out"));
+
+  const result = early.kind === "result" ? early.result : await running;
+  expect(result).toMatchObject({ status: "unsettled", settlement: "unconfirmed" });
+}, 20_000);
+
+it("stops review checking at the first unconfirmed effect", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const input = await task.read({ path: "src/value.ts" });
+  await task.check();
+  await task.replace({ path: "src/value.ts", expectedSha256: input.sha256,
+    content: "export const value = 'new';\n" });
+  task.close();
+  vi.mocked(checkRepositoryTypecheck).mockClear();
+  vi.mocked(checkRepositoryTypecheck).mockResolvedValueOnce(typecheckResult("timed_out"));
+
+  await expect(reviewTask(current.directory)).rejects.toMatchObject({ name: "TaskReviewUnsettledError" });
+  expect(checkRepositoryTypecheck).toHaveBeenCalledOnce();
+}, 20_000);
 
 it("makes a review stale when the bound typecheck evidence changes", async () => {
   const current = await fixture();
@@ -218,10 +302,162 @@ it("promotes only the exact accepted candidate bytes while preserving unrelated 
     const result = await promoteTask(current.directory, current.source, review.reviewSha256);
 
     expect(result).toMatchObject({ status: "applied", files: [{ path: "src/value.ts" }] });
+    const promotion = await readFile(join(current.directory, "promotion.jsonl"), "utf8");
+    expect(promotion.indexOf('"state":"source_write_started"')).toBeLessThan(promotion.indexOf('"state":"applied"'));
     expect(await readFile(join(current.source, "src", "value.ts"), "utf8")).toBe("export const value = 'new';\n");
     expect(await readFile(join(current.source, "README.md"), "utf8")).toBe("operator work\n");
     expect(await readFile(join(current.source, ".git", "index"))).toEqual(index);
     expect(createHash("sha256").update("export const value = 'new';\n").digest("hex"))
       .toBe(result.files[0]?.sourceSha256);
+  } finally { await current.cleanup(); }
+}, 60_000);
+
+it("classifies a rejected promotion before source writing as not applied", async () => {
+  const current = await fixture(true);
+  try {
+    const before = await readFile(join(current.source, "src", "value.ts"), "utf8");
+    await expect(promoteTask(current.directory, current.source, "a".repeat(64))).rejects.toMatchObject({
+      name: "PromotionNotAppliedError",
+    });
+    expect(await readFile(join(current.source, "src", "value.ts"), "utf8")).toBe(before);
+  } finally { await current.cleanup(); }
+});
+
+it("preserves an unconfirmed promotion-time review before source writing", async () => {
+  const current = await fixture(true);
+  try {
+    const task = await CandidateTask.prepare(current.directory, current.grant);
+    const input = await task.read({ path: "src/value.ts" });
+    await task.check();
+    await task.replace({ path: "src/value.ts", expectedSha256: input.sha256,
+      content: "export const value = 'new';\n" });
+    await task.check();
+    task.close();
+    const review = await reviewTask(current.directory);
+    await decideTask(current.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
+    vi.mocked(checkRepositoryTypecheck).mockClear();
+    vi.mocked(checkRepositoryTypecheck).mockResolvedValueOnce(typecheckResult("timed_out"));
+
+    await expect(promoteTask(current.directory, current.source, review.reviewSha256)).rejects.toMatchObject({
+      name: "PromotionUncertainError",
+    });
+    expect(checkRepositoryTypecheck).toHaveBeenCalledOnce();
+  } finally { await current.cleanup(); }
+}, 60_000);
+
+async function acceptedChange(current: Awaited<ReturnType<typeof fixture>>) {
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const input = await task.read({ path: "src/value.ts" });
+  await task.check();
+  await task.replace({ path: "src/value.ts", expectedSha256: input.sha256, content: "export const value = 'new';\n" });
+  task.close();
+  const review = await reviewTask(current.directory);
+  await decideTask(current.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
+  return { task, review };
+}
+
+it.each([false, true])("promotes exact accepted LF bytes over an admitted CRLF source (attributes: %s)", async (attributes) => {
+  const current = await fixture(true, attributes);
+  try {
+    const target = join(current.source, "src/value.ts");
+    git(current.source, ["config", "core.autocrlf", "true"]);
+    await writeFile(target, "export const value = 'old';\r\n");
+    git(current.source, ["add", "--", "src/value.ts"]);
+    expect(git(current.source, ["status", "--porcelain"])).toBe("");
+    const { review } = await acceptedChange(current);
+    expect(review.check.sourceInputsSha256).toMatch(/^[a-f0-9]{64}$/u);
+    await expect(promoteTask(current.directory, current.source, review.reviewSha256))
+      .resolves.toMatchObject({ status: "applied" });
+    expect(await readFile(target)).toEqual(await readFile(join(current.checkout, "src/value.ts")));
+    expect(await readFile(target, "utf8")).toBe("export const value = 'new';\n");
+  } finally { await current.cleanup(); }
+}, 60_000);
+
+it.each(["export const value = 'operator';\r\n", "export const value = 'old';\n"])(
+  "rejects source drift after CRLF admission: %j", async (replacement) => {
+    const current = await fixture(true);
+    try {
+      const target = join(current.source, "src/value.ts");
+      await writeFile(target, "export const value = 'old';\r\n");
+      const { review } = await acceptedChange(current);
+      await writeFile(target, replacement);
+      await expect(promoteTask(current.directory, current.source, review.reviewSha256))
+        .rejects.toMatchObject({ name: "PromotionNotAppliedError" });
+      expect(await readFile(target, "utf8")).toBe(replacement);
+      await expect(readFile(join(current.directory, "promotion.jsonl"))).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { await current.cleanup(); }
+  }, 60_000);
+
+it("rejects an existing substantive source edit before creating a task plan", async () => {
+  const current = await fixture(true);
+  try {
+    await writeFile(join(current.source, "src/value.ts"), "export const value = 'operator';\r\n");
+    await expect(CandidateTask.prepare(current.directory, current.grant)).rejects.toThrow("Task source binding invalid");
+    await expect(readFile(join(current.directory, "task.json"))).rejects.toMatchObject({ code: "ENOENT" });
+  } finally { await current.cleanup(); }
+});
+
+it("rejects source permission drift after admission", async () => {
+  const current = await fixture(true);
+  const target = join(current.source, "src/value.ts");
+  const mode = (await lstat(target)).mode & 0o777;
+  try {
+    const { review } = await acceptedChange(current);
+    await chmod(target, 0o444);
+    expect((await lstat(target)).mode & 0o777).not.toBe(mode);
+    await expect(promoteTask(current.directory, current.source, review.reviewSha256))
+      .rejects.toMatchObject({ name: "PromotionNotAppliedError" });
+    expect(await readFile(target, "utf8")).toBe("export const value = 'old';\n");
+  } finally { await chmod(target, mode); await current.cleanup(); }
+}, 60_000);
+
+it("makes acceptance stale if a persisted source representation is rebound", async () => {
+  const current = await fixture(true);
+  try {
+    const { task, review } = await acceptedChange(current);
+    const planPath = join(current.directory, "task.json");
+    const plan = JSON.parse(await readFile(planPath, "utf8"));
+    const crlf = "export const value = 'old';\r\n";
+    plan.sourceInputs["src/value.ts"].sha256 = createHash("sha256").update(crlf).digest("hex");
+    plan.definitionSha256 = createHash("sha256").update(JSON.stringify({ task: plan.task, version: 2,
+      grant: plan.grant, contract: plan.contract, instructions: task.describe().instructions,
+      inputs: plan.inputs, sourceInputs: plan.sourceInputs })).digest("hex");
+    await writeFile(planPath, JSON.stringify(plan));
+    await writeFile(join(current.source, "src/value.ts"), crlf);
+    const rebound = await reviewTask(current.directory);
+    expect(rebound.check.writeSetSha256).toBe(review.check.writeSetSha256);
+    expect(rebound.reviewSha256).not.toBe(review.reviewSha256);
+    expect(rebound.operatorDecision?.applicability).toBe("stale");
+    await expect(promoteTask(current.directory, current.source, review.reviewSha256))
+      .rejects.toMatchObject({ name: "PromotionNotAppliedError" });
+  } finally { await current.cleanup(); }
+}, 60_000);
+
+it("keeps legacy plans inspectable without reconstructing source binding or promotion authority", async () => {
+  const current = await fixture(true);
+  try {
+    const task = await CandidateTask.prepare(current.directory, current.grant);
+    const input = await task.read({ path: "src/value.ts" });
+    await task.check();
+    await task.replace({ path: "src/value.ts", expectedSha256: input.sha256, content: "export const value = 'new';\n" });
+    task.close();
+    const planPath = join(current.directory, "task.json");
+    const plan = JSON.parse(await readFile(planPath, "utf8"));
+    plan.version = 1;
+    delete plan.sourceInputs;
+    plan.definitionSha256 = createHash("sha256").update(JSON.stringify({ task: plan.task, version: 1,
+      grant: plan.grant, contract: plan.contract, instructions: task.describe().instructions })).digest("hex");
+    await writeFile(planPath, JSON.stringify(plan));
+    await expect(checkCandidateTask(current.directory)).resolves.toMatchObject({ status: "passed", sourceInputsSha256: null });
+    await expect(inspectCandidateTask(current.directory)).resolves.toMatchObject({ sourceInputs: null, promotable: false });
+    const review = await reviewTask(current.directory);
+    await expect(decideTask(current.directory, { decision: "accept", reviewSha256: review.reviewSha256 }))
+      .rejects.toThrow("Acceptance requires a passing current check and an admitted source binding");
+    await expect(readFile(join(current.directory, "decision.json"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(promoteTask(current.directory, current.source, "a".repeat(64)))
+      .rejects.toMatchObject({ name: "PromotionNotAppliedError" });
+    const persisted = JSON.parse(await readFile(planPath, "utf8"));
+    expect(persisted.version).toBe(1);
+    expect(persisted.sourceInputs).toBeUndefined();
   } finally { await current.cleanup(); }
 }, 60_000);

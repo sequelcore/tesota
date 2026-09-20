@@ -36,7 +36,7 @@ it("requires observed client settlement after timeout even when container remova
   spawnSync.mockReturnValue({ error: undefined, status: 0, stderr: "" });
 
   const running = executeRepositoryTypecheckContainer(invocation(), "tesota-typecheck-fixed");
-  await vi.advanceTimersByTimeAsync(30_000);
+  await vi.advanceTimersByTimeAsync(60_000);
   await vi.advanceTimersByTimeAsync(2_000);
 
   await expect(running).resolves.toMatchObject({ status: "failed", reason: "timeout", process: "unconfirmed",
@@ -90,7 +90,7 @@ it("reports unconfirmed cleanup instead of the underlying timeout", async () => 
   spawnSync.mockReturnValue({ error: undefined, status: 1, stderr: "container still exists" });
 
   const running = executeRepositoryTypecheckContainer(invocation(), "tesota-typecheck-fixed");
-  await vi.advanceTimersByTimeAsync(30_000);
+  await vi.advanceTimersByTimeAsync(60_000);
 
   await expect(running).resolves.toMatchObject({ status: "failed", reason: "cleanup_unconfirmed",
     process: "unconfirmed", container: "unconfirmed" });

@@ -1,0 +1,371 @@
+{
+  "format": "tesota-supported-task-prospective-observation",
+  "version": 1,
+  "protocol": "../follow-up-5.md",
+  "freeze": {
+    "frozenAt": "2026-09-20T02:12:43.4816955Z",
+    "hashes": {
+      "experiments/supported-task/follow-up-5.md": "ddc05448e131c85915cf2dda4e2269ef9307248dec1e63a725353c752709c46a",
+      "experiments/supported-task/http-limit-oracle.mjs": "a26e221cb7702fcda86712b94533b0f243f7199de44ec29839974408a0ccf65f",
+      "src/candidate-task.ts": "cd33545bcdf9c74f07247d9e4100e574c2e0190db0ddc23154487a3602ba4fc7",
+      "src/task-source.ts": "5f5900f20ab31248596f171fd4a0fb67b6335ef7953a379a1da7c3d938012feb",
+      "src/task-promotion.ts": "edac17460c5ca83352237561a9fd59e6fde86b0c5ffb328e72286943f8b2a92c",
+      "src/task-review.ts": "1067c6f5288113adc9e281444b6d4461e93e33558e423c458294b62721e0ec98",
+      "src/task-run.ts": "a1168afb175f43efac8df506667924698ddc94a130779f638ed634901ae9c796",
+      "src/repository-check-input.ts": "f25f1d48e28155474e43463259332cd751c6934acb005270cef622de8cd974ee",
+      "src/repository-typecheck.ts": "d8f8493a6bbeb96559c0fd80c964b789a867d9de1fc0202040f8cfe5b16de45a",
+      "src/repository-typecheck-process.ts": "2f874e7dfc2fcfeef9e09ba35d52b1d1163fafb3cdfe65d21b4462029c9a73e0",
+      "src/repository-container-process.ts": "7afb0d3d98ae5a6d0157597e57c9c4cd0ad4a0f072bff16707b96ff84b06426e",
+      "src/command-isolation.ts": "b05e47ca9f2b3c3b0cff0631befca4f91bdee8ccf4a7d09e85930507da76a777",
+      "src/integrations/pi-task.ts": "9b7582ea3c60f0906b85a4d9684f204c6e432aa5dd03d7cf8db4f814b4799c07"
+    }
+  },
+  "platform": {
+    "os": "Windows",
+    "architecture": "x64",
+    "bun": "1.4.2",
+    "node": "24.15.0",
+    "docker": "29.8.0"
+  },
+  "setup": {
+    "clone": "independent clone from locally available committed public history; no source worktree edits copied",
+    "cleanAtTaskStart": true,
+    "dependencyInstall": "frozen root lockfile, scripts disabled, optional packages omitted, Linux/x64",
+    "preflight": "passed; process exited and container absent",
+    "friction": [
+      "The preflight candidate initially reported dirty source; subsequent status and diff were empty and the task-start observation was clean. No tracked file was edited to change admission.",
+      "Plain Node type stripping could not load the baseline parameter property; evaluator switched to the declared experimental-transform-types flag before submission."
+    ]
+  },
+  "events": [
+    {
+      "format": "tesota-task-outcome",
+      "version": 2,
+      "state": "awaiting_scope_approval",
+      "proposalId": "3e32f03b-1990-4862-a61f-fdffcb1edffe",
+      "proposalSha256": "033d8dce4feb8d8f521909cd20060cf6a4236f24d4cd3c459f38598cc544c686",
+      "baseline": "862beb481157bfd5f53893bfea612610b23b29a0",
+      "timestamp": "2026-09-20T02:13:18.134Z",
+      "authority": "none"
+    },
+    {
+      "state": "execution_started",
+      "timestamp": "2026-09-20T02:13:25.760Z"
+    },
+    {
+      "state": "execution_finished",
+      "timestamp": "2026-09-20T02:15:08.425Z",
+      "result": {
+        "status": "passed",
+        "accounting": {
+          "elapsedMs": 101923,
+          "firstCheck": "check_failed",
+          "correctionAttempts": 1,
+          "modelInvocations": 5,
+          "toolCalls": 4,
+          "edits": 1,
+          "consumption": {
+            "status": "partial",
+            "tokenUsage": "unavailable",
+            "cost": "unavailable"
+          }
+        }
+      }
+    },
+    {
+      "state": "review_ready",
+      "timestamp": "2026-09-20T02:16:18.587Z",
+      "reviewSha256": "daab45340b83749d6b3c4f66123998261216ccd31118631f08ef315386b4d168",
+      "checkStatus": "passed"
+    },
+    {
+      "state": "decision_recorded",
+      "timestamp": "2026-09-20T02:30:42.383Z",
+      "decision": "accept",
+      "reviewSha256": "daab45340b83749d6b3c4f66123998261216ccd31118631f08ef315386b4d168"
+    },
+    {
+      "state": "promotion_started",
+      "timestamp": "2026-09-20T02:30:42.385Z",
+      "reviewSha256": "daab45340b83749d6b3c4f66123998261216ccd31118631f08ef315386b4d168"
+    },
+    {
+      "state": "finished",
+      "timestamp": "2026-09-20T02:32:42.088Z",
+      "outcome": "promoted",
+      "files": [
+        {
+          "path": "src/http.ts",
+          "sourceSha256": "e3e20fca98146fcccdff91981bc712628a523226a6c281f5245e161105b19fb3"
+        }
+      ]
+    }
+  ],
+  "check": {
+    "status": "passed",
+    "diagnostics": [
+      "Scope integrity passed for src/http.ts.",
+      "TypeScript no-emit check passed. Outcome correctness requires human review."
+    ],
+    "outcome": "passed",
+    "settlement": "observed",
+    "task": "typescript-change",
+    "typecheck": {
+      "profile": "typescript-no-emit/v1",
+      "status": "passed",
+      "reason": null,
+      "diagnostics": [],
+      "process": "exited",
+      "container": "absent",
+      "binding": {
+        "profile": "typescript-no-emit/v1",
+        "candidate": {
+          "baseline": "862beb481157bfd5f53893bfea612610b23b29a0",
+          "contentSha256": "d70645c1c06b90b33989d345bea6a9291aeb698709901db98595a31b3d1bc0fc"
+        },
+        "repository": {
+          "script": "tsc --noEmit -p tsconfig.json",
+          "packageJsonSha256": "92f565d87cae5f7a6466d534aeb571d96ab8fd622c9c4104af9c452e790fbf4a",
+          "tsconfigSha256": "3621b91a4aa9557449b454a90bfba61ca432831ce60c8b1e634dc7953676e1fc",
+          "lockfileSha256": "2641927e4207467ad05df6fb30afa5384d68385b8c6271576ff7bf544c9fb178"
+        },
+        "verifier": {
+          "packageVersion": "6.0.3",
+          "installationSha256": "d16be388b513fa480f1620b445dbec59bc7e20bec088efb10c1d66aef4001b34"
+        },
+        "isolation": {
+          "image": "node@sha256:d1b3b4da11eefd5941e7f0b9cf17783fc99d9c6fc34884a665f40a06dbdfc94f",
+          "policySha256": "5469d6bb385fecbb05249caf2dd8e1f5ebc7bcf2b616f82b054c003aad5cf7ae",
+          "executableSha256": "46d8a5bd7523c575fb276a75296ab19abb9bf277d334169c665e521e46dbc2a4"
+        },
+        "command": [
+          "node",
+          "/workspace/node_modules/typescript/bin/tsc",
+          "--noEmit",
+          "--incremental",
+          "false",
+          "--pretty",
+          "false",
+          "-p",
+          "tsconfig.json"
+        ],
+        "limits": {
+          "timeoutMs": 60000,
+          "maxOutputBytes": 262144,
+          "terminationWaitMs": 2000
+        }
+      },
+      "authority": "none",
+      "provenance": "issued"
+    },
+    "provenance": "recorded_untrusted",
+    "baseline": "862beb481157bfd5f53893bfea612610b23b29a0",
+    "writeSetSha256": "8375af7e0180d5ace20b1f59ba5657eec41c49a9850644afa78a0d2725e38336",
+    "sourceInputsSha256": "6a348386df393e3486aa16408d42dfe8af84bf594a0db9d1cdc25e4e1968c65e",
+    "taskAcceptance": "not_evaluated"
+  },
+  "sourceBeforeSha256": "7a10c32bf5b84118b8a7180fa1589bc95a266958168bc3f74d49ec142daf38e8",
+  "candidateFileSha256": "e3e20fca98146fcccdff91981bc712628a523226a6c281f5245e161105b19fb3",
+  "oracle": {
+    "before": {
+      "format": "tesota-http-limit-oracle",
+      "version": 1,
+      "runtime": "v24.15.0",
+      "results": [
+        {
+          "name": "invalid NaN with null body",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid NaN before body access",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid Infinity with null body",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid Infinity before body access",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid -Infinity with null body",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid -Infinity before body access",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid -1 with null body",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid -1 before body access",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid 0.5 with null body",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid 0.5 before body access",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid 9007199254740992 with null body",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "invalid 9007199254740992 before body access",
+          "passed": false,
+          "error": "Missing expected rejection (RangeError)."
+        },
+        {
+          "name": "zero accepts null and empty bodies",
+          "passed": true
+        },
+        {
+          "name": "exact byte limit decodes split UTF-8",
+          "passed": true
+        },
+        {
+          "name": "zero rejects nonempty body and cancels",
+          "passed": true
+        },
+        {
+          "name": "overflow counts bytes and cancels",
+          "passed": true
+        },
+        {
+          "name": "pre-aborted valid read preserves reason",
+          "passed": true
+        },
+        {
+          "name": "in-flight abort settles despite a pending cancellation callback",
+          "passed": true
+        }
+      ]
+    },
+    "after": {
+      "format": "tesota-http-limit-oracle",
+      "version": 1,
+      "runtime": "v24.15.0",
+      "results": [
+        {
+          "name": "invalid NaN with null body",
+          "passed": true
+        },
+        {
+          "name": "invalid NaN before body access",
+          "passed": true
+        },
+        {
+          "name": "invalid Infinity with null body",
+          "passed": true
+        },
+        {
+          "name": "invalid Infinity before body access",
+          "passed": true
+        },
+        {
+          "name": "invalid -Infinity with null body",
+          "passed": true
+        },
+        {
+          "name": "invalid -Infinity before body access",
+          "passed": true
+        },
+        {
+          "name": "invalid -1 with null body",
+          "passed": true
+        },
+        {
+          "name": "invalid -1 before body access",
+          "passed": true
+        },
+        {
+          "name": "invalid 0.5 with null body",
+          "passed": true
+        },
+        {
+          "name": "invalid 0.5 before body access",
+          "passed": true
+        },
+        {
+          "name": "invalid 9007199254740992 with null body",
+          "passed": true
+        },
+        {
+          "name": "invalid 9007199254740992 before body access",
+          "passed": true
+        },
+        {
+          "name": "zero accepts null and empty bodies",
+          "passed": true
+        },
+        {
+          "name": "exact byte limit decodes split UTF-8",
+          "passed": true
+        },
+        {
+          "name": "zero rejects nonempty body and cancels",
+          "passed": true
+        },
+        {
+          "name": "overflow counts bytes and cancels",
+          "passed": true
+        },
+        {
+          "name": "pre-aborted valid read preserves reason",
+          "passed": true
+        },
+        {
+          "name": "in-flight abort settles despite a pending cancellation callback",
+          "passed": true
+        }
+      ]
+    },
+    "assessment": "Frozen evaluator-authored behavioral oracle; separate from task model, not independent delivery review.",
+    "subjectHashReconfirmedAtReview": true,
+    "applied": {
+      "passed": 18,
+      "failed": 0,
+      "runtime": "v24.15.0",
+      "subjectSha256": "e3e20fca98146fcccdff91981bc712628a523226a6c281f5245e161105b19fb3"
+    }
+  },
+  "humanDecision": "accept",
+  "application": "applied",
+  "limits": [
+    "Prospective bounded feasibility case selected from source inspection, not a representative sample.",
+    "Tesota full gate ran concurrently; no isolated timing comparison.",
+    "No full SysOne integration/release qualification; external delivery review and coverage of final local changes are operator-attested, not independently inspected.",
+    "Token usage and inference cost unavailable."
+  ],
+  "exactAcceptedBytesConfirmed": true,
+  "returnedToUsefulPrompt": true,
+  "shellExitCode": 0,
+  "totalElapsedMs": 1163954,
+  "deliveryReview": {
+    "status": "reported_favorable",
+    "reviewer": "anonymous external reviewer",
+    "provenance": "user_report",
+    "reportedOutcome": "satisfactory; no findings reported",
+    "reviewedRevision": null,
+    "applicability": "operator_confirmed_final_local_changes",
+    "reviewedImplementation": "The source-file hashes in freeze.hashes identify the local implementation covered by the user's confirmation; no reviewed commit is asserted.",
+    "coordination": "User explicitly confirmed that the anonymous favorable review covered the final local changes and requested milestone closure. No review artifact, reviewer tools or identity were supplied."
+  }
+}

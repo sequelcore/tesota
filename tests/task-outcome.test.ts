@@ -77,6 +77,32 @@ it("reports unconfirmed application without implying that no write occurred", as
   await journal.close();
 });
 
+it("keeps a historical v1 generic promotion failure unconfirmed while writing explicit v2 receipts", async () => {
+  const directory = await fixture();
+  const timestamp = "2026-09-15T00:00:00.000Z";
+  const accounting = { elapsedMs: 100, firstCheck: "check_failed", correctionAttempts: 1,
+    modelInvocations: 1, toolCalls: 2, edits: 1,
+    consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } };
+  await writeFile(join(directory, "start.jsonl"), [
+    { format: "tesota-task-outcome", version: 1, state: "awaiting_scope_approval", ...identity, timestamp, authority: "none" },
+    { state: "execution_started", timestamp },
+    { state: "execution_finished", timestamp, candidate: "candidate-1", result: { status: "passed", accounting } },
+    { state: "review_ready", timestamp, reviewSha256: "c".repeat(64), checkStatus: "passed" },
+    { state: "decision_recorded", timestamp, decision: "accept", reviewSha256: "c".repeat(64) },
+    { state: "promotion_started", timestamp, reviewSha256: "c".repeat(64) },
+    { state: "finished", timestamp, outcome: "failed" },
+  ].map((event) => JSON.stringify(event)).join("\n") + "\n");
+
+  await expect(loadTaskOutcome(directory)).resolves.toMatchObject({
+    status: "failed", terminal: true, promotion: "unconfirmed",
+  });
+
+  const next = await fixture();
+  const journal = await createTaskOutcome(next, identity);
+  expect(await readFile(join(next, "start.jsonl"), "utf8")).toContain('"version":2');
+  await journal.close();
+});
+
 it("rejects malformed, excess and impossible recovered histories", async () => {
   const directory = await fixture();
   const journal = await createTaskOutcome(directory, identity);

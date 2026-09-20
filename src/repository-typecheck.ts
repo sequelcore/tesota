@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
 import { bindCandidateCheckoutContent, inspectPromotionSource } from "./candidate-checkout.js";
 import { CONTAINER_IMAGE, buildTypecheckContainerInvocation, containerRuntimeIsOutside, resolveContainerRuntime,
   type ContainerRuntimeIdentity, typecheckContainerPolicySha256 } from "./command-isolation.js";
-import { dependencyInstallationSha256, parseRepositoryJson, readRepositoryInput, repositoryInputDirectory,
-  sha256 } from "./repository-check-input.js";
+import { dependencyInstallationSha256, parseRepositoryJson, readDependencyInstallationInput, readRepositoryInput,
+  repositoryInputDirectory, sha256, snapshotDependencyInstallation } from "./repository-check-input.js";
 import { REPOSITORY_TYPECHECK_LIMITS, executeRepositoryTypecheckContainer,
   type RepositoryTypecheckExecutor } from "./repository-typecheck-process.js";
 
@@ -17,7 +18,14 @@ const packageSchema = z.object({
   scripts: z.object({ typecheck: z.literal(REPOSITORY_TYPECHECK_SCRIPT) }),
   devDependencies: z.object({ typescript: z.string().regex(/^\d+\.\d+\.\d+$/u) }),
 });
-const installedPackageSchema = z.object({ name: z.literal("typescript"), version: z.string().regex(/^\d+\.\d+\.\d+$/u) });
+const installedPackageSchema = z.object({
+  name: z.literal("typescript"),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/u),
+  dependencies: z.record(z.string(), z.string()).optional(),
+  optionalDependencies: z.record(z.string(), z.string()).optional(),
+});
+const installedLinuxPackageSchema = z.object({ name: z.literal("@typescript/typescript-linux-x64"),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/u) });
 const tsconfigSchema = z.object({
   extends: z.never().optional(),
   references: z.never().optional(),
@@ -76,8 +84,21 @@ export async function prepareRepositoryTypecheck(options: PrepareOptions): Promi
   tsconfigSchema.parse(parseRepositoryJson(tsconfigBytes));
   const nodeModules = await repositoryInputDirectory(join(source, "node_modules"));
   const typescriptRoot = await repositoryInputDirectory(join(nodeModules, "typescript"));
-  const installed = installedPackageSchema.parse(parseRepositoryJson(await readRepositoryInput(join(typescriptRoot, "package.json"), 128 * 1024)));
+  const installed = installedPackageSchema.parse(parseRepositoryJson(await readDependencyInstallationInput(
+    join(typescriptRoot, "package.json"), 128 * 1024)));
   if (installed.version !== declared.devDependencies.typescript) throw new Error("Installed TypeScript does not match repository declaration");
+  const linuxPackageName = "@typescript/typescript-linux-x64";
+  const linuxDependency = installed.optionalDependencies?.[linuxPackageName] ?? installed.dependencies?.[linuxPackageName];
+  if (linuxDependency !== undefined) {
+    if (linuxDependency !== installed.version) throw new Error("TypeScript Linux/x64 declaration mismatch");
+    let linuxPackage: z.infer<typeof installedLinuxPackageSchema>;
+    try {
+      const linuxPackageRoot = await repositoryInputDirectory(join(nodeModules, "@typescript", "typescript-linux-x64"));
+      linuxPackage = installedLinuxPackageSchema.parse(parseRepositoryJson(await readDependencyInstallationInput(
+        join(linuxPackageRoot, "package.json"), 128 * 1024)));
+    } catch { throw new Error("TypeScript Linux/x64 closure unavailable"); }
+    if (linuxPackage.version !== installed.version) throw new Error("TypeScript Linux/x64 closure version mismatch");
+  }
   const runtime = options.runtime ?? await resolveContainerRuntime([source, candidate.directory, candidate.checkout]);
   if (!digestPattern.test(runtime.executableSha256) || !containerRuntimeIsOutside(runtime, [source, candidate.directory, candidate.checkout])) {
     throw new Error("Repository typecheck runtime unavailable");
@@ -87,7 +108,7 @@ export async function prepareRepositoryTypecheck(options: PrepareOptions): Promi
     candidate,
     repository: { script: REPOSITORY_TYPECHECK_SCRIPT, packageJsonSha256: sha256(packageBytes),
       tsconfigSha256: sha256(tsconfigBytes), lockfileSha256: sha256(lockfileBytes) },
-    verifier: { packageVersion: installed.version, installationSha256: await dependencyInstallationSha256(nodeModules) },
+    verifier: { packageVersion: installed.version, installationSha256: await dependencyInstallationSha256(nodeModules, true) },
     isolation: { image: CONTAINER_IMAGE, policySha256: typecheckContainerPolicySha256(),
       executable: runtime.executable, executableSha256: runtime.executableSha256, nodeModules },
     command: ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
@@ -119,60 +140,98 @@ function failedResult(profile: RepositoryTypecheckProfile, status: RepositoryTyp
     binding: withoutAuthority(profile), authority: "none", provenance: "issued" });
 }
 
-async function inputsRemainCurrent(profile: RepositoryTypecheckProfile): Promise<boolean> {
+interface SnapshotExecution {
+  readonly result: RepositoryTypecheckResult;
+  readonly snapshotSettled: boolean;
+}
+
+function snapshotSettled(process: RepositoryTypecheckResult["process"], container: RepositoryTypecheckResult["container"]): boolean {
+  return process !== "unconfirmed" && container === "absent";
+}
+
+function signalAborted(signal?: AbortSignal): boolean { return signal?.aborted === true; }
+
+async function inputsRemainCurrent(profile: RepositoryTypecheckProfile, signal?: AbortSignal): Promise<boolean> {
   const candidate = await candidateBinding(profile.candidate.directory);
   const packageBytes = await readRepositoryInput(join(candidate.checkout, "package.json"), 128 * 1024);
   const tsconfigBytes = await readRepositoryInput(join(candidate.checkout, "tsconfig.json"), 128 * 1024);
   const lockfileBytes = await readRepositoryInput(join(candidate.checkout, "bun.lock"), 8 * 1024 * 1024);
   const nodeModules = await repositoryInputDirectory(profile.isolation.nodeModules);
   const typescriptRoot = await repositoryInputDirectory(join(nodeModules, "typescript"));
-  const installed = installedPackageSchema.parse(parseRepositoryJson(await readRepositoryInput(join(typescriptRoot, "package.json"), 128 * 1024)));
+  const installed = installedPackageSchema.parse(parseRepositoryJson(await readDependencyInstallationInput(
+    join(typescriptRoot, "package.json"), 128 * 1024)));
   const executableSha256 = sha256(await readRepositoryInput(profile.isolation.executable, 128 * 1024 * 1024));
   return candidate.contentSha256 === profile.candidate.contentSha256 &&
     sha256(packageBytes) === profile.repository.packageJsonSha256 && sha256(tsconfigBytes) === profile.repository.tsconfigSha256 &&
     sha256(lockfileBytes) === profile.repository.lockfileSha256 &&
     installed.version === profile.verifier.packageVersion &&
-    await dependencyInstallationSha256(nodeModules) === profile.verifier.installationSha256 &&
+    await dependencyInstallationSha256(nodeModules, true, signal) === profile.verifier.installationSha256 &&
     executableSha256 === profile.isolation.executableSha256;
+}
+
+async function executeSnapshotTypecheck(profile: RepositoryTypecheckProfile, snapshotDirectory: string, name: string,
+  executor: RepositoryTypecheckExecutor, signal: AbortSignal | undefined): Promise<SnapshotExecution> {
+  const invocation = buildTypecheckContainerInvocation({ candidate: profile.candidate.checkout,
+    nodeModules: snapshotDirectory }, profile.isolation.executable, name);
+  const observed = await executor(invocation, name, signal);
+  const settled = snapshotSettled(observed.process, observed.container);
+  if (observed.status === "failed") {
+    const status = observed.reason === "cancelled" ? "cancelled" : observed.reason === "timeout" ? "timed_out" :
+      observed.reason === "spawn_failed" ? "unavailable" : "execution_failed";
+    return { result: failedResult(profile, status, observed.reason, observed.process, observed.container), snapshotSettled: settled };
+  }
+  let output: readonly string[];
+  try { output = diagnostics(observed.stdout, observed.stderr); }
+  catch { return { result: failedResult(profile, "execution_failed", "invalid_output", observed.process, observed.container), snapshotSettled: settled }; }
+  if (await dependencyInstallationSha256(snapshotDirectory, false, signal).catch(() => "") !== profile.verifier.installationSha256) {
+    if (signalAborted(signal)) {
+      return { result: failedResult(profile, "cancelled", "cancelled", observed.process, observed.container), snapshotSettled: settled };
+    }
+    return { result: failedResult(profile, "execution_failed", "dependency_snapshot_drift", observed.process, observed.container), snapshotSettled: settled };
+  }
+  if (!await inputsRemainCurrent(profile, signal).catch(() => false)) {
+    if (signalAborted(signal)) {
+      return { result: failedResult(profile, "cancelled", "cancelled", observed.process, observed.container), snapshotSettled: settled };
+    }
+    return { result: failedResult(profile, "execution_failed", "input_drift", observed.process, observed.container), snapshotSettled: settled };
+  }
+  if (observed.signal !== null || observed.exitCode === null) {
+    return { result: failedResult(profile, "execution_failed", "unexpected_process_exit", observed.process, observed.container), snapshotSettled: settled };
+  }
+  if (observed.exitCode === 0 && output.length === 0) {
+    return { result: Object.freeze({ ...failedResult(profile, "passed", "passed", observed.process, observed.container), reason: null }), snapshotSettled: settled };
+  }
+  if ((observed.exitCode === 1 || observed.exitCode === 2) && output.some((line) => /\berror TS\d+:/u.test(line))) {
+    return { result: Object.freeze({ ...failedResult(profile, "check_failed", "diagnostics", observed.process, observed.container),
+      diagnostics: Object.freeze([...output]) }), snapshotSettled: settled };
+  }
+  if (observed.exitCode === 125) {
+    return { result: failedResult(profile, "unavailable", "runtime_unavailable", observed.process, observed.container), snapshotSettled: settled };
+  }
+  return { result: failedResult(profile, "execution_failed", "incoherent_compiler_result", observed.process, observed.container), snapshotSettled: settled };
 }
 
 export async function runRepositoryTypecheck(profile: RepositoryTypecheckProfile,
   executor: RepositoryTypecheckExecutor = executeRepositoryTypecheckContainer,
   signal?: AbortSignal): Promise<RepositoryTypecheckResult> {
   if (!issued.has(profile)) throw new Error("Repository typecheck profile was not issued");
-  if (signal?.aborted === true) return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
-  if (!await inputsRemainCurrent(profile).catch(() => false)) {
+  if (signalAborted(signal)) return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
+  if (!await inputsRemainCurrent(profile, signal).catch(() => false)) {
+    if (signalAborted(signal)) return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
     return failedResult(profile, "execution_failed", "input_drift", "not_started", "absent");
   }
   const name = `tesota-typecheck-${randomUUID()}`;
-  const invocation = buildTypecheckContainerInvocation({ candidate: profile.candidate.checkout,
-    nodeModules: profile.isolation.nodeModules }, profile.isolation.executable, name);
-  const observed = await executor(invocation, name, signal);
-  if (observed.status === "failed") {
-    const status = observed.reason === "cancelled" ? "cancelled" : observed.reason === "timeout" ? "timed_out" :
-      observed.reason === "spawn_failed" ? "unavailable" : "execution_failed";
-    return failedResult(profile, status, observed.reason, observed.process, observed.container);
+  const snapshot = await snapshotDependencyInstallation(profile.isolation.nodeModules, profile.candidate.directory,
+    profile.verifier.installationSha256, `.tesota-typecheck-dependencies-${randomUUID()}`, signal);
+  if (snapshot.state !== "ready") {
+    if (snapshot.state === "cancelled") return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
+    return snapshot.state === "mismatch"
+      ? failedResult(profile, "execution_failed", "dependency_snapshot_mismatch", "not_started", "absent")
+      : failedResult(profile, "unavailable", "dependency_snapshot_unavailable", "not_started", "absent");
   }
-  let output: readonly string[];
-  try { output = diagnostics(observed.stdout, observed.stderr); }
-  catch { return failedResult(profile, "execution_failed", "invalid_output", observed.process, observed.container); }
-  if (!await inputsRemainCurrent(profile).catch(() => false)) {
-    return failedResult(profile, "execution_failed", "input_drift", observed.process, observed.container);
-  }
-  if (observed.signal !== null || observed.exitCode === null) {
-    return failedResult(profile, "execution_failed", "unexpected_process_exit", observed.process, observed.container);
-  }
-  if (observed.exitCode === 0 && output.length === 0) {
-    return Object.freeze({ ...failedResult(profile, "passed", "passed", observed.process, observed.container), reason: null });
-  }
-  if (observed.exitCode === 1 && output.some((line) => /\berror TS\d+:/u.test(line))) {
-    return Object.freeze({ ...failedResult(profile, "check_failed", "diagnostics", observed.process, observed.container),
-      diagnostics: Object.freeze([...output]) });
-  }
-  if (observed.exitCode === 125) {
-    return failedResult(profile, "unavailable", "runtime_unavailable", observed.process, observed.container);
-  }
-  return failedResult(profile, "execution_failed", "incoherent_compiler_result", observed.process, observed.container);
+  const execution = await executeSnapshotTypecheck(profile, snapshot.directory, name, executor, signal);
+  if (execution.snapshotSettled) await rm(snapshot.directory, { recursive: true, force: true }).catch(() => {});
+  return execution.result;
 }
 
 /** Compose the concrete profile; the caller remains responsible for task execution authority. */
