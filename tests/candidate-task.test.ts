@@ -438,7 +438,8 @@ it("makes a review stale when the bound typecheck evidence changes", async () =>
   expect(second.check.writeSetSha256).toBe(first.check.writeSetSha256);
 }, 20_000);
 
-it("composes a real offline CandidateTask through R0, admitted R1 and fresh durable review", async () => {
+it.each(["no-op", "batched edit and check"])(
+  "composes a real offline CandidateTask through R0, admitted R1 %s and fresh durable review", async (revisionWork) => {
   const current = await fixture();
   const task = await CandidateTask.prepare(current.directory, current.grant);
   const budget = createPiTaskBudget();
@@ -478,7 +479,11 @@ it("composes a real offline CandidateTask through R0, admitted R1 and fresh dura
   });
   const r1Provider = fauxProvider({ models: [{ id: "offline", name: "Offline" }] });
   r1Provider.setResponses([
-    fauxAssistantMessage(fauxToolCall("tesota_check", {})), fauxAssistantMessage("done"),
+    fauxAssistantMessage(revisionWork === "no-op" ? [fauxToolCall("tesota_check", {})] : [
+      fauxToolCall("tesota_replace", { path: "src/value.ts",
+        expectedSha256: createHash("sha256").update("export const value = 'new';\n").digest("hex"),
+        content: "export const value = 'revised';\n" }), fauxToolCall("tesota_check", {}),
+    ]), fauxAssistantMessage("done"),
   ]);
   const r1Capability = task.beginExecution({ cause: "semantic_revision", refinement: revision.refinement,
     parentReviewSha256: revision.parentReviewSha256, parentWriteSetSha256: revision.parentWriteSetSha256,
@@ -505,6 +510,8 @@ it("composes a real offline CandidateTask through R0, admitted R1 and fresh dura
   expect(r1.historicalAttempt).toBe("semantic_revision_passed");
   expect(r1.reviewSha256).not.toBe(r0.reviewSha256);
   expect(budget.modelInvocations).toBeGreaterThan(r0Session.modelInvocations);
+  expect(r1Session.modelInvocations - r0Session.modelInvocations).toBe(2);
+  expect(r1Session.toolCalls - r0Session.toolCalls).toBe(revisionWork === "no-op" ? 1 : 2);
 }, 30_000);
 
 it("gives an R1 no-op fresh semantic review identity without claiming changed correction bytes", async () => {
@@ -515,6 +522,64 @@ it("gives an R1 no-op fresh semantic review identity without claiming changed co
   expect(r1.check.writeSetSha256).toBe(r0.check.writeSetSha256);
   expect(r1.historicalAttempt).toBe("semantic_revision_passed");
   expect(r1.operatorDecision).toBeNull();
+}, 20_000);
+
+it("rejects all-zero R1 consumption with otherwise valid retained evidence", async () => {
+  const { current, r0, revision, timestamp, parentAttemptSha256 } = await retainedRevisionFixture();
+  await expect(reviewTask(current.directory)).resolves.toMatchObject({ historicalAttempt: "semantic_revision_passed" });
+  await writeFile(join(current.directory, "attempt-r1.jsonl"), attemptText(
+    attemptStarted(2, current.baseline, timestamp, { sha256: semanticRevisionSha256(revision),
+      parentReviewSha256: r0.reviewSha256, parentAttemptSha256 }),
+    { ...r1Session(r0.check), modelInvocations: 0, toolCalls: 0, activeMs: 0 }, r0.check, timestamp));
+  await expect(reviewTask(current.directory)).rejects.toThrow("Semantic revision resource evidence invalid");
+}, 20_000);
+
+it.each([
+  ["zero model invocations", { modelInvocations: 0 }],
+  ["zero tool calls", { toolCalls: 0 }],
+  ["zero active time", { activeMs: 0 }],
+  ["nonzero model regression", { modelInvocations: 3 }],
+  ["nonzero tool regression", { toolCalls: 2 }],
+  ["nonzero time regression", { activeMs: 99 }],
+  ["unchanged model consumption", { modelInvocations: 4 }],
+  ["only one new model invocation", { modelInvocations: 5 }],
+  ["unchanged tool consumption", { toolCalls: 3 }],
+  ["tool delta omitting a claimed edit", { edits: 1, editCauses: [{ cause: "semantic_revision" }] }],
+] satisfies ReadonlyArray<readonly [string, Partial<PiTaskResult>]>)(
+  "rejects R1 %s without changing bytes, checks or lineage", async (_name, mutation) => {
+    const { current, r0, revision, timestamp, parentAttemptSha256 } = await retainedRevisionFixture();
+    await writeFile(join(current.directory, "attempt-r1.jsonl"), attemptText(
+      attemptStarted(2, current.baseline, timestamp, { sha256: semanticRevisionSha256(revision),
+        parentReviewSha256: r0.reviewSha256, parentAttemptSha256 }),
+      { ...r1Session(r0.check), ...mutation }, r0.check, timestamp));
+    vi.mocked(checkRepositoryTypecheck).mockClear();
+    await expect(reviewTask(current.directory)).rejects.toThrow("Semantic revision resource evidence invalid");
+    expect(checkRepositoryTypecheck).not.toHaveBeenCalled();
+  }, 20_000);
+
+it("accepts R1 rounded-time equality and minimum no-op resource increments", async () => {
+  const { current, r0, revision, timestamp, parentAttemptSha256 } = await retainedRevisionFixture();
+  await writeFile(join(current.directory, "attempt-r1.jsonl"), attemptText(
+    attemptStarted(2, current.baseline, timestamp, { sha256: semanticRevisionSha256(revision),
+      parentReviewSha256: r0.reviewSha256, parentAttemptSha256 }),
+    { ...r1Session(r0.check), activeMs: r0Session(r0.check).activeMs }, r0.check, timestamp));
+  await expect(reviewTask(current.directory)).resolves.toMatchObject({ historicalAttempt: "semantic_revision_passed" });
+}, 20_000);
+
+it.each([0, 2])("rejects aggregate phase consumption with %i R1 edits and two R1 checks", async (edits) => {
+  const { current, r0, revision, timestamp, parentAttemptSha256 } = await retainedRevisionFixture();
+  const failed: CandidateTaskCheck = { status: "check_failed", diagnostics: ["TypeScript check failed."],
+    outcome: "check_failed", settlement: "observed", task: r0.check.task, typecheck: typecheckResult("check_failed"),
+    baseline: r0.check.baseline, writeSetSha256: "2".repeat(64), sourceInputsSha256: r0.check.sourceInputsSha256,
+    taskAcceptance: "not_evaluated", provenance: "issued" };
+  const session: PiTaskResult = { ...r1Session(r0.check), toolCalls: 9, edits,
+    checks: [edits === 0 ? issued(r0.check) : failed, issued(r0.check)], checksSuppliedToModel: 2,
+    editCauses: edits === 0 ? [] : [{ cause: "semantic_revision" }, { cause: "diagnostic_repair",
+      failedCheckSha256: createHash("sha256").update(JSON.stringify(failed)).digest("hex") }] };
+  await writeFile(join(current.directory, "attempt-r1.jsonl"), attemptText(
+    attemptStarted(2, current.baseline, timestamp, { sha256: semanticRevisionSha256(revision),
+      parentReviewSha256: r0.reviewSha256, parentAttemptSha256 }), session, r0.check, timestamp));
+  await expect(reviewTask(current.directory)).rejects.toThrow("Semantic revision resource evidence invalid");
 }, 20_000);
 
 const revisionEvidenceFailures = [

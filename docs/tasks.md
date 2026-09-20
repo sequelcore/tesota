@@ -129,7 +129,17 @@ The original `attempt.jsonl` and `candidate.diff` remain immutable; R1 uses
 `attempt-r1.jsonl` and `candidate-r1.diff`. The revision binds the digest of
 the complete retained R0 attempt, and review accepts an R1 pass only when both
 attempt files are bounded regular single-link files with complete, ordered,
-internally consistent records for that exact R0-to-R1 lineage. A generation-bound in-memory
+internally consistent records for that exact R0-to-R1 lineage. Review compares
+R1 cumulative model invocations, tool calls and active time with the parsed,
+digest-bound R0 session. R1 must account for at least the invocation requesting
+its checks and a later invocation receiving their results, and one tool call
+per retained edit/check. Multiple tools may share a model response; no fixed
+transcript or preceding read is required. Active time may stay equal because
+the producer rounds phase milliseconds and caps cumulative time. Phase-local
+edits and checks must together fit the existing task-wide ceilings. The attempt
+format does not retain read counts or tool ordering, so these checks establish
+lower bounds, not complete reconstruction of resource use.
+A generation-bound in-memory
 capability is the only execution authority. Persisted plans, attempts, revision
 facts and reviews cannot recreate it, and any unconfirmed callback settlement
 permanently blocks R1.

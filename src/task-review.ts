@@ -7,6 +7,7 @@ import { checkCandidateTask, inspectCandidateTask, type CandidateTaskCheck } fro
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
 import { PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses, type PiTaskResult } from "./integrations/pi-task.js";
 import { readSemanticRevision, semanticRevisionSha256, type SemanticRevision } from "./semantic-revision.js";
+import { TASK_LIMITS } from "./task-contract.js";
 
 const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const decisionSchema: z.ZodObject<{
@@ -179,6 +180,7 @@ async function inspectInitialAttempt(directory: string): Promise<InspectedAttemp
 export async function inspectSemanticRevisionAttempt(directory: string, revision: SemanticRevision): Promise<{
   readonly session: PiTaskResult; readonly current: unknown;
 }> {
+  const parent = await validateRevisionParent(directory, revision);
   const attempt = await inspectAttempt(directory, "attempt-r1.jsonl", revisionAttemptStartedSchema);
   const started = revisionAttemptStartedSchema.parse(attempt.started);
   const session = attempt.finished.session;
@@ -193,7 +195,23 @@ export async function inspectSemanticRevisionAttempt(directory: string, revision
       !piSemanticRevisionPasses(session as PiTaskResult, current as CandidateTaskCheck)) {
     throw new Error("Semantic revision attempt invalid");
   }
+  requireRevisionResources(parent, session);
   return { session: session as PiTaskResult, current: attempt.rawCurrent };
+}
+
+function requireRevisionResources(parent: z.infer<typeof sessionSchema>, session: z.infer<typeof sessionSchema>): void {
+  // runPiTask charges the requesting invocation and a later invocation that receives
+  // the check result. Sequential tool dispatch permits multiple tools per response.
+  const minimumModelDelta = 2;
+  // Each completed replacement/check has a charged tool_execution_start. Reads
+  // are not retained here and replacement does not enforce a preceding read.
+  const minimumToolDelta = session.edits + session.checks.length;
+  if (session.modelInvocations - parent.modelInvocations < minimumModelDelta ||
+      session.toolCalls - parent.toolCalls < minimumToolDelta || session.activeMs < parent.activeMs ||
+      parent.edits + session.edits > TASK_LIMITS.edits ||
+      parent.checks.length + session.checks.length > TASK_LIMITS.checks) {
+    throw new Error("Semantic revision resource evidence invalid");
+  }
 }
 
 function parentReviewSha256(directory: string, current: CandidateTaskCheck, rawCheck: unknown, diff: string): string {
@@ -204,10 +222,11 @@ function parentReviewSha256(directory: string, current: CandidateTaskCheck, rawC
   }));
 }
 
-async function validateRevisionParent(directory: string, revision: SemanticRevision): Promise<void> {
+async function validateRevisionParent(directory: string, revision: SemanticRevision): Promise<z.infer<typeof sessionSchema>> {
   const attempt = await inspectInitialAttempt(directory);
   const current = attempt.finished.current;
-  if (current === null) throw new Error("R0 attempt evidence unavailable");
+  const session = attempt.finished.session;
+  if (current === null || session === null) throw new Error("R0 attempt evidence unavailable");
   const diff = await readBoundedText(join(directory, "candidate.diff"), 256 * 1024);
   if (revision.parentAttemptSha256 !== attempt.sha256 ||
       revision.parentReviewSha256 !== parentReviewSha256(directory, current as CandidateTaskCheck, attempt.rawCurrent, diff) ||
@@ -215,6 +234,7 @@ async function validateRevisionParent(directory: string, revision: SemanticRevis
       revision.parentCheckSha256 !== digest(JSON.stringify(attempt.rawCurrent))) {
     throw new Error("Semantic revision parent identity invalid");
   }
+  return session;
 }
 
 export interface CorrectionParentIdentity {
@@ -283,7 +303,6 @@ export async function reviewTask(directory: string, observeCheck: () => void = i
   const revision = await readSemanticRevision(candidate.directory);
   let revisionAttempt: Awaited<ReturnType<typeof inspectSemanticRevisionAttempt>> | null = null;
   if (revision !== null) {
-    await validateRevisionParent(candidate.directory, revision);
     revisionAttempt = await inspectSemanticRevisionAttempt(candidate.directory, revision);
   }
   observeCheck();
