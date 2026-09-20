@@ -72,8 +72,9 @@ vi.mock("../src/candidate-task.js", () => ({
   checkCandidateTask: vi.fn(async () => currentCheck.value),
 }));
 
-vi.mock("../src/task-review.js", () => ({
-  validateCorrectionParent: vi.fn(async () => {
+vi.mock("../src/task-review.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/task-review.js")>();
+  return { ...original, validateCorrectionParent: vi.fn(async () => {
     parentAdmission.calls += 1;
     if (parentAdmission.calls === parentAdmission.pauseOnCall) {
       parentAdmission.entered?.();
@@ -85,8 +86,8 @@ vi.mock("../src/task-review.js", () => ({
     else if (identity !== parentAdmission.admittedIdentity) throw new Error("Semantic correction parent evidence invalid");
     if (currentCheck.value === null) throw new Error("Semantic correction parent evidence invalid");
     return { check: currentCheck.value, attemptSha256: "9".repeat(64) };
-  }),
-}));
+  }) };
+});
 
 const session = vi.hoisted(() => ({ value: null as PiTaskResult | null }));
 vi.mock("../src/integrations/pi-task.js", async (importOriginal) => {

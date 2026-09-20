@@ -6,7 +6,7 @@ import { CandidateTask, checkCandidateTask, type CandidateTaskCheck } from "./ca
 import { TASK_LIMITS } from "./task-contract.js";
 import { validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
 import type { TaskExecutionAccounting } from "./task-outcome.js";
-import { validateCorrectionParent, type CorrectionParentIdentity } from "./task-review.js";
+import { TaskReviewUnsettledError, validateCorrectionParent, type CorrectionParentIdentity } from "./task-review.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { createPiTaskBudget, PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses, runPiTask,
@@ -219,7 +219,8 @@ async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTa
     await record.sync();
     if (signal.aborted) throw new Error("Task interrupted");
     session = await executeTaskSession(task, revision, parentEvidence, budget, signal, admitRevision);
-  } catch {
+  } catch (error) {
+    if (error instanceof TaskReviewUnsettledError) current = error.check;
     writeError("Task attempt did not complete successfully; retained state is available for inspection.\n");
   } finally {
     try {
