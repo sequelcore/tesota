@@ -21,7 +21,7 @@ export const PI_DISCOVERY_TURN_LIMITS: Readonly<{
 export type PiDiscoveryAllowedOutcome = "conversation" | "continued_conversation" | "task_proposal";
 
 export interface PiDiscoverySessionResult {
-  readonly status: "completed" | "failed" | "aborted" | "timed_out" | "unsettled" | "limit_exhausted" | "context_limit";
+  readonly status: "completed" | "failed" | "invalid_result" | "tool_failed" | "aborted" | "timed_out" | "unsettled" | "limit_exhausted" | "context_limit";
   readonly modelInvocations: number;
   readonly toolCalls: number;
   readonly outcome: ConversationTurn | null;
@@ -42,6 +42,7 @@ interface ActiveTurn {
   terminalObserved: boolean;
   terminalStopReason: AssistantMessage["stopReason"] | null;
   promptFailed: boolean;
+  failure: "invalid_result" | "tool_failed" | "limit_exhausted" | null;
   closed: boolean;
 }
 
@@ -88,6 +89,7 @@ function completedStatus(turn: ActiveTurn, input: {
 }): PiDiscoverySessionResult["status"] {
   if (input.deadlineExpired) return "timed_out";
   if (input.abortRequested || input.signalAborted || turn.terminalStopReason === "aborted") return "aborted";
+  if (turn.failure !== null) return turn.failure;
   if (contextLimit(input.errorMessage)) return "context_limit";
   if (!turn.terminalObserved || turn.denied || turn.promptFailed || turn.terminalStopReason !== "stop" ||
       turn.outcome === null) return "failed";
@@ -110,13 +112,14 @@ export class PiDiscoverySession {
     const sdkStream = session.agent.streamFunction;
     session.agent.streamFunction = (model, context, options) => {
       const active = this.#active;
-      if (active === undefined || active.closed || active.signal.aborted || active.denied ||
-          canAdmitInvocation("inference", active.modelInvocations, PI_DISCOVERY_TURN_LIMITS.modelInvocations) !== "allow" ||
+      if (active === undefined || active.closed || active.signal.aborted || active.denied) {
+        return deniedStream(model, "Tesota discovery is closed or denied");
+      }
+      if (canAdmitInvocation("inference", active.modelInvocations, PI_DISCOVERY_TURN_LIMITS.modelInvocations) !== "allow" ||
           canAdmitInvocation("inference", this.#modelInvocations, PI_DISCOVERY_SESSION_LIMITS.modelInvocations) !== "allow") {
-        if (active !== undefined) {
-          active.denied = true;
-          active.discovery.close();
-        }
+        active.failure = "limit_exhausted";
+        active.denied = true;
+        active.discovery.close();
         return deniedStream(model, "Tesota discovery model limit reached");
       }
       active.modelInvocations += 1;
@@ -132,6 +135,7 @@ export class PiDiscoverySession {
         this.#toolCalls += 1;
       }
       if (event.type === "tool_execution_end" && event.isError) {
+        active.failure ??= "tool_failed";
         active.denied = true;
         active.discovery.close();
       }
@@ -157,15 +161,19 @@ export class PiDiscoverySession {
     const execute = async (action: (turn: ActiveTurn) => Promise<unknown> | unknown, toolSignal?: AbortSignal) => {
       const turn = active();
       try {
-        if (turn.denied || turn.signal.aborted || toolSignal?.aborted ||
-            turn.toolCalls > PI_DISCOVERY_TURN_LIMITS.toolCalls ||
-            owner === undefined || owner.#toolCalls > PI_DISCOVERY_SESSION_LIMITS.toolCalls) {
+        if (turn.toolCalls > PI_DISCOVERY_TURN_LIMITS.toolCalls ||
+            owner !== undefined && owner.#toolCalls > PI_DISCOVERY_SESSION_LIMITS.toolCalls) {
+          turn.failure = "limit_exhausted";
+          throw new Error("Tesota discovery tool limit reached");
+        }
+        if (turn.denied || turn.signal.aborted || toolSignal?.aborted || owner === undefined) {
           throw new Error("Tesota discovery operation denied");
         }
         const result = await action(turn);
         if (turn.closed || turn.signal.aborted || toolSignal?.aborted) throw new Error("Tesota discovery tool is closed");
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
       } catch {
+        turn.failure ??= "tool_failed";
         turn.denied = true;
         turn.discovery.close();
         throw new Error("Tesota discovery operation denied or unavailable");
@@ -194,7 +202,10 @@ export class PiDiscoverySession {
         execute: async (_id, args, signal) => execute((turn) => {
           if (turn.outcome !== null) throw new Error("Discovery result already submitted");
           const parsed = turn.outcomeSchema.safeParse(args);
-          if (!parsed.success) throw new Error("Discovery result denied");
+          if (!parsed.success) {
+            turn.failure = "invalid_result";
+            throw new Error("Discovery result invalid");
+          }
           turn.outcome = turn.discovery.submit(parsed.data);
           return { status: "result_recorded", kind: turn.outcome.kind, authority: "none" };
         }, signal) },
@@ -242,7 +253,7 @@ export class PiDiscoverySession {
     this.#turns += 1;
     const turn: ActiveTurn = { id: Symbol("pi-discovery-turn"), discovery, signal,
       outcomeSchema: outcomeSchema(allowed), modelInvocations: 0, toolCalls: 0, outcome: null, denied: false,
-      terminalObserved: false, terminalStopReason: null, promptFailed: false, closed: false };
+      terminalObserved: false, terminalStopReason: null, promptFailed: false, failure: null, closed: false };
     this.#active = turn;
     let abortRequested = false;
     let deadlineExpired = false;

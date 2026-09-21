@@ -57,6 +57,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private timer: ReturnType<typeof setInterval> | undefined;
   private removeInputListener: (() => void) | undefined;
   private started = false;
+  private lastMessage = "";
 
   constructor(options: TesotaShellTerminalOptions) {
     this.tui = options.tui;
@@ -100,12 +101,17 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.removeInputListener = undefined;
     this.cancelPrompt();
     this.tui.terminal.setProgress(false);
-    this.tui.stop();
+    this.tui.stop({ preserveScreen: true });
+    if (this.lastMessage.length > 0) {
+      const lines = new Text(this.lastMessage, 0, 0).render(this.tui.terminal.columns);
+      this.tui.terminal.write(lines.join("\r\n") + "\r\n");
+    }
   }
 
   write(text: string): void {
     const content = text.trimEnd();
     if (content.length === 0) return;
+    this.lastMessage = content;
     this.transcript.addChild(new Text(content, 1, 0));
     this.transcript.invalidate();
     this.tui.requestRender();

@@ -6,6 +6,17 @@ import type { TaskStartProgress } from "../src/task-start.js";
 
 const baseline = "a".repeat(40);
 
+it.each([
+  ["invalid_result", "The model returned an invalid response."],
+  ["tool_failed", "A repository tool failed or was denied."],
+] as const)("explains %s without reporting model budget exhaustion", async (reason, message) => {
+  const output: string[] = [];
+  const result = await runTesotaShell({ write: (text) => output.push(text), ask: async () => "Explain",
+    discover: async () => ({ status: "unavailable", exitCode: 1, reason }), start: vi.fn() });
+  expect(result).toBe(1);
+  expect(output.at(-1)).toBe(`${message} Nothing changed.\n`);
+});
+
 function answerResult(message = "The shell is bounded.", observedBaseline = baseline) {
   return { status: "completed" as const, exitCode: 0, turn: { kind: "answer" as const,
     answer: { kind: "answer" as const, message, evidenceFiles: ["src/tesota-shell.ts"], uncertainties: [] },

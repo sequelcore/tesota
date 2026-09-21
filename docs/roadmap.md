@@ -73,12 +73,21 @@ cancellation during inference and reading, timeout, late completion and
 subscription cleanup. The first live Windows walkthrough on a public external
 repository observed useful follow-up context, correction and settled
 cancellation, but also inconsistent unavailable turns and did not exercise the
-TUI. Live qualification therefore remains pending; see the
-implementation pull request for the sanitized observations. When compaction or restoration is supported, reconstruct current task
+TUI. A subsequent local walkthrough after the prose and terminal fixes completed
+the full read-only TUI sequence with Luna; [qualification](qualification.md#continuous-conversation-and-context)
+records its scope and limits. Broader reliability remains unqualified.
+When compaction or restoration is supported, reconstruct current task
 facts without restoring expired tool authority. Full interrupted-task recovery
 is qualified separately; it does not block proving a continuous settled session.
 
 ### 2. Complete a source-and-regression-test change
+
+Remove the committed-baseline-only reading restriction as a scoped part of this
+work. Conversation should be able to inspect uncommitted local changes without
+requiring a commit first. Preserve existing user changes, identify the exact
+content observed, invalidate affected evidence when it changes and detect
+conflicts before application. This working-tree support is planned, not part of
+the current read-only session.
 
 Reuse Pi's reading and editing mechanisms selectively, through the current
 candidate and permission owners. Inspect every operation that can read, write,

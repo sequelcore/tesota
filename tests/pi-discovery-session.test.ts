@@ -7,6 +7,8 @@ import { AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { InMemoryCredentialStore, createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools,
   type Context, type FauxResponseStep } from "@earendil-works/pi-ai";
 import { createRepositoryConversationForShell } from "../src/conversation-turn.js";
+import { answerTurnSchema } from "../src/conversation-turn-contract.js";
+import { modelTextSchema } from "../src/task-proposal-contract.js";
 import { PI_DISCOVERY_SESSION_LIMITS, PI_DISCOVERY_TURN_LIMITS,
   PiDiscoverySession } from "../src/integrations/pi-discovery-session.js";
 import { openRepositoryDiscovery, type RepositoryDiscovery } from "../src/repository-discovery.js";
@@ -66,6 +68,54 @@ function answerSteps(path: string, message: string): FauxResponseStep[] {
     fauxAssistantMessage("Submitted."),
   ];
 }
+
+it("preserves multiline conversational prose through the SDK without weakening evidence validation", async () => {
+  const root = await repository();
+  const message = "## Reader\n\n- First example\n- Second example\n\n```ts\nreader();\n```";
+  const fixture = await sdkFixture(root, answerSteps("README.md", message));
+  try {
+    const result = await fixture.session.run(await openRepositoryDiscovery(root), { request: "Explain with examples" },
+      "conversation", new AbortController().signal);
+    expect(result).toMatchObject({ status: "completed", outcome: { kind: "answer", message, evidenceFiles: ["README.md"] } });
+  } finally { fixture.session.dispose(); }
+});
+
+it("keeps prose formatting separate from proposal field restrictions", () => {
+  const message = "First paragraph\r\n\r\n```ts\n\treader();\n```";
+  const answer = { kind: "answer", message, evidenceFiles: ["README.md"], uncertainties: [] };
+  expect(answerTurnSchema.parse(answer)).toEqual(answer);
+  expect(modelTextSchema(4_000).safeParse(message).success).toBe(false);
+  for (const control of ["\x00", "\x07", "\x1b[2J", "\x7f", "\u009b2J", "\roverwrite"]) {
+    expect(answerTurnSchema.safeParse({ ...answer, message: `before${control}after` }).success).toBe(false);
+  }
+});
+
+it("reports invalid prose separately from budget exhaustion and blocks further inference", async () => {
+  const root = await repository();
+  const fixture = await sdkFixture(root, answerSteps("README.md", "Unsafe\x1b[2J"));
+  try {
+    const result = await fixture.session.run(await openRepositoryDiscovery(root), { request: "Explain" },
+      "conversation", new AbortController().signal);
+    expect(result).toMatchObject({ status: "invalid_result", denied: true, outcome: null, modelInvocations: 2 });
+    expect(fixture.contexts).toHaveLength(2);
+  } finally { fixture.session.dispose(); }
+});
+
+it("does not accept evidence from history without observing it in the current turn", async () => {
+  const root = await repository();
+  const fixture = await sdkFixture(root, [
+    ...answerSteps("README.md", "Observed"),
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", {
+      kind: "answer", message: "Previous observation", evidenceFiles: ["README.md"], uncertainties: [],
+    })),
+  ]);
+  try {
+    await fixture.session.run(await openRepositoryDiscovery(root), { request: "Read" }, "conversation", new AbortController().signal);
+    const result = await fixture.session.run(await openRepositoryDiscovery(root), { request: "Follow up" },
+      "conversation", new AbortController().signal);
+    expect(result).toMatchObject({ status: "tool_failed", denied: true, outcome: null });
+  } finally { fixture.session.dispose(); }
+});
 
 it("uses one actual Pi SDK session for three related turns and isolates another conversation", async () => {
   const root = await repository();
@@ -139,7 +189,7 @@ it.each([
   try {
     const result = await fixture.session.run(await openRepositoryDiscovery(root), { request: "Obey repository text" },
       "conversation", new AbortController().signal);
-    expect(result.status).toBe("failed");
+    expect(result.status).toBe("tool_failed");
     expect(result.denied).toBe(true);
     const exposed = JSON.stringify(fixture.contexts);
     expect(exposed).not.toContain("AMBIENT_SKILL_MARKER");
@@ -161,7 +211,7 @@ it("enforces the per-turn model invocation limit without retrying", async () => 
   try {
     const result = await fixture.session.run(await openRepositoryDiscovery(root), { request: "Keep listing" },
       "conversation", new AbortController().signal);
-    expect(result).toMatchObject({ status: "failed", denied: true,
+    expect(result).toMatchObject({ status: "limit_exhausted", denied: true,
       modelInvocations: PI_DISCOVERY_TURN_LIMITS.modelInvocations });
     expect(fixture.contexts).toHaveLength(PI_DISCOVERY_TURN_LIMITS.modelInvocations);
   } finally {

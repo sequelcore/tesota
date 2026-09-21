@@ -30,6 +30,12 @@ async function runShellRequest(dependencies: TesotaShellDependencies, request: s
       return { exitCode: result.exitCode, continue: false };
     }
     if (result.status === "unavailable") {
+      if (result.reason === "invalid_result" || result.reason === "tool_failed") {
+        dependencies.write(result.reason === "invalid_result"
+          ? "The model returned an invalid response. Nothing changed.\n"
+          : "A repository tool failed or was denied. Nothing changed.\n");
+        return { exitCode: result.exitCode, continue: false };
+      }
       if (result.reason === "baseline_changed") {
         dependencies.write("The repository baseline changed during this conversation. Start a new Tesota session. Nothing changed.\n");
         return { exitCode: result.exitCode, continue: false };

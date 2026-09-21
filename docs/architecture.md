@@ -160,6 +160,14 @@ session additionally admits at most 12 turns, 36 model invocations and 96 tool
 calls. Context overflow ends the conversation clearly; no automatic compaction,
 provider retry, silent model switch or transcript persistence is enabled.
 
+Conversation prose has its own formatting contract: paragraphs, tabs and code
+blocks pass through to Pi's text renderer; terminal control sequences remain
+invalid. Proposal fields retain their separate restrictions. Structured discovery
+results still bind evidence to files observed in the current turn; prose itself
+does not grant authority. Invalid results, tool failures and budget exhaustion
+retain distinct outcomes. After leaving the alternate screen, the shell renders
+its final message through Pi so a stopped session leaves an explanation visible.
+
 Pi's [project trust configuration](https://github.com/earendil-works/pi/blob/v0.86.1/packages/coding-agent/docs/settings.md#project-trust)
 controls loading project settings and resources. Its `defaultProjectTrust`,
 `/trust` and `--approve` controls do not authorize Tesota task effects. Declining

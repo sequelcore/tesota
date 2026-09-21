@@ -100,7 +100,7 @@ async function liveSource(): Promise<string> {
 export type ConversationCommandResult =
   | Readonly<{ status: "completed"; exitCode: number; turn: CompletedConversationTurn }>
   | Readonly<{ status: "unavailable"; exitCode: number;
-      reason: "baseline_changed" | "context_limit" | "limits_exhausted" | "timeout" | "unavailable" }>
+      reason: "baseline_changed" | "context_limit" | "limits_exhausted" | "invalid_result" | "tool_failed" | "timeout" | "unavailable" }>
   | Readonly<{ status: "cancelled"; exitCode: 130; settlement: "observed" }>
   | Readonly<{ status: "unsettled"; exitCode: 1; reason: "discovery_unconfirmed" }>;
 
@@ -111,6 +111,9 @@ export interface RepositoryConversationForShell {
 
 function sessionFailure(result: PiDiscoverySessionResult): ConversationCommandResult | null {
   if (result.status === "completed") return null;
+  if (result.status === "invalid_result" || result.status === "tool_failed") {
+    return { status: "unavailable", exitCode: 1, reason: result.status };
+  }
   if (result.status === "aborted") return { status: "cancelled", exitCode: 130, settlement: "observed" };
   if (result.status === "timed_out") return { status: "unavailable", exitCode: 1, reason: "timeout" };
   if (result.status === "unsettled") return { status: "unsettled", exitCode: 1, reason: "discovery_unconfirmed" };
