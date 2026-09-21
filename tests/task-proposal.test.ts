@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
-import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall,
+import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools,
   type FauxResponseStep } from "@earendil-works/pi-ai";
 import { discoverConversationTurn, formatConversationTurn } from "../src/conversation-turn.js";
 import { openRepositoryDiscovery } from "../src/repository-discovery.js";
@@ -203,7 +203,7 @@ it("produces and privately retains a non-authoritative proposal from bounded rea
   expect(formatTaskProposal(created)).toContain("Authority: none; no candidate was created and nothing can execute this proposal.\n");
   expect(fake.stream).toHaveBeenCalledTimes(6);
   for (const call of fake.stream.mock.calls) {
-    expect(call[1].tools?.map((tool) => tool.name)).toEqual([
+    expect(getCurrentTools(call[1].messages).map((tool) => tool.name)).toEqual([
       "tesota_list", "tesota_search", "tesota_read", "tesota_submit_result",
     ]);
   }

@@ -110,8 +110,10 @@ writes so an uncertain result is inspectable.
 
 ## Integration boundaries
 
-Pi owns model interaction, session mechanics and tool-call events. Tesota owns
-which tools exist, their schemas, budgets and effects. Gentle is an optional
+The supported discovery and task routes use Pi agent-core for model interaction
+and tool-call events. Tesota owns which tools exist, their schemas, budgets and
+effects. The separate Coding Agent SDK adapter creates an in-memory session;
+it is not the supported conversation host. Gentle is an optional
 review provider; Tesota preserves provider evidence but keeps acceptance and
 promotion local and distinct.
 
@@ -130,6 +132,55 @@ after it has a concrete task consumer and satisfies the qualification policy in
 The admission policy for bounded capability research, including its separation
 from runtime adoption, is recorded in
 [decision 011](decisions/011-evidence-gated-capabilities.md).
+
+## Pi session integration direction
+
+This is an intended integration boundary, not implemented session persistence
+or permission to load additional tools. The [roadmap](roadmap.md) owns its order.
+
+| Concern | Reuse or existing owner |
+| --- | --- |
+| Transcript, follow-up handling and compaction | Pi Coding Agent public session APIs; one conversation owner. |
+| Current task, candidate, check and application facts | Existing Tesota records; conversation summaries may reference but cannot replace them. |
+| Resources and tools | Explicitly selected resources and adapters connected to current Tesota authority. |
+| Candidate writes and adoption | Existing candidate effects, content binding, review and promotion. |
+| Process effects and termination | The admitted execution environment and observed settlement, not merely Pi's terminal event. |
+
+Retain the current shell while evaluating a full session host; replace UI pieces
+only for a demonstrated integration need. The existing SDK adapter's external
+signal is checked after the run rather than wired to live cancellation. It also
+needs explicit resource selection and cumulative accounting before adoption.
+An SDK migration must not turn default resource discovery into permission to
+execute global or project extensions or to provision tools during a task.
+
+Pi's [project trust configuration](https://github.com/earendil-works/pi/blob/v0.86.1/packages/coding-agent/docs/settings.md#project-trust)
+controls loading project settings and resources. Its `defaultProjectTrust`,
+`/trust` and `--approve` controls do not authorize Tesota task effects. Declining
+project trust also does not suppress every input: context files and user/global
+or explicitly supplied extensions have separate loading behavior. Select those
+resources explicitly in the host integration.
+
+Reuse Pi's tool selection, blocking hooks and approval UI where useful, while
+keeping the decision in the existing Tesota admission and effect owners. Pi's
+[security contract](https://github.com/earendil-works/pi/blob/v0.86.1/packages/coding-agent/docs/security.md)
+does not provide a built-in sandbox. Its example permission gate illustrates
+confirmation for selected Bash patterns; it is not a complete command or path
+policy. Neither project trust nor that example replaces the existing execution
+environment. No additional permission framework is required by this integration.
+
+Restoring or branching a transcript does not restore authority, roll back files
+or undo an application. Rebind the visible state to Tesota's canonical records
+after compaction or resume. When Pi replaces a session instance, reconnect
+subscriptions and current tool bindings; do not retain closures issued under
+expired authority. Retire the superseded session path when the replacement is
+adopted rather than maintaining competing histories.
+
+Reusable tool operations must route through the relevant effect owner. Inspect
+direct filesystem access, subprocesses and provisioning in addition to public
+operation interfaces. A working directory is not confinement, and an extension
+hook is not isolation from code executing inside the host process. Candidate
+edits still require current input binding and invalidate affected evidence;
+rendered patches do not replace exact accepted bytes at promotion.
 
 ## Execution environments
 

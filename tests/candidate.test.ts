@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, writeFile, link, unlink } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import { fauxProvider, fauxAssistantMessage, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
 import { CANDIDATE_SOURCE, CANDIDATE_EXPECTED_SOURCE, CANDIDATE_LIMITS, candidateSatisfiesTask, VerificationCandidate } from "../src/verification/candidate.js";
 import { configuredOxlint } from "../src/verification/oxlint.js";
 import { DurableVerificationEvidenceStore } from "../src/verification/evidence.js";
@@ -35,7 +35,7 @@ it.each([CANDIDATE_EXPECTED_SOURCE, CANDIDATE_EXPECTED_SOURCE.slice(0, -1)])("co
   ]);
   const result = await runPiSession({ scenario: "candidate_correction", candidate, input: "candidate.ts", check,
     model: faux.getModel(), stream: (model, context, options) => {
-      expect(context.tools?.[0]?.parameters).toMatchObject({ properties: { input: { const: "candidate.ts" } } });
+      expect(getCurrentTools(context.messages)[0]?.parameters).toMatchObject({ properties: { input: { const: "candidate.ts" } } });
       return faux.provider.streamSimple(model, context, options);
     } });
   const [before, after] = candidate.checks;

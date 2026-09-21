@@ -20,7 +20,7 @@ different:
 | Horizon | Meaning |
 | --- | --- |
 | **Implemented today** | A local, terminal-first pre-release that can answer bounded repository questions and attempt one narrow class of TypeScript source changes with explicit approval, checks, review and application. |
-| **Next demonstrated capability** | Correct or revise a supported task without restarting, with fresh exact-result evidence and explicit cumulative budgets. |
+| **Next demonstrated capability** | Complete a continuous source-and-regression-test task with user-requested correction, fresh exact-result evidence and explicit cumulative budgets; see the roadmap for implementation order. |
 | **Coding destination** | A verification-first coding agent capable of broad, real repository work while preserving explicit authority, exact-result evidence, visible unknowns, human acceptance and guarded application. |
 | **Long-term thesis** | An agent for research, planning, creation, tool use and other consequential work, where each domain defines its result, applicable evidence, effects and adoption boundary. |
 

@@ -7,7 +7,9 @@ works in an isolated checkout, presents applicable checks and lets you review
 and apply the result.
 
 This guide describes the current supported workflow. The [roadmap](roadmap.md)
-owns what comes next.
+owns what comes next. Its planned continuous source-and-test workflow is not
+available through the commands below; test edits and interrupted-task resume
+remain unsupported.
 
 ## Prerequisites
 
