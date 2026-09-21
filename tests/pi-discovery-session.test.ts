@@ -262,6 +262,38 @@ it("cancels inference through the SDK and settles before returning", async () =>
   }
 });
 
+it("keeps cancellation unsettled while the original prompt is still checking authentication", async () => {
+  vi.useFakeTimers();
+  const root = await repository();
+  const fixture = await sdkFixture(root, answerSteps("README.md", "Must not run."));
+  let authStarted: () => void = () => {};
+  const enteredAuth = new Promise<void>((resolve) => { authStarted = resolve; });
+  let releaseAuth: () => void = () => {};
+  const heldAuth = new Promise<{ type: "api_key" }>((resolve) => {
+    releaseAuth = () => { resolve({ type: "api_key" }); };
+  });
+  vi.spyOn(fixture.runtime, "checkAuth").mockImplementation(async () => {
+    authStarted();
+    return heldAuth;
+  });
+  const cancellation = new AbortController();
+  try {
+    const running = fixture.session.run(await openRepositoryDiscovery(root), { request: "Wait for auth" },
+      "conversation", cancellation.signal);
+    await enteredAuth;
+    cancellation.abort();
+    await vi.advanceTimersByTimeAsync(PI_DISCOVERY_TURN_LIMITS.settlementMs);
+    await expect(running).resolves.toMatchObject({ status: "unsettled", outcome: null });
+    await expect(fixture.session.run(await openRepositoryDiscovery(root), { request: "Another turn" },
+      "conversation", new AbortController().signal)).rejects.toThrow("unavailable");
+    releaseAuth();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fixture.contexts).toHaveLength(0);
+  } finally {
+    fixture.session.dispose();
+  }
+});
+
 it("bounds an uncooperative timeout, ignores late completion, and refuses another turn", async () => {
   vi.useFakeTimers();
   const root = await repository();

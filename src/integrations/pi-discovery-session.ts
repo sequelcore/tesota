@@ -271,7 +271,10 @@ export class PiDiscoverySession {
       if (abortRequested) {
         let settlementTimer: ReturnType<typeof setTimeout> | undefined;
         const settled = await Promise.race([
-          (abortPromise ?? Promise.resolve()).then(() => true, () => true),
+          Promise.all([
+            (abortPromise ?? Promise.resolve()).catch(() => undefined),
+            prompt,
+          ]).then(() => true),
           new Promise<false>((resolve) => { settlementTimer = setTimeout(() => resolve(false),
             PI_DISCOVERY_TURN_LIMITS.settlementMs); }),
         ]);
