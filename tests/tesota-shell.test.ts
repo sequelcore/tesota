@@ -6,6 +6,17 @@ import type { TaskStartProgress } from "../src/task-start.js";
 
 const baseline = "a".repeat(40);
 
+it.each([
+  ["invalid_result", "The model returned an invalid response."],
+  ["tool_failed", "A repository tool failed or was denied."],
+] as const)("explains %s without reporting model budget exhaustion", async (reason, message) => {
+  const output: string[] = [];
+  const result = await runTesotaShell({ write: (text) => output.push(text), ask: async () => "Explain",
+    discover: async () => ({ status: "unavailable", exitCode: 1, reason }), start: vi.fn() });
+  expect(result).toBe(1);
+  expect(output.at(-1)).toBe(`${message} Nothing changed.\n`);
+});
+
 function answerResult(message = "The shell is bounded.", observedBaseline = baseline) {
   return { status: "completed" as const, exitCode: 0, turn: { kind: "answer" as const,
     answer: { kind: "answer" as const, message, evidenceFiles: ["src/tesota-shell.ts"], uncertainties: [] },
@@ -210,5 +221,26 @@ it("invalidates a clarification continuation when the committed baseline changes
   const result = await runTesotaShell({ write: (text) => output.push(text),
     ask: async () => answers.shift() ?? "", discover, start: vi.fn() });
   expect(result).toBe(1);
-  expect(output.at(-1)).toBe("The committed baseline changed during clarification. Start a new request. Nothing changed.\n");
+  expect(output.at(-1)).toBe("The repository baseline changed during this conversation. Start a new Tesota session. Nothing changed.\n");
+});
+
+it("continues contextual reading after a settled cancellation and presents another prompt", async () => {
+  const answers = ["Where is the reader?", "What calls it?", "Cancel this one", "Continue from before", ""];
+  const ask = vi.fn(async () => answers.shift() ?? "");
+  const discover = vi.fn()
+    .mockResolvedValueOnce(answerResult("The reader is in src/reader.ts."))
+    .mockResolvedValueOnce(answerResult("src/shell.ts calls it."))
+    .mockResolvedValueOnce({ status: "cancelled" as const, exitCode: 130 as const, settlement: "observed" as const })
+    .mockResolvedValueOnce(answerResult("The prior reader context remains available."));
+  const output: string[] = [];
+
+  const result = await runTesotaShell({ write: (text) => output.push(text), ask, discover, start: vi.fn() });
+
+  expect(result).toBe(0);
+  expect(discover.mock.calls.map(([input]) => input)).toEqual([
+    { request: "Where is the reader?" }, { request: "What calls it?" }, { request: "Cancel this one" },
+    { request: "Continue from before" },
+  ]);
+  expect(output).toContain("Repository discovery cancelled. Nothing changed.\n");
+  expect(ask).toHaveBeenCalledTimes(5);
 });

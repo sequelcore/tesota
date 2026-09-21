@@ -39,6 +39,19 @@ function visible(terminal: TestTerminal): string {
   return stripTerminalSequences(terminal.writes.join("\n"));
 }
 
+it("retains the last message when stopping before the scheduled render", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  shell.start();
+  for (let index = 0; index < 30; index++) shell.write(`Earlier message ${index}\n`);
+  tui.renderNow(true);
+  terminal.writes.length = 0;
+  shell.write("The response was invalid. No work was applied.\n");
+  shell.stop();
+  expect(visible(terminal)).toContain("The response was invalid. No work was applied.");
+});
+
 it("renders Tesota Shell as one persistent terminal surface", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });

@@ -56,6 +56,30 @@ Explicit resource selection must exclude unadmitted configuration, extensions
 and tool provisioning. A session-completion event alone cannot establish that
 tool effects or subprocess descendants have settled.
 
+The implemented read-only slice has deterministic SDK and shell regression
+coverage for shared context, isolation, correction, resource denial, baseline
+drift, cancellation, timeout, late events and settlement. Automatic compaction,
+retry, persistence and session replacement are disabled, so those mechanisms
+are not qualified. The first sanitized Windows walkthrough on a preselected
+public repository observed follow-up usefulness and real-provider cancellation,
+but inconsistent unavailable turns left live qualification pending. Subsequent
+diagnosis reproduced rejection of ordinary multiline prose and loss of the final
+message when the terminal closed. These cases now have deterministic regressions.
+
+On 2026-09-21, a local Windows PTY walkthrough of the ordinary compiled CLI with
+`openai-codex/gpt-5.6-luna` and the prose/terminal fixes completed a multiline
+list, a contextual correction with paragraphs and a code block, cancellation,
+and a follow-up retaining the corrected subject. The source was
+`sindresorhus/yoctocolors` at `a85b98a90e5731914567d8c209e7ec45ac2d24e2`.
+The final message remained visible and the process exited 0. This qualifies that
+local walkthrough only; it does not establish general reliability or explain
+every earlier unavailable result. The run used local changes over `99209bef`;
+it is separate from CI and from the earlier PR's qualification evidence.
+
+The local `bun run check` gate also passed after these fixes: typechecking,
+compilation, lint and 498 deterministic tests across 37 files. These checks do
+not invoke the live provider or establish broader task support.
+
 ## Complete change and application
 
 This retains the outcome requirements used for the historical Milestone 1.

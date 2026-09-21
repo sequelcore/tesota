@@ -1,7 +1,12 @@
 import * as z from "zod";
-import { modelTextSchema, taskProposalSchema, validProposalPath } from "./task-proposal-contract.js";
+import { taskProposalSchema, validProposalPath } from "./task-proposal-contract.js";
 
-const messageSchema = modelTextSchema(4_000);
+// Conversation prose supports paragraphs and code; terminal control sequences remain forbidden.
+const messageSchema = z.string().trim().min(1).max(4_000).refine((value) =>
+  [...value.replaceAll("\r\n", "\n")].every((character) => {
+    const code = character.charCodeAt(0);
+    return code === 9 || code === 10 || code >= 32 && (code < 127 || code > 159);
+  }));
 const evidencePathSchema = z.string().min(1).max(512).refine(validProposalPath);
 const requestSchema = z.string().trim().min(1).max(8_000);
 const baselineSchema = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u);

@@ -82,8 +82,8 @@ reports the terminal application state in the retained task outcome.
 
 Tesota currently supports a small but real software-development slice:
 
-- ask bounded questions about the committed repository and continue one
-  clarification;
+- ask related bounded questions about the committed repository in one in-memory
+  conversation, including one clarification per request;
 - describe a small change without naming internal lifecycle IDs;
 - propose and approve a change to one or two existing non-test TypeScript files
   below `src/`;
