@@ -326,8 +326,9 @@ it("detects a changed committed baseline before sending another SDK turn", async
 
 it("preserves the existing proposal record path from the continuous SDK conversation", async () => {
   const root = await repository();
-  const proposals = await mkdtemp(join(tmpdir(), "tesota-continuous-proposals-"));
-  roots.push(proposals);
+  const proposalFixture = await mkdtemp(join(tmpdir(), "tesota-continuous-proposals-"));
+  roots.push(proposalFixture);
+  const proposals = join(proposalFixture, "proposals");
   const fixture = await sdkFixture(root, [
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/reader.ts" })),
     fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
