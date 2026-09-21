@@ -3,10 +3,12 @@ import { resolve } from "node:path";
 import { realpath } from "node:fs/promises";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { conversationInputSchema, retainedConversationRequest, type AnswerTurn, type ClarificationTurn,
   type ConversationInput } from "./conversation-turn-contract.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { runPiDiscovery, type DiscoveryOutcome, type PiDiscoveryResult } from "./integrations/pi-discovery.js";
+import { PiDiscoverySession, type PiDiscoverySessionResult } from "./integrations/pi-discovery-session.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { openRepositoryDiscovery } from "./repository-discovery.js";
 import { runRepositoryGit } from "./repository-git.js";
@@ -97,9 +99,90 @@ async function liveSource(): Promise<string> {
 
 export type ConversationCommandResult =
   | Readonly<{ status: "completed"; exitCode: number; turn: CompletedConversationTurn }>
-  | Readonly<{ status: "unavailable"; exitCode: number; reason: "baseline_changed" | "unavailable" }>
+  | Readonly<{ status: "unavailable"; exitCode: number;
+      reason: "baseline_changed" | "context_limit" | "limits_exhausted" | "timeout" | "unavailable" }>
   | Readonly<{ status: "cancelled"; exitCode: 130; settlement: "observed" }>
   | Readonly<{ status: "unsettled"; exitCode: 1; reason: "discovery_unconfirmed" }>;
+
+export interface RepositoryConversationForShell {
+  discover(input: ConversationInput, signal: AbortSignal): Promise<ConversationCommandResult>;
+  dispose(): void;
+}
+
+function sessionFailure(result: PiDiscoverySessionResult): ConversationCommandResult | null {
+  if (result.status === "completed") return null;
+  if (result.status === "aborted") return { status: "cancelled", exitCode: 130, settlement: "observed" };
+  if (result.status === "timed_out") return { status: "unavailable", exitCode: 1, reason: "timeout" };
+  if (result.status === "unsettled") return { status: "unsettled", exitCode: 1, reason: "discovery_unconfirmed" };
+  if (result.status === "context_limit") return { status: "unavailable", exitCode: 1, reason: "context_limit" };
+  if (result.status === "limit_exhausted") return { status: "unavailable", exitCode: 1, reason: "limits_exhausted" };
+  return { status: "unavailable", exitCode: 1, reason: "unavailable" };
+}
+
+/** Continuous read-only shell conversation; Pi owns transcript mechanics while each reader remains turn-scoped. */
+export async function createRepositoryConversationForShell(options: {
+  readonly sourceDirectory: string;
+  readonly proposalsRoot: string;
+  readonly modelRuntime: ModelRuntime;
+  readonly model: Model<Api>;
+}): Promise<RepositoryConversationForShell> {
+  const session = await PiDiscoverySession.create({ cwd: options.sourceDirectory,
+    modelRuntime: options.modelRuntime, model: options.model });
+  let identity: string | undefined;
+  let disposed = false;
+  return {
+    async discover(rawInput, signal) {
+      if (disposed) throw new Error("Repository conversation disposed");
+      if (signal.aborted) return { status: "cancelled", exitCode: 130, settlement: "observed" };
+      const input = conversationInputSchema.parse(rawInput);
+      const discovery = await openRepositoryDiscovery(options.sourceDirectory);
+      const description = discovery.describe();
+      const currentIdentity = JSON.stringify({ baseline: description.baseline, dirtyPaths: description.dirtyPaths });
+      if (input.clarification !== undefined && input.clarification.baseline !== description.baseline ||
+          identity !== undefined && identity !== currentIdentity) {
+        discovery.close();
+        return { status: "unavailable", exitCode: 1, reason: "baseline_changed" };
+      }
+      identity = currentIdentity;
+      const allowedOutcome = input.clarification === undefined ? "conversation" : "continued_conversation";
+      const result = await session.run(discovery, input, allowedOutcome, signal);
+      const failed = sessionFailure(result);
+      if (failed !== null) return failed;
+      if (result.outcome === null) return { status: "unavailable", exitCode: 1, reason: "unavailable" };
+      let turn: CompletedConversationTurn;
+      if (result.outcome.kind === "answer") {
+        turn = { kind: "answer", answer: result.outcome, baseline: description.baseline };
+      } else if (result.outcome.kind === "clarification") {
+        turn = { kind: "clarification", clarification: result.outcome, baseline: description.baseline };
+      } else {
+        const request = input.clarification === undefined ? input.request : retainedConversationRequest(input);
+        turn = { kind: "task_proposal", proposedTask: await retainTaskProposal({ proposalsRoot: options.proposalsRoot,
+          request, description, result: { ...result, status: "completed", outcome: result.outcome },
+          model: options.model }) };
+      }
+      return { status: "completed",
+        exitCode: turn.kind === "task_proposal" && turn.proposedTask.record.status !== "ready" ? 1 : 0, turn };
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      session.dispose();
+    },
+  };
+}
+
+export async function createLiveRepositoryConversationForShell(sourceDirectory: string,
+  signal?: AbortSignal): Promise<RepositoryConversationForShell> {
+  if (signal?.aborted === true) throw new DOMException("cancelled", "AbortError");
+  if (process.platform !== "win32") throw new Error("Live repository discovery is currently supported on Windows");
+  const credentials = new CodexCredentials();
+  const runtime = await ModelRuntime.create({ credentials, refreshOnCreate: false, allowModelNetwork: false,
+    ...(signal === undefined ? {} : { signal }) });
+  const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
+  if (model?.api !== "openai-codex-responses") throw new Error("model unavailable");
+  return createRepositoryConversationForShell({ sourceDirectory, proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
+    modelRuntime: runtime, model });
+}
 
 async function runLiveConversation(rawInput: ConversationInput,
   allowedOutcome: DiscoveryOutcome, writeError: (text: string) => void = (text) => { process.stderr.write(text); },

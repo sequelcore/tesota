@@ -1,7 +1,8 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
-import { runRepositoryConversationForShell, type ConversationCommandResult } from "./conversation-turn.js";
+import { createLiveRepositoryConversationForShell, type ConversationCommandResult,
+  type RepositoryConversationForShell } from "./conversation-turn.js";
 import type { ConversationInput } from "./conversation-turn-contract.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { runTesotaShell } from "./tesota-shell.js";
@@ -13,10 +14,12 @@ export interface TesotaShellCommandDependencies {
   readonly surface: TesotaShellTerminal;
   readonly discover: (input: ConversationInput) => Promise<ConversationCommandResult>;
   readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void) => Promise<TaskStartResult>;
+  readonly dispose?: () => void;
 }
 
 export function createProcessTesotaShell(cwd: string = process.cwd()): TesotaShellCommandDependencies {
   let activeOperation: AbortController | undefined;
+  let conversation: Promise<RepositoryConversationForShell> | undefined;
   const tui = new TuiAltScreen(new ProcessTerminal(), false, undefined, { mouse: true });
   const interrupt = (): void => { activeOperation?.abort(); };
   const runOperation = async <T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
@@ -31,8 +34,18 @@ export function createProcessTesotaShell(cwd: string = process.cwd()): TesotaShe
   const surface = createTesotaShellTerminal({ cwd, tui, interrupt });
   return {
     surface,
-    discover: (input) => runOperation((signal) =>
-      runRepositoryConversationForShell(input, (text) => { surface.write(text); }, signal)),
+    discover: (input) => runOperation(async (signal) => {
+      conversation ??= createLiveRepositoryConversationForShell(cwd, signal);
+      try { return await (await conversation).discover(input, signal); }
+      catch (error) {
+        if (signal.aborted || error instanceof Error && error.name === "AbortError") {
+          conversation = undefined;
+          return { status: "cancelled", exitCode: 130, settlement: "observed" };
+        }
+        surface.write("Repository discovery unavailable or failed; nothing changed and no authority was created.\n");
+        return { status: "unavailable", exitCode: 1, reason: "unavailable" };
+      }
+    }),
     start: (proposalId, report) => runOperation((signal) => startTask({
       proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
       sourceDirectory: cwd,
@@ -46,6 +59,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd()): TesotaShe
         writeError: (text) => { surface.write(text); },
       }),
     })),
+    dispose: () => { void conversation?.then((owner) => { owner.dispose(); }, () => undefined); },
   };
 }
 
@@ -69,6 +83,7 @@ export async function runTesotaShellCommand(
       : "Tesota session failed. Inspect retained evidence before retrying.\n");
     return cancelled ? 130 : 1;
   } finally {
+    dependencies.dispose?.();
     surface.stop();
   }
 }

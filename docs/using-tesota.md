@@ -7,8 +7,8 @@ works in an isolated checkout, presents applicable checks and lets you review
 and apply the result.
 
 This guide describes the current supported workflow. The [roadmap](roadmap.md)
-owns what comes next. Its planned continuous source-and-test workflow is not
-available through the commands below; test edits and interrupted-task resume
+owns what comes next. Continuous read-only questions are implemented; the later
+continuous source-and-test workflow, test edits and interrupted-task resume
 remain unsupported.
 
 ## Prerequisites
@@ -65,7 +65,24 @@ Then describe what you need:
 ```
 
 A bounded read-only question can end with an answer and return to the prompt.
-Tesota may ask one clarification while preserving the same committed baseline.
+Related follow-up questions and corrections reuse the same in-memory Pi
+conversation, so they receive the earlier transcript. A separate `tesota`
+process starts an isolated conversation. Tesota may ask one clarification while
+preserving the same committed baseline.
+
+Each turn receives a fresh bounded reader for the current committed baseline.
+The conversation stops if the baseline or relevant dirty-path state changes;
+earlier observations are not presented as current. Pressing Ctrl+C during a
+read-only turn closes that reader and cancels the SDK operation. Tesota returns
+to a prompt only after settlement is confirmed. Unconfirmed settlement ends the
+session.
+
+Repository reads keep their existing per-turn operation and byte limits. One
+conversation admits at most 12 turns, 36 model invocations and 96 tool calls.
+Automatic SDK retries and compaction are disabled. A timeout, exhausted budget
+or context-window failure is reported without silently resetting history or
+changing the provider. Conversations are not saved to disk and cannot be
+resumed after process exit.
 
 For a change request:
 

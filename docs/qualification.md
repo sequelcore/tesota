@@ -56,6 +56,16 @@ Explicit resource selection must exclude unadmitted configuration, extensions
 and tool provisioning. A session-completion event alone cannot establish that
 tool effects or subprocess descendants have settled.
 
+The implemented read-only slice has deterministic SDK and shell regression
+coverage for shared context, isolation, correction, resource denial, baseline
+drift, cancellation, timeout, late events and settlement. Automatic compaction,
+retry, persistence and session replacement are disabled, so those mechanisms
+are not qualified. The first sanitized Windows walkthrough on a preselected
+public repository observed follow-up usefulness and real-provider cancellation,
+but inconsistent unavailable turns and the unexercised TUI keep live
+qualification pending. See the
+implementation pull request for the sanitized observations.
+
 ## Complete change and application
 
 This retains the outcome requirements used for the historical Milestone 1.

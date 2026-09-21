@@ -10,7 +10,7 @@ development is the first proving ground, not the permanent product boundary.
 
 ## What works today
 
-The pre-release supports bounded repository questions and a small TypeScript
+The pre-release supports continuous bounded repository questions and a small TypeScript
 source task through Tesota Shell: proposal, approval, independent checkout,
 editing, scope-integrity and contained typechecking, exact diff review and
 guarded application. The write set is one or two existing non-test TypeScript
@@ -24,10 +24,11 @@ interrupted-task resume are not supported. The existing targeted Vitest profile
 is a mechanism to extend, not an ordinary source-and-test task already available
 to users. [Using Tesota](using-tesota.md) owns current usage and limitations.
 
-The main runtime uses Pi agent-core with Tesota-owned tools. The separate Coding
-Agent SDK adapter is not the supported session host. See
-[architecture](architecture.md#pi-session-integration-direction) for the current
-boundary and intended reuse.
+Tesota Shell now uses one in-memory Pi Coding Agent SDK session for related
+read-only turns with Tesota-owned tools, explicit resources, cumulative
+conversation limits and bounded cancellation settlement. The admitted task
+runtime remains on its existing Pi agent-core integration. See
+[architecture](architecture.md#pi-session-integration) for the current boundary.
 
 ## Next outcome: a continuous code-and-test task
 
@@ -56,17 +57,24 @@ The upstream
 [0.86.0 migration](https://github.com/earendil-works/pi/blob/v0.86.1/packages/coding-agent/CHANGELOG.md)
 changes streaming context, JSON value contracts and shell hook behavior. Provider
 test doubles now read tool declarations through the public transcript helper.
-The supported runtime remains unchanged; continuous SDK hosting is next.
+The dependency compatibility record remains separate from the read-only session
+implementation and its qualification.
 
-Use the full Coding Agent SDK for conversation history, follow-up handling and
-context management where its public APIs meet Tesota's needs. Start with a
-continuous read-only session, then connect the existing admitted task tools.
-Reuse the current shell composition unless the integration demonstrates a
-specific reason to replace it. The SDK adapter needs live cancellation and
-explicit resource loading before it can become the supported host.
+The continuous read-only slice now uses the full Coding Agent SDK for in-memory
+conversation history and follow-up context while retaining the current shell.
+It selects resources and tools explicitly, checks repository identity between
+turns, propagates cancellation and keeps per-turn and conversation limits.
+Automatic compaction, persistence and retries remain disabled. Connecting the
+existing admitted task tools is the next part of this outcome.
 
-Completion evidence includes useful follow-up context and cancellation during
-work. When compaction or restoration is supported, reconstruct current task
+Deterministic integration tests cover three related turns, an isolated second
+conversation, user correction, resource and tool denial, source drift,
+cancellation during inference and reading, timeout, late completion and
+subscription cleanup. The first live Windows walkthrough on a public external
+repository observed useful follow-up context, correction and settled
+cancellation, but also inconsistent unavailable turns and did not exercise the
+TUI. Live qualification therefore remains pending; see the
+implementation pull request for the sanitized observations. When compaction or restoration is supported, reconstruct current task
 facts without restoring expired tool authority. Full interrupted-task recovery
 is qualified separately; it does not block proving a continuous settled session.
 

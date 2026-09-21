@@ -31,8 +31,20 @@ async function runShellRequest(dependencies: TesotaShellDependencies, request: s
     }
     if (result.status === "unavailable") {
       if (result.reason === "baseline_changed") {
-        dependencies.write("The committed baseline changed during clarification. Start a new request. Nothing changed.\n");
+        dependencies.write("The repository baseline changed during this conversation. Start a new Tesota session. Nothing changed.\n");
         return { exitCode: result.exitCode, continue: false };
+      }
+      if (result.reason === "context_limit") {
+        dependencies.write("The conversation reached the model context limit. Start a new Tesota session. Nothing changed.\n");
+        return { exitCode: result.exitCode, continue: false };
+      }
+      if (result.reason === "limits_exhausted") {
+        dependencies.write("The bounded conversation limit was reached. Start a new Tesota session. Nothing changed.\n");
+        return { exitCode: result.exitCode, continue: false };
+      }
+      if (result.reason === "timeout") {
+        dependencies.write("Repository discovery timed out after confirmed settlement. Start a new request. Nothing changed.\n");
+        return { exitCode: result.exitCode, continue: true };
       }
       dependencies.write("Request blocked or unavailable. Nothing changed.\n");
       return { exitCode: result.exitCode, continue: false };

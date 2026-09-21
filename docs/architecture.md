@@ -65,6 +65,7 @@ and an isolated process does not gain authority merely because it is confined.
 | --- | --- |
 | `cli.ts`, `tesota-shell-command.ts` | Public commands and interactive composition |
 | `repository-discovery.ts` | Bounded read-only view of committed source |
+| `integrations/pi-discovery-session.ts` | In-memory Pi SDK transcript, explicit read-only tool loadout, conversation budgets and cancellation settlement |
 | `task-proposal-contract.ts` | Model-facing proposal vocabulary and limits |
 | `task-proposal.ts` | Durable non-authoritative proposal evidence |
 | `proposal-admission.ts` | Supported task policy and immutable run grant |
@@ -110,10 +111,14 @@ writes so an uncertain result is inspectable.
 
 ## Integration boundaries
 
-The supported discovery and task routes use Pi agent-core for model interaction
-and tool-call events. Tesota owns which tools exist, their schemas, budgets and
-effects. The separate Coding Agent SDK adapter creates an in-memory session;
-it is not the supported conversation host. Gentle is an optional
+The supported shell discovery route uses one in-memory Pi Coding Agent SDK
+session for sequential read-only turns. The explicit resource loader disables
+ambient extensions, skills, prompt templates, themes and context files. Tesota
+supplies only its bounded list, search, read and result tools and replaces the
+repository reader on every turn. The explicit `task propose` seam and candidate
+runtime continue to use their narrower agent-core integrations. Tesota owns
+which tools exist, their schemas, budgets and effects. The separate one-shot
+Coding Agent SDK adapter remains an experimental candidate consumer. Gentle is an optional
 review provider; Tesota preserves provider evidence but keeps acceptance and
 promotion local and distinct.
 
@@ -133,25 +138,27 @@ The admission policy for bounded capability research, including its separation
 from runtime adoption, is recorded in
 [decision 011](decisions/011-evidence-gated-capabilities.md).
 
-## Pi session integration direction
+## Pi session integration
 
-This is an intended integration boundary, not implemented session persistence
-or permission to load additional tools. The [roadmap](roadmap.md) owns its order.
+The first read-only session slice is implemented. It is not disk persistence,
+session restoration or permission to load additional tools. The
+[roadmap](roadmap.md) owns subsequent expansion.
 
 | Concern | Reuse or existing owner |
 | --- | --- |
-| Transcript, follow-up handling and compaction | Pi Coding Agent public session APIs; one conversation owner. |
+| Transcript and follow-up handling | One in-memory Pi Coding Agent SDK session. Automatic compaction and retry are disabled. |
 | Current task, candidate, check and application facts | Existing Tesota records; conversation summaries may reference but cannot replace them. |
 | Resources and tools | Explicitly selected resources and adapters connected to current Tesota authority. |
 | Candidate writes and adoption | Existing candidate effects, content binding, review and promotion. |
 | Process effects and termination | The admitted execution environment and observed settlement, not merely Pi's terminal event. |
 
-Retain the current shell while evaluating a full session host; replace UI pieces
-only for a demonstrated integration need. The existing SDK adapter's external
-signal is checked after the run rather than wired to live cancellation. It also
-needs explicit resource selection and cumulative accounting before adoption.
-An SDK migration must not turn default resource discovery into permission to
-execute global or project extensions or to provision tools during a task.
+The current shell owns prompt sequencing and task routing. Its SDK reader host
+wires cancellation to the active inference or tool operation, waits up to the
+settlement bound and returns to the prompt only after settlement is confirmed.
+Each turn retains the existing repository operation and exposure limits. The
+session additionally admits at most 12 turns, 36 model invocations and 96 tool
+calls. Context overflow ends the conversation clearly; no automatic compaction,
+provider retry, silent model switch or transcript persistence is enabled.
 
 Pi's [project trust configuration](https://github.com/earendil-works/pi/blob/v0.86.1/packages/coding-agent/docs/settings.md#project-trust)
 controls loading project settings and resources. Its `defaultProjectTrust`,
