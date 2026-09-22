@@ -62,12 +62,14 @@ const sessionSchema = z.strictObject({
   denialStage: z.enum(["tool_request", "tool_operation", "tool_result", "model_admission"]).optional(),
   deniedTool: z.enum(["tesota_read", "tesota_replace", "tesota_check", "unknown"]).optional(),
 });
-const executorSchema = z.strictObject(Object.fromEntries([
+const executorSchema = z.strictObject({ ...Object.fromEntries([
   "task-run.js", "candidate-checkout.js", "candidate-task.js", "task-contract.js", "task-source.js",
   "semantic-revision.js", "repository-check-input.js", "proposal-admission.js", "repository-typecheck.js",
   "repository-typecheck-process.js", "command-isolation.js", "verification/invocation-admission.js",
   "integrations/pi-task.js", "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock",
-].map((path) => [path, digestSchema])));
+].map((path) => [path, digestSchema])),
+  "integrations/pi-discovery-session.js": digestSchema.optional(),
+});
 const attemptBaseStartedShape = {
   format: z.literal("tesota-task-attempt"), state: z.literal("started"), timestamp: z.iso.datetime(),
   baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u), sourceDirty: z.boolean(),

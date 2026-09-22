@@ -140,8 +140,8 @@ from runtime adoption, is recorded in
 
 ## Pi session integration
 
-The first read-only session slice is implemented. It is not disk persistence,
-session restoration or permission to load additional tools. The
+The read-only session and its bounded initial task-tool connection are implemented.
+They are not disk persistence, session restoration or permission to load additional tools. The
 [roadmap](roadmap.md) owns subsequent expansion.
 
 | Concern | Reuse or existing owner |
@@ -152,12 +152,17 @@ session restoration or permission to load additional tools. The
 | Candidate writes and adoption | Existing candidate effects, content binding, review and promotion. |
 | Process effects and termination | The admitted execution environment and observed settlement, not merely Pi's terminal event. |
 
-The current shell owns prompt sequencing and task routing. Its SDK reader host
+The current shell owns prompt sequencing and task routing. Its SDK host
 wires cancellation to the active inference or tool operation, waits up to the
 settlement bound and returns to the prompt only after settlement is confirmed.
-Each turn retains the existing repository operation and exposure limits. The
-session additionally admits at most 12 turns, 36 model invocations and 96 tool
-calls. Context overflow ends the conversation clearly; no automatic compaction,
+Each discovery turn retains the existing repository operation and exposure limits.
+After approval, R0 activates only the admitted read, replace and check tools in
+the same SDK transcript. Those tools delegate to the live candidate capability;
+the task runner keeps its separate cumulative R0/R1 limits and evidence owner.
+Task tools become inactive after R0 settles. The optional semantic correction
+still uses a fresh disposable Pi execution. The read-only conversation and its
+R0 task turn together admit at most 36 model invocations and 96 tool calls;
+discovery additionally admits at most 12 turns. Context overflow ends the conversation clearly; no automatic compaction,
 provider retry, silent model switch or transcript persistence is enabled.
 
 Conversation prose has its own formatting contract: paragraphs, tabs and code

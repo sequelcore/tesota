@@ -10,7 +10,7 @@ import { TaskReviewUnsettledError, validateCorrectionParent, type CorrectionPare
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { createPiTaskBudget, PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses, runPiTask,
-  type PiTaskBudget, type PiTaskResult } from "./integrations/pi-task.js";
+  type PiTaskBudget, type PiTaskResult, type PiTaskSessionHost } from "./integrations/pi-task.js";
 import { effectiveCriteriaSha256, parseSemanticRefinement, recordSemanticRevision, semanticRevisionSha256,
   type SemanticRevision } from "./semantic-revision.js";
 
@@ -39,6 +39,7 @@ export interface TaskRunHost {
   readonly signal?: AbortSignal;
   readonly write?: (text: string) => void;
   readonly writeError?: (text: string) => void;
+  readonly session?: PiTaskSessionHost;
 }
 
 function stdout(text: string): void { process.stdout.write(text); }
@@ -85,7 +86,7 @@ function taskExecutionAccounting(session: PiTaskResult | null, startedAt: number
     consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } };
 }
 
-function resolvedHost(host: TaskRunHost): Required<Omit<TaskRunHost, "signal">> {
+function resolvedHost(host: TaskRunHost): Required<Pick<TaskRunHost, "write" | "writeError">> {
   return { write: host.write ?? stdout, writeError: host.writeError ?? stderr };
 }
 
@@ -115,7 +116,7 @@ async function executorSha256(): Promise<Record<string, string>> {
     "repository-check-input.js",
     "proposal-admission.js", "repository-typecheck.js", "repository-typecheck-process.js", "command-isolation.js",
     "verification/invocation-admission.js", "integrations/pi-task.js",
-    "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock"]) {
+    "integrations/pi-live.js", "integrations/pi-discovery-session.js", "integrations/codex-credentials.js", "../bun.lock"]) {
     executor[path] = createHash("sha256").update(await readFile(new URL(path, import.meta.url))).digest("hex");
   }
   return executor;
@@ -123,7 +124,7 @@ async function executorSha256(): Promise<Record<string, string>> {
 
 async function executeTaskSession(task: CandidateTask, context: SemanticRevision | null,
   parentEvidence: CandidateTaskCheck | null, budget: PiTaskBudget, signal: AbortSignal,
-  admitRevision?: () => Promise<CandidateTaskCheck>): Promise<PiTaskResult> {
+  admitRevision?: () => Promise<CandidateTaskCheck>, session?: PiTaskSessionHost): Promise<PiTaskResult> {
   const usage = task.usage();
   const remainingBudget = {
     reads: Math.max(0, TASK_LIMITS.reads - usage.reads), edits: Math.max(0, TASK_LIMITS.edits - usage.edits),
@@ -153,7 +154,7 @@ async function executeTaskSession(task: CandidateTask, context: SemanticRevision
   }
   try {
     return await runPiTask(capability, model, (requested, modelContext, options) =>
-      models.streamSimple(requested, modelContext, options), signal, budget);
+      models.streamSimple(requested, modelContext, options), signal, budget, context === null ? session : undefined);
   } finally { capability.close(); }
 }
 
@@ -193,7 +194,7 @@ function attemptPasses(revision: SemanticRevision | null, session: PiTaskResult 
 async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTask, budget: PiTaskBudget,
   revision: SemanticRevision | null, parentEvidence: CandidateTaskCheck | null, signal: AbortSignal,
   writeError: (text: string) => void,
-  admitRevision?: () => Promise<CandidateTaskCheck>): Promise<RecordedTaskAttempt> {
+  admitRevision?: () => Promise<CandidateTaskCheck>, sessionHost?: PiTaskSessionHost): Promise<RecordedTaskAttempt> {
   const suffix = revision === null ? "" : "-r1";
   const finalRecordPath = join(candidate.directory, `attempt${suffix}.jsonl`);
   const recordPath = revision === null ? finalRecordPath : join(candidate.directory, "attempt-r1.partial");
@@ -218,7 +219,7 @@ async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTa
     await record.writeFile(startedRecord);
     await record.sync();
     if (signal.aborted) throw new Error("Task interrupted");
-    session = await executeTaskSession(task, revision, parentEvidence, budget, signal, admitRevision);
+    session = await executeTaskSession(task, revision, parentEvidence, budget, signal, admitRevision, sessionHost);
   } catch (error) {
     if (error instanceof TaskReviewUnsettledError) current = error.check;
     writeError("Task attempt did not complete successfully; retained state is available for inspection.\n");
@@ -271,7 +272,7 @@ async function runPhase(candidate: CandidateCheckout, task: CandidateTask, budge
   process.once("SIGTERM", interrupt);
   try {
     return await recordTaskAttempt(candidate, task, budget, revision, parentEvidence, cancellation.signal, writeError,
-      admitRevision);
+      admitRevision, revision === null ? host.session : undefined);
   } finally {
     cancellation.abort();
     process.removeListener("SIGINT", interrupt);

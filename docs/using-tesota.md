@@ -7,8 +7,9 @@ works in an isolated checkout, presents applicable checks and lets you review
 and apply the result.
 
 This guide describes the current supported workflow. The [roadmap](roadmap.md)
-owns what comes next. Continuous read-only questions are implemented; the later
-continuous source-and-test workflow, test edits and interrupted-task resume
+owns what comes next. Continuous read-only questions and the initial approved
+source-task turn share one in-memory Pi conversation. The later continuous
+source-and-test workflow, test edits and interrupted-task resume
 remain unsupported.
 
 ## Prerequisites
@@ -70,7 +71,7 @@ conversation, so they receive the earlier transcript. A separate `tesota`
 process starts an isolated conversation. Tesota may ask one clarification while
 preserving the same committed baseline.
 
-Each turn receives a fresh bounded reader for the current committed baseline.
+Each read-only turn receives a fresh bounded reader for the current committed baseline.
 The conversation stops if the baseline or relevant dirty-path state changes;
 earlier observations are not presented as current. Pressing Ctrl+C during a
 read-only turn closes that reader and cancels the SDK operation. Tesota returns
@@ -78,7 +79,9 @@ to a prompt only after settlement is confirmed. Unconfirmed settlement ends the
 session.
 
 Repository reads keep their existing per-turn operation and byte limits. One
-conversation admits at most 12 turns, 36 model invocations and 96 tool calls.
+conversation admits at most 12 discovery turns, 36 model invocations and 96 tool
+calls across discovery and its initial approved task turn. The task also keeps
+its separate cumulative R0/R1 limits.
 Automatic SDK retries and compaction are disabled. A timeout, exhausted budget
 or context-window failure is reported without silently resetting history or
 changing the provider. Conversations are not saved to disk and cannot be
@@ -120,7 +123,9 @@ It excludes tests, dependency and check configuration, file creation, deletion
 or renaming, migrations, arbitrary shell commands and network access. The model
 cannot select a replacement check or weaken its configuration.
 
-After approval, Tesota creates an isolated result and begins work. A failed
+After approval, Tesota creates an isolated result and exposes only the task's
+approved read, replace and check tools for the R0 turn in the same in-memory
+conversation. A failed
 check can supply diagnostics for another bounded edit. Every changed result has
 its own identity, so evidence for an earlier version does not silently apply to
 the later one.

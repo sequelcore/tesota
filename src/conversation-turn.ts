@@ -9,6 +9,7 @@ import { conversationInputSchema, retainedConversationRequest, type AnswerTurn, 
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { runPiDiscovery, type DiscoveryOutcome, type PiDiscoveryResult } from "./integrations/pi-discovery.js";
 import { PiDiscoverySession, type PiDiscoverySessionResult } from "./integrations/pi-discovery-session.js";
+import type { PiTaskSessionHost } from "./integrations/pi-task.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { openRepositoryDiscovery } from "./repository-discovery.js";
 import { runRepositoryGit } from "./repository-git.js";
@@ -106,6 +107,7 @@ export type ConversationCommandResult =
 
 export interface RepositoryConversationForShell {
   discover(input: ConversationInput, signal: AbortSignal): Promise<ConversationCommandResult>;
+  taskHost(): PiTaskSessionHost;
   dispose(): void;
 }
 
@@ -134,6 +136,7 @@ export async function createRepositoryConversationForShell(options: {
   let identity: string | undefined;
   let disposed = false;
   return {
+    taskHost: () => session.taskHost(),
     async discover(rawInput, signal) {
       if (disposed) throw new Error("Repository conversation disposed");
       if (signal.aborted) return { status: "cancelled", exitCode: 130, settlement: "observed" };

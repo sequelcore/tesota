@@ -80,6 +80,17 @@ The local `bun run check` gate also passed after these fixes: typechecking,
 compilation, lint and 498 deterministic tests across 37 files. These checks do
 not invoke the live provider or establish broader task support.
 
+The later R0 task-tool connection has a deterministic SDK integration test for
+discovery, checked candidate editing and a subsequent question in one transcript,
+including revocation of a retained tool proxy. This is local check evidence.
+One [prospective Windows/Docker live route attempt](../experiments/supported-task/continuous-session-2-2026-09-22.md)
+then completed ordinary shell discovery, scoped approval, a contained
+TypeScript check, candidate review and an explicit human rejection. An
+independent 18-case oracle passed on the exact candidate. No promotion or
+post-task conversational follow-up occurred, so this qualifies the observed
+execution-to-rejection path only, not accepted application, broad reliability
+or the complete continuous code-and-test outcome.
+
 ## Complete change and application
 
 This retains the outcome requirements used for the historical Milestone 1.

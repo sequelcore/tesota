@@ -39,7 +39,7 @@ Individual container checks retain their separate 60-second execution limit;
 dependency binding and snapshot preparation occur inside the cumulative task
 window.
 Those limits are task-wide across the initial R0 execution and the optional R1
-semantic revision. A fresh Pi agent receives only the remaining model, tool,
+semantic revision. The optional R1 uses a fresh Pi agent with only the remaining model, tool,
 read, edit, check and active-time budget; attempted consequential work is not
 refunded after cancellation or uncertain settlement.
 
@@ -87,8 +87,10 @@ This distinction is intentional:
 ## Review and promotion
 
 `task start <proposal-id>` presents the admitted scope before execution. If the
-operator approves it, Tesota creates a fresh candidate and runs the bounded Pi
-task. Passing current scope and typecheck evidence exposes the exact diff for an
+operator approves it, Tesota creates a fresh candidate and runs the bounded R0
+task through the same in-memory Pi SDK conversation as discovery in Tesota Shell.
+The lower-level task command retains its one-shot agent. Passing current scope
+and typecheck evidence exposes the exact diff for an
 accept, reject or request-one-correction choice. A correction requires bounded
 user refinement and separate approval, keeps the same candidate, repository,
 baseline, paths, tools and profiles, and uses a fresh disposable Pi agent. It

@@ -25,9 +25,11 @@ is a mechanism to extend, not an ordinary source-and-test task already available
 to users. [Using Tesota](using-tesota.md) owns current usage and limitations.
 
 Tesota Shell now uses one in-memory Pi Coding Agent SDK session for related
-read-only turns with Tesota-owned tools, explicit resources, cumulative
-conversation limits and bounded cancellation settlement. The admitted task
-runtime remains on its existing Pi agent-core integration. See
+read-only turns and the initial approved source-task execution. Tesota-owned
+tools, explicit resources, cumulative conversation limits and bounded
+cancellation settlement remain in force. The task runner retains its existing
+candidate, budget, check and review owners; optional R1 semantic correction
+still uses a fresh Pi agent-core execution. See
 [architecture](architecture.md#pi-session-integration) for the current boundary.
 
 ## Next outcome: a continuous code-and-test task
@@ -64,8 +66,12 @@ The continuous read-only slice now uses the full Coding Agent SDK for in-memory
 conversation history and follow-up context while retaining the current shell.
 It selects resources and tools explicitly, checks repository identity between
 turns, propagates cancellation and keeps per-turn and conversation limits.
-Automatic compaction, persistence and retries remain disabled. Connecting the
-existing admitted task tools is the next part of this outcome.
+Automatic compaction, persistence and retries remain disabled. The initial
+task-tool connection has deterministic local coverage. One prospective
+Windows/Docker live attempt reached a checked candidate and explicit human
+rejection through the ordinary shell; accepted application, post-task follow-up
+and broader live qualification remain outstanding. See
+[qualification](qualification.md#continuous-conversation-and-context).
 
 Deterministic integration tests cover three related turns, an isolated second
 conversation, user correction, resource and tool denial, source drift,
