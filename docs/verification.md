@@ -98,6 +98,28 @@ the composed source-task flow is exercised on representative work; current tests
 exercise admission, bindings, result interpretation and failure settlement with
 synthetic fixtures.
 
+## Protected targeted Node test profile
+
+`node-test-targeted/v1` is the check for the approved source-and-test task.
+The grant names one existing `tests/**/*.test.ts` file and the only candidate
+files allowed to differ. Tesota records the repository's declared test script
+but does not execute it or any model-selected command. It runs fixed Node argv
+with TypeScript type stripping and that exact test path in the pinned Docker
+image. This is a focused behavioral observation, not TypeScript typechecking
+or the full repository test script.
+
+The candidate and Tesota's compiled, SHA-256-bound Node reporter are mounted
+read-only. Network is disabled; host credentials and dependency installations
+are not mounted. The reporter consumes Node test events and ignores test-owned
+stdout, then emits one bounded machine report. A pass requires the selected
+entry path, one complete cumulative summary, at least one test, all tests
+passing, no skipped/TODO/cancelled tests and a clean process/container exit.
+Malformed, mismatched, empty and incomplete reports do not pass. The profile
+rechecks candidate, test, package declaration, reporter and Docker-client bytes
+before and after invocation. It has a 30-second container limit and no
+host-native fallback. A passing report is still check evidence, not human
+acceptance or permission to apply the diff.
+
 ## Protected targeted Vitest profile
 
 `vitest-targeted/v1` is a separate, repository-owned producer. It is not yet a

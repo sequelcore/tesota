@@ -52,7 +52,7 @@ boundaries and never authenticates against the live service.
 ## Bounds and outcomes
 
 The fixed route is `openai-codex`, `openai-codex-responses`, and
-`gpt-5.6-luna` over SSE. There is no provider, model, account or API-key
+`gpt-6-luna` over SSE. There is no provider, model, account or API-key
 fallback. The installed Pi request builder omits `maxTokens`; Tesota has no
 established 64-token output ceiling.
 

@@ -76,12 +76,15 @@ the current repository's committed baseline. It retains a proposal with no execu
 creates no candidate and never runs in the normal check suite. See
 [task proposals](proposals.md).
 `task start <proposal-id>` is the composable seam behind the shell continuation.
-It requires an interactive Windows terminal and admits only a current ready
-proposal for one or two existing TypeScript files below `src/`. Approval creates
+It requires an interactive Windows terminal and admits a current ready
+proposal for either one or two existing TypeScript source files below `src/`
+or one approved existing TypeScript source plus one existing regression test.
+Approval creates
 a fresh candidate; replay and resume are rejected. The current checks establish
-scope integrity and run the exact contained `typescript-no-emit/v1` profile while
-explicitly leaving outcome correctness to human review. Repository check
-configuration, dependency declarations, test and file-lifecycle changes remain denied. A
+scope integrity and run the exact contained `typescript-no-emit/v1` or
+`node-test-targeted/v1` profile while explicitly leaving outcome correctness
+to human review. Repository check configuration, dependency declarations,
+general test and file-lifecycle changes remain denied. A
 later accept/reject question is bound to the escaped diff;
 acceptance invokes conflict-safe promotion without requiring another ID. At the
 first passing review, the operator may instead request one bounded semantic

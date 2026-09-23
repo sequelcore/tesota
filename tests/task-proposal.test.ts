@@ -416,6 +416,30 @@ it("blocks a proposal whose admitted paths have excluded working changes", async
   expect(created.record.proposal.writeFiles).toEqual(["src/integrations/pi-task.ts"]);
 });
 
+it("retains an unsupported source-and-test check combination without offering execution", async () => {
+  const { source, proposals } = await fixture();
+  const fake = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "tests/pi-task-evidence.test.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
+      objective: "Change the task result and its regression test.",
+      completionConditions: ["The changed behavior has a regression test."],
+      readFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
+      writeFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
+      checks: ["scope-integrity", "typescript-no-emit/v1", "node-test-targeted/v1"],
+      uncertainties: [],
+    } })),
+    fauxAssistantMessage("Proposal submitted."),
+  ]);
+  const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "Fix the task and add a regression test", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal });
+  expect(created.record.status).toBe("blocked_scope");
+  expect(formatTaskProposal(created)).toContain("Status: blocked by unsupported scope or checks");
+  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id,
+    sourceDirectory: source })).rejects.toThrow("unsupported");
+});
+
 it("reports both sides of a staged rename so a deleted proposal input cannot look clean", async () => {
   const { source } = await fixture();
   await rename(join(source, "README.md"), join(source, "RENAMED.md"));

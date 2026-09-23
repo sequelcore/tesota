@@ -5,9 +5,10 @@ import * as z from "zod";
 import { candidateDiff, inspectCandidateCheckout } from "./candidate-checkout.js";
 import { checkCandidateTask, inspectCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
-import { PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses, type PiTaskResult } from "./integrations/pi-task.js";
+import { PI_SOURCE_TEST_LIMITS, PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses,
+  type PiTaskResult } from "./integrations/pi-task.js";
 import { readSemanticRevision, semanticRevisionSha256, type SemanticRevision } from "./semantic-revision.js";
-import { TASK_LIMITS } from "./task-contract.js";
+import { SOURCE_TEST_TASK_KIND, taskLimits } from "./task-contract.js";
 
 const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const decisionSchema: z.ZodObject<{
@@ -22,13 +23,21 @@ const decisionSchema: z.ZodObject<{
 type TaskDecision = z.infer<typeof decisionSchema>;
 const requestSchema = z.strictObject({ decision: decisionSchema.shape.decision, reviewSha256: digestSchema });
 
-const limitsSchema = z.strictObject({
+const legacyLimitsSchema = z.strictObject({
   modelInvocations: z.literal(PI_TASK_LIMITS.modelInvocations),
   toolCalls: z.literal(PI_TASK_LIMITS.toolCalls),
   sessionMs: z.literal(PI_TASK_LIMITS.sessionMs),
   settlementMs: z.literal(PI_TASK_LIMITS.settlementMs),
   outputTokens: z.literal(PI_TASK_LIMITS.outputTokens),
 });
+const sourceTestLimitsSchema = z.strictObject({
+  modelInvocations: z.literal(PI_SOURCE_TEST_LIMITS.modelInvocations),
+  toolCalls: z.literal(PI_SOURCE_TEST_LIMITS.toolCalls),
+  sessionMs: z.literal(PI_SOURCE_TEST_LIMITS.sessionMs),
+  settlementMs: z.literal(PI_SOURCE_TEST_LIMITS.settlementMs),
+  outputTokens: z.literal(PI_SOURCE_TEST_LIMITS.outputTokens),
+});
+const limitsSchema = z.union([legacyLimitsSchema, sourceTestLimitsSchema]);
 const typecheckSchema = z.strictObject({
   profile: z.literal("typescript-no-emit/v1"),
   status: z.enum(["passed", "check_failed", "unavailable", "execution_failed", "timed_out", "cancelled"]),
@@ -36,11 +45,20 @@ const typecheckSchema = z.strictObject({
   process: z.enum(["not_started", "exited", "unconfirmed"]), container: z.enum(["absent", "unconfirmed"]),
   binding: z.unknown(), authority: z.literal("none"), provenance: z.literal("issued"),
 });
+const nodeTestSchema = z.strictObject({
+  profile: z.literal("node-test-targeted/v1"),
+  status: z.enum(["passed", "check_failed", "no_tests", "unavailable", "execution_failed", "timed_out", "cancelled"]),
+  reason: z.string().nullable(), diagnostics: z.array(z.string()),
+  process: z.enum(["not_started", "exited", "unconfirmed"]), container: z.enum(["absent", "unconfirmed"]),
+  binding: z.unknown(), authority: z.literal("none"), provenance: z.literal("issued"),
+});
 const checkShape = {
   status: z.enum(["passed", "check_failed"]), diagnostics: z.array(z.string()),
   outcome: z.enum(["passed", "check_failed", "operational_failed"]),
-  settlement: z.enum(["observed", "unconfirmed"]), task: z.literal("typescript-change"),
-  typecheck: typecheckSchema.nullable(), baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u),
+  settlement: z.enum(["observed", "unconfirmed"]), task: z.enum(["typescript-change", SOURCE_TEST_TASK_KIND]),
+  changedFiles: z.array(z.string()).max(2).optional(), selectedTest: z.string().optional(),
+  typecheck: typecheckSchema.nullable(), nodeTest: nodeTestSchema.nullable().optional(),
+  baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u),
   writeSetSha256: digestSchema, sourceInputsSha256: digestSchema, taskAcceptance: z.literal("not_evaluated"),
 };
 const issuedCheckSchema = z.strictObject({ ...checkShape, provenance: z.literal("issued") });
@@ -51,9 +69,9 @@ const editCauseSchema = z.discriminatedUnion("cause", [
 ]);
 const sessionSchema = z.strictObject({
   status: z.enum(["completed", "failed", "aborted", "unsettled"]),
-  modelInvocations: z.number().int().nonnegative().max(PI_TASK_LIMITS.modelInvocations),
-  toolCalls: z.number().int().nonnegative().max(PI_TASK_LIMITS.toolCalls),
-  edits: z.number().int().nonnegative(), checks: z.array(issuedCheckSchema).max(3),
+  modelInvocations: z.number().int().nonnegative().max(PI_SOURCE_TEST_LIMITS.modelInvocations),
+  toolCalls: z.number().int().nonnegative().max(PI_SOURCE_TEST_LIMITS.toolCalls),
+  edits: z.number().int().nonnegative(), checks: z.array(issuedCheckSchema).max(6),
   checksSuppliedToModel: z.number().int().nonnegative(), finalCheckSuppliedToModel: z.boolean(),
   deadlineExpired: z.boolean(), settlement: z.enum(["observed", "unconfirmed"]), denied: z.boolean(),
   terminalStopReason: z.string().min(1).nullable(), taskAcceptance: z.literal("not_evaluated"),
@@ -69,11 +87,14 @@ const executorSchema = z.strictObject({ ...Object.fromEntries([
   "integrations/pi-task.js", "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock",
 ].map((path) => [path, digestSchema])),
   "integrations/pi-discovery-session.js": digestSchema.optional(),
+  "repository-node-test.js": digestSchema.optional(),
+  "repository-node-test-process.js": digestSchema.optional(),
+  "repository-node-test-reporter.js": digestSchema.optional(),
 });
 const attemptBaseStartedShape = {
   format: z.literal("tesota-task-attempt"), state: z.literal("started"), timestamp: z.iso.datetime(),
   baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u), sourceDirty: z.boolean(),
-  executor: executorSchema, model: z.literal(LIVE_CODEX_MODEL_ID), limits: limitsSchema,
+  executor: executorSchema, model: z.enum(["gpt-5.6-luna", LIVE_CODEX_MODEL_ID]), limits: limitsSchema,
   taskAcceptance: z.literal("not_evaluated"),
 };
 const initialAttemptStartedSchema = z.strictObject({ ...attemptBaseStartedShape, version: z.literal(1),
@@ -161,6 +182,10 @@ async function inspectAttempt(directory: string, name: "attempt.jsonl" | "attemp
   const started = startedSchema.parse(JSON.parse(lines[0] ?? "null"));
   const rawFinished = z.record(z.string(), z.unknown()).parse(JSON.parse(lines[1] ?? "null"));
   const finished = attemptFinishedSchema.parse(rawFinished);
+  if (finished.session !== null && (finished.session.modelInvocations > started.limits.modelInvocations ||
+      finished.session.toolCalls > started.limits.toolCalls || finished.session.activeMs > started.limits.sessionMs)) {
+    throw new Error("Task attempt resource evidence invalid");
+  }
   if (Date.parse(finished.timestamp) < Date.parse(started.timestamp)) throw new Error("Task attempt evidence unavailable");
   return { sha256: digest(text), started, finished, rawCurrent: rawFinished["current"] };
 }
@@ -170,6 +195,8 @@ async function inspectInitialAttempt(directory: string): Promise<InspectedAttemp
   const session = attempt.finished.session;
   const current = attempt.finished.current;
   if (attempt.finished.outcome !== "passed" || !attempt.finished.reviewSaved || session === null || current === null ||
+      JSON.stringify(attempt.started.limits) !== JSON.stringify(current.task === SOURCE_TEST_TASK_KIND ?
+        PI_SOURCE_TEST_LIMITS : PI_TASK_LIMITS) ||
       session.executionCause !== "initial_implementation" || session.checks.some((check) =>
         check.baseline !== attempt.started.baseline) || current.baseline !== attempt.started.baseline ||
       !sessionChecksMatchCurrent(session, current) ||
@@ -188,6 +215,8 @@ export async function inspectSemanticRevisionAttempt(directory: string, revision
   const session = attempt.finished.session;
   const current = attempt.finished.current;
   if (attempt.finished.outcome !== "passed" || !attempt.finished.reviewSaved || session === null || current === null ||
+      JSON.stringify(started.limits) !== JSON.stringify(current.task === SOURCE_TEST_TASK_KIND ?
+        PI_SOURCE_TEST_LIMITS : PI_TASK_LIMITS) ||
       started.revisionSha256 !== semanticRevisionSha256(revision) ||
       started.parentReviewSha256 !== revision.parentReviewSha256 ||
       started.parentAttemptSha256 !== revision.parentAttemptSha256 ||
@@ -210,8 +239,8 @@ function requireRevisionResources(parent: z.infer<typeof sessionSchema>, session
   const minimumToolDelta = session.edits + session.checks.length;
   if (session.modelInvocations - parent.modelInvocations < minimumModelDelta ||
       session.toolCalls - parent.toolCalls < minimumToolDelta || session.activeMs < parent.activeMs ||
-      parent.edits + session.edits > TASK_LIMITS.edits ||
-      parent.checks.length + session.checks.length > TASK_LIMITS.checks) {
+      parent.edits + session.edits > taskLimits(parent.checks[0]?.task ?? "typescript-change").edits ||
+      parent.checks.length + session.checks.length > taskLimits(parent.checks[0]?.task ?? "typescript-change").checks) {
     throw new Error("Semantic revision resource evidence invalid");
   }
 }

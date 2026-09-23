@@ -6,7 +6,8 @@ import { Type, createAssistantMessageEventStream, fauxAssistantMessage, type Api
 import * as z from "zod";
 import { continuedConversationTurnSchema, conversationTurnSchema, taskProposalTurnSchema,
   type ConversationInput, type ConversationTurn } from "../conversation-turn-contract.js";
-import type { RepositoryDiscovery } from "../repository-discovery.js";
+import { RepositoryDiscoveryError, type RepositoryDiscovery, type RepositoryDiscoveryFailureCode
+} from "../repository-discovery.js";
 import { canAdmitInvocation } from "../verification/invocation-admission.js";
 import { proposalListSchema, proposalReadSchema, proposalSearchSchema } from "../task-proposal-contract.js";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -22,6 +23,26 @@ export const PI_DISCOVERY_TURN_LIMITS: Readonly<{
 
 export type PiDiscoveryAllowedOutcome = "conversation" | "continued_conversation" | "task_proposal";
 
+export type DiscoveryToolName = "tesota_list" | "tesota_search" | "tesota_read" | "tesota_submit_result" |
+  "unavailable_tool";
+export interface DiscoveryToolFailure {
+  readonly tool: DiscoveryToolName;
+  readonly cause: RepositoryDiscoveryFailureCode | "backend_unavailable" | "host_denied" | "tool_unavailable" |
+    "tool_rejected";
+}
+
+function discoveryToolName(name: string): DiscoveryToolName {
+  if (name === "tesota_list" || name === "tesota_search" || name === "tesota_read" ||
+      name === "tesota_submit_result") return name;
+  return "unavailable_tool";
+}
+
+function toolFailureCause(error: unknown, turn: ActiveTurn, toolSignal?: AbortSignal): DiscoveryToolFailure["cause"] {
+  if (error instanceof RepositoryDiscoveryError) return error.code;
+  if (turn.denied || turn.signal.aborted || toolSignal?.aborted) return "host_denied";
+  return "backend_unavailable";
+}
+
 export interface PiDiscoverySessionResult {
   readonly status: "completed" | "failed" | "invalid_result" | "tool_failed" | "aborted" | "timed_out" | "unsettled" | "limit_exhausted" | "context_limit";
   readonly modelInvocations: number;
@@ -30,6 +51,7 @@ export interface PiDiscoverySessionResult {
   readonly denied: boolean;
   readonly terminalStopReason: AssistantMessage["stopReason"] | null;
   readonly metrics: { readonly operations: number; readonly exposedBytes: number };
+  readonly toolFailure: DiscoveryToolFailure | null;
 }
 
 interface ActiveTurn {
@@ -45,6 +67,7 @@ interface ActiveTurn {
   terminalStopReason: AssistantMessage["stopReason"] | null;
   promptFailed: boolean;
   failure: "invalid_result" | "tool_failed" | "limit_exhausted" | null;
+  toolFailure: DiscoveryToolFailure | null;
   closed: boolean;
 }
 
@@ -60,9 +83,11 @@ function systemPrompt(): string {
     "context but does not satisfy current access checks. Ground answers in files observed in the current turn and name " +
     "them in evidenceFiles. Fully read every proposed " +
     "write file in the current turn. Proposal readFiles may contain only currently observed paths, and writeFiles must " +
-    "also be in readFiles. Proposals may write one or two existing TypeScript files under src/ and must select " +
-    "scope-integrity followed by typescript-no-emit/v1. They may not change repository check configuration, dependency " +
-    "declarations, tests, add, delete, or rename files. During discovery, submit exactly one result, then stop. " +
+    "also be in readFiles. Proposals may write one or two existing non-test TypeScript files under src/ with " +
+    "scope-integrity and typescript-no-emit/v1, or one existing TypeScript source file plus one existing " +
+    "tests/**/*.test.ts file with exactly scope-integrity and node-test-targeted/v1. Do not combine those " +
+    "checks with typescript-no-emit/v1 or promise a typecheck for the source-and-test variant. They may not change repository check " +
+    "configuration or dependency declarations, or add, delete, or rename files. During discovery, submit exactly one result, then stop. " +
     "Never claim approval, " +
     "execution, acceptance, permissions, or network access.";
 }
@@ -141,6 +166,9 @@ export class PiDiscoverySession {
         this.#toolCalls += 1;
       }
       if (event.type === "tool_execution_end" && event.isError) {
+        active.toolFailure ??= event.toolName === discoveryToolName(event.toolName) ?
+          { tool: discoveryToolName(event.toolName), cause: "tool_rejected" } :
+          { tool: "unavailable_tool", cause: "tool_unavailable" };
         active.failure ??= "tool_failed";
         active.denied = true;
         active.discovery.close();
@@ -164,7 +192,8 @@ export class PiDiscoverySession {
       if (turn === undefined || turn.closed) throw new Error("Tesota discovery tool is closed");
       return turn;
     };
-    const execute = async (action: (turn: ActiveTurn) => Promise<unknown> | unknown, toolSignal?: AbortSignal) => {
+    const execute = async (tool: DiscoveryToolName, action: (turn: ActiveTurn) => Promise<unknown> | unknown,
+      toolSignal?: AbortSignal) => {
       const turn = active();
       try {
         if (turn.toolCalls > PI_DISCOVERY_TURN_LIMITS.toolCalls ||
@@ -178,7 +207,8 @@ export class PiDiscoverySession {
         const result = await action(turn);
         if (turn.closed || turn.signal.aborted || toolSignal?.aborted) throw new Error("Tesota discovery tool is closed");
         return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: {} };
-      } catch {
+      } catch (error) {
+        turn.toolFailure ??= { tool, cause: toolFailureCause(error, turn, toolSignal) };
         turn.failure ??= "tool_failed";
         turn.denied = true;
         turn.discovery.close();
@@ -193,23 +223,23 @@ export class PiDiscoverySession {
       { name: "tesota_list", label: "List baseline files",
         description: "List allowed tracked files from the current committed baseline under a path prefix.",
         parameters: listParameters, executionMode: "sequential",
-        execute: async (_id, args, signal) => execute((turn) => turn.discovery.list(args), signal) },
+        execute: async (_id, args, signal) => execute("tesota_list", (turn) => turn.discovery.list(args), signal) },
       { name: "tesota_search", label: "Search baseline files",
         description: "Search allowed committed text in the current baseline for one literal string under a path prefix.",
         parameters: searchParameters, executionMode: "sequential",
-        execute: async (_id, args, signal) => execute((turn) => turn.discovery.search(args), signal) },
+        execute: async (_id, args, signal) => execute("tesota_search", (turn) => turn.discovery.search(args), signal) },
       { name: "tesota_read", label: "Read admitted file",
         description: "Read one allowed regular text file from the current exact committed baseline.",
         parameters: readParameters, executionMode: "sequential",
         execute: async (id, args, signal) => {
           const taskRead = owner === undefined ? undefined : owner.#taskTools?.get("tesota_read");
-          return taskRead === undefined ? execute((turn) => turn.discovery.read(args), signal) :
+          return taskRead === undefined ? execute("tesota_read", (turn) => turn.discovery.read(args), signal) :
             taskRead.execute(id, args, signal);
         } },
       { name: "tesota_submit_result", label: "Submit discovery result",
         description: "Submit one grounded answer, clarification question, or non-authoritative task proposal.",
         parameters: submitParameters, executionMode: "sequential",
-        execute: async (_id, args, signal) => execute((turn) => {
+        execute: async (_id, args, signal) => execute("tesota_submit_result", (turn) => {
           if (turn.outcome !== null) throw new Error("Discovery result already submitted");
           const parsed = turn.outcomeSchema.safeParse(args);
           if (!parsed.success) {
@@ -269,19 +299,20 @@ export class PiDiscoverySession {
     if (signal.aborted) {
       discovery.close();
       return { status: "aborted", modelInvocations: 0, toolCalls: 0, outcome: null, denied: false,
-        terminalStopReason: null, metrics: metrics() };
+        terminalStopReason: null, metrics: metrics(), toolFailure: null };
     }
     if (this.#turns >= PI_DISCOVERY_SESSION_LIMITS.turns ||
         this.#modelInvocations >= PI_DISCOVERY_SESSION_LIMITS.modelInvocations ||
         this.#toolCalls >= PI_DISCOVERY_SESSION_LIMITS.toolCalls) {
       discovery.close();
       return { status: "limit_exhausted", modelInvocations: 0, toolCalls: 0, outcome: null, denied: true,
-        terminalStopReason: null, metrics: metrics() };
+        terminalStopReason: null, metrics: metrics(), toolFailure: null };
     }
     this.#turns += 1;
     const turn: ActiveTurn = { id: Symbol("pi-discovery-turn"), discovery, signal,
       outcomeSchema: outcomeSchema(allowed), modelInvocations: 0, toolCalls: 0, outcome: null, denied: false,
-      terminalObserved: false, terminalStopReason: null, promptFailed: false, failure: null, closed: false };
+      terminalObserved: false, terminalStopReason: null, promptFailed: false, failure: null, toolFailure: null,
+      closed: false };
     this.#active = turn;
     let abortRequested = false;
     let deadlineExpired = false;
@@ -321,7 +352,8 @@ export class PiDiscoverySession {
         if (!settled) {
           this.#usable = false;
           return { status: "unsettled", modelInvocations: turn.modelInvocations, toolCalls: turn.toolCalls,
-            outcome: null, denied: turn.denied, terminalStopReason: turn.terminalStopReason, metrics: metrics() };
+            outcome: null, denied: turn.denied, terminalStopReason: turn.terminalStopReason, metrics: metrics(),
+            toolFailure: turn.toolFailure };
         }
       } else {
         await prompt;
@@ -332,7 +364,7 @@ export class PiDiscoverySession {
         errorMessage });
       return { status, modelInvocations: turn.modelInvocations, toolCalls: turn.toolCalls,
         outcome: status === "completed" ? turn.outcome : null, denied: turn.denied,
-        terminalStopReason: turn.terminalStopReason, metrics: metrics() };
+        terminalStopReason: turn.terminalStopReason, metrics: metrics(), toolFailure: turn.toolFailure };
     } finally {
       turn.closed = true;
       discovery.close();

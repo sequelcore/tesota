@@ -40,6 +40,12 @@ export interface VitestIsolationPaths {
   readonly selectedTests: readonly string[];
 }
 
+export interface NodeTestIsolationPaths {
+  readonly candidate: string;
+  readonly reporter: string;
+  readonly selectedTest: string;
+}
+
 export const VITEST_SEMANTIC_ARGUMENTS = [
   "run", "--config", "tests/vitest.fast.config.ts", "--reporter", "json", "--no-file-parallelism",
   "--maxWorkers", "1", "--pool", "forks", "--environment", "node", "--isolate", "--testTimeout", "10000",
@@ -185,6 +191,32 @@ export function vitestContainerPolicySha256(): string {
 export function buildVitestContainerInvocation(paths: VitestIsolationPaths,
   executable: string, name: string): IsolationInvocation {
   return { command: executable, args: vitestContainerArguments(paths, name), cwd: paths.candidate, env: safeHostEnvironment() };
+}
+
+function nodeTestContainerArguments(paths: NodeTestIsolationPaths, name: string): readonly string[] {
+  return [
+    ...CONTAINER_ENGINE_ARGS, "run", "--name", name, "--rm", "--pull=never", "--network=none", "--read-only",
+    "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65534:65534", "--pids-limit=32",
+    "--memory=512m", "--memory-swap=512m", "--cpus=1", "--log-driver=none",
+    "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=32m",
+    "--mount", dockerMount(paths.candidate, "/workspace/repository", true),
+    "--mount", dockerMount(paths.reporter, "/tesota/reporter.mjs", true),
+    "--workdir", "/workspace/repository", "--entrypoint=node", CONTAINER_IMAGE,
+    "--experimental-strip-types", "--test", "--test-concurrency=1", "--test-reporter=/tesota/reporter.mjs",
+    paths.selectedTest,
+  ];
+}
+
+export function nodeTestContainerPolicySha256(): string {
+  return createHash("sha256").update(JSON.stringify(nodeTestContainerArguments({
+    candidate: "<candidate>", reporter: "<reporter>", selectedTest: "<selected-test>",
+  }, "<runtime-name>"))).digest("hex");
+}
+
+export function buildNodeTestContainerInvocation(paths: NodeTestIsolationPaths,
+  executable: string, name: string): IsolationInvocation {
+  return { command: executable, args: nodeTestContainerArguments(paths, name), cwd: paths.candidate,
+    env: safeHostEnvironment() };
 }
 
 export function buildContainerInvocation(

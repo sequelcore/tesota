@@ -13,6 +13,11 @@ export interface TesotaShellDependencies {
 
 function ignoreProgress(_progress: TesotaShellProgress): void {}
 
+function toolFailureDetail(result: ConversationCommandResult): string {
+  if (result.status !== "unavailable" || result.reason !== "tool_failed" || result.toolFailure == null) return "";
+  return ` (${result.toolFailure.tool}: ${result.toolFailure.cause})`;
+}
+
 async function runShellRequest(dependencies: TesotaShellDependencies, request: string,
   report: (progress: TesotaShellProgress) => void): Promise<{ readonly exitCode: number; readonly continue: boolean }> {
   let input: ConversationInput = { request };
@@ -33,7 +38,7 @@ async function runShellRequest(dependencies: TesotaShellDependencies, request: s
       if (result.reason === "invalid_result" || result.reason === "tool_failed") {
         dependencies.write(result.reason === "invalid_result"
           ? "The model returned an invalid response. Nothing changed.\n"
-          : "A repository tool failed or was denied. Nothing changed.\n");
+          : `A repository tool failed or was denied${toolFailureDetail(result)}. Nothing changed.\n`);
         return { exitCode: result.exitCode, continue: false };
       }
       if (result.reason === "baseline_changed") {

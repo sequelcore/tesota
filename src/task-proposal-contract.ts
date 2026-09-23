@@ -1,7 +1,8 @@
 import * as z from "zod";
-import { TASK_CHECKS } from "./task-contract.js";
+import { TASK_CHECKS, SOURCE_TEST_TASK_CHECKS } from "./task-contract.js";
 
-export const PROPOSAL_CHECKS: typeof TASK_CHECKS = TASK_CHECKS;
+export const PROPOSAL_CHECKS: readonly [typeof TASK_CHECKS[0], typeof TASK_CHECKS[1], typeof SOURCE_TEST_TASK_CHECKS[1]] =
+  Object.freeze([TASK_CHECKS[0], TASK_CHECKS[1], SOURCE_TEST_TASK_CHECKS[1]]);
 export const PROPOSAL_LIMITS: Readonly<{
   operations: number; listedFiles: number; searchMatches: number; fileBytes: number; scannedBytes: number; exposedBytes: number;
 }> = Object.freeze({ operations: 32, listedFiles: 512, searchMatches: 40,

@@ -91,6 +91,13 @@ post-task conversational follow-up occurred, so this qualifies the observed
 execution-to-rejection path only, not accepted application, broad reliability
 or the complete continuous code-and-test outcome.
 
+The later Pi 0.87.1 / `gpt-6-luna` route update passed the complete local gate
+and one separate live no-tool probe (completed answer and observed
+cancellation). This establishes route availability and local settlement for
+that probe only. The [practical-use pilot](../experiments/practical-use/2026-09-22-results.md)
+retains its failed and degraded external-task attempts without qualifying a
+source-and-test change or accepted application.
+
 ## Complete change and application
 
 This retains the outcome requirements used for the historical Milestone 1.
@@ -131,8 +138,10 @@ become success. Recheck after correction and reject stale acceptance or source
 drift at application.
 
 Use the actual external repository configuration; an unsupported setup is a
-recorded refusal or a separately implemented profile expansion. Extending Vitest
-does not qualify arbitrary test frameworks or repository commands.
+recorded refusal or a separately implemented profile expansion. The targeted
+Node test profile for the selected task does not qualify arbitrary test
+frameworks, repository scripts or commands. Its local development checks are
+not the fresh external usefulness evaluation required by this section.
 
 ## Correction
 

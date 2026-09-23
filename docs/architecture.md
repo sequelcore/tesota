@@ -34,7 +34,7 @@ Tesota Shell
   -> operator approval
   -> CandidateTask (bounded effects in independent checkout)
   -> Pi (model loop and tool calls)
-  -> scope-integrity + contained TypeScript observations
+  -> scope-integrity + admitted contained check observations
   -> TaskReview (exact diff and current evidence)
   -> optional one-use SemanticRevision (authority-free R1 lineage)
   -> operator decision
@@ -78,7 +78,9 @@ and an isolated process does not gain authority merely because it is confined.
 | `repository-typecheck-command.ts` | One-use local approval and CLI composition for the TypeScript profile |
 | `repository-vitest.ts` | Concrete targeted Vitest profile admission, input binding and result semantics |
 | `repository-vitest-process.ts` | Fixed Vitest process limits and composition with shared container settlement |
-| `candidate-task.ts` | Candidate effects, plan binding and composition of scope integrity with the concrete TypeScript check |
+| `repository-node-test.ts`, `repository-node-test-reporter.ts` | Selected Node test admission, bound machine report and fail-closed result semantics |
+| `repository-node-test-process.ts` | Fixed Node test process limits and shared container settlement |
+| `candidate-task.ts` | Candidate effects, plan binding and composition of scope integrity with the admitted concrete check |
 | `task-source.ts` | Bounded blob/worktree representation admission and exact source-target observations for guarded promotion |
 | `integrations/pi-task.ts` | Pi execution and correction evidence consistency |
 | `task-review.ts` | Exact-candidate review and local decision evidence |
@@ -204,7 +206,7 @@ rendered patches do not replace exact accepted bytes at promotion.
 
 ## Execution environments
 
-The current repository TypeScript and Vitest profiles use a pinned Docker
+The current repository TypeScript, Vitest and targeted Node test profiles use a pinned Docker
 container because they can load candidate dependencies or execute candidate
 tests. Their container policy is part of their bound evidence. The native
 Oxlint profile occupies a narrower boundary: it reads a captured source file
@@ -226,9 +228,11 @@ qualification boundary are in
 
 ## Current limitations
 
-The implementation admits only modifications to one or two existing `src/**/*.ts` files. Its repository-executing
+The original task admits only modifications to one or two existing `src/**/*.ts` files;
+the separate source-and-test task admits one existing TypeScript source and one existing regression test.
+Its repository-executing
 checks currently require the qualified container path; no OS-sandboxed or
-trusted host-native repository-task provider is implemented. It does not admit test changes,
+trusted host-native repository-task provider is implemented. It does not admit general test changes,
 new/deleted files, arbitrary repository commands or projects, general web tools, remote adoption or
 untrusted workloads. The [roadmap](roadmap.md) owns the capability sequence;
 [qualification](qualification.md) records the evidence required to broaden

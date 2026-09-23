@@ -8,10 +8,12 @@ import { conversationInputSchema, retainedConversationRequest, type AnswerTurn, 
   type ConversationInput } from "./conversation-turn-contract.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { runPiDiscovery, type DiscoveryOutcome, type PiDiscoveryResult } from "./integrations/pi-discovery.js";
-import { PiDiscoverySession, type PiDiscoverySessionResult } from "./integrations/pi-discovery-session.js";
+import { PiDiscoverySession, type DiscoveryToolFailure, type PiDiscoverySessionResult
+} from "./integrations/pi-discovery-session.js";
 import type { PiTaskSessionHost } from "./integrations/pi-task.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { openRepositoryDiscovery } from "./repository-discovery.js";
+import { supportedProposalKind } from "./proposal-admission.js";
 import { runRepositoryGit } from "./repository-git.js";
 import { formatTaskProposal, retainTaskProposal, type ProposedTask } from "./task-proposal.js";
 
@@ -79,7 +81,8 @@ export async function discoverConversationTurn(options: {
   }
   const request = input.clarification === undefined ? input.request : retainedConversationRequest(input);
   return { kind: "task_proposal", proposedTask: await retainTaskProposal({ proposalsRoot: options.proposalsRoot,
-    request, description, result: { ...result, outcome: result.outcome }, model: options.model }) };
+    request, description, result: { ...result, outcome: result.outcome }, model: options.model,
+    supportedScope: supportedProposalKind(result.outcome.proposal) !== null }) };
 }
 
 export function formatConversationTurn(turn: CompletedConversationTurn): string {
@@ -101,7 +104,8 @@ async function liveSource(): Promise<string> {
 export type ConversationCommandResult =
   | Readonly<{ status: "completed"; exitCode: number; turn: CompletedConversationTurn }>
   | Readonly<{ status: "unavailable"; exitCode: number;
-      reason: "baseline_changed" | "context_limit" | "limits_exhausted" | "invalid_result" | "tool_failed" | "timeout" | "unavailable" }>
+      reason: "baseline_changed" | "context_limit" | "limits_exhausted" | "invalid_result" | "tool_failed" | "timeout" | "unavailable";
+      toolFailure?: DiscoveryToolFailure | null }>
   | Readonly<{ status: "cancelled"; exitCode: 130; settlement: "observed" }>
   | Readonly<{ status: "unsettled"; exitCode: 1; reason: "discovery_unconfirmed" }>;
 
@@ -114,7 +118,8 @@ export interface RepositoryConversationForShell {
 function sessionFailure(result: PiDiscoverySessionResult): ConversationCommandResult | null {
   if (result.status === "completed") return null;
   if (result.status === "invalid_result" || result.status === "tool_failed") {
-    return { status: "unavailable", exitCode: 1, reason: result.status };
+    return { status: "unavailable", exitCode: 1, reason: result.status,
+      ...(result.status === "tool_failed" ? { toolFailure: result.toolFailure } : {}) };
   }
   if (result.status === "aborted") return { status: "cancelled", exitCode: 130, settlement: "observed" };
   if (result.status === "timed_out") return { status: "unavailable", exitCode: 1, reason: "timeout" };
@@ -164,7 +169,7 @@ export async function createRepositoryConversationForShell(options: {
         const request = input.clarification === undefined ? input.request : retainedConversationRequest(input);
         turn = { kind: "task_proposal", proposedTask: await retainTaskProposal({ proposalsRoot: options.proposalsRoot,
           request, description, result: { ...result, status: "completed", outcome: result.outcome },
-          model: options.model }) };
+          model: options.model, supportedScope: supportedProposalKind(result.outcome.proposal) !== null }) };
       }
       return { status: "completed",
         exitCode: turn.kind === "task_proposal" && turn.proposedTask.record.status !== "ready" ? 1 : 0, turn };

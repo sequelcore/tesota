@@ -1,6 +1,9 @@
 import { CodexCredentials } from "./codex-credentials.js";
-import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./pi-live.js";
+import { storedCodexModels } from "./pi-live.js";
 import type { CredentialStore, Model, Models, SimpleStreamOptions } from "@earendil-works/pi-ai";
+
+/** Gentle 2.8's reviewer route stays fixed independently of Tesota's task model. */
+export const REVIEW_CODEX_MODEL_ID = "gpt-5.6-luna";
 
 /** The relay passes bytes; this adapter admits only a bounded, valid UTF-8 prompt. */
 export const OPAQUE_PI_REVIEWER_LIMITS: Readonly<{
@@ -181,7 +184,7 @@ export function createOpaquePiReviewer(dependencies: OpaquePiReviewerDependencie
     try {
       const execution = (async (): Promise<Buffer> => {
         const models = await dependencies.resolveModels(dependencies.credentials, signal);
-        const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
+        const model = models.getModel("openai-codex", REVIEW_CODEX_MODEL_ID);
         if (model?.api !== "openai-codex-responses") {
           throw failure(OPAQUE_PI_REVIEWER_FAILURE.MODEL_UNAVAILABLE, "Tesota Codex reviewer model is unavailable");
         }

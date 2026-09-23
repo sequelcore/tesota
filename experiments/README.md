@@ -19,6 +19,9 @@ Windows sandbox with the pinned container selected for the next bounded code tas
 The [supported task qualification](supported-task/README.md) freezes the first
 prospective external-repository corpus and the live evidence required before
 the active one-conversation milestone can close.
+The [practical-use pilot](practical-use/2026-09-22-pilot.md) freezes a small
+diagnostic comparison on external repositories; its [results](practical-use/2026-09-22-results.md)
+retain the failed and degraded attempts without a coding-capability claim.
 
 ## Retained artifacts
 
@@ -32,6 +35,7 @@ the active one-conversation milestone can close.
 | [Saved-login probe](codex/evidence/stored-probe.json) | Stored authentication resolved; HTTP 200 and completed turn; exact-response assertion failed, abort probe absent |
 | [Response diagnostic](codex/evidence/response-diagnostic.json) | Expected text matched; one additional non-text block caused rejection; abort probe absent |
 | [Passing saved-login probe](codex/evidence/stored-probe-passed.json) | Exact answer plus Pi thinking accepted; normal and observed-abort probes passed |
+| [GPT-6 Luna route smoke](codex/evidence/gpt6-luna-route-2026-09-22.json) | Pi 0.87.1 stored-login turn and observed abort passed; no repository tools or task acceptance |
 | [Live verification probe](codex/evidence/verification-probe.json) | One admitted fixture check detected the intended violation; bounded result supplied to the second model invocation; session and local evidence save passed |
 | [Denied candidate attempt](codex/evidence/candidate-denied.json) | Admission rejected requests; zero edits or checks; invocation budget stopped the session |
 | [Candidate newline mismatch](codex/evidence/candidate-newline.json) | Correction and checks completed; version 2's final-newline assertion rejected the source |

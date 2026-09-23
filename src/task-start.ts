@@ -8,6 +8,7 @@ import { promoteTask, PromotionNotAppliedError } from "./task-promotion.js";
 import { runProposalTask, type TaskRunResult } from "./task-run.js";
 import { parseSemanticRefinement } from "./semantic-revision.js";
 import { createTaskOutcome, formatTaskOutcome, type TaskOutcomeJournal } from "./task-outcome.js";
+import { SOURCE_TEST_TASK_KIND } from "./task-contract.js";
 import { askTerminalQuestion, type PromptTerminal } from "./terminal-question.js";
 
 export type TaskStartProgress =
@@ -59,24 +60,33 @@ function ignoreProgress(_progress: TaskStartProgress): void {}
 function aborted(error: unknown): boolean { return error instanceof Error && error.name === "AbortError"; }
 
 function proposalCard(grant: ProposalRunGrant): string {
+  const evidence = grant.kind === SOURCE_TEST_TASK_KIND ?
+    `scope integrity and contained Node test ${grant.selectedTest}; no repository typecheck` :
+    "scope integrity and contained TypeScript no-emit";
   return `Proposed task\nObjective: ${grant.objective}\nWrite: ${grant.writeFiles.join(", ")}\n` +
     `Read: ${grant.readFiles.join(", ")}\nBaseline: ${grant.baseline}\n` +
-    "Automatic evidence: scope integrity and contained TypeScript no-emit. Outcome correctness requires human review.\n";
+    `Automatic evidence: ${evidence}. Outcome correctness requires human review.\n`;
 }
 
 function formatTaskReview(review: TaskReview): string {
   const typecheck = review.check.typecheck;
-  if (review.changedFiles.length === 0 || review.check.status !== "passed" || typecheck?.status !== "passed") {
+  const nodeTest = review.check.nodeTest;
+  if (review.changedFiles.length === 0 || review.check.status !== "passed" ||
+      (review.check.task === SOURCE_TEST_TASK_KIND ? nodeTest?.status !== "passed" : typecheck?.status !== "passed")) {
     throw new Error("Candidate review evidence unavailable");
   }
+  const checkSummary = review.check.task === SOURCE_TEST_TASK_KIND ?
+    `PASS Selected Node test: this exact result passed ${nodeTest?.profile}\n` :
+    `PASS TypeScript no-emit: this exact result passed ${typecheck?.profile}\n`;
+  const unchecked = review.check.task === SOURCE_TEST_TASK_KIND ? "- repository typechecking\n" : "- full integration suite\n";
   return "\nCandidate review\n\n" +
     `Changed:\n${review.changedFiles.map((path) => `- ${path}`).join("\n")}\n\n` +
     "Checked:\n" +
     "PASS Scope integrity: only admitted files changed\n" +
-    `PASS TypeScript no-emit: this exact result passed ${typecheck.profile}\n\n` +
+    checkSummary + "\n" +
     "Not established:\n" +
     "- requested behavior and completion conditions\n" +
-    "- full integration suite\n\n" +
+    unchecked + "\n" +
     "Changed since checking: No\n" +
     "Application: Not applied; awaiting your decision\n\n" +
     `Diff (escaped JSON):\n${JSON.stringify(review.diff)}\n`;

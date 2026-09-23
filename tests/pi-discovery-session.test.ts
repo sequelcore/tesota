@@ -117,7 +117,37 @@ it("does not accept evidence from history without observing it in the current tu
     await fixture.session.run(await openRepositoryDiscovery(root), { request: "Read" }, "conversation", new AbortController().signal);
     const result = await fixture.session.run(await openRepositoryDiscovery(root), { request: "Follow up" },
       "conversation", new AbortController().signal);
-    expect(result).toMatchObject({ status: "tool_failed", denied: true, outcome: null });
+    expect(result).toMatchObject({ status: "tool_failed", denied: true, outcome: null,
+      toolFailure: { tool: "tesota_submit_result", cause: "evidence_not_observed" } });
+  } finally { fixture.session.dispose(); }
+});
+
+it("reports a safe reader failure category without exposing the requested path", async () => {
+  const root = await repository();
+  const fixture = await sdkFixture(root, [fauxAssistantMessage(fauxToolCall("tesota_read", {
+    path: "src/missing.ts",
+  }))]);
+  try {
+    const result = await fixture.session.run(await openRepositoryDiscovery(root), { request: "Read missing file" },
+      "conversation", new AbortController().signal);
+    expect(result).toMatchObject({ status: "tool_failed", toolFailure: { tool: "tesota_read", cause: "read_denied" } });
+    expect(JSON.stringify(result)).not.toContain("src/missing.ts");
+  } finally { fixture.session.dispose(); }
+});
+
+it("does not leak an unexpected repository error through diagnostics", async () => {
+  const root = await repository();
+  const fixture = await sdkFixture(root, [fauxAssistantMessage(fauxToolCall("tesota_read", {
+    path: "README.md",
+  }))]);
+  const discovery = await openRepositoryDiscovery(root);
+  vi.spyOn(discovery, "read").mockRejectedValue(new Error("PRIVATE_BACKEND_DETAIL"));
+  try {
+    const result = await fixture.session.run(discovery, { request: "Read file" },
+      "conversation", new AbortController().signal);
+    expect(result).toMatchObject({ status: "tool_failed",
+      toolFailure: { tool: "tesota_read", cause: "backend_unavailable" } });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_BACKEND_DETAIL");
   } finally { fixture.session.dispose(); }
 });
 
@@ -195,6 +225,7 @@ it.each([
       "conversation", new AbortController().signal);
     expect(result.status).toBe("tool_failed");
     expect(result.denied).toBe(true);
+    expect(result.toolFailure).toEqual({ tool: "unavailable_tool", cause: "tool_unavailable" });
     const exposed = JSON.stringify(fixture.contexts);
     expect(exposed).not.toContain("AMBIENT_SKILL_MARKER");
     expect(exposed).not.toContain("AMBIENT_CONTEXT_MARKER");
@@ -520,7 +551,7 @@ it("cancels active reading, confirms settlement, and keeps the closed reader unu
   let closed = false;
   const discovery: RepositoryDiscovery = {
     describe: () => ({ source: root, baseline: "a".repeat(40), dirtyPaths: [],
-      checks: ["scope-integrity", "typescript-no-emit/v1"],
+      checks: ["scope-integrity", "typescript-no-emit/v1", "node-test-targeted/v1"],
       limits: { operations: 32, exposedBytes: 131072, fileBytes: 65536, scannedBytes: 1048576,
         listedFiles: 256, searchMatches: 64 } }),
     list: async () => ({ files: [], truncated: false }),

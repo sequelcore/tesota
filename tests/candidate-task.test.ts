@@ -204,6 +204,25 @@ async function retainedRevisionFixture() {
   return { ...parent, revision, r1Attempt };
 }
 
+it("keeps a pre-upgrade Luna attempt inspectable for a current correction decision", async () => {
+  const parent = await retainedParentFixture();
+  try {
+    const lines = parent.r0Attempt.trimEnd().split("\n");
+    const started = z.record(z.string(), z.unknown()).parse(JSON.parse(lines[0] ?? "null"));
+    started["model"] = "gpt-5.6-luna";
+    const legacyAttempt = JSON.stringify(started) + "\n" + lines[1] + "\n";
+    await writeFile(join(parent.current.directory, "attempt.jsonl"), legacyAttempt);
+    const identity = await validateCorrectionParent(parent.current.directory, {
+      parentReviewSha256: parent.r0.reviewSha256,
+      parentWriteSetSha256: parent.r0.check.writeSetSha256,
+      parentCheckSha256: createHash("sha256").update(JSON.stringify(parent.r0.check)).digest("hex"),
+      parentAttemptSha256: createHash("sha256").update(legacyAttempt).digest("hex"),
+      taskDefinitionSha256: parent.task.describe().definitionSha256,
+    });
+    expect(identity.attemptSha256).toBe(createHash("sha256").update(legacyAttempt).digest("hex"));
+  } finally { await parent.current.cleanup(); }
+}, 20_000);
+
 it("derives the bounded tool contract from an approved TypeScript grant", async () => {
   const current = await fixture();
   const task = await CandidateTask.prepare(current.directory, current.grant);

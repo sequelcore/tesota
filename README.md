@@ -86,9 +86,9 @@ Tesota currently supports a small but real software-development slice:
   conversation, including one clarification per request;
 - describe a small change without naming internal lifecycle IDs;
 - propose and approve a change to one or two existing non-test TypeScript files
-  below `src/`;
+  below `src/`, or one existing TypeScript source plus one existing regression test;
 - let the agent work in an independent checkout with grant-derived tools;
-- run scope-integrity and the repository's admitted no-emit TypeScript profile;
+- run scope-integrity and the admitted no-emit TypeScript or targeted Node-test profile;
 - use bounded diagnostics for the current correction loop;
 - review the exact diff and evidence before accepting or rejecting it;
 - apply accepted bytes only after conflict checks; and
@@ -132,13 +132,16 @@ Linux/x64 platform package, the closure must include
 performs no dependency install or image pull. See
 [Using Tesota](docs/using-tesota.md) for the complete current path and its
 failure and recovery boundaries.
+The separate targeted Node-test profile does not mount a dependency closure;
+it supports only a selected test that runs with the pinned Node image and the
+approved candidate contents. It does not run the repository's full test script.
 
 `bun link` points the global `tesota` command at this checkout. Run `bun unlink`
 here to remove it.
 
 ## Current limits
 
-Tesota does **not** currently support arbitrary repository work, test edits, new
+Tesota does **not** currently support arbitrary repository work, general test edits, new
 or deleted files, unrestricted commands, dependency changes, general web
 research, untrusted workloads or non-code workflows. It does not offer a stable
 API or a general security guarantee. Its supported repository task is narrower
