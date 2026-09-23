@@ -1,10 +1,12 @@
 # Identity and purpose
 
-**Tesota is a verification-first agent for work that carries its evidence.**
-Describe what you need, inspect the result and its applicable checks, and decide
-whether to use it. Software development is its first proving ground. Research,
-planning and other consequential work remain a long-term direction, not current
-capabilities.
+**Tesota is an open-source agent for work that carries its evidence.** Describe
+what you need, inspect what the agent did and what its checks establish, and
+decide whether to use the result. The intended product is a general-purpose
+harness that can take on varied tasks through appropriate tools and methods of
+verification. The current pre-release implementation supports only bounded
+repository questions and TypeScript changes; the [roadmap](roadmap.md)
+separates that support from the product direction.
 
 The intended experience is an ordinary conversation:
 
@@ -43,16 +45,19 @@ review provider. None of these integrations grants itself Tesota's authority.
 Replacing an engine or model requires qualification of the affected behavior;
 an engine registry or universal provider interface is not a product goal.
 
-The initial audience is developers and maintainers who want useful AI assistance
-while understanding the resulting changes and their limits. Success means
-completing worthwhile work with acceptable defects, setup, time, intervention
-and review effort. Representative use must establish that claim; a feature list
-or one successful demonstration cannot.
+The intended audience includes people doing coding and non-coding work who want
+useful AI assistance while understanding the result and its limits. Success
+means completing worthwhile work with acceptable defects, setup, time,
+intervention and review effort. Representative use must establish that claim;
+a feature list or one successful demonstration cannot. Native and user-supplied
+verification and review methods are an opt-in product direction, not a current
+general integration capability.
 
 ## Public language and name
 
-The category is **verification-first agent**; **verification-first coding agent**
-is suitable when discussing the software-development domain. The primary line
+The category is **general-purpose, verification-first agent harness**;
+**verification-first coding agent** describes only the current proving ground.
+The primary line
 is **Work that carries its evidence.** Claims of safety, trust, autonomy or
 production readiness require evidence for the exact claim. The dated
 [positioning review](references/public-positioning.md) and

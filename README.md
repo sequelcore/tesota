@@ -1,9 +1,11 @@
 # Tesota
 
-**Tesota is a pre-release, open-source, verification-first agent.** It helps you
+**Tesota is an open-source agent for work that carries its evidence.** Give it
+a task, inspect what it did and what its checks establish, and decide what to
+accept. It is being built as a general-purpose harness. Today it helps you
 inspect a repository and attempt a bounded TypeScript change, then shows the
-exact result, applicable checks and remaining unknowns before you decide whether
-to apply it.
+result, applicable checks and remaining unknowns before you decide whether to
+apply it.
 
 The current interface is a local terminal conversation. It can answer related
 questions about a committed repository, ask for clarification and propose a

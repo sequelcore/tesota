@@ -1,13 +1,16 @@
 # Architecture
 
-Tesota is a local, terminal-first, verification-first agent. The current system
+Tesota is being built as a local, terminal-first, general-purpose,
+verification-first agent harness. The current system
 implements a narrow software-development slice: bounded repository discovery,
 an approved TypeScript source change in an isolated candidate, explicit evidence,
 human review and guarded promotion.
 
 The architecture follows the lifecycle in [identity](identity.md). It does not
 define a universal agent, verifier or plugin framework ahead of concrete
-consumers.
+consumers. The [general-purpose decision](decisions/012-general-purpose-harness.md)
+sets the target; the runtime flow and owner table below describe implemented
+behavior.
 
 Product documentation uses the human sequence **Ask -> Work <-> Check <->
 Correct -> Review -> Apply**. The runtime needs more precise identities and
@@ -213,3 +216,19 @@ new/deleted files, arbitrary repository commands or projects, general web tools,
 untrusted workloads. The [roadmap](roadmap.md) owns the capability sequence;
 [qualification](qualification.md) records the evidence required to broaden
 those boundaries.
+
+## Intended extension boundary
+
+The current candidate, check, review and promotion contracts are a coding
+implementation, not a template that every domain must copy. Future task types
+need their own result and effect boundaries. An answer may be reviewed without
+file application; a browser action needs observed state and settlement; a
+document result needs artifact identity and applicable checks.
+
+Shared evidence should identify the claim, examined result and inputs,
+producer, configuration, outcome and limits. Individual methods retain their
+own semantics and effect policy. Native and user-supplied methods are opt-in;
+reviewers assess the result and evidence fit, while human acceptance stays
+separate. Implement a shared contract only when actual methods need it.
+Internal compatibility layers are unnecessary because there are no external
+consumers. The [roadmap](roadmap.md) owns the sequence.

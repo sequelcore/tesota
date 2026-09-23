@@ -3,6 +3,10 @@
 This document owns verifier selection and qualification criteria. It does not
 set current product priority; the [roadmap](roadmap.md) does. Research
 candidates become implementation work only when observed tasks justify them.
+Tesota's intended verification fabric allows native and user-supplied,
+opt-in methods across task domains; that general interface is not implemented
+today. The [general-purpose decision](decisions/012-general-purpose-harness.md)
+records the product direction.
 
 The [product identity](identity.md) defines why Tesota is verification-first.
 This document turns that thesis into selection and qualification criteria for
@@ -81,6 +85,9 @@ Tesota should implement a dedicated adapter for the first instance of a result
 contract. Shared abstractions are justified only after at least two implemented
 consumers expose the same stable semantics. This preserves one owner per
 behavior and avoids designing a universal verifier framework in advance.
+User-supplied methods need the same evidence, failure and effect boundaries
+before their results count toward a task; installation alone does not qualify a
+method or turn its finding into human acceptance.
 
 ## Qualification standard
 
