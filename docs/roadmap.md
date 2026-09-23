@@ -31,8 +31,19 @@ representative usefulness. The earlier
 retains failed and degraded attempts. The check eligibility preview has not
 yet been qualified in a fresh live task.
 
-The shell uses an in-memory Pi session for related read-only turns and an
-initial approved task turn. Conversations are not persisted or resumed.
+The shell now lists local sessions, persists their human transcript and result
+inspections, and can reopen a settled Pi context with its consumed budgets.
+Each session owns its prompts, cancellation and model context. Up to two
+operations may run at once; application to the same repository is serialized
+and still rechecks source drift. A wide terminal can show a second conversation
+read-only. An interrupted operation is never resumed as active or authorized;
+unconfirmed effects block new work in that session. This shell workspace has
+automated coverage but no ordinary live qualification yet. For a new request,
+repository baseline changes refresh engine context and carry the consumed
+budget forward; a changed clarification baseline still stops that request.
+It has session-only Tesota dark, Tesota light and terminal-color appearances;
+the first two assume matching terminal profiles. User-supplied themes and
+appearance persistence are not implemented.
 General repository changes, uncommitted input, new or deleted files,
 arbitrary commands, browser/computer use, document work and general research
 are outside the current contract. [Using Tesota](using-tesota.md) describes

@@ -8,7 +8,7 @@ and apply the result.
 
 This guide describes the current supported workflow. The [roadmap](roadmap.md)
 owns what comes next. Continuous read-only questions and the initial approved
-source-task turn share one in-memory Pi conversation. The later continuous
+source-task turn share one bounded Pi conversation within a Tesota session. The later continuous
 source-and-test workflow has a bounded implementation for one existing source
 and test file and two accepted live walkthroughs. Broader external qualification
 remains outstanding. General test edits and interrupted-task resume remain
@@ -62,6 +62,12 @@ cd my-project
 tesota
 ```
 
+To try the shell appearance, launch it with `tesota --theme tesota-dark`
+(the default), `tesota --theme tesota-light`, or `tesota --theme terminal`.
+Use the dark or light variant with a matching terminal profile; `terminal` leaves
+color choices to the terminal. This selection lasts for one invocation and
+does not change task permissions or verification results.
+
 Then describe what you need:
 
 ```text
@@ -69,14 +75,28 @@ Then describe what you need:
 ```
 
 A bounded read-only question can end with an answer and return to the prompt.
-Related follow-up questions and corrections reuse the same in-memory Pi
-conversation, so they receive the earlier transcript. A separate `tesota`
-process starts an isolated conversation. Tesota may ask one clarification while
-preserving the same committed baseline.
+Related follow-up questions and corrections reuse the same Pi conversation,
+so they receive the earlier transcript. The shell retains sessions locally
+and reopens settled Pi context after a normal restart. Tesota may ask one
+clarification while preserving the same committed baseline.
 
-Each read-only turn receives a fresh bounded reader for the current committed baseline.
-The conversation stops if the baseline or relevant dirty-path state changes;
-earlier observations are not presented as current. Pressing Ctrl+C during a
+The left column lists conversations. The selected conversation owns the
+composer and status at its bottom; its latest answer, proposal or candidate
+review appears in the right inspector. Earlier results can be inspected, but
+a pending decision always applies to the latest result named by its prompt.
+At wide sizes, `Alt+S` toggles a second, read-only conversation pane. On a
+narrow terminal, `Alt+1`, `Alt+2` and `Alt+3` show sessions, conversation and
+inspector respectively. `Alt+J` (or `Ctrl+Tab` when the terminal sends it)
+selects the next session, `Ctrl+N` creates a new one, `Alt+,` and `Alt+.`
+browse inspected results, and `Ctrl+Q`
+closes the shell. The selected conversation is always the input target.
+
+Each read-only turn receives a fresh bounded reader for the current committed
+baseline. If repository state changes between ordinary requests, the shell
+refreshes model context and checks the request against the new state while
+carrying forward the consumed budget. A clarification tied to an older baseline
+stops, because its original question may no longer apply. Earlier observations
+are not presented as current. Pressing Ctrl+C during a
 read-only turn closes that reader and cancels the SDK operation. Tesota returns
 to a prompt only after settlement is confirmed. Unconfirmed settlement ends the
 session.
@@ -87,8 +107,12 @@ calls across discovery and its initial approved task turn. The task also keeps
 its separate cumulative R0/R1 limits.
 Automatic SDK retries and compaction are disabled. A timeout, exhausted budget
 or context-window failure is reported without silently resetting history or
-changing the provider. Conversations are not saved to disk and cannot be
-resumed after process exit.
+changing the provider. Tesota saves the human transcript and Pi's settled
+context in separate local records under `~/.tesota/`. A reopened conversation
+retains the budget it already spent. A stopped operation is not resumed; if it
+was interrupted, the next engine context is fresh and earlier approval is not
+restored. Unconfirmed effects block further work in that conversation. Inspect
+the retained task record before beginning separate work.
 
 For a change request:
 
@@ -144,7 +168,7 @@ or renaming, migrations, arbitrary shell commands and network access. The model
 cannot select a replacement check or weaken its configuration.
 
 After approval, Tesota creates an isolated result and exposes only the task's
-approved read, replace and check tools for the R0 turn in the same in-memory
+approved read, replace and check tools for the R0 turn in the same bounded Pi
 conversation. A failed
 check can supply diagnostics for another bounded edit. Every changed result has
 its own identity, so evidence for an earlier version does not silently apply to
@@ -162,9 +186,9 @@ The review should answer four separate questions:
 Today Tesota lists the changed files, names scope integrity and the applicable
 contained check separately, states that the candidate has not yet been
 applied and keeps requested behavior, completion conditions and the full
-integration suite explicitly unestablished. It then shows the escaped exact
-diff. The terminal outcome distinguishes applied, not applied and unconfirmed
-application.
+integration suite explicitly unestablished. The shell inspector shows the
+exact diff as text; lower-level task output retains its escaped representation.
+The terminal outcome distinguishes applied, not applied and unconfirmed application.
 
 The TypeScript or targeted Node profile can establish that the admitted invocation passed for
 the bound result and conditions. It does not establish requested behavior,
@@ -200,7 +224,9 @@ causes, the review decision and application state. Host checks are reported as
 work rather than limited by a new ceiling. Token usage and monetary cost remain
 unavailable because the current producer does not observe them.
 
-Interrupted work cannot yet be resumed. Durable facts can be inspected, but
+Interrupted work cannot yet be resumed. A session's conversation and prior
+results can be revisited, but that does not restart an interrupted task.
+Durable facts can be inspected, but
 recovery does not recreate expired approval or execution authority. If Tesota
 cannot confirm that an effect ended, that uncertainty must remain visible.
 

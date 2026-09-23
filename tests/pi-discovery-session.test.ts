@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { AgentSession, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { AgentSession, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { InMemoryCredentialStore, createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools,
   type Context, type FauxResponseStep } from "@earendil-works/pi-ai";
 import { createRepositoryConversationForShell } from "../src/conversation-turn.js";
@@ -82,6 +82,49 @@ it("preserves multiline conversational prose through the SDK without weakening e
       "conversation", new AbortController().signal);
     expect(result).toMatchObject({ status: "completed", outcome: { kind: "answer", message, evidenceFiles: ["README.md"] } });
   } finally { fixture.session.dispose(); }
+});
+
+it("restores Pi context with its consumed Tesota budget after a settled restart", async () => {
+  const root = await repository();
+  const directory = join(root, "pi-sessions");
+  const identity = randomUUID();
+  const first = await sdkFixture(root, answerSteps("README.md", "First answer"));
+  const manager = SessionManager.create(root, directory, { id: identity });
+  const initial = await PiDiscoverySession.create({ cwd: root, modelRuntime: first.runtime,
+    model: first.model, sessionManager: manager });
+  try {
+    expect(await initial.run(await openRepositoryDiscovery(root), { request: "First question" },
+      "conversation", new AbortController().signal)).toMatchObject({ status: "completed" });
+  } finally { initial.dispose(); first.session.dispose(); }
+  const file = SessionManager.findById(root, identity, directory);
+  if (file === undefined) throw new Error("Expected a persisted Pi session");
+  const restored = await sdkFixture(root, answerSteps("README.md", "Second answer"));
+  const continued = await PiDiscoverySession.create({ cwd: root, modelRuntime: restored.runtime,
+    model: restored.model, sessionManager: SessionManager.open(file, directory, root) });
+  try {
+    expect(await continued.run(await openRepositoryDiscovery(root), { request: "Follow up" },
+      "conversation", new AbortController().signal)).toMatchObject({ status: "completed" });
+    expect(JSON.stringify(restored.contexts[0]?.messages)).toContain("First question");
+    const budgets = SessionManager.open(file, directory, root).getEntries().filter((entry) =>
+      entry.type === "custom" && entry.customType === "tesota-shell-budgets-v1");
+    expect(budgets).toHaveLength(2);
+    const latest = budgets.at(-1);
+    expect(latest?.type === "custom" ? latest.data : null).toMatchObject({ turns: 2 });
+  } finally { continued.dispose(); restored.session.dispose(); }
+});
+
+it("does not reset a user session's limit when the Pi engine is refreshed", async () => {
+  const root = await repository();
+  const fixture = await sdkFixture(root, answerSteps("README.md", "Should not run"));
+  const refreshed = await PiDiscoverySession.create({ cwd: root, modelRuntime: fixture.runtime,
+    model: fixture.model, initialBudget: { turns: PI_DISCOVERY_SESSION_LIMITS.turns,
+      modelInvocations: 3, toolCalls: 4 } });
+  try {
+    const result = await refreshed.run(await openRepositoryDiscovery(root), { request: "One more" },
+      "conversation", new AbortController().signal);
+    expect(result).toMatchObject({ status: "limit_exhausted", modelInvocations: 0, toolCalls: 0 });
+    expect(fixture.contexts).toHaveLength(0);
+  } finally { refreshed.dispose(); fixture.session.dispose(); }
 });
 
 it("keeps prose formatting separate from proposal field restrictions", () => {

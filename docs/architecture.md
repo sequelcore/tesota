@@ -66,9 +66,10 @@ and an isolated process does not gain authority merely because it is confined.
 
 | Owner | Responsibility |
 | --- | --- |
-| `cli.ts`, `tesota-shell-command.ts` | Public commands and interactive composition |
+| `cli.ts`, `tesota-shell-command.ts`, `tesota-shell-terminal.ts` | Public commands, session-bound interactive composition and Pi TUI layout |
+| `shell-session-store.ts` | Local human transcript, inspection cache and interrupted-session state; no grant or task evidence |
 | `repository-discovery.ts` | Bounded read-only view of committed source |
-| `integrations/pi-discovery-session.ts` | In-memory Pi SDK transcript, explicit read-only tool loadout, conversation budgets and cancellation settlement |
+| `integrations/pi-discovery-session.ts` | Pi SDK transcript, explicit read-only tool loadout, persisted cumulative budgets and cancellation settlement |
 | `task-proposal-contract.ts` | Model-facing proposal vocabulary and limits |
 | `task-proposal.ts` | Durable non-authoritative proposal evidence |
 | `proposal-admission.ts` | Supported task policy and immutable run grant |
@@ -114,8 +115,10 @@ writes so an uncertain result is inspectable.
 
 ## Integration boundaries
 
-The supported shell discovery route uses one in-memory Pi Coding Agent SDK
-session for sequential read-only turns. The explicit resource loader disables
+Each supported shell session has one Pi Coding Agent SDK transcript for
+sequential turns. Settled transcripts are stored under Tesota's local state
+with cumulative budget entries; an interrupted operation receives a fresh
+engine identity on restart. The explicit resource loader disables
 ambient extensions, skills, prompt templates, themes and context files. Tesota
 supplies only its bounded list, search, read and result tools and replaces the
 repository reader on every turn. The explicit `task propose` seam and candidate
@@ -143,19 +146,30 @@ from runtime adoption, is recorded in
 ## Pi session integration
 
 The read-only session and its bounded initial task-tool connection are implemented.
-They are not disk persistence, session restoration or permission to load additional tools. The
-[roadmap](roadmap.md) owns subsequent expansion.
+The shell workspace restores settled Pi context, but a restored transcript is
+not permission to resume an interrupted task or load additional tools. The
+[roadmap](roadmap.md) owns subsequent expansion and qualification.
 
 | Concern | Reuse or existing owner |
 | --- | --- |
-| Transcript and follow-up handling | One in-memory Pi Coding Agent SDK session. Automatic compaction and retry are disabled. |
+| Transcript and follow-up handling | One Pi Coding Agent SDK session per user session. Settled context and cumulative budgets can be reopened; automatic compaction and retry are disabled. |
 | Current task, candidate, check and application facts | Existing Tesota records; conversation summaries may reference but cannot replace them. |
 | Resources and tools | Explicitly selected resources and adapters connected to current Tesota authority. |
 | Candidate writes and adoption | Existing candidate effects, content binding, review and promotion. |
 | Process effects and termination | The admitted execution environment and observed settlement, not merely Pi's terminal event. |
 
-The current shell owns prompt sequencing and task routing. Its SDK host
-wires cancellation to the active inference or tool operation, waits up to the
+The shell owns a separate prompt and cancellation target for each user session,
+with at most two operations active across them. A split view can show another
+session read-only; focus and decisions stay with the selected session. Pi TUI
+provides the editor, horizontal stacks and scroll views. The session store
+keeps human transcript and inspection cache apart from canonical task records.
+It does not persist approval or reconstruct a candidate capability. A single
+local shell writer owns one repository's session history. Promotion attempts
+from its parallel sessions are serialized before the existing source-drift
+checks. A changed repository state rotates the Pi context for a new request,
+with the prior counters carried forward; clarification baselines still fail
+closed. Each session's SDK host wires cancellation to its active inference or
+tool operation, waits up to the
 settlement bound and returns to the prompt only after settlement is confirmed.
 Each discovery turn retains the existing repository operation and exposure limits.
 After approval, R0 activates only the admitted read, replace and check tools in
@@ -164,8 +178,9 @@ the task runner keeps its separate cumulative R0/R1 limits and evidence owner.
 Task tools become inactive after R0 settles. The optional semantic correction
 still uses a fresh disposable Pi execution. The read-only conversation and its
 R0 task turn together admit at most 36 model invocations and 96 tool calls;
-discovery additionally admits at most 12 turns. Context overflow ends the conversation clearly; no automatic compaction,
-provider retry, silent model switch or transcript persistence is enabled.
+discovery additionally admits at most 12 turns. Context overflow ends the engine
+conversation clearly; no automatic compaction, provider retry or silent model
+switch is enabled. Settled transcript restoration preserves those counters.
 
 Conversation prose has its own formatting contract: paragraphs, tabs and code
 blocks pass through to Pi's text renderer; terminal control sequences remain
@@ -179,7 +194,7 @@ Pi's project trust and resource settings do not authorize Tesota task effects.
 The shell explicitly selects resources because default context and extensions
 have different loading rules. Pi does not sandbox the repository checks;
 Tesota's admitted execution environment owns that boundary. Restoring a
-transcript, if later implemented, cannot restore expired tools or approval.
+transcript cannot restore expired tools or approval.
 Candidate edits still require current input binding and invalidate affected
 evidence; rendered patches do not replace exact accepted bytes at promotion.
 

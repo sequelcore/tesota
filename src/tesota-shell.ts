@@ -1,4 +1,5 @@
 import { formatConversationTurn, type ConversationCommandResult } from "./conversation-turn.js";
+import type { CompletedConversationTurn } from "./conversation-turn.js";
 import type { ConversationInput } from "./conversation-turn-contract.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import type { TaskStartProgress, TaskStartResult } from "./task-start.js";
@@ -9,6 +10,7 @@ export interface TesotaShellDependencies {
   readonly discover: (input: ConversationInput) => Promise<ConversationCommandResult>;
   readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void) => Promise<TaskStartResult>;
   readonly report?: (progress: TesotaShellProgress) => void;
+  readonly onTurn?: (turn: CompletedConversationTurn) => void;
 }
 
 function ignoreProgress(_progress: TesotaShellProgress): void {}
@@ -42,8 +44,8 @@ async function runShellRequest(dependencies: TesotaShellDependencies, request: s
         return { exitCode: result.exitCode, continue: false };
       }
       if (result.reason === "baseline_changed") {
-        dependencies.write("The repository baseline changed during this conversation. Start a new Tesota session. Nothing changed.\n");
-        return { exitCode: result.exitCode, continue: false };
+        dependencies.write("The repository changed before that clarification could continue. Ask again against the current state. Nothing changed.\n");
+        return { exitCode: result.exitCode, continue: true };
       }
       if (result.reason === "context_limit") {
         dependencies.write("The conversation reached the model context limit. Start a new Tesota session. Nothing changed.\n");
@@ -61,6 +63,7 @@ async function runShellRequest(dependencies: TesotaShellDependencies, request: s
       return { exitCode: result.exitCode, continue: false };
     }
     dependencies.write(formatConversationTurn(result.turn));
+    dependencies.onTurn?.(result.turn);
     if (result.turn.kind === "clarification") {
       if (clarificationBaseline !== undefined) {
         dependencies.write("A second clarification is not supported. Nothing changed.\n");

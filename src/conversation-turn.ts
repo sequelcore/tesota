@@ -1,14 +1,15 @@
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { realpath } from "node:fs/promises";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { conversationInputSchema, retainedConversationRequest, type AnswerTurn, type ClarificationTurn,
   type ConversationInput } from "./conversation-turn-contract.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { runPiDiscovery, type DiscoveryOutcome, type PiDiscoveryResult } from "./integrations/pi-discovery.js";
-import { PiDiscoverySession, type DiscoveryToolFailure, type PiDiscoverySessionResult
+import { PiDiscoverySession, type DiscoveryToolFailure, type PiDiscoveryBudget, type PiDiscoverySessionResult
 } from "./integrations/pi-discovery-session.js";
 import type { PiTaskSessionHost } from "./integrations/pi-task.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
@@ -113,6 +114,7 @@ export type ConversationCommandResult =
 export interface RepositoryConversationForShell {
   discover(input: ConversationInput, signal: AbortSignal): Promise<ConversationCommandResult>;
   taskHost(): PiTaskSessionHost;
+  budget(): PiDiscoveryBudget;
   dispose(): void;
 }
 
@@ -136,13 +138,29 @@ export async function createRepositoryConversationForShell(options: {
   readonly proposalsRoot: string;
   readonly modelRuntime: ModelRuntime;
   readonly model: Model<Api>;
+  readonly engineId?: string;
+  readonly initialBudget?: PiDiscoveryBudget;
 }): Promise<RepositoryConversationForShell> {
+  const sessionManager = options.engineId === undefined ? undefined : (() => {
+    const directory = join(homedir(), ".tesota", "pi-sessions",
+      createHash("sha256").update(resolve(options.sourceDirectory).toLocaleLowerCase("en-US")).digest("hex"));
+    const existing = SessionManager.findById(options.sourceDirectory, options.engineId, directory);
+    const manager = existing === undefined ? SessionManager.create(options.sourceDirectory, directory,
+      { id: options.engineId }) : SessionManager.open(existing, directory, options.sourceDirectory);
+    if (manager.getHeader()?.cwd !== resolve(options.sourceDirectory)) {
+      throw new Error("Saved Pi session belongs to another repository");
+    }
+    return manager;
+  })();
   const session = await PiDiscoverySession.create({ cwd: options.sourceDirectory,
-    modelRuntime: options.modelRuntime, model: options.model });
+    modelRuntime: options.modelRuntime, model: options.model,
+    ...(sessionManager === undefined ? {} : { sessionManager }),
+    ...(options.initialBudget === undefined ? {} : { initialBudget: options.initialBudget }) });
   let identity: string | undefined;
   let disposed = false;
   return {
     taskHost: () => session.taskHost(),
+    budget: () => session.budget(),
     async discover(rawInput, signal) {
       if (disposed) throw new Error("Repository conversation disposed");
       if (signal.aborted) return { status: "cancelled", exitCode: 130, settlement: "observed" };
@@ -184,7 +202,8 @@ export async function createRepositoryConversationForShell(options: {
 }
 
 export async function createLiveRepositoryConversationForShell(sourceDirectory: string,
-  signal?: AbortSignal): Promise<RepositoryConversationForShell> {
+  signal?: AbortSignal, engineId?: string, initialBudget?: PiDiscoveryBudget):
+Promise<RepositoryConversationForShell> {
   if (signal?.aborted === true) throw new DOMException("cancelled", "AbortError");
   if (process.platform !== "win32") throw new Error("Live repository discovery is currently supported on Windows");
   const credentials = new CodexCredentials();
@@ -193,7 +212,8 @@ export async function createLiveRepositoryConversationForShell(sourceDirectory: 
   const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
   if (model?.api !== "openai-codex-responses") throw new Error("model unavailable");
   return createRepositoryConversationForShell({ sourceDirectory, proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
-    modelRuntime: runtime, model });
+    modelRuntime: runtime, model, ...(engineId === undefined ? {} : { engineId }),
+    ...(initialBudget === undefined ? {} : { initialBudget }) });
 }
 
 async function runLiveConversation(rawInput: ConversationInput,

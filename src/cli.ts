@@ -4,6 +4,7 @@ import { configuredOxlint, runOxlint } from "./verification/oxlint.js";
 
 const help = `Tesota
 Usage: tesota [--help | -h | help]
+       tesota --theme <tesota-dark|tesota-light|terminal>
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout>
        tesota candidate create
@@ -25,9 +26,17 @@ Runs bounded verification and scoped repository tasks.
 `;
 
 const args = process.argv.slice(2);
-if (args.length === 0 && process.stdin.isTTY === true && process.stdout.isTTY === true && process.stderr.isTTY === true) {
-  const { runTesotaShellCommand } = await import("./tesota-shell-command.js");
-  process.exit(await runTesotaShellCommand());
+if ((args.length === 0 || args.length === 2 && args[0] === "--theme") &&
+    process.stdin.isTTY === true && process.stdout.isTTY === true && process.stderr.isTTY === true) {
+  const { parseTesotaShellTheme } = await import("./tesota-shell-theme.js");
+  const theme = args.length === 0 ? "tesota-dark" : parseTesotaShellTheme(args[1] ?? "");
+  if (theme === undefined) {
+    process.stderr.write("Unknown shell theme. Choose tesota-dark, tesota-light or terminal.\n");
+    process.exitCode = 2;
+  } else {
+    const { createProcessTesotaShell, runTesotaShellCommand } = await import("./tesota-shell-command.js");
+    process.exit(await runTesotaShellCommand(createProcessTesotaShell(process.cwd(), theme)));
+  }
 } else if (args.length === 0 || (args.length === 1 && ["--help", "-h", "help"].includes(args[0] ?? ""))) {
   process.stdout.write(help);
 } else if (args.length === 2 && args[0] === "auth" && args[1] !== undefined) {

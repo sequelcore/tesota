@@ -231,7 +231,7 @@ it("stops after an unanswered clarification without starting work", async () => 
   expect(output.at(-1)).toBe("Clarification cancelled. Nothing changed.\n");
 });
 
-it("invalidates a clarification continuation when the committed baseline changes", async () => {
+it("returns to the prompt when a clarification baseline changes", async () => {
   const output: string[] = [];
   const answers = ["Update the guide", "docs/guide.md"];
   const discover = vi.fn()
@@ -240,8 +240,8 @@ it("invalidates a clarification continuation when the committed baseline changes
       reason: "baseline_changed" as const });
   const result = await runTesotaShell({ write: (text) => output.push(text),
     ask: async () => answers.shift() ?? "", discover, start: vi.fn() });
-  expect(result).toBe(1);
-  expect(output.at(-1)).toBe("The repository baseline changed during this conversation. Start a new Tesota session. Nothing changed.\n");
+  expect(result).toBe(0);
+  expect(output).toContain("The repository changed before that clarification could continue. Ask again against the current state. Nothing changed.\n");
 });
 
 it("continues contextual reading after a settled cancellation and presents another prompt", async () => {

@@ -21,6 +21,17 @@ export const PI_DISCOVERY_TURN_LIMITS: Readonly<{
   modelInvocations: number; toolCalls: number; turnMs: number; settlementMs: number; outputTokens: number;
 }> = Object.freeze({ modelInvocations: 12, toolCalls: 32, turnMs: 120_000, settlementMs: 2_000, outputTokens: 4_096 });
 
+const budgetSchema: z.ZodType<{ turns: number; modelInvocations: number; toolCalls: number; usable: boolean }> =
+  z.strictObject({ turns: z.number().int().nonnegative().max(PI_DISCOVERY_SESSION_LIMITS.turns),
+    modelInvocations: z.number().int().nonnegative().max(PI_DISCOVERY_SESSION_LIMITS.modelInvocations),
+    toolCalls: z.number().int().nonnegative().max(PI_DISCOVERY_SESSION_LIMITS.toolCalls), usable: z.boolean() });
+const BUDGET_ENTRY = "tesota-shell-budgets-v1";
+export interface PiDiscoveryBudget {
+  readonly turns: number;
+  readonly modelInvocations: number;
+  readonly toolCalls: number;
+}
+
 export type PiDiscoveryAllowedOutcome = "conversation" | "continued_conversation" | "task_proposal";
 
 export type DiscoveryToolName = "tesota_list" | "tesota_search" | "tesota_read" | "tesota_submit_result" |
@@ -138,8 +149,30 @@ export class PiDiscoverySession {
   #usable = true;
   #taskTools: Map<string, AgentTool> | undefined;
 
-  private constructor(session: AgentSession) {
+  private constructor(session: AgentSession, initialBudget?: PiDiscoveryBudget) {
     this.#session = session;
+    const entries = session.sessionManager.getEntries();
+    if (entries.length > 0) {
+      const lastMessage = entries.findLastIndex((entry) => entry.type === "message");
+      const lastBudget = entries.findLastIndex((entry) => entry.type === "custom" &&
+        entry.customType === BUDGET_ENTRY);
+      if (lastMessage >= 0 && lastBudget < lastMessage) throw new Error("Persisted Pi turn lacks settled budget evidence");
+      if (lastBudget >= 0) {
+        const entry = entries[lastBudget];
+        if (entry?.type !== "custom") throw new Error("Persisted Pi budget entry unavailable");
+        const budget = budgetSchema.parse(entry.data);
+        this.#turns = budget.turns;
+        this.#modelInvocations = budget.modelInvocations;
+        this.#toolCalls = budget.toolCalls;
+        this.#usable = budget.usable;
+      }
+    }
+    if (initialBudget !== undefined) {
+      const admitted = budgetSchema.parse({ ...initialBudget, usable: true });
+      this.#turns = Math.max(this.#turns, admitted.turns);
+      this.#modelInvocations = Math.max(this.#modelInvocations, admitted.modelInvocations);
+      this.#toolCalls = Math.max(this.#toolCalls, admitted.toolCalls);
+    }
     const sdkStream = session.agent.streamFunction;
     session.agent.streamFunction = (model, context, options) => {
       const active = this.#active;
@@ -185,6 +218,8 @@ export class PiDiscoverySession {
     readonly cwd: string;
     readonly modelRuntime: ModelRuntime;
     readonly model: Model<Api>;
+    readonly sessionManager?: SessionManager;
+    readonly initialBudget?: PiDiscoveryBudget;
   }): Promise<PiDiscoverySession> {
     let owner: PiDiscoverySession | undefined;
     const active = (): ActiveTurn => {
@@ -280,14 +315,19 @@ export class PiDiscoverySession {
       PI_DISCOVERY_TURN_LIMITS.outputTokens) };
     const { session } = await createAgentSession({
       cwd: options.cwd, modelRuntime: options.modelRuntime, model: boundedModel, thinkingLevel: "off",
-      sessionManager: SessionManager.inMemory(options.cwd), settingsManager, resourceLoader,
+      sessionManager: options.sessionManager ?? SessionManager.inMemory(options.cwd), settingsManager, resourceLoader,
       tools: tools.map((tool) => tool.name), customTools: tools,
     });
     session.setAutoCompactionEnabled(false);
     session.setAutoRetryEnabled(false);
     session.setActiveToolsByName(["tesota_list", "tesota_search", "tesota_read", "tesota_submit_result"]);
-    owner = new PiDiscoverySession(session);
+    try { owner = new PiDiscoverySession(session, options.initialBudget); }
+    catch (error) { session.dispose(); throw error; }
     return owner;
+  }
+
+  budget(): PiDiscoveryBudget {
+    return { turns: this.#turns, modelInvocations: this.#modelInvocations, toolCalls: this.#toolCalls };
   }
 
   async run(discovery: RepositoryDiscovery, input: ConversationInput, allowed: PiDiscoveryAllowedOutcome,
@@ -371,7 +411,16 @@ export class PiDiscoverySession {
       clearTimeout(deadline);
       signal.removeEventListener("abort", abort);
       if (this.#active?.id === turn.id) this.#active = undefined;
+      this.saveBudgets();
     }
+  }
+
+  private saveBudgets(): void {
+    if (!this.#session.sessionManager.isPersisted()) return;
+    this.#session.sessionManager.appendCustomEntry(BUDGET_ENTRY, {
+      turns: this.#turns, modelInvocations: this.#modelInvocations,
+      toolCalls: this.#toolCalls, usable: this.#usable,
+    });
   }
 
   /** The session remains the transcript owner; the task runner supplies temporary tools and limits. */
@@ -407,6 +456,7 @@ export class PiDiscoverySession {
         if (settled && !this.#disposed) {
           this.#session.setActiveToolsByName(["tesota_list", "tesota_search", "tesota_read", "tesota_submit_result"]);
         }
+        this.saveBudgets();
       },
     };
   }

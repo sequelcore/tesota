@@ -40,6 +40,7 @@ interface StartTaskDependencies {
   readonly createOutcome?: typeof createTaskOutcome;
   readonly report?: (progress: TaskStartProgress) => void;
   readonly inspectEligibility?: (grant: ProposalRunGrant) => Promise<RepositoryCheckEligibility>;
+  readonly onReview?: (review: TaskReview) => void;
 }
 
 interface HostWorkMeter {
@@ -110,6 +111,11 @@ function formatTaskReview(review: TaskReview): string {
     "Changed since checking: No\n" +
     "Application: Not applied; awaiting your decision\n\n" +
     `Diff (escaped JSON):\n${JSON.stringify(review.diff)}\n`;
+}
+
+function showTaskReview(dependencies: StartTaskDependencies, review: TaskReview): void {
+  if (dependencies.onReview === undefined) dependencies.write(formatTaskReview(review));
+  else dependencies.onReview(review);
 }
 
 async function finishOutcome(journal: TaskOutcomeJournal,
@@ -220,7 +226,7 @@ async function runSemanticCorrection(dependencies: StartTaskDependencies, execut
   await journal.append({ state: "review_ready", reviewSha256: revisedReview.reviewSha256,
     checkStatus: revisedReview.check.status, revision: "R1", parentReviewSha256: review.reviewSha256,
     hostChecks: meter.checks });
-  dependencies.write(formatTaskReview(revisedReview));
+  showTaskReview(dependencies, revisedReview);
   report({ phase: "ready_for_review", operation: "candidate_review" });
   const finalDecision = approved(await dependencies.ask("Accept and promote these exact revised bytes? [y/N] "))
     ? "accept" : "reject";
@@ -265,7 +271,7 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
     const review = await (dependencies.review ?? reviewTask)(execution.candidate.directory, meter.observeCheck);
     await journal.append({ state: "review_ready", reviewSha256: review.reviewSha256,
       checkStatus: review.check.status, hostChecks: meter.checks });
-    dependencies.write(formatTaskReview(review));
+    showTaskReview(dependencies, review);
     report({ phase: "ready_for_review", operation: "candidate_review" });
     const answer = await dependencies.ask(execution.correction?.available() === true
       ? "Choose for these exact candidate bytes: accept, reject, or request correction [a/r/c] "

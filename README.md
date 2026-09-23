@@ -7,11 +7,16 @@ inspect a repository and attempt a bounded TypeScript change, then shows the
 result, applicable checks and remaining unknowns before you decide whether to
 apply it.
 
-The current interface is a local terminal conversation. It can answer related
+The current interface is a local terminal workspace with saved conversations.
+It can answer related
 questions about a committed repository, ask for clarification and propose a
 supported change. After you approve the scope, it works in an independent
 checkout, runs fixed checks and presents the diff for review. Acceptance and
 application are separate steps.
+
+The shell lists sessions, shows a selected result beside its conversation and
+can supervise two bounded operations. The workspace has automated checks;
+ordinary live use of its new layout and parallel flow still needs qualification.
 
 ## Try it
 

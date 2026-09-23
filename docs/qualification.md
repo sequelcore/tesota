@@ -53,6 +53,15 @@ Explicit resource selection must exclude unadmitted configuration, extensions
 and tool provisioning. A session-completion event alone cannot establish that
 tool effects or subprocess descendants have settled.
 
+For the shell workspace, exercise two real sessions while one waits for a
+decision and the other produces output. Confirm that switching or split view
+does not move the input target, approval or cancellation to another session.
+Repeat at narrow and wide terminal sizes, across a normal restart, an
+interrupted restart and a changed repository baseline. Reconstruct the current
+task outcome from its task record; a saved inspector view is historical display
+data, not current check evidence. Concurrent applications to overlapping
+source must conflict rather than overwrite.
+
 The [roadmap](roadmap.md) owns current status. Dated walkthroughs and failures
 are retained under [experiments](../experiments/README.md).
 

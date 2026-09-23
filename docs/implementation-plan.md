@@ -20,6 +20,16 @@ replacement. Preserve legal notices, historical decisions and experiment
 records. A future application consumer supplies its own identity and domain
 policy; no private product detail belongs in this public plan.
 
+The shell appearance is part of the first user workflow. The historical
+`kiln-legacy-2026-09` tag contains Tesota light/dark palettes and a TUI
+adapter; use their semantic colors as design reference, not their GUI, gateway
+or configuration architecture. Establish a small set of shell-owned roles
+for text, emphasis, focus, checks, warnings and diffs. State and decision
+labels must remain legible without color. Session-only theme selection is
+implemented as an early preview; qualify it through the first user workflow.
+After that, qualify one user-supplied palette through the same roles;
+appearance cannot change work authority or evidence meaning.
+
 Before implementing a slice, freeze a small task and its expected outcome,
 source baseline, required effects, applicable checks and independent assessment.
 Keep refusals, failed attempts, setup time, user intervention, review effort and
@@ -33,6 +43,56 @@ proof may start once a concrete consumer and the relevant lifecycle contracts
 exist; Java, new-file creation and dirty-input support are not blanket
 prerequisites. The numbered order guides attention rather than requiring
 unrelated capabilities to ship first.
+
+## Shell workspace delivery alongside slice 1
+
+The shell must let a person return to a conversation, inspect the result under
+review and supervise another session without sending a decision to the wrong
+one. A session is the user-visible conversation. A task is one bounded request
+inside it. A check or human decision belongs to a particular result, not to
+the session as a whole. Activity, pending human input, unread output and stale
+evidence remain independent facts.
+
+1. **One selected session and real inspection.** Put the composer and status
+   below the selected conversation. Show structured proposal, answer and review
+   information in an inspector; keep a summary in the conversation and show the
+   actual diff as text. Narrow terminals must expose the same information with
+   keyboard controls. Done when a supported task can be inspected and decided
+   with keyboard alone at narrow and wide sizes, including stale or missing
+   evidence. The layout and typed presentation callbacks are implemented;
+   ordinary live layout qualification is pending.
+2. **Several sessions without crossed input.** Give each session its own
+   transcript, draft, request for human input, progress and cancellation. The
+   left list contains sessions; reviewer and verifier activity stays with its
+   task. Done when A can request a decision while B is selected, and only A can
+   receive that decision. The session-owned terminal state is implemented;
+   independent live interaction remains to be qualified.
+3. **Durable history and guarded continuation.** Persist the human transcript
+   separately from task outcomes. Use Pi's own session record for settled model
+   context and retain cumulative usage counters; interrupted work starts with
+   fresh engine context, never recovered authority. Unconfirmed effects block
+   further work in that session. Done when a normal restart restores useful
+   context and results, an interrupted restart does not revive a grant, and
+   corrupt storage fails visibly. Automated cases cover settled Pi context,
+   local history and interrupted-state reconstruction; live recovery remains
+   to be qualified. A changed repository baseline refreshes the model context
+   and rechecks the request, carrying forward the consumed budget; a changed
+   baseline during clarification still stops that continuation.
+4. **Two independent operations.** Bind model context, prompts and cancellation
+   to the originating session. Serialize application to the same repository so
+   a second acceptance sees the first write and must pass source-drift checks.
+   Done when two genuine tasks progress, cancellation affects only its target,
+   and overlapping application cannot overwrite a peer's result. The bounded
+   composition is implemented; concurrent live task qualification is pending.
+5. **Optional simultaneous view.** A wide terminal may show a second session
+   read-only beside the selected conversation, with one explicit input target.
+   Done when switching, resizing and leaving split view cannot retarget a
+   pending decision. The view and keyboard toggle are implemented; live visual
+   qualification is pending.
+
+These are shell increments within the existing task roadmap. They do not make
+Go, document work or community methods depend on a window manager. No general
+agent scheduler, event bus or new authority type is implied by the layout.
 
 ## 1. One complete TypeScript fix with independently selected checks
 
@@ -55,7 +115,9 @@ selected check by themselves.
 **Done when.** The original defect fails the same regression oracle that later
 passes on the repaired result, without weakened assertions. Both required
 checks pass on that final result, and the user can accept and apply
-or reject it without internal IDs, raw hashes or escaped JSON. A failed,
+or reject it without internal IDs, raw hashes or escaped JSON. The shell
+makes the work, check outcomes and next human decision scannable in narrow
+and wide terminals, including a readable monochrome rendering. A failed,
 missing, malformed or interrupted required check never appears as a pass.
 Candidate edits, changed check inputs and source drift invalidate evidence or
 application as appropriate. Correction receives fresh checks. Record one fresh
