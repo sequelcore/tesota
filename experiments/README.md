@@ -3,12 +3,10 @@
 These records preserve historical observations. They do not turn old checks into
 current acceptance, authenticate their producer, or prove behavior outside the
 recorded scope. [Project status](../docs/roadmap.md) owns progress interpretation;
-[Codex instructions](codex/README.md) own live command behavior. The
-[Pi compatibility experiment](pi/README.md) describes the synthetic boundary.
-The [live verification experiment](codex/verification.md) connects the real model
-to one fixed verifier action.
-The [candidate correction exercise](codex/candidate.md) adds one isolated source
-replacement, rechecking and a review diff.
+[Codex instructions](codex/README.md) own current live command behavior. The
+[Pi compatibility experiment](pi/README.md), [live verification experiment](codex/verification.md)
+and [candidate correction exercise](codex/candidate.md) retain results from
+retired fixture-based adapters.
 The [Gentle AI qualification](gentle/README.md) defines the bounded review
 provider experiment and records immutable review, correction and recovery
 observations, including the combined correction cycle.

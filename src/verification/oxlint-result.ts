@@ -31,15 +31,6 @@ export type OxlintResult =
   | (CompletedOxlintReport & { readonly binding: InputBinding })
   | (Extract<OxlintReport, { readonly status: "execution_failed" }> & { readonly binding?: InputBinding });
 
-export type CompletedOxlintResult = CompletedOxlintReport & { readonly binding: InputBinding };
-
-export interface RecoveredOxlintEvidence {
-  readonly kind: "recovered";
-  readonly structuralValidity: "valid";
-  readonly provenance: "recovered_untrusted";
-  readonly historical: CompletedOxlintResult;
-}
-
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

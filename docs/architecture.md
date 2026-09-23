@@ -117,8 +117,7 @@ ambient extensions, skills, prompt templates, themes and context files. Tesota
 supplies only its bounded list, search, read and result tools and replaces the
 repository reader on every turn. The explicit `task propose` seam and candidate
 runtime continue to use their narrower agent-core integrations. Tesota owns
-which tools exist, their schemas, budgets and effects. The separate one-shot
-Coding Agent SDK adapter remains an experimental candidate consumer. Gentle is an optional
+which tools exist, their schemas, budgets and effects. Gentle is an optional
 review provider; Tesota preserves provider evidence but keeps acceptance and
 promotion local and distinct.
 

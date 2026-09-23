@@ -39,10 +39,6 @@ export const fixedConfiguration: string = JSON.stringify({
   },
 });
 
-export function isKnownProfileConfiguration(profile: unknown, configuration: unknown): profile is OxlintProfile {
-  return profile === OXLINT_PROFILE && configuration === fixedConfiguration;
-}
-
 export function isKnownDiagnosticRule(rule: unknown): rule is string {
   return typeof rule === "string" && OXLINT_DIAGNOSTIC_RULES.includes(rule);
 }
