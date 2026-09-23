@@ -67,6 +67,7 @@ vi.mock("../src/candidate-task.js", () => ({
     beginExecution: vi.fn(() => { state.beginExecutions += 1; return { close: vi.fn() }; }),
     usage: vi.fn(() => state.usage),
     describe: vi.fn(() => ({ definitionSha256: "e".repeat(64), task: "typescript-change",
+      checks: ["scope-integrity", "typescript-no-emit/v1"],
       limits: { reads: 8, edits: 2, checks: 3, fileBytes: 64 * 1024 } })),
     close: vi.fn(),
   }) as unknown as CandidateTask) },

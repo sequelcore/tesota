@@ -42,3 +42,29 @@ Node test and, using the adjusted policy, the actual contained TypeScript
 adapter passed with observed process exit and container absence. That preflight
 took several minutes including dependency snapshot preparation; it did not
 retroactively validate the first attempt.
+
+## Second ordinary-shell attempt
+
+The [retry protocol](2026-09-23-combined-shell-progress-retry.md) used the
+corrected committed baseline `575b58e81aa639cdb2b2343fe00b253bd4673d43`.
+Both checks were selected and approved in a fresh session. The agent recorded
+the unchanged initial check, added the regression, observed its Node failure
+(0 passed, 1 failed), and made the narrow source repair. An independent copy
+of the committed source with the candidate's new test also failed on the
+correction-specific assertion, preserving the red oracle.
+
+The third check did not return. Dependency snapshot preparation for the
+TypeScript check was still in progress when the five-minute cumulative agent
+window expired. The two-second settlement wait ended with the tool effect
+unconfirmed. The retained attempt in candidate
+`f124b3cc-7091-4668-aa58-6cd3c2becf8e` reports `unsettled`, eight model
+invocations, eight tool calls, two edits and 300000 ms active time; its final
+check and current review check are absent. No review decision or application
+occurred. This remains a failure even though the candidate diff resembles the
+desired repair. A fresh session and candidate are required for another attempt.
+
+The contained TypeScript preflight had passed on this baseline, so the next
+change gives only the preapproved Node-plus-TypeScript task a bounded ten-minute
+cumulative agent-session window. The individual contained check limits,
+settlement allowance and other task budgets remain fixed. This is a provisional
+limit for another qualification, not evidence that the combined flow succeeds.

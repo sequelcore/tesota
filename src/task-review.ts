@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { lstat, open, realpath } from "node:fs/promises";
 import { join, relative } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import * as z from "zod";
 import { candidateDiff, inspectCandidateCheckout } from "./candidate-checkout.js";
 import { checkCandidateTask, inspectCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
-import { PI_SOURCE_TEST_LIMITS, PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses,
+import { PI_SOURCE_TEST_LIMITS, PI_SOURCE_TEST_TYPECHECK_LIMITS, PI_TASK_LIMITS, piTaskLimits,
+  piSemanticRevisionPasses, piTaskPasses,
   type PiTaskResult } from "./integrations/pi-task.js";
 import { readSemanticRevision, semanticRevisionSha256, type SemanticRevision } from "./semantic-revision.js";
 import { SOURCE_TEST_TASK_KIND, taskLimits } from "./task-contract.js";
@@ -37,7 +39,14 @@ const sourceTestLimitsSchema = z.strictObject({
   settlementMs: z.literal(PI_SOURCE_TEST_LIMITS.settlementMs),
   outputTokens: z.literal(PI_SOURCE_TEST_LIMITS.outputTokens),
 });
-const limitsSchema = z.union([sourceTaskLimitsSchema, sourceTestLimitsSchema]);
+const sourceTestTypecheckLimitsSchema = z.strictObject({
+  modelInvocations: z.literal(PI_SOURCE_TEST_TYPECHECK_LIMITS.modelInvocations),
+  toolCalls: z.literal(PI_SOURCE_TEST_TYPECHECK_LIMITS.toolCalls),
+  sessionMs: z.literal(PI_SOURCE_TEST_TYPECHECK_LIMITS.sessionMs),
+  settlementMs: z.literal(PI_SOURCE_TEST_TYPECHECK_LIMITS.settlementMs),
+  outputTokens: z.literal(PI_SOURCE_TEST_TYPECHECK_LIMITS.outputTokens),
+});
+const limitsSchema = z.union([sourceTaskLimitsSchema, sourceTestLimitsSchema, sourceTestTypecheckLimitsSchema]);
 const typecheckSchema = z.strictObject({
   profile: z.literal("typescript-no-emit/v1"),
   status: z.enum(["passed", "check_failed", "unavailable", "execution_failed", "timed_out", "cancelled"]),
@@ -76,7 +85,8 @@ const sessionSchema = z.strictObject({
   deadlineExpired: z.boolean(), settlement: z.enum(["observed", "unconfirmed"]), denied: z.boolean(),
   terminalStopReason: z.string().min(1).nullable(), taskAcceptance: z.literal("not_evaluated"),
   executionCause: z.enum(["initial_implementation", "semantic_revision"]),
-  activeMs: z.number().int().nonnegative().max(PI_TASK_LIMITS.sessionMs), editCauses: z.array(editCauseSchema),
+  activeMs: z.number().int().nonnegative().max(PI_SOURCE_TEST_TYPECHECK_LIMITS.sessionMs),
+  editCauses: z.array(editCauseSchema),
   denialStage: z.enum(["tool_request", "tool_operation", "tool_result", "model_admission"]).optional(),
   deniedTool: z.enum(["tesota_read", "tesota_replace", "tesota_check", "unknown"]).optional(),
 });
@@ -120,7 +130,7 @@ function sessionChecksMatchCurrent(session: z.infer<typeof sessionSchema>, curre
   return last !== undefined && session.checksSuppliedToModel === session.checks.length &&
     session.checks.every((check) => check.task === current.task && check.baseline === current.baseline &&
       check.sourceInputsSha256 === current.sourceInputsSha256) &&
-    JSON.stringify({ ...last, provenance: "recorded_untrusted" }) === JSON.stringify(current);
+    isDeepStrictEqual({ ...last, provenance: "recorded_untrusted" }, current);
 }
 
 export interface TaskReview {
@@ -192,11 +202,13 @@ async function inspectAttempt(directory: string, name: "attempt.jsonl" | "attemp
 
 async function inspectInitialAttempt(directory: string): Promise<InspectedAttempt> {
   const attempt = await inspectAttempt(directory, "attempt.jsonl", initialAttemptStartedSchema);
+  const task = await inspectCandidateTask(directory);
   const session = attempt.finished.session;
   const current = attempt.finished.current;
   if (attempt.finished.outcome !== "passed" || !attempt.finished.reviewSaved || session === null || current === null ||
-      JSON.stringify(attempt.started.limits) !== JSON.stringify(current.task === SOURCE_TEST_TASK_KIND ?
-        PI_SOURCE_TEST_LIMITS : PI_TASK_LIMITS) ||
+      current.task !== task.task ||
+      JSON.stringify(attempt.started.limits) !== JSON.stringify(piTaskLimits(task.task,
+        task.checks.some((check) => check === "typescript-no-emit/v1"))) ||
       session.executionCause !== "initial_implementation" || session.checks.some((check) =>
         check.baseline !== attempt.started.baseline) || current.baseline !== attempt.started.baseline ||
       !sessionChecksMatchCurrent(session, current) ||
@@ -211,12 +223,14 @@ export async function inspectSemanticRevisionAttempt(directory: string, revision
 }> {
   const parent = await validateRevisionParent(directory, revision);
   const attempt = await inspectAttempt(directory, "attempt-r1.jsonl", revisionAttemptStartedSchema);
+  const task = await inspectCandidateTask(directory);
   const started = revisionAttemptStartedSchema.parse(attempt.started);
   const session = attempt.finished.session;
   const current = attempt.finished.current;
   if (attempt.finished.outcome !== "passed" || !attempt.finished.reviewSaved || session === null || current === null ||
-      JSON.stringify(started.limits) !== JSON.stringify(current.task === SOURCE_TEST_TASK_KIND ?
-        PI_SOURCE_TEST_LIMITS : PI_TASK_LIMITS) ||
+      current.task !== task.task ||
+      JSON.stringify(started.limits) !== JSON.stringify(piTaskLimits(task.task,
+        task.checks.some((check) => check === "typescript-no-emit/v1"))) ||
       started.revisionSha256 !== semanticRevisionSha256(revision) ||
       started.parentReviewSha256 !== revision.parentReviewSha256 ||
       started.parentAttemptSha256 !== revision.parentAttemptSha256 ||

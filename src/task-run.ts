@@ -128,7 +128,8 @@ async function executeTaskSession(task: CandidateTask, context: SemanticRevision
   admitRevision?: () => Promise<CandidateTaskCheck>, session?: PiTaskSessionHost): Promise<PiTaskResult> {
   const usage = task.usage();
   const limits = task.describe().limits;
-  const piLimits = piTaskLimits(task.describe().task);
+  const description = task.describe();
+  const piLimits = piTaskLimits(description.task, description.checks.some((check) => check === "typescript-no-emit/v1"));
   const remainingBudget = {
     reads: Math.max(0, limits.reads - usage.reads), edits: Math.max(0, limits.edits - usage.edits),
     checks: Math.max(0, limits.checks - usage.checks),
@@ -213,7 +214,8 @@ async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTa
   try {
     const startedRecord = JSON.stringify({ format: "tesota-task-attempt", version: revision === null ? 1 : 2, state: "started",
       timestamp: new Date().toISOString(), baseline: candidate.baseline, sourceDirty: candidate.sourceDirty,
-      executor: await executorSha256(), model: LIVE_CODEX_MODEL_ID, limits: piTaskLimits(task.describe().task),
+      executor: await executorSha256(), model: LIVE_CODEX_MODEL_ID,
+      limits: piTaskLimits(task.describe().task, task.describe().checks.some((check) => check === "typescript-no-emit/v1")),
       taskAcceptance: "not_evaluated", executionCause: revision === null ? "initial_implementation" : "semantic_revision",
       ...(revision === null ? {} : { revisionSha256: semanticRevisionSha256(revision),
         parentReviewSha256: revision.parentReviewSha256,
@@ -260,7 +262,8 @@ async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTa
 function correctionBudgetAvailable(task: CandidateTask, budget: PiTaskBudget): boolean {
   const usage = task.usage();
   const limits = taskLimits(task.describe().task);
-  const piLimits = piTaskLimits(task.describe().task);
+  const description = task.describe();
+  const piLimits = piTaskLimits(description.task, description.checks.some((check) => check === "typescript-no-emit/v1"));
   return usage.reads < limits.reads && usage.edits < limits.edits && usage.checks < limits.checks &&
     budget.modelInvocations + 4 <= piLimits.modelInvocations &&
     budget.toolCalls + 3 <= piLimits.toolCalls && budget.activeMs < piLimits.sessionMs;

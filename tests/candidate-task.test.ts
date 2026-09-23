@@ -13,7 +13,8 @@ import { promoteTask } from "../src/task-promotion.js";
 import type { ProposalRunGrant } from "../src/proposal-admission.js";
 import { TASK_LIMITS } from "../src/task-contract.js";
 import { checkRepositoryTypecheck, type RepositoryTypecheckResult } from "../src/repository-typecheck.js";
-import { createPiTaskBudget, PI_TASK_LIMITS, runPiTask, type PiTaskResult } from "../src/integrations/pi-task.js";
+import { createPiTaskBudget, PI_TASK_LIMITS, runPiTask, taskCheckSha256,
+  type PiTaskResult } from "../src/integrations/pi-task.js";
 import { LIVE_CODEX_MODEL_ID } from "../src/integrations/pi-live.js";
 import { recordSemanticRevision, semanticRevisionSha256 } from "../src/semantic-revision.js";
 
@@ -594,7 +595,7 @@ it.each([0, 2])("rejects aggregate phase consumption with %i R1 edits and two R1
   const session: PiTaskResult = { ...r1Session(r0.check), toolCalls: 9, edits,
     checks: [edits === 0 ? issued(r0.check) : failed, issued(r0.check)], checksSuppliedToModel: 2,
     editCauses: edits === 0 ? [] : [{ cause: "semantic_revision" }, { cause: "diagnostic_repair",
-      failedCheckSha256: createHash("sha256").update(JSON.stringify(failed)).digest("hex") }] };
+      failedCheckSha256: taskCheckSha256(failed) }] };
   await writeFile(join(current.directory, "attempt-r1.jsonl"), attemptText(
     attemptStarted(2, current.baseline, timestamp, { sha256: semanticRevisionSha256(revision),
       parentReviewSha256: r0.reviewSha256, parentAttemptSha256 }), session, r0.check, timestamp));

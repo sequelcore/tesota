@@ -599,12 +599,13 @@ async function loadCandidateTask(directory: string): Promise<{ plan: TaskPlan; g
 export async function inspectCandidateTask(directory: string): Promise<{
   task: typeof TASK_KIND | typeof SOURCE_TEST_TASK_KIND; baseline: string; definitionSha256: string;
   writeSetSha256: string; writeFiles: readonly string[];
+  checks: typeof TASK_CHECKS | typeof SOURCE_TEST_TASK_CHECKS | typeof SOURCE_TEST_TYPECHECK_TASK_CHECKS;
   sourceInputs: TaskSourceInputs;
 }> {
   const loaded = await loadCandidateTask(directory);
   return { task: loaded.grant.kind, baseline: loaded.plan.baseline, definitionSha256: loaded.plan.definitionSha256,
     writeSetSha256: taskWriteSetSha256(loaded.files, loaded.grant.writeFiles),
-    writeFiles: [...loaded.grant.writeFiles],
+    writeFiles: [...loaded.grant.writeFiles], checks: loaded.grant.declaredChecks,
     sourceInputs: loaded.plan.sourceInputs };
 }
 

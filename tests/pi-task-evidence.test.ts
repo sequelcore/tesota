@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
 import type { CandidateTaskCheck } from "../src/candidate-task.js";
-import { PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses,
+import { PI_TASK_LIMITS, piTaskLimits, piSemanticRevisionPasses, piTaskPasses, taskCheckSha256,
   type PiTaskResult } from "../src/integrations/pi-task.js";
 
 const before: CandidateTaskCheck = {
@@ -27,6 +26,14 @@ it("keeps a finite task window that accommodates the qualified Windows profile",
   expect(PI_TASK_LIMITS.sessionMs).toBe(300_000);
 });
 
+it("extends only the approved source-and-test combination's cumulative agent time", () => {
+  expect(piTaskLimits("typescript-change", true).sessionMs).toBe(300_000);
+  expect(piTaskLimits("typescript-source-test-change", false).sessionMs).toBe(300_000);
+  expect(piTaskLimits("typescript-source-test-change", true)).toEqual({
+    ...piTaskLimits("typescript-source-test-change", false), sessionMs: 600_000,
+  });
+});
+
 it("accepts consistent completed task evidence", () => {
   expect(piTaskPasses(result, current)).toBe(true);
 });
@@ -42,7 +49,7 @@ it("keeps initial implementation, semantic revision and diagnostic repair causes
   expect(piTaskPasses({ ...result, editCauses: [{ cause: "semantic_revision" }] }, current)).toBe(false);
   expect(piTaskPasses({ ...result, edits: 2, checks: [before, diagnostic, after],
     checksSuppliedToModel: 3, editCauses: [{ cause: "initial_implementation" },
-      { cause: "diagnostic_repair", failedCheckSha256: createHash("sha256").update(JSON.stringify(diagnostic)).digest("hex") }] },
+      { cause: "diagnostic_repair", failedCheckSha256: taskCheckSha256(diagnostic) }] },
   current)).toBe(true);
 });
 

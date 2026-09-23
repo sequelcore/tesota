@@ -40,8 +40,10 @@ file and one existing `tests/**/*.test.ts` file. Its exact paths are in the
 immutable grant; the source file need not live below `src/`. Scripts, check
 configuration, dependencies, file creation and arbitrary commands remain
 denied. It permits up to 12 reads, six replacements and six checks across R0
-and R1, with the same 64 KiB file bound and five-minute cumulative active-time
-limit. Source-only plans use version 2; source-and-test plans use version 3.
+and R1, with the same 64 KiB file bound. Its cumulative agent-session time
+limit is five minutes with the Node test alone and ten minutes when the
+contained TypeScript typecheck is also approved. Source-only plans use version
+2; source-and-test plans use version 3.
 
 For this variant, the model first checks the unchanged candidate, changes the
 regression test and checks that it fails on the original source, then repairs
@@ -55,7 +57,8 @@ source and test bytes are checked again at review and conflict-checked before
 promotion. A later semantic correction uses only the remaining cumulative
 budget and requires fresh evidence.
 
-The complete model-and-check session has a five-minute cumulative deadline.
+The source-only and Node-only model-and-check sessions have a five-minute
+cumulative deadline; the approved Node-plus-TypeScript session has ten minutes.
 Individual container checks retain their separate 60-second TypeScript or
 30-second Node-test execution limits;
 dependency binding and snapshot preparation occur inside the cumulative task
@@ -64,6 +67,8 @@ Those limits are task-wide across the initial R0 execution and the optional R1
 semantic revision. The optional R1 uses a fresh Pi agent with only the remaining model, tool,
 read, edit, check and active-time budget; attempted consequential work is not
 refunded after cancellation or uncertain settlement.
+Final host checks and review occur after the agent session and have separate
+execution limits; the cumulative deadline is not an end-to-end wall-clock cap.
 
 The persisted plan binds the approved proposal, committed baseline,
 initial candidate read-input hashes, exact source-target hashes and modes,

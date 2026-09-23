@@ -3,17 +3,20 @@ import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { afterEach, expect, it, vi } from "vitest";
-import { bindCandidateCheckoutContent, createCandidateCheckout } from "../src/candidate-checkout.js";
+import { bindCandidateCheckoutContent, candidateDiff, createCandidateCheckout } from "../src/candidate-checkout.js";
 import { CandidateTask, checkCandidateTask, inspectCandidateTask } from "../src/candidate-task.js";
 import { validateProposalRunGrant, type ProposalRunGrant } from "../src/proposal-admission.js";
 import { nodeTestProfileFingerprint, prepareRepositoryNodeTest, runRepositoryNodeTest,
   type RepositoryNodeTestResult } from "../src/repository-node-test.js";
 import { checkRepositoryTypecheck, prepareRepositoryTypecheck, runRepositoryTypecheck, typecheckProfileFingerprint,
   type RepositoryTypecheckResult } from "../src/repository-typecheck.js";
-import { decideTask, reviewTask } from "../src/task-review.js";
+import { decideTask, reviewTask, validateCorrectionParent } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
-import { piTaskPasses, type PiTaskResult } from "../src/integrations/pi-task.js";
+import { PI_SOURCE_TEST_TYPECHECK_LIMITS, piTaskPasses, taskCheckSha256,
+  type PiTaskResult } from "../src/integrations/pi-task.js";
+import { LIVE_CODEX_MODEL_ID } from "../src/integrations/pi-live.js";
 
 vi.mock("../src/repository-node-test.js", () => ({
   prepareRepositoryNodeTest: vi.fn(async (options: { readonly candidate: string }) => ({ directory: options.candidate })),
@@ -147,6 +150,64 @@ it("requires both selected checks on the same final source-and-test result", asy
   task.close();
 }, 60_000);
 
+it("reviews combined retained evidence above five minutes and rejects an excess over ten", async () => {
+  const current = await fixture(true);
+  const task = await CandidateTask.prepare(current.candidate.directory, current.grant);
+  const source = await task.read({ path: "lib/value.ts" });
+  const test = await task.read({ path: "tests/value.test.ts" });
+  const before = await task.check();
+  await task.replace({ path: "tests/value.test.ts", expectedSha256: test.sha256,
+    content: "// regression: expect value 2\n" });
+  const red = await task.check();
+  await task.replace({ path: "lib/value.ts", expectedSha256: source.sha256,
+    content: "export const value = 2;\n" });
+  const green = await task.check();
+  task.close();
+  const recorded = await checkCandidateTask(current.candidate.directory);
+  const diff = await candidateDiff(current.candidate.directory);
+  await writeFile(join(current.candidate.directory, "candidate.diff"), diff);
+  const timestamp = new Date().toISOString();
+  const executor = Object.fromEntries([
+    "task-run.js", "candidate-checkout.js", "candidate-task.js", "task-contract.js", "task-source.js",
+    "semantic-revision.js", "repository-check-input.js", "proposal-admission.js", "repository-typecheck.js",
+    "repository-typecheck-process.js", "command-isolation.js", "verification/invocation-admission.js",
+    "integrations/pi-task.js", "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock",
+  ].map((path) => [path, "8".repeat(64)]));
+  const started = { format: "tesota-task-attempt", version: 1, state: "started", timestamp,
+    baseline: current.candidate.baseline, sourceDirty: false, executor, model: LIVE_CODEX_MODEL_ID,
+    limits: PI_SOURCE_TEST_TYPECHECK_LIMITS, taskAcceptance: "not_evaluated",
+    executionCause: "initial_implementation" };
+  const session: PiTaskResult = { status: "completed", modelInvocations: 10, toolCalls: 10, edits: 2,
+    checks: [before, red, green], checksSuppliedToModel: 3, finalCheckSuppliedToModel: true,
+    deadlineExpired: false, settlement: "observed", denied: false, terminalStopReason: "stop",
+    taskAcceptance: "not_evaluated", executionCause: "initial_implementation", activeMs: 300_001,
+    editCauses: [{ cause: "initial_implementation" }, { cause: "diagnostic_repair",
+      failedCheckSha256: taskCheckSha256(red) }] };
+  const attempt = (usage: PiTaskResult) => [started, { state: "finished", timestamp, outcome: "passed",
+    session: usage, current: recorded, reviewSaved: true, taskAcceptance: "not_evaluated" }]
+    .map((event) => JSON.stringify(event)).join("\n") + "\n";
+  const attemptPath = join(current.candidate.directory, "attempt.jsonl");
+  const retained = attempt(session);
+  await writeFile(attemptPath, retained);
+  expect(piTaskPasses(session, recorded)).toBe(true);
+  expect(green.writeSetSha256).toBe(recorded.writeSetSha256);
+  expect(isDeepStrictEqual({ ...green, provenance: "recorded_untrusted" }, recorded)).toBe(true);
+  const review = await reviewTask(current.candidate.directory);
+  const identity = { parentReviewSha256: review.reviewSha256,
+    parentWriteSetSha256: recorded.writeSetSha256,
+    parentCheckSha256: createHash("sha256").update(JSON.stringify(recorded)).digest("hex"),
+    parentAttemptSha256: createHash("sha256").update(retained).digest("hex"),
+    taskDefinitionSha256: task.describe().definitionSha256 };
+  await expect(validateCorrectionParent(current.candidate.directory, identity)).resolves.toMatchObject({
+    attemptSha256: identity.parentAttemptSha256,
+  });
+  const excess = attempt({ ...session, activeMs: 600_001 });
+  await writeFile(attemptPath, excess);
+  await expect(validateCorrectionParent(current.candidate.directory, {
+    ...identity, parentAttemptSha256: createHash("sha256").update(excess).digest("hex"),
+  })).rejects.toThrow();
+}, 60_000);
+
 it("keeps the red regression, green repair, current review and exact two-file promotion distinct", async () => {
   const current = await fixture();
   const task = await CandidateTask.prepare(current.candidate.directory, current.grant);
@@ -171,7 +232,7 @@ it("keeps the red regression, green repair, current review and exact two-file pr
     deadlineExpired: false, settlement: "observed", denied: false, terminalStopReason: "stop",
     taskAcceptance: "not_evaluated", executionCause: "initial_implementation", activeMs: 100,
     editCauses: [{ cause: "initial_implementation" }, { cause: "diagnostic_repair",
-      failedCheckSha256: createHash("sha256").update(JSON.stringify(red)).digest("hex") }] };
+      failedCheckSha256: taskCheckSha256(red) }] };
   expect(piTaskPasses(session, recorded)).toBe(true);
   expect(piTaskPasses({ ...session, checks: [before, { ...red,
     changedFiles: ["lib/value.ts", "tests/value.test.ts"] }, green] }, recorded)).toBe(false);

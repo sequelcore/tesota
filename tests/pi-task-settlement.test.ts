@@ -38,6 +38,40 @@ function budgetTask(cause: "initial_implementation" | "semantic_revision") {
   } as unknown as CandidateTask;
 }
 
+function sourceTestBudgetTask(withTypecheck: boolean, cause: "initial_implementation" | "semantic_revision") {
+  const task = budgetTask(cause);
+  const checks = withTypecheck ? ["scope-integrity", "node-test-targeted/v1", "typescript-no-emit/v1"] as const :
+    ["scope-integrity", "node-test-targeted/v1"] as const;
+  task.describe = () => ({ ...description, task: "typescript-source-test-change", checks,
+    executionCause: cause });
+  return task;
+}
+
+it("allows only the combined approved session to continue after five minutes of cumulative use", async () => {
+  const budget = createPiTaskBudget();
+  budget.activeMs = 300_001;
+  const combined = sourceTestBudgetTask(true, "semantic_revision");
+  const provider = fauxProvider({ models: [{ id: "offline", name: "Offline" }] });
+  provider.setResponses([fauxAssistantMessage("done")]);
+  const result = await runPiTask(combined, provider.getModel(), provider.provider.streamSimple,
+    new AbortController().signal, budget);
+  expect(result).toMatchObject({ status: "completed", deadlineExpired: false, settlement: "observed" });
+  expect(result.activeMs).toBeGreaterThan(300_000);
+});
+
+it.each([false, true])("expires the %s source-and-test session at its selected cumulative limit", async (withTypecheck) => {
+  const budget = createPiTaskBudget();
+  budget.activeMs = withTypecheck ? 599_950 : 299_950;
+  const task = sourceTestBudgetTask(withTypecheck, "semantic_revision");
+  task.check = vi.fn(async () => await new Promise<CandidateTaskCheck>((_resolve) => undefined));
+  const provider = fauxProvider({ models: [{ id: "offline", name: "Offline" }] });
+  provider.setResponses([fauxAssistantMessage(fauxToolCall("tesota_check", {}))]);
+  const result = await runPiTask(task, provider.getModel(), provider.provider.streamSimple,
+    new AbortController().signal, budget);
+  expect(result).toMatchObject({ status: "unsettled", deadlineExpired: true, settlement: "unconfirmed" });
+  expect(result.activeMs).toBe(withTypecheck ? 600_000 : 300_000);
+}, 10_000);
+
 it("shares exact model and tool ceilings across real disposable Pi agents", async () => {
   const modelBudget = createPiTaskBudget();
   modelBudget.modelInvocations = PI_TASK_LIMITS.modelInvocations - 1;

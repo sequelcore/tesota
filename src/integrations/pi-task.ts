@@ -13,9 +13,13 @@ export const PI_TASK_LIMITS: Readonly<{
 export const PI_SOURCE_TEST_LIMITS: typeof PI_TASK_LIMITS = Object.freeze({
   modelInvocations: 18, toolCalls: 24, sessionMs: 300_000, settlementMs: 2_000, outputTokens: 4096,
 });
+export const PI_SOURCE_TEST_TYPECHECK_LIMITS: typeof PI_TASK_LIMITS = Object.freeze({
+  ...PI_SOURCE_TEST_LIMITS, sessionMs: 600_000,
+});
 
-export function piTaskLimits(kind: CandidateTaskCheck["task"]): typeof PI_TASK_LIMITS {
-  return kind === SOURCE_TEST_TASK_KIND ? PI_SOURCE_TEST_LIMITS : PI_TASK_LIMITS;
+export function piTaskLimits(kind: CandidateTaskCheck["task"], withTypecheck = false): typeof PI_TASK_LIMITS {
+  return kind === SOURCE_TEST_TASK_KIND ?
+    (withTypecheck ? PI_SOURCE_TEST_TYPECHECK_LIMITS : PI_SOURCE_TEST_LIMITS) : PI_TASK_LIMITS;
 }
 
 export interface PiTaskBudget {
@@ -74,8 +78,24 @@ function deniedStream(model: Model<Api>): ReturnType<typeof createAssistantMessa
 
 function validInitialEditCauses(result: PiTaskResult): boolean {
   return result.editCauses.length === result.edits && result.editCauses[0]?.cause === "initial_implementation" &&
-    result.editCauses.slice(1).every((cause, index) => cause.cause === "diagnostic_repair" &&
-      cause.failedCheckSha256 === createHash("sha256").update(JSON.stringify(result.checks[index + 1])).digest("hex"));
+    result.editCauses.slice(1).every((cause, index) => {
+      const failed = result.checks[index + 1];
+      return cause.cause === "diagnostic_repair" && failed !== undefined &&
+        cause.failedCheckSha256 === taskCheckSha256(failed);
+    });
+}
+
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (value !== null && typeof value === "object") return Object.fromEntries(
+    Object.entries(value).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+      .map(([key, nested]) => [key, canonicalJson(nested)]));
+  return value;
+}
+
+/** Stable across JSON parsing and schema validation, which may reorder object fields. */
+export function taskCheckSha256(check: CandidateTaskCheck): string {
+  return createHash("sha256").update(JSON.stringify(canonicalJson(check))).digest("hex");
 }
 
 interface TaskAgentExecution {
@@ -160,7 +180,7 @@ export async function runPiTask(task: CandidateTaskExecution, model: Model<Api>,
   let settlementTimer: ReturnType<typeof setTimeout> | undefined;
   let settlementDeadline: number | undefined;
   const description = task.describe();
-  const limits = piTaskLimits(description.task);
+  const limits = piTaskLimits(description.task, description.checks.some((check) => check === "typescript-no-emit/v1"));
   const executionCause = description.executionCause ?? "initial_implementation";
   const { read: taskReadSchema, replace: taskEditSchema, check: taskCheckSchema } = task.requestSchemas();
 
@@ -212,8 +232,7 @@ export async function runPiTask(task: CandidateTaskExecution, model: Model<Api>,
       const previous = checks.at(-1);
       editCauses.push(edits > 0 && previous?.status === "check_failed" &&
         !previous.diagnostics.every((diagnostic) => diagnostic === "No admitted file changed.")
-        ? { cause: "diagnostic_repair", failedCheckSha256: createHash("sha256")
-          .update(JSON.stringify(previous)).digest("hex") }
+        ? { cause: "diagnostic_repair", failedCheckSha256: taskCheckSha256(previous) }
         : { cause: executionCause });
       edits += 1;
       return { status: "updated", verification: "required" };
@@ -429,7 +448,7 @@ export function piSemanticRevisionPasses(result: PiTaskResult, current: Candidat
     result.edits === 0 || result.editCauses[0]?.cause === "semantic_revision",
     result.editCauses.slice(1).every((cause) => cause.cause === "diagnostic_repair" &&
       result.checks.some((check) => check.status === "check_failed" && cause.failedCheckSha256 ===
-        createHash("sha256").update(JSON.stringify(check)).digest("hex"))),
+        taskCheckSha256(check))),
     result.checks.length >= 1,
     result.checks.length <= (last?.task === SOURCE_TEST_TASK_KIND ? 6 : 2),
     result.checks.every((check) => check.provenance === "issued" && check.settlement === "observed" &&
