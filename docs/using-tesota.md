@@ -10,8 +10,9 @@ This guide describes the current supported workflow. The [roadmap](roadmap.md)
 owns what comes next. Continuous read-only questions and the initial approved
 source-task turn share one in-memory Pi conversation. The later continuous
 source-and-test workflow has a bounded implementation for one existing source
-and test file, but useful live completion and fresh external qualification remain
-outstanding. General test edits and interrupted-task resume remain unsupported.
+and test file and two accepted live walkthroughs. Broader external qualification
+remains outstanding. General test edits and interrupted-task resume remain
+unsupported.
 
 ## Prerequisites
 
@@ -99,6 +100,13 @@ Tesota first inspects the committed repository state. If the task fits the
 current contract, it presents the files it proposes to change and the checks it
 will use. This is the user-facing form of the work proposal and access request.
 No write authority exists until you approve that scope.
+Before the approval prompt, `task start` inspects the prerequisites for the selected
+fixed check from the committed files and local verifier installation. It reports
+the profile and a concise eligibility reason. If prerequisites are missing,
+it stops without asking for approval or creating a candidate. This is a
+read-only preview, not a check result:
+candidate admission and execution revalidate their own inputs, and the Docker
+engine or image may still fail when the check runs.
 
 If the request is unsupported, Tesota should explain the boundary rather than
 pretend it can complete the work.
@@ -126,8 +134,9 @@ file and one existing `tests/**/*.test.ts` file, with exact paths approved up
 front. It allows up to six replacements and six checks across the initial work
 and one approved correction. The test must first fail on the original source,
 then pass after the repair. Its fixed Node test runs in the protected container;
-it does not typecheck or run the full repository suite. This variant is still
-awaiting a complete ordinary live walkthrough and fresh external evaluation.
+it does not typecheck or run the full repository suite. Its two accepted
+ordinary walkthroughs include one fresh external task, but do not establish
+representative usefulness.
 
 The source-only variant excludes tests; both variants exclude dependency and
 check configuration, file creation, deletion

@@ -5,7 +5,7 @@ import * as z from "zod";
 import { bindCandidateCheckoutContent, inspectPromotionSource } from "./candidate-checkout.js";
 import { CONTAINER_IMAGE, buildNodeTestContainerInvocation, containerRuntimeIsOutside,
   nodeTestContainerPolicySha256, resolveContainerRuntime, type ContainerRuntimeIdentity } from "./command-isolation.js";
-import { parseRepositoryJson, readRepositoryInput, sha256 } from "./repository-check-input.js";
+import { parseRepositoryJson, readCommittedCheckInput, readRepositoryInput, sha256 } from "./repository-check-input.js";
 import { REPOSITORY_NODE_TEST_LIMITS, executeRepositoryNodeTestContainer,
   type RepositoryNodeTestExecutor } from "./repository-node-test-process.js";
 import { validProposalPath } from "./task-proposal-contract.js";
@@ -60,6 +60,27 @@ interface PrepareOptions {
 
 const issuedProfiles = new WeakSet<object>();
 const issuedResults = new WeakSet<object>();
+
+/** Read-only preview; candidate preparation remains the authoritative boundary. */
+export async function inspectRepositoryNodeTestEligibility(source: string, selectedTest: string):
+Promise<Readonly<{ status: "eligible" | "ineligible"; reason: string }>> {
+  try {
+    if (!selectedTestPattern.test(selectedTest)) {
+      return { status: "ineligible", reason: "selected Node test path is unsupported" };
+    }
+    const packageBytes = readCommittedCheckInput(source, "package.json", 128 * 1024);
+    if (!packageSchema.safeParse(parseRepositoryJson(packageBytes)).success) {
+      return { status: "ineligible", reason: "package.json must declare a test script" };
+    }
+    readCommittedCheckInput(source, selectedTest, 1024 * 1024);
+    const reporter = reporterPath();
+    await readRepositoryInput(reporter, 128 * 1024);
+    await resolveContainerRuntime([source, reporter]);
+    return { status: "eligible", reason: "selected test, repository declaration, reporter, and Docker client are present" };
+  } catch {
+    return { status: "ineligible", reason: "selected test, repository declaration, reporter, or Docker client is unavailable" };
+  }
+}
 
 function allowedPaths(options: PrepareOptions): readonly string[] {
   const paths = options.allowedWriteFiles;

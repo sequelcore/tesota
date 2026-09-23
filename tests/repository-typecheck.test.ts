@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
-import { REPOSITORY_TYPECHECK_PROFILE, formatRepositoryTypecheckProfile, prepareRepositoryTypecheck,
+import { REPOSITORY_TYPECHECK_PROFILE, formatRepositoryTypecheckProfile, inspectRepositoryTypecheckEligibility, prepareRepositoryTypecheck,
   runRepositoryTypecheck } from "../src/repository-typecheck.js";
 import * as repositoryCheckInput from "../src/repository-check-input.js";
 import type { RepositoryTypecheckExecutor } from "../src/repository-typecheck-process.js";
@@ -56,6 +56,22 @@ async function fixture(script = "tsc --noEmit -p tsconfig.json", typescriptVersi
   const candidate = await createCandidateCheckout(source, join(root, "candidates"));
   return { root, source, candidate };
 }
+
+it("reports an incompatible script before candidate execution", async () => {
+  const current = await fixture("tsc --noEmit");
+  await writeFile(join(current.source, "package.json"), JSON.stringify({ scripts: {
+    typecheck: "tsc --noEmit -p tsconfig.json" }, devDependencies: { typescript: "7.0.2" } }) + "\n");
+  await expect(inspectRepositoryTypecheckEligibility(current.source)).resolves.toEqual({
+    status: "ineligible",
+    reason: 'package.json must declare typecheck exactly as "tsc --noEmit -p tsconfig.json" and an exact TypeScript devDependency',
+  });
+});
+
+it("reports a missing installed verifier before candidate execution", async () => {
+  const current = await fixture();
+  await rm(join(current.source, "node_modules", "typescript"), { recursive: true });
+  await expect(inspectRepositoryTypecheckEligibility(current.source)).resolves.toMatchObject({ status: "ineligible" });
+});
 
 async function runtime(root: string): Promise<{ readonly executable: string; readonly executableSha256: string }> {
   const executable = join(root, "trusted", process.platform === "win32" ? "docker.exe" : "docker");

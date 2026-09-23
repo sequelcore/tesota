@@ -19,10 +19,17 @@ fresh decision, but its usefulness still needs prospective evaluation. The
 source-and-test task admits one existing TypeScript source file and one existing
 regression test with a fixed targeted Node check. Development checks have
 covered that contract. One [ordinary live diagnostic](../experiments/practical-use/2026-09-22-check-selection-results.md)
-reached checked exact review and ended in an explicit test-only rejection;
-accepted application and fresh external qualification remain outstanding. The
+reached checked exact review and ended in an explicit test-only rejection. Two
+[later ordinary walkthroughs](../experiments/practical-use/2026-09-23-results.md)
+reached accepted application, one on the repeated task and one on a fresh
+preselected external task. They establish those cases, not representative
+source-and-test usefulness across repositories. The
 earlier [practical-use pilot](../experiments/practical-use/2026-09-22-results.md)
 retains failed and degraded attempts rather than a coding-success claim.
+A later [three-repository sample](../experiments/practical-use/2026-09-23-cross-repository-results.md)
+retained one satisfactory read-only answer, one accepted source-only application
+and one source-task execution failure before review. It does not establish
+representative usefulness.
 
 The shell uses one in-memory Pi SDK session for related read-only turns and an
 initial approved task turn. Optional semantic correction still uses a fresh Pi
@@ -42,16 +49,25 @@ alone is not a useful completion. Separate check evidence from human acceptance
 and applied results.
 
 Use those observations to select a bounded improvement. The source-and-test
-path particularly needs an ordinary live conversation that finds the right
-files, presents the application-selected check, changes the regression test and
-source, handles correction when requested, and reaches accepted application. The
+path now has ordinary live conversations that found the right files, presented
+the application-selected check, changed the regression test and source,
+repaired failed initial checks and reached accepted application. The
 [Gentle Pi follow-up](../experiments/practical-use/2026-09-22-results.md) found proposals
 that requested both TypeScript no-emit and the targeted Node test; that
 combination was blocked before approval. Tesota now selects the fixed check
 pair from the proposed file scope rather than asking the model to choose it.
-The diagnostic reached review but was rejected for live-testing purposes.
-An accepted live completion is still needed before claiming source-and-test
-usefulness.
+The earlier diagnostic reached review but was rejected for live-testing
+purposes. The later accepted cases answer that narrow gap. Broader usefulness
+still needs a fresh spread of external repositories and task classes, with
+independently assessed residual defects and separately timed operator effort.
+The selected next improvement was to identify an ineligible fixed repository
+check before asking for scope approval. `task start` now previews the selected
+check's declarations, installed verifier or selected test, and Docker client.
+It explains missing prerequisites and stops before approval and candidate work.
+The preview is not check evidence: admission and execution still recheck actual
+inputs, and runtime availability is established only by execution. The
+cross-repository sample that motivated this change remains a failed attempt;
+the new behavior has not yet been qualified in a fresh live task.
 
 ## Expansion criteria
 

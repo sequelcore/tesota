@@ -7,6 +7,11 @@ import { askTaskStartQuestion, startTask } from "../src/task-start.js";
 import { createTaskOutcome, loadProposalTaskOutcome, type TaskExecutionAccounting } from "../src/task-outcome.js";
 import { TaskReviewUnsettledError, type TaskReview } from "../src/task-review.js";
 
+vi.mock("../src/repository-typecheck.js", () => ({ inspectRepositoryTypecheckEligibility: vi.fn(async () =>
+  ({ status: "eligible", reason: "test prerequisites present" })) }));
+vi.mock("../src/repository-node-test.js", () => ({ inspectRepositoryNodeTestEligibility: vi.fn(async () =>
+  ({ status: "eligible", reason: "test prerequisites present" })) }));
+
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
@@ -307,6 +312,24 @@ it("records scope refusal without granting execution and rejects replay of the e
   });
   await expect(startTask(options)).rejects.toThrow();
   expect(failed).toHaveBeenCalledOnce();
+});
+
+it("explains an ineligible selected check before asking for approval or running a candidate", async () => {
+  const current = await fixture();
+  const output: string[] = [];
+  const ask = vi.fn();
+  const execute = vi.fn();
+  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, ask, write: (line) => output.push(line), execute,
+    inspectEligibility: async () => ({ status: "ineligible", reason: "typecheck script differs" }) })).resolves.toEqual({
+    status: "settled", exitCode: 1, outcome: "failed",
+  });
+  expect(output.join("")).toContain("Check eligibility (typescript-no-emit/v1): ineligible — typecheck script differs");
+  expect(ask).not.toHaveBeenCalled();
+  expect(execute).not.toHaveBeenCalled();
+  expect(await loadProposalTaskOutcome(current.proposalsRoot, current.id)).toMatchObject({
+    status: "failed", terminal: true, operator: { scopeApproval: "pending" }, candidate: null,
+  });
 });
 
 it("settles a known execution cancellation without promotion", async () => {

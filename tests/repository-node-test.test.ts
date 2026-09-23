@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
 import { buildNodeTestContainerInvocation } from "../src/command-isolation.js";
-import { prepareRepositoryNodeTest, runRepositoryNodeTest } from "../src/repository-node-test.js";
+import { inspectRepositoryNodeTestEligibility, prepareRepositoryNodeTest, runRepositoryNodeTest } from "../src/repository-node-test.js";
 import type { RepositoryNodeTestExecutor } from "../src/repository-node-test-process.js";
 
 const roots: string[] = [];
@@ -58,6 +58,13 @@ function executor(output: string, exitCode = 0): RepositoryNodeTestExecutor {
   return async () => ({ status: "closed", exitCode, signal: null, stdout: Buffer.from(output), stderr: Buffer.alloc(0),
     process: "exited", container: "absent" });
 }
+
+it("reports an unsupported selected test before execution", async () => {
+  const current = await fixture();
+  await expect(inspectRepositoryNodeTestEligibility(current.source, "tests/other.spec.ts")).resolves.toEqual({
+    status: "ineligible", reason: "selected Node test path is unsupported",
+  });
+});
 
 it("binds a selected existing Node test and invokes Docker with no host execution", async () => {
   const current = await fixture();

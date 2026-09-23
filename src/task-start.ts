@@ -9,6 +9,8 @@ import { runProposalTask, type TaskRunResult } from "./task-run.js";
 import { parseSemanticRefinement } from "./semantic-revision.js";
 import { createTaskOutcome, formatTaskOutcome, type TaskOutcomeJournal } from "./task-outcome.js";
 import { SOURCE_TEST_TASK_KIND } from "./task-contract.js";
+import { inspectRepositoryTypecheckEligibility, type RepositoryCheckEligibility } from "./repository-typecheck.js";
+import { inspectRepositoryNodeTestEligibility } from "./repository-node-test.js";
 import { askTerminalQuestion, type PromptTerminal } from "./terminal-question.js";
 
 export type TaskStartProgress =
@@ -37,6 +39,7 @@ interface StartTaskDependencies {
   readonly promote?: typeof promoteTask;
   readonly createOutcome?: typeof createTaskOutcome;
   readonly report?: (progress: TaskStartProgress) => void;
+  readonly inspectEligibility?: (grant: ProposalRunGrant) => Promise<RepositoryCheckEligibility>;
 }
 
 interface HostWorkMeter {
@@ -59,13 +62,30 @@ function acceptanceRequested(answer: string): boolean { return /^(?:a|accept|y|y
 function ignoreProgress(_progress: TaskStartProgress): void {}
 function aborted(error: unknown): boolean { return error instanceof Error && error.name === "AbortError"; }
 
-function proposalCard(grant: ProposalRunGrant): string {
+function proposalCard(grant: ProposalRunGrant, eligibility: RepositoryCheckEligibility): string {
   const evidence = grant.kind === SOURCE_TEST_TASK_KIND ?
     `scope integrity and contained Node test ${grant.selectedTest}; no repository typecheck` :
     "scope integrity and contained TypeScript no-emit";
   return `Proposed task\nObjective: ${grant.objective}\nWrite: ${grant.writeFiles.join(", ")}\n` +
     `Read: ${grant.readFiles.join(", ")}\nBaseline: ${grant.baseline}\n` +
-    `Automatic evidence: ${evidence}. Outcome correctness requires human review.\n`;
+    `Automatic evidence: ${evidence}. Outcome correctness requires human review.\n` +
+    `Check eligibility (${grant.kind === SOURCE_TEST_TASK_KIND ? grant.verification.nodeTest : grant.verification.typecheck}): ` +
+    `${eligibility.status} — ${eligibility.reason}. Preview only; execution rechecks current inputs.\n`;
+}
+
+function inspectSelectedCheck(grant: ProposalRunGrant): Promise<RepositoryCheckEligibility> {
+  return grant.kind === SOURCE_TEST_TASK_KIND
+    ? inspectRepositoryNodeTestEligibility(grant.source, grant.selectedTest)
+    : inspectRepositoryTypecheckEligibility(grant.source);
+}
+
+async function writeEligibilityPreview(dependencies: StartTaskDependencies, grant: ProposalRunGrant): Promise<void> {
+  const eligibility = await (dependencies.inspectEligibility ?? inspectSelectedCheck)(grant);
+  dependencies.write(proposalCard(grant, eligibility));
+  if (eligibility.status === "ineligible") {
+    dependencies.write("This fixed check cannot run with the inspected inputs. No approval was requested.\n");
+    throw new Error("Selected repository check is ineligible");
+  }
 }
 
 function formatTaskReview(review: TaskReview): string {
@@ -228,7 +248,7 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
   let execution: TaskRunResult | undefined;
   const meter = createHostWorkMeter();
   try {
-    dependencies.write(proposalCard(grant));
+    await writeEligibilityPreview(dependencies, grant);
     report({ phase: "awaiting_approval", operation: "proposal_scope" });
     if (!approved(await dependencies.ask("Approve this scope and start isolated execution? [y/N] "))) {
       dependencies.write("Proposal not started. Nothing changed.\n");

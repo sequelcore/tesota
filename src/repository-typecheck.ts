@@ -5,7 +5,7 @@ import * as z from "zod";
 import { bindCandidateCheckoutContent, inspectPromotionSource } from "./candidate-checkout.js";
 import { CONTAINER_IMAGE, buildTypecheckContainerInvocation, containerRuntimeIsOutside, resolveContainerRuntime,
   type ContainerRuntimeIdentity, typecheckContainerPolicySha256 } from "./command-isolation.js";
-import { dependencyInstallationSha256, parseRepositoryJson, readDependencyInstallationInput, readRepositoryInput,
+import { dependencyInstallationSha256, parseRepositoryJson, readCommittedCheckInput, readDependencyInstallationInput, readRepositoryInput,
   repositoryInputDirectory, sha256, snapshotDependencyInstallation } from "./repository-check-input.js";
 import { REPOSITORY_TYPECHECK_LIMITS, executeRepositoryTypecheckContainer,
   type RepositoryTypecheckExecutor } from "./repository-typecheck-process.js";
@@ -65,7 +65,54 @@ interface PrepareOptions {
   readonly source: string;
   readonly runtime?: ContainerRuntimeIdentity;
 }
+export type RepositoryCheckEligibility = Readonly<{ status: "eligible" | "ineligible"; reason: string }>;
 const issued = new WeakSet<object>();
+
+/** Read-only preview of committed check declarations and the installed verifier. */
+export async function inspectRepositoryTypecheckEligibility(source: string): Promise<RepositoryCheckEligibility> {
+  try {
+    const packageBytes = readCommittedCheckInput(source, "package.json", 128 * 1024);
+    const declared = packageSchema.safeParse(parseRepositoryJson(packageBytes));
+    if (!declared.success) return { status: "ineligible",
+      reason: `package.json must declare typecheck exactly as "${REPOSITORY_TYPECHECK_SCRIPT}" and an exact TypeScript devDependency` };
+    const tsconfig = readCommittedCheckInput(source, "tsconfig.json", 128 * 1024);
+    if (!tsconfigSchema.safeParse(parseRepositoryJson(tsconfig)).success) {
+      return { status: "ineligible", reason: "tsconfig.json has unsupported extends, references, or compiler plugins" };
+    }
+    readCommittedCheckInput(source, "bun.lock", 8 * 1024 * 1024);
+    let nodeModules: string;
+    let installed: ReturnType<typeof installedPackageSchema.safeParse>;
+    try {
+      nodeModules = await repositoryInputDirectory(join(source, "node_modules"));
+      const typescriptRoot = await repositoryInputDirectory(join(nodeModules, "typescript"));
+      installed = installedPackageSchema.safeParse(parseRepositoryJson(await readDependencyInstallationInput(
+        join(typescriptRoot, "package.json"), 128 * 1024)));
+    } catch { return { status: "ineligible", reason: "installed TypeScript is unavailable" }; }
+    if (!installed.success || installed.data.version !== declared.data.devDependencies.typescript) {
+      return { status: "ineligible", reason: "installed TypeScript is missing or does not match package.json" };
+    }
+    const linuxName = "@typescript/typescript-linux-x64";
+    const linuxVersion = installed.data.optionalDependencies?.[linuxName] ?? installed.data.dependencies?.[linuxName];
+    if (linuxVersion !== undefined) {
+      if (linuxVersion !== installed.data.version) {
+        return { status: "ineligible", reason: "TypeScript Linux/x64 declaration does not match TypeScript" };
+      }
+      let linux: ReturnType<typeof installedLinuxPackageSchema.safeParse>;
+      try {
+        const linuxRoot = await repositoryInputDirectory(join(nodeModules, "@typescript", "typescript-linux-x64"));
+        linux = installedLinuxPackageSchema.safeParse(parseRepositoryJson(await readDependencyInstallationInput(
+          join(linuxRoot, "package.json"), 128 * 1024)));
+      } catch { return { status: "ineligible", reason: "TypeScript Linux/x64 installation is unavailable" }; }
+      if (!linux.success || linux.data.version !== installed.data.version) {
+        return { status: "ineligible", reason: "TypeScript Linux/x64 installation is missing or mismatched" };
+      }
+    }
+    await resolveContainerRuntime([source]);
+    return { status: "eligible", reason: "required declarations, installed verifier, and Docker client are present" };
+  } catch {
+    return { status: "ineligible", reason: "required repository inputs, installed verifier, or Docker client are unavailable" };
+  }
+}
 
 async function candidateBinding(candidateDirectory: string): Promise<RepositoryTypecheckProfile["candidate"]> {
   return await bindCandidateCheckoutContent(candidateDirectory, (path) => protectedInputs.has(path));

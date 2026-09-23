@@ -43,8 +43,8 @@ The source-only task can change one or two existing non-test TypeScript files
 under `src/` and run a contained no-emit typecheck. A separate source-and-test
 task can change one existing TypeScript source file and one existing regression
 test, then run a fixed targeted Node test. Both require explicit approval and
-human review. The source-and-test path has development checks but still needs a
-successful ordinary live walkthrough and fresh external evaluation.
+human review. The source-and-test path has accepted ordinary live walkthroughs,
+including one fresh external case; representative usefulness remains unproven.
 
 Tesota does not currently handle arbitrary repository changes, new or deleted
 files, model-selected shell commands, dependency changes or interrupted-task

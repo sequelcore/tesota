@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readdir, realpath, rm } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
+import { runRepositoryGitBytes } from "./repository-git.js";
 
 const MAXIMUM_DEPENDENCY_ENTRIES = 100_000;
 const MAXIMUM_DEPENDENCY_BYTES = 512 * 1024 * 1024;
@@ -42,6 +43,13 @@ async function readBoundedRegularFile(path: string, maximumBytes: number, allowH
 /** Read one bounded, non-redirected input used by a repository check profile. */
 export async function readRepositoryInput(path: string, maximumBytes: number): Promise<Buffer> {
   return await readBoundedRegularFile(path, maximumBytes, false);
+}
+
+/** Inspect committed check inputs without confusing uncommitted source edits with the candidate baseline. */
+export function readCommittedCheckInput(source: string, path: string, maximumBytes: number): Buffer {
+  const bytes = runRepositoryGitBytes(source, ["show", `HEAD:${path}`]);
+  if (bytes.length > maximumBytes) throw new Error("Committed repository check input too large");
+  return bytes;
 }
 
 /** Read one dependency file while permitting Bun's content-addressed hardlinks. */
