@@ -2,14 +2,14 @@ import { execFileSync } from "node:child_process";
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent, type StreamFn } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools, type AssistantMessage } from "@earendil-works/pi-ai";
-import { browserOnlyAuth, LIVE_CODEX_EXPECTED_TOKEN, LIVE_LIMITS, liveProbePasses,
-  classifyLiveOAuthFailure, observeLiveBrowserLaunch, runLiveOAuthLogin, runLiveCodexTurn,
+import { deviceCodeAuth, LIVE_CODEX_EXPECTED_TOKEN, LIVE_LIMITS, liveProbePasses,
+  classifyLiveOAuthFailure, runLiveOAuthLogin, runLiveCodexTurn,
   type LiveCodexExperimentResult, type LiveCodexTurnResult } from "../src/integrations/pi-live.js";
 import { liveSourceIdentity, serializeLiveEvidence } from "../src/integrations/pi-live-evidence.js";
 
 function experimentEvidence(result: LiveCodexExperimentResult): string {
   return serializeLiveEvidence(liveSourceIdentity(), "2026-01-01T00:00:00.000Z", {
-    mode: "full_probe", authenticationMethod: "browser", authentication: { outcome: "succeeded", oauthFailureCategory: null },
+    mode: "full_probe", authenticationMethod: "device_code", authentication: { outcome: "succeeded", oauthFailureCategory: null },
     experiment: result, inferenceAttempted: false, disposition: "failed",
   });
 }
@@ -233,31 +233,6 @@ it("rejects missing or wrongly ordered abort assertions independently", async ()
   for (const mutation of mutations) expect(liveProbePasses({ ...probe, ...mutation }, true)).toBe(false);
 });
 
-it("never reads or prints manual authorization material; callback cancellation settles the prompt", async () => {
-  const openBrowser = vi.fn();
-  const log = vi.spyOn(console, "log");
-  const abort = new AbortController();
-  const callback = new AbortController();
-  const auth = browserOnlyAuth(openBrowser, abort.signal);
-  expect(await auth.prompt({ type: "select", message: "login", options: [{ id: "browser", label: "Browser" }] })).toBe("browser");
-  let returned = false;
-  const prompt = auth.prompt({ type: "manual_code", message: "SYNTHETIC_PROMPT", signal: callback.signal });
-  const rejected = expect(prompt).rejects.toThrow("Browser callback input closed");
-  void prompt.then(() => { returned = true; }, () => {});
-  await Promise.resolve();
-  expect(returned).toBe(false);
-  expect(log).not.toHaveBeenCalled();
-  callback.abort();
-  await rejected;
-  await expect(auth.prompt({ type: "secret", message: "SYNTHETIC_PROMPT" })).rejects.toThrow("Manual authorization input is disabled");
-  await expect(auth.prompt({ type: "text", message: "SYNTHETIC_PROMPT" })).rejects.toThrow("Manual authorization input is disabled");
-  await expect(auth.prompt({ type: "manual_code", message: "SYNTHETIC_PROMPT" })).rejects.toThrow("Manual authorization input is disabled");
-  auth.notify({ type: "info", message: "SYNTHETIC_PRIVATE_MESSAGE" });
-  auth.notify({ type: "progress", message: "SYNTHETIC_PRIVATE_MESSAGE" });
-  expect(log).not.toHaveBeenCalled();
-  expect(openBrowser).not.toHaveBeenCalled();
-});
-
 it("retains only the exact versioned evidence shape, and neither probe can hide failure", async () => {
   const abortProbe = await successfulAbort();
   const turn = controlled();
@@ -290,7 +265,7 @@ it("retains only the exact versioned evidence shape, and neither probe can hide 
 function oauthFailureEvidence(error: unknown, category: string) {
   const failureCategory = classifyLiveOAuthFailure(error);
   const serialized = serializeLiveEvidence(liveSourceIdentity(), "2026-01-01T00:00:00.000Z", {
-    mode: "auth_only", authenticationMethod: "browser", authentication: failureCategory === "oauth_timeout" ?
+    mode: "auth_only", authenticationMethod: "device_code", authentication: failureCategory === "oauth_timeout" ?
       { outcome: "unconfirmed", oauthFailureCategory: failureCategory } :
       { outcome: "failed", oauthFailureCategory: failureCategory },
     experiment: null, inferenceAttempted: false, disposition: "failed",
@@ -306,7 +281,7 @@ function oauthFailureEvidence(error: unknown, category: string) {
 
 it("classifies the local OAuth deadline even when cancellation rejects login immediately", async () => {
   vi.useFakeTimers();
-  const auth = browserOnlyAuth(vi.fn(), new AbortController().signal);
+  const auth = deviceCodeAuth(vi.fn(), new AbortController().signal);
   let signal: AbortSignal | undefined;
   const running = runLiveOAuthLogin((interaction) => new Promise((_resolve, reject) => {
     signal = interaction.signal;
@@ -318,19 +293,6 @@ it("classifies the local OAuth deadline even when cancellation rejects login imm
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it.each(["throw", "error_event"])("classifies local browser launch %s without serializing its payload", async (mode) => {
-  const cancellation = new AbortController();
-  const auth = browserOnlyAuth(vi.fn(), cancellation.signal);
-  const running = runLiveOAuthLogin((interaction) => new Promise((_resolve, reject) => {
-    interaction.signal?.addEventListener("abort", () => reject(interaction.signal?.reason), { once: true });
-  }), auth).catch((error: unknown) => error);
-  observeLiveBrowserLaunch((onError) => {
-    if (mode === "throw") throw new Error("SYNTHETIC_PRIVATE launcher details");
-    queueMicrotask(onError);
-  }, cancellation);
-  oauthFailureEvidence(await running, "browser_launch_failed");
-});
-
 it.each([
   new Error("oauth_timeout: SYNTHETIC_PRIVATE authorization_code=code redirect_uri=https://example.invalid/callback access_token=token"),
   { category: "browser_launch_failed", stack: "SYNTHETIC_PRIVATE stack",
@@ -339,19 +301,14 @@ it.each([
     headers: "SYNTHETIC_PRIVATE header", env: "SYNTHETIC_PRIVATE env", body: "SYNTHETIC_PRIVATE body" },
   "login_rejected", undefined,
 ])("maps unrecognized login failures to unknown without inspecting raw details (%#)", async (error: unknown) => {
-  const auth = browserOnlyAuth(vi.fn(), new AbortController().signal);
+  const auth = deviceCodeAuth(vi.fn(), new AbortController().signal);
   const failure = await runLiveOAuthLogin(() => Promise.reject(error), auth).catch((caught: unknown) => caught);
   oauthFailureEvidence(failure, "unknown");
 });
 
-it("does not infer a callback failure from prompt cancellation and clears a successful login deadline", async () => {
+it("clears a successful login deadline", async () => {
   vi.useFakeTimers();
-  const auth = browserOnlyAuth(vi.fn(), new AbortController().signal);
-  const callback = new AbortController();
-  const pending = auth.prompt({ type: "manual_code", message: "offline", signal: callback.signal })
-    .catch((error: unknown) => error);
-  callback.abort();
-  oauthFailureEvidence(await pending, "unknown");
+  const auth = deviceCodeAuth(vi.fn(), new AbortController().signal);
   await runLiveOAuthLogin(() => Promise.resolve({ access: "SYNTHETIC_PRIVATE", refresh: "SYNTHETIC_PRIVATE" }), auth);
   expect(vi.getTimerCount()).toBe(0);
 });

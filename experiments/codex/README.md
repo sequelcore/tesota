@@ -42,9 +42,9 @@ For login-only diagnostics, use the compiled entry with `--auth-only --device-co
 Both require an interactive unrecorded terminal. Normal login belongs to
 `tesota auth login`; these modes exist to test the isolated interaction.
 
-`--full-probe --browser` retains the legacy browser-callback diagnostic. It does
-not persist credentials or accept manual callback input. Browser launch is not
-proof that navigation or callback completion occurred.
+The former browser-callback probe has been retired. Its retained evidence still
+describes the historical diagnostic; current probes use stored or device-code
+authentication.
 
 All modes support offline `--help`. Normal `bun run check` uses synthetic provider
 boundaries and never authenticates against the live service.

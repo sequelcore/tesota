@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent } from "@earendil-works/pi-agent-core";
 import { createAssistantMessageEventStream, fauxAssistantMessage, type FetchFunction } from "@earendil-works/pi-ai";
-import { runLiveCodex, deviceCodeAuth, deviceCodeTerminalRenderer, browserOnlyAuth, observeLiveBrowserLaunch, LIVE_LIMITS,
+import { runLiveCodex, deviceCodeAuth, deviceCodeTerminalRenderer, LIVE_LIMITS,
   LIVE_CODEX_EXPECTED_TOKEN, type LiveCodexRunResult } from "../src/integrations/pi-live.js";
 import { liveSourceIdentity, serializeLiveEvidence, type LiveSourceIdentity } from "../src/integrations/pi-live-evidence.js";
 
@@ -196,7 +196,7 @@ it.each(["stream", "streamSimple", "complete", "completeSimple", "streamDeferred
 
 it("full-probe still runs both independent probes after login", async () => {
   const f = await fixture();
-  const result = await runLiveCodex("full_probe", browserOnlyAuth(vi.fn(), f.cancellation.signal));
+  const result = await runLiveCodex("full_probe", f.interaction);
   expect(result.disposition).toBe("passed");
   expect(f.stream).toHaveBeenCalledTimes(2);
   expect(evidence(result)).toMatchObject({ mode: "full_probe", modelInvocationCount: 2, disposition: "passed" });
@@ -217,26 +217,6 @@ it.each(["stream", "streamSimple", "fetchDeferred", "cancelDeferred"] as const)(
     expect(f.stream).not.toHaveBeenCalled();
   },
 );
-
-it.each(["timeout_first", "browser_first"])("settles timeout/browser race by first local observation: %s", async (order) => {
-  vi.useFakeTimers();
-  const f = await fixture();
-  let failBrowser: () => void = () => {};
-  observeLiveBrowserLaunch((failed) => { failBrowser = failed; }, f.cancellation);
-  f.login.mockImplementation(() => new Promise(() => {}));
-  if (order === "browser_first") setTimeout(failBrowser, LIVE_LIMITS.loginMs);
-  const running = runLiveCodex("auth_only", f.interaction);
-  if (order === "timeout_first") setTimeout(failBrowser, LIVE_LIMITS.loginMs);
-  // Synchronous timer advancement deliberately withholds promise microtasks.
-  vi.advanceTimersByTime(LIVE_LIMITS.loginMs);
-  const result = await running;
-  expect(result.authentication).toEqual(order === "timeout_first" ?
-    { outcome: "unconfirmed", oauthFailureCategory: "oauth_timeout" } :
-    { outcome: "failed", oauthFailureCategory: "browser_launch_failed" });
-  expect(evidence(result)).toMatchObject({ disposition: "failed", modelInvocationCount: 0, turn: null, abortProbe: null });
-  expect(f.stream).not.toHaveBeenCalled();
-  expect(vi.getTimerCount()).toBe(0);
-});
 
 it("unknown OAuth failure is distinct from success and never retains its payload", async () => {
   const f = await fixture();
