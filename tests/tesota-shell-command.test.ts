@@ -23,6 +23,7 @@ function fakeSurface(ask: (prompt: string) => Promise<string>) {
     inspectFor: () => {},
     recoverFor: () => {},
     blockSession: () => {},
+    endSession: () => {},
   };
   return { surface, events, progress };
 }
@@ -105,7 +106,7 @@ it("routes simultaneous session turns and results to their originating conversat
     report: () => {}, refreshElapsed: () => {}, inspect: () => {}, addSession: () => {}, selectSession: () => {},
     writeTo: (id, text) => { output.push({ id, text }); },
     askIn: (id) => new Promise<string>((resolve) => { pending.set(id, resolve); }),
-    reportFor: () => {}, inspectFor: (id) => { inspections.push(id); }, recoverFor: () => {}, blockSession: () => {},
+    reportFor: () => {}, inspectFor: (id) => { inspections.push(id); }, recoverFor: () => {}, blockSession: () => {}, endSession: () => {},
   };
   const release = new Map<string, (value: ReturnType<typeof answerResult>) => void>();
   const discover = vi.fn((_input, id = "default") => new Promise<ReturnType<typeof answerResult>>((resolve) => {
@@ -129,6 +130,26 @@ it("routes simultaneous session turns and results to their originating conversat
   await expect(running).resolves.toBe(0);
   expect(output.some((event) => event.id === "other" && event.text.includes("Answer B"))).toBe(true);
   expect(output.some((event) => event.id === "default" && event.text.includes("Answer A"))).toBe(true);
+});
+
+it("ends a failed workspace turn without restarting it on selection", async () => {
+  const fixture = fakeSurface(async () => "");
+  const ended: string[] = [];
+  const askIn = vi.fn(async () => "Find the source");
+  const discover = vi.fn(async () => ({ status: "unavailable" as const, exitCode: 1,
+    reason: "tool_failed" as const, toolFailure: { tool: "tesota_search", cause: "invalid_arguments" } }));
+  let controls: { newSession: (id: string) => void; selectSession: (id: string) => void; quit: () => void } | undefined;
+  const running = runTesotaShellCommand({
+    surface: { ...fixture.surface, askIn, endSession: (id) => { ended.push(id); } },
+    initialSessionId: "default", discover, start: vi.fn(),
+    configureWorkspace: (callbacks) => { controls = callbacks; },
+  });
+  await vi.waitFor(() => { expect(ended).toEqual(["default"]); });
+  controls?.selectSession("default");
+  expect(askIn).toHaveBeenCalledTimes(1);
+  expect(discover).toHaveBeenCalledTimes(1);
+  controls?.quit();
+  await expect(running).resolves.toBe(0);
 });
 
 function answerResult(message: string) {

@@ -82,6 +82,21 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   expect(terminal.started).toBe(false);
 });
 
+it("clears progress and input when a workspace session ends", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  shell.start();
+  shell.reportFor("default", { phase: "discovering", operation: "repository_discovery" });
+  shell.endSession("default");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Session ended");
+  expect(visible(terminal)).not.toContain("Inspecting the committed repository");
+  await expect(shell.askIn("default", "> ")).rejects.toThrow("ended");
+  shell.stop();
+});
+
 it.each([
   { theme: "tesota-dark" as const, accent: "198;168;210" },
   { theme: "tesota-light" as const, accent: "109;75;120" },

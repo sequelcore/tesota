@@ -60,13 +60,15 @@ evidence remain independent facts.
    keyboard controls. Done when a supported task can be inspected and decided
    with keyboard alone at narrow and wide sizes, including stale or missing
    evidence. The layout and typed presentation callbacks are implemented;
-   ordinary live layout qualification is pending.
+   narrow-terminal live inspection was exercised; wide and stale-evidence
+   visual qualification remains pending.
 2. **Several sessions without crossed input.** Give each session its own
    transcript, draft, request for human input, progress and cancellation. The
    left list contains sessions; reviewer and verifier activity stays with its
    task. Done when A can request a decision while B is selected, and only A can
    receive that decision. The session-owned terminal state is implemented;
-   independent live interaction remains to be qualified.
+   a live session kept its approval target while another answered. Live
+   cancellation isolation remains pending.
 3. **Durable history and guarded continuation.** Persist the human transcript
    separately from task outcomes. Use Pi's own session record for settled model
    context and retain cumulative usage counters; interrupted work starts with
@@ -74,8 +76,9 @@ evidence remain independent facts.
    further work in that session. Done when a normal restart restores useful
    context and results, an interrupted restart does not revive a grant, and
    corrupt storage fails visibly. Automated cases cover settled Pi context,
-   local history and interrupted-state reconstruction; live recovery remains
-   to be qualified. A changed repository baseline refreshes the model context
+   local history and interrupted-state reconstruction; normal restart was
+   exercised live, while interrupted restart remains pending. A changed
+   repository baseline refreshes the model context
    and rechecks the request, carrying forward the consumed budget; a changed
    baseline during clarification still stops that continuation.
 4. **Two independent operations.** Bind model context, prompts and cancellation

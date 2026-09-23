@@ -37,8 +37,12 @@ Each session owns its prompts, cancellation and model context. Up to two
 operations may run at once; application to the same repository is serialized
 and still rechecks source drift. A wide terminal can show a second conversation
 read-only. An interrupted operation is never resumed as active or authorized;
-unconfirmed effects block new work in that session. This shell workspace has
-automated coverage but no ordinary live qualification yet. For a new request,
+unconfirmed effects block new work in that session. A
+[two-session live walkthrough](../experiments/practical-use/2026-09-23-shell-workspace-results.md)
+exercised approval binding, an independent answer, an accepted external issue
+fix and normal restart. It also found a stale progress defect, now fixed in
+source and focused tests. Wide split view, interrupted restart and overlapping
+application remain unqualified live. For a new request,
 repository baseline changes refresh engine context and carry the consumed
 budget forward; a changed clarification baseline still stops that request.
 It has session-only Tesota dark, Tesota light and terminal-color appearances;

@@ -231,9 +231,11 @@ export async function runTesotaShellCommand(
     let resolveQuit: (() => void) | undefined;
     const quit = new Promise<void>((resolve) => { resolveQuit = resolve; });
     const started = new Set<string>();
+    const ended = new Set<string>();
     let closing = false;
     const runSession = (id: string): void => {
       if (dependencies.blockedSessionIds?.includes(id)) return;
+      if (ended.has(id)) return;
       if (started.has(id)) return;
       started.add(id);
       const operation = runTesotaShell({
@@ -243,11 +245,17 @@ export async function runTesotaShellCommand(
         start: (proposalId, report) => dependencies.start(proposalId, report, id),
         report: (progress: TesotaShellProgress) => { surface.reportFor(id, progress); },
         onTurn: (turn) => { surface.inspectFor(id, inspectConversationTurn(turn)); },
-      }).then(() => undefined, (error: unknown) => {
+      }).then(() => {
+        ended.add(id);
+        surface.endSession(id);
+      }, (error: unknown) => {
         const cancelled = error instanceof Error && error.name === "AbortError";
         if (closing && cancelled) return;
-        surface.writeTo(id, cancelled ? "Session cancelled. Inspect retained evidence before retrying.\n" :
-            "Session failed. Inspect retained evidence before retrying.\n");
+        ended.add(id);
+        try {
+          surface.writeTo(id, cancelled ? "Session cancelled. Inspect retained evidence before retrying.\n" :
+              "Session failed. Inspect retained evidence before retrying.\n");
+        } finally { surface.endSession(id); }
       });
       running.add(operation);
       void operation.finally(() => { running.delete(operation); started.delete(id); });
