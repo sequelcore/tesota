@@ -70,8 +70,9 @@ installation are accepted as source inputs, but the mounted snapshot contains
 only independently copied regular files. The candidate mount is also read-only.
 The container has no network, added capabilities or mounted host credentials,
 uses a read-only root filesystem and starts from the pinned image without
-pulling. The fixed Node process receives a 384 MiB old-space ceiling inside the
-512 MiB container limit. Output is bounded to 256 KiB and execution to 60 seconds. Timeout and
+pulling. The TypeScript 7 compiler is Go-based and needs a bounded 128-process,
+two-CPU, 1024 MiB container for this qualified profile; its Node launcher has
+a 384 MiB old-space ceiling. Output is bounded to 256 KiB and execution to 60 seconds. Timeout and
 cancellation request container removal; the result remains `unconfirmed` if
 Docker absence or client settlement cannot be observed.
 

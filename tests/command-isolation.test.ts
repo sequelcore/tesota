@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   CONTAINER_IMAGE,
@@ -43,6 +44,9 @@ describe("command isolation qualification", () => {
 
     expect(invocation.command).toBe("C:\\Program Files\\Docker\\docker.exe");
     expect(serialized).toContain("--network=none");
+    expect(invocation.args).toEqual(expect.arrayContaining([
+      "--pids-limit=128", "--memory=1024m", "--memory-swap=1024m", "--cpus=2",
+    ]));
     expect(serialized).toContain("target=/workspace/repository,readonly");
     expect(serialized).toContain("target=/workspace/node_modules,readonly");
     expect(serialized).toContain("/workspace/node_modules/typescript/bin/tsc");
@@ -50,7 +54,10 @@ describe("command isolation qualification", () => {
     expect(serialized).toContain("--noEmit\n--incremental\nfalse\n--pretty\nfalse\n-p\ntsconfig.json");
     expect(serialized).not.toContain("TESOTA_QUALIFICATION_SECRET");
     expect(typecheckContainerPolicySha256()).toMatch(/^[a-f\d]{64}$/u);
-    expect(typecheckContainerPolicySha256()).toBe(typecheckContainerPolicySha256());
+    const normalized = buildTypecheckContainerInvocation({ candidate: "<candidate>",
+      nodeModules: "<node-modules>" }, "<runtime-name>", "<runtime-name>");
+    expect(typecheckContainerPolicySha256()).toBe(createHash("sha256")
+      .update(JSON.stringify(normalized.args)).digest("hex"));
   });
 
   it("isolates the fixed Vitest runner from writes, network and ambient credentials", () => {

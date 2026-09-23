@@ -8,7 +8,7 @@ The [roadmap](../docs/roadmap.md) owns current status and priority, and
 | Area | Record |
 | --- | --- |
 | First prospective repository task and follow-ups | [Supported task](supported-task/README.md) |
-| Practical external-task pilot, including failures | [Practical use](practical-use/2026-09-22-results.md), [check-selection walkthrough](practical-use/2026-09-22-check-selection-results.md), [accepted walkthroughs](practical-use/2026-09-23-results.md), [cross-repository sample](practical-use/2026-09-23-cross-repository-results.md), [shell workspace walkthrough](practical-use/2026-09-23-shell-workspace-results.md), and [combined-check internal diagnostic](practical-use/2026-09-23-combined-check-results.md) |
+| Practical external-task pilot, including failures | [Practical use](practical-use/2026-09-22-results.md), [check-selection walkthrough](practical-use/2026-09-22-check-selection-results.md), [accepted walkthroughs](practical-use/2026-09-23-results.md), [cross-repository sample](practical-use/2026-09-23-cross-repository-results.md), [shell workspace walkthrough](practical-use/2026-09-23-shell-workspace-results.md), [first combined-check diagnostic](practical-use/2026-09-23-combined-check-results.md), and [shell-progress combined-check diagnostic](practical-use/2026-09-23-combined-shell-progress-results.md) |
 | Optional independent review provider | [Gentle AI](gentle/README.md) |
 | Fixed static check selection | [Oxlint](oxlint/README.md) |
 | Windows sandbox and container comparison | [Isolation](isolation/README.md) |
