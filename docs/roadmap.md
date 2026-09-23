@@ -25,8 +25,7 @@ variant is now implemented for one existing TypeScript source and one existing
 `tests/**/*.test.ts` file, using a fixed contained Node test rather than the
 repository script. Its deterministic and Docker development checks do not yet
 establish useful completion through the ordinary live conversation or a fresh
-external evaluation. The targeted Vitest profile remains a separate mechanism,
-not a check silently selected for this variant. [Using Tesota](using-tesota.md)
+external evaluation. [Using Tesota](using-tesota.md)
 owns current usage and limitations.
 
 In the subsequent Gentle Pi follow-up, ordinary discovery reached the right
@@ -155,8 +154,7 @@ launch processes or provision tools; a working directory or replaceable I/O
 interface alone does not establish control of all effects.
 
 Use the repository's actual test runner for the selected task: Gentle Pi uses
-Node's built-in test runner, so a concrete targeted Node profile is required;
-the existing Vitest profile cannot verify this repository. Admit test edits
+Node's built-in test runner, so a concrete targeted Node profile is required. Admit test edits
 through proposal, scope, check inputs, exact diff, review and promotion together.
 Add a file-lifecycle operation only if the selected task needs it and its effects
 are implemented across those owners. Keep check selection and configuration
