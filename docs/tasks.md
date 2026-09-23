@@ -41,8 +41,7 @@ immutable grant; the source file need not live below `src/`. Scripts, check
 configuration, dependencies, file creation and arbitrary commands remain
 denied. It permits up to 12 reads, six replacements and six checks across R0
 and R1, with the same 64 KiB file bound and five-minute cumulative active-time
-limit. Its separate plan version 3 and model limits leave version-1/2 source-only
-plans and their fingerprints unchanged.
+limit. Source-only plans use version 2; source-and-test plans use version 3.
 
 For this variant, the model first checks the unchanged candidate, changes the
 regression test and checks that it fails on the original source, then repairs
@@ -65,7 +64,7 @@ semantic revision. The optional R1 uses a fresh Pi agent with only the remaining
 read, edit, check and active-time budget; attempted consequential work is not
 refunded after cancellation or uncertain settlement.
 
-The version-2 or version-3 persisted plan binds the approved proposal, committed baseline,
+The persisted plan binds the approved proposal, committed baseline,
 initial candidate read-input hashes, exact source-target hashes and modes,
 write set, limits and task definition. Reloading that plan can recheck a
 candidate, but cannot recreate editing authority.
@@ -82,10 +81,6 @@ an LF/CRLF-only change is source drift. Their hashes and modes participate in
 the task definition and check evidence, so rebinding them invalidates the
 review fingerprint. Candidate replacements are applied exactly as reviewed;
 promotion does not convert their line endings.
-
-Version-1 plans remain inspectable and checkable, but their missing source
-observations are never reconstructed from the present worktree. They cannot
-receive a new acceptance or be promoted. A fresh approved task is required.
 
 ## What the automatic checks prove
 

@@ -198,9 +198,8 @@ Unconfirmed termination retains both source and configuration snapshots. Failure
 include binding when preparation established it; absence never implies success.
 
 Completed Oxlint results and their input bindings remain immutable. The CLI
-prints the result without persisting it. Historical fixture-based correction
-and durable-recovery experiments are retained under `experiments/`; their
-runtime adapters are retired.
+prints the result without persisting it. Dated experimental observations are
+retained under [experiments](../experiments/README.md).
 
 ## Standalone LemmaScript and Dafny formal check
 

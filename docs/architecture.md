@@ -172,34 +172,13 @@ does not grant authority. Invalid results, tool failures and budget exhaustion
 retain distinct outcomes. After leaving the alternate screen, the shell renders
 its final message through Pi so a stopped session leaves an explanation visible.
 
-Pi's [project trust configuration](https://github.com/earendil-works/pi/blob/v0.86.1/packages/coding-agent/docs/settings.md#project-trust)
-controls loading project settings and resources. Its `defaultProjectTrust`,
-`/trust` and `--approve` controls do not authorize Tesota task effects. Declining
-project trust also does not suppress every input: context files and user/global
-or explicitly supplied extensions have separate loading behavior. Select those
-resources explicitly in the host integration.
-
-Reuse Pi's tool selection, blocking hooks and approval UI where useful, while
-keeping the decision in the existing Tesota admission and effect owners. Pi's
-[security contract](https://github.com/earendil-works/pi/blob/v0.86.1/packages/coding-agent/docs/security.md)
-does not provide a built-in sandbox. Its example permission gate illustrates
-confirmation for selected Bash patterns; it is not a complete command or path
-policy. Neither project trust nor that example replaces the existing execution
-environment. No additional permission framework is required by this integration.
-
-Restoring or branching a transcript does not restore authority, roll back files
-or undo an application. Rebind the visible state to Tesota's canonical records
-after compaction or resume. When Pi replaces a session instance, reconnect
-subscriptions and current tool bindings; do not retain closures issued under
-expired authority. Retire the superseded session path when the replacement is
-adopted rather than maintaining competing histories.
-
-Reusable tool operations must route through the relevant effect owner. Inspect
-direct filesystem access, subprocesses and provisioning in addition to public
-operation interfaces. A working directory is not confinement, and an extension
-hook is not isolation from code executing inside the host process. Candidate
-edits still require current input binding and invalidate affected evidence;
-rendered patches do not replace exact accepted bytes at promotion.
+Pi's project trust and resource settings do not authorize Tesota task effects.
+The shell explicitly selects resources because default context and extensions
+have different loading rules. Pi does not sandbox the repository checks;
+Tesota's admitted execution environment owns that boundary. Restoring a
+transcript, if later implemented, cannot restore expired tools or approval.
+Candidate edits still require current input binding and invalidate affected
+evidence; rendered patches do not replace exact accepted bytes at promotion.
 
 ## Execution environments
 

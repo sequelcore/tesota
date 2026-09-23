@@ -33,14 +33,11 @@ establish usefulness only for the selected corpus and evaluation method.
 ## Qualifying an increment
 
 Select the capability and new effects under test, then apply the relevant
-requirements below. These sections describe evidence obligations, not a serial
-roadmap. Do not claim full recovery or broad coding support from one successful
-session. Preserve the earlier numbered milestone records as historical evidence.
-
-For a Pi dependency or session migration, first preserve the existing supported
-behavior through `bun run check` and focused integration checks. Assess new
-resources, tools or environments separately; package compatibility does not
-qualify new effects.
+requirements below. These are evidence obligations, not a serial roadmap.
+Do not claim broad capability from one successful session. For a Pi dependency
+or session migration, preserve existing supported behavior with `bun run check`
+and focused integration checks; assess new resources, tools and environments
+separately.
 
 ## Continuous conversation and context
 
@@ -56,51 +53,10 @@ Explicit resource selection must exclude unadmitted configuration, extensions
 and tool provisioning. A session-completion event alone cannot establish that
 tool effects or subprocess descendants have settled.
 
-The implemented read-only slice has deterministic SDK and shell regression
-coverage for shared context, isolation, correction, resource denial, baseline
-drift, cancellation, timeout, late events and settlement. Automatic compaction,
-retry, persistence and session replacement are disabled, so those mechanisms
-are not qualified. The first sanitized Windows walkthrough on a preselected
-public repository observed follow-up usefulness and real-provider cancellation,
-but inconsistent unavailable turns left live qualification pending. Subsequent
-diagnosis reproduced rejection of ordinary multiline prose and loss of the final
-message when the terminal closed. These cases now have deterministic regressions.
-
-On 2026-09-21, a local Windows PTY walkthrough of the ordinary compiled CLI with
-`openai-codex/gpt-5.6-luna` and the prose/terminal fixes completed a multiline
-list, a contextual correction with paragraphs and a code block, cancellation,
-and a follow-up retaining the corrected subject. The source was
-`sindresorhus/yoctocolors` at `a85b98a90e5731914567d8c209e7ec45ac2d24e2`.
-The final message remained visible and the process exited 0. This qualifies that
-local walkthrough only; it does not establish general reliability or explain
-every earlier unavailable result. The run used local changes over `99209bef`;
-it is separate from CI and from the earlier PR's qualification evidence.
-
-The local `bun run check` gate also passed after these fixes: typechecking,
-compilation, lint and 498 deterministic tests across 37 files. These checks do
-not invoke the live provider or establish broader task support.
-
-The later R0 task-tool connection has a deterministic SDK integration test for
-discovery, checked candidate editing and a subsequent question in one transcript,
-including revocation of a retained tool proxy. This is local check evidence.
-One [prospective Windows/Docker live route attempt](../experiments/supported-task/continuous-session-2-2026-09-22.md)
-then completed ordinary shell discovery, scoped approval, a contained
-TypeScript check, candidate review and an explicit human rejection. An
-independent 18-case oracle passed on the exact candidate. No promotion or
-post-task conversational follow-up occurred, so this qualifies the observed
-execution-to-rejection path only, not accepted application, broad reliability
-or the complete continuous code-and-test outcome.
-
-The later Pi 0.87.1 / `gpt-6-luna` route update passed the complete local gate
-and one separate live no-tool probe (completed answer and observed
-cancellation). This establishes route availability and local settlement for
-that probe only. The [practical-use pilot](../experiments/practical-use/2026-09-22-results.md)
-retains its failed and degraded external-task attempts without qualifying a
-source-and-test change or accepted application.
+The [roadmap](roadmap.md) owns current status. Dated walkthroughs and failures
+are retained under [experiments](../experiments/README.md).
 
 ## Complete change and application
-
-This retains the outcome requirements used for the historical Milestone 1.
 
 To qualify one complete small repository change from one conversation:
 
@@ -145,8 +101,6 @@ not the fresh external usefulness evaluation required by this section.
 
 ## Correction
 
-This retains the outcome requirements of the historical Milestone 2.
-
 Correction qualification must separately exercise:
 
 - first-result production;
@@ -160,8 +114,6 @@ residual defects, intervention, elapsed time and unsuccessful correction cost
 with the no-correction baseline.
 
 ## Interruption recovery
-
-This retains the outcome requirements of the historical Milestone 3.
 
 Recovery qualification restarts the product at every durable boundary. It
 includes work interrupted before and after a result, check persistence, wrong-
