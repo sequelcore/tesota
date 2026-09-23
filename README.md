@@ -61,6 +61,7 @@ it does not establish that the requested behavior is correct. The
 | Complete user workflow | [Using Tesota](docs/using-tesota.md) |
 | Product purpose and terms | [Identity](docs/identity.md) |
 | Current status and next work | [Roadmap](docs/roadmap.md) |
+| Vertical delivery plan | [Implementation plan](docs/implementation-plan.md) |
 | Implementation and authority boundaries | [Architecture](docs/architecture.md) |
 | Checks and their claims | [Verification](docs/verification.md) |
 | Build, test and contribution guidance | [Development](docs/development.md) |

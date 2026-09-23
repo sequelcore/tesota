@@ -7,7 +7,8 @@ the intended experience, not a current capability claim.
 [Identity](identity.md) defines the purpose; [qualification](qualification.md)
 defines evidence for claims; [experiments](../experiments/README.md) retain
 dated results. [Decision 012](decisions/012-general-purpose-harness.md) records
-the new direction.
+the new direction. The [implementation plan](implementation-plan.md) names
+vertical slices and their completion evidence.
 
 ## Current status
 
@@ -50,8 +51,8 @@ plan or a promise that every named integration will ship.
 Replace the fixed TypeScript task shapes with a flow for a small, preselected
 change in an ordinary repository. Start with the file operations and checks
 needed by that task, then expand to further languages and layouts. The first
-slice must let the user select an applicable repository check from trusted
-configuration rather than tying it to a TypeScript task shape. Preserve the
+slice must let the user select an eligible, qualified repository check before
+approval rather than tying it to a TypeScript task shape. Preserve the
 check's exact claim and failure outcome.
 
 The user should describe the goal, approve consequential access, see the
@@ -76,6 +77,13 @@ The shell should explain results, sources, actions, checks and uncertainty in
 words users understand. Technical identities stay in inspectable detail.
 A task may end in an answer or artifact when there is nothing to apply.
 Consequential external actions need their own approval and outcome record.
+
+An application-hosted task is another needed qualification case once a
+concrete consumer exists. The application keeps its identity, domain data and
+business decisions; Tesota must handle the admitted work, result and evidence
+without inheriting that application's policy. A changed objective or revoked
+permission must be checked before a consequential action. Qualify this through
+a bounded consumer task, not a generic hosting platform built in advance.
 
 ### 3. Extensible verification and review
 

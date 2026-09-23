@@ -225,6 +225,13 @@ need their own result and effect boundaries. An answer may be reviewed without
 file application; a browser action needs observed state and settlement; a
 document result needs artifact identity and applicable checks.
 
+An application may eventually host Tesota work while retaining its own users,
+domain data and business policy. Tesota would need a bounded way to receive
+current authority and context and return results and evidence. That boundary
+is proposed, not implemented. A change to the governing objective or
+permission must be rechecked before any consequential tool effect; a
+post-action review cannot authorize an action retroactively.
+
 Shared evidence should identify the claim, examined result and inputs,
 producer, configuration, outcome and limits. Individual methods retain their
 own semantics and effect policy. Native and user-supplied methods are opt-in;

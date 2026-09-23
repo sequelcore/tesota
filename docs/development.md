@@ -71,6 +71,7 @@ contract in another guide.
 | Product purpose and vocabulary | [Identity](identity.md) |
 | Supported user workflow | [Using Tesota](using-tesota.md) |
 | Status and priorities | [Roadmap](roadmap.md) |
+| Vertical implementation slices and completion evidence | [Implementation plan](implementation-plan.md) |
 | Implementation and authority boundaries | [Architecture](architecture.md) |
 | Product qualification criteria | [Qualification](qualification.md) |
 | Implemented check contracts | [Verification](verification.md) |
