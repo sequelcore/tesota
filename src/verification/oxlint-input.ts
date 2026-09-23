@@ -4,73 +4,43 @@ import { createRequire } from "node:module";
 import { basename, dirname, join } from "node:path";
 
 export const OXLINT_PROFILE = "oxlint-static/v3" as const;
-export const LEGACY_OXLINT_PROFILE_V2 = "oxlint-static/v2" as const;
-export const LEGACY_OXLINT_PROFILE_V1 = "oxlint-basic/v1" as const;
-export type OxlintProfile = typeof OXLINT_PROFILE | typeof LEGACY_OXLINT_PROFILE_V2 |
-  typeof LEGACY_OXLINT_PROFILE_V1;
+export type OxlintProfile = typeof OXLINT_PROFILE;
 
-const legacyDiagnosticRulesV1: readonly string[] = Object.freeze([
+export const OXLINT_DIAGNOSTIC_RULES: readonly string[] = Object.freeze([
   "eslint(no-debugger)",
   "eslint(no-unused-vars)",
-]);
-const legacyDiagnosticRulesV2: readonly string[] = Object.freeze([
-  ...legacyDiagnosticRulesV1,
   "eslint(no-constant-binary-expression)",
   "eslint(no-unsafe-optional-chaining)",
   "oxc(missing-throw)",
   "typescript(no-explicit-any)",
   "typescript(ban-ts-comment)",
-]);
-export const OXLINT_DIAGNOSTIC_RULES: readonly string[] = Object.freeze([
-  ...legacyDiagnosticRulesV2,
   "typescript(no-non-null-assertion)",
   "oxc(no-accumulating-spread)",
 ]);
 
-export const legacyConfigurationV1: string = JSON.stringify({
-  plugins: [], categories: { correctness: "off" },
-  rules: { "no-debugger": "error", "no-unused-vars": "error" },
-});
-
-const profileV2Rules = {
-  "no-debugger": "error",
-  "no-unused-vars": "error",
-  "no-constant-binary-expression": "error",
-  "no-unsafe-optional-chaining": "error",
-  "oxc/missing-throw": "error",
-  "typescript/no-explicit-any": "error",
-  "typescript/ban-ts-comment": ["error", {
-    minimumDescriptionLength: 3,
-    "ts-check": false,
-    "ts-expect-error": "allow-with-description",
-    "ts-ignore": true,
-    "ts-nocheck": true,
-  }],
-} as const;
-
-export const legacyConfigurationV2: string = JSON.stringify({
-  plugins: ["oxc", "typescript"], categories: { correctness: "off" }, rules: profileV2Rules,
-});
-
 export const fixedConfiguration: string = JSON.stringify({
   plugins: ["oxc", "typescript"], categories: { correctness: "off" },
   rules: {
-    ...profileV2Rules,
+    "no-debugger": "error",
+    "no-unused-vars": "error",
+    "no-constant-binary-expression": "error",
+    "no-unsafe-optional-chaining": "error",
+    "oxc/missing-throw": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/ban-ts-comment": ["error", {
+      minimumDescriptionLength: 3,
+      "ts-check": false,
+      "ts-expect-error": "allow-with-description",
+      "ts-ignore": true,
+      "ts-nocheck": true,
+    }],
     "typescript/no-non-null-assertion": "error",
     "oxc/no-accumulating-spread": "error",
   },
 });
 
-export function isKnownProfileConfiguration(profile: unknown, configuration: unknown): profile is OxlintProfile {
-  return (profile === OXLINT_PROFILE && configuration === fixedConfiguration) ||
-    (profile === LEGACY_OXLINT_PROFILE_V2 && configuration === legacyConfigurationV2) ||
-    (profile === LEGACY_OXLINT_PROFILE_V1 && configuration === legacyConfigurationV1);
-}
-
-export function isKnownDiagnosticRule(profile: OxlintProfile, rule: unknown): rule is string {
-  const knownRules = profile === OXLINT_PROFILE ? OXLINT_DIAGNOSTIC_RULES :
-    profile === LEGACY_OXLINT_PROFILE_V2 ? legacyDiagnosticRulesV2 : legacyDiagnosticRulesV1;
-  return typeof rule === "string" && knownRules.includes(rule);
+export function isKnownDiagnosticRule(rule: unknown): rule is string {
+  return typeof rule === "string" && OXLINT_DIAGNOSTIC_RULES.includes(rule);
 }
 
 export interface InputBinding {

@@ -1,16 +1,21 @@
 # Candidate correction
 
-This Windows experiment exercises a real model correcting one isolated source
+This is a retained record of a retired experiment. The `live:candidate` command
+and its fixture-based adapter are no longer available.
+
+This Windows experiment exercised a real model correcting one isolated source
 file. It builds on the [verification-tool experiment](verification.md), using the
 same Pi adapter, stored authentication and bounded Oxlint verifier.
+
+Historical invocation (no longer available):
 
 ```sh
 bun run build
 bun run live:candidate
 ```
 
-The entry point accepts only `--stored`; it cannot select arbitrary files or
-start login. `bun --no-env-file dist/live-candidate.js --help` is offline.
+The entry point accepted only `--stored`; it could not select arbitrary files or
+start login. `bun --no-env-file dist/live-candidate.js --help` was offline.
 
 ## Task and admission
 

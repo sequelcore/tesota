@@ -55,7 +55,7 @@ describe("command isolation qualification", () => {
 
   it("isolates the fixed Vitest runner from writes, network and ambient credentials", () => {
     const invocation = buildVitestContainerInvocation({ candidate: "C:\\fixture\\candidate",
-      linuxX64NodeModules: "C:\\fixture\\linux-x64-node_modules", selectedTests: ["tests/repository-vitest.test.ts"] },
+      linuxX64NodeModules: "C:\\fixture\\linux-x64-node_modules", selectedTests: ["tests/sample.test.ts"] },
     "C:\\Program Files\\Docker\\docker.exe", "tesota-vitest-fixed");
     const serialized = invocation.args.join("\n");
 
@@ -68,7 +68,7 @@ describe("command isolation qualification", () => {
     expect(serialized).toContain("--reporter\njson");
     expect(serialized).toContain("--configLoader\nrunner");
     expect(serialized).toContain("--cache=false");
-    expect(serialized).toContain("tests/repository-vitest.test.ts");
+    expect(serialized).toContain("tests/sample.test.ts");
     expect(serialized).not.toContain("TESOTA_QUALIFICATION_SECRET");
     expect(invocation.env["TESOTA_QUALIFICATION_SECRET"]).toBeUndefined();
     expect(vitestContainerPolicySha256()).toMatch(/^[a-f\d]{64}$/u);

@@ -2,16 +2,32 @@ import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { conversationTurnSchema, type ConversationTurn } from "./conversation-turn-contract.js";
 import { assertNoRepositoryGitPrograms, isGitObjectId, runRepositoryGit, runRepositoryGitBytes } from "./repository-git.js";
-import { PROPOSAL_CHECKS, PROPOSAL_LIMITS, proposalListSchema, proposalReadSchema, proposalSearchSchema,
+import { PROPOSAL_LIMITS, proposalListSchema, proposalReadSchema, proposalSearchSchema,
   validProposalPath } from "./task-proposal-contract.js";
 
 interface BlobEntry { readonly oid: string; readonly size: number; }
+
+export type RepositoryDiscoveryFailureCode = "invalid_arguments" | "read_denied" | "limit_exhausted" |
+  "evidence_not_observed" | "baseline_changed" | "closed";
+
+/** Stable, non-sensitive failure categories for the discovery host. Never include model arguments. */
+export class RepositoryDiscoveryError extends Error {
+  readonly code: RepositoryDiscoveryFailureCode;
+
+  constructor(code: RepositoryDiscoveryFailureCode) {
+    super(code === "closed" ? "Repository discovery closed" :
+      code === "read_denied" ? "Repository read denied" :
+      code === "baseline_changed" ? "Repository baseline blob changed" :
+      code === "evidence_not_observed" ? "Discovery paths were not observed" :
+      "Repository discovery denied");
+    this.code = code;
+  }
+}
 
 export interface RepositoryDiscoveryDescription {
   readonly source: string;
   readonly baseline: string;
   readonly dirtyPaths: readonly string[];
-  readonly checks: typeof PROPOSAL_CHECKS;
   readonly limits: typeof PROPOSAL_LIMITS;
 }
 
@@ -94,31 +110,43 @@ class GitRepositoryDiscovery implements RepositoryDiscovery {
 
   describe(): RepositoryDiscoveryDescription {
     return { source: this.#source, baseline: this.#baseline, dirtyPaths: this.#dirtyPaths,
-      checks: PROPOSAL_CHECKS, limits: PROPOSAL_LIMITS };
+      limits: PROPOSAL_LIMITS };
   }
 
   #admit(): void {
-    if (this.#closed) throw new Error("Repository discovery closed");
+    if (this.#closed) throw new RepositoryDiscoveryError("closed");
     this.#operations += 1;
-    if (this.#operations > PROPOSAL_LIMITS.operations) { this.close(); throw new Error("Repository discovery denied"); }
+    if (this.#operations > PROPOSAL_LIMITS.operations) {
+      this.close();
+      throw new RepositoryDiscoveryError("limit_exhausted");
+    }
   }
 
   #expose(text: string): void {
     this.#exposedBytes += Buffer.byteLength(text);
-    if (this.#exposedBytes > PROPOSAL_LIMITS.exposedBytes) { this.close(); throw new Error("Repository discovery denied"); }
+    if (this.#exposedBytes > PROPOSAL_LIMITS.exposedBytes) {
+      this.close();
+      throw new RepositoryDiscoveryError("limit_exhausted");
+    }
   }
 
   #blobBytes(path: string): Buffer {
     const entry = this.#files.get(path);
-    if (entry === undefined || entry.size > PROPOSAL_LIMITS.fileBytes) throw new Error("Repository read denied");
+    if (entry === undefined || entry.size > PROPOSAL_LIMITS.fileBytes) throw new RepositoryDiscoveryError("read_denied");
     const bytes = runRepositoryGitBytes(this.#source, ["cat-file", "blob", entry.oid]);
-    if (bytes.length !== entry.size) throw new Error("Repository baseline blob changed");
+    if (bytes.length !== entry.size) throw new RepositoryDiscoveryError("baseline_changed");
     return bytes;
   }
 
   #blob(path: string): string {
-    const content = new TextDecoder("utf-8", { fatal: true }).decode(this.#blobBytes(path));
-    if (containsBinaryControls(content)) throw new Error("Repository read denied");
+    const bytes = this.#blobBytes(path);
+    let content: string;
+    try { content = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+    catch (error) {
+      if (error instanceof TypeError) throw new RepositoryDiscoveryError("read_denied");
+      throw error;
+    }
+    if (containsBinaryControls(content)) throw new RepositoryDiscoveryError("read_denied");
     return content;
   }
 
@@ -135,7 +163,7 @@ class GitRepositoryDiscovery implements RepositoryDiscovery {
   async list(input: unknown): Promise<{ readonly files: readonly string[]; readonly truncated: boolean }> {
     this.#admit();
     const parsed = proposalListSchema.safeParse(input);
-    if (!parsed.success) throw new Error("Repository list denied");
+    if (!parsed.success) throw new RepositoryDiscoveryError("invalid_arguments");
     const { prefix } = parsed.data;
     const matching = [...this.#files.keys()].filter((path) => path.startsWith(prefix));
     const files = matching.slice(0, PROPOSAL_LIMITS.listedFiles);
@@ -147,7 +175,7 @@ class GitRepositoryDiscovery implements RepositoryDiscovery {
     readonly truncated: boolean }> {
     this.#admit();
     const parsed = proposalSearchSchema.safeParse(input);
-    if (!parsed.success) throw new Error("Repository search denied");
+    if (!parsed.success) throw new RepositoryDiscoveryError("invalid_arguments");
     const { query, prefix } = parsed.data;
     const needle = query.toLocaleLowerCase("en-US");
     const matches: { path: string; line: number; text: string }[] = [];
@@ -159,7 +187,7 @@ class GitRepositoryDiscovery implements RepositoryDiscovery {
       if (scanned > PROPOSAL_LIMITS.scannedBytes) { truncated = true; break; }
       const content = this.#searchableBlob(path);
       await new Promise<void>((resolveSearch) => setImmediate(resolveSearch));
-      if (this.#closed) throw new Error("Repository discovery closed");
+      if (this.#closed) throw new RepositoryDiscoveryError("closed");
       if (content === null) continue;
       const lines = content.split(/\r?\n/u);
       for (let index = 0; index < lines.length; index += 1) {
@@ -178,7 +206,7 @@ class GitRepositoryDiscovery implements RepositoryDiscovery {
   async read(input: unknown): Promise<{ readonly path: string; readonly content: string }> {
     this.#admit();
     const parsed = proposalReadSchema.safeParse(input);
-    if (!parsed.success) throw new Error("Repository read denied");
+    if (!parsed.success) throw new RepositoryDiscoveryError("invalid_arguments");
     const { path } = parsed.data;
     const content = this.#blob(path);
     this.#observed.add(path);
@@ -190,7 +218,7 @@ class GitRepositoryDiscovery implements RepositoryDiscovery {
   submit(input: unknown): ConversationTurn {
     this.#admit();
     const parsed = conversationTurnSchema.safeParse(input);
-    if (!parsed.success) throw new Error("Discovery submission denied");
+    if (!parsed.success) throw new RepositoryDiscoveryError("invalid_arguments");
     const outcome = parsed.data;
     const evidenceFiles = outcome.kind === "answer" ? outcome.evidenceFiles :
       outcome.kind === "task_proposal" ? outcome.proposal.readFiles : [];
@@ -198,7 +226,7 @@ class GitRepositoryDiscovery implements RepositoryDiscovery {
     if (evidenceFiles.some((path) => !this.#observed.has(path)) ||
         writeFiles.some((path) => !this.#fullyRead.has(path))) {
       this.close();
-      throw new Error("Discovery paths were not observed");
+      throw new RepositoryDiscoveryError("evidence_not_observed");
     }
     return outcome;
   }

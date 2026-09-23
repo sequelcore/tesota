@@ -17,6 +17,14 @@ it.each([
   expect(output.at(-1)).toBe(`${message} Nothing changed.\n`);
 });
 
+it("shows only an allowlisted tool failure cause", async () => {
+  const output: string[] = [];
+  await runTesotaShell({ write: (text) => output.push(text), ask: async () => "Read missing file",
+    discover: async () => ({ status: "unavailable", exitCode: 1, reason: "tool_failed",
+      toolFailure: { tool: "tesota_read", cause: "read_denied" } }), start: vi.fn() });
+  expect(output.at(-1)).toBe("A repository tool failed or was denied (tesota_read: read_denied). Nothing changed.\n");
+});
+
 function answerResult(message = "The shell is bounded.", observedBaseline = baseline) {
   return { status: "completed" as const, exitCode: 0, turn: { kind: "answer" as const,
     answer: { kind: "answer" as const, message, evidenceFiles: ["src/tesota-shell.ts"], uncertainties: [] },
@@ -106,6 +114,18 @@ it("reports a blocked proposal without claiming executable progress", async () =
 
   expect(result).toBe(1);
   expect(output.at(-1)).toBe("Request blocked or unavailable. Nothing changed.\n");
+});
+
+it("does not request approval for a proposal with unsupported checks", async () => {
+  const output: string[] = [];
+  const start = vi.fn();
+  const result = await runTesotaShell({ write: (text) => output.push(text), ask: async () => "Fix with a test",
+    discover: async () => ({ ...proposalResult(), exitCode: 1,
+      turn: { ...proposalResult().turn, proposedTask: { ...proposalResult().turn.proposedTask,
+        record: { ...proposalResult().turn.proposedTask.record, status: "blocked_scope" as const } } } }), start });
+  expect(result).toBe(1);
+  expect(start).not.toHaveBeenCalled();
+  expect(output.join("")).not.toContain("Proposal ready. Execution still requires your approval.");
 });
 
 it("continues a ready proposal into the approval flow without asking for its id", async () => {

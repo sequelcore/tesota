@@ -1,21 +1,19 @@
 import { mkdirSync, openSync, closeSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
-import { browserOnlyAuth, observeLiveBrowserLaunch, deviceCodeAuth, deviceCodeTerminalRenderer, runLiveCodex, type LiveAuthInteraction,
+import { deviceCodeAuth, deviceCodeTerminalRenderer, runLiveCodex, type LiveAuthInteraction,
   type LiveCodexRunResult } from "./integrations/pi-live.js";
 import { liveSourceIdentity, serializeLiveEvidence } from "./integrations/pi-live-evidence.js";
 
 const args = process.argv.slice(2);
 const mode = args[0] === "--auth-only" ? "auth_only" : args[0] === "--full-probe" ? "full_probe" : null;
-const method = args[1] === "--stored" ? "stored" : args[1] === "--device-code" ? "device_code" :
-  args[1] === "--browser" ? "browser" : null;
+const method = args[1] === "--stored" ? "stored" : args[1] === "--device-code" ? "device_code" : null;
 const valid = mode !== null && method !== null && (mode === "full_probe" || method === "device_code");
 if ((args.length === 1 && args[0] === "--help") || (valid && args.length === 3 && args[2] === "--help")) {
-  console.log("Tesota Codex experiment. --full-probe --stored reuses saved login for up to two model invocations. --full-probe --device-code performs network authentication AND up to two model invocations. --full-probe --browser tests legacy browser authentication. --auth-only --device-code: ZERO model inference calls; no model probes. Device login requires an interactive terminal. No retries. --help is offline.");
+  console.log("Tesota Codex experiment. --full-probe --stored reuses saved login for up to two model invocations. --full-probe --device-code performs network authentication AND up to two model invocations. --auth-only --device-code: ZERO model inference calls; no model probes. Device login requires an interactive terminal. No retries. --help is offline.");
 } else if (!valid || args.length !== 2 || process.platform !== "win32") {
-  console.error("Select --auth-only --device-code or --full-probe <--stored|--device-code|--browser> on Windows, or --help offline.");
+  console.error("Select --auth-only --device-code or --full-probe <--stored|--device-code> on Windows, or --help offline.");
   process.exitCode = 2;
 } else if (method === "device_code" &&
   (process.stdin.isTTY !== true || process.stdout.isTTY !== true || process.stderr.isTTY !== true)) {
@@ -38,23 +36,12 @@ if ((args.length === 1 && args[0] === "--help") || (valid && args.length === 3 &
     try {
       console.log(method === "stored" ? "Using saved Codex login; up to two model invocations." :
         mode === "auth_only" ? "ZERO model inference calls; device-code authentication only." :
-        method === "device_code" ? "device-code OAuth/network authentication AND up to two model invocations" :
-        "Browser OAuth authentication AND up to two model invocations");
+        "device-code OAuth/network authentication AND up to two model invocations");
       const interaction: LiveAuthInteraction = method === "stored" ? {
         authenticationMethod: "stored", signal: cancel.signal,
         prompt: async () => { throw new Error("Stored login cannot prompt"); },
         notify: () => { throw new Error("Stored login cannot notify"); },
-      } : method === "device_code" ? deviceCodeAuth(deviceCodeTerminalRenderer(), cancel.signal) :
-        browserOnlyAuth((url) => {
-          const target = new URL(url);
-          if (target.origin !== "https://auth.openai.com" || target.pathname !== "/oauth/authorize" ||
-            target.searchParams.has("code") || target.searchParams.has("access_token")) throw new Error("Unexpected authorization route");
-          observeLiveBrowserLaunch((onError) => {
-            const child = spawn("explorer.exe", [url], { windowsHide: true, stdio: "ignore" });
-            child.on("error", onError);
-            child.unref();
-          }, cancel);
-        }, cancel.signal);
+      } : deviceCodeAuth(deviceCodeTerminalRenderer(), cancel.signal);
       const result: LiveCodexRunResult = await runLiveCodex(mode, interaction, credentials);
       writeFileSync(file, serializeLiveEvidence(identity, timestamp, result), { encoding: "utf8" });
       console.log(`Evidence: ${destination}`);

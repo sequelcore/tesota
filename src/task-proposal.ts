@@ -8,7 +8,7 @@ import type { TaskProposalTurn } from "./conversation-turn-contract.js";
 import type { PiDiscoveryResult } from "./integrations/pi-discovery.js";
 import type { RepositoryDiscoveryDescription } from "./repository-discovery.js";
 import { isGitObjectId } from "./repository-git.js";
-import { PROPOSAL_CHECKS, PROPOSAL_LIMITS, taskProposalSchema, validProposalPath,
+import { PROPOSAL_CHECKS, PROPOSAL_LIMITS, taskProposalSchema, validProposalPath, withProposalChecks,
   type TaskProposal } from "./task-proposal-contract.js";
 
 export interface TaskProposalRecord {
@@ -21,7 +21,7 @@ export interface TaskProposalRecord {
   readonly request: string;
   readonly authority: "none";
   readonly provenance: "model_proposed";
-  readonly status: "ready" | "blocked_dirty";
+  readonly status: "ready" | "blocked_dirty" | "blocked_scope";
   readonly proposal: TaskProposal;
   readonly dirtyPaths: readonly string[];
   readonly dirtyConflicts: readonly string[];
@@ -37,7 +37,8 @@ export interface TaskProposalRecord {
 const proposalRecordSchema: z.ZodType<TaskProposalRecord> = z.strictObject({
   format: z.literal("tesota-task-proposal"), version: z.literal(1), id: z.uuid(), recordedAt: z.iso.datetime(),
   source: z.string().refine(isAbsolute), baseline: z.string().refine(isGitObjectId), request: z.string().min(1).max(8_000),
-  authority: z.literal("none"), provenance: z.literal("model_proposed"), status: z.enum(["ready", "blocked_dirty"]),
+  authority: z.literal("none"), provenance: z.literal("model_proposed"),
+  status: z.enum(["ready", "blocked_dirty", "blocked_scope"]),
   proposal: taskProposalSchema, dirtyPaths: z.array(z.string().refine(validProposalPath)),
   dirtyConflicts: z.array(z.string().refine(validProposalPath)),
   checks: z.array(z.strictObject({ id: z.enum(PROPOSAL_CHECKS),
@@ -170,15 +171,17 @@ export async function retainTaskProposal(options: {
   readonly description: RepositoryDiscoveryDescription;
   readonly result: PiDiscoveryResult & { readonly outcome: TaskProposalTurn };
   readonly model: Model<Api>;
+  readonly supportedScope: boolean;
 }): Promise<ProposedTask> {
   const { description, result } = options;
-  const proposal = result.outcome.proposal;
+  const proposal = withProposalChecks(result.outcome.proposal);
   const dirtyConflicts = proposalConflicts(proposal, description.dirtyPaths);
   const id = randomUUID();
   const record = proposalRecordSchema.parse({
     format: "tesota-task-proposal", version: 1, id, recordedAt: new Date().toISOString(),
     source: description.source, baseline: description.baseline, request: options.request, authority: "none",
-    provenance: "model_proposed", status: dirtyConflicts.length === 0 ? "ready" : "blocked_dirty", proposal,
+    provenance: "model_proposed", status: !options.supportedScope ? "blocked_scope" :
+      dirtyConflicts.length === 0 ? "ready" : "blocked_dirty", proposal,
     dirtyPaths: description.dirtyPaths, dirtyConflicts,
     checks: proposal.checks.map((check) => ({ id: check, definition: "application_owned_declarative_only", executable: false })),
     discovery: { provider: options.model.provider, model: options.model.id, inferenceTransport: "configured_provider",
@@ -199,7 +202,8 @@ export function formatTaskProposal(created: ProposedTask): string {
   const { record } = created;
   const lines = [
     `Task proposal ${record.id}`,
-    `Status: ${record.status === "ready" ? "ready for review" : "blocked by excluded working changes"}`,
+    `Status: ${record.status === "ready" ? "ready for review" : record.status === "blocked_dirty" ?
+      "blocked by excluded working changes" : "blocked by unsupported scope or checks"}`,
     `Objective: ${record.proposal.objective}`,
     `Write: ${record.proposal.writeFiles.join(", ")}`,
     `Read: ${record.proposal.readFiles.join(", ") || "none"}`,

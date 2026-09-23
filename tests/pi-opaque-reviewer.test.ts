@@ -6,11 +6,11 @@ import {
   OPAQUE_PI_REVIEWER_FAILURE,
   OPAQUE_PI_REVIEWER_LIMITS,
   OpaquePiReviewerError,
+  REVIEW_CODEX_MODEL_ID,
 } from "../src/integrations/pi-opaque-reviewer.js";
-import { LIVE_CODEX_MODEL_ID } from "../src/integrations/pi-live.js";
 
 const model: Model<"openai-codex-responses"> = {
-  id: LIVE_CODEX_MODEL_ID,
+  id: REVIEW_CODEX_MODEL_ID,
   name: "Luna",
   api: "openai-codex-responses",
   provider: "openai-codex",
@@ -35,7 +35,7 @@ function assistant(content: AssistantMessage["content"], stopReason: AssistantMe
     content,
     api: "openai-codex-responses",
     provider: "openai-codex",
-    model: LIVE_CODEX_MODEL_ID,
+    model: REVIEW_CODEX_MODEL_ID,
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
     stopReason,
@@ -75,7 +75,7 @@ it("passes exact valid UTF-8 prompt bytes to direct, tool-free Pi inference and 
     promptByteLength: prompt.length,
     stdoutByteLength: Buffer.byteLength(output, "utf8"),
   });
-  expect(fake.getModel).toHaveBeenCalledWith("openai-codex", LIVE_CODEX_MODEL_ID);
+  expect(fake.getModel).toHaveBeenCalledWith("openai-codex", REVIEW_CODEX_MODEL_ID);
   expect(fake.streamSimple).toHaveBeenCalledTimes(1);
   const call = fake.streamSimple.mock.calls[0];
   if (call === undefined) throw new Error("Expected a Pi stream call");

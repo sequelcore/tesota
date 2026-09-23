@@ -222,3 +222,15 @@ response observation, secret exclusion, normal completion, observed abort and
 suppression of the second probe after failure. They used synthetic public login
 and per-request transport boundaries, not a live service. No successful second
 full-probe record is retained in this repository.
+
+## Read-only shell walkthrough, 2026-09-21
+
+A local Windows PTY walkthrough of the compiled CLI used
+`openai-codex/gpt-5.6-luna` against `sindresorhus/yoctocolors` at
+`a85b98a90e5731914567d8c209e7ec45ac2d24e2`. It completed a multiline
+list, a contextual correction with paragraphs and a code block, cancellation,
+and a follow-up retaining the corrected subject. The final message remained
+visible; the process exited 0. The run used local changes over `99209bef`.
+The accompanying local gate passed typecheck, compilation, lint and 498 tests
+across 37 files. This observed walkthrough does not establish general
+reliability, explain earlier unavailable turns or qualify repository task work.

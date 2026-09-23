@@ -24,8 +24,6 @@
     "check": "bun run typecheck && bun run test && bun run lint",
     "start": "bun --no-env-file dist/cli.js",
     "live:codex": "bun --no-env-file dist/live-codex.js --full-probe --stored",
-    "live:verification": "bun --no-env-file dist/live-verification.js --stored",
-    "live:candidate": "bun --no-env-file dist/live-candidate.js --stored",
     "live:codex:device-code": "bun --no-env-file dist/live-codex.js --full-probe --device-code",
     "auth:codex": "bun --no-env-file dist/cli.js auth login"
   },
@@ -37,10 +35,10 @@
     "vitest": "4.1.11"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.86.1",
-    "@earendil-works/pi-ai": "0.86.1",
-    "@earendil-works/pi-coding-agent": "0.86.1",
-    "@earendil-works/pi-tui": "0.86.1",
+    "@earendil-works/pi-agent-core": "0.87.1",
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@earendil-works/pi-tui": "0.87.1",
     "zod": "4.6.1"
   }
 }

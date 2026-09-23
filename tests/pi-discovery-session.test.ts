@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +13,9 @@ import { modelTextSchema } from "../src/task-proposal-contract.js";
 import { PI_DISCOVERY_SESSION_LIMITS, PI_DISCOVERY_TURN_LIMITS,
   PiDiscoverySession } from "../src/integrations/pi-discovery-session.js";
 import { openRepositoryDiscovery, type RepositoryDiscovery } from "../src/repository-discovery.js";
+import { createPiTaskBudget, runPiTask } from "../src/integrations/pi-task.js";
+import { taskRequestSchemas } from "../src/task-contract.js";
+import type { CandidateTaskCheck, CandidateTaskExecution } from "../src/candidate-task.js";
 
 const roots: string[] = [];
 
@@ -113,7 +117,37 @@ it("does not accept evidence from history without observing it in the current tu
     await fixture.session.run(await openRepositoryDiscovery(root), { request: "Read" }, "conversation", new AbortController().signal);
     const result = await fixture.session.run(await openRepositoryDiscovery(root), { request: "Follow up" },
       "conversation", new AbortController().signal);
-    expect(result).toMatchObject({ status: "tool_failed", denied: true, outcome: null });
+    expect(result).toMatchObject({ status: "tool_failed", denied: true, outcome: null,
+      toolFailure: { tool: "tesota_submit_result", cause: "evidence_not_observed" } });
+  } finally { fixture.session.dispose(); }
+});
+
+it("reports a safe reader failure category without exposing the requested path", async () => {
+  const root = await repository();
+  const fixture = await sdkFixture(root, [fauxAssistantMessage(fauxToolCall("tesota_read", {
+    path: "src/missing.ts",
+  }))]);
+  try {
+    const result = await fixture.session.run(await openRepositoryDiscovery(root), { request: "Read missing file" },
+      "conversation", new AbortController().signal);
+    expect(result).toMatchObject({ status: "tool_failed", toolFailure: { tool: "tesota_read", cause: "read_denied" } });
+    expect(JSON.stringify(result)).not.toContain("src/missing.ts");
+  } finally { fixture.session.dispose(); }
+});
+
+it("does not leak an unexpected repository error through diagnostics", async () => {
+  const root = await repository();
+  const fixture = await sdkFixture(root, [fauxAssistantMessage(fauxToolCall("tesota_read", {
+    path: "README.md",
+  }))]);
+  const discovery = await openRepositoryDiscovery(root);
+  vi.spyOn(discovery, "read").mockRejectedValue(new Error("PRIVATE_BACKEND_DETAIL"));
+  try {
+    const result = await fixture.session.run(discovery, { request: "Read file" },
+      "conversation", new AbortController().signal);
+    expect(result).toMatchObject({ status: "tool_failed",
+      toolFailure: { tool: "tesota_read", cause: "backend_unavailable" } });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_BACKEND_DETAIL");
   } finally { fixture.session.dispose(); }
 });
 
@@ -191,6 +225,7 @@ it.each([
       "conversation", new AbortController().signal);
     expect(result.status).toBe("tool_failed");
     expect(result.denied).toBe(true);
+    expect(result.toolFailure).toEqual({ tool: "unavailable_tool", cause: "tool_unavailable" });
     const exposed = JSON.stringify(fixture.contexts);
     expect(exposed).not.toContain("AMBIENT_SKILL_MARKER");
     expect(exposed).not.toContain("AMBIENT_CONTEXT_MARKER");
@@ -417,7 +452,7 @@ it("preserves the existing proposal record path from the continuous SDK conversa
       objective: "Clarify the bounded reader export.",
       completionConditions: ["The export uses the requested name."],
       readFiles: ["src/reader.ts"], writeFiles: ["src/reader.ts"],
-      checks: ["scope-integrity", "typescript-no-emit/v1"], uncertainties: [],
+      uncertainties: [],
     } })),
     fauxAssistantMessage("Proposal ready."),
   ]);
@@ -436,6 +471,74 @@ it("preserves the existing proposal record path from the continuous SDK conversa
   }
 });
 
+it("uses the same SDK transcript for discovery, one approved task execution, and the next question", async () => {
+  const root = await repository();
+  const oldContent = "export const reader = 'bounded';\n";
+  const newContent = "export const reader = 'checked';\n";
+  const sha = (value: string): string => createHash("sha256").update(value).digest("hex");
+  const fixture = await sdkFixture(root, [
+    ...answerSteps("src/reader.ts", "The reader export is in src/reader.ts."),
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/reader.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage(fauxToolCall("tesota_replace", { path: "src/reader.ts",
+      expectedSha256: sha(oldContent), content: newContent })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage("The approved candidate is ready for review."),
+    ...answerSteps("src/reader.ts", "The original repository still has the bounded export."),
+  ]);
+  const conversation = await createRepositoryConversationForShell({ sourceDirectory: root,
+    proposalsRoot: join(root, "proposals"), modelRuntime: fixture.runtime, model: fixture.model });
+  fixture.session.dispose();
+  const host = conversation.taskHost();
+  let content = oldContent;
+  let checks = 0;
+  let staleCheck: (() => Promise<unknown>) | undefined;
+  const check = (passed: boolean): CandidateTaskCheck => ({
+    task: "typescript-change", status: passed ? "passed" : "check_failed",
+    outcome: passed ? "passed" : "check_failed", settlement: "observed", provenance: "issued",
+    diagnostics: [passed ? "Passed." : "No admitted file changed."], typecheck: null,
+    baseline: "a".repeat(40), writeSetSha256: passed ? "2".repeat(64) : "1".repeat(64),
+    sourceInputsSha256: "d".repeat(64), taskAcceptance: "not_evaluated",
+  });
+  const task: CandidateTaskExecution = {
+    describe: () => ({ task: "typescript-change", baseline: "a".repeat(40), definitionSha256: "b".repeat(64),
+      objective: "Change the reader export.", completionConditions: ["The candidate exports checked."],
+      instructions: "Change only the admitted file.", readFiles: ["src/reader.ts"],
+      writeFiles: ["src/reader.ts"], checks: ["scope-integrity", "typescript-no-emit/v1"],
+      outcome: "human_review_required", limits: { reads: 8, edits: 2, checks: 3, fileBytes: 64 * 1024 } }),
+    requestSchemas: () => taskRequestSchemas(["src/reader.ts"], ["src/reader.ts"]),
+    read: vi.fn(async () => ({ content, sha256: sha(content) })),
+    replace: vi.fn(async (request) => { const parsed = taskRequestSchemas(["src/reader.ts"],
+      ["src/reader.ts"]).replace.parse(request); content = parsed.content; }),
+    check: vi.fn(async () => {
+      const tool = host.agent.state.tools.find((entry) => entry.name === "tesota_check");
+      if (tool === undefined) throw new Error("Task check tool unavailable");
+      staleCheck ??= () => tool.execute("late-call", {});
+      return check(++checks > 1);
+    }),
+    usage: () => ({ reads: 1, edits: 1, checks }), close: vi.fn(),
+  };
+  try {
+    expect((await conversation.discover({ request: "Where is the reader export?" },
+      new AbortController().signal)).status).toBe("completed");
+    const result = await runPiTask(task, fixture.model, fixture.faux.provider.streamSimple,
+      new AbortController().signal, createPiTaskBudget(), host);
+    expect(result).toMatchObject({ status: "completed", settlement: "observed", edits: 1,
+      checksSuppliedToModel: 2, finalCheckSuppliedToModel: true });
+    expect(content).toBe(newContent);
+    expect(host.agent.state.tools.map((tool) => tool.name)).toEqual([
+      "tesota_list", "tesota_search", "tesota_read", "tesota_submit_result",
+    ]);
+    if (staleCheck === undefined) throw new Error("Task check proxy was not observed");
+    await expect(staleCheck()).rejects.toThrow("Task check unavailable");
+    expect((await conversation.discover({ request: "What did the original repository export?" },
+      new AbortController().signal)).status).toBe("completed");
+    expect(fixture.contexts.some((context) => context.messages.some((message) =>
+      message.role === "user" && JSON.stringify(message).includes("Where is the reader export?")) &&
+      context.messages.some((message) => message.role === "user" && JSON.stringify(message).includes("approved task")))).toBe(true);
+  } finally { conversation.dispose(); }
+});
+
 it("cancels active reading, confirms settlement, and keeps the closed reader unusable", async () => {
   const root = await repository();
   const fixture = await sdkFixture(root, [
@@ -448,7 +551,6 @@ it("cancels active reading, confirms settlement, and keeps the closed reader unu
   let closed = false;
   const discovery: RepositoryDiscovery = {
     describe: () => ({ source: root, baseline: "a".repeat(40), dirtyPaths: [],
-      checks: ["scope-integrity", "typescript-no-emit/v1"],
       limits: { operations: 32, exposedBytes: 131072, fileBytes: 65536, scannedBytes: 1048576,
         listedFiles: 256, searchMatches: 64 } }),
     list: async () => ({ files: [], truncated: false }),

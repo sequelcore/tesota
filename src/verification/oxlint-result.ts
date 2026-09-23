@@ -31,15 +31,6 @@ export type OxlintResult =
   | (CompletedOxlintReport & { readonly binding: InputBinding })
   | (Extract<OxlintReport, { readonly status: "execution_failed" }> & { readonly binding?: InputBinding });
 
-export type CompletedOxlintResult = CompletedOxlintReport & { readonly binding: InputBinding };
-
-export interface RecoveredOxlintEvidence {
-  readonly kind: "recovered";
-  readonly structuralValidity: "valid";
-  readonly provenance: "recovered_untrusted";
-  readonly historical: CompletedOxlintResult;
-}
-
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -68,7 +59,7 @@ function diagnosticLocation(value: unknown): { readonly line: number; readonly c
 function lintDiagnostic(value: unknown, file: string, cwd: string): LintDiagnostic | undefined {
   if (!record(value)) return undefined;
   const rule = value["code"];
-  if (!isKnownDiagnosticRule(OXLINT_PROFILE, rule)) return undefined;
+  if (!isKnownDiagnosticRule(rule)) return undefined;
   if (value["severity"] !== "error") return undefined;
   const message = value["message"];
   if (typeof message !== "string" || message.length === 0) return undefined;

@@ -66,7 +66,8 @@ vi.mock("../src/candidate-task.js", () => ({
   CandidateTask: { prepare: vi.fn(async () => ({
     beginExecution: vi.fn(() => { state.beginExecutions += 1; return { close: vi.fn() }; }),
     usage: vi.fn(() => state.usage),
-    describe: vi.fn(() => ({ definitionSha256: "e".repeat(64) })),
+    describe: vi.fn(() => ({ definitionSha256: "e".repeat(64), task: "typescript-change",
+      limits: { reads: 8, edits: 2, checks: 3, fileBytes: 64 * 1024 } })),
     close: vi.fn(),
   }) as unknown as CandidateTask) },
   checkCandidateTask: vi.fn(async () => currentCheck.value),
@@ -105,9 +106,9 @@ vi.mock("../src/integrations/pi-task.js", async (importOriginal) => {
 });
 
 vi.mock("../src/integrations/pi-live.js", () => ({
-  LIVE_CODEX_MODEL_ID: "gpt-5.6-luna",
+  LIVE_CODEX_MODEL_ID: "gpt-6-luna",
   storedCodexModels: vi.fn(async () => ({
-    getModel: () => ({ api: "openai-codex-responses", provider: "openai-codex", id: "gpt-5.6-luna" }),
+    getModel: () => ({ api: "openai-codex-responses", provider: "openai-codex", id: "gpt-6-luna" }),
     streamSimple: vi.fn(),
   })),
 }));

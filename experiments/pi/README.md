@@ -1,9 +1,12 @@
 # Synthetic Pi compatibility
 
-Pi is accepted as a candidate engine following the synthetic compatibility
+This is a retained record of a retired fixture-based adapter. Current Pi
+integration is described in the [architecture](../../docs/architecture.md).
+
+Pi was accepted as a candidate engine following the synthetic compatibility
 experiment, with the limitations below. `runPiSession` in
 `src/integrations/pi.ts` uses Pi's in-memory faux responses for these synthetic
-scenarios. The same adapter now accepts a live stream for the separate
+scenarios. The same adapter later accepted a live stream for the separate
 [verification experiment](../codex/verification.md). See the
 [roadmap](../../docs/roadmap.md) for status.
 

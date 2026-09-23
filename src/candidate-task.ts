@@ -5,7 +5,9 @@ import * as z from "zod";
 import { inspectCandidateCheckout, readCandidateBaselineFiles } from "./candidate-checkout.js";
 import { validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
 import { checkRepositoryTypecheck, type RepositoryTypecheckResult } from "./repository-typecheck.js";
-import { TASK_CHECKS, TASK_KIND, TASK_LIMITS, taskRequestSchemas, type TaskOracleResult } from "./task-contract.js";
+import { prepareRepositoryNodeTest, runRepositoryNodeTest, type RepositoryNodeTestResult } from "./repository-node-test.js";
+import { SOURCE_TEST_TASK_CHECKS, SOURCE_TEST_TASK_KIND, SOURCE_TEST_TASK_LIMITS,
+  TASK_CHECKS, TASK_KIND, TASK_LIMITS, taskLimits, taskRequestSchemas, type TaskOracleResult } from "./task-contract.js";
 import { captureTaskSourceInputs, matchesTaskBaseline, taskSourceInputsSchema, validateTaskSourceInputs,
   type TaskSourceInputs } from "./task-source.js";
 
@@ -22,20 +24,37 @@ const contractSchema = z.strictObject({
   effects: z.tuple([z.literal("read_candidate"), z.literal("replace_candidate_file"), z.literal("run_task_check")]),
   promotion: z.literal("allowed"),
 });
+const sourceTestContractSchema = z.strictObject({
+  objective: z.string().min(1), completionConditions: z.array(z.string().min(1)).min(1).max(8),
+  readFiles: z.array(z.string()).min(2).max(SOURCE_TEST_TASK_LIMITS.reads),
+  writeFiles: z.array(z.string()).length(2),
+  checks: z.tuple([z.literal(SOURCE_TEST_TASK_CHECKS[0]), z.literal(SOURCE_TEST_TASK_CHECKS[1])]),
+  outcome: z.literal("human_review_required"),
+  limits: z.strictObject({ reads: z.literal(SOURCE_TEST_TASK_LIMITS.reads),
+    edits: z.literal(SOURCE_TEST_TASK_LIMITS.edits), checks: z.literal(SOURCE_TEST_TASK_LIMITS.checks),
+    fileBytes: z.literal(SOURCE_TEST_TASK_LIMITS.fileBytes) }),
+  effects: z.tuple([z.literal("read_candidate"), z.literal("replace_candidate_file"), z.literal("run_task_check")]),
+  promotion: z.literal("allowed"),
+});
 const planShape = {
   format: z.literal("tesota-candidate-task"), task: z.literal(TASK_KIND),
   definitionSha256: hashSchema, contract: contractSchema, baseline: baselineSchema,
   inputs: z.record(z.string(), hashSchema), grant: z.unknown(),
 };
 const planSchema = z.discriminatedUnion("version", [
-  z.strictObject({ ...planShape, version: z.literal(1) }),
   z.strictObject({ ...planShape, version: z.literal(2), sourceInputs: taskSourceInputsSchema }),
+  z.strictObject({ format: z.literal("tesota-candidate-task"), task: z.literal(SOURCE_TEST_TASK_KIND),
+    version: z.literal(3), definitionSha256: hashSchema, contract: sourceTestContractSchema,
+    baseline: baselineSchema, inputs: z.record(z.string(), hashSchema), grant: z.unknown(),
+    sourceInputs: taskSourceInputsSchema }),
 ]);
 type TaskPlan = z.infer<typeof planSchema>;
 type TaskFiles = Readonly<Record<string, string>>;
 
 export interface CandidateTaskCheck extends TaskOracleResult {
-  readonly task: typeof TASK_KIND;
+  readonly task: typeof TASK_KIND | typeof SOURCE_TEST_TASK_KIND;
+  readonly changedFiles?: readonly string[];
+  readonly selectedTest?: string;
   /** The automatic-check outcome is separate from whether its process effects settled. */
   readonly outcome: "passed" | "check_failed" | "operational_failed";
   readonly settlement: "observed" | "unconfirmed";
@@ -44,11 +63,12 @@ export interface CandidateTaskCheck extends TaskOracleResult {
   readonly writeSetSha256: string;
   readonly sourceInputsSha256: string | null;
   readonly typecheck: RepositoryTypecheckResult | null;
+  readonly nodeTest?: RepositoryNodeTestResult | null;
   readonly taskAcceptance: "not_evaluated";
 }
 
 export interface CandidateTaskDescription {
-  readonly task: typeof TASK_KIND;
+  readonly task: typeof TASK_KIND | typeof SOURCE_TEST_TASK_KIND;
   readonly baseline: string;
   readonly definitionSha256: string;
   readonly objective: string;
@@ -56,7 +76,7 @@ export interface CandidateTaskDescription {
   readonly instructions: string;
   readonly readFiles: readonly string[];
   readonly writeFiles: readonly string[];
-  readonly checks: typeof TASK_CHECKS;
+  readonly checks: typeof TASK_CHECKS | typeof SOURCE_TEST_TASK_CHECKS;
   readonly outcome: "human_review_required";
   readonly limits: typeof TASK_LIMITS;
   readonly executionCause?: "initial_implementation" | "semantic_revision";
@@ -104,7 +124,13 @@ export interface SemanticExecutionContext {
 
 function hash(value: string | Buffer): string { return createHash("sha256").update(value).digest("hex"); }
 
-function contractFor(grant: ProposalRunGrant): z.infer<typeof contractSchema> {
+function contractFor(grant: ProposalRunGrant): z.infer<typeof contractSchema> | z.infer<typeof sourceTestContractSchema> {
+  if (grant.kind === SOURCE_TEST_TASK_KIND) return {
+    objective: grant.objective, completionConditions: [...grant.completionConditions],
+    readFiles: [...grant.readFiles], writeFiles: [...grant.writeFiles], checks: [...SOURCE_TEST_TASK_CHECKS],
+    outcome: "human_review_required", limits: SOURCE_TEST_TASK_LIMITS,
+    effects: ["read_candidate", "replace_candidate_file", "run_task_check"], promotion: "allowed",
+  } as z.infer<typeof sourceTestContractSchema>;
   return { objective: grant.objective, completionConditions: [...grant.completionConditions],
     readFiles: [...grant.readFiles], writeFiles: [...grant.writeFiles], checks: [...TASK_CHECKS],
     outcome: "human_review_required", limits: TASK_LIMITS,
@@ -112,22 +138,27 @@ function contractFor(grant: ProposalRunGrant): z.infer<typeof contractSchema> {
 }
 
 function instructionsFor(grant: ProposalRunGrant): string {
+  if (grant.kind === SOURCE_TEST_TASK_KIND) return `Complete the approved TypeScript source and regression-test outcome: ${grant.objective}\nCompletion conditions:\n` +
+    grant.completionConditions.map((condition) => `- ${condition}`).join("\n") +
+    "\nChange only the admitted source and test files. First check the unchanged baseline, then change the regression test and check that it fails on the original source. Then repair the source and check again. The selected Node test runs in a contained check; it does not typecheck or establish all requested behavior.";
   return `Complete the approved TypeScript outcome: ${grant.objective}\nCompletion conditions:\n` +
     grant.completionConditions.map((condition) => `- ${condition}`).join("\n") +
     "\nChange only the admitted files. The automatic checks establish scope integrity and TypeScript compilation, not outcome correctness.";
 }
 
-function definitionSha256(grant: ProposalRunGrant, contract: z.infer<typeof contractSchema>,
-  binding?: Pick<Extract<TaskPlan, { version: 2 }>, "inputs" | "sourceInputs">): string {
-  if (binding !== undefined) {
-    return hash(JSON.stringify({ task: TASK_KIND, version: 2, grant, contract,
-      instructions: instructionsFor(grant), inputs: binding.inputs, sourceInputs: binding.sourceInputs }));
-  }
-  return hash(JSON.stringify({ task: TASK_KIND, version: 1, grant, contract, instructions: instructionsFor(grant) }));
+function definitionSha256(grant: ProposalRunGrant,
+  contract: z.infer<typeof contractSchema> | z.infer<typeof sourceTestContractSchema>,
+  binding: Pick<TaskPlan, "inputs" | "sourceInputs">): string {
+  if (grant.kind === SOURCE_TEST_TASK_KIND) return hash(JSON.stringify({
+    task: SOURCE_TEST_TASK_KIND, version: 3, grant, contract, instructions: instructionsFor(grant),
+    inputs: binding.inputs, sourceInputs: binding.sourceInputs,
+  }));
+  return hash(JSON.stringify({ task: TASK_KIND, version: 2, grant, contract,
+    instructions: instructionsFor(grant), inputs: binding.inputs, sourceInputs: binding.sourceInputs }));
 }
 
-function sourceInputsSha256(plan: TaskPlan): string | null {
-  return plan.version === 2 ? hash(JSON.stringify(plan.sourceInputs)) : null;
+function sourceInputsSha256(plan: TaskPlan): string {
+  return hash(JSON.stringify(plan.sourceInputs));
 }
 
 async function readText(path: string): Promise<string> {
@@ -165,8 +196,9 @@ function validatePlan(value: unknown): { plan: TaskPlan; grant: ProposalRunGrant
   const plan = planSchema.parse(value);
   const grant = validateProposalRunGrant(plan.grant);
   const contract = contractFor(grant);
-  if (grant.baseline !== plan.baseline || plan.definitionSha256 !== definitionSha256(grant, contract,
-    plan.version === 2 ? plan : undefined) ||
+  if (plan.version === 3 && grant.kind !== SOURCE_TEST_TASK_KIND ||
+      plan.version !== 3 && grant.kind !== TASK_KIND) throw new Error("Task plan kind invalid");
+  if (grant.baseline !== plan.baseline || plan.definitionSha256 !== definitionSha256(grant, contract, plan) ||
       JSON.stringify(plan.contract) !== JSON.stringify(contract) ||
       Object.keys(plan.inputs).length !== grant.readFiles.length ||
       !grant.readFiles.every((path) => plan.inputs[path] !== undefined)) throw new Error("Task plan invalid");
@@ -190,8 +222,11 @@ async function observe(directory: string, plan: TaskPlan, grant: ProposalRunGran
 }
 
 function checkScope(files: TaskFiles, plan: TaskPlan, grant: ProposalRunGrant): TaskOracleResult {
-  const changed = grant.writeFiles.filter((path) => hash(files[path] ?? "") !== plan.inputs[path]);
+  const changed = changedWriteFiles(files, plan, grant);
   if (changed.length === 0) return { status: "check_failed", diagnostics: ["No admitted file changed."] };
+  if (grant.kind === SOURCE_TEST_TASK_KIND && changed.length !== 2 && !changed.includes(grant.selectedTest)) {
+    return { status: "check_failed", diagnostics: ["Change the regression test before the source repair."] };
+  }
   const suppressed = changed.filter((path) => /(?:\/\/|\/\*)\s*@ts-(?:ignore|nocheck|expect-error)\b/u.test(files[path] ?? ""));
   return suppressed.length > 0
     ? { status: "check_failed", diagnostics: [
@@ -200,14 +235,50 @@ function checkScope(files: TaskFiles, plan: TaskPlan, grant: ProposalRunGrant): 
     : { status: "passed", diagnostics: [`Scope integrity passed for ${changed.join(", ")}.`] };
 }
 
+function changedWriteFiles(files: TaskFiles, plan: TaskPlan, grant: ProposalRunGrant): readonly string[] {
+  return grant.writeFiles.filter((path) => hash(files[path] ?? "") !== plan.inputs[path]);
+}
+
+function sourceTestCheckDetails(files: TaskFiles, plan: TaskPlan, grant: ProposalRunGrant):
+Readonly<{ changedFiles: readonly string[]; selectedTest: string }> | Readonly<Record<string, never>> {
+  return grant.kind === SOURCE_TEST_TASK_KIND ? {
+    changedFiles: changedWriteFiles(files, plan, grant), selectedTest: grant.selectedTest,
+  } : {};
+}
+
 async function checkTask(directory: string, files: TaskFiles, plan: TaskPlan,
   grant: ProposalRunGrant, signal?: AbortSignal):
 Promise<{ readonly oracle: TaskOracleResult; readonly outcome: CandidateTaskCheck["outcome"];
-  readonly settlement: CandidateTaskCheck["settlement"]; readonly typecheck: RepositoryTypecheckResult | null }> {
+  readonly settlement: CandidateTaskCheck["settlement"]; readonly typecheck: RepositoryTypecheckResult | null;
+  readonly nodeTest?: RepositoryNodeTestResult | null }> {
   if (signal?.aborted === true) throw new DOMException("cancelled", "AbortError");
   const scope = checkScope(files, plan, grant);
   if (scope.status === "check_failed") {
     return { oracle: scope, outcome: "check_failed", settlement: "observed", typecheck: null };
+  }
+  if (grant.kind === SOURCE_TEST_TASK_KIND) {
+    const profile = await prepareRepositoryNodeTest({ candidate: directory, source: grant.source,
+      selectedTest: grant.selectedTest, allowedWriteFiles: grant.writeFiles });
+    const nodeTest = await runRepositoryNodeTest(profile, undefined, signal);
+    const settlement = nodeTest.process === "unconfirmed" || nodeTest.container === "unconfirmed" ?
+      "unconfirmed" : "observed";
+    if (settlement === "unconfirmed") return { oracle: { status: "check_failed", diagnostics: [
+      "Node test settlement is unconfirmed.",
+    ] }, outcome: "operational_failed", settlement, typecheck: null, nodeTest };
+    const bothChanged = changedWriteFiles(files, plan, grant).length === 2;
+    if (nodeTest.status === "passed" && !bothChanged) return { oracle: { status: "check_failed", diagnostics: [
+      "Regression test passed before the source changed; it did not detect the original defect.",
+    ] }, outcome: "check_failed", settlement, typecheck: null, nodeTest };
+    if (nodeTest.status === "passed") return { oracle: { status: "passed", diagnostics: [...scope.diagnostics,
+      "Selected Node regression test passed. Repository typechecking was not performed."] },
+    outcome: "passed", settlement, typecheck: null, nodeTest };
+    if (nodeTest.status === "check_failed" || nodeTest.status === "no_tests") return {
+      oracle: { status: "check_failed", diagnostics: [...nodeTest.diagnostics] }, outcome: "check_failed",
+      settlement, typecheck: null, nodeTest,
+    };
+    return { oracle: { status: "check_failed", diagnostics: [
+      `Selected Node test did not complete: ${nodeTest.status}.`,
+    ] }, outcome: "operational_failed", settlement, typecheck: null, nodeTest };
   }
   const typecheck = await checkRepositoryTypecheck({ candidate: directory, source: grant.source }, signal);
   const settlement = typecheck.process === "unconfirmed" || typecheck.container === "unconfirmed" ? "unconfirmed" : "observed";
@@ -266,7 +337,8 @@ export class CandidateTask {
     }
     const contract = contractFor(grant);
     const sourceInputs = await captureTaskSourceInputs(directory, grant.source, grant.writeFiles, snapshot.files);
-    const plan = planSchema.parse({ format: "tesota-candidate-task", version: 2, task: TASK_KIND,
+    const version = grant.kind === SOURCE_TEST_TASK_KIND ? 3 : 2;
+    const plan = planSchema.parse({ format: "tesota-candidate-task", version, task: grant.kind,
       definitionSha256: definitionSha256(grant, contract, { inputs, sourceInputs }), contract, baseline: grant.baseline,
       inputs, sourceInputs, grant });
     const file = await open(join(inspection.directory, "task.json"), "wx", 0o600);
@@ -276,10 +348,11 @@ export class CandidateTask {
   }
 
   describe(): CandidateTaskDescription {
-    return { task: TASK_KIND, baseline: this.#plan.baseline, definitionSha256: this.#plan.definitionSha256,
+    return { task: this.#grant.kind, baseline: this.#plan.baseline, definitionSha256: this.#plan.definitionSha256,
       objective: this.#grant.objective, completionConditions: this.#grant.completionConditions,
       instructions: instructionsFor(this.#grant), readFiles: this.#grant.readFiles, writeFiles: this.#grant.writeFiles,
-      checks: TASK_CHECKS, outcome: "human_review_required" as const, limits: TASK_LIMITS };
+      checks: this.#grant.kind === SOURCE_TEST_TASK_KIND ? SOURCE_TEST_TASK_CHECKS : TASK_CHECKS,
+      outcome: "human_review_required" as const, limits: taskLimits(this.#grant.kind) };
   }
 
   close(): void { this.#closed = true; }
@@ -318,7 +391,7 @@ export class CandidateTask {
 
   requestSchemas(): ReturnType<typeof taskRequestSchemas> {
     return taskRequestSchemas(this.#grant.readFiles as [string, ...string[]],
-      this.#grant.writeFiles as [string, ...string[]]);
+      this.#grant.writeFiles as [string, ...string[]], taskLimits(this.#grant.kind));
   }
 
   #requireCurrentGeneration(generation?: number): void {
@@ -352,7 +425,7 @@ export class CandidateTask {
   async #read(request: unknown, generation?: number): Promise<{ content: string; sha256: string }> {
     return this.#operation(async ({ checkout }) => {
       const args = this.requestSchemas().read.parse(request);
-      if (this.#reads >= TASK_LIMITS.reads) throw new Error("Read budget exceeded");
+      if (this.#reads >= taskLimits(this.#grant.kind).reads) throw new Error("Read budget exceeded");
       this.#reads += 1;
       const content = await readText(join(checkout, args.path));
       return { content, sha256: hash(content) };
@@ -367,7 +440,8 @@ export class CandidateTask {
     return this.#operation(async ({ checkout, files }) => {
       const args = this.requestSchemas().replace.parse(request);
       const currentContent = files[args.path];
-      if (currentContent === undefined || this.#checks === 0 || this.#edits >= TASK_LIMITS.edits ||
+      if (currentContent === undefined || this.#checks === 0 ||
+          this.#edits >= taskLimits(this.#grant.kind).edits ||
           args.expectedSha256 !== hash(currentContent)) throw new Error("Edit denied");
       this.#edits += 1;
       const target = join(checkout, args.path);
@@ -401,11 +475,13 @@ export class CandidateTask {
 
   async #check(signal?: AbortSignal, generation?: number): Promise<CandidateTaskCheck> {
     const result = await this.#operation<CandidateTaskCheck>(async ({ files }) => {
-      if (this.#checks >= TASK_LIMITS.checks) throw new Error("Check budget exceeded");
+      if (this.#checks >= taskLimits(this.#grant.kind).checks) throw new Error("Check budget exceeded");
       this.#checks += 1;
       const checked = await checkTask(this.#directory, files, this.#plan, this.#grant, signal);
       return { ...checked.oracle, outcome: checked.outcome, settlement: checked.settlement,
-        task: TASK_KIND, provenance: "issued", typecheck: checked.typecheck,
+        task: this.#grant.kind, provenance: "issued", typecheck: checked.typecheck,
+        ...sourceTestCheckDetails(files, this.#plan, this.#grant),
+        ...(checked.nodeTest === undefined ? {} : { nodeTest: checked.nodeTest }),
         baseline: this.#plan.baseline, writeSetSha256: taskWriteSetSha256(files, this.#grant.writeFiles),
         sourceInputsSha256: sourceInputsSha256(this.#plan),
         taskAcceptance: "not_evaluated" as const };
@@ -424,22 +500,21 @@ async function loadCandidateTask(directory: string): Promise<{ plan: TaskPlan; g
     return content !== undefined && digest !== undefined && (parsed.plan.version === 2
       ? matchesTaskBaseline(digest, content) : hash(content) === digest);
   })) throw new Error("Task baseline changed");
-  if (parsed.plan.version === 2) {
-    validateTaskSourceInputs(parsed.plan.sourceInputs, parsed.grant.writeFiles, baseline.files);
-  }
+  validateTaskSourceInputs(parsed.plan.sourceInputs, parsed.grant.writeFiles, baseline.files);
   const snapshot = await observe(directory, parsed.plan, parsed.grant);
   return { ...parsed, files: snapshot.files };
 }
 
 export async function inspectCandidateTask(directory: string): Promise<{
-  task: typeof TASK_KIND; baseline: string; definitionSha256: string; writeSetSha256: string; writeFiles: readonly string[];
-  sourceInputs: TaskSourceInputs | null; promotable: boolean;
+  task: typeof TASK_KIND | typeof SOURCE_TEST_TASK_KIND; baseline: string; definitionSha256: string;
+  writeSetSha256: string; writeFiles: readonly string[];
+  sourceInputs: TaskSourceInputs;
 }> {
   const loaded = await loadCandidateTask(directory);
-  return { task: TASK_KIND, baseline: loaded.plan.baseline, definitionSha256: loaded.plan.definitionSha256,
+  return { task: loaded.grant.kind, baseline: loaded.plan.baseline, definitionSha256: loaded.plan.definitionSha256,
     writeSetSha256: taskWriteSetSha256(loaded.files, loaded.grant.writeFiles),
     writeFiles: [...loaded.grant.writeFiles],
-    sourceInputs: loaded.plan.version === 2 ? loaded.plan.sourceInputs : null, promotable: loaded.plan.version === 2 };
+    sourceInputs: loaded.plan.sourceInputs };
 }
 
 /** Rechecking persisted evidence never reopens editing authority. */
@@ -447,7 +522,9 @@ export async function checkCandidateTask(directory: string, signal?: AbortSignal
   const loaded = await loadCandidateTask(directory);
   const checked = await checkTask(directory, loaded.files, loaded.plan, loaded.grant, signal);
   return { ...checked.oracle, outcome: checked.outcome, settlement: checked.settlement,
-    task: TASK_KIND, typecheck: checked.typecheck,
+    task: loaded.grant.kind, typecheck: checked.typecheck,
+    ...sourceTestCheckDetails(loaded.files, loaded.plan, loaded.grant),
+    ...(checked.nodeTest === undefined ? {} : { nodeTest: checked.nodeTest }),
     provenance: "recorded_untrusted", baseline: loaded.plan.baseline,
     writeSetSha256: taskWriteSetSha256(loaded.files, loaded.grant.writeFiles),
     sourceInputsSha256: sourceInputsSha256(loaded.plan), taskAcceptance: "not_evaluated" };

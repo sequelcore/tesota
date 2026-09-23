@@ -2,6 +2,10 @@
 
 Status: adopted architectural direction. Only the current container-backed
 repository profiles and the fixed native Oxlint profile are implemented.
+The Vitest profile described in this decision was later retired because it had
+no task-flow consumer; the TypeScript and targeted Node-test profiles are the
+current container-backed implementations. The historical rationale below is
+retained.
 
 ## Context
 
@@ -125,10 +129,9 @@ consumers and qualified implementations.
 
 ## Current application
 
-- `typescript-no-emit/v1` and `vitest-targeted/v1` remain container-specific
-  protected profiles. Docker Desktop and their pinned image are current
-  development requirements for those profiles, not requirements for Tesota as
-  a product.
+- At adoption, `typescript-no-emit/v1` and `vitest-targeted/v1` were container-specific
+  protected profiles. Docker Desktop and their pinned image were development
+  requirements for those profiles, not requirements for Tesota as a product.
 - `oxlint-static/v3` remains a fixed native verifier profile. Its bounded input,
   disabled plugins and lack of candidate-code execution make that a different
   risk class; its process boundary is explicitly not described as a sandbox.

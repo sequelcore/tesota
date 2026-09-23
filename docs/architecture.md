@@ -34,7 +34,7 @@ Tesota Shell
   -> operator approval
   -> CandidateTask (bounded effects in independent checkout)
   -> Pi (model loop and tool calls)
-  -> scope-integrity + contained TypeScript observations
+  -> scope-integrity + admitted contained check observations
   -> TaskReview (exact diff and current evidence)
   -> optional one-use SemanticRevision (authority-free R1 lineage)
   -> operator decision
@@ -72,13 +72,13 @@ and an isolated process does not gain authority merely because it is confined.
 | `task-contract.ts` | Shared task kind, budgets and grant-derived tool schemas |
 | `candidate-checkout.ts` | Independent candidate creation, inspection and lifecycle |
 | `repository-check-input.ts` | Bounded regular-file, dependency-installation and JSON observations shared by admitted repository checks |
-| `repository-container-process.ts` | Docker client/container settlement shared by the concrete TypeScript and Vitest profiles |
+| `repository-container-process.ts` | Docker client/container settlement shared by the concrete TypeScript and Node-test profiles |
 | `repository-typecheck.ts` | Concrete TypeScript profile admission, input binding and result semantics |
 | `repository-typecheck-process.ts` | Fixed TypeScript process limits and composition with shared container settlement |
 | `repository-typecheck-command.ts` | One-use local approval and CLI composition for the TypeScript profile |
-| `repository-vitest.ts` | Concrete targeted Vitest profile admission, input binding and result semantics |
-| `repository-vitest-process.ts` | Fixed Vitest process limits and composition with shared container settlement |
-| `candidate-task.ts` | Candidate effects, plan binding and composition of scope integrity with the concrete TypeScript check |
+| `repository-node-test.ts`, `repository-node-test-reporter.ts` | Selected Node test admission, bound machine report and fail-closed result semantics |
+| `repository-node-test-process.ts` | Fixed Node test process limits and shared container settlement |
+| `candidate-task.ts` | Candidate effects, plan binding and composition of scope integrity with the admitted concrete check |
 | `task-source.ts` | Bounded blob/worktree representation admission and exact source-target observations for guarded promotion |
 | `integrations/pi-task.ts` | Pi execution and correction evidence consistency |
 | `task-review.ts` | Exact-candidate review and local decision evidence |
@@ -117,8 +117,7 @@ ambient extensions, skills, prompt templates, themes and context files. Tesota
 supplies only its bounded list, search, read and result tools and replaces the
 repository reader on every turn. The explicit `task propose` seam and candidate
 runtime continue to use their narrower agent-core integrations. Tesota owns
-which tools exist, their schemas, budgets and effects. The separate one-shot
-Coding Agent SDK adapter remains an experimental candidate consumer. Gentle is an optional
+which tools exist, their schemas, budgets and effects. Gentle is an optional
 review provider; Tesota preserves provider evidence but keeps acceptance and
 promotion local and distinct.
 
@@ -140,8 +139,8 @@ from runtime adoption, is recorded in
 
 ## Pi session integration
 
-The first read-only session slice is implemented. It is not disk persistence,
-session restoration or permission to load additional tools. The
+The read-only session and its bounded initial task-tool connection are implemented.
+They are not disk persistence, session restoration or permission to load additional tools. The
 [roadmap](roadmap.md) owns subsequent expansion.
 
 | Concern | Reuse or existing owner |
@@ -152,12 +151,17 @@ session restoration or permission to load additional tools. The
 | Candidate writes and adoption | Existing candidate effects, content binding, review and promotion. |
 | Process effects and termination | The admitted execution environment and observed settlement, not merely Pi's terminal event. |
 
-The current shell owns prompt sequencing and task routing. Its SDK reader host
+The current shell owns prompt sequencing and task routing. Its SDK host
 wires cancellation to the active inference or tool operation, waits up to the
 settlement bound and returns to the prompt only after settlement is confirmed.
-Each turn retains the existing repository operation and exposure limits. The
-session additionally admits at most 12 turns, 36 model invocations and 96 tool
-calls. Context overflow ends the conversation clearly; no automatic compaction,
+Each discovery turn retains the existing repository operation and exposure limits.
+After approval, R0 activates only the admitted read, replace and check tools in
+the same SDK transcript. Those tools delegate to the live candidate capability;
+the task runner keeps its separate cumulative R0/R1 limits and evidence owner.
+Task tools become inactive after R0 settles. The optional semantic correction
+still uses a fresh disposable Pi execution. The read-only conversation and its
+R0 task turn together admit at most 36 model invocations and 96 tool calls;
+discovery additionally admits at most 12 turns. Context overflow ends the conversation clearly; no automatic compaction,
 provider retry, silent model switch or transcript persistence is enabled.
 
 Conversation prose has its own formatting contract: paragraphs, tabs and code
@@ -168,38 +172,17 @@ does not grant authority. Invalid results, tool failures and budget exhaustion
 retain distinct outcomes. After leaving the alternate screen, the shell renders
 its final message through Pi so a stopped session leaves an explanation visible.
 
-Pi's [project trust configuration](https://github.com/earendil-works/pi/blob/v0.86.1/packages/coding-agent/docs/settings.md#project-trust)
-controls loading project settings and resources. Its `defaultProjectTrust`,
-`/trust` and `--approve` controls do not authorize Tesota task effects. Declining
-project trust also does not suppress every input: context files and user/global
-or explicitly supplied extensions have separate loading behavior. Select those
-resources explicitly in the host integration.
-
-Reuse Pi's tool selection, blocking hooks and approval UI where useful, while
-keeping the decision in the existing Tesota admission and effect owners. Pi's
-[security contract](https://github.com/earendil-works/pi/blob/v0.86.1/packages/coding-agent/docs/security.md)
-does not provide a built-in sandbox. Its example permission gate illustrates
-confirmation for selected Bash patterns; it is not a complete command or path
-policy. Neither project trust nor that example replaces the existing execution
-environment. No additional permission framework is required by this integration.
-
-Restoring or branching a transcript does not restore authority, roll back files
-or undo an application. Rebind the visible state to Tesota's canonical records
-after compaction or resume. When Pi replaces a session instance, reconnect
-subscriptions and current tool bindings; do not retain closures issued under
-expired authority. Retire the superseded session path when the replacement is
-adopted rather than maintaining competing histories.
-
-Reusable tool operations must route through the relevant effect owner. Inspect
-direct filesystem access, subprocesses and provisioning in addition to public
-operation interfaces. A working directory is not confinement, and an extension
-hook is not isolation from code executing inside the host process. Candidate
-edits still require current input binding and invalidate affected evidence;
-rendered patches do not replace exact accepted bytes at promotion.
+Pi's project trust and resource settings do not authorize Tesota task effects.
+The shell explicitly selects resources because default context and extensions
+have different loading rules. Pi does not sandbox the repository checks;
+Tesota's admitted execution environment owns that boundary. Restoring a
+transcript, if later implemented, cannot restore expired tools or approval.
+Candidate edits still require current input binding and invalidate affected
+evidence; rendered patches do not replace exact accepted bytes at promotion.
 
 ## Execution environments
 
-The current repository TypeScript and Vitest profiles use a pinned Docker
+The current repository TypeScript and targeted Node test profiles use a pinned Docker
 container because they can load candidate dependencies or execute candidate
 tests. Their container policy is part of their bound evidence. The native
 Oxlint profile occupies a narrower boundary: it reads a captured source file
@@ -221,9 +204,11 @@ qualification boundary are in
 
 ## Current limitations
 
-The implementation admits only modifications to one or two existing `src/**/*.ts` files. Its repository-executing
+The original task admits only modifications to one or two existing `src/**/*.ts` files;
+the separate source-and-test task admits one existing TypeScript source and one existing regression test.
+Its repository-executing
 checks currently require the qualified container path; no OS-sandboxed or
-trusted host-native repository-task provider is implemented. It does not admit test changes,
+trusted host-native repository-task provider is implemented. It does not admit general test changes,
 new/deleted files, arbitrary repository commands or projects, general web tools, remote adoption or
 untrusted workloads. The [roadmap](roadmap.md) owns the capability sequence;
 [qualification](qualification.md) records the evidence required to broaden

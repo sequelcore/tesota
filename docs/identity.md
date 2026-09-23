@@ -1,227 +1,65 @@
 # Identity and purpose
 
-**Tesota is an open-source, verification-first agent.**
+**Tesota is a verification-first agent for work that carries its evidence.**
+Describe what you need, inspect the result and its applicable checks, and decide
+whether to use it. Software development is its first proving ground. Research,
+planning and other consequential work remain a long-term direction, not current
+capabilities.
 
-Describe what you need and work with Tesota toward a result you can inspect,
-correct and choose to use.
-
-> **Work that carries its evidence.**
-
-The intended experience is a normal agent conversation. Tesota should keep the
-scope, checks, authority and work history understandable without requiring the
-user to operate an internal lifecycle. Software development is the first
-proving ground for that experience, not the permanent limit of the product.
-
-## Product scope
-
-Tesota's destination, next proof and current implementation are deliberately
-different:
-
-| Horizon | Meaning |
-| --- | --- |
-| **Implemented today** | A local, terminal-first pre-release that can keep context across bounded read-only repository questions and attempt one narrow class of TypeScript source changes with explicit approval, checks, review and application. |
-| **Next demonstrated capability** | Complete a continuous source-and-regression-test task with user-requested correction, fresh exact-result evidence and explicit cumulative budgets; see the roadmap for implementation order. |
-| **Coding destination** | A verification-first coding agent capable of broad, real repository work while preserving explicit authority, exact-result evidence, visible unknowns, human acceptance and guarded application. |
-| **Long-term thesis** | An agent for research, planning, creation, tool use and other consequential work, where each domain defines its result, applicable evidence, effects and adoption boundary. |
-
-Tesota does not yet support arbitrary repository work, general web research,
-unrestricted commands, issue publication or general-purpose non-code
-workflows. The [roadmap](roadmap.md) is the sole owner of current product status
-and priority. The [architecture](architecture.md) describes the implementation
-that exists.
-
-## Coding breadth and product identity
-
-Broad coding capability is a product destination. Tesota should grow from its
-current narrow change into a useful range of everyday repository work. That
-breadth must be demonstrated on representative tasks through support coverage,
-residual defects, intervention, elapsed time, cost and refusal causes. A feature
-list or the label “general coding agent” does not establish it.
-
-Verification-first behavior is the product identity. Tesota is not an
-unrestricted coding loop with checks added afterward. As its task range grows,
-it must continue to keep authority explicit, bind evidence to the exact result,
-use diagnostics for bounded correction, preserve unknowns and separate checks,
-review, acceptance and application.
-
-Pi can continue to provide model interaction, tool use and agent-loop mechanics.
-Tesota owns how that work is admitted, evidenced, reviewed and applied. Reaching
-broad coding usefulness does not require rebuilding a native agent engine or
-copying another coding product's architecture.
-
-This is an intended direction, not a claim that the current implementation
-matches broad coding agents, a delivery schedule or permission to relax a
-restriction without evidence. The roadmap governs the order in which breadth is
-earned.
-
-## The experience
-
-The user-facing mental model is:
+The intended experience is an ordinary conversation:
 
 ```text
 Ask -> Work <-> Check <-> Correct -> Review -> Apply
 ```
 
-This is a flexible conversation, not six mandatory ceremonies. A read-only
-question can end with an answer. A check can happen before, during or after an
-edit. Correction can follow a diagnostic or human feedback. Applying a result
-is a separate consequential action, and earlier effects may also require their
-own authority.
-
-The current implementation still exposes some seams in this experience. A
-supported change can move from a natural-language request through approval,
-work, checks, review and application without the user copying internal IDs.
-Known-settled cancellation and lifecycle failure return to a fresh prompt;
-unconfirmed execution or application settlement ends the session. One bounded
-semantic revision is implemented but not yet prospectively qualified.
-[Using Tesota](using-tesota.md) documents the exact supported workflow without
-presenting the destination as current behavior.
+These are possible stages, not mandatory ceremonies. A repository question can
+end with an answer. A change needs scoped approval, a current result and human
+review before application. [Using Tesota](using-tesota.md) describes the current
+workflow; the [roadmap](roadmap.md) owns status and priority.
 
 ## Why verification-first
 
-AI makes production abundant. Evidence remains scarce. A persuasive answer, a
-polished change or a successful tool transcript does not by itself establish
-that the result is correct, current or authorized to take effect.
+An agent's answer or completed edit is not proof of correctness. Tesota keeps
+four distinctions visible:
 
-Verification-first means that Tesota keeps four commitments visible:
+1. A check states the property, result and conditions it actually observed.
+2. Evidence for an earlier result does not silently apply after that result changes.
+3. Unchecked behavior and unresolved effects remain explicit.
+4. Checks, human acceptance and application are separate facts.
 
-1. **Checks state what they establish.** A typecheck, test, review and policy
-   check answer different questions.
-2. **Evidence stays attached to an exact result.** If the result changes, old
-   evidence remains history and the affected claims need checking again.
-3. **Unknowns remain explicit.** Passing one check does not become a universal
-   declaration that the work is “verified.”
-4. **Evidence informs a decision; it does not grant authority.** Producing,
-   checking, accepting and applying a result are distinct facts.
+These distinctions also govern failures. A finding, unavailable tool, timeout,
+cancellation and unconfirmed settlement need different outcomes. Recovery can
+reconstruct recorded facts but cannot recreate expired authority. Approval
+determines which effects may be attempted; the execution environment limits
+what a process can do. See [architecture](architecture.md) and
+[qualification](qualification.md) for the precise boundaries.
 
-A useful summary should therefore look like this:
+## Product and components
 
-```text
-Changed:
-- src/auth.ts
-- src/session.ts
+Tesota owns the task scope, evidence, review and application decision. Pi is the
+current agent engine for conversation and tool-loop mechanics; Codex is the
+configured model route for the supported live flow. Gentle AI is an optional
+review provider. None of these integrations grants itself Tesota's authority.
+Replacing an engine or model requires qualification of the affected behavior;
+an engine registry or universal provider interface is not a product goal.
 
-Checked:
-PASS Scope integrity: only admitted files changed
-PASS TypeScript no-emit: this exact result passed typescript-no-emit/v1
+The initial audience is developers and maintainers who want useful AI assistance
+while understanding the resulting changes and their limits. Success means
+completing worthwhile work with acceptable defects, setup, time, intervention
+and review effort. Representative use must establish that claim; a feature list
+or one successful demonstration cannot.
 
-Not established:
-- requested behavior and completion conditions
-- full integration suite
+## Public language and name
 
-Changed since checking: No
-Application: Not applied; awaiting your decision
-```
+The category is **verification-first agent**; **verification-first coding agent**
+is suitable when discussing the software-development domain. The primary line
+is **Work that carries its evidence.** Claims of safety, trust, autonomy or
+production readiness require evidence for the exact claim. The dated
+[positioning review](references/public-positioning.md) and
+[identity decision](decisions/006-public-product-identity.md) retain the
+reasoning behind this language.
 
-The current shell renders this structure for its supported TypeScript task. The
-specific checks and unknowns must change when a later task has a different
-evidence contract.
-
-## Enduring principles
-
-The simpler product story does not weaken the lifecycle beneath it:
-
-1. **Production is not proof.** Model completion does not establish task
-   completion.
-2. **Verification is part of execution.** Checks can guide work before the final
-   result, not merely reject it afterward.
-3. **Diagnostics are useful inputs.** A bounded failure can lead to correction
-   and renewed verification.
-4. **Evidence has a subject.** An observation identifies the exact result and
-   relevant conditions it describes.
-5. **Changed results need renewed evidence.** Old evidence remains historical;
-   it does not silently apply to new work.
-6. **Different claims need different verifiers.** No single check establishes
-   every property of a task.
-7. **Evidence does not create authority.** A passing tool, reviewer or model
-   cannot silently approve or apply its own result.
-8. **Failure states remain honest.** A finding, unavailable tool, timeout,
-   cancellation and uncertain effect are not interchangeable.
-9. **Verification is proportional.** Required evidence depends on the work, its
-   effects and the cost of being wrong.
-10. **Telemetry describes; it does not authorize.** Visibility can improve a
-    decision without becoming a permission source.
-11. **Authority and confinement are different.** Approval determines which
-    effects may be attempted; the execution environment limits which effects a
-    process can perform. Neither substitutes for the other.
-
-Recovery can reconstruct durable facts but cannot recreate expired authority.
-A cancellation request is not confirmed settlement. Acceptance is not
-application. Any delegated authority must remain within the authority of its
-parent. These are product invariants even when the interface uses ordinary
-language such as “still active,” “could not confirm completion” or “apply these
-changes.”
-
-The [verification reference](verification.md), [architecture](architecture.md)
-and [qualification criteria](qualification.md) retain the precise contracts.
-
-## Product, engine and model
-
-Tesota is the product and the agent. Pi is the current agent engine: it provides
-session, model-interaction and tool-loop mechanics. A model is one component of
-an execution route. Neither Pi nor a particular model is Tesota's identity.
-
-**The work and its evidence can outlive the engine.** Tesota should preserve
-the right to change models or engines when a replacement route is justified and
-qualified. Changing engines is not itself the product, and the current roadmap
-does not promise an engine registry, universal session migration, automatic
-model routing, account pools, silent provider failover or a native Tesota
-engine.
-
-Pi, Gentle AI and individual verifiers are credited integrations. They do not
-gain Tesota-owned authority through integration. The architecture explains the
-boundaries among the agent engine, execution environment, verifier and reviewer.
-
-## Audience and measure of success
-
-Tesota is initially for developers and maintainers who want AI assistance while
-keeping scope, resulting changes, applicable checks and human decisions
-understandable. That audience remains a hypothesis until ordinary use validates
-it.
-
-The first useful measure is not feature count. It is whether a person can
-complete a worthwhile task with acceptable residual defects and reasonable
-setup, intervention, elapsed time and review burden. Later domains need their
-own result, evidence, effect and adoption definitions before becoming product
-promises.
-
-## Public language
-
-Public introductions lead with what Tesota is, what a person can do with it and
-why its evidence relationship matters. Internal lifecycle terms follow only
-when a reader needs implementation detail.
-
-The canonical category is **verification-first agent**. In an explicitly
-software-development context, **verification-first coding agent** is a valid
-domain description, not the product's permanent boundary.
-
-The primary tagline is:
-
-> **Work that carries its evidence.**
-
-For the software-development domain, this contextual line is also valid:
-
-> **Build the change. Keep the evidence.**
-
-Tesota speaks with calm engineering precision. It explains what happened, what
-evidence applies and what remains unknown. It does not describe itself as safe,
-trusted, autonomous, production-ready or superior without evidence for the
-exact claim. The dated [public positioning review](references/public-positioning.md)
-records the external comparison behind this language. [Decision 006](decisions/006-public-product-identity.md)
-records the original positioning decision, and [decision 010](decisions/010-center-public-docs-on-user-experience.md)
-records the experience-first documentation hierarchy.
-
-## Why the name
-
-The name comes from *Olneya tesota*, desert ironwood, also known as *palo
-fierro*. This Sonoran Desert tree has dense, durable wood and provides shelter
-that helps other plants establish themselves. The botanical reference is
+Tesota takes its name from *Olneya tesota*, the Sonoran Desert ironwood tree
 described by the [Arizona-Sonora Desert Museum](https://www.desertmuseum.org/programs/ifnm_ironwoodtree.php).
-
-For the project, it suggests a durable foundation that supports growth. This is
-an intended association, not a claim that the software has already achieved
-that dependability. Botanical language does not become architecture vocabulary.
-
-Final visual identity, domain selection and social handles remain open.
-Professional trademark clearance has not been completed, so current use must
-not imply exclusive legal rights to the name.
+The name suggests a durable foundation; it is not a dependability claim or an
+architecture term. Trademark clearance has not been completed.

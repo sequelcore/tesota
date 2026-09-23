@@ -9,14 +9,15 @@ admission and explicit operator approval can issue an execution grant.
 
 ```text
 request -> read-only proposal -> admission -> operator approval
-        -> isolated candidate -> scope + contained typecheck -> human review
+        -> isolated candidate -> scope + admitted contained check -> human review
         -> accept/reject, or one approved semantic correction
         -> fresh checks + fresh review -> final decision -> guarded promotion
 ```
 
 There is no application task registry and no special task for modifying Tesota.
-The current implementation accepts one deliberately narrow task kind:
-`typescript-change`.
+The implementation accepts the original `typescript-change` kind and a separate
+`typescript-source-test-change` kind. The latter is an integrated development
+increment, not yet qualified as a representative external workflow.
 
 ## Current contract
 
@@ -34,16 +35,36 @@ An admitted TypeScript change:
 - requires an initial check before the first replacement; and
 - remains subject to human review before promotion.
 
+The source-and-test variant approves exactly one existing non-test `.ts` source
+file and one existing `tests/**/*.test.ts` file. Its exact paths are in the
+immutable grant; the source file need not live below `src/`. Scripts, check
+configuration, dependencies, file creation and arbitrary commands remain
+denied. It permits up to 12 reads, six replacements and six checks across R0
+and R1, with the same 64 KiB file bound and five-minute cumulative active-time
+limit. Source-only plans use version 2; source-and-test plans use version 3.
+
+For this variant, the model first checks the unchanged candidate, changes the
+regression test and checks that it fails on the original source, then repairs
+the source and checks the final candidate. The fixed `node-test-targeted/v1`
+invocation runs the approved test under Node's test runner inside the pinned,
+read-only, network-disabled Docker container. It does not execute the
+repository's test script, typecheck the project or prove full-suite behavior.
+Empty, skipped, TODO and incoherent test reports cannot pass. The exact final
+source and test bytes are checked again at review and conflict-checked before
+promotion. A later semantic correction uses only the remaining cumulative
+budget and requires fresh evidence.
+
 The complete model-and-check session has a five-minute cumulative deadline.
-Individual container checks retain their separate 60-second execution limit;
+Individual container checks retain their separate 60-second TypeScript or
+30-second Node-test execution limits;
 dependency binding and snapshot preparation occur inside the cumulative task
 window.
 Those limits are task-wide across the initial R0 execution and the optional R1
-semantic revision. A fresh Pi agent receives only the remaining model, tool,
+semantic revision. The optional R1 uses a fresh Pi agent with only the remaining model, tool,
 read, edit, check and active-time budget; attempted consequential work is not
 refunded after cancellation or uncertain settlement.
 
-The version-2 persisted plan binds the approved proposal, committed baseline,
+The persisted plan binds the approved proposal, committed baseline,
 initial candidate read-input hashes, exact source-target hashes and modes,
 write set, limits and task definition. Reloading that plan can recheck a
 candidate, but cannot recreate editing authority.
@@ -61,14 +82,12 @@ the task definition and check evidence, so rebinding them invalidates the
 review fingerprint. Candidate replacements are applied exactly as reviewed;
 promotion does not convert their line endings.
 
-Version-1 plans remain inspectable and checkable, but their missing source
-observations are never reconstructed from the present worktree. They cannot
-receive a new acceptance or be promoted. A fresh approved task is required.
-
 ## What the automatic checks prove
 
-`scope-integrity` establishes that at least one admitted file changed and that
-the candidate contains no unsupported path or change type. Once content changes,
+`scope-integrity` establishes that admitted content changed and that the
+candidate contains no unsupported path or change type. The source-and-test
+variant requires both approved files to differ by its final passing check.
+For the source-only variant, once content changes,
 `typescript-no-emit/v1` establishes that the exact bound candidate passed the
 repository's fixed no-emit TypeScript compilation under the recorded toolchain
 and isolation inputs. Compiler findings remain check failures; timeout,
@@ -87,8 +106,10 @@ This distinction is intentional:
 ## Review and promotion
 
 `task start <proposal-id>` presents the admitted scope before execution. If the
-operator approves it, Tesota creates a fresh candidate and runs the bounded Pi
-task. Passing current scope and typecheck evidence exposes the exact diff for an
+operator approves it, Tesota creates a fresh candidate and runs the bounded R0
+task through the same in-memory Pi SDK conversation as discovery in Tesota Shell.
+The lower-level task command retains its one-shot agent. Passing current scope
+and selected check evidence exposes the exact diff for an
 accept, reject or request-one-correction choice. A correction requires bounded
 user refinement and separate approval, keeps the same candidate, repository,
 baseline, paths, tools and profiles, and uses a fresh disposable Pi agent. It
@@ -101,7 +122,7 @@ evidence as well as the candidate bytes, so changed verifier inputs make a prior
 decision stale. R1 extends that identity with its effective semantic criteria,
 exact R0 parent and revision identity, so even unchanged bytes require a fresh
 review and decision. Before the decision, the shell lists the exact changed files,
-states the separate scope-integrity and TypeScript claims, names the behavioral
+states the separate scope-integrity and applicable verifier claims, names the behavioral
 and integration unknowns, and reports that application has not occurred.
 Promotion applies only the accepted write set when the source revision checks,
 captured target bytes and modes, and review identity still match. The terminal outcome reports application
@@ -158,7 +179,8 @@ never authorize execution, acceptance or promotion.
 
 ## Deliberate omissions
 
-Tesota does not currently admit test edits, create/delete/rename effects,
+Tesota does not admit general test edits, create/delete/rename effects,
 arbitrary task manifests, repository scripts, dependency changes or automatic
-acceptance. Broader source work requires qualified check profiles and explicit
-effect contracts. The [roadmap](roadmap.md) owns that expansion.
+acceptance. The new Node test route is limited to one approved existing test;
+broader source work requires qualified check profiles and explicit effect
+contracts. The [roadmap](roadmap.md) owns that expansion.

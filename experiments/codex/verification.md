@@ -1,8 +1,13 @@
 # Live verification tool
 
-This Windows experiment connects the saved Codex login to the existing bounded
+This is a retained record of a retired experiment. The `live:verification`
+command and its fixture-based adapter are no longer available.
+
+This Windows experiment connected the saved Codex login to the existing bounded
 Oxlint verifier through Pi. It edits no source and does not execute agent tasks.
 The next [candidate exercise](candidate.md) adds a bounded replacement and recheck.
+
+Historical invocation (no longer available):
 
 ```sh
 bun run build
@@ -55,7 +60,7 @@ Each run reserves a new directory under ignored `experiments/codex/runs/` before
 authentication. `probe.json` uses `tesota-verification-probe` version 2 and records
 fixed implementation hashes, bounds, counts and event names. It excludes model
 text, requested argument values, raw errors and provider bodies. `verification.json`
-is written by the existing durable verification store when an issued completed
+was written by the then-existing durable verification store when an issued completed
 result exists. It includes local input and installation paths; retain it locally,
 not as a shareable sanitized report. Failed/incomplete runs remain failures.
 

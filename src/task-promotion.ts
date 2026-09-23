@@ -120,7 +120,7 @@ function failedPromotionState(sourceWriteStarted: boolean, applied: readonly str
 
 function acceptedSourceInputs(review: TaskReview, task: Awaited<ReturnType<typeof inspectCandidateTask>>,
   reviewSha256: string): TaskSourceInputs {
-  if (!task.promotable || task.sourceInputs === null || review.reviewSha256 !== reviewSha256 || review.check.status !== "passed" ||
+  if (review.reviewSha256 !== reviewSha256 || review.check.status !== "passed" ||
       review.operatorDecision?.applicability !== "current" || review.operatorDecision.record.decision !== "accept" ||
       hash(Buffer.from(JSON.stringify(task.sourceInputs))) !== review.check.sourceInputsSha256) {
     throw new Error("Promotion requires the current accepted review and source binding");

@@ -98,70 +98,27 @@ the composed source-task flow is exercised on representative work; current tests
 exercise admission, bindings, result interpretation and failure settlement with
 synthetic fixtures.
 
-## Protected targeted Vitest profile
+## Protected targeted Node test profile
 
-`vitest-targeted/v1` is a separate, repository-owned producer. It is not yet a
-CLI command, task-grant check or correction-loop input. Its sole admitted
-declaration is the committed `test:fast` script
-`vitest run --config tests/vitest.fast.config.ts`; Tesota never executes that
-string. The application selects one or more exact test files from the committed
-fast-test configuration, then invokes the observed Vitest entry with its own
-fixed argv, JSON reporter, fork pool, isolation and one-worker policy.
-Admission models Vitest's case-insensitive substring semantics for positional
-file filters and rejects a selection if those arguments would collect any
-other configured test. Exact result membership remains a second, post-execution
-check rather than the first point at which over-collection is detected.
+`node-test-targeted/v1` is the check for the approved source-and-test task.
+The grant names one existing `tests/**/*.test.ts` file and the only candidate
+files allowed to differ. Tesota records the repository's declared test script
+but does not execute it or any model-selected command. It runs fixed Node argv
+with TypeScript type stripping and that exact test path in the pinned Docker
+image. This is a focused behavioral observation, not TypeScript typechecking
+or the full repository test script.
 
-The configuration parser accepts only the current declarative fast-test shape:
-one `vitest/config` import, explicit test-file include list, worker limit and
-test timeout. Setup files, global setup, projects, plugins, alternate runner
-settings and any other configuration shape are unsupported. Candidate changes to
-tests, snapshots, manifests, lockfiles, TypeScript or Vitest configuration are
-rejected, so the task model cannot weaken the selected oracle.
-
-The binding covers candidate bytes, package declaration, lockfile, configuration
-and selected-test hashes, installed Vitest and Vite identities, the runner entry,
-the complete mounted Linux/x64 dependency installation, Docker executable,
-containment policy and exact semantic invocation. A Windows `node_modules` tree
-is never treated as portable: admission requires a separately provisioned
-Linux/x64 closure, including the Linux Rolldown binding used by the admitted
-runner. The producer observes and binds that closure's complete content,
-package identities, native target metadata and declared Vitest version. It does
-not provision the closure or establish that its entire dependency graph was
-derived from the candidate lockfile, so evidence labels its provenance
-`operator_provisioned_unqualified`; supplying it is an application/operator
-trust boundary, not a model-controlled input. The producer neither installs
-dependencies nor pulls images. Without that closure, preparation returns
-`linux_x64_dependency_closure_unavailable` and issues no profile.
-
-The pinned container mounts the candidate and Linux/x64 closure as read-only
-sibling trees, has no network or mounted host credentials, and provides only a
-bounded `/tmp` tmpfs. The fixed invocation uses Vite's `runner` configuration
-loader and disables persistent Vitest caching, so attempted writes to the
-candidate or dependency installation fail instead of mutating bound inputs. Its
-client and container settlement remain independent observations.
-
-The producer distinguishes `passed`, `check_failed`, `no_tests`, `unavailable`,
-`timed_out`, `cancelled` and `execution_failed`. A pass requires an exit-zero,
-strictly parsed Vitest 4 JSON report whose collection exactly matches the bound
-test files and whose tests all passed. Empty, malformed, truncated, oversized,
-wrong-shape or contradictory output fails closed; a nonzero result never passes.
-Recognized failed assertions receive a capped diagnostic projection. A pass also
-requires coherent suite, test, file, exit, signal and snapshot counters; nested
-suites are accepted through normalized reported file membership rather than a
-suite-count/file-count equality. A selected file with zero assertions is
-`no_tests`, not a pass. Bound inputs are re-observed immediately before dispatch
-and after execution; this prevents known stale input from starting the process but
-does not create a filesystem lock against concurrent mutation.
-
-The positive path was exercised on September 15, 2026 through Docker Desktop's
-Linux/amd64 daemon and the pinned image: a minimal committed TypeScript fixture,
-an operator-provisioned Linux/x64 closure, the real Vitest 4.1.11/Vite 8.2.2
-runner and one selected test produced issued `passed` evidence with confirmed
-client exit and container absence. This qualifies that bounded positive path;
-it does not qualify dependency provenance, every failure/cleanup path, another
-platform or composition into the task lifecycle. Deterministic tests remain the
-evidence for admission, result interpretation and injected settlement cases.
+The candidate and Tesota's compiled, SHA-256-bound Node reporter are mounted
+read-only. Network is disabled; host credentials and dependency installations
+are not mounted. The reporter consumes Node test events and ignores test-owned
+stdout, then emits one bounded machine report. A pass requires the selected
+entry path, one complete cumulative summary, at least one test, all tests
+passing, no skipped/TODO/cancelled tests and a clean process/container exit.
+Malformed, mismatched, empty and incomplete reports do not pass. The profile
+rechecks candidate, test, package declaration, reporter and Docker-client bytes
+before and after invocation. It has a 30-second container limit and no
+host-native fallback. A passing report is still check evidence, not human
+acceptance or permission to apply the diff.
 
 ## Oxlint single-file static profile
 
@@ -240,61 +197,9 @@ import-aware analysis remain excluded.
 Unconfirmed termination retains both source and configuration snapshots. Failures
 include binding when preparation established it; absence never implies success.
 
-`assessApplicability(result, currentCheck)` returns `status`, `provenance` and
-`comparedAt` separately from the original execution outcome. Matching observed inputs are
-`applicable`; changed source, configuration, semantic arguments, limits or
-installation identity are `stale`; unreadable/missing inputs and unrecognized
-result objects are `unavailable`. A check failure can still be applicable.
-Comparison recognizes issued completed results and structurally validated records
-registered by the recovery store, preserving their different provenance. Arbitrary
-copies or caller-parsed JSON are unavailable. Completed results are immutable.
-
-Applicability describes the inputs observed during that comparison, not a
-permanent flag or an atomic view across mutable files. Installed tools are
-trusted and expected to remain stable during execution: their digest is an
-observation of installation contents, not loaded-image attestation. Digests do
-not authenticate an asserted pass. This is not whole-repository verification.
-
-## Durable evidence and recovery
-
-`DurableVerificationEvidenceStore` in `src/verification/evidence.ts` is the
-single owner of persisted verification evidence. It writes one JSON record
-containing the completed historical outcome and its exact input binding. The
-record format is identified by `tesota-verification-evidence` and version `1`;
-only this implemented version is read. A save accepts only an issued, completed
-result, so a copied result object cannot be persisted as if it came from the
-executor.
-
-The store serializes and enforces the 512 KiB UTF-8 record bound before any
-filesystem write, preserving an existing record on size rejection. It writes a
-unique temporary file beside the destination and renames it into place after
-the write. Callers must coordinate access to each destination; the store assumes
-a single writer and supplies no locking or concurrent-operation ordering.
-A process interruption before rename leaves the previous record or no record;
-recovery never reads the temporary file. Failed writes or renames attempt
-best-effort temporary cleanup; abrupt process termination can leave orphaned
-temporary files. Replacement relies on the filesystem's rename semantics;
-interruption during rename is not independently proven here. There is no fsync
-protocol or power-loss durability guarantee.
-Reads are size-bounded, reject malformed UTF-8 before JSON parsing, and require
-the complete exact record shape. Diagnostic text is never repaired on recovery.
-Missing data is `missing`; malformed, truncated, oversized or unsupported data
-is `invalid`; other read failures are `unavailable`.
-
-A valid reload returns a recovered historical result with
-`structuralValidity: "valid"` and `provenance: "recovered_untrusted"`. It is
-not an issued in-process result and gains no authority from its storage path.
-Only the store's successful structural parse can register a recovered object;
-there is no public registration function. Binding comparison ignores object-key
-order while preserving exact configuration text and argument order.
-`assessApplicability` can compare its binding with current source, profile and
-verifier inputs, returning `applicable`, `stale` or `unavailable` while keeping
-that recovered provenance visible. A recovered `passed` result remains
-historically passed when current inputs make it stale. Exact `oxlint-basic/v1`
-and `oxlint-static/v2` records remain structurally recoverable, but they are
-stale against the current `oxlint-static/v3` profile and cannot supply current
-verification. The storage API is explicit; the CLI prints the verification
-result without saving it through this store.
+Completed Oxlint results and their input bindings remain immutable. The CLI
+prints the result without persisting it. Dated experimental observations are
+retained under [experiments](../experiments/README.md).
 
 ## Standalone LemmaScript and Dafny formal check
 

@@ -2,8 +2,8 @@
 
 This Windows-only diagnostic checks one normal model turn and one observed
 cancellation through Pi. It runs no executable tools and grants no task acceptance.
-The separate [verification-tool experiment](verification.md) admits one fixed
-Oxlint check through the same saved login.
+The separate [verification-tool experiment](verification.md) used one fixed
+Oxlint check through the same saved login. Its command has been retired.
 See [history](history.md) for earlier results and the [roadmap](../../docs/roadmap.md)
 for project status.
 
@@ -42,9 +42,9 @@ For login-only diagnostics, use the compiled entry with `--auth-only --device-co
 Both require an interactive unrecorded terminal. Normal login belongs to
 `tesota auth login`; these modes exist to test the isolated interaction.
 
-`--full-probe --browser` retains the legacy browser-callback diagnostic. It does
-not persist credentials or accept manual callback input. Browser launch is not
-proof that navigation or callback completion occurred.
+The former browser-callback probe has been retired. Its retained evidence still
+describes the historical diagnostic; current probes use stored or device-code
+authentication.
 
 All modes support offline `--help`. Normal `bun run check` uses synthetic provider
 boundaries and never authenticates against the live service.
@@ -52,7 +52,7 @@ boundaries and never authenticates against the live service.
 ## Bounds and outcomes
 
 The fixed route is `openai-codex`, `openai-codex-responses`, and
-`gpt-5.6-luna` over SSE. There is no provider, model, account or API-key
+`gpt-6-luna` over SSE. There is no provider, model, account or API-key
 fallback. The installed Pi request builder omits `maxTokens`; Tesota has no
 established 64-token output ceiling.
 

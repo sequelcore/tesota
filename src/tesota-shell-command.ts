@@ -46,19 +46,25 @@ export function createProcessTesotaShell(cwd: string = process.cwd()): TesotaShe
         return { status: "unavailable", exitCode: 1, reason: "unavailable" };
       }
     }),
-    start: (proposalId, report) => runOperation((signal) => startTask({
-      proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
-      sourceDirectory: cwd,
-      reference: proposalId,
-      ask: (prompt) => surface.ask(prompt),
-      write: (text) => { surface.write(text); },
-      report,
-      execute: (grant) => runProposalTask(grant, {
-        signal,
+    start: (proposalId, report) => runOperation(async (signal) => {
+      const owner = await conversation;
+      if (owner === undefined) throw new Error("Tesota conversation unavailable for approved task");
+      const result = await startTask({
+        proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
+        sourceDirectory: cwd,
+        reference: proposalId,
+        ask: (prompt) => surface.ask(prompt),
         write: (text) => { surface.write(text); },
-        writeError: (text) => { surface.write(text); },
-      }),
-    })),
+        report,
+        execute: (grant) => runProposalTask(grant, {
+          signal,
+          session: owner.taskHost(),
+          write: (text) => { surface.write(text); },
+          writeError: (text) => { surface.write(text); },
+        }),
+      });
+      return result;
+    }),
     dispose: () => { void conversation?.then((owner) => { owner.dispose(); }, () => undefined); },
   };
 }

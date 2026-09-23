@@ -109,9 +109,9 @@ vi.mock("../src/integrations/pi-task.js", async (importOriginal) => {
 
 const provider = vi.hoisted(() => ({ streamSimple: vi.fn() }));
 vi.mock("../src/integrations/pi-live.js", () => ({
-  LIVE_CODEX_MODEL_ID: "gpt-5.6-luna",
+  LIVE_CODEX_MODEL_ID: "gpt-6-luna",
   storedCodexModels: vi.fn(async () => ({
-    getModel: () => ({ api: "openai-codex-responses", provider: "openai-codex", id: "gpt-5.6-luna" }),
+    getModel: () => ({ api: "openai-codex-responses", provider: "openai-codex", id: "gpt-6-luna" }),
     streamSimple: provider.streamSimple,
   })),
 }));

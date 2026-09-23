@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vitest";
-import { assessApplicability, configuredOxlint, runOxlint, type OxlintCheck } from "../src/verification/oxlint.js";
+import { configuredOxlint, runOxlint, type OxlintCheck } from "../src/verification/oxlint.js";
+import { observeVerifier } from "../src/verification/oxlint-input.js";
 import { interpretOxlint } from "../src/verification/oxlint-result.js";
 
 const bun = execFileSync("bun", ["--no-env-file", "-p", "process.execPath"], {
@@ -80,7 +81,6 @@ it.each([
   expect(result.diagnostics).toHaveLength(1);
   expect(result.diagnostics[0]?.rule).toBe(rule);
   expect(runCli(file)).toEqual({ code: 1, result });
-  expect((await assessApplicability(result, check)).status).toBe("applicable");
   expect(await readFile(file, "utf8")).toBe(source);
 });
 
@@ -209,29 +209,9 @@ it("binds exact bytes and the effective check through the compiled CLI", async (
   expect(result.binding?.verifier).toMatchObject({ packageVersion: "1.82.0", executable: bun });
   expect(result.binding?.verifier.executableSha256).toMatch(/^[a-f0-9]{64}$/u);
   expect(runCli(file)).toEqual({ code: 0, result });
-  expect((await assessApplicability(result, check)).status).toBe("applicable");
   await writeFile(file, "debugger;\n");
-  expect((await assessApplicability(result, check)).status).toBe("stale");
+  expect(result.binding?.source.sha256).toBe(createHash("sha256").update(source).digest("hex"));
   expect(result.status).toBe("passed");
-});
-
-it("compares configuration contents even with the same profile label", async () => {
-  const { file, check } = await fixture();
-  const result = await runOxlint(check, file);
-  expect((await assessApplicability(result, { ...check, configuration: check.configuration + " " })).status).toBe("stale");
-  expect(result.binding?.check.profile).toBe(profile);
-  expect((await assessApplicability(result, { ...check, timeoutMs: check.timeoutMs + 1 })).status).toBe("stale");
-});
-
-it("never makes unavailable sources or serialized assertions applicable", async () => {
-  const { file, check } = await fixture();
-  const result = await runOxlint(check, file);
-  expect((await assessApplicability({ ...result }, check)).status).toBe("unavailable");
-  expect((await assessApplicability(result, { ...check, executable: join(check.cwd, "missing.exe") })).status).toBe("unavailable");
-  await rm(file);
-  expect((await assessApplicability(result, check)).status).toBe("unavailable");
-  await mkdir(file);
-  expect((await assessApplicability(result, check)).status).toBe("unavailable");
 });
 
 it.each(["entry", "native"])("binds %s content, not just the declared package version", async (changed) => {
@@ -247,7 +227,9 @@ it.each(["entry", "native"])("binds %s content, not just the declared package ve
   }));
   const result = await runOxlint(check, file);
   expect(result.status).toBe("passed");
-  expect((await assessApplicability(result, check)).status).toBe("applicable");
+  const identity = result.binding?.verifier.installationSha256;
+  expect(identity).toMatch(/^[a-f0-9]{64}$/u);
   await writeFile(changed === "entry" ? check.entry : native, "// changed installation\n");
-  expect((await assessApplicability(result, check)).status).toBe("stale");
+  const observed = await observeVerifier(check.executable, check.entry);
+  expect(observed.installationSha256).not.toBe(identity);
 });

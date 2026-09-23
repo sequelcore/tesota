@@ -1,0 +1,119 @@
+{
+  "format": "tesota-codex-evidence",
+  "version": 9,
+  "provenance": "machine_generated",
+  "timestamp": "2026-09-22T22:56:15.369Z",
+  "implementation": {
+    "binding": "sha256_of_source_and_executed_javascript",
+    "sourceSha256": {
+      "src/live-codex.ts": "a16e5a6fe6e38fdf381b36c172090e4dc2262028a9b770343b5967319a4ce838",
+      "src/integrations/pi-live.ts": "64536242d2b7d364c778d3156b400f19ec70e9ecb0ee7123de10bdf9f1d494c9",
+      "src/integrations/pi-live-evidence.ts": "dbc22b23b8d487d8ec84d7a7d6de6b79411271ee09fc1f9f001c8b0cfc541be9",
+      "src/integrations/codex-credentials.ts": "ed1d2e251cb87b028dcfd0c52a10288ca9a39fb263fe404f47465e25230cb116",
+      "dist/live-codex.js": "32c30affa32684c80f16449b2171f2a3e2c9141e82f146c6798bbd55fb3e63c6",
+      "dist/integrations/pi-live.js": "05f9ad72d82a8af9732fa61de62354e33d5c3d53ecd554d3bd4482f0a969cb3b",
+      "dist/integrations/pi-live-evidence.js": "113563fa6195aca1f309fa2bc584e273094e2ca8f86874f548f9ed87ad096ecc",
+      "dist/integrations/codex-credentials.js": "63647ad6c968344e9494f56eba5424f22108d23da52a61876f274d92047868b8",
+      "package.json": "c467fb84020f25b8db62a20fd4d1554d05f6af605982da194ac177f9375f6796",
+      "bun.lock": "35c2362734dcfc18f600ecec5e5f0275d1b4e3de61e71a194c0b7e4bc6c0b2da",
+      "tsconfig.json": "574826539e25d984cc682eaced92f0a0220cf9ce23225ee30027de1db3930a61",
+      "tsconfig.build.json": "36a8e8030a0369cff3c25ebf999f39412998367acf8ebe4860504bf53df342b8"
+    }
+  },
+  "provider": "openai-codex",
+  "api": "openai-codex-responses",
+  "model": "gpt-6-luna",
+  "authType": "oauth",
+  "authenticationMethod": "stored",
+  "mode": "full_probe",
+  "authenticationOutcome": "succeeded",
+  "inferenceAttempted": false,
+  "limits": {
+    "modelInvocationsPerProbe": 1,
+    "turnMs": 30000,
+    "settlementMs": 2000,
+    "loginMs": 180000
+  },
+  "oauthFailureCategory": null,
+  "modelInvocationCount": 2,
+  "turn": {
+    "status": "completed",
+    "modelInvocationCount": 1,
+    "invocationAttempts": 1,
+    "toolExecutionStartCount": 0,
+    "streamUpdateCount": 5,
+    "terminalStopReason": "stop",
+    "terminalObserved": true,
+    "abortRequested": false,
+    "taskAcceptance": "not_evaluated",
+    "responseMatchesExpectedToken": true,
+    "responseDiagnostic": {
+      "messageObserved": true,
+      "textBlockCount": 1,
+      "nonTextBlockCount": 0,
+      "thinkingBlockCount": 0,
+      "textMatchesExpectedToken": true
+    },
+    "requestBudgetExceeded": false,
+    "deadlineExpired": false,
+    "settlement": "observed",
+    "events": [
+      "session_started",
+      "turn_started",
+      "model_invocation_started",
+      "stream_update",
+      "turn_completed",
+      "terminal_stop",
+      "normalized_completed"
+    ],
+    "providerDiagnostic": {
+      "httpStatus": 200,
+      "failureStage": null,
+      "providerErrorCode": null
+    },
+    "requestBoundRespected": true,
+    "turnBoundRespected": true,
+    "disposition": "passed"
+  },
+  "abortProbe": {
+    "status": "aborted",
+    "modelInvocationCount": 1,
+    "invocationAttempts": 1,
+    "toolExecutionStartCount": 0,
+    "streamUpdateCount": 2,
+    "terminalStopReason": "aborted",
+    "terminalObserved": true,
+    "abortRequested": true,
+    "taskAcceptance": "not_evaluated",
+    "responseMatchesExpectedToken": false,
+    "responseDiagnostic": {
+      "messageObserved": true,
+      "textBlockCount": 1,
+      "nonTextBlockCount": 0,
+      "thinkingBlockCount": 0,
+      "textMatchesExpectedToken": false
+    },
+    "requestBudgetExceeded": false,
+    "deadlineExpired": false,
+    "settlement": "observed",
+    "events": [
+      "session_started",
+      "turn_started",
+      "model_invocation_started",
+      "stream_update",
+      "abort_requested",
+      "turn_completed",
+      "terminal_aborted",
+      "normalized_aborted"
+    ],
+    "providerDiagnostic": {
+      "httpStatus": 200,
+      "failureStage": null,
+      "providerErrorCode": null
+    },
+    "requestBoundRespected": true,
+    "turnBoundRespected": true,
+    "disposition": "passed"
+  },
+  "disposition": "passed"
+}

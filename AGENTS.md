@@ -1,13 +1,13 @@
 # Tesota
 
 This pre-release package provides a CLI, development checks, bounded Oxlint
-verification, durable evidence recovery, independent candidate checkouts and
+verification, durable task-outcome recovery, independent candidate checkouts and
 one approved contained repository typecheck profile, one proposal-backed
 TypeScript source task with bounded execution, local review
 decisions and guarded exact-file promotion.
-Separate Pi compatibility and live
-authentication, fixed verification-tool and isolated candidate-correction experiments
-exist. The bounded source-task flow has Windows/Docker live qualification;
+Separate live authentication and historical Pi compatibility, fixed
+verification-tool and isolated candidate-correction experiments are documented.
+The bounded source-task flow has Windows/Docker live qualification;
 this does not establish general repository-task support or cross-platform live qualification.
 Keep changes scoped to the active increment.
 

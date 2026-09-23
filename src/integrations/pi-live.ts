@@ -7,7 +7,7 @@ import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-code
 import { canAdmitInvocation } from "../verification/invocation-admission.js";
 
 /** Default live model for the current Plus-compatible development account. */
-export const LIVE_CODEX_MODEL_ID = "gpt-5.6-luna";
+export const LIVE_CODEX_MODEL_ID = "gpt-6-luna";
 export const LIVE_CODEX_EXPECTED_TOKEN = "TESOTA_CODEX_OK";
 export const LIVE_LIMITS: Readonly<{
   modelInvocationsPerProbe: number; turnMs: number; settlementMs: number; loginMs: number;
@@ -60,9 +60,9 @@ export interface LiveCodexExperimentResult {
   readonly abortProbe: LiveCodexTurnResult | null;
 }
 
-export type LiveOAuthFailureCategory = "oauth_timeout" | "browser_launch_failed" | "unknown";
+export type LiveOAuthFailureCategory = "oauth_timeout" | "unknown";
 
-export type LiveAuthenticationMethod = "browser" | "device_code" | "stored";
+export type LiveAuthenticationMethod = "device_code" | "stored";
 export interface LiveAuthInteraction extends AuthInteraction {
   readonly authenticationMethod: LiveAuthenticationMethod;
 }
@@ -94,17 +94,9 @@ class LiveOAuthFailure extends Error {
   }
 }
 
-/** Observe launcher exceptions/error events without retaining their payloads. */
-export function observeLiveBrowserLaunch(
-  launch: (onError: () => void) => void, cancellation: AbortController,
-): void {
-  const failed = (): void => cancellation.abort(new LiveOAuthFailure("browser_launch_failed"));
-  try { launch(failed); } catch { failed(); }
-}
-
 export function classifyLiveOAuthFailure(error: unknown): LiveOAuthFailureCategory {
   if (error instanceof LiveOAuthFailure) {
-    if (error.category === "oauth_timeout" || error.category === "browser_launch_failed") return error.category;
+    if (error.category === "oauth_timeout") return error.category;
   }
   return "unknown";
 }
@@ -415,8 +407,8 @@ export async function runLiveOAuthLogin(
     };
     const aborted = (): void => finish("failed", signal.reason);
     // First authoritative local observation wins, before downstream promise cleanup.
-    // Abort listeners observe browser failure synchronously; the deadline observes
-    // timeout before requesting cancellation. Late failures cannot replace either.
+    // The deadline observes timeout before requesting cancellation. Late failures
+    // cannot replace that observation.
     const timer = setTimeout(() => {
       const failure = new LiveOAuthFailure("oauth_timeout");
       finish("failed", failure);
@@ -440,36 +432,6 @@ export async function runLiveOAuthLogin(
       );
     } catch (error) { finish("failed", error); }
   });
-}
-
-/** Pi races manual_code with its callback server. Never read terminal authorization input. */
-export function browserOnlyAuth(openBrowser: (url: string) => void, signal: AbortSignal): LiveAuthInteraction {
-  return {
-    authenticationMethod: "browser", signal,
-    prompt: async (prompt) => {
-      if (prompt.type === "select" && prompt.options.some((option) => option.id === "browser")) return "browser";
-      if (prompt.type !== "manual_code" || prompt.signal === undefined) {
-        throw new Error("Manual authorization input is disabled; browser callback required");
-      }
-      return new Promise<string>((_resolve, reject) => {
-        const cancel = (): void => {
-          signal.removeEventListener("abort", cancel);
-          prompt.signal?.removeEventListener("abort", cancel);
-          reject(new Error("Browser callback input closed"));
-        };
-        if (signal.aborted || prompt.signal?.aborted) cancel();
-        else {
-          signal.addEventListener("abort", cancel, { once: true });
-          prompt.signal?.addEventListener("abort", cancel, { once: true });
-        }
-      });
-    },
-    notify: (event) => {
-      // Do not print provider-owned free text or authorization URLs.
-      if (event.type === "auth_url") openBrowser(event.url);
-      else if (event.type === "device_code") throw new Error("Device login is disabled");
-    },
-  };
 }
 
 /** The only presentation data admitted from Pi's device notification. */

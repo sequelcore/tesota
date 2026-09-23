@@ -204,6 +204,25 @@ async function retainedRevisionFixture() {
   return { ...parent, revision, r1Attempt };
 }
 
+it("keeps a pre-upgrade Luna attempt inspectable for a current correction decision", async () => {
+  const parent = await retainedParentFixture();
+  try {
+    const lines = parent.r0Attempt.trimEnd().split("\n");
+    const started = z.record(z.string(), z.unknown()).parse(JSON.parse(lines[0] ?? "null"));
+    started["model"] = "gpt-5.6-luna";
+    const legacyAttempt = JSON.stringify(started) + "\n" + lines[1] + "\n";
+    await writeFile(join(parent.current.directory, "attempt.jsonl"), legacyAttempt);
+    const identity = await validateCorrectionParent(parent.current.directory, {
+      parentReviewSha256: parent.r0.reviewSha256,
+      parentWriteSetSha256: parent.r0.check.writeSetSha256,
+      parentCheckSha256: createHash("sha256").update(JSON.stringify(parent.r0.check)).digest("hex"),
+      parentAttemptSha256: createHash("sha256").update(legacyAttempt).digest("hex"),
+      taskDefinitionSha256: parent.task.describe().definitionSha256,
+    });
+    expect(identity.attemptSha256).toBe(createHash("sha256").update(legacyAttempt).digest("hex"));
+  } finally { await parent.current.cleanup(); }
+}, 20_000);
+
 it("derives the bounded tool contract from an approved TypeScript grant", async () => {
   const current = await fixture();
   const task = await CandidateTask.prepare(current.directory, current.grant);
@@ -845,7 +864,7 @@ it("makes acceptance stale if a persisted source representation is rebound", asy
   } finally { await current.cleanup(); }
 }, 60_000);
 
-it("keeps legacy plans inspectable without reconstructing source binding or promotion authority", async () => {
+it("rejects plans without the current source binding", async () => {
   const current = await fixture(true);
   try {
     const task = await CandidateTask.prepare(current.directory, current.grant);
@@ -860,11 +879,9 @@ it("keeps legacy plans inspectable without reconstructing source binding or prom
     plan.definitionSha256 = createHash("sha256").update(JSON.stringify({ task: plan.task, version: 1,
       grant: plan.grant, contract: plan.contract, instructions: task.describe().instructions })).digest("hex");
     await writeFile(planPath, JSON.stringify(plan));
-    await expect(checkCandidateTask(current.directory)).resolves.toMatchObject({ status: "passed", sourceInputsSha256: null });
-    await expect(inspectCandidateTask(current.directory)).resolves.toMatchObject({ sourceInputs: null, promotable: false });
-    const review = await reviewTask(current.directory);
-    await expect(decideTask(current.directory, { decision: "accept", reviewSha256: review.reviewSha256 }))
-      .rejects.toThrow("Acceptance requires a passing current check and an admitted source binding");
+    await expect(checkCandidateTask(current.directory)).rejects.toThrow();
+    await expect(inspectCandidateTask(current.directory)).rejects.toThrow();
+    await expect(reviewTask(current.directory)).rejects.toThrow();
     await expect(readFile(join(current.directory, "decision.json"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(promoteTask(current.directory, current.source, "a".repeat(64)))
       .rejects.toMatchObject({ name: "PromotionNotAppliedError" });

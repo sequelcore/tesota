@@ -1,14 +1,13 @@
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { OPAQUE_PI_REVIEWER_LIMITS, runOpaquePiReviewer } from "./integrations/pi-opaque-reviewer.js";
-import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
+import { OPAQUE_PI_REVIEWER_LIMITS, REVIEW_CODEX_MODEL_ID, runOpaquePiReviewer } from "./integrations/pi-opaque-reviewer.js";
 
 export const PI_REVIEW_RELAY_ARGUMENTS: readonly string[] = Object.freeze([
   "--print", "--mode", "text", "--no-session", "--no-tools", "--no-extensions",
   "--no-skills", "--no-prompt-templates", "--no-themes", "--no-context-files", "--no-approve",
 ]);
 
-const PI_REVIEW_RELAY_MODEL = `openai-codex/${LIVE_CODEX_MODEL_ID}`;
+const PI_REVIEW_RELAY_MODEL = `openai-codex/${REVIEW_CODEX_MODEL_ID}`;
 
 function argumentsAdmitted(arguments_: readonly string[]): boolean {
   const fixed = PI_REVIEW_RELAY_ARGUMENTS;

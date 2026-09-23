@@ -1,7 +1,7 @@
 /**
  * Pi's optional Google provider peer is not needed by the synthetic faux path.
  * Keep the absent peer type-only and avoid adding a provider-specific runtime
- * dependency to this experiment. pi-ai 0.86.1 pins @google/genai 2.21.0,
+ * dependency to this experiment. pi-ai 0.87.1 pins @google/genai 2.21.0,
  * whose declarations import Client from its optional SDK peer (^1.25.2).
  * The required never member makes this placeholder uninhabitable.
  * When Tesota consumes MCP, remove this placeholder and adopt the genuine

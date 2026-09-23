@@ -7,9 +7,11 @@ works in an isolated checkout, presents applicable checks and lets you review
 and apply the result.
 
 This guide describes the current supported workflow. The [roadmap](roadmap.md)
-owns what comes next. Continuous read-only questions are implemented; the later
-continuous source-and-test workflow, test edits and interrupted-task resume
-remain unsupported.
+owns what comes next. Continuous read-only questions and the initial approved
+source-task turn share one in-memory Pi conversation. The later continuous
+source-and-test workflow has a bounded implementation for one existing source
+and test file, but useful live completion and fresh external qualification remain
+outstanding. General test edits and interrupted-task resume remain unsupported.
 
 ## Prerequisites
 
@@ -22,9 +24,10 @@ bun run build
 bun link
 ```
 
-The current change workflow also requires Git and Docker Desktop on Windows,
-the pinned verification image already present locally and a matching TypeScript
-closure in the target repository. Prepare that closure in an
+The current change workflow also requires Git and Docker Desktop on Windows
+and the pinned verification image already present locally. The source-only
+TypeScript profile additionally requires a matching TypeScript closure in the
+target repository. Prepare that closure in an
 independent checkout with the repository's committed lockfile:
 
 ```powershell
@@ -70,7 +73,7 @@ conversation, so they receive the earlier transcript. A separate `tesota`
 process starts an isolated conversation. Tesota may ask one clarification while
 preserving the same committed baseline.
 
-Each turn receives a fresh bounded reader for the current committed baseline.
+Each read-only turn receives a fresh bounded reader for the current committed baseline.
 The conversation stops if the baseline or relevant dirty-path state changes;
 earlier observations are not presented as current. Pressing Ctrl+C during a
 read-only turn closes that reader and cancels the SDK operation. Tesota returns
@@ -78,7 +81,9 @@ to a prompt only after settlement is confirmed. Unconfirmed settlement ends the
 session.
 
 Repository reads keep their existing per-turn operation and byte limits. One
-conversation admits at most 12 turns, 36 model invocations and 96 tool calls.
+conversation admits at most 12 discovery turns, 36 model invocations and 96 tool
+calls across discovery and its initial approved task turn. The task also keeps
+its separate cumulative R0/R1 limits.
 Automatic SDK retries and compaction are disabled. A timeout, exhausted budget
 or context-window failure is reported without silently resetting history or
 changing the provider. Conversations are not saved to disk and cannot be
@@ -98,7 +103,7 @@ No write authority exists until you approve that scope.
 If the request is unsupported, Tesota should explain the boundary rather than
 pretend it can complete the work.
 
-## One supported change
+## Bounded supported changes
 
 The current source-task contract allows:
 
@@ -116,11 +121,22 @@ explicit approval, uses the remaining task-wide budget and produces fresh R1
 checks and review identity. A no-op R1 is allowed when truthful, but still needs
 a fresh final decision because its semantic criteria changed.
 
-It excludes tests, dependency and check configuration, file creation, deletion
+The separate source-and-test variant permits one existing TypeScript source
+file and one existing `tests/**/*.test.ts` file, with exact paths approved up
+front. It allows up to six replacements and six checks across the initial work
+and one approved correction. The test must first fail on the original source,
+then pass after the repair. Its fixed Node test runs in the protected container;
+it does not typecheck or run the full repository suite. This variant is still
+awaiting a complete ordinary live walkthrough and fresh external evaluation.
+
+The source-only variant excludes tests; both variants exclude dependency and
+check configuration, file creation, deletion
 or renaming, migrations, arbitrary shell commands and network access. The model
 cannot select a replacement check or weaken its configuration.
 
-After approval, Tesota creates an isolated result and begins work. A failed
+After approval, Tesota creates an isolated result and exposes only the task's
+approved read, replace and check tools for the R0 turn in the same in-memory
+conversation. A failed
 check can supply diagnostics for another bounded edit. Every changed result has
 its own identity, so evidence for an earlier version does not silently apply to
 the later one.
@@ -134,14 +150,14 @@ The review should answer four separate questions:
 3. What remains unestablished or needs human judgment?
 4. Has the result been applied to the working repository?
 
-Today Tesota lists the changed files, names scope integrity and the contained
-TypeScript profile separately, states that the candidate has not yet been
+Today Tesota lists the changed files, names scope integrity and the applicable
+contained check separately, states that the candidate has not yet been
 applied and keeps requested behavior, completion conditions and the full
 integration suite explicitly unestablished. It then shows the escaped exact
 diff. The terminal outcome distinguishes applied, not applied and unconfirmed
 application.
 
-The TypeScript profile can establish that the admitted invocation passed for
+The TypeScript or targeted Node profile can establish that the admitted invocation passed for
 the bound result and conditions. It does not establish requested behavior,
 completion conditions, a complete integration suite or universal correctness.
 
@@ -192,7 +208,7 @@ currently:
 
 - make arbitrary repository changes;
 - run model-selected shell commands or install dependencies;
-- edit tests or create, delete or rename files in the supported task;
+- edit arbitrary tests or create, delete or rename files in the supported task;
 - request more than one semantic correction in the same task;
 - resume an interrupted task; or
 - claim that the live end-to-end workflow is qualified across representative

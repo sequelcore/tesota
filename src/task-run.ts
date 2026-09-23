@@ -3,14 +3,14 @@ import { open, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { candidateDiff, createCandidateCheckout, type CandidateCheckout } from "./candidate-checkout.js";
 import { CandidateTask, checkCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
-import { TASK_LIMITS } from "./task-contract.js";
+import { taskLimits } from "./task-contract.js";
 import { validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
 import type { TaskExecutionAccounting } from "./task-outcome.js";
 import { TaskReviewUnsettledError, validateCorrectionParent, type CorrectionParentIdentity } from "./task-review.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
-import { createPiTaskBudget, PI_TASK_LIMITS, piSemanticRevisionPasses, piTaskPasses, runPiTask,
-  type PiTaskBudget, type PiTaskResult } from "./integrations/pi-task.js";
+import { createPiTaskBudget, piTaskLimits, piSemanticRevisionPasses, piTaskPasses, runPiTask,
+  type PiTaskBudget, type PiTaskResult, type PiTaskSessionHost } from "./integrations/pi-task.js";
 import { effectiveCriteriaSha256, parseSemanticRefinement, recordSemanticRevision, semanticRevisionSha256,
   type SemanticRevision } from "./semantic-revision.js";
 
@@ -39,6 +39,7 @@ export interface TaskRunHost {
   readonly signal?: AbortSignal;
   readonly write?: (text: string) => void;
   readonly writeError?: (text: string) => void;
+  readonly session?: PiTaskSessionHost;
 }
 
 function stdout(text: string): void { process.stdout.write(text); }
@@ -85,7 +86,7 @@ function taskExecutionAccounting(session: PiTaskResult | null, startedAt: number
     consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } };
 }
 
-function resolvedHost(host: TaskRunHost): Required<Omit<TaskRunHost, "signal">> {
+function resolvedHost(host: TaskRunHost): Required<Pick<TaskRunHost, "write" | "writeError">> {
   return { write: host.write ?? stdout, writeError: host.writeError ?? stderr };
 }
 
@@ -114,8 +115,9 @@ async function executorSha256(): Promise<Record<string, string>> {
     "semantic-revision.js",
     "repository-check-input.js",
     "proposal-admission.js", "repository-typecheck.js", "repository-typecheck-process.js", "command-isolation.js",
+    "repository-node-test.js", "repository-node-test-process.js", "repository-node-test-reporter.js",
     "verification/invocation-admission.js", "integrations/pi-task.js",
-    "integrations/pi-live.js", "integrations/codex-credentials.js", "../bun.lock"]) {
+    "integrations/pi-live.js", "integrations/pi-discovery-session.js", "integrations/codex-credentials.js", "../bun.lock"]) {
     executor[path] = createHash("sha256").update(await readFile(new URL(path, import.meta.url))).digest("hex");
   }
   return executor;
@@ -123,14 +125,16 @@ async function executorSha256(): Promise<Record<string, string>> {
 
 async function executeTaskSession(task: CandidateTask, context: SemanticRevision | null,
   parentEvidence: CandidateTaskCheck | null, budget: PiTaskBudget, signal: AbortSignal,
-  admitRevision?: () => Promise<CandidateTaskCheck>): Promise<PiTaskResult> {
+  admitRevision?: () => Promise<CandidateTaskCheck>, session?: PiTaskSessionHost): Promise<PiTaskResult> {
   const usage = task.usage();
+  const limits = task.describe().limits;
+  const piLimits = piTaskLimits(task.describe().task);
   const remainingBudget = {
-    reads: Math.max(0, TASK_LIMITS.reads - usage.reads), edits: Math.max(0, TASK_LIMITS.edits - usage.edits),
-    checks: Math.max(0, TASK_LIMITS.checks - usage.checks),
-    modelInvocations: Math.max(0, PI_TASK_LIMITS.modelInvocations - budget.modelInvocations),
-    toolCalls: Math.max(0, PI_TASK_LIMITS.toolCalls - budget.toolCalls),
-    activeMs: Math.max(0, PI_TASK_LIMITS.sessionMs - budget.activeMs),
+    reads: Math.max(0, limits.reads - usage.reads), edits: Math.max(0, limits.edits - usage.edits),
+    checks: Math.max(0, limits.checks - usage.checks),
+    modelInvocations: Math.max(0, piLimits.modelInvocations - budget.modelInvocations),
+    toolCalls: Math.max(0, piLimits.toolCalls - budget.toolCalls),
+    activeMs: Math.max(0, piLimits.sessionMs - budget.activeMs),
   };
   const models = await storedCodexModels(new CodexCredentials(), signal);
   const model = models.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
@@ -153,7 +157,7 @@ async function executeTaskSession(task: CandidateTask, context: SemanticRevision
   }
   try {
     return await runPiTask(capability, model, (requested, modelContext, options) =>
-      models.streamSimple(requested, modelContext, options), signal, budget);
+      models.streamSimple(requested, modelContext, options), signal, budget, context === null ? session : undefined);
   } finally { capability.close(); }
 }
 
@@ -193,7 +197,7 @@ function attemptPasses(revision: SemanticRevision | null, session: PiTaskResult 
 async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTask, budget: PiTaskBudget,
   revision: SemanticRevision | null, parentEvidence: CandidateTaskCheck | null, signal: AbortSignal,
   writeError: (text: string) => void,
-  admitRevision?: () => Promise<CandidateTaskCheck>): Promise<RecordedTaskAttempt> {
+  admitRevision?: () => Promise<CandidateTaskCheck>, sessionHost?: PiTaskSessionHost): Promise<RecordedTaskAttempt> {
   const suffix = revision === null ? "" : "-r1";
   const finalRecordPath = join(candidate.directory, `attempt${suffix}.jsonl`);
   const recordPath = revision === null ? finalRecordPath : join(candidate.directory, "attempt-r1.partial");
@@ -209,7 +213,7 @@ async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTa
   try {
     const startedRecord = JSON.stringify({ format: "tesota-task-attempt", version: revision === null ? 1 : 2, state: "started",
       timestamp: new Date().toISOString(), baseline: candidate.baseline, sourceDirty: candidate.sourceDirty,
-      executor: await executorSha256(), model: LIVE_CODEX_MODEL_ID, limits: PI_TASK_LIMITS,
+      executor: await executorSha256(), model: LIVE_CODEX_MODEL_ID, limits: piTaskLimits(task.describe().task),
       taskAcceptance: "not_evaluated", executionCause: revision === null ? "initial_implementation" : "semantic_revision",
       ...(revision === null ? {} : { revisionSha256: semanticRevisionSha256(revision),
         parentReviewSha256: revision.parentReviewSha256,
@@ -218,7 +222,7 @@ async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTa
     await record.writeFile(startedRecord);
     await record.sync();
     if (signal.aborted) throw new Error("Task interrupted");
-    session = await executeTaskSession(task, revision, parentEvidence, budget, signal, admitRevision);
+    session = await executeTaskSession(task, revision, parentEvidence, budget, signal, admitRevision, sessionHost);
   } catch (error) {
     if (error instanceof TaskReviewUnsettledError) current = error.check;
     writeError("Task attempt did not complete successfully; retained state is available for inspection.\n");
@@ -255,9 +259,11 @@ async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTa
 
 function correctionBudgetAvailable(task: CandidateTask, budget: PiTaskBudget): boolean {
   const usage = task.usage();
-  return usage.reads < TASK_LIMITS.reads && usage.edits < TASK_LIMITS.edits && usage.checks < TASK_LIMITS.checks &&
-    budget.modelInvocations + 4 <= PI_TASK_LIMITS.modelInvocations &&
-    budget.toolCalls + 3 <= PI_TASK_LIMITS.toolCalls && budget.activeMs < PI_TASK_LIMITS.sessionMs;
+  const limits = taskLimits(task.describe().task);
+  const piLimits = piTaskLimits(task.describe().task);
+  return usage.reads < limits.reads && usage.edits < limits.edits && usage.checks < limits.checks &&
+    budget.modelInvocations + 4 <= piLimits.modelInvocations &&
+    budget.toolCalls + 3 <= piLimits.toolCalls && budget.activeMs < piLimits.sessionMs;
 }
 
 async function runPhase(candidate: CandidateCheckout, task: CandidateTask, budget: PiTaskBudget,
@@ -271,7 +277,7 @@ async function runPhase(candidate: CandidateCheckout, task: CandidateTask, budge
   process.once("SIGTERM", interrupt);
   try {
     return await recordTaskAttempt(candidate, task, budget, revision, parentEvidence, cancellation.signal, writeError,
-      admitRevision);
+      admitRevision, revision === null ? host.session : undefined);
   } finally {
     cancellation.abort();
     process.removeListener("SIGINT", interrupt);

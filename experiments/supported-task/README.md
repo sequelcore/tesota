@@ -5,6 +5,11 @@ The frozen post-correction cases are recorded separately in the
 [fourth](follow-up-4.md) and [fifth](follow-up-5.md) follow-up protocols; they do not rewrite this original
 corpus.
 
+The later continuous SDK task-tool route has a separate
+[live follow-up protocol](continuous-session-2026-09-22.md).
+Its ineligible setup case is retained separately from the
+[eligible route case](continuous-session-2-2026-09-22.md).
+
 This record freezes a small prospective evaluation of Tesota's supported
 TypeScript source-task flow. Selection happened on 2026-09-19 before any task
 was submitted to Tesota. No result had been observed when this protocol was
