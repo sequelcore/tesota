@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { taskProposalSchema, validProposalPath } from "./task-proposal-contract.js";
+import { modelTaskProposalSchema, validProposalPath } from "./task-proposal-contract.js";
 
 // Conversation prose supports paragraphs and code; terminal control sequences remain forbidden.
 const messageSchema = z.string().trim().min(1).max(4_000).refine((value) =>
@@ -64,10 +64,10 @@ export const clarificationTurnSchema: z.ZodType<{
 });
 
 export const taskProposalTurnSchema: z.ZodType<{
-  kind: "task_proposal"; proposal: z.infer<typeof taskProposalSchema>;
+  kind: "task_proposal"; proposal: z.infer<typeof modelTaskProposalSchema>;
 }> = z.strictObject({
   kind: z.literal("task_proposal"),
-  proposal: taskProposalSchema,
+  proposal: modelTaskProposalSchema,
 });
 
 export const continuedConversationTurnSchema: z.ZodType<

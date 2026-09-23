@@ -50,7 +50,8 @@ Only a completed proposal result creates
 - the operator request and committed baseline;
 - model and configured transport identity;
 - observed operations and limits;
-- proposed objective, completion conditions, read/write set and check; and
+- proposed objective, completion conditions and read/write set, plus the fixed
+  check pair Tesota selected from the proposed file scope; and
 - working-tree conflicts known at proposal time.
 
 Its authority is `none` and its provenance is `model_proposed`. Editing retained
@@ -63,6 +64,10 @@ Older retained `ready` records are not rewritten and still fail admission when
 their proposed scope is unsupported.
 
 ## Supported admission
+
+The model proposes files and completion conditions; it does not select a check.
+Tesota derives the fixed pair from the proposed file scope, records and shows it
+before approval, and independently rechecks the pair during admission.
 
 The original policy accepts one or two existing non-test, non-declaration
 TypeScript writes below `src/`, up to eight allowed reads and exactly

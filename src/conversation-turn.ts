@@ -14,6 +14,7 @@ import type { PiTaskSessionHost } from "./integrations/pi-task.js";
 import { LIVE_CODEX_MODEL_ID, storedCodexModels } from "./integrations/pi-live.js";
 import { openRepositoryDiscovery } from "./repository-discovery.js";
 import { supportedProposalKind } from "./proposal-admission.js";
+import { withProposalChecks } from "./task-proposal-contract.js";
 import { runRepositoryGit } from "./repository-git.js";
 import { formatTaskProposal, retainTaskProposal, type ProposedTask } from "./task-proposal.js";
 
@@ -82,7 +83,7 @@ export async function discoverConversationTurn(options: {
   const request = input.clarification === undefined ? input.request : retainedConversationRequest(input);
   return { kind: "task_proposal", proposedTask: await retainTaskProposal({ proposalsRoot: options.proposalsRoot,
     request, description, result: { ...result, outcome: result.outcome }, model: options.model,
-    supportedScope: supportedProposalKind(result.outcome.proposal) !== null }) };
+    supportedScope: supportedProposalKind(withProposalChecks(result.outcome.proposal)) !== null }) };
 }
 
 export function formatConversationTurn(turn: CompletedConversationTurn): string {
@@ -169,7 +170,7 @@ export async function createRepositoryConversationForShell(options: {
         const request = input.clarification === undefined ? input.request : retainedConversationRequest(input);
         turn = { kind: "task_proposal", proposedTask: await retainTaskProposal({ proposalsRoot: options.proposalsRoot,
           request, description, result: { ...result, status: "completed", outcome: result.outcome },
-          model: options.model, supportedScope: supportedProposalKind(result.outcome.proposal) !== null }) };
+          model: options.model, supportedScope: supportedProposalKind(withProposalChecks(result.outcome.proposal)) !== null }) };
       }
       return { status: "completed",
         exitCode: turn.kind === "task_proposal" && turn.proposedTask.record.status !== "ready" ? 1 : 0, turn };

@@ -91,7 +91,6 @@ function proposalSteps(): FauxResponseStep[] {
       completionConditions: ["The integration exposes the requested result."],
       readFiles: ["README.md", "src/integrations/pi-task.ts"],
       writeFiles: ["src/integrations/pi-task.ts"],
-      checks: ["scope-integrity", "typescript-no-emit/v1"],
       uncertainties: [],
     } })),
     fauxAssistantMessage("Proposal ready."),
@@ -105,7 +104,7 @@ function typescriptProposalSteps(): FauxResponseStep[] {
       objective: "Change the task result.",
       completionConditions: ["The new result remains type-correct."],
       readFiles: ["src/integrations/pi-task.ts"], writeFiles: ["src/integrations/pi-task.ts"],
-      checks: ["scope-integrity", "typescript-no-emit/v1"], uncertainties: [],
+      uncertainties: [],
     } })),
     fauxAssistantMessage("Proposal ready."),
   ];
@@ -238,26 +237,27 @@ it("rejects stale and unsupported proposal evidence before issuing a run grant",
   await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id, sourceDirectory: source }))
     .rejects.toThrow("stale");
 
-  const unsupported = fakeModel([
+  const sourceOnly = fakeModel([
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
     fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
       objective: "Change the task result.", completionConditions: ["The result changes."],
       readFiles: ["src/integrations/pi-task.ts"], writeFiles: ["src/integrations/pi-task.ts"],
-      checks: ["scope-integrity"], uncertainties: [],
+      uncertainties: [],
     } })), fauxAssistantMessage("Proposal ready."),
   ]);
   const multi = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
-    request: "Change code without typechecking.", model: unsupported.model, stream: unsupported.stream,
+    request: "Change code without typechecking.", model: sourceOnly.model, stream: sourceOnly.stream,
     signal: new AbortController().signal });
+  expect(multi.record.proposal.checks).toEqual(["scope-integrity", "typescript-no-emit/v1"]);
   await expect(admitTaskProposal({ proposalsRoot: proposals, reference: multi.record.id, sourceDirectory: source }))
-    .rejects.toThrow("unsupported");
+    .resolves.toMatchObject({ kind: "typescript-change", declaredChecks: ["scope-integrity", "typescript-no-emit/v1"] });
 
   const legacyDocumentation = fakeModel([
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "docs/identity.md" })),
     fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
       objective: "Change documentation.", completionConditions: ["The document changes."],
       readFiles: ["docs/identity.md"], writeFiles: ["docs/identity.md"],
-      checks: ["scope-integrity", "typescript-no-emit/v1"], uncertainties: [],
+      uncertainties: [],
     } })), fauxAssistantMessage("Proposal ready."),
   ]);
   const legacy = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
@@ -416,7 +416,37 @@ it("blocks a proposal whose admitted paths have excluded working changes", async
   expect(created.record.proposal.writeFiles).toEqual(["src/integrations/pi-task.ts"]);
 });
 
-it("retains an unsupported source-and-test check combination without offering execution", async () => {
+it("selects the fixed source-and-test check pair from the proposed files", async () => {
+  const { source, proposals } = await fixture();
+  const fake = fakeModel([
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "tests/pi-task-evidence.test.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
+      objective: "Change the task result and its regression test.",
+      completionConditions: ["The changed behavior has a regression test."],
+      readFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
+      writeFiles: ["src/integrations/pi-task.ts", "tests/pi-task-evidence.test.ts"],
+      uncertainties: [],
+    } })),
+    fauxAssistantMessage("Proposal submitted."),
+  ]);
+  const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
+    request: "Fix the task and add a regression test", model: fake.model, stream: fake.stream,
+    signal: new AbortController().signal });
+  expect(created.record.status).toBe("ready");
+  expect(created.record.proposal.checks).toEqual(["scope-integrity", "node-test-targeted/v1"]);
+  expect(formatTaskProposal(created)).toContain("Checks: scope-integrity, node-test-targeted/v1");
+  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id,
+    sourceDirectory: source })).resolves.toMatchObject({ kind: "typescript-source-test-change",
+      declaredChecks: ["scope-integrity", "node-test-targeted/v1"] });
+  const altered = { ...created.record, proposal: { ...created.record.proposal,
+    checks: ["scope-integrity", "typescript-no-emit/v1", "node-test-targeted/v1"] } };
+  await writeFile(join(created.directory, "proposal.json"), JSON.stringify(altered, null, 2) + "\n");
+  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id,
+    sourceDirectory: source })).rejects.toThrow("unsupported");
+});
+
+it("rejects model-supplied checks instead of treating them as policy", async () => {
   const { source, proposals } = await fixture();
   const fake = fakeModel([
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
@@ -429,15 +459,11 @@ it("retains an unsupported source-and-test check combination without offering ex
       checks: ["scope-integrity", "typescript-no-emit/v1", "node-test-targeted/v1"],
       uncertainties: [],
     } })),
-    fauxAssistantMessage("Proposal submitted."),
   ]);
-  const created = await proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
+  await expect(proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals,
     request: "Fix the task and add a regression test", model: fake.model, stream: fake.stream,
-    signal: new AbortController().signal });
-  expect(created.record.status).toBe("blocked_scope");
-  expect(formatTaskProposal(created)).toContain("Status: blocked by unsupported scope or checks");
-  await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id,
-    sourceDirectory: source })).rejects.toThrow("unsupported");
+    signal: new AbortController().signal })).rejects.toThrow("did not complete");
+  await expect(readdir(proposals)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
 it("reports both sides of a staged rename so a deleted proposal input cannot look clean", async () => {
@@ -457,7 +483,7 @@ it("rejects unobserved paths, malformed or mutating tools without retaining prop
     fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
       objective: "Change identity.", completionConditions: ["Identity changes."],
       readFiles: ["README.md", "docs/identity.md"], writeFiles: ["docs/identity.md"],
-      checks: ["scope-integrity"], uncertainties: [],
+      uncertainties: [],
     } })),
   ]);
   await expect(proposeThroughConversation({ sourceDirectory: source, proposalsRoot: proposals, request: "Change identity",
@@ -497,7 +523,7 @@ it("settles an aborted discovery without accepting a late proposal", async () =>
   expect(result).toMatchObject({ status: "unsettled", outcome: null });
   const late = fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
     objective: "Late", completionConditions: ["Late"], readFiles: [], writeFiles: ["README.md"],
-    checks: ["scope-integrity"], uncertainties: [],
+    uncertainties: [],
   } }));
   stream.push({ type: "done", reason: "toolUse", message: late });
   stream.end(late);
@@ -514,7 +540,7 @@ it("does not accept a terminal stop that arrives after the session deadline", as
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "README.md" })),
     fauxAssistantMessage(fauxToolCall("tesota_submit_result", { kind: "task_proposal", proposal: {
       objective: "Clarify README.", completionConditions: ["README is clear."],
-      readFiles: ["README.md"], writeFiles: ["README.md"], checks: ["scope-integrity"], uncertainties: [],
+      readFiles: ["README.md"], writeFiles: ["README.md"], uncertainties: [],
     } })),
   ];
   let invocation = 0;

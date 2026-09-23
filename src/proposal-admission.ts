@@ -4,7 +4,7 @@ import * as z from "zod";
 import { loadTaskProposal } from "./task-proposal.js";
 import { runRepositoryGit } from "./repository-git.js";
 import { isRepositoryDiscoveryPathAllowed } from "./repository-discovery.js";
-import { validProposalPath, type TaskProposal } from "./task-proposal-contract.js";
+import { regressionTestPath, validProposalPath, type TaskProposal } from "./task-proposal-contract.js";
 import { SOURCE_TEST_TASK_CHECKS, SOURCE_TEST_TASK_KIND, TASK_CHECKS, TASK_KIND } from "./task-contract.js";
 
 interface ProposalGrantBase {
@@ -68,10 +68,6 @@ function sourceTestPath(path: string): boolean {
   return path.endsWith(".ts") && !path.endsWith(".d.ts") &&
     !/^(?:tests|scripts|config|\.github)\//u.test(path) &&
     !/(?:^|\/)__tests__\/|\.(?:test|spec|config|setup)\.ts$/u.test(path);
-}
-
-function regressionTestPath(path: string): boolean {
-  return /^tests\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*\.test\.ts$/u.test(path);
 }
 
 const sourceTestGrantSchema: z.ZodType<SourceTestRunGrant> = z.strictObject({

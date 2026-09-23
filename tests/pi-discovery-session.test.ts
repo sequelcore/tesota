@@ -452,7 +452,7 @@ it("preserves the existing proposal record path from the continuous SDK conversa
       objective: "Clarify the bounded reader export.",
       completionConditions: ["The export uses the requested name."],
       readFiles: ["src/reader.ts"], writeFiles: ["src/reader.ts"],
-      checks: ["scope-integrity", "typescript-no-emit/v1"], uncertainties: [],
+      uncertainties: [],
     } })),
     fauxAssistantMessage("Proposal ready."),
   ]);
@@ -551,7 +551,6 @@ it("cancels active reading, confirms settlement, and keeps the closed reader unu
   let closed = false;
   const discovery: RepositoryDiscovery = {
     describe: () => ({ source: root, baseline: "a".repeat(40), dirtyPaths: [],
-      checks: ["scope-integrity", "typescript-no-emit/v1", "node-test-targeted/v1"],
       limits: { operations: 32, exposedBytes: 131072, fileBytes: 65536, scannedBytes: 1048576,
         listedFiles: 256, searchMatches: 64 } }),
     list: async () => ({ files: [], truncated: false }),

@@ -83,10 +83,10 @@ function systemPrompt(): string {
     "context but does not satisfy current access checks. Ground answers in files observed in the current turn and name " +
     "them in evidenceFiles. Fully read every proposed " +
     "write file in the current turn. Proposal readFiles may contain only currently observed paths, and writeFiles must " +
-    "also be in readFiles. Proposals may write one or two existing non-test TypeScript files under src/ with " +
-    "scope-integrity and typescript-no-emit/v1, or one existing TypeScript source file plus one existing " +
-    "tests/**/*.test.ts file with exactly scope-integrity and node-test-targeted/v1. Do not combine those " +
-    "checks with typescript-no-emit/v1 or promise a typecheck for the source-and-test variant. They may not change repository check " +
+    "also be in readFiles. Proposals may write one or two existing non-test TypeScript files under src/, " +
+    "or one existing TypeScript source file plus one existing tests/**/*.test.ts file. Do not propose checks: " +
+    "Tesota selects the fixed check pair from the proposed file scope and shows it before approval. " +
+    "The source-and-test variant runs a targeted Node test, not a typecheck. They may not change repository check " +
     "configuration or dependency declarations, or add, delete, or rename files. During discovery, submit exactly one result, then stop. " +
     "Never claim approval, " +
     "execution, acceptance, permissions, or network access.";
@@ -334,7 +334,7 @@ export class PiDiscoverySession {
       clarification: { question: input.clarification.question, answer: input.clarification.answer } };
     const prompt = this.#session.prompt(JSON.stringify({ allowedOutcome: allowed, ...request,
       repository: { baseline: description.baseline, dirtyPaths: description.dirtyPaths,
-        checks: description.checks, limits: description.limits } }), { expandPromptTemplates: false })
+        limits: description.limits } }), { expandPromptTemplates: false })
       .catch(() => { turn.promptFailed = true; });
     try {
       await Promise.race([prompt, aborted]);

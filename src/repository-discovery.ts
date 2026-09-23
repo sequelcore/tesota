@@ -2,7 +2,7 @@ import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { conversationTurnSchema, type ConversationTurn } from "./conversation-turn-contract.js";
 import { assertNoRepositoryGitPrograms, isGitObjectId, runRepositoryGit, runRepositoryGitBytes } from "./repository-git.js";
-import { PROPOSAL_CHECKS, PROPOSAL_LIMITS, proposalListSchema, proposalReadSchema, proposalSearchSchema,
+import { PROPOSAL_LIMITS, proposalListSchema, proposalReadSchema, proposalSearchSchema,
   validProposalPath } from "./task-proposal-contract.js";
 
 interface BlobEntry { readonly oid: string; readonly size: number; }
@@ -28,7 +28,6 @@ export interface RepositoryDiscoveryDescription {
   readonly source: string;
   readonly baseline: string;
   readonly dirtyPaths: readonly string[];
-  readonly checks: typeof PROPOSAL_CHECKS;
   readonly limits: typeof PROPOSAL_LIMITS;
 }
 
@@ -111,7 +110,7 @@ class GitRepositoryDiscovery implements RepositoryDiscovery {
 
   describe(): RepositoryDiscoveryDescription {
     return { source: this.#source, baseline: this.#baseline, dirtyPaths: this.#dirtyPaths,
-      checks: PROPOSAL_CHECKS, limits: PROPOSAL_LIMITS };
+      limits: PROPOSAL_LIMITS };
   }
 
   #admit(): void {

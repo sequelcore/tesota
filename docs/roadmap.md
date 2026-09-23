@@ -18,8 +18,10 @@ One bounded semantic correction is implemented with renewed evidence and a
 fresh decision, but its usefulness still needs prospective evaluation. The
 source-and-test task admits one existing TypeScript source file and one existing
 regression test with a fixed targeted Node check. Development checks have
-covered that contract; a useful ordinary live completion and fresh external
-qualification remain outstanding. The recent [practical-use pilot](../experiments/practical-use/2026-09-22-results.md)
+covered that contract. One [ordinary live diagnostic](../experiments/practical-use/2026-09-22-check-selection-results.md)
+reached checked exact review and ended in an explicit test-only rejection;
+accepted application and fresh external qualification remain outstanding. The
+earlier [practical-use pilot](../experiments/practical-use/2026-09-22-results.md)
 retains failed and degraded attempts rather than a coding-success claim.
 
 The shell uses one in-memory Pi SDK session for related read-only turns and an
@@ -41,12 +43,15 @@ and applied results.
 
 Use those observations to select a bounded improvement. The source-and-test
 path particularly needs an ordinary live conversation that finds the right
-files, proposes an admitted check, changes the regression test and source,
-handles correction when requested, and reaches review and application. The
+files, presents the application-selected check, changes the regression test and
+source, handles correction when requested, and reaches accepted application. The
 [Gentle Pi follow-up](../experiments/practical-use/2026-09-22-results.md) found proposals
 that requested both TypeScript no-emit and the targeted Node test; that
-combination is blocked before approval. Resolve this observed obstacle before
-claiming source-and-test usefulness.
+combination was blocked before approval. Tesota now selects the fixed check
+pair from the proposed file scope rather than asking the model to choose it.
+The diagnostic reached review but was rejected for live-testing purposes.
+An accepted live completion is still needed before claiming source-and-test
+usefulness.
 
 ## Expansion criteria
 

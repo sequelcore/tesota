@@ -8,7 +8,7 @@ import type { TaskProposalTurn } from "./conversation-turn-contract.js";
 import type { PiDiscoveryResult } from "./integrations/pi-discovery.js";
 import type { RepositoryDiscoveryDescription } from "./repository-discovery.js";
 import { isGitObjectId } from "./repository-git.js";
-import { PROPOSAL_CHECKS, PROPOSAL_LIMITS, taskProposalSchema, validProposalPath,
+import { PROPOSAL_CHECKS, PROPOSAL_LIMITS, taskProposalSchema, validProposalPath, withProposalChecks,
   type TaskProposal } from "./task-proposal-contract.js";
 
 export interface TaskProposalRecord {
@@ -174,7 +174,7 @@ export async function retainTaskProposal(options: {
   readonly supportedScope: boolean;
 }): Promise<ProposedTask> {
   const { description, result } = options;
-  const proposal = result.outcome.proposal;
+  const proposal = withProposalChecks(result.outcome.proposal);
   const dirtyConflicts = proposalConflicts(proposal, description.dirtyPaths);
   const id = randomUUID();
   const record = proposalRecordSchema.parse({
