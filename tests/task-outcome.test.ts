@@ -82,7 +82,7 @@ it("reports unconfirmed application without implying that no write occurred", as
   await journal.close();
 });
 
-it("keeps a historical v1 generic promotion failure unconfirmed while writing explicit v3 receipts", async () => {
+it("rejects obsolete outcome journals while writing v3 receipts", async () => {
   const directory = await fixture();
   const timestamp = "2026-09-15T00:00:00.000Z";
   const accounting = { elapsedMs: 100, firstCheck: "check_failed", correctionAttempts: 1,
@@ -98,9 +98,7 @@ it("keeps a historical v1 generic promotion failure unconfirmed while writing ex
     { state: "finished", timestamp, outcome: "failed" },
   ].map((event) => JSON.stringify(event)).join("\n") + "\n");
 
-  await expect(loadTaskOutcome(directory)).resolves.toMatchObject({
-    status: "failed", terminal: true, promotion: "unconfirmed",
-  });
+  await expect(loadTaskOutcome(directory)).rejects.toThrow("Task outcome unavailable");
 
   const next = await fixture();
   const journal = await createTaskOutcome(next, identity);
@@ -184,7 +182,7 @@ it("rejects parent mismatch, a second correction, timestamp regression and exces
   await expect(loadTaskOutcome(directory)).rejects.toThrow("Task outcome unavailable");
 });
 
-it("preserves v2 R0 semantics and rejects correction after a final decision", async () => {
+it("rejects v2 journals and correction after a final decision", async () => {
   const directory = await fixture();
   const timestamp = "2026-09-20T00:00:00.000Z";
   const accounting = { elapsedMs: 100, firstCheck: "check_failed", correctionAttempts: 1,
@@ -202,17 +200,6 @@ it("preserves v2 R0 semantics and rejects correction after a final decision", as
   ];
   const path = join(directory, "start.jsonl");
   await writeFile(path, history.map((event) => JSON.stringify(event)).join("\n") + "\n");
-  const legacy = await loadTaskOutcome(directory);
-  expect(legacy).toMatchObject({ status: "rejected", operator: { decision: "reject" } });
-  expect(formatTaskOutcome(legacy)).toContain("Execution operations: 3 model invocations, 4 tool calls, 1 edit\n");
-  expect(formatTaskOutcome(legacy)).not.toContain("Corrections:");
-  expect(formatTaskOutcome(legacy)).not.toContain("Execution causes:");
-  const broadenedLegacy: unknown[] = [history[0], history[1],
-    { state: "execution_finished", timestamp, candidate: "candidate", result: { status: "passed",
-      accounting: { ...accounting,
-        causes: { initialImplementation: true, diagnosticRepairs: 1, semanticRevision: false } } } },
-    ...history.slice(3)];
-  await writeFile(path, broadenedLegacy.map((event) => JSON.stringify(event)).join("\n") + "\n");
   await expect(loadTaskOutcome(directory)).rejects.toThrow("Task outcome unavailable");
   const invalid: unknown[] = [{ ...history[0], version: 3 }, ...history.slice(1, 5),
     { state: "correction_approved", timestamp, parentReviewSha256: r0,

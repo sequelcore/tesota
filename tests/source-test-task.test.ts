@@ -66,12 +66,12 @@ async function fixture(): Promise<{ root: string; source: string;
   return { root, source, candidate, grant };
 }
 
-it("retains legacy limits and binds a separate source-and-test contract", async () => {
+it("retains source-task limits and binds a separate source-and-test contract", async () => {
   const current = await fixture();
   const task = await CandidateTask.prepare(current.candidate.directory, current.grant);
   expect(task.describe()).toMatchObject({ task: "typescript-source-test-change", limits: { edits: 6, checks: 6 },
     checks: ["scope-integrity", "node-test-targeted/v1"] });
-  expect((await inspectCandidateTask(current.candidate.directory)).promotable).toBe(true);
+  expect((await inspectCandidateTask(current.candidate.directory)).sourceInputs).toBeDefined();
   task.close();
 });
 

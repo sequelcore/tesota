@@ -864,7 +864,7 @@ it("makes acceptance stale if a persisted source representation is rebound", asy
   } finally { await current.cleanup(); }
 }, 60_000);
 
-it("keeps legacy plans inspectable without reconstructing source binding or promotion authority", async () => {
+it("rejects plans without the current source binding", async () => {
   const current = await fixture(true);
   try {
     const task = await CandidateTask.prepare(current.directory, current.grant);
@@ -879,11 +879,9 @@ it("keeps legacy plans inspectable without reconstructing source binding or prom
     plan.definitionSha256 = createHash("sha256").update(JSON.stringify({ task: plan.task, version: 1,
       grant: plan.grant, contract: plan.contract, instructions: task.describe().instructions })).digest("hex");
     await writeFile(planPath, JSON.stringify(plan));
-    await expect(checkCandidateTask(current.directory)).resolves.toMatchObject({ status: "passed", sourceInputsSha256: null });
-    await expect(inspectCandidateTask(current.directory)).resolves.toMatchObject({ sourceInputs: null, promotable: false });
-    const review = await reviewTask(current.directory);
-    await expect(decideTask(current.directory, { decision: "accept", reviewSha256: review.reviewSha256 }))
-      .rejects.toThrow("Acceptance requires a passing current check and an admitted source binding");
+    await expect(checkCandidateTask(current.directory)).rejects.toThrow();
+    await expect(inspectCandidateTask(current.directory)).rejects.toThrow();
+    await expect(reviewTask(current.directory)).rejects.toThrow();
     await expect(readFile(join(current.directory, "decision.json"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(promoteTask(current.directory, current.source, "a".repeat(64)))
       .rejects.toMatchObject({ name: "PromotionNotAppliedError" });

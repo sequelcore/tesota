@@ -80,9 +80,9 @@ function validBinding(value: unknown): value is InputBinding {
   return validSource(value["source"]) && validCheck(value["check"]) && validVerifier(value["verifier"]);
 }
 
-function validDiagnostic(value: unknown, binding: InputBinding): boolean {
+function validDiagnostic(value: unknown): boolean {
   if (!exact(value, ["rule", "message", "line", "column"])) return false;
-  return isKnownDiagnosticRule(binding.check.profile, value["rule"]) && string(value["message"]) &&
+  return isKnownDiagnosticRule(value["rule"]) && string(value["message"]) &&
     value["message"].length > 0 && positiveInteger(value["line"]) && positiveInteger(value["column"]);
 }
 
@@ -97,7 +97,7 @@ function validResult(value: unknown): value is CompletedOxlintResult {
   if (value["status"] === "passed" && value["diagnostics"].length !== 0) return false;
   if (value["status"] === "check_failed" && value["diagnostics"].length === 0) return false;
   if (value["file"] !== binding.source.file) return false;
-  return value["diagnostics"].every((diagnostic) => validDiagnostic(diagnostic, binding));
+  return value["diagnostics"].every(validDiagnostic);
 }
 
 function validDurableRecord(value: unknown): value is DurableRecord {

@@ -68,7 +68,7 @@ function diagnosticLocation(value: unknown): { readonly line: number; readonly c
 function lintDiagnostic(value: unknown, file: string, cwd: string): LintDiagnostic | undefined {
   if (!record(value)) return undefined;
   const rule = value["code"];
-  if (!isKnownDiagnosticRule(OXLINT_PROFILE, rule)) return undefined;
+  if (!isKnownDiagnosticRule(rule)) return undefined;
   if (value["severity"] !== "error") return undefined;
   const message = value["message"];
   if (typeof message !== "string" || message.length === 0) return undefined;

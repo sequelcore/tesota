@@ -23,7 +23,7 @@ const decisionSchema: z.ZodObject<{
 type TaskDecision = z.infer<typeof decisionSchema>;
 const requestSchema = z.strictObject({ decision: decisionSchema.shape.decision, reviewSha256: digestSchema });
 
-const legacyLimitsSchema = z.strictObject({
+const sourceTaskLimitsSchema = z.strictObject({
   modelInvocations: z.literal(PI_TASK_LIMITS.modelInvocations),
   toolCalls: z.literal(PI_TASK_LIMITS.toolCalls),
   sessionMs: z.literal(PI_TASK_LIMITS.sessionMs),
@@ -37,7 +37,7 @@ const sourceTestLimitsSchema = z.strictObject({
   settlementMs: z.literal(PI_SOURCE_TEST_LIMITS.settlementMs),
   outputTokens: z.literal(PI_SOURCE_TEST_LIMITS.outputTokens),
 });
-const limitsSchema = z.union([legacyLimitsSchema, sourceTestLimitsSchema]);
+const limitsSchema = z.union([sourceTaskLimitsSchema, sourceTestLimitsSchema]);
 const typecheckSchema = z.strictObject({
   profile: z.literal("typescript-no-emit/v1"),
   status: z.enum(["passed", "check_failed", "unavailable", "execution_failed", "timed_out", "cancelled"]),

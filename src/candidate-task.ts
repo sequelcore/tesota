@@ -42,7 +42,6 @@ const planShape = {
   inputs: z.record(z.string(), hashSchema), grant: z.unknown(),
 };
 const planSchema = z.discriminatedUnion("version", [
-  z.strictObject({ ...planShape, version: z.literal(1) }),
   z.strictObject({ ...planShape, version: z.literal(2), sourceInputs: taskSourceInputsSchema }),
   z.strictObject({ format: z.literal("tesota-candidate-task"), task: z.literal(SOURCE_TEST_TASK_KIND),
     version: z.literal(3), definitionSha256: hashSchema, contract: sourceTestContractSchema,
@@ -149,20 +148,17 @@ function instructionsFor(grant: ProposalRunGrant): string {
 
 function definitionSha256(grant: ProposalRunGrant,
   contract: z.infer<typeof contractSchema> | z.infer<typeof sourceTestContractSchema>,
-  binding?: Pick<Extract<TaskPlan, { version: 2 | 3 }>, "inputs" | "sourceInputs">): string {
-  if (grant.kind === SOURCE_TEST_TASK_KIND && binding !== undefined) return hash(JSON.stringify({
+  binding: Pick<TaskPlan, "inputs" | "sourceInputs">): string {
+  if (grant.kind === SOURCE_TEST_TASK_KIND) return hash(JSON.stringify({
     task: SOURCE_TEST_TASK_KIND, version: 3, grant, contract, instructions: instructionsFor(grant),
     inputs: binding.inputs, sourceInputs: binding.sourceInputs,
   }));
-  if (binding !== undefined) {
-    return hash(JSON.stringify({ task: TASK_KIND, version: 2, grant, contract,
-      instructions: instructionsFor(grant), inputs: binding.inputs, sourceInputs: binding.sourceInputs }));
-  }
-  return hash(JSON.stringify({ task: TASK_KIND, version: 1, grant, contract, instructions: instructionsFor(grant) }));
+  return hash(JSON.stringify({ task: TASK_KIND, version: 2, grant, contract,
+    instructions: instructionsFor(grant), inputs: binding.inputs, sourceInputs: binding.sourceInputs }));
 }
 
-function sourceInputsSha256(plan: TaskPlan): string | null {
-  return plan.version === 2 || plan.version === 3 ? hash(JSON.stringify(plan.sourceInputs)) : null;
+function sourceInputsSha256(plan: TaskPlan): string {
+  return hash(JSON.stringify(plan.sourceInputs));
 }
 
 async function readText(path: string): Promise<string> {
@@ -202,8 +198,7 @@ function validatePlan(value: unknown): { plan: TaskPlan; grant: ProposalRunGrant
   const contract = contractFor(grant);
   if (plan.version === 3 && grant.kind !== SOURCE_TEST_TASK_KIND ||
       plan.version !== 3 && grant.kind !== TASK_KIND) throw new Error("Task plan kind invalid");
-  if (grant.baseline !== plan.baseline || plan.definitionSha256 !== definitionSha256(grant, contract,
-    plan.version === 2 || plan.version === 3 ? plan : undefined) ||
+  if (grant.baseline !== plan.baseline || plan.definitionSha256 !== definitionSha256(grant, contract, plan) ||
       JSON.stringify(plan.contract) !== JSON.stringify(contract) ||
       Object.keys(plan.inputs).length !== grant.readFiles.length ||
       !grant.readFiles.every((path) => plan.inputs[path] !== undefined)) throw new Error("Task plan invalid");
@@ -505,9 +500,7 @@ async function loadCandidateTask(directory: string): Promise<{ plan: TaskPlan; g
     return content !== undefined && digest !== undefined && (parsed.plan.version === 2
       ? matchesTaskBaseline(digest, content) : hash(content) === digest);
   })) throw new Error("Task baseline changed");
-  if (parsed.plan.version === 2 || parsed.plan.version === 3) {
-    validateTaskSourceInputs(parsed.plan.sourceInputs, parsed.grant.writeFiles, baseline.files);
-  }
+  validateTaskSourceInputs(parsed.plan.sourceInputs, parsed.grant.writeFiles, baseline.files);
   const snapshot = await observe(directory, parsed.plan, parsed.grant);
   return { ...parsed, files: snapshot.files };
 }
@@ -515,14 +508,13 @@ async function loadCandidateTask(directory: string): Promise<{ plan: TaskPlan; g
 export async function inspectCandidateTask(directory: string): Promise<{
   task: typeof TASK_KIND | typeof SOURCE_TEST_TASK_KIND; baseline: string; definitionSha256: string;
   writeSetSha256: string; writeFiles: readonly string[];
-  sourceInputs: TaskSourceInputs | null; promotable: boolean;
+  sourceInputs: TaskSourceInputs;
 }> {
   const loaded = await loadCandidateTask(directory);
   return { task: loaded.grant.kind, baseline: loaded.plan.baseline, definitionSha256: loaded.plan.definitionSha256,
     writeSetSha256: taskWriteSetSha256(loaded.files, loaded.grant.writeFiles),
     writeFiles: [...loaded.grant.writeFiles],
-    sourceInputs: loaded.plan.version === 2 || loaded.plan.version === 3 ? loaded.plan.sourceInputs : null,
-    promotable: loaded.plan.version === 2 || loaded.plan.version === 3 };
+    sourceInputs: loaded.plan.sourceInputs };
 }
 
 /** Rechecking persisted evidence never reopens editing authority. */

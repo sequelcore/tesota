@@ -6,7 +6,6 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { assessApplicability, configuredOxlint, runOxlint } from "../src/verification/oxlint.js";
 import { DurableVerificationEvidenceStore } from "../src/verification/evidence.js";
-import { legacyConfigurationV2 } from "../src/verification/oxlint-input.js";
 
 const renameMock = vi.hoisted(() => vi.fn());
 vi.mock("node:fs/promises", async (original) => {
@@ -20,10 +19,6 @@ const bun = execFileSync("bun", ["--no-env-file", "-p", "process.execPath"], {
 }).trim();
 const evidenceModule = pathToFileURL(fileURLToPath(new URL("../dist/verification/evidence.js", import.meta.url))).href;
 const oxlintModule = pathToFileURL(fileURLToPath(new URL("../dist/verification/oxlint.js", import.meta.url))).href;
-const legacyConfigurationV1 = JSON.stringify({
-  plugins: [], categories: { correctness: "off" },
-  rules: { "no-debugger": "error", "no-unused-vars": "error" },
-});
 const roots: string[] = [];
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -96,10 +91,7 @@ it("preserves a check failure while distinguishing missing evidence", async () =
   expect(missing).toEqual({ status: "missing" });
 });
 
-it.each([
-  { profile: "oxlint-basic/v1", configuration: legacyConfigurationV1 },
-  { profile: "oxlint-static/v2", configuration: legacyConfigurationV2 },
-])("recovers $profile evidence as historical but makes it stale against v3", async ({ profile, configuration }) => {
+it.each(["oxlint-basic/v1", "oxlint-static/v2"])("rejects obsolete %s evidence", async (profile) => {
   const { root, file, check, store } = await fixture();
   const current = await runOxlint(check, file);
   await store.save(current);
@@ -111,16 +103,10 @@ it.each([
   const binding = result["binding"];
   if (!record(binding) || !record(binding["check"])) throw new Error("Expected durable binding fixture");
   result["profile"] = profile;
-  binding["check"] = { ...binding["check"],
-    profile, configuration };
+  binding["check"] = { ...binding["check"], profile };
   await writeFile(path, JSON.stringify(durable));
 
-  const recovered = await store.load();
-  if (recovered.status !== "recovered") throw new Error("Expected recovered legacy evidence");
-  expect(recovered.evidence.historical.profile).toBe(profile);
-  expect(await assessApplicability(recovered.evidence, check)).toMatchObject({
-    status: "stale", provenance: "recovered_untrusted",
-  });
+  expect(await store.load()).toEqual({ status: "invalid", reason: "invalid_shape" });
 });
 
 it.each(["{", JSON.stringify({ format: "tesota-verification-evidence", version: 99 })])(

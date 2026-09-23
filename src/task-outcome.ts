@@ -30,7 +30,7 @@ interface ExecutionResult {
 
 interface InitialEvent {
   readonly format: "tesota-task-outcome";
-  readonly version: 1 | 2 | 3;
+  readonly version: 3;
   readonly state: "awaiting_scope_approval";
   readonly proposalId: string;
   readonly proposalSha256: string;
@@ -84,7 +84,7 @@ const revisionExecutionResultSchema: z.ZodType<ExecutionResult> = z.strictObject
 }).refine(({ status, accounting }) => accounting.correctionAttempts <= accounting.edits &&
   (status !== "passed" || accounting.firstCheck !== "not_observed"));
 const initialSchema: z.ZodType<InitialEvent> = z.strictObject({
-  format: z.literal("tesota-task-outcome"), version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  format: z.literal("tesota-task-outcome"), version: z.literal(3),
   state: z.literal("awaiting_scope_approval"),
   proposalId: z.uuid(), proposalSha256: digestSchema, baseline: objectIdSchema, timestamp: timestampSchema,
   authority: z.literal("none"),
@@ -166,10 +166,10 @@ export interface TaskOutcome {
   readonly provenance: "recorded_untrusted";
 }
 
-function terminalInterruptionAllowed(previous: InitialEvent | OutcomeEvent, next: OutcomeEvent, version: 1 | 2 | 3): boolean {
+function terminalInterruptionAllowed(previous: InitialEvent | OutcomeEvent, next: OutcomeEvent): boolean {
   return next.state === "finished" && (next.outcome === "failed" || next.outcome === "cancelled") &&
     next.files === undefined && previous.state !== "finished" && previous.state !== "scope_declined" &&
-    (version === 1 || previous.state !== "promotion_started");
+    previous.state !== "promotion_started";
 }
 
 function executionFinishedTransition(previous: Extract<OutcomeEvent, { state: "execution_finished" }>,
@@ -186,13 +186,12 @@ function decisionTransition(previous: Extract<OutcomeEvent, { state: "decision_r
   return next.state === "finished" && next.outcome === "rejected" && next.files === undefined;
 }
 
-function reviewTransition(previous: Extract<OutcomeEvent, { state: "review_ready" }>, next: OutcomeEvent,
-  version: 1 | 2 | 3): boolean {
+function reviewTransition(previous: Extract<OutcomeEvent, { state: "review_ready" }>, next: OutcomeEvent): boolean {
   if (previous.revision === "R1") {
     return next.state === "decision_recorded" && next.reviewSha256 === previous.reviewSha256;
   }
   if (next.state === "decision_recorded") return next.reviewSha256 === previous.reviewSha256;
-  return version === 3 && next.state === "correction_approved" && next.parentReviewSha256 === previous.reviewSha256;
+  return next.state === "correction_approved" && next.parentReviewSha256 === previous.reviewSha256;
 }
 
 function revisionFinishedTransition(previous: Extract<OutcomeEvent, { state: "revision_finished" }>,
@@ -209,18 +208,17 @@ function promotionTransition(next: OutcomeEvent): boolean {
   return next.outcome === "promotion_not_applied" && next.files === undefined;
 }
 
-function transitionAllowed(previous: InitialEvent | OutcomeEvent, next: OutcomeEvent, version: 1 | 2 | 3): boolean {
+function transitionAllowed(previous: InitialEvent | OutcomeEvent, next: OutcomeEvent): boolean {
   if (Date.parse(next.timestamp) < Date.parse(previous.timestamp)) return false;
-  if (next.state === "finished" && next.outcome === "promotion_not_applied" && version === 1) return false;
-  if (terminalInterruptionAllowed(previous, next, version)) return true;
+  if (terminalInterruptionAllowed(previous, next)) return true;
   switch (previous.state) {
     case "awaiting_scope_approval": return next.state === "scope_declined" || next.state === "execution_started";
     case "execution_started": return next.state === "execution_finished";
     case "execution_finished": return executionFinishedTransition(previous, next);
-    case "review_ready": return reviewTransition(previous, next, version);
-    case "correction_approved": return version === 3 && next.state === "revision_started" &&
+    case "review_ready": return reviewTransition(previous, next);
+    case "correction_approved": return next.state === "revision_started" &&
       next.parentReviewSha256 === previous.parentReviewSha256;
-    case "revision_started": return version === 3 && next.state === "revision_finished" &&
+    case "revision_started": return next.state === "revision_finished" &&
       next.parentReviewSha256 === previous.parentReviewSha256;
     case "revision_finished": return revisionFinishedTransition(previous, next);
     case "decision_recorded": return decisionTransition(previous, next);
@@ -247,20 +245,8 @@ function parseEvents(values: readonly unknown[]): readonly [InitialEvent, ...Out
   let hostChecks = 0;
   for (const value of values.slice(1)) {
     const event = eventSchema.parse(value);
-    if (first.version !== 3 && (event.state === "correction_approved" || event.state === "revision_started" ||
-        event.state === "revision_finished" || event.state === "review_ready" &&
-        (event.revision === "R1" || event.parentReviewSha256 !== undefined))) {
-      throw new Error("Invalid task outcome version");
-    }
-    if (first.version !== 3 && event.state === "execution_finished" &&
-        (event.result.accounting.causes !== undefined || event.result.accounting.resources !== undefined)) {
-      throw new Error("Invalid task outcome version");
-    }
-    if (first.version !== 3 && "hostChecks" in event && event.hostChecks !== undefined) {
-      throw new Error("Invalid task outcome version");
-    }
     hostChecks = cumulativeHostChecks(event, hostChecks);
-    if (!transitionAllowed(previous, event, first.version)) throw new Error("Invalid task outcome transition");
+    if (!transitionAllowed(previous, event)) throw new Error("Invalid task outcome transition");
     events.push(event);
     previous = event;
   }

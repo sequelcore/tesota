@@ -312,10 +312,9 @@ order while preserving exact configuration text and argument order.
 `assessApplicability` can compare its binding with current source, profile and
 verifier inputs, returning `applicable`, `stale` or `unavailable` while keeping
 that recovered provenance visible. A recovered `passed` result remains
-historically passed when current inputs make it stale. Exact `oxlint-basic/v1`
-and `oxlint-static/v2` records remain structurally recoverable, but they are
-stale against the current `oxlint-static/v3` profile and cannot supply current
-verification. The storage API is explicit; the CLI prints the verification
+historically passed when current inputs make it stale. Recovery accepts only
+the current `oxlint-static/v3` profile; older profile records are invalid.
+The storage API is explicit; the CLI prints the verification
 result without saving it through this store.
 
 ## Standalone LemmaScript and Dafny formal check
