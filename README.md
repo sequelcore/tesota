@@ -49,8 +49,9 @@ Run `bun unlink` in this checkout to remove the development command.
 The source-only task can change one or two existing non-test TypeScript files
 under `src/` and run a contained no-emit typecheck. A separate source-and-test
 task can change one existing TypeScript source file and one existing regression
-test, then run a fixed targeted Node test. Both require explicit approval and
-human review. The source-and-test path has accepted ordinary live walkthroughs,
+test. It requires the targeted Node test and can also require the contained
+typecheck when both profiles are eligible and selected before approval. Both
+task shapes require explicit approval and human review. The source-and-test path has accepted ordinary live walkthroughs,
 including one fresh external case; representative usefulness remains unproven.
 
 Tesota does not currently handle arbitrary repository changes, new or deleted

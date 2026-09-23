@@ -124,9 +124,11 @@ Tesota first inspects the committed repository state. If the task fits the
 current contract, it presents the files it proposes to change and the checks it
 will use. This is the user-facing form of the work proposal and access request.
 No write authority exists until you approve that scope.
-Before the approval prompt, `task start` inspects the prerequisites for the selected
-fixed check from the committed files and local verifier installation. It reports
-the profile and a concise eligibility reason. If prerequisites are missing,
+Before approval, `task start` inspects the prerequisites for the fixed checks
+from the committed files and local verifier installation. For a source-and-test
+task, you choose the targeted Node test alone or the Node test plus TypeScript
+typecheck when both are eligible. Every selected check is required. Tesota
+shows an ineligible reason before the choice; if the required test cannot run,
 it stops without asking for approval or creating a candidate. This is a
 read-only preview, not a check result:
 candidate admission and execution revalidate their own inputs, and the Docker
@@ -157,8 +159,10 @@ The separate source-and-test variant permits one existing TypeScript source
 file and one existing `tests/**/*.test.ts` file, with exact paths approved up
 front. It allows up to six replacements and six checks across the initial work
 and one approved correction. The test must first fail on the original source,
-then pass after the repair. Its fixed Node test runs in the protected container;
-it does not typecheck or run the full repository suite. Its two accepted
+then pass after the repair without changing that demonstrated regression. Its
+fixed Node test runs in the protected container; when selected, the contained
+typecheck must also pass on the same final candidate. Neither runs the full
+repository suite. Its two accepted
 ordinary walkthroughs include one fresh external task, but do not establish
 representative usefulness.
 
@@ -190,8 +194,8 @@ integration suite explicitly unestablished. The shell inspector shows the
 exact diff as text; lower-level task output retains its escaped representation.
 The terminal outcome distinguishes applied, not applied and unconfirmed application.
 
-The TypeScript or targeted Node profile can establish that the admitted invocation passed for
-the bound result and conditions. It does not establish requested behavior,
+The selected TypeScript and targeted Node profiles can establish that their admitted invocations passed for
+the bound result and conditions. They do not establish requested behavior,
 completion conditions, a complete integration suite or universal correctness.
 
 Accepting a result records a human decision. Application is a separate,

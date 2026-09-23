@@ -8,9 +8,9 @@ import { createTaskOutcome, loadProposalTaskOutcome, type TaskExecutionAccountin
 import { TaskReviewUnsettledError, type TaskReview } from "../src/task-review.js";
 
 vi.mock("../src/repository-typecheck.js", () => ({ inspectRepositoryTypecheckEligibility: vi.fn(async () =>
-  ({ status: "eligible", reason: "test prerequisites present" })) }));
+  ({ status: "eligible", reason: "test prerequisites present", fingerprint: "a".repeat(64) })) }));
 vi.mock("../src/repository-node-test.js", () => ({ inspectRepositoryNodeTestEligibility: vi.fn(async () =>
-  ({ status: "eligible", reason: "test prerequisites present" })) }));
+  ({ status: "eligible", reason: "test prerequisites present", fingerprint: "b".repeat(64) })) }));
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -22,13 +22,17 @@ function git(cwd: string, args: readonly string[]): string {
   return result.stdout.trim();
 }
 
-async function fixture() {
+async function fixture(sourceTest = false) {
   const root = await mkdtemp(join(tmpdir(), "tesota-start-test-"));
   roots.push(root);
   const source = join(root, "source");
   const proposalsRoot = join(root, "proposals");
   await mkdir(join(source, "src"), { recursive: true });
   await writeFile(join(source, "src", "value.ts"), "export const value = 'old';\n");
+  if (sourceTest) {
+    await mkdir(join(source, "tests"), { recursive: true });
+    await writeFile(join(source, "tests", "value.test.ts"), "// regression placeholder\n");
+  }
   git(source, ["init", "--quiet"]); git(source, ["add", "."]);
   git(source, ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit",
     "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
@@ -40,11 +44,14 @@ async function fixture() {
     format: "tesota-task-proposal", version: 1, id, recordedAt: new Date().toISOString(), source, baseline,
     request: "Change the value.", authority: "none", provenance: "model_proposed", status: "ready",
     proposal: { objective: "Change the exported value.", completionConditions: ["The new value is exported."],
-      readFiles: ["src/value.ts"], writeFiles: ["src/value.ts"],
-      checks: ["scope-integrity", "typescript-no-emit/v1"], uncertainties: [] },
-    dirtyPaths: [], dirtyConflicts: [], checks: [{ id: "scope-integrity",
-      definition: "application_owned_declarative_only", executable: false }, { id: "typescript-no-emit/v1",
-      definition: "application_owned_declarative_only", executable: false }],
+      readFiles: sourceTest ? ["src/value.ts", "tests/value.test.ts"] : ["src/value.ts"],
+      writeFiles: sourceTest ? ["src/value.ts", "tests/value.test.ts"] : ["src/value.ts"],
+      checks: sourceTest ? ["scope-integrity", "node-test-targeted/v1", "typescript-no-emit/v1"] :
+        ["scope-integrity", "typescript-no-emit/v1"], uncertainties: [] },
+    dirtyPaths: [], dirtyConflicts: [], checks: (sourceTest ?
+      ["scope-integrity", "node-test-targeted/v1", "typescript-no-emit/v1"] :
+      ["scope-integrity", "typescript-no-emit/v1"]).map((id) => ({ id,
+      definition: "application_owned_declarative_only", executable: false })),
     discovery: { provider: "test", model: "test", inferenceTransport: "configured_provider",
       modelControlledNetwork: false, modelInvocations: 1, toolCalls: 1, operations: 1, exposedBytes: 8,
       limits: { operations: 24, listedFiles: 256, searchMatches: 64, fileBytes: 65536,
@@ -330,6 +337,73 @@ it("explains an ineligible selected check before asking for approval or running 
   expect(await loadProposalTaskOutcome(current.proposalsRoot, current.id)).toMatchObject({
     status: "failed", terminal: true, operator: { scopeApproval: "pending" }, candidate: null,
   });
+});
+
+it("selects both eligible source-and-test checks before scope approval", async () => {
+  const current = await fixture(true);
+  const answers = ["2", "yes"];
+  const prompts: string[] = [];
+  const output: string[] = [];
+  const execute = vi.fn(async (_grant: unknown) => ({ candidate: { directory: "retained-candidate",
+    checkout: "retained-checkout", baseline: current.baseline, sourceDirty: false },
+  status: "failed" as const, accounting }));
+  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, ask: async (prompt) => { prompts.push(prompt); return answers.shift() ?? ""; },
+    write: (line) => { output.push(line); }, execute })).resolves.toMatchObject({ outcome: "execution_failed" });
+  expect(prompts[0]).toContain("[2] Node test + TypeScript typecheck");
+  expect(prompts[1]).toContain("Approve this scope");
+  expect(output.join("")).toContain("Selected required checks: scope-integrity, node-test-targeted/v1, typescript-no-emit/v1");
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+    declaredChecks: ["scope-integrity", "node-test-targeted/v1", "typescript-no-emit/v1"],
+    verification: expect.objectContaining({ typecheck: "typescript-no-emit/v1" }),
+  }));
+});
+
+it("does not drop a selected check that becomes ineligible after approval", async () => {
+  const current = await fixture(true);
+  const answers = ["2", "yes"];
+  const execute = vi.fn();
+  let typecheckInspections = 0;
+  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, ask: async () => answers.shift() ?? "", write: () => {}, execute,
+    inspectEligibility: async (_grant, profile) => {
+      if (profile === "typescript-no-emit/v1" && ++typecheckInspections === 2) {
+        return { status: "ineligible", reason: "configuration changed" };
+      }
+      return { status: "eligible", reason: "fixture prerequisites", fingerprint: "c".repeat(64) };
+    } })).resolves.toMatchObject({ status: "settled", outcome: "failed" });
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it("does not execute a proposal changed while the operator approves its scope", async () => {
+  const current = await fixture(true);
+  const execute = vi.fn();
+  let asks = 0;
+  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, ask: async () => {
+      asks += 1;
+      if (asks === 1) return "2";
+      const path = join(current.directory, "proposal.json");
+      const changed = JSON.parse(await readFile(path, "utf8")) as { proposal: { objective: string } };
+      changed.proposal.objective = "A different objective after approval.";
+      await writeFile(path, JSON.stringify(changed, null, 2) + "\n");
+      return "yes";
+    }, write: () => {}, execute })).resolves.toMatchObject({ status: "settled", outcome: "failed" });
+  expect(execute).not.toHaveBeenCalled();
+});
+
+it("does not execute after an eligible check changes identity during approval", async () => {
+  const current = await fixture(true);
+  const answers = ["2", "yes"];
+  const execute = vi.fn();
+  let typecheckInspections = 0;
+  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, ask: async () => answers.shift() ?? "", write: () => {}, execute,
+    inspectEligibility: async (_grant, profile) => ({ status: "eligible", reason: "fixture prerequisites",
+      fingerprint: profile === "typescript-no-emit/v1" && ++typecheckInspections === 2 ?
+        "d".repeat(64) : "c".repeat(64) }) })).resolves.toMatchObject({
+      status: "settled", outcome: "failed" });
+  expect(execute).not.toHaveBeenCalled();
 });
 
 it("settles a known execution cancellation without promotion", async () => {

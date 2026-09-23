@@ -8,6 +8,7 @@ import { CONTAINER_IMAGE, buildNodeTestContainerInvocation, containerRuntimeIsOu
 import { parseRepositoryJson, readCommittedCheckInput, readRepositoryInput, sha256 } from "./repository-check-input.js";
 import { REPOSITORY_NODE_TEST_LIMITS, executeRepositoryNodeTestContainer,
   type RepositoryNodeTestExecutor } from "./repository-node-test-process.js";
+import type { RepositoryCheckEligibility } from "./repository-typecheck.js";
 import { validProposalPath } from "./task-proposal-contract.js";
 
 export const REPOSITORY_NODE_TEST_PROFILE = "node-test-targeted/v1" as const;
@@ -50,6 +51,15 @@ export type RepositoryNodeTestResult = Readonly<{
   provenance: "issued";
 }>;
 
+/** Candidate test bytes may change; the approved verifier inputs may not. */
+export function nodeTestProfileFingerprint(binding: Omit<RepositoryNodeTestProfile, "authority">): string {
+  return sha256(JSON.stringify({ profile: binding.profile,
+    packageJson: binding.repository.packageJsonSha256, selectedTest: binding.repository.selectedTest,
+    reporter: binding.verifier.reporter, reporterSha256: binding.verifier.reporterSha256,
+    runtime: { executable: binding.isolation.executable, executableSha256: binding.isolation.executableSha256 },
+    image: binding.isolation.image, policy: binding.isolation.policySha256, limits: binding.limits }));
+}
+
 interface PrepareOptions {
   readonly candidate: string;
   readonly source: string;
@@ -63,7 +73,7 @@ const issuedResults = new WeakSet<object>();
 
 /** Read-only preview; candidate preparation remains the authoritative boundary. */
 export async function inspectRepositoryNodeTestEligibility(source: string, selectedTest: string):
-Promise<Readonly<{ status: "eligible" | "ineligible"; reason: string }>> {
+Promise<RepositoryCheckEligibility> {
   try {
     if (!selectedTestPattern.test(selectedTest)) {
       return { status: "ineligible", reason: "selected Node test path is unsupported" };
@@ -74,9 +84,13 @@ Promise<Readonly<{ status: "eligible" | "ineligible"; reason: string }>> {
     }
     readCommittedCheckInput(source, selectedTest, 1024 * 1024);
     const reporter = reporterPath();
-    await readRepositoryInput(reporter, 128 * 1024);
-    await resolveContainerRuntime([source, reporter]);
-    return { status: "eligible", reason: "selected test, repository declaration, reporter, and Docker client are present" };
+    const reporterBytes = await readRepositoryInput(reporter, 128 * 1024);
+    const runtime = await resolveContainerRuntime([source, reporter]);
+    return { status: "eligible", reason: "selected test, repository declaration, reporter, and Docker client are present",
+      fingerprint: sha256(JSON.stringify({ profile: REPOSITORY_NODE_TEST_PROFILE,
+        packageJson: sha256(packageBytes), selectedTest,
+        reporter, reporterSha256: sha256(reporterBytes), runtime, image: CONTAINER_IMAGE,
+        policy: nodeTestContainerPolicySha256(), limits: REPOSITORY_NODE_TEST_LIMITS })) };
   } catch {
     return { status: "ineligible", reason: "selected test, repository declaration, reporter, or Docker client is unavailable" };
   }

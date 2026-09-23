@@ -174,7 +174,8 @@ async function runCorrection() {
     reference: current.proposalId,
     ask: vi.fn().mockResolvedValueOnce("yes").mockResolvedValueOnce("c")
       .mockResolvedValueOnce("Use the alternate wording.").mockResolvedValueOnce("yes"),
-    inspectEligibility: async () => ({ status: "eligible", reason: "fixture check prerequisites" }),
+    inspectEligibility: async () => ({ status: "eligible", reason: "fixture check prerequisites",
+      fingerprint: "c".repeat(64) }),
     write: (text) => output.push(text), decide, promote,
     execute: (grant) => runProposalTask(grant, { write: () => {}, writeError: () => {} }) });
   if (state.candidate === null) throw new Error("Candidate was not created");

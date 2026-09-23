@@ -4,10 +4,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { createCandidateCheckout } from "../src/candidate-checkout.js";
+import { bindCandidateCheckoutContent, createCandidateCheckout } from "../src/candidate-checkout.js";
 import { CandidateTask, checkCandidateTask, inspectCandidateTask } from "../src/candidate-task.js";
 import { validateProposalRunGrant, type ProposalRunGrant } from "../src/proposal-admission.js";
-import { prepareRepositoryNodeTest, runRepositoryNodeTest, type RepositoryNodeTestResult } from "../src/repository-node-test.js";
+import { nodeTestProfileFingerprint, prepareRepositoryNodeTest, runRepositoryNodeTest,
+  type RepositoryNodeTestResult } from "../src/repository-node-test.js";
+import { checkRepositoryTypecheck, prepareRepositoryTypecheck, runRepositoryTypecheck, typecheckProfileFingerprint,
+  type RepositoryTypecheckResult } from "../src/repository-typecheck.js";
 import { decideTask, reviewTask } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
 import { piTaskPasses, type PiTaskResult } from "../src/integrations/pi-task.js";
@@ -15,7 +18,12 @@ import { piTaskPasses, type PiTaskResult } from "../src/integrations/pi-task.js"
 vi.mock("../src/repository-node-test.js", () => ({
   prepareRepositoryNodeTest: vi.fn(async (options: { readonly candidate: string }) => ({ directory: options.candidate })),
   runRepositoryNodeTest: vi.fn(),
+  nodeTestProfileFingerprint: vi.fn(() => "a".repeat(64)),
 }));
+vi.mock("../src/repository-typecheck.js", () => ({ checkRepositoryTypecheck: vi.fn(),
+  prepareRepositoryTypecheck: vi.fn(async () => ({ profile: "typescript-no-emit/v1" })),
+  runRepositoryTypecheck: vi.fn(),
+  typecheckProfileFingerprint: vi.fn(() => "b".repeat(64)) }));
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -31,7 +39,7 @@ function git(cwd: string, args: readonly string[]): string {
   return result.stdout.trim();
 }
 
-async function fixture(): Promise<{ root: string; source: string;
+async function fixture(includeTypecheck = false): Promise<{ root: string; source: string;
   candidate: Awaited<ReturnType<typeof createCandidateCheckout>>; grant: ProposalRunGrant }> {
   const root = await mkdtemp(join(tmpdir(), "tesota-source-test-"));
   roots.push(root);
@@ -52,17 +60,34 @@ async function fixture(): Promise<{ root: string; source: string;
     proposalSha256: "a".repeat(64), source, baseline: candidate.baseline,
     objective: "Fix the value and add a regression.", completionConditions: ["The value is 2."],
     readFiles: ["lib/value.ts", "tests/value.test.ts"], writeFiles: ["lib/value.ts", "tests/value.test.ts"],
-    selectedTest: "tests/value.test.ts", declaredChecks: ["scope-integrity", "node-test-targeted/v1"],
+    selectedTest: "tests/value.test.ts", declaredChecks: includeTypecheck ?
+      ["scope-integrity", "node-test-targeted/v1", "typescript-no-emit/v1"] :
+      ["scope-integrity", "node-test-targeted/v1"],
     verification: { scopeIntegrity: "application_owned", nodeTest: "node-test-targeted/v1",
-      outcome: "human_review_required" },
+      typecheck: includeTypecheck ? "typescript-no-emit/v1" : null, outcome: "human_review_required" },
+    ...(includeTypecheck ? { approvedChecks: { "node-test-targeted/v1": "a".repeat(64),
+      "typescript-no-emit/v1": "b".repeat(64) } } : {}),
   });
   vi.mocked(runRepositoryNodeTest).mockImplementation(async () => {
     const contents = await readFile(join(candidate.checkout, "lib", "value.ts"), "utf8");
     const status = contents.includes("value = 2") ? "passed" : "check_failed";
+    const binding = await bindCandidateCheckoutContent(candidate.directory, () => false);
+    const selectedTestSha256 = createHash("sha256").update(await readFile(join(candidate.checkout,
+      "tests", "value.test.ts"))).digest("hex");
     return { profile: "node-test-targeted/v1", status, reason: status === "passed" ? null : "diagnostics",
       diagnostics: status === "passed" ? [] : ["expected value 2"], process: "exited", container: "absent",
-      binding: {} as never, authority: "none", provenance: "issued" } satisfies RepositoryNodeTestResult;
+      binding: { candidate: binding, repository: { selectedTestSha256 } } as never,
+      authority: "none", provenance: "issued" } satisfies RepositoryNodeTestResult;
   });
+  vi.mocked(checkRepositoryTypecheck).mockImplementation(async () => ({
+    profile: "typescript-no-emit/v1", status: "passed", reason: null, diagnostics: [],
+    process: "exited", container: "absent",
+    binding: { candidate: await bindCandidateCheckoutContent(candidate.directory, () => false) } as never,
+    authority: "none", provenance: "issued",
+  } satisfies RepositoryTypecheckResult));
+  vi.mocked(runRepositoryTypecheck).mockImplementation(async () => checkRepositoryTypecheck({
+    candidate: candidate.directory, source,
+  }));
   return { root, source, candidate, grant };
 }
 
@@ -74,6 +99,53 @@ it("retains source-task limits and binds a separate source-and-test contract", a
   expect((await inspectCandidateTask(current.candidate.directory)).sourceInputs).toBeDefined();
   task.close();
 });
+
+it("requires both selected checks on the same final source-and-test result", async () => {
+  const current = await fixture(true);
+  const task = await CandidateTask.prepare(current.candidate.directory, current.grant);
+  const source = await task.read({ path: "lib/value.ts" });
+  const test = await task.read({ path: "tests/value.test.ts" });
+  await task.check();
+  await task.replace({ path: "tests/value.test.ts", expectedSha256: test.sha256,
+    content: "// regression: expect value 2\n" });
+  const red = await task.check();
+  expect(red.nodeTest?.status).toBe("check_failed");
+  expect(runRepositoryTypecheck).not.toHaveBeenCalled();
+  await task.replace({ path: "lib/value.ts", expectedSha256: source.sha256,
+    content: "export const value = 2;\n" });
+  const green = await task.check();
+  expect(green).toMatchObject({ status: "passed", nodeTest: { status: "passed" },
+    typecheck: { status: "passed" } });
+  expect(green.nodeTest?.binding.candidate.contentSha256)
+    .toBe(green.typecheck?.binding.candidate.contentSha256);
+  vi.mocked(checkRepositoryTypecheck).mockResolvedValueOnce({
+    ...green.typecheck!, status: "check_failed", reason: "diagnostics", diagnostics: ["Type error"],
+  });
+  const failed = await task.check();
+  expect(failed).toMatchObject({ status: "check_failed", outcome: "check_failed",
+    nodeTest: { status: "passed" }, typecheck: { status: "check_failed" } });
+  vi.mocked(checkRepositoryTypecheck).mockResolvedValueOnce({
+    ...green.typecheck!, binding: { ...green.typecheck!.binding,
+      candidate: { ...green.typecheck!.binding.candidate, contentSha256: "f".repeat(64) } },
+  });
+  const mismatched = await task.check();
+  expect(mismatched).toMatchObject({ status: "check_failed", outcome: "operational_failed" });
+  vi.mocked(typecheckProfileFingerprint).mockReturnValueOnce("c".repeat(64));
+  const runsBeforeReplacement = vi.mocked(runRepositoryTypecheck).mock.calls.length;
+  const replacedVerifier = await checkCandidateTask(current.candidate.directory);
+  expect(replacedVerifier).toMatchObject({ status: "check_failed", outcome: "operational_failed",
+    diagnostics: ["Selected TypeScript verifier inputs changed after approval."] });
+  expect(nodeTestProfileFingerprint).toHaveBeenCalled();
+  expect(runRepositoryTypecheck).toHaveBeenCalledTimes(runsBeforeReplacement);
+  expect(prepareRepositoryTypecheck).toHaveBeenCalled();
+  vi.mocked(nodeTestProfileFingerprint).mockReturnValueOnce("c".repeat(64));
+  const nodeRunsBeforeReplacement = vi.mocked(runRepositoryNodeTest).mock.calls.length;
+  const replacedNodeVerifier = await checkCandidateTask(current.candidate.directory);
+  expect(replacedNodeVerifier).toMatchObject({ status: "check_failed", outcome: "operational_failed",
+    diagnostics: ["Selected Node verifier inputs changed after approval."] });
+  expect(runRepositoryNodeTest).toHaveBeenCalledTimes(nodeRunsBeforeReplacement);
+  task.close();
+}, 60_000);
 
 it("keeps the red regression, green repair, current review and exact two-file promotion distinct", async () => {
   const current = await fixture();

@@ -16,7 +16,10 @@ Tesota is pre-release. Its terminal shell supports bounded questions over a
 committed repository and two approved TypeScript task shapes in independent
 checkouts. One changes one or two existing non-test `src/` files and runs a
 fixed contained typecheck. The other changes one existing source file and one
-existing regression test and runs a fixed targeted Node test. It shows the
+existing regression test and requires a targeted Node test; when the contained
+TypeScript typecheck is eligible, the operator can require it too before
+approving the work. Selected verifier inputs are bound to that approval, and
+both checks must examine the same final candidate. It shows the
 exact diff and applicable evidence, then requires a local decision before
 guarded application. One bounded semantic correction is implemented.
 Known-settled outcomes return to a new prompt; unconfirmed execution or
@@ -28,8 +31,10 @@ include accepted applications, while a
 retains an execution failure. These establish the exercised cases, not
 representative usefulness. The earlier
 [practical-use pilot](../experiments/practical-use/2026-09-22-results.md)
-retains failed and degraded attempts. The check eligibility preview has not
-yet been qualified in a fresh live task.
+retains failed and degraded attempts. A
+[fresh combined-check attempt](../experiments/practical-use/2026-09-23-combined-check-results.md)
+exercised eligibility, selection, approval and a failing regression, but ended
+with unconfirmed execution and no application. This does not complete slice 1.
 
 The shell now lists local sessions, persists their human transcript and result
 inspections, and can reopen a settled Pi context with its consumed budgets.

@@ -9,6 +9,9 @@ export const TASK_LIMITS: Readonly<{ reads: number; edits: number; checks: numbe
 export const SOURCE_TEST_TASK_KIND = "typescript-source-test-change" as const;
 export const SOURCE_TEST_TASK_CHECKS: readonly ["scope-integrity", "node-test-targeted/v1"] =
   Object.freeze(["scope-integrity", "node-test-targeted/v1"]);
+export const SOURCE_TEST_TYPECHECK_TASK_CHECKS:
+  readonly ["scope-integrity", "node-test-targeted/v1", "typescript-no-emit/v1"] =
+  Object.freeze(["scope-integrity", "node-test-targeted/v1", "typescript-no-emit/v1"]);
 export const SOURCE_TEST_TASK_LIMITS: typeof TASK_LIMITS =
   Object.freeze({ reads: 12, edits: 6, checks: 6, fileBytes: 64 * 1024 });
 

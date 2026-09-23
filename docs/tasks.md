@@ -47,8 +47,9 @@ For this variant, the model first checks the unchanged candidate, changes the
 regression test and checks that it fails on the original source, then repairs
 the source and checks the final candidate. The fixed `node-test-targeted/v1`
 invocation runs the approved test under Node's test runner inside the pinned,
-read-only, network-disabled Docker container. It does not execute the
-repository's test script, typecheck the project or prove full-suite behavior.
+read-only, network-disabled Docker container. When selected before approval,
+`typescript-no-emit/v1` must also pass on the same final candidate. Neither
+executes the repository's test script or proves full-suite behavior.
 Empty, skipped, TODO and incoherent test reports cannot pass. The exact final
 source and test bytes are checked again at review and conflict-checked before
 promotion. A later semantic correction uses only the remaining cumulative

@@ -100,13 +100,15 @@ synthetic fixtures.
 
 ## Protected targeted Node test profile
 
-`node-test-targeted/v1` is the check for the approved source-and-test task.
+`node-test-targeted/v1` is required for an approved source-and-test task.
 The grant names one existing `tests/**/*.test.ts` file and the only candidate
 files allowed to differ. Tesota records the repository's declared test script
 but does not execute it or any model-selected command. It runs fixed Node argv
 with TypeScript type stripping and that exact test path in the pinned Docker
 image. This is a focused behavioral observation, not TypeScript typechecking
-or the full repository test script.
+or the full repository test script. If `typescript-no-emit/v1` is also eligible
+and selected before approval, both checks must pass against one candidate
+identity before review can present a passing result.
 
 The candidate and Tesota's compiled, SHA-256-bound Node reporter are mounted
 read-only. Network is disabled; host credentials and dependency installations

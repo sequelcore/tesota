@@ -2,11 +2,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { lstat, open, realpath, rename, unlink } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import * as z from "zod";
-import { inspectCandidateCheckout, readCandidateBaselineFiles } from "./candidate-checkout.js";
+import { bindCandidateCheckoutContent, inspectCandidateCheckout, readCandidateBaselineFiles } from "./candidate-checkout.js";
 import { validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
-import { checkRepositoryTypecheck, type RepositoryTypecheckResult } from "./repository-typecheck.js";
-import { prepareRepositoryNodeTest, runRepositoryNodeTest, type RepositoryNodeTestResult } from "./repository-node-test.js";
-import { SOURCE_TEST_TASK_CHECKS, SOURCE_TEST_TASK_KIND, SOURCE_TEST_TASK_LIMITS,
+import { checkRepositoryTypecheck, prepareRepositoryTypecheck, runRepositoryTypecheck,
+  typecheckProfileFingerprint, type RepositoryTypecheckResult } from "./repository-typecheck.js";
+import { nodeTestProfileFingerprint, prepareRepositoryNodeTest, runRepositoryNodeTest,
+  type RepositoryNodeTestResult } from "./repository-node-test.js";
+import { SOURCE_TEST_TASK_CHECKS, SOURCE_TEST_TASK_KIND, SOURCE_TEST_TASK_LIMITS, SOURCE_TEST_TYPECHECK_TASK_CHECKS,
   TASK_CHECKS, TASK_KIND, TASK_LIMITS, taskLimits, taskRequestSchemas, type TaskOracleResult } from "./task-contract.js";
 import { captureTaskSourceInputs, matchesTaskBaseline, taskSourceInputsSchema, validateTaskSourceInputs,
   type TaskSourceInputs } from "./task-source.js";
@@ -28,7 +30,11 @@ const sourceTestContractSchema = z.strictObject({
   objective: z.string().min(1), completionConditions: z.array(z.string().min(1)).min(1).max(8),
   readFiles: z.array(z.string()).min(2).max(SOURCE_TEST_TASK_LIMITS.reads),
   writeFiles: z.array(z.string()).length(2),
-  checks: z.tuple([z.literal(SOURCE_TEST_TASK_CHECKS[0]), z.literal(SOURCE_TEST_TASK_CHECKS[1])]),
+  checks: z.union([
+    z.tuple([z.literal(SOURCE_TEST_TASK_CHECKS[0]), z.literal(SOURCE_TEST_TASK_CHECKS[1])]),
+    z.tuple([z.literal(SOURCE_TEST_TYPECHECK_TASK_CHECKS[0]),
+      z.literal(SOURCE_TEST_TYPECHECK_TASK_CHECKS[1]), z.literal(SOURCE_TEST_TYPECHECK_TASK_CHECKS[2])]),
+  ]),
   outcome: z.literal("human_review_required"),
   limits: z.strictObject({ reads: z.literal(SOURCE_TEST_TASK_LIMITS.reads),
     edits: z.literal(SOURCE_TEST_TASK_LIMITS.edits), checks: z.literal(SOURCE_TEST_TASK_LIMITS.checks),
@@ -76,7 +82,7 @@ export interface CandidateTaskDescription {
   readonly instructions: string;
   readonly readFiles: readonly string[];
   readonly writeFiles: readonly string[];
-  readonly checks: typeof TASK_CHECKS | typeof SOURCE_TEST_TASK_CHECKS;
+  readonly checks: typeof TASK_CHECKS | typeof SOURCE_TEST_TASK_CHECKS | typeof SOURCE_TEST_TYPECHECK_TASK_CHECKS;
   readonly outcome: "human_review_required";
   readonly limits: typeof TASK_LIMITS;
   readonly executionCause?: "initial_implementation" | "semantic_revision";
@@ -127,7 +133,7 @@ function hash(value: string | Buffer): string { return createHash("sha256").upda
 function contractFor(grant: ProposalRunGrant): z.infer<typeof contractSchema> | z.infer<typeof sourceTestContractSchema> {
   if (grant.kind === SOURCE_TEST_TASK_KIND) return {
     objective: grant.objective, completionConditions: [...grant.completionConditions],
-    readFiles: [...grant.readFiles], writeFiles: [...grant.writeFiles], checks: [...SOURCE_TEST_TASK_CHECKS],
+    readFiles: [...grant.readFiles], writeFiles: [...grant.writeFiles], checks: [...grant.declaredChecks],
     outcome: "human_review_required", limits: SOURCE_TEST_TASK_LIMITS,
     effects: ["read_candidate", "replace_candidate_file", "run_task_check"], promotion: "allowed",
   } as z.infer<typeof sourceTestContractSchema>;
@@ -140,7 +146,9 @@ function contractFor(grant: ProposalRunGrant): z.infer<typeof contractSchema> | 
 function instructionsFor(grant: ProposalRunGrant): string {
   if (grant.kind === SOURCE_TEST_TASK_KIND) return `Complete the approved TypeScript source and regression-test outcome: ${grant.objective}\nCompletion conditions:\n` +
     grant.completionConditions.map((condition) => `- ${condition}`).join("\n") +
-    "\nChange only the admitted source and test files. First check the unchanged baseline, then change the regression test and check that it fails on the original source. Then repair the source and check again. The selected Node test runs in a contained check; it does not typecheck or establish all requested behavior.";
+    "\nChange only the admitted source and test files. First check the unchanged baseline, then change the regression test and check that it fails on the original source. Then repair the source and check again. The selected Node test runs in a contained check. " +
+    (grant.verification.typecheck === null ? "Repository typechecking was not selected." :
+      "The final result must also pass the selected TypeScript typecheck.");
   return `Complete the approved TypeScript outcome: ${grant.objective}\nCompletion conditions:\n` +
     grant.completionConditions.map((condition) => `- ${condition}`).join("\n") +
     "\nChange only the admitted files. The automatic checks establish scope integrity and TypeScript compilation, not outcome correctness.";
@@ -246,47 +254,130 @@ Readonly<{ changedFiles: readonly string[]; selectedTest: string }> | Readonly<R
   } : {};
 }
 
+type TaskCheckObservation = { readonly oracle: TaskOracleResult; readonly outcome: CandidateTaskCheck["outcome"];
+  readonly settlement: CandidateTaskCheck["settlement"]; readonly typecheck: RepositoryTypecheckResult | null;
+  readonly nodeTest?: RepositoryNodeTestResult | null };
+
+function nodeVerifierChanged(grant: ProposalRunGrant, result: RepositoryNodeTestResult): boolean {
+  return grant.approvedChecks !== undefined &&
+    nodeTestProfileFingerprint(result.binding) !== grant.approvedChecks["node-test-targeted/v1"];
+}
+
+function typecheckVerifierChanged(grant: ProposalRunGrant, result: RepositoryTypecheckResult): boolean {
+  return grant.approvedChecks !== undefined &&
+    typecheckProfileFingerprint(result.binding) !== grant.approvedChecks["typescript-no-emit/v1"];
+}
+
+function prematureRegressionPass(nodeTest: RepositoryNodeTestResult, bothChanged: boolean): boolean {
+  return nodeTest.status === "passed" && !bothChanged;
+}
+
+async function runSelectedTypecheck(directory: string, grant: ProposalRunGrant,
+  signal?: AbortSignal): Promise<RepositoryTypecheckResult | null> {
+  if (grant.approvedChecks === undefined) return checkRepositoryTypecheck({ candidate: directory, source: grant.source }, signal);
+  const profile = await prepareRepositoryTypecheck({ candidate: directory, source: grant.source });
+  if (typecheckProfileFingerprint(profile) !== grant.approvedChecks["typescript-no-emit/v1"]) return null;
+  return runRepositoryTypecheck(profile, undefined, signal);
+}
+
+async function checkSelectedTypecheckAfterNode(directory: string, grant: ProposalRunGrant,
+  scope: TaskOracleResult, nodeTest: RepositoryNodeTestResult,
+  signal?: AbortSignal): Promise<TaskCheckObservation> {
+  const typecheck = await runSelectedTypecheck(directory, grant, signal);
+  if (typecheck === null) return { oracle: { status: "check_failed", diagnostics: [
+    "Selected TypeScript verifier inputs changed after approval.",
+  ] }, outcome: "operational_failed", settlement: "observed", typecheck: null, nodeTest };
+  const settlement = typecheck.process === "unconfirmed" || typecheck.container === "unconfirmed" ?
+    "unconfirmed" : "observed";
+  if (settlement === "unconfirmed") return { oracle: { status: "check_failed", diagnostics: [
+    "TypeScript no-emit settlement is unconfirmed.",
+  ] }, outcome: "operational_failed", settlement, typecheck, nodeTest };
+  if (typecheckVerifierChanged(grant, typecheck)) return {
+    oracle: { status: "check_failed", diagnostics: ["Selected TypeScript verifier inputs changed after approval."] },
+    outcome: "operational_failed", settlement, typecheck, nodeTest,
+  };
+  const candidateAfterBoth = await bindCandidateCheckoutContent(directory, () => false);
+  if (typecheck.binding.candidate.contentSha256 !== nodeTest.binding.candidate.contentSha256 ||
+      candidateAfterBoth.contentSha256 !== nodeTest.binding.candidate.contentSha256) return {
+    oracle: { status: "check_failed", diagnostics: ["The selected checks examined different candidate versions."] },
+    outcome: "operational_failed", settlement, typecheck, nodeTest,
+  };
+  if (typecheck.status === "passed") return { oracle: { status: "passed", diagnostics: [
+    ...scope.diagnostics, "Selected Node regression test and TypeScript no-emit check passed on the same result.",
+  ] }, outcome: "passed", settlement, typecheck, nodeTest };
+  return { oracle: { status: "check_failed", diagnostics: typecheck.status === "check_failed" ?
+    [...typecheck.diagnostics] : [`TypeScript no-emit did not complete: ${typecheck.status}.`] },
+  outcome: typecheck.status === "check_failed" ? "check_failed" : "operational_failed",
+  settlement, typecheck, nodeTest };
+}
+
+async function checkSourceTestTask(directory: string, files: TaskFiles, plan: TaskPlan,
+  grant: Extract<ProposalRunGrant, { kind: typeof SOURCE_TEST_TASK_KIND }>, scope: TaskOracleResult,
+  signal?: AbortSignal): Promise<TaskCheckObservation> {
+  const profile = await prepareRepositoryNodeTest({ candidate: directory, source: grant.source,
+    selectedTest: grant.selectedTest, allowedWriteFiles: grant.writeFiles });
+  if (grant.approvedChecks !== undefined &&
+      nodeTestProfileFingerprint(profile) !== grant.approvedChecks["node-test-targeted/v1"]) return {
+    oracle: { status: "check_failed", diagnostics: ["Selected Node verifier inputs changed after approval."] },
+    outcome: "operational_failed", settlement: "observed", typecheck: null,
+  };
+  const nodeTest = await runRepositoryNodeTest(profile, undefined, signal);
+  const settlement = nodeTest.process === "unconfirmed" || nodeTest.container === "unconfirmed" ?
+    "unconfirmed" : "observed";
+  if (settlement === "unconfirmed") return { oracle: { status: "check_failed", diagnostics: [
+    "Node test settlement is unconfirmed.",
+  ] }, outcome: "operational_failed", settlement, typecheck: null, nodeTest };
+  if (nodeVerifierChanged(grant, nodeTest)) return {
+    oracle: { status: "check_failed", diagnostics: ["Selected Node verifier inputs changed after approval."] },
+    outcome: "operational_failed", settlement, typecheck: null, nodeTest,
+  };
+  const candidateAfterNode = await bindCandidateCheckoutContent(directory, () => false);
+  if (candidateAfterNode.contentSha256 !== nodeTest.binding.candidate.contentSha256) return {
+    oracle: { status: "check_failed", diagnostics: ["Candidate changed during the selected Node test."] },
+    outcome: "operational_failed", settlement, typecheck: null, nodeTest,
+  };
+  const bothChanged = changedWriteFiles(files, plan, grant).length === 2;
+  if (prematureRegressionPass(nodeTest, bothChanged)) return { oracle: { status: "check_failed", diagnostics: [
+    "Regression test passed before the source changed; it did not detect the original defect.",
+  ] }, outcome: "check_failed", settlement, typecheck: null, nodeTest };
+  if (nodeTest.status === "passed") {
+    if (grant.verification.typecheck === null) return { oracle: { status: "passed", diagnostics: [
+      ...scope.diagnostics, "Selected Node regression test passed. Repository typechecking was not performed.",
+    ] }, outcome: "passed", settlement, typecheck: null, nodeTest };
+    return checkSelectedTypecheckAfterNode(directory, grant, scope, nodeTest, signal);
+  }
+  if (nodeTest.status === "check_failed" || nodeTest.status === "no_tests") return {
+    oracle: { status: "check_failed", diagnostics: [...nodeTest.diagnostics] }, outcome: "check_failed",
+    settlement, typecheck: null, nodeTest,
+  };
+  return { oracle: { status: "check_failed", diagnostics: [
+    `Selected Node test did not complete: ${nodeTest.status}.`,
+  ] }, outcome: "operational_failed", settlement, typecheck: null, nodeTest };
+}
+
 async function checkTask(directory: string, files: TaskFiles, plan: TaskPlan,
   grant: ProposalRunGrant, signal?: AbortSignal):
-Promise<{ readonly oracle: TaskOracleResult; readonly outcome: CandidateTaskCheck["outcome"];
-  readonly settlement: CandidateTaskCheck["settlement"]; readonly typecheck: RepositoryTypecheckResult | null;
-  readonly nodeTest?: RepositoryNodeTestResult | null }> {
+Promise<TaskCheckObservation> {
   if (signal?.aborted === true) throw new DOMException("cancelled", "AbortError");
   const scope = checkScope(files, plan, grant);
   if (scope.status === "check_failed") {
     return { oracle: scope, outcome: "check_failed", settlement: "observed", typecheck: null };
   }
-  if (grant.kind === SOURCE_TEST_TASK_KIND) {
-    const profile = await prepareRepositoryNodeTest({ candidate: directory, source: grant.source,
-      selectedTest: grant.selectedTest, allowedWriteFiles: grant.writeFiles });
-    const nodeTest = await runRepositoryNodeTest(profile, undefined, signal);
-    const settlement = nodeTest.process === "unconfirmed" || nodeTest.container === "unconfirmed" ?
-      "unconfirmed" : "observed";
-    if (settlement === "unconfirmed") return { oracle: { status: "check_failed", diagnostics: [
-      "Node test settlement is unconfirmed.",
-    ] }, outcome: "operational_failed", settlement, typecheck: null, nodeTest };
-    const bothChanged = changedWriteFiles(files, plan, grant).length === 2;
-    if (nodeTest.status === "passed" && !bothChanged) return { oracle: { status: "check_failed", diagnostics: [
-      "Regression test passed before the source changed; it did not detect the original defect.",
-    ] }, outcome: "check_failed", settlement, typecheck: null, nodeTest };
-    if (nodeTest.status === "passed") return { oracle: { status: "passed", diagnostics: [...scope.diagnostics,
-      "Selected Node regression test passed. Repository typechecking was not performed."] },
-    outcome: "passed", settlement, typecheck: null, nodeTest };
-    if (nodeTest.status === "check_failed" || nodeTest.status === "no_tests") return {
-      oracle: { status: "check_failed", diagnostics: [...nodeTest.diagnostics] }, outcome: "check_failed",
-      settlement, typecheck: null, nodeTest,
-    };
-    return { oracle: { status: "check_failed", diagnostics: [
-      `Selected Node test did not complete: ${nodeTest.status}.`,
-    ] }, outcome: "operational_failed", settlement, typecheck: null, nodeTest };
-  }
-  const typecheck = await checkRepositoryTypecheck({ candidate: directory, source: grant.source }, signal);
+  if (grant.kind === SOURCE_TEST_TASK_KIND) return checkSourceTestTask(directory, files, plan, grant, scope, signal);
+  const typecheck = await runSelectedTypecheck(directory, grant, signal);
+  if (typecheck === null) return { oracle: { status: "check_failed", diagnostics: [
+    "Selected TypeScript verifier inputs changed after approval.",
+  ] }, outcome: "operational_failed", settlement: "observed", typecheck: null };
   const settlement = typecheck.process === "unconfirmed" || typecheck.container === "unconfirmed" ? "unconfirmed" : "observed";
   if (settlement === "unconfirmed") {
     return { oracle: { status: "check_failed", diagnostics: [
       "TypeScript no-emit settlement is unconfirmed.",
     ] }, outcome: "operational_failed", settlement, typecheck };
   }
+  if (typecheckVerifierChanged(grant, typecheck)) return {
+    oracle: { status: "check_failed", diagnostics: ["Selected TypeScript verifier inputs changed after approval."] },
+    outcome: "operational_failed", settlement, typecheck,
+  };
   if (typecheck.status === "passed") {
     return { oracle: { status: "passed", diagnostics: [...scope.diagnostics,
       "TypeScript no-emit check passed. Outcome correctness requires human review."] },
@@ -351,7 +442,7 @@ export class CandidateTask {
     return { task: this.#grant.kind, baseline: this.#plan.baseline, definitionSha256: this.#plan.definitionSha256,
       objective: this.#grant.objective, completionConditions: this.#grant.completionConditions,
       instructions: instructionsFor(this.#grant), readFiles: this.#grant.readFiles, writeFiles: this.#grant.writeFiles,
-      checks: this.#grant.kind === SOURCE_TEST_TASK_KIND ? SOURCE_TEST_TASK_CHECKS : TASK_CHECKS,
+      checks: this.#grant.declaredChecks,
       outcome: "human_review_required" as const, limits: taskLimits(this.#grant.kind) };
   }
 

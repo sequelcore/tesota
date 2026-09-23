@@ -66,15 +66,18 @@ their proposed scope is unsupported.
 ## Supported admission
 
 The model proposes files and completion conditions; it does not select a check.
-Tesota derives the fixed pair from the proposed file scope, records and shows it
-before approval, and independently rechecks the pair during admission.
+Tesota derives bounded check choices from the proposed file scope. It previews
+their eligibility, asks the operator to select available checks, and binds the
+required selection in the run grant before approval. Admission and execution
+recheck current inputs; the model cannot add a command or drop a selected check.
 
 The original policy accepts one or two existing non-test, non-declaration
 TypeScript writes below `src/`, up to eight allowed reads and exactly
 `scope-integrity` followed by `typescript-no-emit/v1`. A separate variant
 accepts one existing TypeScript source file plus one existing
 `tests/**/*.test.ts` regression file, with the exact pair approved and
-`scope-integrity` followed by `node-test-targeted/v1`. Its source file may live
+mandatory `scope-integrity` and `node-test-targeted/v1`, with
+`typescript-no-emit/v1` selectable when eligible. Its source file may live
 outside `src/`, but scripts and check configuration remain excluded. Every
 write file must also be readable. Dependency declarations, general test edits,
 create/delete/rename effects, stale baselines, dirty admitted paths, sensitive

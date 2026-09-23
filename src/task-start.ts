@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { admitTaskProposal, type ProposalRunGrant } from "./proposal-admission.js";
+import { admitTaskProposal, validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
 import { decideTask, reviewTask, TaskReviewUnsettledError, type TaskReview } from "./task-review.js";
 import { promoteTask, PromotionNotAppliedError } from "./task-promotion.js";
 import { runProposalTask, type TaskRunResult } from "./task-run.js";
@@ -39,7 +39,8 @@ interface StartTaskDependencies {
   readonly promote?: typeof promoteTask;
   readonly createOutcome?: typeof createTaskOutcome;
   readonly report?: (progress: TaskStartProgress) => void;
-  readonly inspectEligibility?: (grant: ProposalRunGrant) => Promise<RepositoryCheckEligibility>;
+  readonly inspectEligibility?: (grant: ProposalRunGrant,
+    profile?: "node-test-targeted/v1" | "typescript-no-emit/v1") => Promise<RepositoryCheckEligibility>;
   readonly onReview?: (review: TaskReview) => void;
 }
 
@@ -65,7 +66,8 @@ function aborted(error: unknown): boolean { return error instanceof Error && err
 
 function proposalCard(grant: ProposalRunGrant, eligibility: RepositoryCheckEligibility): string {
   const evidence = grant.kind === SOURCE_TEST_TASK_KIND ?
-    `scope integrity and contained Node test ${grant.selectedTest}; no repository typecheck` :
+    `scope integrity and contained Node test ${grant.selectedTest}` +
+      (grant.verification.typecheck === null ? "; TypeScript check choice follows" : "; contained TypeScript no-emit") :
     "scope integrity and contained TypeScript no-emit";
   return `Proposed task\nObjective: ${grant.objective}\nWrite: ${grant.writeFiles.join(", ")}\n` +
     `Read: ${grant.readFiles.join(", ")}\nBaseline: ${grant.baseline}\n` +
@@ -74,32 +76,90 @@ function proposalCard(grant: ProposalRunGrant, eligibility: RepositoryCheckEligi
     `${eligibility.status} — ${eligibility.reason}. Preview only; execution rechecks current inputs.\n`;
 }
 
-function inspectSelectedCheck(grant: ProposalRunGrant): Promise<RepositoryCheckEligibility> {
-  return grant.kind === SOURCE_TEST_TASK_KIND
-    ? inspectRepositoryNodeTestEligibility(grant.source, grant.selectedTest)
-    : inspectRepositoryTypecheckEligibility(grant.source);
+function inspectSelectedCheck(grant: ProposalRunGrant,
+  profile?: "node-test-targeted/v1" | "typescript-no-emit/v1"): Promise<RepositoryCheckEligibility> {
+  return grant.kind === SOURCE_TEST_TASK_KIND && profile !== "typescript-no-emit/v1"
+    ? inspectRepositoryNodeTestEligibility(grant.source, grant.selectedTest) :
+    inspectRepositoryTypecheckEligibility(grant.source);
 }
 
-async function writeEligibilityPreview(dependencies: StartTaskDependencies, grant: ProposalRunGrant): Promise<void> {
-  const eligibility = await (dependencies.inspectEligibility ?? inspectSelectedCheck)(grant);
-  dependencies.write(proposalCard(grant, eligibility));
-  if (eligibility.status === "ineligible") {
-    dependencies.write("This fixed check cannot run with the inspected inputs. No approval was requested.\n");
+type SelectedChecks = Readonly<{ grant: ProposalRunGrant; fingerprints: Readonly<Record<string, string>> }>;
+
+async function selectEligibleChecks(dependencies: StartTaskDependencies,
+  initial: ProposalRunGrant): Promise<SelectedChecks | null> {
+  const inspect = dependencies.inspectEligibility ?? inspectSelectedCheck;
+  const primary = await inspect(initial, initial.kind === SOURCE_TEST_TASK_KIND ?
+    "node-test-targeted/v1" : "typescript-no-emit/v1");
+  dependencies.write(proposalCard(initial, primary));
+  if (primary.status === "ineligible") {
+    dependencies.write("This check cannot run with the inspected inputs. No approval was requested.\n");
     throw new Error("Selected repository check is ineligible");
   }
+  if (primary.fingerprint === undefined) throw new Error("Check identity unavailable before approval");
+  if (initial.kind !== SOURCE_TEST_TASK_KIND) return { grant: initial,
+    fingerprints: { "typescript-no-emit/v1": primary.fingerprint } };
+  const typecheck = await inspect(initial, "typescript-no-emit/v1");
+  dependencies.write(`Additional check (typescript-no-emit/v1): ${typecheck.status} — ${typecheck.reason}.\n`);
+  const choice = (await dependencies.ask(typecheck.status === "eligible"
+    ? "Select required checks: [1] Node regression test, [2] Node test + TypeScript typecheck, [c] cancel: "
+    : "Select required checks: [1] Node regression test, [c] cancel: ")).trim().toLowerCase();
+  if (choice === "c" || choice === "") return null;
+  if (choice !== "1" && !(choice === "2" && typecheck.status === "eligible")) {
+    throw new Error("Check selection cancelled or unavailable");
+  }
+  const selected = choice === "2" ? await admitTaskProposal({ ...dependencies, includeTypecheck: true }) : initial;
+  if (selected.proposalSha256 !== initial.proposalSha256 || selected.proposalId !== initial.proposalId) {
+    throw new Error("Proposal changed before check selection completed");
+  }
+  dependencies.write(`Selected required checks: ${selected.declaredChecks.join(", ")}.\n`);
+  if (choice === "2" && typecheck.fingerprint === undefined) throw new Error("Check identity unavailable before approval");
+  return { grant: selected, fingerprints: {
+    "node-test-targeted/v1": primary.fingerprint,
+    ...(choice === "2" ? { "typescript-no-emit/v1": typecheck.fingerprint } : {}),
+  } };
+}
+
+async function revalidateSelectedChecks(dependencies: StartTaskDependencies,
+  selected: SelectedChecks): Promise<ProposalRunGrant> {
+  const { grant } = selected;
+  const recheck = dependencies.inspectEligibility ?? inspectSelectedCheck;
+  const required = grant.kind === SOURCE_TEST_TASK_KIND ?
+    (grant.verification.typecheck === null ? ["node-test-targeted/v1"] as const :
+      ["node-test-targeted/v1", "typescript-no-emit/v1"] as const) : ["typescript-no-emit/v1"] as const;
+  for (const profile of required) {
+    const current = await recheck(grant, profile);
+    if (current.status !== "eligible" || current.fingerprint !== selected.fingerprints[profile]) {
+      throw new Error("Selected check inputs changed before execution");
+    }
+  }
+  const current = await admitTaskProposal({ ...dependencies,
+    includeTypecheck: grant.kind === SOURCE_TEST_TASK_KIND && grant.verification.typecheck !== null });
+  if (JSON.stringify(current) !== JSON.stringify(grant)) throw new Error("Approved proposal changed before execution");
+  return validateProposalRunGrant({ ...grant, approvedChecks: selected.fingerprints });
+}
+
+async function requestApprovedScope(dependencies: StartTaskDependencies,
+  grant: ProposalRunGrant, report: (progress: TaskStartProgress) => void): Promise<SelectedChecks | null> {
+  const selected = await selectEligibleChecks(dependencies, grant);
+  if (selected === null) return null;
+  report({ phase: "awaiting_approval", operation: "proposal_scope" });
+  return approved(await dependencies.ask("Approve this scope and start isolated execution? [y/N] ")) ? selected : null;
 }
 
 function formatTaskReview(review: TaskReview): string {
   const typecheck = review.check.typecheck;
   const nodeTest = review.check.nodeTest;
   if (review.changedFiles.length === 0 || review.check.status !== "passed" ||
-      (review.check.task === SOURCE_TEST_TASK_KIND ? nodeTest?.status !== "passed" : typecheck?.status !== "passed")) {
+      (review.check.task === SOURCE_TEST_TASK_KIND ? nodeTest?.status !== "passed" ||
+        typecheck !== null && typecheck.status !== "passed" : typecheck?.status !== "passed")) {
     throw new Error("Candidate review evidence unavailable");
   }
   const checkSummary = review.check.task === SOURCE_TEST_TASK_KIND ?
-    `PASS Selected Node test: this exact result passed ${nodeTest?.profile}\n` :
+    `PASS Selected Node test: this exact result passed ${nodeTest?.profile}\n` +
+      (typecheck === null ? "" : `PASS TypeScript no-emit: this exact result passed ${typecheck.profile}\n`) :
     `PASS TypeScript no-emit: this exact result passed ${typecheck?.profile}\n`;
-  const unchecked = review.check.task === SOURCE_TEST_TASK_KIND ? "- repository typechecking\n" : "- full integration suite\n";
+  const unchecked = review.check.task === SOURCE_TEST_TASK_KIND && typecheck === null ?
+    "- repository typechecking\n" : "- full integration suite\n";
   return "\nCandidate review\n\n" +
     `Changed:\n${review.changedFiles.map((path) => `- ${path}`).join("\n")}\n\n` +
     "Checked:\n" +
@@ -246,7 +306,7 @@ async function runSemanticCorrection(dependencies: StartTaskDependencies, execut
 /** One-shot proposal lifecycle. A started proposal cannot be replayed or resumed. */
 export async function startTask(dependencies: StartTaskDependencies): Promise<TaskStartResult> {
   const report = dependencies.report ?? ignoreProgress;
-  const grant = await admitTaskProposal(dependencies);
+  let grant = await admitTaskProposal(dependencies);
   const createOutcome = dependencies.createOutcome ?? createTaskOutcome;
   const journal = await createOutcome(resolve(dependencies.proposalsRoot, grant.proposalId), {
     proposalId: grant.proposalId, proposalSha256: grant.proposalSha256, baseline: grant.baseline,
@@ -254,13 +314,13 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
   let execution: TaskRunResult | undefined;
   const meter = createHostWorkMeter();
   try {
-    await writeEligibilityPreview(dependencies, grant);
-    report({ phase: "awaiting_approval", operation: "proposal_scope" });
-    if (!approved(await dependencies.ask("Approve this scope and start isolated execution? [y/N] "))) {
+    const approvedGrant = await requestApprovedScope(dependencies, grant, report);
+    if (approvedGrant === null) {
       dependencies.write("Proposal not started. Nothing changed.\n");
       await finishOutcome(journal, { state: "scope_declined" }, dependencies.write, meter);
       return { status: "settled", exitCode: 0, outcome: "scope_declined" };
     }
+    grant = await revalidateSelectedChecks(dependencies, approvedGrant);
     await journal.append({ state: "execution_started" });
     report({ phase: "executing", operation: "candidate_task" });
     execution = await (dependencies.execute ?? runProposalTask)(grant);

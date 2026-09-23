@@ -60,12 +60,23 @@ export type RepositoryTypecheckResult = Readonly<{
   provenance: "issued";
 }>;
 
+/** Identity of verifier inputs that must stay equal to the operator's selection. */
+export function typecheckProfileFingerprint(binding: Omit<RepositoryTypecheckProfile, "authority">): string {
+  return sha256(JSON.stringify({ profile: binding.profile,
+    packageJson: binding.repository.packageJsonSha256, tsconfig: binding.repository.tsconfigSha256,
+    lockfile: binding.repository.lockfileSha256,
+    installationSha256: binding.verifier.installationSha256,
+    runtime: { executable: binding.isolation.executable, executableSha256: binding.isolation.executableSha256 },
+    image: binding.isolation.image, policy: binding.isolation.policySha256, limits: binding.limits }));
+}
+
 interface PrepareOptions {
   readonly candidate: string;
   readonly source: string;
   readonly runtime?: ContainerRuntimeIdentity;
 }
-export type RepositoryCheckEligibility = Readonly<{ status: "eligible" | "ineligible"; reason: string }>;
+export type RepositoryCheckEligibility = Readonly<{ status: "eligible" | "ineligible"; reason: string;
+  fingerprint?: string }>;
 const issued = new WeakSet<object>();
 
 /** Read-only preview of committed check declarations and the installed verifier. */
@@ -107,8 +118,14 @@ export async function inspectRepositoryTypecheckEligibility(source: string): Pro
         return { status: "ineligible", reason: "TypeScript Linux/x64 installation is missing or mismatched" };
       }
     }
-    await resolveContainerRuntime([source]);
-    return { status: "eligible", reason: "required declarations, installed verifier, and Docker client are present" };
+    const runtime = await resolveContainerRuntime([source]);
+    const installationSha256 = await dependencyInstallationSha256(nodeModules, true);
+    return { status: "eligible", reason: "required declarations, installed verifier, and Docker client are present",
+      fingerprint: sha256(JSON.stringify({ profile: REPOSITORY_TYPECHECK_PROFILE,
+        packageJson: sha256(packageBytes), tsconfig: sha256(tsconfig),
+        lockfile: sha256(readCommittedCheckInput(source, "bun.lock", 8 * 1024 * 1024)),
+        installationSha256, runtime, image: CONTAINER_IMAGE, policy: typecheckContainerPolicySha256(),
+        limits: REPOSITORY_TYPECHECK_LIMITS })) };
   } catch {
     return { status: "ineligible", reason: "required repository inputs, installed verifier, or Docker client are unavailable" };
   }

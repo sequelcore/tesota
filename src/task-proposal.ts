@@ -207,7 +207,7 @@ export function formatTaskProposal(created: ProposedTask): string {
     `Objective: ${record.proposal.objective}`,
     `Write: ${record.proposal.writeFiles.join(", ")}`,
     `Read: ${record.proposal.readFiles.join(", ") || "none"}`,
-    `Checks: ${record.proposal.checks.join(", ")} (declarative only; not executed)`,
+    `Check choices: ${record.proposal.checks.join(", ")} (eligibility and selection follow; none executed)`,
     "Completion:",
     ...record.proposal.completionConditions.map((condition) => `- ${condition}`),
   ];

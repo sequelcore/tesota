@@ -353,6 +353,8 @@ function validSourceTestSequence(result: PiTaskResult): boolean {
     redWasTestOnly(checks) &&
     checks.at(-1)?.changedFiles?.length === 2 &&
     checks.every((check) => check.selectedTest === checks[1]?.selectedTest) &&
+    checks.slice(1).every((check) => check.nodeTest?.binding.repository.selectedTestSha256 ===
+      checks[1]?.nodeTest?.binding.repository.selectedTestSha256) &&
     checks.slice(1, -1).every((check) => check.status === "check_failed" && check.outcome === "check_failed");
 }
 

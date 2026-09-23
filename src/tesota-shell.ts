@@ -88,7 +88,7 @@ async function runShellRequest(dependencies: TesotaShellDependencies, request: s
       dependencies.write("Request blocked or unavailable. Nothing changed.\n");
       return { exitCode: result.exitCode, continue: false };
     }
-    dependencies.write("Proposal ready. Execution still requires your approval.\n");
+    dependencies.write("Proposal saved. Checking the work and its available checks before approval.\n");
     const started = await dependencies.start(result.turn.proposedTask.record.id, report);
     return { exitCode: started.exitCode, continue: started.status === "settled" };
   }

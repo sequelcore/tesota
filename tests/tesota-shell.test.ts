@@ -144,7 +144,7 @@ it("continues a ready proposal into the approval flow without asking for its id"
   expect(ask).toHaveBeenCalledTimes(2);
   expect(start).toHaveBeenCalledWith("9877887d-1475-4439-a0a6-c1c85091fc9e", expect.any(Function));
   expect(progress).toContainEqual({ phase: "executing", operation: "candidate_task" });
-  expect(output.join("")).toContain("Proposal ready. Execution still requires your approval.\n");
+  expect(output.join("")).toContain("Proposal saved. Checking the work and its available checks before approval.\n");
   expect(output.at(-1)).toBe("Tesota session ended. Nothing changed.\n");
 });
 

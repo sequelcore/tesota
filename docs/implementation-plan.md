@@ -131,6 +131,16 @@ task-kind/check-selection paths rather than retaining aliases.
 **Recovery.** Retain the candidate and observed failure. An unconfirmed process
 or source write remains uncertain and cannot be replayed as if it had settled.
 
+**Current evidence (2026-09-23).** Check selection and exact-result composition
+are implemented and covered by component tests. A fresh ordinary-shell attempt
+selected both checks and established a failing regression, but its execution
+remained unconfirmed before a final check and human review. Independent review
+also found that its candidate broke a retained formal-check path. The
+[attempt record](../experiments/practical-use/2026-09-23-combined-check-results.md)
+is a failed qualification, so this slice remains open. The next attempt needs
+a task whose existing verification contracts can be preserved, a confirmed
+final check, an explicit human decision and independent residual-defect review.
+
 ## 2. One useful task outside a code repository
 
 **Outcome.** Answer a prospectively selected question over supplied local

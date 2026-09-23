@@ -1,6 +1,5 @@
 import type { CompletedConversationTurn } from "./conversation-turn.js";
 import type { TaskReview } from "./task-review.js";
-import { SOURCE_TEST_TASK_KIND } from "./task-contract.js";
 import type { ShellInspection } from "./tesota-shell-terminal.js";
 
 export function inspectConversationTurn(turn: CompletedConversationTurn): ShellInspection {
@@ -19,18 +18,18 @@ export function inspectConversationTurn(turn: CompletedConversationTurn): ShellI
   const record = turn.proposedTask.record;
   return {
     title: "Proposed work",
-    summary: "Proposal ready. Review the scope before approving execution.",
+    summary: "Proposal saved. Check eligibility and scope before approving execution.",
     detail: `Objective\n${record.proposal.objective}\n\nMay read\n${record.proposal.readFiles.join("\n")}` +
       `\n\nMay change\n${record.proposal.writeFiles.join("\n")}` +
-      `\n\nChecks\n${record.proposal.checks.join("\n")}` +
+      `\n\nCheck choices; eligibility and selection follow\n${record.proposal.checks.join("\n")}` +
       "\n\nApproval permits only this scope. It does not establish correctness.",
   };
 }
 
 export function inspectTaskReview(review: TaskReview): ShellInspection {
-  const selected = review.check.task === SOURCE_TEST_TASK_KIND ? review.check.nodeTest : review.check.typecheck;
-  const check = selected === null || selected === undefined ? "Unavailable" :
-    `${selected.status}: ${selected.profile}`;
+  const checks = [review.check.nodeTest, review.check.typecheck].filter((check) => check != null);
+  const check = checks.length === 0 ? "Unavailable" :
+    checks.map((selected) => `${selected.status}: ${selected.profile}`).join("; ");
   return {
     title: "Candidate result",
     summary: `Changed ${review.changedFiles.join(", ")}. Check: ${check}. Review the diff before deciding.`,

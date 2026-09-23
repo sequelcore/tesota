@@ -34,6 +34,7 @@ Tesota Shell
   -> RepositoryDiscovery (read-only baseline)
   -> TaskProposal (untrusted evidence, authority: none)
   -> ProposalAdmission (current policy and baseline)
+  -> eligible check preview and operator selection
   -> operator approval
   -> CandidateTask (bounded effects in independent checkout)
   -> Pi (model loop and tool calls)
@@ -82,13 +83,13 @@ and an isolated process does not gain authority merely because it is confined.
 | `repository-typecheck-command.ts` | One-use local approval and CLI composition for the TypeScript profile |
 | `repository-node-test.ts`, `repository-node-test-reporter.ts` | Selected Node test admission, bound machine report and fail-closed result semantics |
 | `repository-node-test-process.ts` | Fixed Node test process limits and shared container settlement |
-| `candidate-task.ts` | Candidate effects, plan binding and composition of scope integrity with the admitted concrete check |
+| `candidate-task.ts` | Candidate effects, plan binding and composition of scope integrity with every selected concrete check on the same result |
 | `task-source.ts` | Bounded blob/worktree representation admission and exact source-target observations for guarded promotion |
 | `integrations/pi-task.ts` | Pi execution and correction evidence consistency |
 | `task-review.ts` | Exact-candidate review and local decision evidence |
 | `semantic-revision.ts` | Bounded authority-free R1 refinement and parent identity |
 | `task-promotion.ts` | Accepted-byte validation and guarded source writes |
-| `task-start.ts` | One conversational approval-to-promotion workflow |
+| `task-start.ts` | Check selection and identity capture before approval, followed by one conversational approval-to-promotion workflow |
 | `task-outcome.ts` | Durable non-authoritative task outcome journal, recovery and operator summary |
 | `gentle-review-host.ts` | Optional independent Gentle review integration |
 

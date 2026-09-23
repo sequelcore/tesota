@@ -416,7 +416,7 @@ it("blocks a proposal whose admitted paths have excluded working changes", async
   expect(created.record.proposal.writeFiles).toEqual(["src/integrations/pi-task.ts"]);
 });
 
-it("selects the fixed source-and-test check pair from the proposed files", async () => {
+it("lists source-and-test check choices without giving the model check authority", async () => {
   const { source, proposals } = await fixture();
   const fake = fakeModel([
     fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/integrations/pi-task.ts" })),
@@ -434,8 +434,8 @@ it("selects the fixed source-and-test check pair from the proposed files", async
     request: "Fix the task and add a regression test", model: fake.model, stream: fake.stream,
     signal: new AbortController().signal });
   expect(created.record.status).toBe("ready");
-  expect(created.record.proposal.checks).toEqual(["scope-integrity", "node-test-targeted/v1"]);
-  expect(formatTaskProposal(created)).toContain("Checks: scope-integrity, node-test-targeted/v1");
+  expect(created.record.proposal.checks).toEqual(["scope-integrity", "node-test-targeted/v1", "typescript-no-emit/v1"]);
+  expect(formatTaskProposal(created)).toContain("Check choices: scope-integrity, node-test-targeted/v1, typescript-no-emit/v1");
   await expect(admitTaskProposal({ proposalsRoot: proposals, reference: created.record.id,
     sourceDirectory: source })).resolves.toMatchObject({ kind: "typescript-source-test-change",
       declaredChecks: ["scope-integrity", "node-test-targeted/v1"] });

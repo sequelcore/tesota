@@ -137,7 +137,7 @@ it("ends a failed workspace turn without restarting it on selection", async () =
   const ended: string[] = [];
   const askIn = vi.fn(async () => "Find the source");
   const discover = vi.fn(async () => ({ status: "unavailable" as const, exitCode: 1,
-    reason: "tool_failed" as const, toolFailure: { tool: "tesota_search", cause: "invalid_arguments" } }));
+    reason: "tool_failed" as const, toolFailure: { tool: "tesota_search" as const, cause: "invalid_arguments" as const } }));
   let controls: { newSession: (id: string) => void; selectSession: (id: string) => void; quit: () => void } | undefined;
   const running = runTesotaShellCommand({
     surface: { ...fixture.surface, askIn, endSession: (id) => { ended.push(id); } },

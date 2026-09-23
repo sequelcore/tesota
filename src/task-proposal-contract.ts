@@ -1,8 +1,9 @@
 import * as z from "zod";
-import { TASK_CHECKS, SOURCE_TEST_TASK_CHECKS } from "./task-contract.js";
+import { TASK_CHECKS, SOURCE_TEST_TYPECHECK_TASK_CHECKS } from "./task-contract.js";
 
-export const PROPOSAL_CHECKS: readonly [typeof TASK_CHECKS[0], typeof TASK_CHECKS[1], typeof SOURCE_TEST_TASK_CHECKS[1]] =
-  Object.freeze([TASK_CHECKS[0], TASK_CHECKS[1], SOURCE_TEST_TASK_CHECKS[1]]);
+export const PROPOSAL_CHECKS: readonly [typeof TASK_CHECKS[0], typeof TASK_CHECKS[1],
+  typeof SOURCE_TEST_TYPECHECK_TASK_CHECKS[1]] =
+  Object.freeze([TASK_CHECKS[0], TASK_CHECKS[1], SOURCE_TEST_TYPECHECK_TASK_CHECKS[1]]);
 export const PROPOSAL_LIMITS: Readonly<{
   operations: number; listedFiles: number; searchMatches: number; fileBytes: number; scannedBytes: number; exposedBytes: number;
 }> = Object.freeze({ operations: 32, listedFiles: 512, searchMatches: 40,
@@ -78,7 +79,7 @@ export const taskProposalSchema: z.ZodType<TaskProposal> = z.strictObject({
 /** Check selection is application policy; the model only proposes the file scope. */
 export function withProposalChecks(proposal: ModelTaskProposal): TaskProposal {
   const checks = proposal.writeFiles.some(regressionTestPath)
-    ? SOURCE_TEST_TASK_CHECKS : TASK_CHECKS;
+    ? SOURCE_TEST_TYPECHECK_TASK_CHECKS : TASK_CHECKS;
   return taskProposalSchema.parse({ ...proposal, checks });
 }
 

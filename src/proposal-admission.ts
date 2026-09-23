@@ -5,7 +5,8 @@ import { loadTaskProposal } from "./task-proposal.js";
 import { runRepositoryGit } from "./repository-git.js";
 import { isRepositoryDiscoveryPathAllowed } from "./repository-discovery.js";
 import { regressionTestPath, validProposalPath, type TaskProposal } from "./task-proposal-contract.js";
-import { SOURCE_TEST_TASK_CHECKS, SOURCE_TEST_TASK_KIND, TASK_CHECKS, TASK_KIND } from "./task-contract.js";
+import { SOURCE_TEST_TASK_CHECKS, SOURCE_TEST_TASK_KIND, SOURCE_TEST_TYPECHECK_TASK_CHECKS,
+  TASK_CHECKS, TASK_KIND } from "./task-contract.js";
 
 interface ProposalGrantBase {
   readonly proposalId: string;
@@ -14,6 +15,7 @@ interface ProposalGrantBase {
   readonly baseline: string;
   readonly objective: string;
   readonly completionConditions: readonly string[];
+  readonly approvedChecks?: Readonly<Record<string, string>> | undefined;
 }
 
 export interface SourceOnlyRunGrant extends ProposalGrantBase {
@@ -33,10 +35,11 @@ export interface SourceTestRunGrant extends ProposalGrantBase {
   readonly readFiles: readonly string[];
   readonly writeFiles: readonly string[];
   readonly selectedTest: string;
-  readonly declaredChecks: typeof SOURCE_TEST_TASK_CHECKS;
+  readonly declaredChecks: typeof SOURCE_TEST_TASK_CHECKS | typeof SOURCE_TEST_TYPECHECK_TASK_CHECKS;
   readonly verification: {
     readonly scopeIntegrity: "application_owned";
     readonly nodeTest: "node-test-targeted/v1";
+    readonly typecheck: "typescript-no-emit/v1" | null;
     readonly outcome: "human_review_required";
   };
 }
@@ -52,6 +55,7 @@ const grantShape = {
   proposalId: z.uuid(), proposalSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   source: z.string().refine(isAbsolute), baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u),
   objective: z.string().min(1).max(4_000), completionConditions: z.array(z.string().min(1).max(1_000)).min(1).max(8),
+  approvedChecks: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/u)).optional(),
 } as const;
 const sourceOnlyGrantSchema: z.ZodType<SourceOnlyRunGrant> = z.strictObject({
   ...grantShape, kind: z.literal(TASK_KIND),
@@ -62,7 +66,9 @@ const sourceOnlyGrantSchema: z.ZodType<SourceOnlyRunGrant> = z.strictObject({
     typecheck: z.literal(TASK_CHECKS[1]),
     outcome: z.literal("human_review_required") }),
 }).refine((grant) => grant.writeFiles.every((path) => typescriptSourcePath(path) && grant.readFiles.includes(path)) &&
-  grant.readFiles.every(isRepositoryDiscoveryPathAllowed) && new Set(grant.writeFiles).size === grant.writeFiles.length);
+  grant.readFiles.every(isRepositoryDiscoveryPathAllowed) && new Set(grant.writeFiles).size === grant.writeFiles.length &&
+  (grant.approvedChecks === undefined || Object.keys(grant.approvedChecks).length === 1 &&
+    grant.approvedChecks[TASK_CHECKS[1]] !== undefined));
 
 function sourceTestPath(path: string): boolean {
   return path.endsWith(".ts") && !path.endsWith(".d.ts") &&
@@ -75,13 +81,24 @@ const sourceTestGrantSchema: z.ZodType<SourceTestRunGrant> = z.strictObject({
   readFiles: z.array(z.string().refine(validProposalPath)).min(2).max(8),
   writeFiles: z.array(z.string().refine(validProposalPath)).length(2),
   selectedTest: z.string().refine(regressionTestPath),
-  declaredChecks: z.tuple([z.literal(SOURCE_TEST_TASK_CHECKS[0]), z.literal(SOURCE_TEST_TASK_CHECKS[1])]),
+  declaredChecks: z.union([
+    z.tuple([z.literal(SOURCE_TEST_TASK_CHECKS[0]), z.literal(SOURCE_TEST_TASK_CHECKS[1])]),
+    z.tuple([z.literal(SOURCE_TEST_TYPECHECK_TASK_CHECKS[0]),
+      z.literal(SOURCE_TEST_TYPECHECK_TASK_CHECKS[1]), z.literal(SOURCE_TEST_TYPECHECK_TASK_CHECKS[2])]),
+  ]),
   verification: z.strictObject({ scopeIntegrity: z.literal("application_owned"),
-    nodeTest: z.literal(SOURCE_TEST_TASK_CHECKS[1]), outcome: z.literal("human_review_required") }),
+    nodeTest: z.literal(SOURCE_TEST_TASK_CHECKS[1]),
+    typecheck: z.union([z.literal(TASK_CHECKS[1]), z.null()]),
+    outcome: z.literal("human_review_required") }),
 }).refine((grant) => grant.writeFiles.filter(sourceTestPath).length === 1 &&
   grant.writeFiles.filter(regressionTestPath).length === 1 && grant.writeFiles.includes(grant.selectedTest) &&
   grant.writeFiles.every((path) => grant.readFiles.includes(path)) &&
-  grant.readFiles.every(isRepositoryDiscoveryPathAllowed) && new Set(grant.writeFiles).size === 2);
+  grant.readFiles.every(isRepositoryDiscoveryPathAllowed) && new Set(grant.writeFiles).size === 2 &&
+  (grant.declaredChecks.length === 3) === (grant.verification.typecheck !== null) &&
+  (grant.approvedChecks === undefined || Object.keys(grant.approvedChecks).length ===
+    (grant.verification.typecheck === null ? 1 : 2) &&
+    grant.approvedChecks[SOURCE_TEST_TASK_CHECKS[1]] !== undefined &&
+    (grant.verification.typecheck === null || grant.approvedChecks[TASK_CHECKS[1]] !== undefined)));
 
 export function validateProposalRunGrant(value: unknown): ProposalRunGrant {
   const kind = z.object({ kind: z.string() }).parse(value).kind;
@@ -104,8 +121,9 @@ function supportsSourceTestProposal(proposal: TaskProposal): boolean {
     proposal.readFiles.length >= 2 && proposal.readFiles.length <= 8 &&
     proposal.writeFiles.every((path) => proposal.readFiles.includes(path)) &&
     proposal.readFiles.every(isRepositoryDiscoveryPathAllowed) &&
-    proposal.checks.length === 2 && proposal.checks[0] === SOURCE_TEST_TASK_CHECKS[0] &&
-    proposal.checks[1] === SOURCE_TEST_TASK_CHECKS[1];
+    proposal.checks.length === 3 && proposal.checks[0] === SOURCE_TEST_TYPECHECK_TASK_CHECKS[0] &&
+    proposal.checks[1] === SOURCE_TEST_TYPECHECK_TASK_CHECKS[1] &&
+    proposal.checks[2] === SOURCE_TEST_TYPECHECK_TASK_CHECKS[2];
 }
 
 /** Structural preview only; admission still rechecks source identity, status and the current policy. */
@@ -120,6 +138,7 @@ export async function admitTaskProposal(options: {
   readonly proposalsRoot: string;
   readonly reference: string;
   readonly sourceDirectory: string;
+  readonly includeTypecheck?: boolean;
 }): Promise<ProposalRunGrant> {
   const loaded = await loadTaskProposal(options.proposalsRoot, options.reference);
   const source = await realpath(options.sourceDirectory);
@@ -157,8 +176,10 @@ export async function admitTaskProposal(options: {
       kind: SOURCE_TEST_TASK_KIND, proposalId: loaded.record.id, proposalSha256: loaded.sha256,
       source, baseline: head, objective: proposal.objective,
       completionConditions: [...proposal.completionConditions], readFiles: [...proposal.readFiles],
-      writeFiles: [...proposal.writeFiles], selectedTest, declaredChecks: SOURCE_TEST_TASK_CHECKS,
+      writeFiles: [...proposal.writeFiles], selectedTest,
+      declaredChecks: options.includeTypecheck === true ? SOURCE_TEST_TYPECHECK_TASK_CHECKS : SOURCE_TEST_TASK_CHECKS,
       verification: { scopeIntegrity: "application_owned", nodeTest: "node-test-targeted/v1",
+        typecheck: options.includeTypecheck === true ? "typescript-no-emit/v1" : null,
         outcome: "human_review_required" },
     });
   }
