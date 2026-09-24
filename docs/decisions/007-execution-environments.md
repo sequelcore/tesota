@@ -192,9 +192,9 @@ consumers and qualified implementations.
 
 The check lifecycle now reuses a task-owned dependency snapshot and avoids
 verifier runs during review and application. The trusted host-local route is
-implemented for the fixed TypeScript and targeted Node checks, and needs a
-full ordinary-shell diagnostic has now completed without Docker. Direct verifier
-probes alone did not establish the whole task. Its pass observes only the direct process exit;
+implemented for the fixed TypeScript and targeted Node checks. One ordinary-shell
+diagnostic completed without Docker; direct verifier probes alone did not establish
+that full task. A host-local pass observes only the direct process exit;
 surviving descendants and external host inputs remain assumptions of the
 operator-trusted workload. The Docker result remains valid for its exact
 environment and does not qualify either local posture.
