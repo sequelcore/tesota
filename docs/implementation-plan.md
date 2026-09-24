@@ -154,37 +154,45 @@ route also makes ordinary code work unavailable without Docker. Apply
 [decision 007](decisions/007-execution-environments.md) through these bounded
 changes before claiming this slice useful:
 
-1. **Make check work visible.** Record separate elapsed times for input
-   observation, snapshot preparation, command execution, settlement and
-   cleanup. Preserve the check's existing pass/fail and uncertainty semantics.
-   Done when the ordinary shell outcome and a retained diagnostic explain where
-   its wall time went without a developer watching temporary directories.
-2. **Check a candidate revision once per required claim.** Give a task one
-   bounded dependency input, or use the already admitted local installation
-   for a host-local run. Bind each check result to the exact candidate and
-   verifier inputs. Review, decision and promotion revalidate those bindings
-   and source drift without rerunning the verifier for unchanged inputs.
-   A changed input requires a new check and review; unresolved process or
-   cleanup remains an operational failure. Done when the existing red/green,
-   rejection, correction, drift and interrupted-settlement cases retain their
-   outcomes, and a live combined task makes no repeated whole-installation
-   copies or redundant compiler runs.
-3. **Qualify a Docker-free code route.** Let an operator choose a qualified
-   OS sandbox or explicitly consent to the lower-assurance host-local posture
-   for a named task. Keep the container as a selectable protected route, with
-   no silent fallback. Show the protection difference before execution and
-   retain the actual environment in evidence. Start with one fixed TypeScript
-   check and targeted test; add general commands only with a concrete task.
-   Done when a fresh ordinary-shell task starts and applies on a machine with
-   no Docker service, negative tests prove the selected environment cannot
-   change after approval, and the result never claims host-local execution
-   was sandboxed. OS-sandbox qualification additionally requires filesystem,
+1. **Separate execution from applicability.** Measure input observation,
+   dependency preparation, command execution, settlement and cleanup before
+   and after this change; timing is not part of evidence identity. Give a task
+   one bounded dependency input and have Tesota issue a settled observation
+   outside candidate-writable state. It records the exact candidate, material
+   inputs, invocation, environment, result and settlement. Review, decision
+   and promotion inspect its applicability and source drift without executing
+   another check. A candidate-local saved success is never issued evidence.
+   Reuse of a dependency snapshot for a new run checks its actual content;
+   a later change to the original installation does not retroactively change
+   what a settled run observed. An unsettled run cannot supply a passing
+   observation or reusable environment. Done when reviewing, rejecting,
+   accepting and applying an unchanged candidate make zero verifier calls and
+   zero dependency copies; red/green, correction, input drift, concurrent
+   target changes and interrupted settlement retain their outcomes in focused
+   tests and a retained live diagnostic. Replace the affected active APIs and
+   schemas directly; no external consumer requires aliases or a legacy runtime.
+   Historical task records remain inspectable as history but cannot gain new
+   acceptance authority through the replacement.
+2. **Qualify an explicit Docker-free code route.** Start with host-local
+   execution for a repository the operator chooses to trust, using the same
+   observation and applicability lifecycle. Keep Docker as a selectable
+   contained route with no silent fallback. Before approval, explain that
+   Tesota's file-scope limit on its own editing tools does not confine a
+   host-local command, which can reach the user's files, network and
+   credentials. Record that lower assurance in evidence; host-local cannot
+   satisfy a policy requiring confinement. Start with the fixed TypeScript
+   check and targeted test; add general commands only for a concrete task.
+   Done when a fresh ordinary-shell task runs through failure, correction,
+   review and application with Docker stopped or absent, the chosen environment
+   cannot change after approval, and no result describes host-local execution
+   as sandboxed. Native OS sandboxing is a later qualification with filesystem,
    network, credential, descendant, cancellation and cleanup probes.
 
-The first two steps repair check lifecycle and performance. The third removes
-Docker as a code-task prerequisite. Do not add a universal executor registry or
-cache across unrelated tasks to accomplish them. Compare setup and repeated
-check latency against the direct repository command, and retain failures.
+These steps repair check lifecycle and remove Docker as a code-task prerequisite.
+The Docker adapter remains a current capability on the same lifecycle, not a
+legacy path. Do not add a universal executor registry or cache across unrelated
+tasks. Compare setup and repeated-check latency against the direct repository
+command, and retain failures.
 
 ## 2. One useful task outside a code repository
 

@@ -107,12 +107,14 @@ which dependency bytes were used. A snapshot or content manifest can bind those
 bytes; it does not by itself confine the command. Each profile must state which
 properties it requires and retain both in its evidence.
 
-Interactive work should prepare one task-owned environment and immutable
-dependency input, then reuse them for that task's checks while rebinding every
-check to the current candidate bytes. The environment and its inputs are not
-reused after unconfirmed settlement. Cross-task content-addressed caching is
-deferred until measurements demonstrate a need and its poisoning, concurrency,
-invalidation, recovery and cleanup obligations have explicit owners.
+Interactive work should prepare one task-owned environment and bounded
+dependency input, then reuse them for that task's checks while binding each
+invocation to the current candidate bytes. A new invocation must verify that
+the reused dependency input still has its approved content. The environment
+and its inputs are not reused after unconfirmed settlement. Cross-task
+content-addressed caching is deferred until measurements demonstrate a need
+and its poisoning, concurrency, invalidation, recovery and cleanup obligations
+have explicit owners.
 
 The shell must remain useful without Docker installed. For repository commands,
 the ordinary path should prefer a qualified OS sandbox. When that is unavailable,
@@ -126,15 +128,30 @@ access and may interfere with the evidence producer or private state; its
 checks therefore carry a lower-assurance claim even when their reported
 result passes. Consent cannot turn that result into protected evidence.
 
-Verification evidence is a result of an actual command, bound to the candidate
-bytes, material verifier inputs, invocation, environment and observed
-settlement. Review assesses that result; acceptance records a human choice;
-promotion checks the accepted bytes against the source before writing. Those
-later stages must validate the binding rather than rerun an unchanged verifier
-just to ask or record a decision. A changed candidate or material input needs
-new verification and review. A policy may require repetitions for a specific
-flaky or probabilistic claim, but that is an explicit check requirement, not
-an accidental consequence of calling review or promotion.
+Verification evidence is a Tesota-issued observation of an actual command,
+bound to the candidate bytes, material verifier inputs, invocation, environment
+and observed settlement. It is retained outside candidate-writable state. A
+candidate-local record or model statement cannot issue its own passing check.
+For contained execution, candidate code must not be able to reach the
+observation or modify the dependency input; host-local execution instead
+carries the explicit assumption that the user's host and executed code are
+trusted. A
+content digest identifies bytes but cannot authenticate a claim made by code
+that could alter the observation store.
+
+Review assesses the observation; acceptance records a human choice; promotion
+checks the accepted bytes against the source before writing. Those later stages
+validate applicability rather than rerun an unchanged verifier. Changing the
+candidate, its configuration, lockfile or check definition can make the prior
+observation inapplicable. Changing the original dependency installation after
+a settled run does not change the dependency bytes that run actually used, and
+deleting its former snapshot does not erase the historical observation. A new
+run must check its inputs again. If policy requires equivalence with the source
+installation at application time, it must pay for a fresh content comparison
+or enforce immutability; file metadata alone is insufficient. A policy may
+require repetitions for a specific flaky or probabilistic claim, but that is
+an explicit check requirement, not an accidental consequence of calling review
+or promotion.
 
 The design should reuse established environment formats without treating them
 as authority:
@@ -167,11 +184,11 @@ consumers and qualified implementations.
   task authority and does not create a general backend selector.
 
 The next work is to measure preparation, command, settlement and cleanup
-separately; remove redundant whole-installation snapshots and verifier runs;
-and qualify an explicit Docker-free route for one real TypeScript task. The
-bounded dependency reader already avoids maximum-size allocation for small
-files. A second concrete provider should establish the common boundary before
-extracting a shared executor. The existing Docker result remains valid for its
+within the lifecycle repair; remove redundant whole-installation snapshots and
+verifier runs; and qualify an explicit host-local route for one real TypeScript
+task. The bounded dependency reader already avoids maximum-size allocation
+for small files. A second concrete provider should establish the common
+boundary before extracting a shared executor. The existing Docker result remains valid for its
 exact environment and does not qualify either local posture.
 
 A native provider must prove exact filesystem roots, external aliases and
