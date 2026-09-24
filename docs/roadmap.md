@@ -34,7 +34,13 @@ representative usefulness. The earlier
 retains failed and degraded attempts. A
 [fresh combined-check attempt](../experiments/practical-use/2026-09-23-combined-check-results.md)
 exercised eligibility, selection, approval and a failing regression, but ended
-with unconfirmed execution and no application. This does not complete slice 1.
+with unconfirmed execution and no application. A later
+[internal combined-check diagnostic](../experiments/practical-use/2026-09-23-combined-shell-progress-results.md)
+completed red regression, both selected checks, independent review, human
+acceptance and guarded application on Windows/Docker, after three retained
+failed attempts. Its successful run took about 64 minutes because review,
+decision and promotion repeatedly snapshotted dependencies. This does not
+complete slice 1 or qualify representative external-repository usefulness.
 
 The shell now lists local sessions, persists their human transcript and result
 inspections, and can reopen a settled Pi context with its consumed budgets.

@@ -116,3 +116,50 @@ Both passed with empty diagnostics, observed process exit and container
 absence, in 295586 ms and 296398 ms respectively. This qualifies the profile
 for another bounded attempt on this machine; it does not accept the retained
 candidate or prove repeatability on other repositories or platforms.
+
+## Fourth ordinary-shell attempt
+
+The [fourth protocol](2026-09-23-combined-shell-progress-fourth-protocol.md)
+used a fresh shell session and candidate on the unchanged committed baseline
+`575b58e81aa639cdb2b2343fe00b253bd4673d43`. The operator selected both
+the targeted Node test and contained TypeScript typecheck before approving the
+two-file write scope. The agent ran the unchanged check, added the regression
+assertion, observed a failing Node test (0 passed, 1 failed), then repaired the
+source. Its final Node test and TypeScript check passed. The agent session
+settled with 330350 ms active time, eight model invocations, seven tool calls,
+two edits and three checks. The fresh host check also passed both selected
+checks with observed process exit and container absence. The retained attempt
+in candidate `ffaf09e7-44ea-461d-a4df-0a4921e1d789` ended `passed` after
+663566 ms elapsed; that status was execution evidence, not acceptance.
+
+Independently, the candidate's exact new test failed against the committed
+source with the old scope label and passed against the repaired candidate
+(1/1). Astra reviewed the exact two-file diff against the request and existing
+labels and reported no findings. The operator inspected the diff and accepted
+the current review `3a922e704302c0849875a69160739a3af6296baf3bb9d7f3ad98fd383dc5d924`
+through Tesota Shell. Tesota recorded the local decision, rechecked the
+candidate and source, and promoted only those two files. Its durable outcome
+ended `promoted` at 2026-09-24T01:16:22.442Z with 11 fresh host checks in
+total. The promotion journal ended `applied`, and independent post-application
+hashes matched both recorded replacement hashes. The Node regression passed
+on the source clone after application (1/1); `git diff --check` passed and
+`git status` showed only the two approved files modified.
+
+The attempt began at 2026-09-24T00:12:04.208Z and finished about 64 minutes
+later. Execution took about 11 minutes, the first applicable review about
+10 minutes, decision recording and its revalidation about 22 minutes, and
+promotion about 20 minutes. Repeated snapshots of the clone's approximately
+30,825 dependency files (309 MB) dominated host work. The shell continued to
+show the review-decision stage while the acceptance was being revalidated.
+The operator selected checks, approved scope, inspected the diff and accepted
+it, but also had to wait through the repeated checks and investigate the prior
+failures. Token usage and cost were unavailable in the retained outcome.
+
+This is one successful **internal diagnostic** for the combined-check path on
+Windows/Docker, with a real red regression, independently reviewed result,
+current human decision and guarded application. It does not qualify useful
+general coding work, external repositories, other platforms, or full-suite
+correctness. The approximately one-hour end-to-end latency and repeated
+dependency snapshots are material usability failures to address before
+calling this flow ready for ordinary use. The previous three failed attempts
+remain failed; this pass does not reclassify them.

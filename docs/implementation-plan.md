@@ -131,15 +131,19 @@ task-kind/check-selection paths rather than retaining aliases.
 **Recovery.** Retain the candidate and observed failure. An unconfirmed process
 or source write remains uncertain and cannot be replayed as if it had settled.
 
-**Current evidence (2026-09-23).** Check selection and exact-result composition
-are implemented and covered by component tests. A fresh ordinary-shell attempt
-selected both checks and established a failing regression, but its execution
-remained unconfirmed before a final check and human review. Independent review
-also found that its candidate broke a retained formal-check path. The
-[attempt record](../experiments/practical-use/2026-09-23-combined-check-results.md)
-is a failed qualification, so this slice remains open. The next attempt needs
-a task whose existing verification contracts can be preserved, a confirmed
-final check, an explicit human decision and independent residual-defect review.
+**Current evidence (2026-09-24).** Check selection and exact-result composition
+are implemented and covered by component tests. The earlier
+[external-issue attempt](../experiments/practical-use/2026-09-23-combined-check-results.md)
+remains a failed qualification: execution was unconfirmed and independent
+review found a broken formal-check path. A later
+[internal diagnostic](../experiments/practical-use/2026-09-23-combined-shell-progress-results.md)
+completed the red regression, both selected checks, independent diff review,
+human acceptance and guarded application on Windows/Docker. Its four attempts
+include three retained failures, and the successful attempt took about 64
+minutes, mostly in repeated dependency snapshots and fresh host checks. This
+establishes the bounded combined-check mechanism in that case, not useful
+general coding work. The slice stays open for an ordinary external-repository
+task, readable terminal qualification, and practical review/application time.
 
 ## 2. One useful task outside a code repository
 
