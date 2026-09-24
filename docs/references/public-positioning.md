@@ -143,6 +143,24 @@ exposes supervised, automatic and full-access permission modes and delegates
 their enforcement to the selected provider. These are implementation examples,
 not measured proof that their safety or verification guarantees equal Tesota's.
 
+Pi community extensions show narrower seams worth using without importing an
+entire harness design. [pi-permission-modes](https://github.com/wynainfo/pi-permission-modes)
+combines allow/ask/deny rules with an OS sandbox for Bash on macOS and Linux;
+its documentation says native Windows degrades to prompts and identifies file
+tools as policy-governed rather than OS-sandboxed. This is a useful example of
+making the actual protection visible, not a qualified Windows provider for
+Tesota. [pi-interactive-shell](https://github.com/nicobailon/pi-interactive-shell)
+offers observable, interruptible interactive commands and explicitly says its
+launch policy is not a sandbox. These interface ideas can improve Tesota's
+ordinary shell without changing its authority or evidence contracts.
+
+[pi-herdr](https://github.com/AndrewJacop/pi-herdr) drives independently visible
+agent processes in Herdr panes. [herdr-reviewr](https://github.com/persiyanov/herdr-reviewr)
+adds a diff and file viewer with comments that can be sent back to an agent.
+They are references for parallel-work visibility and human review interaction;
+neither supplies Tesota's verifier-result binding or completion decision. Keep
+these integrations optional until a working parallel-task slice needs them.
+
 ## Why verification is becoming central
 
 Several independent source families point toward verification as a first-class
