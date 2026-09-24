@@ -145,6 +145,47 @@ establishes the bounded combined-check mechanism in that case, not useful
 general coding work. The slice stays open for an ordinary external-repository
 task, readable terminal qualification, and practical review/application time.
 
+### Execution and evidence repair before another usefulness claim
+
+The [64-minute internal diagnostic](../experiments/practical-use/2026-09-23-combined-shell-progress-results.md)
+showed a structural problem: one passing candidate caused eleven host checks,
+each TypeScript run preparing a new dependency snapshot. The current Docker
+route also makes ordinary code work unavailable without Docker. Apply
+[decision 007](decisions/007-execution-environments.md) through these bounded
+changes before claiming this slice useful:
+
+1. **Make check work visible.** Record separate elapsed times for input
+   observation, snapshot preparation, command execution, settlement and
+   cleanup. Preserve the check's existing pass/fail and uncertainty semantics.
+   Done when the ordinary shell outcome and a retained diagnostic explain where
+   its wall time went without a developer watching temporary directories.
+2. **Check a candidate revision once per required claim.** Give a task one
+   bounded dependency input, or use the already admitted local installation
+   for a host-local run. Bind each check result to the exact candidate and
+   verifier inputs. Review, decision and promotion revalidate those bindings
+   and source drift without rerunning the verifier for unchanged inputs.
+   A changed input requires a new check and review; unresolved process or
+   cleanup remains an operational failure. Done when the existing red/green,
+   rejection, correction, drift and interrupted-settlement cases retain their
+   outcomes, and a live combined task makes no repeated whole-installation
+   copies or redundant compiler runs.
+3. **Qualify a Docker-free code route.** Let an operator choose a qualified
+   OS sandbox or explicitly consent to the lower-assurance host-local posture
+   for a named task. Keep the container as a selectable protected route, with
+   no silent fallback. Show the protection difference before execution and
+   retain the actual environment in evidence. Start with one fixed TypeScript
+   check and targeted test; add general commands only with a concrete task.
+   Done when a fresh ordinary-shell task starts and applies on a machine with
+   no Docker service, negative tests prove the selected environment cannot
+   change after approval, and the result never claims host-local execution
+   was sandboxed. OS-sandbox qualification additionally requires filesystem,
+   network, credential, descendant, cancellation and cleanup probes.
+
+The first two steps repair check lifecycle and performance. The third removes
+Docker as a code-task prerequisite. Do not add a universal executor registry or
+cache across unrelated tasks to accomplish them. Compare setup and repeated
+check latency against the direct repository command, and retain failures.
+
 ## 2. One useful task outside a code repository
 
 **Outcome.** Answer a prospectively selected question over supplied local

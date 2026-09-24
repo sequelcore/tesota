@@ -69,6 +69,12 @@ the category definition:
   environments. Its guidance positions OS sandboxing for everyday local work
   and stronger isolation for unattended or untrusted execution; it does not
   make Docker the only supported model.
+- [Claude Code's sandbox guide](https://code.claude.com/docs/en/sandboxing)
+  describes native macOS isolation and Linux/WSL2 isolation, while native
+  Windows sandboxing is unavailable there. Its file tools and computer use
+  have different boundaries from sandboxed Bash. This is evidence that a
+  harness can expose protection honestly without putting every action into
+  one environment.
 - [Gemini CLI](https://geminicli.com/docs/cli/sandbox/) documents platform-
   dependent sandbox providers including Seatbelt, Docker or Podman, Windows
   low-integrity execution, gVisor and LXC. The provider name alone does not
@@ -78,10 +84,26 @@ the category definition:
   policies with exact readable and writable roots. This makes an older failed
   full-read comparison insufficient to judge the current exact-root provider;
   it does not qualify that provider for Tesota.
-- [Pi's sandbox extension example](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/examples/extensions/sandbox/index.ts)
+- [Current Codex sandbox documentation](https://learn.chatgpt.com/docs/sandboxing)
+  describes platform-native enforcement for spawned commands. Its
+  [Windows guide](https://learn.chatgpt.com/docs/windows/windows-sandbox)
+  distinguishes stronger `elevated` and weaker `unelevated` modes; neither
+  requires Docker for normal native Windows use.
+- [OpenCode permissions](https://opencode.ai/docs/permissions/) allow, ask or
+  deny individual actions and default most actions to allow. That is a
+  usability comparison, not evidence of operating-system confinement.
+- [Pi's sandbox extension example](https://github.com/earendil-works/pi/blob/967246214355/packages/coding-agent/examples/extensions/sandbox/index.ts)
   demonstrates replacing its normal shell tool with an OS-level Seatbelt or
   bubblewrap boundary. This establishes an extension seam, not a product-wide
   confinement guarantee.
+- [Pi's own containerization guide](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/containerization.md)
+  treats Docker, OpenShell and the Gondolin extension as choices and states
+  that Pi has no built-in permission boundary. Tool-only isolation does not
+  constrain unrelated extension tools. Its
+  [permission-gate example](https://github.com/earendil-works/pi/blob/967246214355/packages/coding-agent/examples/extensions/permission-gate.ts)
+  prompts on command patterns, which is an approval example rather than an OS
+  sandbox. Tesota can reuse Pi's extension seam and UI ideas, but its own
+  admitted tools and checks still need an enforceable boundary.
 - [Vercel Sandbox](https://vercel.com/docs/sandbox) uses remote Firecracker
   microVMs for untrusted code and agent workloads. That is a relevant future
   execution environment, but it adds remote identity, credential, lifecycle and
@@ -106,6 +128,20 @@ survey. They support only a directional inference: users benefit from low setup
 friction, fast repeated feedback, reuse of repository-owned environments,
 cross-platform choices and explicit protection differences. They do not
 establish one universally preferred provider or a measured ranking of demand.
+
+Read-only comparisons in `Sequel/cloned` sharpen the same distinction.
+[Hermes Agent](https://github.com/NousResearch/hermes-agent/blob/2a0d0bc698a5/tools/terminal_tool.py)
+defaults its terminal environment to `local` and offers Docker and other
+backends explicitly; this avoids a Docker prerequisite but does not by itself
+confine host commands.
+[Gentle Pi](https://github.com/Gentleman-Programming/gentle-pi/blob/5df9590e55b6/docs/delegated-verification.md)
+keeps the writer's observed commands as verification evidence and uses
+independent review or risk-based extra checks instead of making every human
+decision rerun every command.
+[T3 Code](https://github.com/pingdotgg/t3code/blob/9c7622dac3d1/docs/user/permission-modes.md)
+exposes supervised, automatic and full-access permission modes and delegates
+their enforcement to the selected provider. These are implementation examples,
+not measured proof that their safety or verification guarantees equal Tesota's.
 
 ## Why verification is becoming central
 

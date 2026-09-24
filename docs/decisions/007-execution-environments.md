@@ -7,6 +7,12 @@ no task-flow consumer; the TypeScript and targeted Node-test profiles are the
 current container-backed implementations. The historical rationale below is
 retained.
 
+The 2026-09-24 combined-check diagnostic exposed an implementation gap:
+Docker was required for the ordinary code path and eleven host checks copied
+the same 309 MB dependency installation repeatedly. That is not the intended
+general-purpose harness experience. The correction below is a design decision,
+not a claim that the new execution path has shipped.
+
 ## Context
 
 Tesota must run tools whose effects differ materially. The current Oxlint
@@ -108,6 +114,28 @@ reused after unconfirmed settlement. Cross-task content-addressed caching is
 deferred until measurements demonstrate a need and its poisoning, concurrency,
 invalidation, recovery and cleanup obligations have explicit owners.
 
+The shell must remain useful without Docker installed. For repository commands,
+the ordinary path should prefer a qualified OS sandbox. When that is unavailable,
+the operator may explicitly choose a trusted host-local posture for a named
+task and its stated effects, or a qualified container if available. Host-local
+consent is separate from approving the candidate's file scope and cannot be
+reported as sandboxing. No backend changes silently after approval. An
+operation requiring confinement remains unavailable if no qualified protected
+environment can run it. Host-local repository code inherits the user's ambient
+access and may interfere with the evidence producer or private state; its
+checks therefore carry a lower-assurance claim even when their reported
+result passes. Consent cannot turn that result into protected evidence.
+
+Verification evidence is a result of an actual command, bound to the candidate
+bytes, material verifier inputs, invocation, environment and observed
+settlement. Review assesses that result; acceptance records a human choice;
+promotion checks the accepted bytes against the source before writing. Those
+later stages must validate the binding rather than rerun an unchanged verifier
+just to ask or record a decision. A changed candidate or material input needs
+new verification and review. A policy may require repetitions for a specific
+flaky or probabilistic claim, but that is an explicit check requirement, not
+an accidental consequence of calling review or promotion.
+
 The design should reuse established environment formats without treating them
 as authority:
 
@@ -138,18 +166,13 @@ consumers and qualified implementations.
 - The Windows isolation experiment compares concrete mechanisms but grants no
   task authority and does not create a general backend selector.
 
-The next implementation question is whether an OS-level local sandbox can
-satisfy one existing repository profile with less setup friction while retaining
-the profile's required evidence. Tesota will qualify that concrete provider
-before extracting a shared execution abstraction.
-
-That qualification follows the current milestone repair rather than replacing
-it. The existing bounded dependency reader must first avoid maximum-size
-allocation for every small file, preserve its byte and cancellation invariants,
-and expose phase measurements. If the corrected Docker profile becomes usable,
-Milestone 1 qualification remains on its already frozen environment. Native
-sandbox qualification is then a separately owned increment against the same
-real TypeScript consumer, not a lighter probe.
+The next work is to measure preparation, command, settlement and cleanup
+separately; remove redundant whole-installation snapshots and verifier runs;
+and qualify an explicit Docker-free route for one real TypeScript task. The
+bounded dependency reader already avoids maximum-size allocation for small
+files. A second concrete provider should establish the common boundary before
+extracting a shared executor. The existing Docker result remains valid for its
+exact environment and does not qualify either local posture.
 
 A native provider must prove exact filesystem roots, external aliases and
 reparse points, local and external network policy, inherited credential

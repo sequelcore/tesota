@@ -201,6 +201,16 @@ evidence; rendered patches do not replace exact accepted bytes at promotion.
 
 ## Execution environments
 
+The work model has three independent decisions: **authority** says which
+operation and effects the user admitted; **execution environment** says what
+the operating system can confine; **verification evidence** says what a check
+observed about which exact result. A user approval is not a sandbox, and a
+sandbox is not a passing check. Review interprets evidence against the user's
+request; acceptance and guarded application remain separate. The current
+TypeScript profiles still package their check and Docker environment together.
+The [repair sequence](implementation-plan.md#execution-and-evidence-repair-before-another-usefulness-claim)
+will separate those decisions for one real task before extracting shared code.
+
 The current repository TypeScript and targeted Node test profiles use a pinned Docker
 container because they can load candidate dependencies or execute candidate
 tests. Their container policy is part of their bound evidence. The native
@@ -209,11 +219,11 @@ through fixed rules, loads no external plugins and executes no candidate code.
 Its process settlement is evidence, but it is not described as sandboxing.
 
 Docker is therefore the current protected provider for repository-executing
-checks, not a product-wide architectural requirement. The intended selection
-order is a qualified OS-level local sandbox when it satisfies the admitted
-policy, a qualified container when it is required or preferred, and an explicit
-trusted host-native posture only for grants that permit its lower assurance.
-Remote isolation remains deferred until a named workflow requires it.
+checks, not a product-wide architectural requirement. The intended ordinary
+protected route is a qualified OS-level local sandbox. A qualified container
+remains selectable when needed or preferred; a trusted host-native route needs
+explicit consent and a grant that permits its lower assurance. Remote
+isolation remains deferred until a named workflow requires it.
 
 There is no silent downgrade. If the selected environment becomes unavailable
 or cannot confirm settlement, Tesota preserves that outcome instead of running

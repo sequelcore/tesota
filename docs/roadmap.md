@@ -41,6 +41,10 @@ acceptance and guarded application on Windows/Docker, after three retained
 failed attempts. Its successful run took about 64 minutes because review,
 decision and promotion repeatedly snapshotted dependencies. This does not
 complete slice 1 or qualify representative external-repository usefulness.
+The [execution and evidence repair](implementation-plan.md#execution-and-evidence-repair-before-another-usefulness-claim)
+is next: eliminate redundant verification and qualify a Docker-free code route
+before another usefulness claim. In that target design Docker is a selectable
+protected provider, not a required installation for Tesota's ordinary use.
 
 The shell now lists local sessions, persists their human transcript and result
 inspections, and can reopen a settled Pi context with its consumed budgets.
