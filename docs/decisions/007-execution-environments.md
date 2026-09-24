@@ -182,6 +182,10 @@ consumers and qualified implementations.
   risk class; its process boundary is explicitly not described as a sandbox.
 - The Windows isolation experiment compares concrete mechanisms but grants no
   task authority and does not create a general backend selector.
+- A later [Anthropic Sandbox Runtime Windows follow-up](../../experiments/isolation/README.md#repository-and-alias-follow-up)
+  passed a real TypeScript check and constrained a private fixture, but a
+  separate broadly accessible host tree remained reachable. It is not yet a
+  qualified protected task provider.
 
 The next work is to measure preparation, command, settlement and cleanup
 within the lifecycle repair; remove redundant whole-installation snapshots and

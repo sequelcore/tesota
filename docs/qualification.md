@@ -18,6 +18,7 @@ Every qualified capability must cover the relevant parts of this matrix:
 | User flow | The outcome can be completed through the documented product surface without reconstructing internal IDs. |
 | Exact result | The result under review has a stable identity, and changed bytes invalidate affected evidence. |
 | Check claims | Each check states what it observed, the bound result and conditions, and what remains unestablished. |
+| Claim and test validity | The expected result and test conditions are justified independently of the result; the conclusion does not exceed what the check could establish. |
 | Authority | Approval is explicit, scoped and non-replayable; child authority cannot exceed parent authority. |
 | Confinement | The execution environment enforces its documented filesystem, network, credential and process boundary without being treated as an authority source. |
 | Failure semantics | Findings, tool unavailability, fatal exit, timeout, cancellation and uncertain settlement remain distinct. |
@@ -29,6 +30,31 @@ Evidence should be proportional to the consequence and novelty of the change.
 Synthetic tests establish deterministic contracts. Live qualification
 establishes only the exercised environment and route. Prospective task results
 establish usefulness only for the selected corpus and evaluation method.
+
+## Claim and test validity
+
+A real tool run can produce accurate observations while the interpretation is
+wrong. Before treating an observation as evidence for a product or task claim,
+record the question being tested, the expected behavior, the relevant setup
+and the source of those expectations. Check that the fixture represents the
+conditions of the claim, including permissions, inputs, configuration and
+external dependencies where they matter. Use a positive or negative control
+when it can distinguish the intended property from a different explanation.
+
+Keep three statements separate: what happened, what the test establishes under
+its conditions, and what remains an inference or unknown. Compare the proposed
+conclusion with the original request and its adopted completion conditions.
+An independent reviewer can challenge the test's assumptions, expected result
+and scope; its judgment is review evidence, not a replacement for the test or
+human acceptance. If a control fails or an assumption proves false, narrow or
+withdraw the claim and retain the observation with its corrected interpretation.
+
+This criterion applies to any task.
+For example, a source citation can be genuine yet fail to support the sentence
+attached to it; a passing test can exercise a different condition from the
+requested behavior. The required controls should match the consequence and
+uncertainty of the claim. Do not turn this criterion into a mandatory ritual
+or a generic verifier interface for every task.
 
 ## Qualifying an increment
 

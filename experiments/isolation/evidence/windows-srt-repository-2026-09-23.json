@@ -1,0 +1,37 @@
+{
+  "experiment": "tesota-srt-repository-windows-probe",
+  "date": "2026-09-23",
+  "platform": "win32-x64",
+  "node": "24.15.0",
+  "typescript": "7.0.2",
+  "provider": "@anthropic-ai/sandbox-runtime",
+  "providerVersion": "0.0.77",
+  "sourceCommit": "ddbeb74711c4097014ef3056791efa83f553116c",
+  "status": "failed",
+  "fixtureInheritedAuthenticatedUsersModify": true,
+  "documentedDefaultReadAllowsUnlistedPaths": true,
+  "validTypecheck": true,
+  "invalidTypecheckRejectedWithTS2322": true,
+  "sandboxUserObserved": true,
+  "readOnlyDeny": {
+    "protectedDirectReadDenied": true,
+    "protectedJunctionReadDenied": true,
+    "unlistedExternalDirectReadDenied": false,
+    "unlistedExternalJunctionReadDenied": false,
+    "externalDirectWriteDenied": false,
+    "externalJunctionWriteDenied": false
+  },
+  "combinedDenyOnSameFile": {
+    "protectedDirectReadDenied": false,
+    "protectedJunctionReadDenied": false
+  },
+  "resourceObservation": {
+    "allocationBytes": 167772160,
+    "allocationSucceeded": true,
+    "configurableCpuMemoryProcessCapFoundInPinnedJobCode": false
+  },
+  "aclRestoredAfterFailedTypecheck": true,
+  "aclRestoredAfterCombinedDeny": true,
+  "officialUninstallReportedAccountAndFilterRemoval": true,
+  "verdict": "configured-probe-did-not-satisfy-tesota-host-policy"
+}

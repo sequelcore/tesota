@@ -45,6 +45,11 @@ The [execution and evidence repair](implementation-plan.md#execution-and-evidenc
 is next: eliminate redundant verification and qualify a Docker-free code route
 before another usefulness claim. In that target design Docker is a selectable
 protected provider, not a required installation for Tesota's ordinary use.
+An [SRT Windows follow-up](../experiments/isolation/README.md#repository-and-alias-follow-up)
+ran a real TypeScript check. A private task fixture constrained its own files,
+but a separate host tree with broad inherited permissions remained accessible.
+The read default is documented; the host-wide write boundary remains unproved.
+SRT is not a selected task provider.
 
 The shell now lists local sessions, persists their human transcript and result
 inspections, and can reopen a settled Pi context with its consumed budgets.
@@ -149,6 +154,10 @@ established without author guidance. Retain failed attempts and user effort.
 
 - Keep the user's original request and adopted completion conditions visible;
   an agent cannot quietly weaken them to make a check pass.
+- Qualify the link between a check and its claim: record relevant conditions,
+  test the expected outcome against an independent basis, and narrow conclusions
+  when a fixture or control does not represent the intended task. See
+  [claim and test validity](qualification.md#claim-and-test-validity).
 - Separate permission to act, check evidence, independent review, human
   acceptance and application. Bind evidence and decisions to their result.
 - State what remains unknown. Missing checks, malformed reports, timeouts and

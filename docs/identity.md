@@ -29,6 +29,14 @@ four distinctions visible:
 3. Unchecked behavior and unresolved effects remain explicit.
 4. Checks, human acceptance and application are separate facts.
 
+Tesota must also examine the fit between a check and the conclusion drawn from
+it. A genuine observation can support the wrong conclusion when the test
+conditions differ from the real task, the expected result is mistaken, or the
+claim reaches beyond what was measured. The original request and its adopted
+completion conditions remain the reference; a passing check cannot silently
+replace them. [Qualification](qualification.md#claim-and-test-validity) defines
+what evidence is needed before a broader claim is made.
+
 These distinctions also govern failures. A finding, unavailable tool, timeout,
 cancellation and unconfirmed settlement need different outcomes. Recovery can
 reconstruct recorded facts but cannot recreate expired authority. Approval
