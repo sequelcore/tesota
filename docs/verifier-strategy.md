@@ -45,6 +45,38 @@ No row subsumes the others. A clean lint result cannot establish behavior, a
 passing test cannot establish an unstated property, a formal proof cannot cover
 an incorrect specification, and a review verdict is not delivery authority.
 
+## Formal models and the intended claim
+
+Formal methods can serve two related purposes. A proof checker can establish a
+stated property under the formal definitions and assumptions supplied to it. A
+model checker can explore a specified state space and produce a counterexample
+to an invariant or temporal property. Neither result, by itself, establishes
+that the formalization expresses the user's requirement or faithfully describes
+the system being changed. Exhaustive search within a bounded model is not a
+proof about every possible implementation behavior.
+
+When a model exposes a suspected defect, Tesota should retain the property,
+assumptions, explored bounds and counterexample. The agent or reviewer then
+maps the trace to the relevant implementation or real workflow and attempts to
+reproduce the failure there. A correction needs an applicable regression check
+and a new model check or proof. If the trace cannot be reproduced, it remains a
+model finding with an unresolved implementation relationship, not a confirmed
+product defect.
+
+The formal claim also needs a separate assessment against the original intent:
+is the property relevant, strong enough, non-vacuous and broad enough to cover
+the requested behavior? That assessment may use an independent reviewer or an
+intent-comparison tool, but its judgment is not a mathematical proof. Record
+missing requirements and unmodeled behavior as limits rather than treating a
+passing checker as complete task verification.
+
+These methods are opt-in for work with a meaningful formalizable property.
+Evidence should identify the requirement, formal artifact, checker and version,
+assumptions or search bounds, observed result, any concrete reproduction and
+the remaining gap between model and system. The same distinction applies to
+software and to other stateful workflows. Formal evidence informs review;
+human acceptance and consequential application remain separate decisions.
+
 ## What native means
 
 A verifier becomes **native to Tesota** when Tesota owns and tests its complete
@@ -149,6 +181,7 @@ or burden that the tool could address.
 | Playwright plus axe-core | Browser behavior and machine-detectable accessibility findings cover failures static source checks cannot observe. | Browser checks are stateful and can be flaky; automated rules do not establish overall usability or accessibility. | Qualify one deterministic journey and seeded defect in a pinned browser image when a supported task requires it. |
 | Ruff or Rust/Cargo/Clippy adapters | Structured language tooling could test whether the contract extends beyond TypeScript. | Generated code, unsafe fixes, procedural macros and build scripts complicate effects and scope. | Select one external repository only after supported work demonstrates the need. |
 | fast-check or mutation testing | Counterexamples and mutation scores can improve the oracle rather than only test a candidate. | Meaningful properties must be repository-owned; randomness needs retained seeds, and mutation runs can be expensive. | Compare example-only and property-based correction for an observed invariant. |
+| Formal model checking of a stateful workflow | Counterexamples may expose ordering, concurrency or recovery defects missed by example tests. | A weak or inaccurate model may pass or report behavior the real system cannot exhibit; explored bounds limit a no-counterexample result. | Model one observed high-risk transition, retain the trace and bounds, reproduce any suspected defect in the system, then recheck the correction. |
 | CodeQL/SARIF or OSV-Scanner evidence import | Existing security evidence may be reusable when provenance and freshness are explicit. | Reports need trustworthy result, configuration and producer binding; vulnerability data changes over time. | Qualify historical ingestion and freshness semantics before treating an empty report as evidence. |
 
 ## Experiment record
