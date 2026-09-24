@@ -3,6 +3,7 @@ import { open, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { candidateDiff, createCandidateCheckout, type CandidateCheckout } from "./candidate-checkout.js";
 import { CandidateTask, checkCandidateTask, type CandidateTaskCheck } from "./candidate-task.js";
+import { releaseRepositoryTypecheckTaskInput } from "./repository-typecheck.js";
 import { taskLimits } from "./task-contract.js";
 import { validateProposalRunGrant, type ProposalRunGrant } from "./proposal-admission.js";
 import type { TaskExecutionAccounting } from "./task-outcome.js";
@@ -32,7 +33,7 @@ export interface TaskCorrectionAuthority {
   available(): boolean;
   criteria(refinement: string): Readonly<{ refinementSha256: string; effectiveCriteriaSha256: string }>;
   run(request: TaskCorrectionRequest): Promise<TaskRunResult>;
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 export interface TaskRunHost {
@@ -235,8 +236,7 @@ async function recordTaskAttempt(candidate: CandidateCheckout, task: CandidateTa
         { flag: "wx", mode: 0o600 });
       reviewSaved = true;
       if (finalCheckPermitted(session, signal)) {
-        hostChecks += 1;
-        current = await checkCandidateTask(candidate.directory, signal);
+        current = await checkCandidateTask(candidate.directory);
       }
       passed = attemptPasses(revision, session, current, signal);
     } catch { passed = false; }
@@ -308,11 +308,14 @@ async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunG
     write(taskRunMessage(status));
     if (status !== "passed") {
       task.close();
+      if (status !== "unsettled") await releaseRepositoryTypecheckTaskInput(candidate.directory)
+        .catch(() => writeError("Task input cleanup is incomplete; inspect the retained candidate.\n"));
       return { candidate, status, accounting: taskExecutionAccounting(attempt.session, startedAt, causes,
         hostChecks, task.usage()),
         correction: null };
     }
     let consumed = false;
+    let preserveInput = false;
     const authority: TaskCorrectionAuthority = {
       available: () => !consumed && task !== undefined && correctionBudgetAvailable(task, budget),
       criteria: (refinement) => {
@@ -321,7 +324,12 @@ async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunG
         return { refinementSha256: createHash("sha256").update(parsed).digest("hex"),
           effectiveCriteriaSha256: effectiveCriteriaSha256(task.describe().definitionSha256, parsed) };
       },
-      close: (): void => { consumed = true; task?.close(); },
+      close: async (): Promise<void> => {
+        consumed = true;
+        task?.close();
+        if (!preserveInput) await releaseRepositoryTypecheckTaskInput(candidate.directory)
+          .catch(() => writeError("Task input cleanup is incomplete; inspect the retained candidate.\n"));
+      },
       run: async (request): Promise<TaskRunResult> => {
         if (consumed || task === undefined || !correctionBudgetAvailable(task, budget)) {
           task?.close();
@@ -343,8 +351,7 @@ async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunG
             parentAttemptSha256: attempt.attemptSha256,
             taskDefinitionSha256: description.definitionSha256,
           };
-          const admitted = await validateCorrectionParent(candidate.directory, parentIdentity,
-            () => { hostChecks += 1; });
+          const admitted = await validateCorrectionParent(candidate.directory, parentIdentity);
           revision = await recordSemanticRevision(candidate.directory, {
             taskDefinitionSha256: description.definitionSha256,
             parentReviewSha256: request.parentReviewSha256,
@@ -357,17 +364,18 @@ async function runPreparedTask(candidate: CandidateCheckout, grant: ProposalRunG
             ...parentIdentity, revisionSha256: semanticRevisionSha256(revision),
           };
           const revised = await runPhase(candidate, task, budget, revision, admitted.check, host, writeError,
-            async () => (await validateCorrectionParent(candidate.directory, finalIdentity,
-              () => { hostChecks += 1; })).check);
+            async () => (await validateCorrectionParent(candidate.directory, finalIdentity)).check);
           hostChecks += revised.hostChecks;
           recordExecutionCauses(causes, revised.session);
           const revisedStatus = taskRunStatus(revised, host.signal ?? new AbortController().signal);
           write(taskRunMessage(revisedStatus));
           task.close();
+          preserveInput = revisedStatus === "unsettled";
           return { candidate, status: revisedStatus,
             accounting: taskExecutionAccounting(revised.session, startedAt, causes, hostChecks, task.usage()),
             correction: null };
         } catch (error) {
+          preserveInput = true;
           task.close();
           throw error;
         }

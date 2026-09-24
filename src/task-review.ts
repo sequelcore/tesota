@@ -163,7 +163,6 @@ function requireSettledCheck(check: CandidateTaskCheck): CandidateTaskCheck {
 }
 
 function digest(text: string): string { return createHash("sha256").update(text).digest("hex"); }
-function ignoreCheck(): void {}
 
 async function readBoundedText(path: string, maximum: number): Promise<string> {
   const metadata = await lstat(path);
@@ -291,17 +290,15 @@ export interface CorrectionParentIdentity {
   readonly revisionSha256?: string;
 }
 
-export async function validateCorrectionParent(directory: string, expected: CorrectionParentIdentity,
-  observeCheck: () => void = ignoreCheck): Promise<{ readonly check: CandidateTaskCheck;
+export async function validateCorrectionParent(directory: string, expected: CorrectionParentIdentity): Promise<{
+  readonly check: CandidateTaskCheck;
     readonly attemptSha256: string }> {
   const candidate = await inspectCandidateCheckout(directory);
   const attempt = await inspectInitialAttempt(candidate.directory);
   const retained = await readBoundedText(join(candidate.directory, "candidate.diff"), 256 * 1024);
-  observeCheck();
   const first = requireSettledCheck(await checkCandidateTask(candidate.directory));
   const task = await inspectCandidateTask(candidate.directory);
   const currentDiff = await candidateDiff(candidate.directory);
-  observeCheck();
   const second = requireSettledCheck(await checkCandidateTask(candidate.directory));
   const recorded = attempt.finished.current;
   const revision = await readSemanticRevision(candidate.directory);
@@ -342,15 +339,14 @@ async function readDecision(directory: string): Promise<TaskDecision | null> {
   } finally { await file.close(); }
 }
 
-/** Fresh checks and a freshly generated diff; saved success claims are never acceptance inputs. */
-export async function reviewTask(directory: string, observeCheck: () => void = ignoreCheck): Promise<TaskReview> {
+/** Inspect issued check observations against current inputs and a freshly generated diff. */
+export async function reviewTask(directory: string): Promise<TaskReview> {
   const candidate = await inspectCandidateCheckout(directory);
   const revision = await readSemanticRevision(candidate.directory);
   let revisionAttempt: Awaited<ReturnType<typeof inspectSemanticRevisionAttempt>> | null = null;
   if (revision !== null) {
     revisionAttempt = await inspectSemanticRevisionAttempt(candidate.directory, revision);
   }
-  observeCheck();
   const check = requireSettledCheck(await checkCandidateTask(candidate.directory));
   if (revisionAttempt !== null && JSON.stringify(revisionAttempt.current) !== JSON.stringify(check)) {
     throw new Error("Semantic revision check identity invalid");
@@ -359,7 +355,6 @@ export async function reviewTask(directory: string, observeCheck: () => void = i
   if (revision !== null && await readBoundedText(join(candidate.directory, "candidate-r1.diff"), 256 * 1024) !== diff) {
     throw new Error("Semantic revision diff identity invalid");
   }
-  observeCheck();
   const current = requireSettledCheck(await checkCandidateTask(candidate.directory));
   if (JSON.stringify(check) !== JSON.stringify(current)) throw new Error("Candidate changed during review");
   const task = await inspectCandidateTask(candidate.directory);
@@ -386,10 +381,9 @@ export async function reviewTask(directory: string, observeCheck: () => void = i
 }
 
 /** Explicit local CLI assertion only. This API is never exposed as a model tool. */
-export async function decideTask(directory: string, request: unknown,
-  observeCheck: () => void = ignoreCheck): Promise<TaskReview> {
+export async function decideTask(directory: string, request: unknown): Promise<TaskReview> {
   const args = requestSchema.parse(request);
-  const review = await reviewTask(directory, observeCheck);
+  const review = await reviewTask(directory);
   if (review.operatorDecision !== null) throw new Error("A decision already exists");
   if (args.reviewSha256 !== review.reviewSha256) throw new Error("Review is stale");
   if (args.decision === "accept" && (review.check.status !== "passed" || review.check.sourceInputsSha256 === null)) {
@@ -401,5 +395,5 @@ export async function decideTask(directory: string, request: unknown,
   try { await file.writeFile(JSON.stringify(record, null, 2) + "\n", "utf8"); await file.sync(); }
   finally { await file.close(); }
   // A late edit cannot be reported as a currently applicable decision.
-  return reviewTask(review.directory, observeCheck);
+  return reviewTask(review.directory);
 }

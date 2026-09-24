@@ -6,7 +6,7 @@ import { isAbsolute, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
 import { REPOSITORY_TYPECHECK_PROFILE, formatRepositoryTypecheckProfile, inspectRepositoryTypecheckEligibility, prepareRepositoryTypecheck,
-  runRepositoryTypecheck } from "../src/repository-typecheck.js";
+  releaseRepositoryTypecheckTaskInput, runRepositoryTypecheck, typecheckProfileFingerprint } from "../src/repository-typecheck.js";
 import * as repositoryCheckInput from "../src/repository-check-input.js";
 import type { RepositoryTypecheckExecutor } from "../src/repository-typecheck-process.js";
 
@@ -102,6 +102,22 @@ it("admits the canonical repository declaration and binds the isolated compiler 
   expect(formatRepositoryTypecheckProfile(profile)).toContain("candidate and dependencies read-only; network denied");
 });
 
+it.runIf(process.platform === "win32")("runs the selected TypeScript check locally without a Docker runtime", async () => {
+  const current = await fixture();
+  await writeFile(join(current.source, "node_modules", "typescript", "bin", "tsc"), "process.exit(0);\n");
+  const eligibility = await inspectRepositoryTypecheckEligibility(current.source, "host-local");
+  expect(eligibility.status).toBe("eligible");
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, environment: "host-local" });
+  expect(profile.isolation.kind).toBe("host-local");
+  expect(typecheckProfileFingerprint(profile)).toBe(eligibility.fingerprint);
+  expect(formatRepositoryTypecheckProfile(profile)).toContain("No sandbox is enforced");
+  const result = await runRepositoryTypecheck(profile, undefined, undefined, true);
+  expect(result).toMatchObject({ status: "passed", process: "exited", container: "absent",
+    binding: { isolation: { kind: "host-local" } } });
+  await releaseRepositoryTypecheckTaskInput(current.candidate.directory);
+});
+
 it("accepts a hardlinked Bun dependency only by mounting an exclusive copied snapshot", async () => {
   const current = await fixture();
   const compiler = join(current.source, "node_modules", "typescript", "bin", "tsc");
@@ -128,6 +144,32 @@ it("accepts a hardlinked Bun dependency only by mounting an exclusive copied sna
   await expect(runRepositoryTypecheck(profile, executor)).resolves.toMatchObject({ status: "passed", reason: null });
   expect(executor).toHaveBeenCalledOnce();
   expect((await readdir(current.candidate.directory)).some((name) => name.startsWith(".tesota-typecheck-dependencies-"))).toBe(false);
+});
+
+it("reuses one task dependency input and rejects a changed snapshot before another run", async () => {
+  const current = await fixture();
+  const profile = await prepareRepositoryTypecheck({ candidate: current.candidate.directory,
+    source: current.source, runtime: await runtime(current.root) });
+  const mounted: string[] = [];
+  const executor = vi.fn<RepositoryTypecheckExecutor>(async (invocation) => {
+    const mount = invocation.args.find((argument) => argument.includes("target=/workspace/node_modules,readonly"));
+    const source = /source=([^,]+)/u.exec(mount ?? "")?.[1];
+    if (source === undefined) throw new Error("Dependency input not mounted");
+    mounted.push(source);
+    return passed(invocation, "task-snapshot");
+  });
+  expect((await runRepositoryTypecheck(profile, executor, undefined, true)).status).toBe("passed");
+  expect((await runRepositoryTypecheck(profile, executor, undefined, true)).status).toBe("passed");
+  expect(mounted).toHaveLength(2);
+  expect(mounted[1]).toBe(mounted[0]);
+  await rm(join(mounted[0]!, "typescript", "bin", "tsc"));
+  await writeFile(join(mounted[0]!, "typescript", "bin", "tsc"), "changed snapshot\n");
+  await expect(runRepositoryTypecheck(profile, executor, undefined, true)).resolves.toMatchObject({
+    status: "execution_failed", reason: "dependency_snapshot_mismatch",
+  });
+  expect(executor).toHaveBeenCalledTimes(2);
+  await releaseRepositoryTypecheckTaskInput(current.candidate.directory);
+  await expect(lstat(mounted[0]!)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
 it("retains the candidate-owned snapshot when container settlement is unconfirmed", async () => {

@@ -31,7 +31,8 @@ export interface TesotaShellCommandDependencies {
 }
 
 export function createProcessTesotaShell(cwd: string = process.cwd(),
-  theme: TesotaShellThemeName = "tesota-dark"): TesotaShellCommandDependencies {
+  theme: TesotaShellThemeName = "tesota-dark",
+  executionEnvironment: "docker-contained" | "host-local" = "host-local"): TesotaShellCommandDependencies {
   const activeOperations = new Map<string, AbortController>();
   const conversations = new Map<string, Promise<RepositoryConversationForShell>>();
   const waiters: { readonly signal: AbortSignal; readonly grant: () => void;
@@ -198,6 +199,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
         sourceDirectory: cwd,
         reference: proposalId,
+        executionEnvironment,
         ask: (prompt) => surface.askIn(sessionId, prompt),
         write: (text) => { surface.writeTo(sessionId, text); },
         report,

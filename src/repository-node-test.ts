@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, normalize, relative } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import * as z from "zod";
 import { bindCandidateCheckoutContent, inspectPromotionSource } from "./candidate-checkout.js";
 import { CONTAINER_IMAGE, buildNodeTestContainerInvocation, containerRuntimeIsOutside,
@@ -8,6 +8,7 @@ import { CONTAINER_IMAGE, buildNodeTestContainerInvocation, containerRuntimeIsOu
 import { parseRepositoryJson, readCommittedCheckInput, readRepositoryInput, sha256 } from "./repository-check-input.js";
 import { REPOSITORY_NODE_TEST_LIMITS, executeRepositoryNodeTestContainer,
   type RepositoryNodeTestExecutor } from "./repository-node-test-process.js";
+import { executeRepositoryHostProcess, resolveHostNodeRuntime, type HostNodeRuntimeIdentity } from "./repository-host-process.js";
 import type { RepositoryCheckEligibility } from "./repository-typecheck.js";
 import { validProposalPath } from "./task-proposal-contract.js";
 
@@ -32,8 +33,9 @@ export interface RepositoryNodeTestProfile {
   readonly repository: { readonly packageJsonSha256: string; readonly declaredTestScript: string;
     readonly selectedTest: string; readonly selectedTestSha256: string; readonly allowedWriteFiles: readonly string[] };
   readonly verifier: { readonly reporter: string; readonly reporterSha256: string };
-  readonly isolation: { readonly image: typeof CONTAINER_IMAGE; readonly policySha256: string;
-    readonly executable: string; readonly executableSha256: string };
+  readonly isolation: ({ readonly kind: "docker-contained"; readonly image: typeof CONTAINER_IMAGE } |
+    { readonly kind: "host-local" }) & { readonly policySha256: string; readonly executable: string;
+    readonly executableSha256: string };
   readonly command: readonly string[];
   readonly limits: typeof REPOSITORY_NODE_TEST_LIMITS;
   readonly authority: "local_operator_approval_required";
@@ -57,7 +59,15 @@ export function nodeTestProfileFingerprint(binding: Omit<RepositoryNodeTestProfi
     packageJson: binding.repository.packageJsonSha256, selectedTest: binding.repository.selectedTest,
     reporter: binding.verifier.reporter, reporterSha256: binding.verifier.reporterSha256,
     runtime: { executable: binding.isolation.executable, executableSha256: binding.isolation.executableSha256 },
-    image: binding.isolation.image, policy: binding.isolation.policySha256, limits: binding.limits }));
+    environment: binding.isolation.kind,
+    ...(binding.isolation.kind === "docker-contained" ? { image: binding.isolation.image } : {}),
+    policy: binding.isolation.policySha256, limits: binding.limits }));
+}
+
+function hostNodeTestPolicySha256(): string {
+  return sha256(JSON.stringify({ environment: "host-local", process: "node", selectedTest: "one-admitted-test",
+    reporter: "tesota-node-test-report/v1", cancellation: "unconfirmed-on-stop",
+    settlement: "root-exit-only-descendants-unobserved", limits: REPOSITORY_NODE_TEST_LIMITS }));
 }
 
 interface PrepareOptions {
@@ -66,13 +76,16 @@ interface PrepareOptions {
   readonly selectedTest: string;
   readonly allowedWriteFiles: readonly string[];
   readonly runtime?: ContainerRuntimeIdentity;
+  readonly hostRuntime?: HostNodeRuntimeIdentity;
+  readonly environment?: "docker-contained" | "host-local";
 }
 
 const issuedProfiles = new WeakSet<object>();
 const issuedResults = new WeakSet<object>();
 
 /** Read-only preview; candidate preparation remains the authoritative boundary. */
-export async function inspectRepositoryNodeTestEligibility(source: string, selectedTest: string):
+export async function inspectRepositoryNodeTestEligibility(source: string, selectedTest: string,
+  environment: "docker-contained" | "host-local" = "docker-contained"):
 Promise<RepositoryCheckEligibility> {
   try {
     if (!selectedTestPattern.test(selectedTest)) {
@@ -85,12 +98,17 @@ Promise<RepositoryCheckEligibility> {
     readCommittedCheckInput(source, selectedTest, 1024 * 1024);
     const reporter = reporterPath();
     const reporterBytes = await readRepositoryInput(reporter, 128 * 1024);
-    const runtime = await resolveContainerRuntime([source, reporter]);
-    return { status: "eligible", reason: "selected test, repository declaration, reporter, and Docker client are present",
+    const runtime = environment === "docker-contained" ? await resolveContainerRuntime([source, reporter]) :
+      await resolveHostNodeRuntime([source, reporter]);
+    return { status: "eligible", reason: environment === "docker-contained" ?
+      "selected test, repository declaration, reporter, and Docker client are present" :
+      "selected test, repository declaration, reporter, and local Node are present; tests have host access",
       fingerprint: sha256(JSON.stringify({ profile: REPOSITORY_NODE_TEST_PROFILE,
         packageJson: sha256(packageBytes), selectedTest,
-        reporter, reporterSha256: sha256(reporterBytes), runtime, image: CONTAINER_IMAGE,
-        policy: nodeTestContainerPolicySha256(), limits: REPOSITORY_NODE_TEST_LIMITS })) };
+        reporter, reporterSha256: sha256(reporterBytes), runtime, environment,
+        ...(environment === "docker-contained" ? { image: CONTAINER_IMAGE } : {}),
+        policy: environment === "docker-contained" ? nodeTestContainerPolicySha256() : hostNodeTestPolicySha256(),
+        limits: REPOSITORY_NODE_TEST_LIMITS })) };
   } catch {
     return { status: "ineligible", reason: "selected test, repository declaration, reporter, or Docker client is unavailable" };
   }
@@ -118,6 +136,7 @@ function reporterPath(): string {
 }
 
 export async function prepareRepositoryNodeTest(options: PrepareOptions): Promise<RepositoryNodeTestProfile> {
+  const environment = options.environment ?? "docker-contained";
   const candidate = await candidateBinding(options);
   const source = await inspectPromotionSource(candidate.directory, options.source, "package.json");
   if (source.head !== candidate.baseline) throw new Error("Repository Node test baseline changed");
@@ -126,19 +145,27 @@ export async function prepareRepositoryNodeTest(options: PrepareOptions): Promis
   const selectedTestBytes = await readRepositoryInput(join(candidate.checkout, options.selectedTest), 1024 * 1024);
   const reporter = reporterPath();
   const reporterBytes = await readRepositoryInput(reporter, 128 * 1024);
-  const runtime = options.runtime ?? await resolveContainerRuntime([source.source, candidate.directory, reporter]);
-  if (!containerRuntimeIsOutside(runtime, [source.source, candidate.directory, reporter]) ||
-      !/^[a-f0-9]{64}$/u.test(runtime.executableSha256)) throw new Error("Repository Node test runtime unavailable");
+  const runtime = environment === "docker-contained" ?
+    options.runtime ?? await resolveContainerRuntime([source.source, candidate.directory, reporter]) :
+    options.hostRuntime ?? await resolveHostNodeRuntime([source.source, candidate.directory, reporter]);
+  if (!/^[a-f0-9]{64}$/u.test(runtime.executableSha256) ||
+      environment === "docker-contained" && !containerRuntimeIsOutside(runtime, [source.source, candidate.directory, reporter])) {
+    throw new Error("Repository Node test runtime unavailable");
+  }
   const profile: RepositoryNodeTestProfile = {
     profile: REPOSITORY_NODE_TEST_PROFILE, candidate,
     repository: { packageJsonSha256: sha256(packageBytes), declaredTestScript: declared.scripts.test,
       selectedTest: options.selectedTest, selectedTestSha256: sha256(selectedTestBytes),
       allowedWriteFiles: Object.freeze([...options.allowedWriteFiles]) },
     verifier: { reporter, reporterSha256: sha256(reporterBytes) },
-    isolation: { image: CONTAINER_IMAGE, policySha256: nodeTestContainerPolicySha256(),
-      executable: runtime.executable, executableSha256: runtime.executableSha256 },
+    isolation: environment === "docker-contained" ? { kind: environment, image: CONTAINER_IMAGE,
+      policySha256: nodeTestContainerPolicySha256(), executable: runtime.executable,
+      executableSha256: runtime.executableSha256 } : { kind: environment,
+      policySha256: hostNodeTestPolicySha256(), executable: runtime.executable,
+      executableSha256: runtime.executableSha256 },
     command: Object.freeze(["node", "--experimental-strip-types", "--test", "--test-concurrency=1",
-      "--test-reporter=/tesota/reporter.mjs", options.selectedTest]),
+      `--test-reporter=${environment === "docker-contained" ? "/tesota/reporter.mjs" : pathToFileURL(reporter).href}`,
+      options.selectedTest]),
     limits: REPOSITORY_NODE_TEST_LIMITS, authority: "local_operator_approval_required",
   };
   Object.freeze(profile.repository); Object.freeze(profile.verifier); Object.freeze(profile.isolation); Object.freeze(profile);
@@ -193,6 +220,12 @@ function cleanPass(report: z.infer<typeof reportSchema>): boolean {
     counts.skipped === 0 && counts.todo === 0;
 }
 
+function expectedTestEntry(profile: RepositoryNodeTestProfile): string {
+  return profile.isolation.kind === "docker-contained" ?
+    `/workspace/repository/${profile.repository.selectedTest}` :
+    normalize(join(profile.candidate.checkout, profile.repository.selectedTest));
+}
+
 function observedResult(profile: RepositoryNodeTestProfile, stdout: Buffer, stderr: Buffer, exitCode: number | null,
   signal: NodeJS.Signals | null, process: RepositoryNodeTestResult["process"],
   container: RepositoryNodeTestResult["container"]): RepositoryNodeTestResult {
@@ -201,13 +234,12 @@ function observedResult(profile: RepositoryNodeTestProfile, stdout: Buffer, stde
   const report = parsedReport(stdout);
   if (report === null) return issueResult(profile, "execution_failed", "invalid_output", [], process, container);
   const counts = report.summary?.counts;
-  const expectedEntry = `/workspace/repository/${profile.repository.selectedTest}`;
   if (report.summaries !== 1 || counts === undefined) {
     return issueResult(profile, "execution_failed", "incoherent_node_test_result", [], process, container);
   }
   if (counts.tests === 0 && report.observed.passed === 0 && report.observed.failed === 0 &&
       report.observed.entries.length === 0) return issueResult(profile, "no_tests", "no_tests", [], process, container);
-  if (!coherentReport(report, expectedEntry)) {
+  if (!coherentReport(report, expectedTestEntry(profile))) {
     return issueResult(profile, "execution_failed", "incoherent_node_test_result", [], process, container);
   }
   if (exitCode === 0 && cleanPass(report)) {
@@ -230,9 +262,12 @@ export async function runRepositoryNodeTest(profile: RepositoryNodeTestProfile,
     return issueResult(profile, "execution_failed", "input_drift", [], "not_started", "absent");
   }
   const name = `tesota-node-test-${randomUUID()}`;
-  const observed = await executor(buildNodeTestContainerInvocation({ candidate: profile.candidate.checkout,
-    reporter: profile.verifier.reporter, selectedTest: profile.repository.selectedTest },
-  profile.isolation.executable, name), name, signal);
+  const observed = profile.isolation.kind === "docker-contained" ? await executor(
+    buildNodeTestContainerInvocation({ candidate: profile.candidate.checkout,
+      reporter: profile.verifier.reporter, selectedTest: profile.repository.selectedTest },
+    profile.isolation.executable, name), name, signal) : await executeRepositoryHostProcess(
+    profile.isolation.executable, profile.command.slice(1), profile.candidate.checkout,
+    REPOSITORY_NODE_TEST_LIMITS, signal);
   if (observed.status === "failed") {
     const status = observed.reason === "cancelled" ? "cancelled" : observed.reason === "timeout" ? "timed_out" :
       observed.reason === "spawn_failed" ? "unavailable" : "execution_failed";

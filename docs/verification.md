@@ -24,12 +24,21 @@ For the standalone Oxlint path, build first with `bun run build`, then run from 
 bun --no-env-file dist/cli.js verify src/cli.ts
 ```
 
-Each profile below owns both its check semantics and its currently qualified
-execution environment. Docker-backed and native profiles are not interchangeable:
-selection must satisfy the admitted policy before approval and evidence records
-the environment that actually ran. There is no fallback from a protected
-profile to host-native execution. The architectural rationale is in
+Each profile below owns its check semantics and selected execution environment.
+The shell defaults to trusted Windows host-local checks: executed repository
+code can access host files, network and credentials. The optional Docker route
+is selected with `tesota --execution docker-contained` and remains the protected
+option. Selection is bound before approval and evidence records what actually
+ran. There is no fallback from a protected profile to host-local execution. The architectural rationale is in
 [decision 007](decisions/007-execution-environments.md).
+
+For a host-local pass, Tesota observes exit of the directly launched Node
+process. It does not establish that descendants ended, that no external host
+inputs were read, or that the check could not affect its own evidence. The
+profile binds the observed candidate, configuration, runtime and captured
+dependency input; other ambient inputs remain outside that claim. This route
+is for operator-trusted repository code and cannot satisfy a confinement or
+complete descendant-settlement requirement.
 
 ## Approved repository typecheck
 
@@ -67,7 +76,9 @@ siblings lets Docker create both mountpoints without writing inside the
 candidate while preserving TypeScript's ancestor-based module lookup.
 Regular hardlinks in a Bun
 installation are accepted as source inputs, but the mounted snapshot contains
-only independently copied regular files. The candidate mount is also read-only.
+only independently copied regular files. A task rehashes and reuses that snapshot
+for later TypeScript checks; standalone profile invocations use a fresh snapshot.
+The candidate mount is also read-only.
 The container has no network, added capabilities or mounted host credentials,
 uses a read-only root filesystem and starts from the pinned image without
 pulling. The TypeScript 7 compiler is Go-based. This profile uses a bounded
@@ -79,8 +90,10 @@ Docker absence or client settlement cannot be observed.
 
 Dependency observation and snapshotting accept at most 100,000 regular entries,
 128 MiB per file and 512 MiB in total, with no symbolic links or redirected
-package directories. A snapshot is removed only after both process exit and
-container absence are observed; uncertain settlement retains it for recovery.
+package directories. A standalone snapshot is removed only after both process
+exit and container absence are observed. A task snapshot is retained across
+its checks, released after the task finishes with confirmed settlement, and
+retained when settlement is uncertain.
 This is a deliberately conservative whole-installation binding for the first
 consumer, not a claim that every future ecosystem should use the same limit.
 

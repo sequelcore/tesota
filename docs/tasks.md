@@ -9,9 +9,9 @@ admission and explicit operator approval can issue an execution grant.
 
 ```text
 request -> read-only proposal -> admission -> operator approval
-        -> isolated candidate -> scope + admitted contained check -> human review
+        -> isolated candidate -> scope + checks in selected environment -> human review
         -> accept/reject, or one approved semantic correction
-        -> fresh checks + fresh review -> final decision -> guarded promotion
+        -> new checks + review of their applicability -> final decision -> guarded promotion
 ```
 
 There is no application task registry and no special task for modifying Tesota.
@@ -28,8 +28,8 @@ An admitted TypeScript change:
 - permits at most two whole-file replacements and three checks;
 - limits every exposed or replacement file to 64 KiB of valid UTF-8;
 - gives the model no shell or network tool and never accepts its choice of command;
-- runs only the fixed `typescript-no-emit/v1` profile in the pinned, read-only,
-  network-disabled container after an admitted file changes;
+- runs only the fixed `typescript-no-emit/v1` profile in the approved Docker or
+  trusted host-local environment after an admitted file changes;
 - denies repository check configuration, dependency declaration, test and file-lifecycle changes;
 - rejects `@ts-ignore`, `@ts-nocheck` and `@ts-expect-error` in changed files so source-level suppression cannot manufacture a pass;
 - requires an initial check before the first replacement; and
@@ -42,38 +42,42 @@ configuration, dependencies, file creation and arbitrary commands remain
 denied. It permits up to 12 reads, six replacements and six checks across R0
 and R1, with the same 64 KiB file bound. Its cumulative agent-session time
 limit is five minutes with the Node test alone and ten minutes when the
-contained TypeScript typecheck is also approved. Source-only plans use version
+TypeScript typecheck is also approved. Source-only plans use version
 2; source-and-test plans use version 3.
 
 For this variant, the model first checks the unchanged candidate, changes the
 regression test and checks that it fails on the original source, then repairs
 the source and checks the final candidate. The fixed `node-test-targeted/v1`
-invocation runs the approved test under Node's test runner inside the pinned,
-read-only, network-disabled Docker container. When selected before approval,
+invocation runs the approved test under Node's test runner in the selected
+execution environment. When selected before approval,
 `typescript-no-emit/v1` must also pass on the same final candidate. Neither
 executes the repository's test script or proves full-suite behavior.
-Empty, skipped, TODO and incoherent test reports cannot pass. The exact final
-source and test bytes are checked again at review and conflict-checked before
-promotion. A later semantic correction uses only the remaining cumulative
-budget and requires fresh evidence.
+Empty, skipped, TODO and incoherent test reports cannot pass. Review compares
+the issued check observation with the exact current source and test bytes;
+promotion checks those bytes for drift. A later semantic correction uses only
+the remaining cumulative budget and requires a new check observation.
 
 The source-only and Node-only model-and-check sessions have a five-minute
 cumulative deadline; the approved Node-plus-TypeScript session has ten minutes.
-Individual container checks retain their separate 60-second TypeScript or
+Individual checks retain their separate 60-second TypeScript or
 30-second Node-test execution limits;
-dependency binding and snapshot preparation occur inside the cumulative task
-window.
+dependency binding and the first snapshot preparation occur inside the cumulative
+task window. Later TypeScript checks in that task rehash and reuse the same
+task-owned snapshot; a changed snapshot blocks the new run.
 Those limits are task-wide across the initial R0 execution and the optional R1
 semantic revision. The optional R1 uses a fresh Pi agent with only the remaining model, tool,
 read, edit, check and active-time budget; attempted consequential work is not
 refunded after cancellation or uncertain settlement.
-Final host checks and review occur after the agent session and have separate
-execution limits; the cumulative deadline is not an end-to-end wall-clock cap.
+Review occurs after the agent session and does not invoke a verifier. The
+cumulative deadline is not an end-to-end wall-clock cap.
 
 The persisted plan binds the approved proposal, committed baseline,
 initial candidate read-input hashes, exact source-target hashes and modes,
-write set, limits and task definition. Reloading that plan can recheck a
-candidate, but cannot recreate editing authority.
+write set, limits and task definition. Each task check records a start before
+execution and a terminal observation afterward in Tesota-owned state outside
+the editable checkout. An unfinished start cannot expose an earlier pass as
+current. Reloading the plan can inspect the latest observation's applicability,
+but cannot recreate editing authority or run a new check.
 
 Git's [text and end-of-line attributes](https://git-scm.com/docs/gitattributes)
 can give a worktree different bytes from its committed blob. Before editing,
@@ -173,9 +177,9 @@ permanently blocks R1.
 
 The current execution producer reports elapsed milliseconds, first-check
 status, explicit execution causes, model invocations, tool calls, repository
-reads, edits, model-loop checks, active execution time and host-side final,
-review, decision and promotion checks. Host checks are observable accounting,
-not a new product ceiling. It does not yet observe token usage or monetary
+reads, edits, model-loop checks and active execution time. Review, decision
+and promotion inspect the last issued check and its current applicability;
+they do not issue another verifier run. It does not yet observe token usage or monetary
 cost, so both remain explicitly unavailable instead of being estimated. `tesota task outcome <proposal-id>`
 reloads the durable summary; Tesota Shell prints the same summary when a task
 reaches a recorded terminal outcome.

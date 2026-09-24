@@ -37,19 +37,21 @@ cd my-project
 tesota
 ```
 
-The supported change path currently requires Windows, Git, Docker Desktop, the
-pinned verification image already available locally and, for the TypeScript
-profile, a matching dependency installation in the target repository. Tesota
-does not install dependencies or pull images during a task. See
+The supported change path currently requires Windows, Git and, for the TypeScript
+profile, a matching dependency installation in the target repository. The shell
+defaults to trusted local checks, which can access host files, network and
+credentials. Choose `tesota --execution docker-contained` for the protected
+container route; that choice requires Docker Desktop and the pinned image already
+available locally. Tesota does not install dependencies or pull images during a task. See
 [Using Tesota](docs/using-tesota.md) for setup, task scope, review and recovery.
 Run `bun unlink` in this checkout to remove the development command.
 
 ## Scope
 
 The source-only task can change one or two existing non-test TypeScript files
-under `src/` and run a contained no-emit typecheck. A separate source-and-test
+under `src/` and run a fixed no-emit typecheck. A separate source-and-test
 task can change one existing TypeScript source file and one existing regression
-test. It requires the targeted Node test and can also require the contained
+test. It requires the targeted Node test and can also require the fixed
 typecheck when both profiles are eligible and selected before approval. Both
 task shapes require explicit approval and human review. The source-and-test path has accepted ordinary live walkthroughs,
 including one fresh external case; representative usefulness remains unproven.

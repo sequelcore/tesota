@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { createCandidateCheckout } from "../src/candidate-checkout.js";
 import { buildNodeTestContainerInvocation } from "../src/command-isolation.js";
-import { inspectRepositoryNodeTestEligibility, prepareRepositoryNodeTest, runRepositoryNodeTest } from "../src/repository-node-test.js";
+import { inspectRepositoryNodeTestEligibility, nodeTestProfileFingerprint, prepareRepositoryNodeTest,
+  runRepositoryNodeTest } from "../src/repository-node-test.js";
 import type { RepositoryNodeTestExecutor } from "../src/repository-node-test-process.js";
 
 const roots: string[] = [];
@@ -79,6 +80,19 @@ it("binds a selected existing Node test and invokes Docker with no host executio
   expect(invocation.args).toContain("--read-only");
   await expect(runRepositoryNodeTest(profile, executor(report({})))).resolves.toMatchObject({ status: "passed", reason: null,
     process: "exited", container: "absent" });
+});
+
+it.runIf(process.platform === "win32")("runs the selected Node test locally with a bound host environment", async () => {
+  const current = await fixture();
+  const eligibility = await inspectRepositoryNodeTestEligibility(current.source, "tests/value.test.ts", "host-local");
+  expect(eligibility.status).toBe("eligible");
+  const profile = await prepareRepositoryNodeTest({ candidate: current.candidate.directory, source: current.source,
+    selectedTest: "tests/value.test.ts", allowedWriteFiles: ["lib/value.ts", "tests/value.test.ts"],
+    environment: "host-local" });
+  expect(profile.isolation.kind).toBe("host-local");
+  expect(nodeTestProfileFingerprint(profile)).toBe(eligibility.fingerprint);
+  await expect(runRepositoryNodeTest(profile)).resolves.toMatchObject({ status: "passed", process: "exited",
+    container: "absent", binding: { isolation: { kind: "host-local" } } });
 });
 
 it.each([

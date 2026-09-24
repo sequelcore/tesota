@@ -194,6 +194,23 @@ legacy path. Do not add a universal executor registry or cache across unrelated
 tasks. Compare setup and repeated-check latency against the direct repository
 command, and retain failures.
 
+**Current implementation status (2026-09-24).** Step 1's check journal,
+applicability inspection and task-owned TypeScript dependency input are in
+source. Focused tests cover interrupted persistence, changed inputs, reused
+snapshots and zero verifier calls after execution. A
+[live adapter diagnostic](../experiments/practical-use/2026-09-23-evidence-repair-adapter-results.md)
+confirmed reuse across two real Docker checks in a small fixture. A timed
+ordinary-shell Docker task completed with two real checks and zero host
+verifier calls during review, decision and promotion; see the
+[timed diagnostic](../experiments/practical-use/2026-09-23-execution-repair-shell-results.md).
+Step 2's trusted host-local TypeScript and targeted Node checks, mode-bound
+approval and no-fallback selection are implemented. Direct Windows verifier
+probes passed. A later [ordinary-shell task](../experiments/practical-use/2026-09-23-execution-repair-shell-results.md#completed-docker-free-task)
+completed failure, correction, review, acceptance and promotion with Docker
+absent from its `PATH`. Both repair steps meet their stated fixture criteria;
+representative external-repository usefulness and a protected native sandbox
+remain separate work.
+
 ## 2. One useful task outside a code repository
 
 **Outcome.** Answer a prospectively selected question over supplied local

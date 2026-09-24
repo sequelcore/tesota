@@ -15,6 +15,7 @@ interface ProposalGrantBase {
   readonly baseline: string;
   readonly objective: string;
   readonly completionConditions: readonly string[];
+  readonly executionEnvironment: "docker-contained" | "host-local";
   readonly approvedChecks?: Readonly<Record<string, string>> | undefined;
 }
 
@@ -55,6 +56,7 @@ const grantShape = {
   proposalId: z.uuid(), proposalSha256: z.string().regex(/^[a-f0-9]{64}$/u),
   source: z.string().refine(isAbsolute), baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u),
   objective: z.string().min(1).max(4_000), completionConditions: z.array(z.string().min(1).max(1_000)).min(1).max(8),
+  executionEnvironment: z.enum(["docker-contained", "host-local"]),
   approvedChecks: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/u)).optional(),
 } as const;
 const sourceOnlyGrantSchema: z.ZodType<SourceOnlyRunGrant> = z.strictObject({
@@ -139,6 +141,7 @@ export async function admitTaskProposal(options: {
   readonly reference: string;
   readonly sourceDirectory: string;
   readonly includeTypecheck?: boolean;
+  readonly executionEnvironment?: "docker-contained" | "host-local";
 }): Promise<ProposalRunGrant> {
   const loaded = await loadTaskProposal(options.proposalsRoot, options.reference);
   const source = await realpath(options.sourceDirectory);
@@ -162,6 +165,7 @@ export async function admitTaskProposal(options: {
       baseline: head,
       objective: proposal.objective,
       completionConditions: [...proposal.completionConditions],
+      executionEnvironment: options.executionEnvironment ?? "docker-contained",
       readFiles: [...proposal.readFiles] as [string, ...string[]],
       writeFiles: [...proposal.writeFiles] as [string, ...string[]],
       declaredChecks: TASK_CHECKS,
@@ -175,6 +179,7 @@ export async function admitTaskProposal(options: {
     return validateProposalRunGrant({
       kind: SOURCE_TEST_TASK_KIND, proposalId: loaded.record.id, proposalSha256: loaded.sha256,
       source, baseline: head, objective: proposal.objective,
+      executionEnvironment: options.executionEnvironment ?? "docker-contained",
       completionConditions: [...proposal.completionConditions], readFiles: [...proposal.readFiles],
       writeFiles: [...proposal.writeFiles], selectedTest,
       declaredChecks: options.includeTypecheck === true ? SOURCE_TEST_TYPECHECK_TASK_CHECKS : SOURCE_TEST_TASK_CHECKS,

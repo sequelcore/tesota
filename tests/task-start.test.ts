@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { askTaskStartQuestion, startTask } from "../src/task-start.js";
 import { createTaskOutcome, loadProposalTaskOutcome, type TaskExecutionAccounting } from "../src/task-outcome.js";
 import { TaskReviewUnsettledError, type TaskReview } from "../src/task-review.js";
+import type { ProposalRunGrant } from "../src/proposal-admission.js";
 
 vi.mock("../src/repository-typecheck.js", () => ({ inspectRepositoryTypecheckEligibility: vi.fn(async () =>
   ({ status: "eligible", reason: "test prerequisites present", fingerprint: "a".repeat(64) })) }));
@@ -78,20 +79,6 @@ const accounting: TaskExecutionAccounting = { elapsedMs: 100, firstCheck: "check
   resources: { reads: 1, checks: 2, hostChecks: 1, activeMs: 50 },
   consumption: { status: "partial", tokenUsage: "unavailable", cost: "unavailable" } };
 
-function hostCheckOracle() {
-  let observed = 0;
-  return {
-    record: (): void => { observed += 1; },
-    relay: (observe: (() => void) | undefined, count: number): void => {
-      for (let index = 0; index < count; index += 1) {
-        observed += 1;
-        observe?.();
-      }
-    },
-    observed: (): number => observed,
-  };
-}
-
 function expectHostChecksNeverRegress(history: string): void {
   const recorded = history.trim().split("\n").flatMap((line): number[] => {
     const event: unknown = JSON.parse(line);
@@ -110,20 +97,14 @@ it("runs one approved proposal through execution, review, decision and promotion
   const candidate = { directory: join(current.directory, "candidate"), checkout: join(current.directory, "repo"),
     baseline: current.baseline, sourceDirty: false };
   const review = passingReview(candidate.directory, current.baseline);
-  const hostChecks = hostCheckOracle();
-  const execute = vi.fn(async () => {
-    hostChecks.record();
-    return { candidate, status: "passed" as const, accounting };
-  });
-  const decide = vi.fn(async (_directory: string, _request: unknown, observe?: () => void) => {
-    hostChecks.relay(observe, 4);
+  const execute = vi.fn(async () => ({ candidate, status: "passed" as const, accounting }));
+  const decide = vi.fn(async (_directory: string, _request: unknown) => {
     return { ...review, operatorDecision: { record: { format: "tesota-task-decision" as const,
     version: 1 as const, decision: "accept" as const, reviewSha256: review.reviewSha256,
     recordedAt: new Date().toISOString(), authority: "local_operator_assertion" as const },
     provenance: "recorded_untrusted" as const, applicability: "current" as const } };
   });
-  const promote = vi.fn(async (_directory: string, _source: string, _review: string, observe?: () => void) => {
-    hostChecks.relay(observe, 4);
+  const promote = vi.fn(async (_directory: string, _source: string, _review: string) => {
     return { status: "applied" as const, source: current.source,
       files: [{ path: "src/value.ts", sourceSha256: "d".repeat(64) }] };
   });
@@ -132,20 +113,18 @@ it("runs one approved proposal through execution, review, decision and promotion
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
     reference: current.id, ask: vi.fn().mockResolvedValueOnce("yes").mockResolvedValueOnce("yes"),
     write: (text) => output.push(text), report: (event) => progress.push(`${event.phase}:${event.operation}`),
-    execute, review: async (_directory: string, observe?: () => void) => {
-      hostChecks.relay(observe, 2); return review;
-    }, decide, promote })).resolves.toEqual({
+    execute, review: async () => review, decide, promote })).resolves.toEqual({
       status: "settled", exitCode: 0, outcome: "promoted",
     });
   expect(execute).toHaveBeenCalledOnce();
   expect(decide).toHaveBeenCalledWith(candidate.directory,
-    { decision: "accept", reviewSha256: review.reviewSha256 }, expect.any(Function));
-  expect(promote).toHaveBeenCalledWith(candidate.directory, current.source, review.reviewSha256, expect.any(Function));
+    { decision: "accept", reviewSha256: review.reviewSha256 });
+  expect(promote).toHaveBeenCalledWith(candidate.directory, current.source, review.reviewSha256);
   expect(output.join("")).toContain(
     "Candidate review\n\n" +
     "Changed:\n- src/value.ts\n\n" +
     "Checked:\n" +
-    "PASS Scope integrity: only admitted files changed\n" +
+    "PASS Candidate scope: only admitted candidate files changed\n" +
     "PASS TypeScript no-emit: this exact result passed typescript-no-emit/v1\n\n" +
     "Not established:\n" +
     "- requested behavior and completion conditions\n" +
@@ -165,7 +144,60 @@ it("runs one approved proposal through execution, review, decision and promotion
   expect(output.join("")).not.toContain("Corrections:");
   const outcome = await loadProposalTaskOutcome(current.proposalsRoot, current.id);
   expect(outcome).toMatchObject({ status: "promoted", proposalId: current.id, candidate: candidate.directory });
-  expect(outcome.execution?.resources?.hostChecks).toBe(hostChecks.observed());
+  expect(outcome.execution?.resources?.hostChecks).toBe(accounting.resources?.hostChecks);
+});
+
+it("keeps a promoted outcome when task input cleanup fails and closes its journal", async () => {
+  const current = await fixture();
+  const candidate = { directory: join(current.directory, "candidate"), checkout: join(current.directory, "repo"),
+    baseline: current.baseline, sourceDirty: false };
+  const review = passingReview(candidate.directory, current.baseline);
+  const closeJournal = vi.fn();
+  const closeCorrection = vi.fn(async () => { throw new Error("synthetic cleanup failure"); });
+  const output: string[] = [];
+  const result = await startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, ask: vi.fn().mockResolvedValueOnce("yes").mockResolvedValueOnce("yes"),
+    write: (value) => output.push(value),
+    execute: async () => ({ candidate, status: "passed" as const, accounting,
+      correction: { available: () => false, criteria: () => ({ refinementSha256: "1".repeat(64),
+        effectiveCriteriaSha256: "2".repeat(64) }), run: vi.fn(), close: closeCorrection } }),
+    review: async () => review,
+    decide: async () => ({ ...review, operatorDecision: { record: { format: "tesota-task-decision" as const,
+      version: 1 as const, decision: "accept" as const, reviewSha256: review.reviewSha256,
+      recordedAt: new Date().toISOString(), authority: "local_operator_assertion" as const },
+    provenance: "recorded_untrusted" as const, applicability: "current" as const } }),
+    promote: async () => ({ status: "applied" as const, source: current.source,
+      files: [{ path: "src/value.ts", sourceSha256: "d".repeat(64) }] }),
+    createOutcome: async (...args) => {
+      const journal = await createTaskOutcome(...args);
+      return { ...journal, close: async () => { closeJournal(); await journal.close(); } };
+    },
+  });
+  expect(result).toEqual({ status: "settled", exitCode: 0, outcome: "promoted" });
+  expect(closeCorrection).toHaveBeenCalledOnce();
+  expect(closeJournal).toHaveBeenCalledOnce();
+  expect(output.join("")).toContain("Task input cleanup is incomplete");
+  expect((await loadProposalTaskOutcome(current.proposalsRoot, current.id)).status).toBe("promoted");
+});
+
+it("binds host-local execution before asking for scope approval", async () => {
+  const current = await fixture();
+  const prompts: string[] = [];
+  const output: string[] = [];
+  const execute = vi.fn(async (grant: ProposalRunGrant) => ({ candidate: { directory: "retained-candidate",
+    checkout: "retained-checkout", baseline: grant.baseline, sourceDirty: false },
+    status: "failed" as const, accounting, correction: null }));
+  await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
+    reference: current.id, executionEnvironment: "host-local",
+    ask: async (prompt) => { prompts.push(prompt); return "yes"; },
+    write: (value) => output.push(value), execute,
+    inspectEligibility: async (grant) => ({ status: "eligible",
+      reason: `fixture ${grant.executionEnvironment}`, fingerprint: "a".repeat(64) }),
+  })).resolves.toMatchObject({ outcome: "execution_failed" });
+  expect(prompts[0]).toContain("trusted local checks with host access and untracked child processes");
+  expect(output.join("")).toContain("no sandbox is enforced");
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ executionEnvironment: "host-local",
+    approvedChecks: { "typescript-no-emit/v1": "a".repeat(64) } }));
 });
 
 it("runs one approved semantic correction through a fresh R1 review and promotes only R1", async () => {
@@ -179,30 +211,24 @@ it("runs one approved semantic correction through a fresh R1 review and promotes
   const revisedAccounting = { ...accounting, elapsedMs: 180, modelInvocations: 6, toolCalls: 7, edits: 2,
     resources: { reads: accounting.resources?.reads ?? 0, checks: accounting.resources?.checks ?? 0,
       hostChecks: 2, activeMs: accounting.resources?.activeMs ?? 0 } };
-  const hostChecks = hostCheckOracle();
   const correction = {
     available: vi.fn(() => true),
     criteria: vi.fn(() => ({ refinementSha256: "1".repeat(64), effectiveCriteriaSha256: "2".repeat(64) })),
-    run: vi.fn(async () => {
-      hostChecks.record();
-      return { candidate, status: "passed" as const, accounting: revisedAccounting, correction: null };
-    }),
+    run: vi.fn(async () => ({ candidate, status: "passed" as const,
+      accounting: revisedAccounting, correction: null })),
     close: vi.fn(),
   };
-  const reviews = vi.fn(async (_directory: string, observe?: () => void) => {
-    hostChecks.relay(observe, 2);
+  const reviews = vi.fn(async () => {
     const call = reviews.mock.calls.length;
     return call < 3 ? r0 : r1;
   });
-  const decide = vi.fn(async (_directory: string, _request: unknown, observe?: () => void) => {
-    hostChecks.relay(observe, 4);
+  const decide = vi.fn(async (_directory: string, _request: unknown) => {
     return { ...r1, operatorDecision: { record: {
     format: "tesota-task-decision" as const, version: 1 as const, decision: "accept" as const,
     reviewSha256: r1.reviewSha256, recordedAt: new Date().toISOString(), authority: "local_operator_assertion" as const,
     }, provenance: "recorded_untrusted" as const, applicability: "current" as const } };
   });
-  const promote = vi.fn(async (_directory: string, _source: string, _review: string, observe?: () => void) => {
-    hostChecks.relay(observe, 4);
+  const promote = vi.fn(async (_directory: string, _source: string, _review: string) => {
     return { status: "applied" as const, source: current.source,
       files: [{ path: "src/value.ts", sourceSha256: "3".repeat(64) }] };
   });
@@ -210,10 +236,9 @@ it("runs one approved semantic correction through a fresh R1 review and promotes
     .mockResolvedValueOnce("Use the alternate wording.").mockResolvedValueOnce("yes").mockResolvedValueOnce("yes");
 
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
-    reference: current.id, ask, write: () => {}, execute: async () => {
-      hostChecks.record();
-      return { candidate, status: "passed" as const, accounting, correction };
-    }, review: reviews, decide, promote })).resolves.toEqual({
+    reference: current.id, ask, write: () => {}, execute: async () =>
+      ({ candidate, status: "passed" as const, accounting, correction }),
+    review: reviews, decide, promote })).resolves.toEqual({
     status: "settled", exitCode: 0, outcome: "promoted",
   });
 
@@ -222,15 +247,15 @@ it("runs one approved semantic correction through a fresh R1 review and promotes
     parentCheckSha256: expect.stringMatching(/^[a-f0-9]{64}$/u) });
   expect(decide).toHaveBeenCalledOnce();
   expect(decide).toHaveBeenCalledWith(candidate.directory,
-    { decision: "accept", reviewSha256: r1.reviewSha256 }, expect.any(Function));
-  expect(promote).toHaveBeenCalledWith(candidate.directory, current.source, r1.reviewSha256, expect.any(Function));
+    { decision: "accept", reviewSha256: r1.reviewSha256 });
+  expect(promote).toHaveBeenCalledWith(candidate.directory, current.source, r1.reviewSha256);
   const history = await readFile(join(current.directory, "start.jsonl"), "utf8");
   expect(history).toContain('"state":"correction_approved"');
   expect(history).toContain('"state":"revision_finished"');
   expect(history).not.toContain('"decision":"accept","reviewSha256":"' + r0.reviewSha256);
   expectHostChecksNeverRegress(history);
   const outcome = await loadProposalTaskOutcome(current.proposalsRoot, current.id);
-  expect(outcome.execution?.resources?.hostChecks).toBe(hostChecks.observed());
+  expect(outcome.execution?.resources?.hostChecks).toBe(revisedAccounting.resources?.hostChecks);
 });
 
 it.each([
@@ -262,9 +287,7 @@ it("settles a rejected candidate without promotion", async () => {
   const candidate = { directory: join(current.directory, "candidate"), checkout: join(current.directory, "repo"),
     baseline: current.baseline, sourceDirty: false };
   const review = passingReview(candidate.directory, current.baseline);
-  const hostChecks = hostCheckOracle();
-  const decide = vi.fn(async (_directory: string, _request: unknown, observe?: () => void) => {
-    hostChecks.relay(observe, 4);
+  const decide = vi.fn(async (_directory: string, _request: unknown) => {
     return { ...review, operatorDecision: { record: {
     format: "tesota-task-decision" as const, version: 1 as const, decision: "reject" as const,
     reviewSha256: review.reviewSha256, recordedAt: new Date().toISOString(),
@@ -275,24 +298,19 @@ it("settles a rejected candidate without promotion", async () => {
 
   await expect(startTask({ proposalsRoot: current.proposalsRoot, sourceDirectory: current.source,
     reference: current.id, ask: vi.fn().mockResolvedValueOnce("yes").mockResolvedValueOnce("no"),
-    write: () => {}, execute: async () => {
-      hostChecks.record();
-      return { candidate, status: "passed" as const, accounting };
-    },
-    review: async (_directory: string, observe?: () => void) => {
-      hostChecks.relay(observe, 2); return review;
-    }, decide, promote })).resolves.toEqual({
+    write: () => {}, execute: async () => ({ candidate, status: "passed" as const, accounting }),
+    review: async () => review, decide, promote })).resolves.toEqual({
       status: "settled", exitCode: 1, outcome: "rejected",
     });
 
   expect(decide).toHaveBeenCalledWith(candidate.directory,
-    { decision: "reject", reviewSha256: review.reviewSha256 }, expect.any(Function));
+    { decision: "reject", reviewSha256: review.reviewSha256 });
   expect(promote).not.toHaveBeenCalled();
   const history = await readFile(join(current.directory, "start.jsonl"), "utf8");
   expectHostChecksNeverRegress(history);
   const outcome = await loadProposalTaskOutcome(current.proposalsRoot, current.id);
   expect(outcome).toMatchObject({ status: "rejected", terminal: true, promotion: "not_reached" });
-  expect(outcome.execution?.resources?.hostChecks).toBe(hostChecks.observed());
+  expect(outcome.execution?.resources?.hostChecks).toBe(accounting.resources?.hostChecks);
 });
 
 it("records scope refusal without granting execution and rejects replay of the exact proposal", async () => {

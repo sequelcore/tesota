@@ -31,6 +31,7 @@ interface StartTaskDependencies {
   readonly proposalsRoot: string;
   readonly sourceDirectory: string;
   readonly reference: string;
+  readonly executionEnvironment?: "docker-contained" | "host-local";
   readonly ask: (prompt: string) => Promise<string>;
   readonly write: (text: string) => void;
   readonly execute?: (grant: ProposalRunGrant) => Promise<TaskRunResult>;
@@ -46,12 +47,10 @@ interface StartTaskDependencies {
 
 interface HostWorkMeter {
   checks: number;
-  readonly observeCheck: () => void;
 }
 
 function createHostWorkMeter(): HostWorkMeter {
-  const meter: HostWorkMeter = { checks: 0, observeCheck: () => { meter.checks += 1; } };
-  return meter;
+  return { checks: 0 };
 }
 
 function executionHostChecks(execution: TaskRunResult): number {
@@ -65,12 +64,16 @@ function ignoreProgress(_progress: TaskStartProgress): void {}
 function aborted(error: unknown): boolean { return error instanceof Error && error.name === "AbortError"; }
 
 function proposalCard(grant: ProposalRunGrant, eligibility: RepositoryCheckEligibility): string {
+  const local = grant.executionEnvironment === "host-local";
   const evidence = grant.kind === SOURCE_TEST_TASK_KIND ?
-    `scope integrity and contained Node test ${grant.selectedTest}` +
-      (grant.verification.typecheck === null ? "; TypeScript check choice follows" : "; contained TypeScript no-emit") :
-    "scope integrity and contained TypeScript no-emit";
+    `scope integrity and ${local ? "host-local" : "contained"} Node test ${grant.selectedTest}` +
+      (grant.verification.typecheck === null ? "; TypeScript check choice follows" :
+        `; ${local ? "host-local" : "contained"} TypeScript no-emit`) :
+    `scope integrity and ${local ? "host-local" : "contained"} TypeScript no-emit`;
   return `Proposed task\nObjective: ${grant.objective}\nWrite: ${grant.writeFiles.join(", ")}\n` +
     `Read: ${grant.readFiles.join(", ")}\nBaseline: ${grant.baseline}\n` +
+    (local ? "Environment: trusted local process. Checks can access host files, network and credentials; no sandbox is enforced. Child processes are not tracked after the main process exits.\n" :
+      "Environment: protected Docker container.\n") +
     `Automatic evidence: ${evidence}. Outcome correctness requires human review.\n` +
     `Check eligibility (${grant.kind === SOURCE_TEST_TASK_KIND ? grant.verification.nodeTest : grant.verification.typecheck}): ` +
     `${eligibility.status} — ${eligibility.reason}. Preview only; execution rechecks current inputs.\n`;
@@ -79,8 +82,8 @@ function proposalCard(grant: ProposalRunGrant, eligibility: RepositoryCheckEligi
 function inspectSelectedCheck(grant: ProposalRunGrant,
   profile?: "node-test-targeted/v1" | "typescript-no-emit/v1"): Promise<RepositoryCheckEligibility> {
   return grant.kind === SOURCE_TEST_TASK_KIND && profile !== "typescript-no-emit/v1"
-    ? inspectRepositoryNodeTestEligibility(grant.source, grant.selectedTest) :
-    inspectRepositoryTypecheckEligibility(grant.source);
+    ? inspectRepositoryNodeTestEligibility(grant.source, grant.selectedTest, grant.executionEnvironment) :
+    inspectRepositoryTypecheckEligibility(grant.source, grant.executionEnvironment);
 }
 
 type SelectedChecks = Readonly<{ grant: ProposalRunGrant; fingerprints: Readonly<Record<string, string>> }>;
@@ -107,7 +110,8 @@ async function selectEligibleChecks(dependencies: StartTaskDependencies,
   if (choice !== "1" && !(choice === "2" && typecheck.status === "eligible")) {
     throw new Error("Check selection cancelled or unavailable");
   }
-  const selected = choice === "2" ? await admitTaskProposal({ ...dependencies, includeTypecheck: true }) : initial;
+  const selected = choice === "2" ? await admitTaskProposal({ ...dependencies,
+    executionEnvironment: initial.executionEnvironment, includeTypecheck: true }) : initial;
   if (selected.proposalSha256 !== initial.proposalSha256 || selected.proposalId !== initial.proposalId) {
     throw new Error("Proposal changed before check selection completed");
   }
@@ -133,6 +137,7 @@ async function revalidateSelectedChecks(dependencies: StartTaskDependencies,
     }
   }
   const current = await admitTaskProposal({ ...dependencies,
+    executionEnvironment: grant.executionEnvironment,
     includeTypecheck: grant.kind === SOURCE_TEST_TASK_KIND && grant.verification.typecheck !== null });
   if (JSON.stringify(current) !== JSON.stringify(grant)) throw new Error("Approved proposal changed before execution");
   return validateProposalRunGrant({ ...grant, approvedChecks: selected.fingerprints });
@@ -143,7 +148,10 @@ async function requestApprovedScope(dependencies: StartTaskDependencies,
   const selected = await selectEligibleChecks(dependencies, grant);
   if (selected === null) return null;
   report({ phase: "awaiting_approval", operation: "proposal_scope" });
-  return approved(await dependencies.ask("Approve this scope and start isolated execution? [y/N] ")) ? selected : null;
+  const prompt = grant.executionEnvironment === "host-local" ?
+    "Approve this scope and trusted local checks with host access and untracked child processes? [y/N] " :
+    "Approve this scope and start isolated execution? [y/N] ";
+  return approved(await dependencies.ask(prompt)) ? selected : null;
 }
 
 function formatTaskReview(review: TaskReview): string {
@@ -158,13 +166,16 @@ function formatTaskReview(review: TaskReview): string {
     `PASS Selected Node test: this exact result passed ${nodeTest?.profile}\n` +
       (typecheck === null ? "" : `PASS TypeScript no-emit: this exact result passed ${typecheck.profile}\n`) :
     `PASS TypeScript no-emit: this exact result passed ${typecheck?.profile}\n`;
+  const local = [nodeTest, typecheck].some((check) => check?.binding.isolation?.kind === "host-local");
+  const environmentSummary = local ?
+    "Execution: trusted local process; host files, network and credentials were accessible. No sandbox was enforced; child processes after main-process exit were not tracked.\n" : "";
   const unchecked = review.check.task === SOURCE_TEST_TASK_KIND && typecheck === null ?
     "- repository typechecking\n" : "- full integration suite\n";
   return "\nCandidate review\n\n" +
     `Changed:\n${review.changedFiles.map((path) => `- ${path}`).join("\n")}\n\n` +
     "Checked:\n" +
-    "PASS Scope integrity: only admitted files changed\n" +
-    checkSummary + "\n" +
+    "PASS Candidate scope: only admitted candidate files changed\n" +
+    checkSummary + environmentSummary + "\n" +
     "Not established:\n" +
     "- requested behavior and completion conditions\n" +
     unchecked + "\n" +
@@ -227,7 +238,7 @@ async function promoteAcceptedTask(review: TaskReview, decided: TaskReview, sour
   report({ phase: "promoting", operation: "accepted_candidate" });
   await journal.append({ state: "promotion_started", reviewSha256: review.reviewSha256, hostChecks: meter.checks });
   try {
-    const promotion = await promote(review.directory, source, review.reviewSha256, meter.observeCheck);
+    const promotion = await promote(review.directory, source, review.reviewSha256);
     try {
       await finishOutcome(journal, { state: "finished", outcome: "promoted", files: promotion.files }, write, meter);
     } catch {
@@ -263,7 +274,7 @@ async function runSemanticCorrection(dependencies: StartTaskDependencies, execut
     await finishOutcome(journal, { state: "finished", outcome: "cancelled" }, dependencies.write, meter);
     return { status: "settled", exitCode: 130, outcome: "cancelled" };
   }
-  const currentParent = await (dependencies.review ?? reviewTask)(review.directory, meter.observeCheck);
+  const currentParent = await (dependencies.review ?? reviewTask)(review.directory);
   if (currentParent.reviewSha256 !== review.reviewSha256 || currentParent.operatorDecision !== null) {
     throw new Error("Parent review changed before semantic correction");
   }
@@ -279,7 +290,7 @@ async function runSemanticCorrection(dependencies: StartTaskDependencies, execut
   meter.checks += Math.max(0, executionHostChecks(revisedExecution) - executionHostChecks(execution));
   const revisionResult = await completedRevision(revisedExecution, review.reviewSha256, journal, dependencies.write, meter);
   if (revisionResult !== null) return revisionResult;
-  const revisedReview = await (dependencies.review ?? reviewTask)(review.directory, meter.observeCheck);
+  const revisedReview = await (dependencies.review ?? reviewTask)(review.directory);
   if (revisedReview.historicalAttempt !== "semantic_revision_passed") {
     throw new Error("Fresh semantic revision review unavailable");
   }
@@ -291,7 +302,7 @@ async function runSemanticCorrection(dependencies: StartTaskDependencies, execut
   const finalDecision = approved(await dependencies.ask("Accept and promote these exact revised bytes? [y/N] "))
     ? "accept" : "reject";
   const final = await (dependencies.decide ?? decideTask)(revisedReview.directory,
-    { decision: finalDecision, reviewSha256: revisedReview.reviewSha256 }, meter.observeCheck);
+    { decision: finalDecision, reviewSha256: revisedReview.reviewSha256 });
   await journal.append({ state: "decision_recorded", decision: finalDecision,
     reviewSha256: revisedReview.reviewSha256, hostChecks: meter.checks });
   if (finalDecision === "reject") {
@@ -303,10 +314,20 @@ async function runSemanticCorrection(dependencies: StartTaskDependencies, execut
     dependencies.promote ?? promoteTask, dependencies.write, meter);
 }
 
+async function closeTaskResources(execution: TaskRunResult | undefined, journal: TaskOutcomeJournal,
+  write: (text: string) => void): Promise<void> {
+  try { await execution?.correction?.close(); }
+  catch {
+    try { write("Task input cleanup is incomplete; inspect the retained candidate.\n"); }
+    catch { /* Cleanup reporting cannot change a completed task outcome. */ }
+  } finally { await journal.close(); }
+}
+
 /** One-shot proposal lifecycle. A started proposal cannot be replayed or resumed. */
 export async function startTask(dependencies: StartTaskDependencies): Promise<TaskStartResult> {
   const report = dependencies.report ?? ignoreProgress;
-  let grant = await admitTaskProposal(dependencies);
+  let grant = await admitTaskProposal({ ...dependencies,
+    executionEnvironment: dependencies.executionEnvironment ?? "docker-contained" });
   const createOutcome = dependencies.createOutcome ?? createTaskOutcome;
   const journal = await createOutcome(resolve(dependencies.proposalsRoot, grant.proposalId), {
     proposalId: grant.proposalId, proposalSha256: grant.proposalSha256, baseline: grant.baseline,
@@ -328,7 +349,7 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
     const executionResult = await completedExecution(execution, journal, dependencies.write, meter);
     if (executionResult !== null) return executionResult;
 
-    const review = await (dependencies.review ?? reviewTask)(execution.candidate.directory, meter.observeCheck);
+    const review = await (dependencies.review ?? reviewTask)(execution.candidate.directory);
     await journal.append({ state: "review_ready", reviewSha256: review.reviewSha256,
       checkStatus: review.check.status, hostChecks: meter.checks });
     showTaskReview(dependencies, review);
@@ -341,7 +362,7 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
     }
     const decision = acceptanceRequested(answer) ? "accept" : "reject";
     const decided = await (dependencies.decide ?? decideTask)(review.directory,
-      { decision, reviewSha256: review.reviewSha256 }, meter.observeCheck);
+      { decision, reviewSha256: review.reviewSha256 });
     await journal.append({ state: "decision_recorded", decision, reviewSha256: review.reviewSha256,
       hostChecks: meter.checks });
     if (decision === "reject") {
@@ -365,7 +386,7 @@ export async function startTask(dependencies: StartTaskDependencies): Promise<Ta
       await finishOutcome(journal, { state: "finished", outcome: "failed" }, dependencies.write, meter);
       return { status: "settled", exitCode: 1, outcome: "failed" };
     } catch { throw error; }
-  } finally { execution?.correction?.close(); await journal.close(); }
+  } finally { await closeTaskResources(execution, journal, dependencies.write); }
 }
 
 export async function askTaskStartQuestion(prompt: string,

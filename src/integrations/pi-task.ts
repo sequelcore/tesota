@@ -3,7 +3,7 @@ import { Agent, type AgentTool, type StreamFn } from "@earendil-works/pi-agent-c
 import { Type, createAssistantMessageEventStream, fauxAssistantMessage, type Api, type Model,
   type AssistantMessage } from "@earendil-works/pi-ai";
 import * as z from "zod";
-import { type CandidateTaskCheck, type CandidateTaskExecution } from "../candidate-task.js";
+import { TaskCheckPersistenceError, type CandidateTaskCheck, type CandidateTaskExecution } from "../candidate-task.js";
 import { SOURCE_TEST_TASK_KIND } from "../task-contract.js";
 import { canAdmitInvocation } from "../verification/invocation-admission.js";
 
@@ -242,7 +242,15 @@ export async function runPiTask(task: CandidateTaskExecution, model: Model<Api>,
     name: "tesota_check", label: "Check task", description: "Run the executor-owned check for the selected task.",
     parameters: checkParameters, execute: async (id, args, toolSignal) => execute(async () => {
       taskCheckSchema.parse(args);
-      const check = await task.check(toolSignal);
+      let check: CandidateTaskCheck;
+      try { check = await task.check(toolSignal); }
+      catch (error) {
+        if (error instanceof TaskCheckPersistenceError) {
+          unconfirmedEffect = true;
+          task.close(true);
+        }
+        throw error;
+      }
       checks.push(check);
       checkCalls.set(id, check);
       if (check.settlement === "unconfirmed") {

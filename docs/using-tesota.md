@@ -25,10 +25,15 @@ bun run build
 bun link
 ```
 
-The current change workflow also requires Git and Docker Desktop on Windows
-and the pinned verification image already present locally. The source-only
-TypeScript profile additionally requires a matching TypeScript closure in the
-target repository. Prepare that closure in an
+The current change workflow requires Git on Windows. The shell defaults to
+trusted local checks. Before approval it states that these checks can access
+host files, network and credentials; they are not sandboxed. Tesota observes
+the main check process but cannot establish that child processes have ended
+or that the check used no other host inputs. To select the
+protected Docker route, start `tesota --execution docker-contained`. That route
+requires Docker Desktop and the pinned verification image already present
+locally. The TypeScript profile requires a matching TypeScript installation in
+the target repository. For the Docker route, prepare a Linux/x64 closure in an
 independent checkout with the repository's committed lockfile:
 
 ```powershell
@@ -41,8 +46,8 @@ the closure must contain that package at the same version. Portable JavaScript
 TypeScript releases have no platform package; platform-specific releases must
 be prepared for Linux/x64 and may not run repository tools directly on the
 Windows host. Tesota does not install dependencies or pull an image while
-working. Docker belongs to the current protected TypeScript route; it is not
-intended as a permanent prerequisite for every Tesota task.
+working. The environment is selected before approval and cannot silently
+change after it.
 
 Authenticate the current Codex model route once:
 
@@ -131,8 +136,8 @@ typecheck when both are eligible. Every selected check is required. Tesota
 shows an ineligible reason before the choice; if the required test cannot run,
 it stops without asking for approval or creating a candidate. This is a
 read-only preview, not a check result:
-candidate admission and execution revalidate their own inputs, and the Docker
-engine or image may still fail when the check runs.
+candidate admission and execution revalidate their own inputs, and the selected
+execution environment may still fail when the check runs.
 
 If the request is unsupported, Tesota should explain the boundary rather than
 pretend it can complete the work.
@@ -160,7 +165,7 @@ file and one existing `tests/**/*.test.ts` file, with exact paths approved up
 front. It allows up to six replacements and six checks across the initial work
 and one approved correction. The test must first fail on the original source,
 then pass after the repair without changing that demonstrated regression. Its
-fixed Node test runs in the protected container; when selected, the contained
+fixed Node test runs in the selected environment; when selected, the selected
 typecheck must also pass on the same final candidate. Neither runs the full
 repository suite. Its two accepted
 ordinary walkthroughs include one fresh external task, but do not establish

@@ -30,11 +30,14 @@ export function inspectTaskReview(review: TaskReview): ShellInspection {
   const checks = [review.check.nodeTest, review.check.typecheck].filter((check) => check != null);
   const check = checks.length === 0 ? "Unavailable" :
     checks.map((selected) => `${selected.status}: ${selected.profile}`).join("; ");
+  const local = checks.some((selected) => selected.binding.isolation?.kind === "host-local");
+  const environment = local ? "Local process: no sandbox; host files, network and credentials were accessible. Child processes after main-process exit were not tracked." :
+    "Protected Docker container.";
   return {
     title: "Candidate result",
-    summary: `Changed ${review.changedFiles.join(", ")}. Check: ${check}. Review the diff before deciding.`,
+    summary: `Changed ${review.changedFiles.join(", ")}. Check: ${check}. ${local ? "Ran locally without a sandbox. " : ""}Review the diff before deciding.`,
     detail: `Changed files\n${review.changedFiles.join("\n")}\n\nChecks\n` +
-      `Scope integrity: ${review.check.status}\n${check}\n\nNot established\n` +
+      `Candidate scope: ${review.check.status}\n${check}\n${environment}\n\nNot established\n` +
       "Whether the behavior meets your request.\n\nExact diff\n" + review.diff,
   };
 }

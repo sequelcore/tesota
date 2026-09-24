@@ -119,6 +119,7 @@ import { runPiTask } from "../src/integrations/pi-task.js";
 
 const grant = {
   kind: "typescript-change" as const,
+  executionEnvironment: "docker-contained" as const,
   proposalId: "b0e37d7c-f19f-4c0c-915c-e52aafea93e7",
   proposalSha256: "b".repeat(64),
   source: process.cwd(),
@@ -189,8 +190,8 @@ it.runIf(process.platform === "win32")("uses the same cumulative ledger for a fr
   const initial = await runProposalTask(grant, { write: () => {}, writeError: () => {} });
   const revised = await initial.correction?.run(correctionRequest());
   expect(revised?.status).toBe("passed");
-  expect(initial.accounting.resources?.hostChecks).toBe(1);
-  expect(revised?.accounting.resources?.hostChecks).toBe(2);
+  expect(initial.accounting.resources?.hostChecks).toBe(0);
+  expect(revised?.accounting.resources?.hostChecks).toBe(0);
   const calls = vi.mocked(runPiTask).mock.calls;
   expect(calls).toHaveLength(2);
   expect(calls[1]?.[4]).toBe(calls[0]?.[4]);

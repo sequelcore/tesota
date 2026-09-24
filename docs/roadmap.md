@@ -15,8 +15,8 @@ vertical slices and their completion evidence.
 Tesota is pre-release. Its terminal shell supports bounded questions over a
 committed repository and two approved TypeScript task shapes in independent
 checkouts. One changes one or two existing non-test `src/` files and runs a
-fixed contained typecheck. The other changes one existing source file and one
-existing regression test and requires a targeted Node test; when the contained
+fixed typecheck in the selected execution environment. The other changes one existing source file and one
+existing regression test and requires a targeted Node test; when the
 TypeScript typecheck is eligible, the operator can require it too before
 approving the work. Selected verifier inputs are bound to that approval, and
 both checks must examine the same final candidate. It shows the
@@ -42,9 +42,17 @@ failed attempts. Its successful run took about 64 minutes because review,
 decision and promotion repeatedly snapshotted dependencies. This does not
 complete slice 1 or qualify representative external-repository usefulness.
 The [execution and evidence repair](implementation-plan.md#execution-and-evidence-repair-before-another-usefulness-claim)
-is next: eliminate redundant verification and qualify a Docker-free code route
-before another usefulness claim. In that target design Docker is a selectable
-protected provider, not a required installation for Tesota's ordinary use.
+now records task checks and reuses a task-owned dependency input. Review,
+decision and promotion inspect the last observation without another verifier
+run. A [small live adapter diagnostic](../experiments/practical-use/2026-09-23-evidence-repair-adapter-results.md)
+confirmed one dependency snapshot across two real checks; a timed ordinary
+task with the trusted host-local route has now completed without Docker;
+[the retained diagnostic](../experiments/practical-use/2026-09-23-execution-repair-shell-results.md)
+records approval, a real check, review, acceptance and guarded application.
+The shell offers host-local checks without Docker and retains Docker as a
+selectable protected route. This is one small Windows fixture, not evidence of
+representative usefulness or OS confinement. A checkout line-ending conversion
+also blocked one attempt before approval and remains a usability issue.
 An [SRT Windows follow-up](../experiments/isolation/README.md#repository-and-alias-follow-up)
 ran a real TypeScript check. A private task fixture constrained its own files,
 but a separate host tree with broad inherited permissions remained accessible.

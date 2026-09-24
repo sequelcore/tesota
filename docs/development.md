@@ -38,12 +38,11 @@ by their owners:
 | Explicit Windows isolation comparison | [Isolation experiment](../experiments/isolation/README.md) |
 | Live model probes | [Codex experiment guide](../experiments/codex/README.md) |
 
-The current repository TypeScript and targeted Node profiles require the pinned
-Docker image already present locally. The TypeScript profile also needs the
-target repository's matching Linux/x64 dependency closure. Tesota does not
-install or pull it during a task; [Using Tesota](using-tesota.md#prerequisites)
-has the preparation command. The Docker requirement belongs to these profiles,
-not every Tesota operation.
+The shell defaults to trusted host-local repository checks on Windows. This
+route is not sandboxed. The optional protected Docker route requires its pinned
+image already present locally and a matching Linux/x64 TypeScript dependency
+closure. Tesota does not install dependencies or pull images during a task;
+[Using Tesota](using-tesota.md#prerequisites) gives the setup details.
 
 ## Change scope
 

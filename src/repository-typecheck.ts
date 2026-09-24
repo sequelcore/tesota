@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
+import { lstat, realpath, rm, symlink, unlink } from "node:fs/promises";
+import { join, relative } from "node:path";
 import * as z from "zod";
 import { bindCandidateCheckoutContent, inspectPromotionSource } from "./candidate-checkout.js";
 import { CONTAINER_IMAGE, buildTypecheckContainerInvocation, containerRuntimeIsOutside, resolveContainerRuntime,
@@ -9,6 +9,7 @@ import { dependencyInstallationSha256, parseRepositoryJson, readCommittedCheckIn
   repositoryInputDirectory, sha256, snapshotDependencyInstallation } from "./repository-check-input.js";
 import { REPOSITORY_TYPECHECK_LIMITS, executeRepositoryTypecheckContainer,
   type RepositoryTypecheckExecutor } from "./repository-typecheck-process.js";
+import { executeRepositoryHostProcess, resolveHostNodeRuntime, type HostNodeRuntimeIdentity } from "./repository-host-process.js";
 
 export const REPOSITORY_TYPECHECK_PROFILE = "typescript-no-emit/v1" as const;
 const REPOSITORY_TYPECHECK_SCRIPT = "tsc --noEmit -p tsconfig.json" as const;
@@ -40,10 +41,10 @@ export interface RepositoryTypecheckProfile {
   readonly repository: { readonly script: typeof REPOSITORY_TYPECHECK_SCRIPT; readonly packageJsonSha256: string;
     readonly tsconfigSha256: string; readonly lockfileSha256: string };
   readonly verifier: { readonly packageVersion: string; readonly installationSha256: string };
-  readonly isolation: { readonly image: typeof CONTAINER_IMAGE; readonly policySha256: string;
-    readonly executable: string; readonly executableSha256: string; readonly nodeModules: string };
-  readonly command: readonly ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental",
-    "false", "--pretty", "false", "-p", "tsconfig.json"];
+  readonly isolation: ({ readonly kind: "docker-contained"; readonly image: typeof CONTAINER_IMAGE } |
+    { readonly kind: "host-local" }) & { readonly policySha256: string; readonly executable: string;
+    readonly executableSha256: string; readonly nodeModules: string };
+  readonly command: readonly string[];
   readonly limits: typeof REPOSITORY_TYPECHECK_LIMITS;
   readonly authority: "local_operator_approval_required";
 }
@@ -67,20 +68,47 @@ export function typecheckProfileFingerprint(binding: Omit<RepositoryTypecheckPro
     lockfile: binding.repository.lockfileSha256,
     installationSha256: binding.verifier.installationSha256,
     runtime: { executable: binding.isolation.executable, executableSha256: binding.isolation.executableSha256 },
-    image: binding.isolation.image, policy: binding.isolation.policySha256, limits: binding.limits }));
+    environment: binding.isolation.kind,
+    ...(binding.isolation.kind === "docker-contained" ? { image: binding.isolation.image } : {}),
+    policy: binding.isolation.policySha256, limits: binding.limits }));
+}
+
+function hostTypecheckPolicySha256(): string {
+  return sha256(JSON.stringify({ environment: "host-local", process: "node", command: REPOSITORY_TYPECHECK_SCRIPT,
+    input: "task-owned-dependency-snapshot", cancellation: "unconfirmed-on-stop",
+    settlement: "root-exit-only-descendants-unobserved", limits: REPOSITORY_TYPECHECK_LIMITS }));
 }
 
 interface PrepareOptions {
   readonly candidate: string;
   readonly source: string;
   readonly runtime?: ContainerRuntimeIdentity;
+  readonly hostRuntime?: HostNodeRuntimeIdentity;
+  readonly environment?: "docker-contained" | "host-local";
 }
 export type RepositoryCheckEligibility = Readonly<{ status: "eligible" | "ineligible"; reason: string;
   fingerprint?: string }>;
 const issued = new WeakSet<object>();
 
+async function inspectLinuxCompilerClosure(nodeModules: string, version: string,
+  linuxVersion: string | undefined): Promise<RepositoryCheckEligibility | null> {
+  if (linuxVersion === undefined) return null;
+  if (linuxVersion !== version) {
+    return { status: "ineligible", reason: "TypeScript Linux/x64 declaration does not match TypeScript" };
+  }
+  let linux: ReturnType<typeof installedLinuxPackageSchema.safeParse>;
+  try {
+    const linuxRoot = await repositoryInputDirectory(join(nodeModules, "@typescript", "typescript-linux-x64"));
+    linux = installedLinuxPackageSchema.safeParse(parseRepositoryJson(await readDependencyInstallationInput(
+      join(linuxRoot, "package.json"), 128 * 1024)));
+  } catch { return { status: "ineligible", reason: "TypeScript Linux/x64 installation is unavailable" }; }
+  return linux.success && linux.data.version === version ? null :
+    { status: "ineligible", reason: "TypeScript Linux/x64 installation is missing or mismatched" };
+}
+
 /** Read-only preview of committed check declarations and the installed verifier. */
-export async function inspectRepositoryTypecheckEligibility(source: string): Promise<RepositoryCheckEligibility> {
+export async function inspectRepositoryTypecheckEligibility(source: string,
+  environment: "docker-contained" | "host-local" = "docker-contained"): Promise<RepositoryCheckEligibility> {
   try {
     const packageBytes = readCommittedCheckInput(source, "package.json", 128 * 1024);
     const declared = packageSchema.safeParse(parseRepositoryJson(packageBytes));
@@ -104,30 +132,26 @@ export async function inspectRepositoryTypecheckEligibility(source: string): Pro
     }
     const linuxName = "@typescript/typescript-linux-x64";
     const linuxVersion = installed.data.optionalDependencies?.[linuxName] ?? installed.data.dependencies?.[linuxName];
-    if (linuxVersion !== undefined) {
-      if (linuxVersion !== installed.data.version) {
-        return { status: "ineligible", reason: "TypeScript Linux/x64 declaration does not match TypeScript" };
-      }
-      let linux: ReturnType<typeof installedLinuxPackageSchema.safeParse>;
-      try {
-        const linuxRoot = await repositoryInputDirectory(join(nodeModules, "@typescript", "typescript-linux-x64"));
-        linux = installedLinuxPackageSchema.safeParse(parseRepositoryJson(await readDependencyInstallationInput(
-          join(linuxRoot, "package.json"), 128 * 1024)));
-      } catch { return { status: "ineligible", reason: "TypeScript Linux/x64 installation is unavailable" }; }
-      if (!linux.success || linux.data.version !== installed.data.version) {
-        return { status: "ineligible", reason: "TypeScript Linux/x64 installation is missing or mismatched" };
-      }
-    }
-    const runtime = await resolveContainerRuntime([source]);
+    const linuxProblem = environment === "docker-contained" ?
+      await inspectLinuxCompilerClosure(nodeModules, installed.data.version, linuxVersion) : null;
+    if (linuxProblem !== null) return linuxProblem;
+    const runtime = environment === "docker-contained" ? await resolveContainerRuntime([source]) :
+      await resolveHostNodeRuntime([source]);
     const installationSha256 = await dependencyInstallationSha256(nodeModules, true);
-    return { status: "eligible", reason: "required declarations, installed verifier, and Docker client are present",
+    return { status: "eligible", reason: environment === "docker-contained" ?
+      "required declarations, installed verifier, and Docker client are present" :
+      "required declarations, installed verifier, and local Node are present; commands have host access",
       fingerprint: sha256(JSON.stringify({ profile: REPOSITORY_TYPECHECK_PROFILE,
         packageJson: sha256(packageBytes), tsconfig: sha256(tsconfig),
         lockfile: sha256(readCommittedCheckInput(source, "bun.lock", 8 * 1024 * 1024)),
-        installationSha256, runtime, image: CONTAINER_IMAGE, policy: typecheckContainerPolicySha256(),
+        installationSha256, runtime, environment,
+        ...(environment === "docker-contained" ? { image: CONTAINER_IMAGE } : {}),
+        policy: environment === "docker-contained" ? typecheckContainerPolicySha256() : hostTypecheckPolicySha256(),
         limits: REPOSITORY_TYPECHECK_LIMITS })) };
   } catch {
-    return { status: "ineligible", reason: "required repository inputs, installed verifier, or Docker client are unavailable" };
+    return { status: "ineligible", reason: environment === "docker-contained" ?
+      "required repository inputs, installed verifier, or Docker client are unavailable" :
+      "required repository inputs, installed verifier, or local Node are unavailable" };
   }
 }
 
@@ -137,6 +161,7 @@ async function candidateBinding(candidateDirectory: string): Promise<RepositoryT
 
 /** Admit one concrete, shell-free typecheck profile from repository declarations and observed installed inputs. */
 export async function prepareRepositoryTypecheck(options: PrepareOptions): Promise<RepositoryTypecheckProfile> {
+  const environment = options.environment ?? "docker-contained";
   const candidate = await candidateBinding(options.candidate);
   const sourceIdentity = await inspectPromotionSource(candidate.directory, options.source, "package.json");
   if (sourceIdentity.head !== candidate.baseline) throw new Error("Repository typecheck source baseline changed");
@@ -153,7 +178,7 @@ export async function prepareRepositoryTypecheck(options: PrepareOptions): Promi
   if (installed.version !== declared.devDependencies.typescript) throw new Error("Installed TypeScript does not match repository declaration");
   const linuxPackageName = "@typescript/typescript-linux-x64";
   const linuxDependency = installed.optionalDependencies?.[linuxPackageName] ?? installed.dependencies?.[linuxPackageName];
-  if (linuxDependency !== undefined) {
+  if (environment === "docker-contained" && linuxDependency !== undefined) {
     if (linuxDependency !== installed.version) throw new Error("TypeScript Linux/x64 declaration mismatch");
     let linuxPackage: z.infer<typeof installedLinuxPackageSchema>;
     try {
@@ -163,8 +188,11 @@ export async function prepareRepositoryTypecheck(options: PrepareOptions): Promi
     } catch { throw new Error("TypeScript Linux/x64 closure unavailable"); }
     if (linuxPackage.version !== installed.version) throw new Error("TypeScript Linux/x64 closure version mismatch");
   }
-  const runtime = options.runtime ?? await resolveContainerRuntime([source, candidate.directory, candidate.checkout]);
-  if (!digestPattern.test(runtime.executableSha256) || !containerRuntimeIsOutside(runtime, [source, candidate.directory, candidate.checkout])) {
+  const runtime = environment === "docker-contained" ?
+    options.runtime ?? await resolveContainerRuntime([source, candidate.directory, candidate.checkout]) :
+    options.hostRuntime ?? await resolveHostNodeRuntime([source, candidate.directory, candidate.checkout]);
+  if (!digestPattern.test(runtime.executableSha256) ||
+      environment === "docker-contained" && !containerRuntimeIsOutside(runtime, [source, candidate.directory, candidate.checkout])) {
     throw new Error("Repository typecheck runtime unavailable");
   }
   const profile: RepositoryTypecheckProfile = {
@@ -173,10 +201,14 @@ export async function prepareRepositoryTypecheck(options: PrepareOptions): Promi
     repository: { script: REPOSITORY_TYPECHECK_SCRIPT, packageJsonSha256: sha256(packageBytes),
       tsconfigSha256: sha256(tsconfigBytes), lockfileSha256: sha256(lockfileBytes) },
     verifier: { packageVersion: installed.version, installationSha256: await dependencyInstallationSha256(nodeModules, true) },
-    isolation: { image: CONTAINER_IMAGE, policySha256: typecheckContainerPolicySha256(),
-      executable: runtime.executable, executableSha256: runtime.executableSha256, nodeModules },
-    command: ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
-      "--pretty", "false", "-p", "tsconfig.json"],
+    isolation: environment === "docker-contained" ? { kind: environment, image: CONTAINER_IMAGE,
+      policySha256: typecheckContainerPolicySha256(), executable: runtime.executable,
+      executableSha256: runtime.executableSha256, nodeModules } : { kind: environment,
+      policySha256: hostTypecheckPolicySha256(), executable: runtime.executable,
+      executableSha256: runtime.executableSha256, nodeModules },
+    command: environment === "docker-contained" ? ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit",
+      "--incremental", "false", "--pretty", "false", "-p", "tsconfig.json"] :
+      ["node", "node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false", "--pretty", "false", "-p", "tsconfig.json"],
     limits: REPOSITORY_TYPECHECK_LIMITS,
     authority: "local_operator_approval_required",
   };
@@ -233,11 +265,32 @@ async function inputsRemainCurrent(profile: RepositoryTypecheckProfile, signal?:
     executableSha256 === profile.isolation.executableSha256;
 }
 
+async function executeHostTypecheck(profile: RepositoryTypecheckProfile, snapshotDirectory: string,
+  signal?: AbortSignal): Promise<Awaited<ReturnType<typeof executeRepositoryHostProcess>>> {
+  const link = join(profile.candidate.checkout, "node_modules");
+  try { await symlink(snapshotDirectory, link, "junction"); }
+  catch { return { status: "failed", reason: "spawn_failed", process: "not_started", container: "absent" }; }
+  const executable = join(link, "typescript", "bin", "tsc");
+  let observed: Awaited<ReturnType<typeof executeRepositoryHostProcess>>;
+  try {
+    observed = await executeRepositoryHostProcess(profile.isolation.executable,
+      [executable, "--noEmit", "--incremental", "false", "--pretty", "false", "-p", "tsconfig.json"],
+      profile.candidate.checkout, REPOSITORY_TYPECHECK_LIMITS, signal);
+  } catch {
+    observed = { status: "failed", reason: "process_error", process: "unconfirmed", container: "absent" };
+  }
+  if (observed.process === "unconfirmed") return observed;
+  try { await unlink(link); }
+  catch { return { status: "failed", reason: "cleanup_unconfirmed", process: "unconfirmed", container: "absent" }; }
+  return observed;
+}
+
 async function executeSnapshotTypecheck(profile: RepositoryTypecheckProfile, snapshotDirectory: string, name: string,
   executor: RepositoryTypecheckExecutor, signal: AbortSignal | undefined): Promise<SnapshotExecution> {
-  const invocation = buildTypecheckContainerInvocation({ candidate: profile.candidate.checkout,
-    nodeModules: snapshotDirectory }, profile.isolation.executable, name);
-  const observed = await executor(invocation, name, signal);
+  const observed = profile.isolation.kind === "docker-contained" ? await executor(
+    buildTypecheckContainerInvocation({ candidate: profile.candidate.checkout,
+      nodeModules: snapshotDirectory }, profile.isolation.executable, name), name, signal) :
+    await executeHostTypecheck(profile, snapshotDirectory, signal);
   const settled = snapshotSettled(observed.process, observed.container);
   if (observed.status === "failed") {
     const status = observed.reason === "cancelled" ? "cancelled" : observed.reason === "timeout" ? "timed_out" :
@@ -277,25 +330,67 @@ async function executeSnapshotTypecheck(profile: RepositoryTypecheckProfile, sna
 
 export async function runRepositoryTypecheck(profile: RepositoryTypecheckProfile,
   executor: RepositoryTypecheckExecutor = executeRepositoryTypecheckContainer,
-  signal?: AbortSignal): Promise<RepositoryTypecheckResult> {
+  signal?: AbortSignal, retainTaskInput = false): Promise<RepositoryTypecheckResult> {
   if (!issued.has(profile)) throw new Error("Repository typecheck profile was not issued");
   if (signalAborted(signal)) return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
   if (!await inputsRemainCurrent(profile, signal).catch(() => false)) {
     if (signalAborted(signal)) return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
     return failedResult(profile, "execution_failed", "input_drift", "not_started", "absent");
   }
-  const name = `tesota-typecheck-${randomUUID()}`;
-  const snapshot = await snapshotDependencyInstallation(profile.isolation.nodeModules, profile.candidate.directory,
-    profile.verifier.installationSha256, `.tesota-typecheck-dependencies-${randomUUID()}`, signal);
+  const containerName = `tesota-typecheck-${randomUUID()}`;
+  const snapshotName = retainTaskInput ? taskInputName(profile.candidate.directory) :
+    `.tesota-typecheck-dependencies-${randomUUID()}`;
+  const snapshot = retainTaskInput ? await reusableTaskInput(profile, snapshotName, signal) :
+    await snapshotDependencyInstallation(profile.isolation.nodeModules, profile.candidate.directory,
+      profile.verifier.installationSha256, snapshotName, signal);
   if (snapshot.state !== "ready") {
     if (snapshot.state === "cancelled") return failedResult(profile, "cancelled", "cancelled", "not_started", "absent");
     return snapshot.state === "mismatch"
       ? failedResult(profile, "execution_failed", "dependency_snapshot_mismatch", "not_started", "absent")
       : failedResult(profile, "unavailable", "dependency_snapshot_unavailable", "not_started", "absent");
   }
-  const execution = await executeSnapshotTypecheck(profile, snapshot.directory, name, executor, signal);
-  if (execution.snapshotSettled) await rm(snapshot.directory, { recursive: true, force: true }).catch(() => {});
+  const execution = await executeSnapshotTypecheck(profile, snapshot.directory, containerName, executor, signal);
+  if (execution.snapshotSettled && !retainTaskInput) {
+    await rm(snapshot.directory, { recursive: true, force: true }).catch(() => {});
+  }
   return execution.result;
+}
+
+function taskInputName(candidateDirectory: string): string {
+  return `.tesota-typecheck-dependencies-${sha256(candidateDirectory).slice(0, 32)}`;
+}
+
+async function reusableTaskInput(profile: RepositoryTypecheckProfile, name: string,
+  signal?: AbortSignal): Promise<Awaited<ReturnType<typeof snapshotDependencyInstallation>>> {
+  const candidate = await repositoryInputDirectory(profile.candidate.directory);
+  const directory = join(candidate, name);
+  let metadata;
+  try { metadata = await lstat(directory); } catch (error) {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") {
+      return snapshotDependencyInstallation(profile.isolation.nodeModules, candidate,
+        profile.verifier.installationSha256, name, signal);
+    }
+    return { state: "unavailable" };
+  }
+  if (!metadata.isDirectory() || metadata.isSymbolicLink() || relative(directory, await realpath(directory)) !== "") {
+    return { state: "mismatch" };
+  }
+  const digest = await dependencyInstallationSha256(directory, false, signal).catch(() => "");
+  return digest === profile.verifier.installationSha256 ? { state: "ready", directory } : { state: "mismatch" };
+}
+
+/** Call after each selected check's observable process settles. Host-local descendants remain unobserved. */
+export async function releaseRepositoryTypecheckTaskInput(candidateDirectory: string): Promise<void> {
+  const candidate = await repositoryInputDirectory(candidateDirectory);
+  const directory = join(candidate, taskInputName(candidate));
+  const metadata = await lstat(directory).catch((error: unknown) => {
+    if (typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (metadata === null) return;
+  if (!metadata.isDirectory() || metadata.isSymbolicLink() || relative(candidate, directory).startsWith("..") ||
+      relative(directory, await realpath(directory)) !== "") throw new Error("Task dependency input unavailable");
+  await rm(directory, { recursive: true, force: true });
 }
 
 /** Compose the concrete profile; the caller remains responsible for task execution authority. */
@@ -310,9 +405,11 @@ export function formatRepositoryTypecheckProfile(profile: RepositoryTypecheckPro
     `Repository declaration: ${profile.repository.script}\nConfiguration: package ${profile.repository.packageJsonSha256}; ` +
     `tsconfig ${profile.repository.tsconfigSha256}; lockfile ${profile.repository.lockfileSha256}\n` +
     `Verifier: TypeScript ${profile.verifier.packageVersion}; installation ${profile.verifier.installationSha256}\n` +
-    `Execution: ${profile.command.join(" ")}\nIsolation: ${profile.isolation.image}; policy ${profile.isolation.policySha256}\n` +
+    `Execution: ${profile.command.join(" ")}\nEnvironment: ${profile.isolation.kind}; policy ${profile.isolation.policySha256}\n` +
     `Runtime: ${profile.isolation.executable}; SHA-256 ${profile.isolation.executableSha256}\n` +
-    "Effects: candidate and dependencies read-only; network denied; host credentials not mounted\n" +
+    (profile.isolation.kind === "docker-contained" ?
+      "Effects: candidate and dependencies read-only; network denied; host credentials not mounted\n" :
+      "Effects: trusted host process; may access files, network, and credentials. No sandbox is enforced.\n") +
     `Limits: ${profile.limits.timeoutMs} ms, ${profile.limits.maxOutputBytes} output bytes\n` +
     "Authority: pending explicit local operator approval.\n";
 }

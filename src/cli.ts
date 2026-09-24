@@ -4,7 +4,7 @@ import { configuredOxlint, runOxlint } from "./verification/oxlint.js";
 
 const help = `Tesota
 Usage: tesota [--help | -h | help]
-       tesota --theme <tesota-dark|tesota-light|terminal>
+       tesota [--theme <tesota-dark|tesota-light|terminal>] [--execution <host-local|docker-contained>]
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout>
        tesota candidate create
@@ -26,16 +26,23 @@ Runs bounded verification and scoped repository tasks.
 `;
 
 const args = process.argv.slice(2);
-if ((args.length === 0 || args.length === 2 && args[0] === "--theme") &&
+const shellFlags = args.length === 0 || args.length === 2 &&
+  (args[0] === "--theme" || args[0] === "--execution") || args.length === 4 &&
+  ((args[0] === "--theme" && args[2] === "--execution") ||
+    (args[0] === "--execution" && args[2] === "--theme"));
+if (shellFlags &&
     process.stdin.isTTY === true && process.stdout.isTTY === true && process.stderr.isTTY === true) {
   const { parseTesotaShellTheme } = await import("./tesota-shell-theme.js");
-  const theme = args.length === 0 ? "tesota-dark" : parseTesotaShellTheme(args[1] ?? "");
-  if (theme === undefined) {
-    process.stderr.write("Unknown shell theme. Choose tesota-dark, tesota-light or terminal.\n");
+  const themeArg = args.indexOf("--theme");
+  const executionArg = args.indexOf("--execution");
+  const theme = themeArg < 0 ? "tesota-dark" : parseTesotaShellTheme(args[themeArg + 1] ?? "");
+  const execution = executionArg < 0 ? "host-local" : args[executionArg + 1];
+  if (theme === undefined || execution !== "host-local" && execution !== "docker-contained") {
+    process.stderr.write("Choose a valid shell theme and execution mode (host-local or docker-contained).\n");
     process.exitCode = 2;
   } else {
     const { createProcessTesotaShell, runTesotaShellCommand } = await import("./tesota-shell-command.js");
-    process.exit(await runTesotaShellCommand(createProcessTesotaShell(process.cwd(), theme)));
+    process.exit(await runTesotaShellCommand(createProcessTesotaShell(process.cwd(), theme, execution)));
   }
 } else if (args.length === 0 || (args.length === 1 && ["--help", "-h", "help"].includes(args[0] ?? ""))) {
   process.stdout.write(help);

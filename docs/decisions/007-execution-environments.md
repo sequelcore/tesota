@@ -1,17 +1,20 @@
 # 007: Keep execution policy independent from its environment
 
-Status: adopted architectural direction. Only the current container-backed
-repository profiles and the fixed native Oxlint profile are implemented.
+Status: adopted architectural direction. The container-backed repository
+profiles, explicit trusted Windows host-local checks, and fixed native Oxlint
+profile are implemented. One small host-local end-to-end task is qualified on
+Windows; broader usefulness and confinement remain unproved.
 The Vitest profile described in this decision was later retired because it had
 no task-flow consumer; the TypeScript and targeted Node-test profiles are the
-current container-backed implementations. The historical rationale below is
+current implementations. The historical rationale below is
 retained.
 
 The 2026-09-24 combined-check diagnostic exposed an implementation gap:
 Docker was required for the ordinary code path and eleven host checks copied
 the same 309 MB dependency installation repeatedly. That is not the intended
-general-purpose harness experience. The correction below is a design decision,
-not a claim that the new execution path has shipped.
+general-purpose harness experience. The correction began as a design decision;
+its current implementation and qualification status are in the
+[implementation plan](../implementation-plan.md#execution-and-evidence-repair-before-another-usefulness-claim).
 
 ## Context
 
@@ -187,13 +190,14 @@ consumers and qualified implementations.
   separate broadly accessible host tree remained reachable. It is not yet a
   qualified protected task provider.
 
-The next work is to measure preparation, command, settlement and cleanup
-within the lifecycle repair; remove redundant whole-installation snapshots and
-verifier runs; and qualify an explicit host-local route for one real TypeScript
-task. The bounded dependency reader already avoids maximum-size allocation
-for small files. A second concrete provider should establish the common
-boundary before extracting a shared executor. The existing Docker result remains valid for its
-exact environment and does not qualify either local posture.
+The check lifecycle now reuses a task-owned dependency snapshot and avoids
+verifier runs during review and application. The trusted host-local route is
+implemented for the fixed TypeScript and targeted Node checks, and needs a
+full ordinary-shell diagnostic has now completed without Docker. Direct verifier
+probes alone did not establish the whole task. Its pass observes only the direct process exit;
+surviving descendants and external host inputs remain assumptions of the
+operator-trusted workload. The Docker result remains valid for its exact
+environment and does not qualify either local posture.
 
 A native provider must prove exact filesystem roots, external aliases and
 reparse points, local and external network policy, inherited credential

@@ -8,9 +8,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { bindCandidateCheckoutContent, candidateDiff, createCandidateCheckout } from "../src/candidate-checkout.js";
 import { CandidateTask, checkCandidateTask, inspectCandidateTask } from "../src/candidate-task.js";
 import { validateProposalRunGrant, type ProposalRunGrant } from "../src/proposal-admission.js";
-import { nodeTestProfileFingerprint, prepareRepositoryNodeTest, runRepositoryNodeTest,
+import { prepareRepositoryNodeTest, runRepositoryNodeTest,
   type RepositoryNodeTestResult } from "../src/repository-node-test.js";
-import { checkRepositoryTypecheck, prepareRepositoryTypecheck, runRepositoryTypecheck, typecheckProfileFingerprint,
+import { checkRepositoryTypecheck, runRepositoryTypecheck,
   type RepositoryTypecheckResult } from "../src/repository-typecheck.js";
 import { decideTask, reviewTask, validateCorrectionParent } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
@@ -60,6 +60,7 @@ async function fixture(includeTypecheck = false): Promise<{ root: string; source
   const candidate = await createCandidateCheckout(source, join(root, "candidates"));
   const grant = validateProposalRunGrant({
     kind: "typescript-source-test-change", proposalId: "b0e37d7c-f19f-4c0c-915c-e52aafea93e7",
+    executionEnvironment: "docker-contained",
     proposalSha256: "a".repeat(64), source, baseline: candidate.baseline,
     objective: "Fix the value and add a regression.", completionConditions: ["The value is 2."],
     readFiles: ["lib/value.ts", "tests/value.test.ts"], writeFiles: ["lib/value.ts", "tests/value.test.ts"],
@@ -79,13 +80,15 @@ async function fixture(includeTypecheck = false): Promise<{ root: string; source
       "tests", "value.test.ts"))).digest("hex");
     return { profile: "node-test-targeted/v1", status, reason: status === "passed" ? null : "diagnostics",
       diagnostics: status === "passed" ? [] : ["expected value 2"], process: "exited", container: "absent",
-      binding: { candidate: binding, repository: { selectedTestSha256 } } as never,
+      binding: { candidate: binding, repository: { selectedTestSha256 },
+        isolation: { kind: "docker-contained" } } as never,
       authority: "none", provenance: "issued" } satisfies RepositoryNodeTestResult;
   });
   vi.mocked(checkRepositoryTypecheck).mockImplementation(async () => ({
     profile: "typescript-no-emit/v1", status: "passed", reason: null, diagnostics: [],
     process: "exited", container: "absent",
-    binding: { candidate: await bindCandidateCheckoutContent(candidate.directory, () => false) } as never,
+    binding: { candidate: await bindCandidateCheckoutContent(candidate.directory, () => false),
+      isolation: { kind: "docker-contained" } } as never,
     authority: "none", provenance: "issued",
   } satisfies RepositoryTypecheckResult));
   vi.mocked(runRepositoryTypecheck).mockImplementation(async () => checkRepositoryTypecheck({
@@ -133,19 +136,10 @@ it("requires both selected checks on the same final source-and-test result", asy
   });
   const mismatched = await task.check();
   expect(mismatched).toMatchObject({ status: "check_failed", outcome: "operational_failed" });
-  vi.mocked(typecheckProfileFingerprint).mockReturnValueOnce("c".repeat(64));
-  const runsBeforeReplacement = vi.mocked(runRepositoryTypecheck).mock.calls.length;
-  const replacedVerifier = await checkCandidateTask(current.candidate.directory);
-  expect(replacedVerifier).toMatchObject({ status: "check_failed", outcome: "operational_failed",
-    diagnostics: ["Selected TypeScript verifier inputs changed after approval."] });
-  expect(nodeTestProfileFingerprint).toHaveBeenCalled();
-  expect(runRepositoryTypecheck).toHaveBeenCalledTimes(runsBeforeReplacement);
-  expect(prepareRepositoryTypecheck).toHaveBeenCalled();
-  vi.mocked(nodeTestProfileFingerprint).mockReturnValueOnce("c".repeat(64));
+  const typecheckRuns = vi.mocked(runRepositoryTypecheck).mock.calls.length;
   const nodeRunsBeforeReplacement = vi.mocked(runRepositoryNodeTest).mock.calls.length;
-  const replacedNodeVerifier = await checkCandidateTask(current.candidate.directory);
-  expect(replacedNodeVerifier).toMatchObject({ status: "check_failed", outcome: "operational_failed",
-    diagnostics: ["Selected Node verifier inputs changed after approval."] });
+  await expect(checkCandidateTask(current.candidate.directory)).rejects.toThrow("no longer applies");
+  expect(runRepositoryTypecheck).toHaveBeenCalledTimes(typecheckRuns);
   expect(runRepositoryNodeTest).toHaveBeenCalledTimes(nodeRunsBeforeReplacement);
   task.close();
 }, 60_000);
@@ -236,10 +230,12 @@ it("keeps the red regression, green repair, current review and exact two-file pr
   expect(piTaskPasses(session, recorded)).toBe(true);
   expect(piTaskPasses({ ...session, checks: [before, { ...red,
     changedFiles: ["lib/value.ts", "tests/value.test.ts"] }, green] }, recorded)).toBe(false);
+  const nodeRuns = vi.mocked(runRepositoryNodeTest).mock.calls.length;
   const review = await reviewTask(current.candidate.directory);
   expect(review.changedFiles).toEqual(["lib/value.ts", "tests/value.test.ts"]);
   await decideTask(current.candidate.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
   const result = await promoteTask(current.candidate.directory, current.source, review.reviewSha256);
+  expect(runRepositoryNodeTest).toHaveBeenCalledTimes(nodeRuns);
   expect(result.files.map((file) => file.path)).toEqual(["lib/value.ts", "tests/value.test.ts"]);
   expect(await readFile(join(current.source, "lib", "value.ts"), "utf8")).toBe("export const value = 2;\n");
   expect(createHash("sha256").update(await readFile(join(current.source, "tests", "value.test.ts"))).digest("hex"))

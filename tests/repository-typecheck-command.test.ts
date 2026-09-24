@@ -11,7 +11,7 @@ const profile: RepositoryTypecheckProfile = {
   repository: { script: "tsc --noEmit -p tsconfig.json", packageJsonSha256: "d".repeat(64),
     tsconfigSha256: "e".repeat(64), lockfileSha256: "f".repeat(64) },
   verifier: { packageVersion: "7.0.2", installationSha256: "1".repeat(64) },
-  isolation: { image: CONTAINER_IMAGE, policySha256: "2".repeat(64), executable: "C:\\docker.exe",
+  isolation: { kind: "docker-contained", image: CONTAINER_IMAGE, policySha256: "2".repeat(64), executable: "C:\\docker.exe",
     executableSha256: "3".repeat(64), nodeModules: "C:\\source\\node_modules" },
   command: ["node", "/workspace/node_modules/typescript/bin/tsc", "--noEmit", "--incremental", "false",
     "--pretty", "false", "-p", "tsconfig.json"],

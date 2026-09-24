@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import * as z from "zod";
-import { createCandidateCheckout } from "../src/candidate-checkout.js";
+import { bindCandidateCheckoutContent, createCandidateCheckout } from "../src/candidate-checkout.js";
 import { CandidateTask, checkCandidateTask, inspectCandidateTask, type CandidateTaskCheck } from "../src/candidate-task.js";
 import { decideTask, reviewTask, validateCorrectionParent } from "../src/task-review.js";
 import { promoteTask } from "../src/task-promotion.js";
@@ -22,12 +22,20 @@ const candidateRename = vi.hoisted(() => ({
   active: false,
   afterTemporaryClose: null as (() => Promise<void>) | null,
   dispatches: 0,
+  checkAppendCalls: 0,
+  failCheckAppendAt: 0,
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const original = await importOriginal<typeof import("node:fs/promises")>();
   return { ...original,
     open: async (path: string, flags: string, mode?: number) => {
+      if (path.endsWith("checks.jsonl") && flags === "r+") {
+        candidateRename.checkAppendCalls += 1;
+        if (candidateRename.checkAppendCalls === candidateRename.failCheckAppendAt) {
+          throw new Error("Simulated check record write failure");
+        }
+      }
       const opened = await original.open(path, flags, mode);
       if (!candidateRename.active || flags !== "wx" || !path.includes(".tesota-")) return opened;
       return {
@@ -66,7 +74,12 @@ beforeEach(() => {
   candidateRename.active = false;
   candidateRename.afterTemporaryClose = null;
   candidateRename.dispatches = 0;
-  vi.mocked(checkRepositoryTypecheck).mockResolvedValue(typecheckResult("passed"));
+  candidateRename.checkAppendCalls = 0;
+  candidateRename.failCheckAppendAt = 0;
+  vi.mocked(checkRepositoryTypecheck).mockImplementation(async ({ candidate }) => ({
+    ...typecheckResult("passed"),
+    binding: { candidate: await bindCandidateCheckoutContent(candidate, () => false), identity: "a" } as never,
+  }));
 });
 
 function deferred(): Readonly<{ promise: Promise<void>; resolve: () => void }> {
@@ -115,6 +128,7 @@ async function fixture(isolatedSource = false, crlfAttributes = false) {
   const candidate = await createCandidateCheckout(source, candidates);
   const grant: ProposalRunGrant = {
     kind: "typescript-change", proposalId: "b0e37d7c-f19f-4c0c-915c-e52aafea93e7",
+    executionEnvironment: "docker-contained",
     proposalSha256: "a".repeat(64), source, baseline: candidate.baseline,
     objective: "Change the exported value.", completionConditions: ["The module exports the requested value."],
     readFiles: ["src/value.ts", "src/reference.ts"], writeFiles: ["src/value.ts"],
@@ -340,7 +354,10 @@ it("returns compiler diagnostics but closes the task on an operational typecheck
   await invalidTask.check();
   await invalidTask.replace({ path: "src/value.ts", expectedSha256: invalidInput.sha256,
     content: "export const value: string = 1;\n" });
-  vi.mocked(checkRepositoryTypecheck).mockResolvedValueOnce(typecheckResult("check_failed"));
+  vi.mocked(checkRepositoryTypecheck).mockImplementationOnce(async ({ candidate }) => ({
+    ...typecheckResult("check_failed"),
+    binding: { candidate: await bindCandidateCheckoutContent(candidate, () => false), identity: "a" } as never,
+  }));
   await expect(invalidTask.check()).resolves.toMatchObject({ status: "check_failed",
     diagnostics: [expect.stringContaining("TS2322")], typecheck: { status: "check_failed" } });
 
@@ -350,12 +367,15 @@ it("returns compiler diagnostics but closes the task on an operational typecheck
   await unavailableTask.check();
   await unavailableTask.replace({ path: "src/value.ts", expectedSha256: unavailableInput.sha256,
     content: "export const value = 'new';\n" });
-  vi.mocked(checkRepositoryTypecheck).mockResolvedValueOnce(typecheckResult("timed_out"));
+  vi.mocked(checkRepositoryTypecheck).mockImplementationOnce(async ({ candidate }) => ({
+    ...typecheckResult("timed_out"),
+    binding: { candidate: await bindCandidateCheckoutContent(candidate, () => false), identity: "a" } as never,
+  }));
   const unavailableCheck = await unavailableTask.check();
   expect(unavailableCheck).toMatchObject({ status: "check_failed", outcome: "operational_failed", settlement: "unconfirmed",
     diagnostics: [expect.stringContaining("settlement is unconfirmed")], typecheck: { status: "timed_out", process: "unconfirmed" } });
   expect(checkRepositoryTypecheck).toHaveBeenLastCalledWith({ candidate: unavailable.directory,
-    source: unavailable.source }, undefined);
+    source: unavailable.source, environment: "docker-contained" }, undefined);
   await expect(unavailableTask.read({ path: "src/value.ts" })).rejects.toThrow("closed");
 });
 
@@ -379,7 +399,8 @@ it("preserves an unconfirmed check that finishes after task authority closes", a
   await entered;
   expect(checkRepositoryTypecheck).toHaveBeenCalledOnce();
   task.close();
-  release?.(typecheckResult("timed_out"));
+  release?.({ ...typecheckResult("timed_out"),
+    binding: { candidate: await bindCandidateCheckoutContent(current.directory, () => false), identity: "a" } as never });
 
   await expect(running).resolves.toMatchObject({ outcome: "operational_failed", settlement: "unconfirmed",
     typecheck: { status: "timed_out", process: "unconfirmed" } });
@@ -431,32 +452,96 @@ it("stops review checking at the first unconfirmed effect", async () => {
   await task.check();
   await task.replace({ path: "src/value.ts", expectedSha256: input.sha256,
     content: "export const value = 'new';\n" });
-  task.close();
   vi.mocked(checkRepositoryTypecheck).mockClear();
-  vi.mocked(checkRepositoryTypecheck).mockResolvedValueOnce(typecheckResult("timed_out"));
-
+  vi.mocked(checkRepositoryTypecheck).mockImplementationOnce(async ({ candidate }) => ({
+    ...typecheckResult("timed_out"),
+    binding: { candidate: await bindCandidateCheckoutContent(candidate, () => false), identity: "a" } as never,
+  }));
+  await task.check();
+  task.close();
   await expect(reviewTask(current.directory)).rejects.toMatchObject({ name: "TaskReviewUnsettledError" });
   expect(checkRepositoryTypecheck).toHaveBeenCalledOnce();
 }, 20_000);
 
-it("makes a review stale when the bound typecheck evidence changes", async () => {
+it("keeps an uncertain check unsettled when its terminal record cannot be saved", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const original = "export const value = 'old';\n";
+  const provider = fauxProvider({ models: [{ id: "offline", name: "Offline" }] });
+  provider.setResponses([
+    fauxAssistantMessage(fauxToolCall("tesota_read", { path: "src/value.ts" })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage(fauxToolCall("tesota_replace", { path: "src/value.ts",
+      expectedSha256: createHash("sha256").update(original).digest("hex"),
+      content: "export const value = 'new';\n" })),
+    fauxAssistantMessage(fauxToolCall("tesota_check", {})),
+    fauxAssistantMessage("done"),
+  ]);
+  vi.mocked(checkRepositoryTypecheck).mockImplementationOnce(async ({ candidate }) => ({
+    ...typecheckResult("timed_out"),
+    binding: { candidate: await bindCandidateCheckoutContent(candidate, () => false), identity: "a" } as never,
+  }));
+  candidateRename.failCheckAppendAt = 3;
+  const result = await runPiTask(task, provider.getModel(), provider.provider.streamSimple,
+    new AbortController().signal);
+  expect(result).toMatchObject({ status: "unsettled", settlement: "unconfirmed" });
+  await expect(reviewTask(current.directory)).rejects.toMatchObject({ name: "TaskCheckPersistenceError" });
+}, 20_000);
+
+it("keeps a settled review bound to its original verifier observation", async () => {
   const current = await fixture();
   const task = await CandidateTask.prepare(current.directory, current.grant);
   const input = await task.read({ path: "src/value.ts" });
   await task.check();
   await task.replace({ path: "src/value.ts", expectedSha256: input.sha256,
     content: "export const value = 'new';\n" });
+  await task.check();
   task.close();
-
-  vi.mocked(checkRepositoryTypecheck).mockResolvedValue(typecheckResult("passed", "first"));
+  const calls = vi.mocked(checkRepositoryTypecheck).mock.calls.length;
   const first = await reviewTask(current.directory);
   vi.mocked(checkRepositoryTypecheck).mockResolvedValue(typecheckResult("passed", "second"));
   const second = await reviewTask(current.directory);
 
   expect(first.changedFiles).toEqual(["src/value.ts"]);
-  expect(second.reviewSha256).not.toBe(first.reviewSha256);
+  expect(second.reviewSha256).toBe(first.reviewSha256);
   expect(second.check.writeSetSha256).toBe(first.check.writeSetSha256);
+  expect(checkRepositoryTypecheck).toHaveBeenCalledTimes(calls);
 }, 20_000);
+
+it("does not reuse a prior pass when a later check has no terminal record", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const input = await task.read({ path: "src/value.ts" });
+  await task.check();
+  await task.replace({ path: "src/value.ts", expectedSha256: input.sha256,
+    content: "export const value = 'new';\n" });
+  const passed = await task.check();
+  await expect(reviewTask(current.directory)).resolves.toMatchObject({ check: { status: "passed" } });
+  await writeFile(join(current.directory, "checks.jsonl"), JSON.stringify({ state: "started", ordinal: 3,
+    definitionSha256: task.describe().definitionSha256, writeSetSha256: passed.writeSetSha256,
+    sourceInputsSha256: passed.sourceInputsSha256 }) + "\n", { flag: "a" });
+  await expect(reviewTask(current.directory)).rejects.toMatchObject({ name: "TaskCheckPersistenceError" });
+  task.close();
+}, 30_000);
+
+it("rejects a stored pass with an unconfirmed nested verifier", async () => {
+  const current = await fixture();
+  const task = await CandidateTask.prepare(current.directory, current.grant);
+  const input = await task.read({ path: "src/value.ts" });
+  await task.check();
+  await task.replace({ path: "src/value.ts", expectedSha256: input.sha256,
+    content: "export const value = 'new';\n" });
+  await task.check();
+  const path = join(current.directory, "checks.jsonl");
+  const lines = (await readFile(path, "utf8")).trimEnd().split("\n");
+  const finished = JSON.parse(lines.at(-1) ?? "null");
+  finished.check.typecheck.process = "unconfirmed";
+  finished.check.typecheck.container = "unconfirmed";
+  lines[lines.length - 1] = JSON.stringify(finished);
+  await writeFile(path, lines.join("\n") + "\n");
+  await expect(reviewTask(current.directory)).rejects.toThrow("Task check result invalid");
+  task.close();
+}, 30_000);
 
 it.each(["no-op", "batched edit and check"])(
   "composes a real offline CandidateTask through R0, admitted R1 %s and fresh durable review", async (revisionWork) => {
@@ -726,12 +811,15 @@ it("promotes only the exact accepted candidate bytes while preserving unrelated 
     await task.replace({ path: "src/value.ts", expectedSha256: input.sha256, content: "export const value = 'new';\n" });
     await task.check();
     task.close();
+    const verifierCalls = vi.mocked(checkRepositoryTypecheck).mock.calls.length;
     const review = await reviewTask(current.directory);
     await decideTask(current.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
     const index = await readFile(join(current.source, ".git", "index"));
     await writeFile(join(current.source, "README.md"), "operator work\n");
 
     const result = await promoteTask(current.directory, current.source, review.reviewSha256);
+
+    expect(checkRepositoryTypecheck).toHaveBeenCalledTimes(verifierCalls);
 
     expect(result).toMatchObject({ status: "applied", files: [{ path: "src/value.ts" }] });
     const promotion = await readFile(join(current.directory, "promotion.jsonl"), "utf8");
@@ -755,7 +843,7 @@ it("classifies a rejected promotion before source writing as not applied", async
   } finally { await current.cleanup(); }
 });
 
-it("preserves an unconfirmed promotion-time review before source writing", async () => {
+it("blocks promotion when a later check has no terminal record", async () => {
   const current = await fixture(true);
   try {
     const task = await CandidateTask.prepare(current.directory, current.grant);
@@ -763,17 +851,19 @@ it("preserves an unconfirmed promotion-time review before source writing", async
     await task.check();
     await task.replace({ path: "src/value.ts", expectedSha256: input.sha256,
       content: "export const value = 'new';\n" });
-    await task.check();
+    const passed = await task.check();
     task.close();
     const review = await reviewTask(current.directory);
     await decideTask(current.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
-    vi.mocked(checkRepositoryTypecheck).mockClear();
-    vi.mocked(checkRepositoryTypecheck).mockResolvedValueOnce(typecheckResult("timed_out"));
+    const calls = vi.mocked(checkRepositoryTypecheck).mock.calls.length;
+    await writeFile(join(current.directory, "checks.jsonl"), JSON.stringify({ state: "started", ordinal: 3,
+      definitionSha256: task.describe().definitionSha256, writeSetSha256: passed.writeSetSha256,
+      sourceInputsSha256: passed.sourceInputsSha256 }) + "\n", { flag: "a" });
 
     await expect(promoteTask(current.directory, current.source, review.reviewSha256)).rejects.toMatchObject({
-      name: "PromotionUncertainError",
+      name: "PromotionNotAppliedError",
     });
-    expect(checkRepositoryTypecheck).toHaveBeenCalledOnce();
+    expect(checkRepositoryTypecheck).toHaveBeenCalledTimes(calls);
   } finally { await current.cleanup(); }
 }, 60_000);
 
@@ -782,6 +872,7 @@ async function acceptedChange(current: Awaited<ReturnType<typeof fixture>>) {
   const input = await task.read({ path: "src/value.ts" });
   await task.check();
   await task.replace({ path: "src/value.ts", expectedSha256: input.sha256, content: "export const value = 'new';\n" });
+  await task.check();
   task.close();
   const review = await reviewTask(current.directory);
   await decideTask(current.directory, { decision: "accept", reviewSha256: review.reviewSha256 });
@@ -856,10 +947,7 @@ it("makes acceptance stale if a persisted source representation is rebound", asy
       inputs: plan.inputs, sourceInputs: plan.sourceInputs })).digest("hex");
     await writeFile(planPath, JSON.stringify(plan));
     await writeFile(join(current.source, "src/value.ts"), crlf);
-    const rebound = await reviewTask(current.directory);
-    expect(rebound.check.writeSetSha256).toBe(review.check.writeSetSha256);
-    expect(rebound.reviewSha256).not.toBe(review.reviewSha256);
-    expect(rebound.operatorDecision?.applicability).toBe("stale");
+    await expect(reviewTask(current.directory)).rejects.toMatchObject({ name: "TaskCheckPersistenceError" });
     await expect(promoteTask(current.directory, current.source, review.reviewSha256))
       .rejects.toMatchObject({ name: "PromotionNotAppliedError" });
   } finally { await current.cleanup(); }

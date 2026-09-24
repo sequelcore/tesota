@@ -73,6 +73,104 @@ export interface CandidateTaskCheck extends TaskOracleResult {
   readonly taskAcceptance: "not_evaluated";
 }
 
+const boundResultShape = {
+  reason: z.string().nullable(), diagnostics: z.array(z.string()),
+  process: z.enum(["not_started", "exited", "unconfirmed"]), container: z.enum(["absent", "unconfirmed"]),
+  binding: z.object({ candidate: z.object({ contentSha256: hashSchema }).passthrough() }).passthrough(),
+  authority: z.literal("none"), provenance: z.literal("issued"),
+};
+const typecheckResultSchema = z.strictObject({ profile: z.literal("typescript-no-emit/v1"),
+  status: z.enum(["passed", "check_failed", "unavailable", "execution_failed", "timed_out", "cancelled"]),
+  ...boundResultShape });
+const nodeTestResultSchema = z.strictObject({ profile: z.literal("node-test-targeted/v1"),
+  status: z.enum(["passed", "check_failed", "no_tests", "unavailable", "execution_failed", "timed_out", "cancelled"]),
+  ...boundResultShape });
+const checkRecordSchema = z.strictObject({
+  status: z.enum(["passed", "check_failed"]), diagnostics: z.array(z.string()),
+  outcome: z.enum(["passed", "check_failed", "operational_failed"]),
+  settlement: z.enum(["observed", "unconfirmed"]), task: z.enum([TASK_KIND, SOURCE_TEST_TASK_KIND]),
+  changedFiles: z.array(z.string()).max(2).optional(), selectedTest: z.string().optional(),
+  typecheck: typecheckResultSchema.nullable(), nodeTest: nodeTestResultSchema.nullable().optional(),
+  baseline: baselineSchema, writeSetSha256: hashSchema, sourceInputsSha256: hashSchema,
+  provenance: z.literal("issued"), taskAcceptance: z.literal("not_evaluated"),
+});
+const CHECK_RECORD_MAX_BYTES = 2 * 1024 * 1024;
+
+export class TaskCheckPersistenceError extends Error {
+  constructor() { super("Task check evidence could not be settled"); this.name = "TaskCheckPersistenceError"; }
+}
+
+const checkStartSchema = z.strictObject({ state: z.literal("started"), ordinal: z.number().int().positive(),
+  definitionSha256: hashSchema, writeSetSha256: hashSchema, sourceInputsSha256: hashSchema });
+const checkFinishSchema = z.strictObject({ state: z.literal("finished"), ordinal: z.number().int().positive(),
+  check: checkRecordSchema });
+
+async function appendCheckEvent(directory: string, ordinal: number, event: z.infer<typeof checkStartSchema> |
+  z.infer<typeof checkFinishSchema>, first: boolean): Promise<void> {
+  const path = join(directory, "checks.jsonl");
+  const record = Buffer.from(JSON.stringify(event) + "\n");
+  const file = await open(path, first && ordinal === 1 ? "wx" : "r+", 0o600);
+  try {
+    const metadata = await file.stat();
+    if (!metadata.isFile() || metadata.nlink !== 1 || metadata.size + record.length > CHECK_RECORD_MAX_BYTES ||
+        relative(path, await realpath(path)) !== "") throw new Error("Task check record unavailable");
+    let written = 0;
+    while (written < record.length) {
+      const next = await file.write(record, written, record.length - written, metadata.size + written);
+      if (next.bytesWritten === 0) throw new Error("Task check record unavailable");
+      written += next.bytesWritten;
+    }
+    await file.sync();
+  } finally { await file.close(); }
+}
+
+async function readCheckRecordLines(directory: string): Promise<string[]> {
+  const path = join(directory, "checks.jsonl");
+  const metadata = await lstat(path);
+  if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.nlink !== 1 ||
+      metadata.size > CHECK_RECORD_MAX_BYTES || relative(path, await realpath(path)) !== "") {
+    throw new Error("Task check record unavailable");
+  }
+  const file = await open(path, "r");
+  let bytes: Buffer;
+  try {
+    const buffer = Buffer.alloc(CHECK_RECORD_MAX_BYTES + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const read = await file.read(buffer, length, buffer.length - length, null);
+      if (read.bytesRead === 0) break;
+      length += read.bytesRead;
+    }
+    if (length > CHECK_RECORD_MAX_BYTES) throw new Error("Task check record unavailable");
+    bytes = buffer.subarray(0, length);
+  } finally { await file.close(); }
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  if (!text.endsWith("\n") || text.includes("\r")) throw new Error("Task check record unavailable");
+  return text.slice(0, -1).split("\n");
+}
+
+async function latestCheckRecord(directory: string, maximum: number, definitionSha256: string): Promise<CandidateTaskCheck> {
+  const lines = await readCheckRecordLines(directory);
+  if (lines.length === 1) throw new TaskCheckPersistenceError();
+  if (lines.length < 2 || lines.length > maximum * 2) throw new Error("Task check record unavailable");
+  let latest: CandidateTaskCheck | null = null;
+  for (let index = 0; index < lines.length; index += 2) {
+    const started = checkStartSchema.parse(JSON.parse(lines[index] ?? "null"));
+    if (started.ordinal !== index / 2 + 1 || started.definitionSha256 !== definitionSha256 ||
+        index + 1 >= lines.length) {
+      throw new TaskCheckPersistenceError();
+    }
+    const finished = checkFinishSchema.parse(JSON.parse(lines[index + 1] ?? "null"));
+    if (finished.ordinal !== started.ordinal || finished.check.writeSetSha256 !== started.writeSetSha256 ||
+        finished.check.sourceInputsSha256 !== started.sourceInputsSha256) {
+      throw new Error("Task check record unavailable");
+    }
+    latest = finished.check as CandidateTaskCheck;
+  }
+  if (latest === null) throw new TaskCheckPersistenceError();
+  return latest;
+}
+
 export interface CandidateTaskDescription {
   readonly task: typeof TASK_KIND | typeof SOURCE_TEST_TASK_KIND;
   readonly baseline: string;
@@ -274,10 +372,12 @@ function prematureRegressionPass(nodeTest: RepositoryNodeTestResult, bothChanged
 
 async function runSelectedTypecheck(directory: string, grant: ProposalRunGrant,
   signal?: AbortSignal): Promise<RepositoryTypecheckResult | null> {
-  if (grant.approvedChecks === undefined) return checkRepositoryTypecheck({ candidate: directory, source: grant.source }, signal);
-  const profile = await prepareRepositoryTypecheck({ candidate: directory, source: grant.source });
+  if (grant.approvedChecks === undefined) return checkRepositoryTypecheck({ candidate: directory, source: grant.source,
+    environment: grant.executionEnvironment }, signal);
+  const profile = await prepareRepositoryTypecheck({ candidate: directory, source: grant.source,
+    environment: grant.executionEnvironment });
   if (typecheckProfileFingerprint(profile) !== grant.approvedChecks["typescript-no-emit/v1"]) return null;
-  return runRepositoryTypecheck(profile, undefined, signal);
+  return runRepositoryTypecheck(profile, undefined, signal, true);
 }
 
 async function checkSelectedTypecheckAfterNode(directory: string, grant: ProposalRunGrant,
@@ -315,7 +415,8 @@ async function checkSourceTestTask(directory: string, files: TaskFiles, plan: Ta
   grant: Extract<ProposalRunGrant, { kind: typeof SOURCE_TEST_TASK_KIND }>, scope: TaskOracleResult,
   signal?: AbortSignal): Promise<TaskCheckObservation> {
   const profile = await prepareRepositoryNodeTest({ candidate: directory, source: grant.source,
-    selectedTest: grant.selectedTest, allowedWriteFiles: grant.writeFiles });
+    selectedTest: grant.selectedTest, allowedWriteFiles: grant.writeFiles,
+    environment: grant.executionEnvironment });
   if (grant.approvedChecks !== undefined &&
       nodeTestProfileFingerprint(profile) !== grant.approvedChecks["node-test-targeted/v1"]) return {
     oracle: { status: "check_failed", diagnostics: ["Selected Node verifier inputs changed after approval."] },
@@ -505,7 +606,11 @@ export class CandidateTask {
         throw new Error("Task closed");
       }
       return result;
-    } catch { this.#closed = true; throw new Error("Task operation denied or unavailable"); }
+    } catch (error) {
+      this.#closed = true;
+      if (error instanceof TaskCheckPersistenceError) throw error;
+      throw new Error("Task operation denied or unavailable");
+    }
     finally { this.#busy = false; }
   }
 
@@ -568,14 +673,23 @@ export class CandidateTask {
     const result = await this.#operation<CandidateTaskCheck>(async ({ files }) => {
       if (this.#checks >= taskLimits(this.#grant.kind).checks) throw new Error("Check budget exceeded");
       this.#checks += 1;
-      const checked = await checkTask(this.#directory, files, this.#plan, this.#grant, signal);
-      return { ...checked.oracle, outcome: checked.outcome, settlement: checked.settlement,
-        task: this.#grant.kind, provenance: "issued", typecheck: checked.typecheck,
-        ...sourceTestCheckDetails(files, this.#plan, this.#grant),
-        ...(checked.nodeTest === undefined ? {} : { nodeTest: checked.nodeTest }),
-        baseline: this.#plan.baseline, writeSetSha256: taskWriteSetSha256(files, this.#grant.writeFiles),
-        sourceInputsSha256: sourceInputsSha256(this.#plan),
-        taskAcceptance: "not_evaluated" as const };
+      const writeSetSha256 = taskWriteSetSha256(files, this.#grant.writeFiles);
+      const sourceSha256 = sourceInputsSha256(this.#plan);
+      await appendCheckEvent(this.#directory, this.#checks, { state: "started", ordinal: this.#checks,
+        definitionSha256: this.#plan.definitionSha256, writeSetSha256, sourceInputsSha256: sourceSha256 }, true);
+      try {
+        const checked = await checkTask(this.#directory, files, this.#plan, this.#grant, signal);
+        const result: CandidateTaskCheck = { ...checked.oracle, outcome: checked.outcome, settlement: checked.settlement,
+          task: this.#grant.kind, provenance: "issued", typecheck: checked.typecheck,
+          ...sourceTestCheckDetails(files, this.#plan, this.#grant),
+          ...(checked.nodeTest === undefined ? {} : { nodeTest: checked.nodeTest }),
+          baseline: this.#plan.baseline, writeSetSha256, sourceInputsSha256: sourceSha256,
+          taskAcceptance: "not_evaluated" as const };
+        checkRecordSchema.parse(result);
+        await appendCheckEvent(this.#directory, this.#checks, { state: "finished", ordinal: this.#checks,
+          check: result as z.infer<typeof checkRecordSchema> }, false);
+        return result;
+      } catch { throw new TaskCheckPersistenceError(); }
     }, (check) => check.settlement === "unconfirmed", generation);
     if (result.outcome === "operational_failed") this.close();
     return result;
@@ -609,15 +723,72 @@ export async function inspectCandidateTask(directory: string): Promise<{
     sourceInputs: loaded.plan.sourceInputs };
 }
 
-/** Rechecking persisted evidence never reopens editing authority. */
-export async function checkCandidateTask(directory: string, signal?: AbortSignal): Promise<CandidateTaskCheck> {
+/** Inspect the latest issued observation against current task inputs without running another check. */
+export async function checkCandidateTask(directory: string): Promise<CandidateTaskCheck> {
   const loaded = await loadCandidateTask(directory);
-  const checked = await checkTask(directory, loaded.files, loaded.plan, loaded.grant, signal);
-  return { ...checked.oracle, outcome: checked.outcome, settlement: checked.settlement,
-    task: loaded.grant.kind, typecheck: checked.typecheck,
-    ...sourceTestCheckDetails(loaded.files, loaded.plan, loaded.grant),
-    ...(checked.nodeTest === undefined ? {} : { nodeTest: checked.nodeTest }),
-    provenance: "recorded_untrusted", baseline: loaded.plan.baseline,
-    writeSetSha256: taskWriteSetSha256(loaded.files, loaded.grant.writeFiles),
-    sourceInputsSha256: sourceInputsSha256(loaded.plan), taskAcceptance: "not_evaluated" };
+  const check = await latestCheckRecord(directory, taskLimits(loaded.grant.kind).checks, loaded.plan.definitionSha256);
+  validateCheckIdentity(loaded, check);
+  if (check.settlement === "unconfirmed") return { ...check, provenance: "recorded_untrusted" };
+  validateCheckResults(loaded.grant, check);
+  await validateCheckCandidateBinding(directory, loaded.grant, check);
+  return { ...check, provenance: "recorded_untrusted" };
+}
+
+type LoadedCandidateTask = Awaited<ReturnType<typeof loadCandidateTask>>;
+
+function validateCheckIdentity(loaded: LoadedCandidateTask, check: CandidateTaskCheck): void {
+  if (check.task !== loaded.grant.kind || check.baseline !== loaded.plan.baseline ||
+      check.writeSetSha256 !== taskWriteSetSha256(loaded.files, loaded.grant.writeFiles) ||
+      check.sourceInputsSha256 !== sourceInputsSha256(loaded.plan) ||
+      JSON.stringify({ changedFiles: check.changedFiles, selectedTest: check.selectedTest }) !==
+        JSON.stringify(sourceTestCheckDetails(loaded.files, loaded.plan, loaded.grant))) {
+    throw new Error("Task check no longer applies to the candidate");
+  }
+}
+
+function validateCheckResults(grant: ProposalRunGrant, check: CandidateTaskCheck): void {
+  const typecheck = check.typecheck;
+  const nodeTest = check.nodeTest;
+  if ([typecheck, nodeTest].some((result) => result?.process === "unconfirmed" ||
+      result?.container === "unconfirmed") ||
+      !checkEnvironmentMatchesGrant(grant, check) ||
+      grant.kind === TASK_KIND && nodeTest != null ||
+      grant.kind === SOURCE_TEST_TASK_KIND && grant.verification.typecheck === null && typecheck !== null ||
+      grant.approvedChecks !== undefined && (
+        typecheck !== null && typecheckVerifierChanged(grant, typecheck) ||
+        nodeTest !== null && nodeTest !== undefined && nodeVerifierChanged(grant, nodeTest))) {
+    throw new Error("Task check result invalid");
+  }
+  validatePassedCheck(grant, check);
+}
+
+function checkEnvironmentMatchesGrant(grant: ProposalRunGrant, check: CandidateTaskCheck): boolean {
+  if (grant.approvedChecks === undefined) return true;
+  return (check.typecheck === null || check.typecheck.binding.isolation?.kind === grant.executionEnvironment) &&
+    (check.nodeTest == null || check.nodeTest.binding.isolation?.kind === grant.executionEnvironment);
+}
+
+function validatePassedCheck(grant: ProposalRunGrant, check: CandidateTaskCheck): void {
+  const typecheck = check.typecheck;
+  const nodeTest = check.nodeTest;
+  if (check.status === "passed" && (check.outcome !== "passed" || check.settlement !== "observed" ||
+      typecheck !== null && (typecheck.process !== "exited" || typecheck.container !== "absent") ||
+      nodeTest != null && (nodeTest.process !== "exited" || nodeTest.container !== "absent") ||
+      (grant.kind === SOURCE_TEST_TASK_KIND ?
+        nodeTest?.status !== "passed" ||
+          grant.verification.typecheck !== null &&
+          typecheck?.status !== "passed" : typecheck?.status !== "passed"))) {
+    throw new Error("Task check result invalid");
+  }
+}
+
+async function validateCheckCandidateBinding(directory: string, grant: ProposalRunGrant,
+  check: CandidateTaskCheck): Promise<void> {
+  const candidate = await bindCandidateCheckoutContent(directory, (path) => !grant.writeFiles.includes(path));
+  for (const observed of [check.typecheck, check.nodeTest]) {
+    if (observed !== null && observed !== undefined &&
+        observed.binding.candidate.contentSha256 !== candidate.contentSha256) {
+      throw new Error("Task check no longer applies to the candidate");
+    }
+  }
 }

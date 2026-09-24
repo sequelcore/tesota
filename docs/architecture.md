@@ -38,7 +38,7 @@ Tesota Shell
   -> operator approval
   -> CandidateTask (bounded effects in independent checkout)
   -> Pi (model loop and tool calls)
-  -> scope-integrity + admitted contained check observations
+  -> candidate scope + admitted check observations in selected environment
   -> TaskReview (exact diff and current evidence)
   -> optional one-use SemanticRevision (authority-free R1 lineage)
   -> operator decision
@@ -78,6 +78,7 @@ and an isolated process does not gain authority merely because it is confined.
 | `candidate-checkout.ts` | Independent candidate creation, inspection and lifecycle |
 | `repository-check-input.ts` | Bounded regular-file, dependency-installation and JSON observations shared by admitted repository checks |
 | `repository-container-process.ts` | Docker client/container settlement shared by the concrete TypeScript and Node-test profiles |
+| `repository-host-process.ts` | Fixed Windows host-process invocation and conservative settlement for trusted local checks |
 | `repository-typecheck.ts` | Concrete TypeScript profile admission, input binding and result semantics |
 | `repository-typecheck-process.ts` | Fixed TypeScript process limits and composition with shared container settlement |
 | `repository-typecheck-command.ts` | One-use local approval and CLI composition for the TypeScript profile |
@@ -106,8 +107,8 @@ filesystem effect itself.
 
 Candidate edits are whole-file replacements bound to the latest observed SHA-256.
 The first replacement requires a prior check. Concurrent changes close the
-handle. Persisted task plans allow inspection and rechecking only; they cannot
-reconstruct editing authority.
+handle. Persisted task plans and issued check observations allow read-only
+applicability inspection; they cannot reconstruct editing authority.
 
 Promotion is a separate consequential effect. It requires a current accepted
 review, the same candidate write-set identity, an unchanged source revision and
@@ -207,13 +208,15 @@ the operating system can confine; **verification evidence** says what a check
 observed about which exact result. A user approval is not a sandbox, and a
 sandbox is not a passing check. Review interprets evidence against the user's
 request; acceptance and guarded application remain separate. The current
-TypeScript profiles still package their check and Docker environment together.
-The [repair sequence](implementation-plan.md#execution-and-evidence-repair-before-another-usefulness-claim)
-will separate those decisions for one real task before extracting shared code.
+TypeScript and Node-test profiles bind the selected Docker or trusted host-local
+environment to each observation.
 
-The current repository TypeScript and targeted Node test profiles use a pinned Docker
-container because they can load candidate dependencies or execute candidate
-tests. Their container policy is part of their bound evidence. The native
+The repository TypeScript and targeted Node test profiles can use a pinned Docker
+container or an explicit trusted Windows host-local process. The selected policy
+is part of their bound evidence. Host-local checks have access to host files,
+network and credentials and cannot satisfy a confinement requirement. A host-local
+pass observes the direct process exit; surviving descendants and external host
+inputs remain outside its evidence claim. The native
 Oxlint profile occupies a narrower boundary: it reads a captured source file
 through fixed rules, loads no external plugins and executes no candidate code.
 Its process settlement is evidence, but it is not described as sandboxing.
@@ -235,9 +238,8 @@ qualification boundary are in
 
 The original task admits only modifications to one or two existing `src/**/*.ts` files;
 the separate source-and-test task admits one existing TypeScript source and one existing regression test.
-Its repository-executing
-checks currently require the qualified container path; no OS-sandboxed or
-trusted host-native repository-task provider is implemented. It does not admit general test changes,
+Its repository-executing checks have Docker and trusted host-local paths; no
+OS-sandboxed repository-task provider is implemented. It does not admit general test changes,
 new/deleted files, arbitrary repository commands or projects, general web tools, remote adoption or
 untrusted workloads. The [roadmap](roadmap.md) owns the capability sequence;
 [qualification](qualification.md) records the evidence required to broaden
