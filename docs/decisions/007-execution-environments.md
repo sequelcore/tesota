@@ -205,6 +205,66 @@ exclusion, toolchain access, child-process settlement, cancellation, resource
 limits, startup failure and cleanup. Its setup and repeated-check latency are
 part of qualification. No provider is selected from documentation claims alone.
 
+## Windows native sandbox candidate (2026-09-24)
+
+**Anthropic Sandbox Runtime (SRT) is the first candidate for the next Windows
+native qualification, not a selected protected task provider.** Its standalone
+library and CLI already use a dedicated Windows account, filesystem ACLs and a
+Windows Filtering Platform network fence. Adapting that mechanism inside
+Tesota is preferable to building a Windows sandbox from scratch before a
+qualified task needs one. Tesota still owns the admitted effects, provider
+selection, observation and evidence; SRT would enforce only the OS boundary.
+Being independent of a provider does not require a separate sandbox repository.
+
+The [2026-09-23 probes](../../experiments/isolation/README.md#repository-and-alias-follow-up)
+establish a narrower result. SRT 0.0.77 ran a real TypeScript check and denied
+direct and junction access within a private task root. A separate host tree
+with broad inherited permissions remained readable and writable. Unlisted
+reads match SRT's documented read default; the external write violates
+Tesota's proposed strict host-write boundary under that configuration. In a
+separate run, combined `denyRead` and `denyWrite` on one file did not preserve
+the observed read denial. The resource probe did not establish the proposed
+memory cap. These are local observations, not a general verdict on every SRT
+configuration or later release. Current upstream ACL code expresses an intent
+to retain the stronger overlapping deny, but that source alone does not resolve
+the observed behavior; reproduce it against the exact version before claiming
+a fix. [SRT configuration and Windows model](https://github.com/anthropics/sandbox-runtime/blob/main/README.md),
+[overlap code](https://github.com/anthropics/sandbox-runtime/blob/main/vendor/srt-win-src/src/acl.rs).
+
+The industry comparison does not establish a drop-in replacement. Codex's
+[Windows design](https://openai.com/index/building-codex-windows-sandbox/)
+deliberately supports broad reads; Gemini CLI's
+[native Windows mode](https://geminicli.com/docs/cli/sandbox/) documents
+persistent file-integrity changes. These are different contracts, not evidence
+that either meets Tesota's exact task policy. SRT labels Windows support alpha,
+requires a one-time elevated machine setup, and documents that Windows system
+DNS resolution is not fenced. A policy promising no outbound data must test
+that path or explicitly admit the DNS exception.
+
+The next qualification must use the same admitted policy and real task that a
+Tesota user would run. It must test original files, credentials, dependency
+inputs and evidence outside candidate-writable state; ordinary broadly
+accessible host trees; direct paths and junctions; overlapping read/write
+rules; direct, loopback, IPv4/IPv6 and DNS network paths; child processes,
+cancellation, helper or host failure, recovery and concurrent sessions. It
+must measure setup and repeated-check time, installed toolchain access and
+resource limits. SRT's current
+[Windows job code](https://github.com/anthropics/sandbox-runtime/blob/main/vendor/srt-win-src/src/job.rs)
+does not establish the required memory, CPU or process caps. Adding an outer
+Windows Job Object is only a hypothesis:
+[Microsoft's nested-job rules](https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs)
+constrain composition when UI limits are set. Prove the entire process tree is
+bounded before making a resource claim; if a narrow SRT helper change is
+needed, prefer an upstream contribution to a parallel sandbox implementation.
+
+If SRT meets the admitted policy, implement its Tesota adapter and qualify the
+resulting task flow. If only a narrower policy can be demonstrated, expose that
+policy and its limits before approval; never label it as the stricter one or
+silently substitute it. Keep Docker selectable for its qualified use and
+trusted host-local execution explicitly lower assurance. Defer a standalone
+sandbox project until a real second consumer and a maintainable independent
+boundary exist.
+
 ## Rejected alternatives
 
 - **Require Docker for all Tesota work.** This would make one qualified provider

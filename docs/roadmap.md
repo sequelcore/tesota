@@ -57,7 +57,9 @@ An [SRT Windows follow-up](../experiments/isolation/README.md#repository-and-ali
 ran a real TypeScript check. A private task fixture constrained its own files,
 but a separate host tree with broad inherited permissions remained accessible.
 The read default is documented; the host-wide write boundary remains unproved.
-SRT is not a selected task provider.
+SRT is not a selected task provider. [Decision 007](decisions/007-execution-environments.md#windows-native-sandbox-candidate-2026-09-24)
+records why it is the first native candidate and what its next qualification
+must establish.
 
 The shell now lists local sessions, persists their human transcript and result
 inspections, and can reopen a settled Pi context with its consumed budgets.
