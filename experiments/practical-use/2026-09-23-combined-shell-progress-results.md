@@ -68,3 +68,51 @@ change gives only the preapproved Node-plus-TypeScript task a bounded ten-minute
 cumulative agent-session window. The individual contained check limits,
 settlement allowance and other task budgets remain fixed. This is a provisional
 limit for another qualification, not evidence that the combined flow succeeds.
+
+## Third ordinary-shell attempt
+
+The [third protocol](2026-09-23-combined-shell-progress-third-protocol.md)
+used the same clean committed baseline, a fresh session and both selected
+checks. The agent observed the unchanged initial candidate, an intentionally
+red Node regression (0 passed, 1 failed), then a green Node test and TypeScript
+typecheck on its final two-file candidate. Its session completed with observed
+settlement, nine model invocations, eight tool calls, two edits and 497359 ms
+active time. Astra's independent diff review found the intended operation
+branch and regression assertion with other labels preserved.
+
+The host's fresh final check ran on the same candidate and selected verifier
+inputs, but TypeScript failed operationally with `output_limit`; Node passed.
+The attempt ended `execution_failed` after 1027223 ms wall time, with one host
+check and no human decision or application. The candidate remains retained at
+`31583ae8-3f6c-439a-8627-420dc6ad3a6d` and cannot be accepted through
+this attempt. The second dependency snapshot dominated the time outside the
+agent-session budget.
+
+A separate read-only Docker reproduction against that retained candidate
+mounted the source installation directly rather than using Tesota's dependency
+snapshot. With the same 128-process, two-CPU, 1024 MiB restrictions, it exited
+with a 1.28 MB Go runtime trace: it failed to create OS thread 129 (`errno=11`).
+This reproduced a failure mechanism consistent with the host's output cap
+failure; that host run's discarded output prevents definitive attribution.
+Adding `GOMAXPROCS=2` to an otherwise identical diagnostic container
+made the TypeScript check exit zero with empty output. This is a policy
+qualification input, not a retroactive pass or proof of repeatability.
+
+The actual snapshot-backed adapter preflight with `GOMAXPROCS=2` still failed
+with `output_limit` after 325841 ms; process exit and container absence were
+observed. No fourth model attempt followed. A manual run against an
+independently copied snapshot passed once, so that single pass did not explain
+the intermittent failure. Five serial direct-mount trials with the 128-process
+limit and `GOMAXPROCS=2` then produced four failures at thread 129 and one
+pass. The same candidate passed five of five trials with a 256-process limit,
+both with and without `GOMAXPROCS=2`. This supports a new bounded 256-process
+policy without the ineffective environment override. It still needs an actual
+snapshot-backed adapter pass and a fresh approval before another model trial.
+
+Two consecutive actual adapter checks then ran against the retained candidate,
+each with a separate dependency snapshot and the 256-process policy identity
+`1b123c771bcc2444d52bf653c74fd7368e4ca336a5c9ae60695bebf3ffeab974`.
+Both passed with empty diagnostics, observed process exit and container
+absence, in 295586 ms and 296398 ms respectively. This qualifies the profile
+for another bounded attempt on this machine; it does not accept the retained
+candidate or prove repeatability on other repositories or platforms.

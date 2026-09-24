@@ -45,7 +45,7 @@ describe("command isolation qualification", () => {
     expect(invocation.command).toBe("C:\\Program Files\\Docker\\docker.exe");
     expect(serialized).toContain("--network=none");
     expect(invocation.args).toEqual(expect.arrayContaining([
-      "--pids-limit=128", "--memory=1024m", "--memory-swap=1024m", "--cpus=2",
+      "--pids-limit=256", "--memory=1024m", "--memory-swap=1024m", "--cpus=2",
     ]));
     expect(serialized).toContain("target=/workspace/repository,readonly");
     expect(serialized).toContain("target=/workspace/node_modules,readonly");

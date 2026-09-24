@@ -139,7 +139,7 @@ export function containerRunPolicySha256(): string {
 function typecheckContainerArguments(paths: TypecheckIsolationPaths, name: string): readonly string[] {
   return [
     ...CONTAINER_ENGINE_ARGS, "run", "--name", name, "--rm", "--pull=never", "--network=none", "--read-only",
-    "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65534:65534", "--pids-limit=128",
+    "--cap-drop=ALL", "--security-opt=no-new-privileges", "--user=65534:65534", "--pids-limit=256",
     "--memory=1024m", "--memory-swap=1024m", "--cpus=2", "--log-driver=none",
     "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=32m",
     "--env", "NODE_OPTIONS=--max-old-space-size=384",
