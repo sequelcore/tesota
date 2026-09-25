@@ -74,7 +74,7 @@ at once; applications are serialized.
 | `cli.ts` | Commands and shell startup |
 | `tesota-shell.ts` | Surface-independent loop: request, review, decision |
 | `tesota-shell-command.ts` | Per-session composition of workspace, agent, checks and application |
-| `tesota-shell-terminal.ts`, `tesota-shell-theme.ts`, `tesota-shell-inspection.ts`, `shell-progress.ts` | Terminal layout, session tabs, themes, result panel and status |
+| `tesota-shell-terminal.ts`, `tesota-shell-theme.ts`, `tesota-shell-inspection.ts`, `shell-progress.ts` | Terminal layout, session sidebar, themes, result panel and status |
 | `tesota-shell-transcript.ts` | How a conversation looks: operator messages, streamed agent replies, tool calls, notices and reviews, built on pi-tui components |
 | `shell-session-store.ts` | Saved transcripts, workspace location and approved checks per session |
 | `integrations/pi-coding-session.ts` | Pi session, confined file tools, command approval, cancellation, and the agent's replies and tool calls as they happen |

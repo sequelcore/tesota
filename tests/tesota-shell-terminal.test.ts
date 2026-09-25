@@ -73,10 +73,12 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   await expect(answer).resolves.toBe("Explain the shell");
   tui.renderNow(true);
   const screen = visible(terminal);
-  expect(screen).toContain("Tesota tesota");
+  expect(screen).toContain("tesota · Session 1");
   expect(screen).toContain("The repository is bounded.");
   expect(screen).toContain("Explain the shell");
   expect(screen).toContain("Ready");
+  expect(screen).toContain("›");
+  expect(screen).not.toContain("────");
   shell.stop();
   expect(terminal.started).toBe(false);
 });
@@ -106,7 +108,8 @@ it("keeps environment preparation visible at the first prompt until it finishes"
   shell.askIn("default", "> ").catch(() => undefined);
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Creating the sandbox");
-  expect(visible(terminal)).toContain("Session 1 · preparing");
+  expect(visible(terminal)).toContain("› ● Session 1");
+  expect(visible(terminal)).toContain("preparing");
   shell.reportFor("default", { phase: "working" });
   shell.clearProgressFor("default", "preparing");
   terminal.writes.length = 0;
@@ -125,6 +128,7 @@ it.each([
   { theme: "terminal" as const, accent: null },
 ])("renders $theme without changing the visible work state", ({ theme, accent }) => {
   const terminal = new TestTerminal();
+  terminal.columns = 140;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, theme });
   shell.start();
@@ -134,11 +138,11 @@ it.each([
 
   const rendered = terminal.writes.join("");
   const screen = visible(terminal);
-  expect(screen).toContain("Tesota");
+  expect(screen).toContain("tesota");
   expect(screen).toContain("Waiting for your decision");
   expect(screen).toContain("Scope approval is required before execution.");
   if (accent === null) expect(rendered).not.toContain("\x1b[38;2;");
-  else expect(rendered).toContain(`\x1b[38;2;${accent}mTesota`);
+  else expect(rendered).toContain(`\x1b[38;2;${accent}mtesota`);
   shell.stop();
 });
 
@@ -217,6 +221,51 @@ it("keeps input and decisions attached to the selected session", async () => {
   shell.stop();
 });
 
+it("shows session needs in a rail that can be hidden and collapses on narrow terminals", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 110;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.addSession("other", "Session 2");
+  shell.start();
+  shell.reportFor("other", { phase: "working" });
+  shell.askIn("default", "Approve? [y/N] ").catch(() => undefined);
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("› ● Session 1");
+  expect(visible(terminal)).toContain("needs you");
+  expect(visible(terminal)).toContain("● Session 2");
+  expect(visible(terminal)).toContain("working");
+
+  terminal.writes.length = 0;
+  terminal.send("\x1bb"); // Alt+B hides the rail without changing the selected session.
+  tui.renderNow(true);
+  expect(visible(terminal)).not.toContain("● Session 2");
+  expect(visible(terminal)).toContain("tesota · Session 1");
+
+  terminal.send("\x1bb");
+  terminal.resizeTo(70, 24);
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).not.toContain("● Session 2");
+  shell.stop();
+});
+
+it("keeps the selected session visible when the sidebar has more rows than the terminal", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 110;
+  terminal.rows = 12;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  for (let index = 2; index <= 9; index++) shell.addSession(`session-${index}`, `Session ${index}`);
+  shell.start();
+  tui.renderNow(true);
+  shell.selectSession("session-9");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("› ● Session 9");
+  shell.stop();
+});
+
 it("offers a view-only comparison while one session keeps input focus", async () => {
   const terminal = new TestTerminal();
   terminal.columns = 190;
@@ -230,7 +279,7 @@ it("offers a view-only comparison while one session keeps input focus", async ()
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Research · view only");
   expect(visible(terminal)).toContain("The other session found a source.");
-  expect(visible(terminal)).toContain("▸ Session 1");
+  expect(visible(terminal)).toContain("› ● Session 1");
   terminal.send("reply");
   terminal.send("\r");
   await expect(pending).resolves.toBe("reply");
@@ -260,6 +309,7 @@ it("keeps the result accessible on a narrow terminal without moving the input ta
   terminal.send("\x1br"); // Alt+R: result panel, in place of the conversation at this width
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Changed src/value.ts");
+  expect(visible(terminal)).toContain("Accept? [y/N]");
   terminal.send("\x1br"); // Alt+R again: back to the conversation
   terminal.send("n");
   terminal.send("\r");
@@ -340,13 +390,13 @@ it("shows each tool call with its command's last output lines and marks interrup
   shell.showActivity("default", { type: "tool_started", call: "3", tool: "bash", subject: "sleep 60" });
   shell.ask("> ").catch(() => undefined);
   const screen = stripTerminalSequences(render());
-  expect(screen).toContain("● Edit src/price.ts");
+  expect(screen).toContain("• Edit src/price.ts");
   expect(screen).not.toContain("Applied edit");
-  expect(screen).toContain("● Run npm test");
-  expect(screen).toContain("… 1 earlier lines");
+  expect(screen).toContain("• Run npm test");
+  expect(screen).toContain("└ … 1 earlier lines");
   expect(screen).toContain("not ok 1 discount");
   expect(screen).not.toContain("line 1\n");
-  expect(screen).toContain("● Run sleep 60 (stopped)");
+  expect(screen).toContain("• Run sleep 60 (stopped)");
   expect(entries).toEqual([{ kind: "tool", tool: "edit", subject: "src/price.ts", failed: false },
     { kind: "tool", tool: "bash", subject: "npm test", failed: true }]);
   shell.stop();
@@ -377,7 +427,7 @@ it("restores a recorded conversation with the same presentation", () => {
   tui.renderNow(true);
   const screen = visible(terminal);
   expect(screen).toContain("Earlier request");
-  expect(screen).toContain("● Read README.md");
+  expect(screen).toContain("• Read README.md");
   expect(screen).toContain("Earlier answer");
   expect(screen).toContain("Applied to your repository.");
   shell.stop();

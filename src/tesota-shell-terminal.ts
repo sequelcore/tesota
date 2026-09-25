@@ -45,7 +45,7 @@ export interface TesotaShellTerminal {
   inspectFor(id: string, inspection: ShellInspection): void;
   /** Show the agent's replies and tool calls in a session as they happen. */
   showActivity(id: string, activity: AgentActivity): void;
-  /** Name how sessions run, such as autonomous in a sandbox, in the header. */
+  /** Name how sessions run, such as autonomous in a sandbox, in the footer. */
   setMode(label: string): void;
   blockSession(id: string): void;
   endSession(id: string): void;
@@ -87,7 +87,8 @@ const spinnerMs = 120;
 /** Below this width the result panel replaces the conversation instead of sitting beside it. */
 const resultBesideWidth = 120;
 const comparisonWidth = 160;
-const hints = "Ctrl+C stop · Ctrl+N new · Ctrl+W close · Alt+J next · Alt+R result · Ctrl+Q quit";
+const sidebarWidth = 25;
+const sidebarMinWidth = 88;
 
 function ignoreInterrupt(): void {}
 
@@ -97,6 +98,30 @@ class Line implements Component {
   setText(text: string): void { this.#text = text; }
   invalidate(): void {}
   render(width: number): string[] { return [truncateToWidth(` ${this.#text}`, width)]; }
+}
+
+/** One repository's sessions, with each session's current need visible at a glance. */
+class SessionRail implements Component {
+  #rows: string[] = [];
+  setRows(rows: string[]): void { this.#rows = rows; }
+  invalidate(): void {}
+  render(width: number): string[] { return this.#rows.map((row) => truncateToWidth(` ${row}`, width)); }
+}
+
+/** Keep Pi's editing behavior and cursor handling while removing its visible frame. */
+class PromptEditor extends Editor {
+  readonly #accent: string | null;
+  constructor(tui: ViewportTUI, theme: TesotaShellTheme) {
+    super(tui, editorTheme(theme), { paddingX: 1 });
+    this.#accent = theme.accent;
+  }
+  protected override renderTopBorder(width: number): string { return " ".repeat(width); }
+  protected override renderBottomBorder(width: number): string { return " ".repeat(width); }
+  override render(width: number): string[] {
+    const lines = super.render(width);
+    if (lines[1] !== undefined) lines[1] = colorText("›", this.#accent) + lines[1].slice(1);
+    return lines;
+  }
 }
 
 function editorTheme(theme: TesotaShellTheme): EditorTheme {
@@ -132,12 +157,14 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private comparisonId: string | undefined;
   private showResult = false;
   private split = false;
+  private sidebarVisible = true;
   private mode = "";
   private frame = 0;
-  private readonly header = new Line();
+  private readonly sidebar = new SessionRail();
+  private readonly sidebarScroll = new ScrollView(this.sidebar, { scrollbar: "auto" });
   private readonly secondaryTitle = new Line();
   private readonly status = new Line();
-  private readonly hints = new Line();
+  private readonly footer = new Line();
   private readonly result = new Text("", 1, 0);
   private readonly editor: Editor;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -152,10 +179,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.theme = tesotaShellTheme(options.theme);
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
     initTheme(this.theme.name === "tesota-light" ? "light" : "dark");
-    this.editor = new Editor(this.tui, editorTheme(this.theme), { paddingX: 1 });
+    this.editor = new PromptEditor(this.tui, this.theme);
     this.editor.disableSubmit = true;
     this.editor.onSubmit = (answer) => { this.submit(answer); };
-    this.hints.setText(mutedText(hints, this.theme));
     this.selectedId = options.initialSession?.id ?? "default";
     this.addSession(this.selectedId, options.initialSession?.title ?? "Session 1",
       options.initialSession?.entries ?? [], options.initialSession?.inspections ?? []);
@@ -176,13 +202,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   private compose(): void {
     const selected = this.selected();
-    this.updateHeader();
+    this.updateSidebar();
     this.updateResult(selected);
     this.updateStatus();
-    const conversation = new VStack([
-      { component: selected.scroll, basis: 0, grow: 1, minSize: 1 },
-      { component: new VStack([this.status, this.editor, this.hints]), basis: "auto", shrink: 1, minSize: 3 },
-    ], { gap: 1 });
     const secondary = this.comparisonId === undefined ?
       [...this.sessions.values()].find((session) => session.id !== selected.id) :
       this.sessions.get(this.comparisonId);
@@ -192,17 +214,22 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       { component: this.secondaryTitle, basis: "auto", shrink: 0 },
       { component: secondary?.scroll ?? new Text("", 0, 0), basis: 0, grow: 1, minSize: 1 },
     ], { gap: 1 });
-    const content = new HStack([
-      { component: conversation, basis: 0, grow: 1, minSize: 30,
+    const reading = new HStack([
+      { component: selected.scroll, basis: 0, grow: 1, minSize: 30,
         visible: (viewport) => !this.showResult || viewport.width >= resultBesideWidth },
       { component: comparison, basis: 48, shrink: 1, minSize: 30,
         visible: (viewport) => this.split && secondary !== undefined && viewport.width >= comparisonWidth },
       { component: new ScrollView(this.result, { scrollbar: "auto" }), basis: 0, grow: 1, minSize: 30,
         visible: () => this.showResult },
     ], { gap: 2 });
-    this.tui.setLayoutRoot(new VStack([
-      { component: this.header, basis: "auto", shrink: 0 },
-      { component: content, basis: 0, grow: 1, minSize: 1 },
+    const content = new VStack([
+      { component: reading, basis: 0, grow: 1, minSize: 1 },
+      { component: new VStack([this.status, this.editor, this.footer]), basis: "auto", shrink: 1, minSize: 3 },
+    ], { gap: 1 });
+    this.tui.setLayoutRoot(new HStack([
+      { component: this.sidebarScroll, basis: sidebarWidth, shrink: 0,
+        visible: (viewport) => this.sidebarVisible && viewport.width >= sidebarMinWidth },
+      { component: content, basis: 0, grow: 1, minSize: 30 },
     ], { gap: 1 }));
     this.tui.requestRender();
   }
@@ -216,18 +243,27 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     return session.unread ? "new" : "";
   }
 
-  /** One line: the product and repository, a tab per session with what needs attention, and the mode. */
-  private updateHeader(): void {
-    const tabs = [...this.sessions.values()].map((session) => {
-      const note = this.attention(session);
-      const label = `${safeTerminalText(session.title)}${note.length === 0 ? "" : ` · ${note}`}`;
-      if (session.id === this.selectedId) return bold(colorText(`▸ ${label}`, this.theme.accent));
-      return note === "needs you" || note === "unresolved" ? colorText(`  ${label}`, this.theme.warning) :
-        mutedText(`  ${label}`, this.theme);
-    });
-    const left = `${bold(colorText("Tesota", this.theme.accent))} ${mutedText(basename(this.options.cwd), this.theme)}`;
-    const mode = this.mode.length === 0 ? "" : `   ${mutedText(this.mode, this.theme)}`;
-    this.header.setText(`${left}   ${tabs.join("  ")}${mode}`);
+  private updateSidebar(): void {
+    const rows = [bold(colorText(safeTerminalText(basename(this.options.cwd)), this.theme.accent)), ""];
+    for (const session of this.sessions.values()) {
+      const attention = this.attention(session);
+      const selected = session.id === this.selectedId;
+      const color = attention === "needs you" || attention === "unresolved" ? this.theme.warning :
+        attention === "working" || attention === "preparing" ? this.theme.accent : this.theme.muted;
+      const dot = colorText("●", color);
+      const title = safeTerminalText(session.title);
+      rows.push(`${selected ? bold(colorText("›", this.theme.accent)) : " "} ${dot} ` +
+        `${selected ? bold(title) : mutedText(title, this.theme)}`);
+      rows.push(mutedText(`    ${attention || "idle"}`, this.theme));
+    }
+    rows.push("", mutedText("Ctrl+N new · Alt+J next", this.theme),
+      mutedText("Ctrl+W close · Alt+B", this.theme));
+    this.sidebar.setRows(rows);
+    this.sidebarScroll.updateLayout(rows.length, this.tui.terminal.rows, () => this.tui.requestRender());
+    const mode = this.mode.startsWith("autonomous") ? "autonomous" :
+      this.mode.startsWith("supervised") ? "supervised" : this.mode;
+    this.footer.setText(mutedText([mode, safeTerminalText(basename(this.options.cwd)),
+      safeTerminalText(this.selected().title)].filter(Boolean).join(" · "), this.theme));
   }
 
   private updateResult(session: SessionView): void {
@@ -270,6 +306,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.editor.setText(session.draft);
     this.editor.disableSubmit = session.pending === undefined;
     this.compose();
+    const row = 2 + [...this.sessions.keys()].indexOf(id) * 2;
+    const top = this.sidebarScroll.scrollTop;
+    const height = this.sidebarScroll.viewportHeight;
+    if (row < top) this.sidebarScroll.scrollTo(row);
+    else if (height > 0 && row + 1 >= top + height) this.sidebarScroll.scrollTo(row - height + 2);
     if (session.pending !== undefined) this.tui.setFocus(this.editor);
     this.options.onSessionChange?.(id);
   }
@@ -279,6 +320,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.started = true;
     this.removeInputListener = this.tui.addInputListener((data) => this.handleKey(data));
     this.tui.terminal.setTitle("Tesota");
+    this.compose();
     this.tui.start();
     let ticks = 0;
     this.timer = setInterval(() => {
@@ -306,6 +348,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       return { consume: true };
     }
     if (matchesKey(data, "alt+r")) { this.showResult = !this.showResult; this.compose(); return { consume: true }; }
+    if (matchesKey(data, "alt+b")) { this.sidebarVisible = !this.sidebarVisible; this.compose(); return { consume: true }; }
     if (matchesKey(data, "alt+,") || matchesKey(data, "alt+.")) {
       this.moveInspection(matchesKey(data, "alt+,") ? -1 : 1);
       return { consume: true };
@@ -343,7 +386,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     session.transcript.add(entry);
     if (persist) this.options.onEntry?.(session.id, entry);
     if (session.id !== this.selectedId) session.unread = true;
-    this.updateHeader();
+    this.updateSidebar();
     this.tui.requestRender();
   }
 
@@ -365,13 +408,13 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       session.progress = { value: { phase: "working" }, startedAt: current.startedAt };
     }
     if (session.id !== this.selectedId) session.unread = true;
-    this.updateHeader();
+    this.updateSidebar();
     this.refreshElapsed();
   }
 
   setMode(label: string): void {
     this.mode = label;
-    this.updateHeader();
+    this.updateSidebar();
     this.tui.requestRender();
   }
 
@@ -384,14 +427,16 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.record(session, { kind: "review", title: inspection.title, text: inspection.summary }, true);
     if (id === this.selectedId) {
       // Beside the conversation there is room to show the diff at once; narrower, it waits for Alt+R.
-      if (this.tui.terminal.columns >= resultBesideWidth) this.showResult = true;
+      const available = this.tui.terminal.columns -
+        (this.sidebarVisible && this.tui.terminal.columns >= sidebarMinWidth ? sidebarWidth + 1 : 0);
+      if (available >= resultBesideWidth) this.showResult = true;
       this.compose();
     }
   }
 
   blockSession(id: string): void {
     this.find(id).blocked = true;
-    this.updateHeader();
+    this.updateSidebar();
     this.refreshElapsed();
   }
 
@@ -417,7 +462,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     session.progress = undefined;
     session.transcript.settle();
     if (id === this.selectedId) this.editor.disableSubmit = true;
-    this.updateHeader();
+    this.updateSidebar();
     this.refreshElapsed();
   }
 
@@ -439,7 +484,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       this.editor.disableSubmit = false;
       this.tui.setFocus(this.editor);
     }
-    this.updateHeader();
+    this.updateSidebar();
     this.refreshElapsed();
     return answer;
   }
@@ -447,7 +492,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   report(progress: TesotaShellProgress): void { this.reportFor(this.selectedId, progress); }
   reportFor(id: string, progress: TesotaShellProgress): void {
     this.find(id).progress = { value: progress, startedAt: this.now() };
-    this.updateHeader();
+    this.updateSidebar();
     this.refreshElapsed();
   }
 
@@ -455,7 +500,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const session = this.sessions.get(id);
     if (session?.progress?.value.phase !== phase) return;
     session.progress = undefined;
-    this.updateHeader();
+    this.updateSidebar();
     this.refreshElapsed();
   }
 
@@ -505,7 +550,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       this.editor.setText("");
     }
     pending.reject(new DOMException("cancelled", "AbortError"));
-    this.updateHeader();
+    this.updateSidebar();
   }
 }
 

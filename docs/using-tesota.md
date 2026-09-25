@@ -89,6 +89,7 @@ example `bun run check`); press Enter to accept, type your own separated by
 The conversation shows a review once: each changed file and each check with
 ✓ or ✗. The full diff and check output open beside it on a wide terminal;
 `Alt+R` shows or hides them, in place of the conversation on a narrow one.
+The prompt stays visible in either view.
 Then choose:
 
 - **apply** writes the changes to your repository. A file is only written if
@@ -103,8 +104,10 @@ not show the change does what you asked; read the diff.
 
 ## Sessions and appearance
 
-The header names the repository, shows a tab per session with what needs you
-(`needs you`, `working`, `new`), and the mode. `Ctrl+N` starts a new session;
+The left sidebar names the repository and shows each session's state, such as
+`needs you`, `working`, or `idle`. It hides automatically on narrow terminals;
+`Alt+B` hides or shows it when there is room. The line below the prompt shows
+the mode, repository and selected session. `Ctrl+N` starts a new session;
 `Alt+J` (or `Ctrl+Tab`) selects the next. `Ctrl+W` closes the selected session and removes
 its workspace and conversation. If the session has unapplied changes, the
 first `Ctrl+W` warns and a second one within five seconds confirms. Stop

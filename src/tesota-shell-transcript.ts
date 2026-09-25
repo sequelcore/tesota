@@ -77,15 +77,15 @@ class ToolBlock implements Component {
     const color = this.#state === "failed" ? this.theme.error : this.#state === "done" ? this.theme.success :
       this.#state === "stopped" ? this.theme.warning : this.theme.accent;
     const name = toolNames[this.tool] ?? this.tool;
-    const head = ` ${colorText("●", color)} ${bold(name)} ${mutedText(safeTerminalText(this.subject), this.theme)}` +
+    const head = ` ${colorText("•", color)} ${bold(name)} ${mutedText(safeTerminalText(this.subject), this.theme)}` +
       (this.#state === "stopped" ? mutedText(" (stopped)", this.theme) : "");
     const lines = [truncateToWidth(head, width)];
     if (this.tool !== "bash" && this.#state !== "failed") return lines;
     const output = safeTerminalText(this.#output.trimEnd()).split(/\r?\n/u).filter((line) => line.length > 0);
     const shown = output.slice(-outputTail);
-    if (output.length > shown.length) lines.push(truncateToWidth(mutedText(`   ⎿ … ${output.length - shown.length} earlier lines`, this.theme), width));
+    if (output.length > shown.length) lines.push(truncateToWidth(mutedText(`   └ … ${output.length - shown.length} earlier lines`, this.theme), width));
     for (const [index, line] of shown.entries()) {
-      const prefix = index === 0 && output.length === shown.length ? "   ⎿ " : "     ";
+      const prefix = index === 0 && output.length === shown.length ? "   └ " : "     ";
       lines.push(truncateToWidth(mutedText(`${prefix}${line}`, this.theme), width));
     }
     return lines;
