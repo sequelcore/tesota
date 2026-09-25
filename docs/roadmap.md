@@ -70,7 +70,10 @@ and the verifier contract, where each result states its claim and limits, with
 Oxlint on introduced diagnostics and LemmaScript with Dafny as the first
 verifiers beyond approved checks; and ClaimCheck's method as a second
 reviewer of proved contracts. Gentle AI's review waits for a contract that
-admits hosts other than gentle-pi.
+admits hosts other than gentle-pi. Each workspace keeps an append-only
+assurance journal of every reviewed candidate and the operator's decision.
+Workflow profiles wait until daily use shows a repository that needs a
+different set of verifiers, reviewers or rounds.
 
 **Done when:** a change to Tesota goes through verification, an independent
 review and a correction round, and the operator decides on the whole record.

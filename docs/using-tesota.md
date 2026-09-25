@@ -120,6 +120,10 @@ proof can hold and still prove less than you asked, such as "denied and not
 allowed is refused" when you asked that denied always wins; this reviewer
 reports that gap.
 
+Each workspace keeps an assurance journal, `assurance.jsonl` beside its
+checkout: for every reviewed version, your requests, each verifier's claim and
+outcome, each reviewer's findings, and whether you applied or rejected it.
+
 When checks fail or the reviewer finds a defect, Tesota first sends those
 problems back to the agent, with your requests unchanged, and checks and
 reviews the corrected result: at most two rounds, fewer if a round changes

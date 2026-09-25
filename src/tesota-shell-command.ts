@@ -27,6 +27,7 @@ import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
 import { createPiReviewer } from "./integrations/pi-reviewer.js";
 import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
 import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
+import { appendAssurance, decisionEntry, reviewEntry, type AssuranceEntry } from "./assurance-journal.js";
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
 
@@ -322,6 +323,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     return state.coding;
   };
   const blockSession = (id: string): void => { store.block(id); surface.blockSession(id); };
+  /** Evidence that could not be recorded is reported, never dropped silently. */
+  const journal = async (id: string, workspace: Workspace, entry: AssuranceEntry): Promise<void> => {
+    try { await appendAssurance(workspace.directory, entry); } catch (error) {
+      surface.writeTo(id, `Tesota could not record this in the workspace's assurance journal: ${error instanceof Error ? error.message : "unknown error"}.`, "warning");
+    }
+  };
 
   /** Pending changes in a session's existing workspace; never creates one. */
   const pendingChangeCount = async (id: string): Promise<number> => {
@@ -460,6 +467,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" }));
       if (unchanged) state.reviewed = snapshot;
       surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews }));
+      await journal(id, workspace, reviewEntry(snapshot, requests, checks, flags, reviews));
       return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews, requests };
     }),
     apply: () => serialized(async (): Promise<ApplyResult> => {
@@ -468,18 +476,28 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       if (reviewed === undefined) return { status: "conflict", reason: "there is no current review", paths: [] };
       state.reviewed = undefined;
       applying.add(id);
+      const workspace = await workspaceFor(id);
       try {
-        return { status: "applied", changes: await applyWorkspace(await workspaceFor(id), reviewed) };
+        const changes = await applyWorkspace(workspace, reviewed);
+        await journal(id, workspace, decisionEntry(reviewed.tree, "applied"));
+        return { status: "applied", changes };
       } catch (error) {
-        if (error instanceof ApplyConflictError) return { status: "conflict", reason: error.message, paths: error.paths };
+        if (error instanceof ApplyConflictError) {
+          await journal(id, workspace, decisionEntry(reviewed.tree, "application_conflict"));
+          return { status: "conflict", reason: error.message, paths: error.paths };
+        }
         blockSession(id);
+        await journal(id, workspace, decisionEntry(reviewed.tree, "application_uncertain"));
         return { status: "uncertain", applied: error instanceof ApplyUncertainError ? error.applied : [] };
       } finally { applying.delete(id); }
     }),
     reject: async () => {
       const state = stateFor(id);
+      const rejected = state.reviewed;
       state.reviewed = undefined;
-      (await workspaceFor(id)).revert();
+      const workspace = await workspaceFor(id);
+      if (rejected !== undefined) await journal(id, workspace, decisionEntry(rejected.tree, "rejected"));
+      workspace.revert();
       state.note = "Note: the user rejected your previous changes, and the workspace was reset to the last applied state.";
     },
   });

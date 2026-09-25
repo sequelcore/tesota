@@ -91,6 +91,7 @@ at once; applications are serialized.
 | `workspace-checks.ts` | The verifier result (outcome, claim, limits) and running approved check commands in the session's environment |
 | `verification/oxlint-verifier.ts` | Tesota's Oxlint profile on changed files, counting only diagnostics the change introduced |
 | `verification/lemmascript-verifier.ts` | LemmaScript with Dafny on changed files with `//@` annotations, in a private copy |
+| `assurance-journal.ts` | The workspace's append-only record of each reviewed candidate's evidence and the operator's decision |
 | `correction.ts` | Which failures and findings go back to the agent, the correction message, and the round limit |
 | `review.ts` | The reviewer contract: what a reviewer sees, its findings, and incomplete reviews |
 | `integrations/pi-claimcheck.ts` | ClaimCheck's round-trip method on contracts LemmaScript proved: restated without the requests, then compared with them |
