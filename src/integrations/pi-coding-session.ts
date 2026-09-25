@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { type AgentSession, type BashOperations, type ModelRuntime, type SessionManager, type ToolDefinition,
+import { type AgentSession, type AgentSessionEvent, type BashOperations, type ModelRuntime, type SessionManager, type ToolDefinition,
   createAgentSession, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition,
   createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition,
   createWriteToolDefinition, DefaultResourceLoader, defineTool, SessionManager as PiSessionManager, SettingsManager,
@@ -11,6 +11,17 @@ import { allowsAutonomy, type ExecutionEnvironment } from "../execution-environm
 export type CommandApproval = "once" | "always" | "deny";
 /** How the operator answered a refused network destination: for this session, for the repository, or not at all. */
 export type NetworkDecision = "session" | "repository" | "deny";
+
+/**
+ * What the agent is doing, as it happens, for a surface to show. `reply`
+ * carries the full text of one assistant message so far; `message` numbers
+ * the messages of a session in order.
+ */
+export type AgentActivity =
+  | Readonly<{ type: "reply"; message: number; text: string; final: boolean }>
+  | Readonly<{ type: "tool_started"; call: string; tool: string; subject: string }>
+  | Readonly<{ type: "tool_output"; call: string; output: string }>
+  | Readonly<{ type: "tool_finished"; call: string; failed: boolean; output: string }>;
 
 export type CodingTurnResult =
   | Readonly<{ status: "completed"; reply: string }>
@@ -31,7 +42,7 @@ export interface CodingSessionOptions {
   readonly approveCommand: (command: string, signal: AbortSignal | undefined) => Promise<CommandApproval>;
   /** Asked after a command whose network access the environment refused. */
   readonly decideNetwork?: (destinations: readonly string[]) => Promise<NetworkDecision>;
-  readonly onActivity?: (text: string) => void;
+  readonly onActivity?: (activity: AgentActivity) => void;
 }
 
 const settlementMs = 10_000;
@@ -170,15 +181,43 @@ function replyText(session: AgentSession): string {
   return assistant.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n").trim();
 }
 
-function describeTool(name: string, args: unknown): string {
-  const field = (key: string): string => {
-    if (typeof args !== "object" || args === null) return "";
-    const value: unknown = Reflect.get(args, key);
-    return typeof value === "string" ? value : "";
-  };
-  if (name === "bash") return `Running ${field("command")}`;
-  if (name === "grep" || name === "find") return `Searching ${field("pattern")}`;
-  return `${name[0]?.toUpperCase() ?? ""}${name.slice(1)} ${field("path")}`.trim();
+/** The argument that identifies what a tool call acts on: its command, pattern or path. */
+function toolSubject(name: string, args: unknown): string {
+  if (typeof args !== "object" || args === null) return "";
+  const key = name === "bash" ? "command" : name === "grep" || name === "find" ? "pattern" : "path";
+  const value: unknown = Reflect.get(args, key);
+  return typeof value === "string" ? value : "";
+}
+
+/** The text parts of a message or tool result, in order. */
+function textOf(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content.flatMap((part: unknown) => typeof part === "object" && part !== null &&
+    Reflect.get(part, "type") === "text" && typeof Reflect.get(part, "text") === "string"
+    ? [String(Reflect.get(part, "text"))] : []).join("\n");
+}
+
+function resultText(result: unknown): string {
+  return typeof result === "object" && result !== null ? textOf(Reflect.get(result, "content")) : "";
+}
+
+/** Map one Pi session event to what a surface shows; other events show nothing. */
+export function activityOf(event: AgentSessionEvent, message: number): AgentActivity | undefined {
+  switch (event.type) {
+    case "message_update":
+    case "message_end":
+      return event.message.role === "assistant"
+        ? { type: "reply", message, text: textOf(event.message.content).trim(), final: event.type === "message_end" }
+        : undefined;
+    case "tool_execution_start":
+      return { type: "tool_started", call: event.toolCallId, tool: event.toolName, subject: toolSubject(event.toolName, event.args) };
+    case "tool_execution_update":
+      return { type: "tool_output", call: event.toolCallId, output: resultText(event.partialResult) };
+    case "tool_execution_end":
+      return { type: "tool_finished", call: event.toolCallId, failed: event.isError, output: resultText(event.result) };
+    default:
+      return undefined;
+  }
 }
 
 /** A general coding conversation whose file tools cannot leave the workspace. */
@@ -187,10 +226,13 @@ export class CodingSession {
   readonly #unsubscribe: () => void;
   #usable = true;
 
-  private constructor(session: AgentSession, onActivity: ((text: string) => void) | undefined) {
+  private constructor(session: AgentSession, onActivity: ((activity: AgentActivity) => void) | undefined) {
     this.#session = session;
+    let message = session.messages.filter((entry) => entry.role === "assistant").length;
     this.#unsubscribe = session.subscribe((event) => {
-      if (event.type === "tool_execution_start") onActivity?.(describeTool(event.toolName, event.args));
+      if (event.type === "message_start" && event.message.role === "assistant") message += 1;
+      const activity = onActivity === undefined ? undefined : activityOf(event, message);
+      if (activity !== undefined) onActivity?.(activity);
     });
   }
 

@@ -12,7 +12,7 @@ function surface(overrides: Partial<TesotaShellTerminal> = {}): { surface: Tesot
     write: (text) => { events.push(text); }, ask: async () => "",
     report: () => {}, refreshElapsed: () => {}, inspect: () => {}, addSession: () => {}, selectSession: () => {},
     writeTo: (_id, text) => { events.push(text); }, askIn: async () => "",
-    reportFor: () => {}, clearProgressFor: () => {}, inspectFor: () => {}, blockSession: () => {}, endSession: () => {}, removeSession: () => {},
+    reportFor: () => {}, clearProgressFor: () => {}, inspectFor: () => {}, showActivity: () => {}, setMode: () => {}, blockSession: () => {}, endSession: () => {}, removeSession: () => {},
     ...overrides,
   } };
 }
@@ -46,7 +46,7 @@ it("routes simultaneous session turns to their own conversation", async () => {
   });
   const running = runTesotaShellCommand({ surface: fixture.surface, initialSessionId: "default",
     session: (id) => {
-      const created = work(() => new Promise<WorkResult>((resolve) => { release.set(id, resolve); }));
+      const created = work(vi.fn(() => new Promise<WorkResult>((resolve) => { release.set(id, resolve); })));
       sessions.set(id, created);
       return created;
     },
@@ -56,11 +56,13 @@ it("routes simultaneous session turns to their own conversation", async () => {
   pending.get("default")?.("Question A");
   pending.get("other")?.("Question B");
   await vi.waitFor(() => { expect(release.size).toBe(2); });
-  release.get("other")?.({ status: "completed", reply: "Answer B", changes: [] });
-  await vi.waitFor(() => { expect(output).toContainEqual({ id: "other", text: "Answer B\n" }); });
-  expect(output.some((event) => event.id === "default" && event.text.includes("Answer"))).toBe(false);
-  release.get("default")?.({ status: "completed", reply: "Answer A", changes: [] });
-  await vi.waitFor(() => { expect(output).toContainEqual({ id: "default", text: "Answer A\n" }); });
+  expect(sessions.get("default")?.work).toHaveBeenCalledWith("Question A");
+  expect(sessions.get("other")?.work).toHaveBeenCalledWith("Question B");
+  release.get("other")?.({ status: "failed", reason: "B stopped" });
+  await vi.waitFor(() => { expect(output).toContainEqual({ id: "other", text: "The request failed: B stopped\n" }); });
+  expect(output.some((event) => event.id === "default" && event.text.includes("stopped"))).toBe(false);
+  release.get("default")?.({ status: "failed", reason: "A stopped" });
+  await vi.waitFor(() => { expect(output).toContainEqual({ id: "default", text: "The request failed: A stopped\n" }); });
   pending.get("other")?.("");
   pending.get("default")?.("");
   controls?.quit();

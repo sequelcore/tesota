@@ -69,6 +69,13 @@ Approved commands run with your permissions, files, network and credentials.
 They are not sandboxed. `Ctrl+C` stops the current request; changes made so
 far stay in the workspace.
 
+The conversation shows your messages on a tinted background, the agent's
+replies as formatted text while it writes them, and each file it reads or
+edits and each command it runs as one line; a command also shows its last
+few output lines. Tesota's own notes, such as preparation or newer changes
+from your repository, are dimmed, and warnings are colored. The line above
+the input shows what the session is doing or the question it is waiting on.
+
 A question that needs no changes ends with an answer. The conversation
 continues, so follow-up requests keep their context.
 
@@ -79,8 +86,10 @@ content. The first time in a repository it suggests commands from it (for
 example `bun run check`); press Enter to accept, type your own separated by
 `;`, or type `none`. Tesota remembers the choice for that repository.
 
-The transcript lists the changed files and each check's outcome. The result
-panel shows the full diff and check output. Then choose:
+The conversation shows a review once: each changed file and each check with
+✓ or ✗. The full diff and check output open beside it on a wide terminal;
+`Alt+R` shows or hides them, in place of the conversation on a narrow one.
+Then choose:
 
 - **apply** writes the changes to your repository. A file is only written if
   your copy still matches what the agent started from, so your own edits are
@@ -94,13 +103,13 @@ not show the change does what you asked; read the diff.
 
 ## Sessions and appearance
 
-The left column lists sessions. `Ctrl+N` starts a new one; `Alt+J` (or
-`Ctrl+Tab`) selects the next. `Ctrl+W` closes the selected session and removes
+The header names the repository, shows a tab per session with what needs you
+(`needs you`, `working`, `new`), and the mode. `Ctrl+N` starts a new session;
+`Alt+J` (or `Ctrl+Tab`) selects the next. `Ctrl+W` closes the selected session and removes
 its workspace and conversation. If the session has unapplied changes, the
 first `Ctrl+W` warns and a second one within five seconds confirms. Stop
 running work with `Ctrl+C` first. Closing the last session opens a new one. At wide sizes, `Alt+S` shows a second session
-read-only; on a narrow terminal, `Alt+1`, `Alt+2` and `Alt+3` show sessions,
-conversation and result panel. `Alt+,` and `Alt+.` browse earlier results.
+read-only. `Alt+,` and `Alt+.` browse earlier results.
 `Ctrl+Q` closes the shell. Sessions, their workspaces and their conversations
 are restored after a restart.
 

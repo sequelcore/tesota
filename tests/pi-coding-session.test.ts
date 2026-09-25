@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { confinedPath } from "../src/integrations/pi-coding-session.js";
+import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { activityOf, confinedPath } from "../src/integrations/pi-coding-session.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -42,4 +43,29 @@ it("lets the agent read but not change Git internals", async () => {
   expect(confinedPath(root, ".git/config", false)).toBe(join(root, ".git", "config"));
   expect(() => confinedPath(root, ".git/config", true)).toThrow(".git");
   expect(() => confinedPath(root, ".GIT/hooks/pre-commit", true)).toThrow(".git");
+});
+
+it("turns the agent's streamed text and tool calls into activity a surface can show", () => {
+  const assistant = { role: "assistant", content: [{ type: "text", text: "Checking " }, { type: "toolCall" },
+    { type: "text", text: "the tests." }] };
+  const events = [
+    { type: "message_update", message: assistant },
+    { type: "message_end", message: assistant },
+    { type: "message_end", message: { role: "user", content: "hi" } },
+    { type: "tool_execution_start", toolCallId: "c1", toolName: "bash", args: { command: "npm test" } },
+    { type: "tool_execution_update", toolCallId: "c1", toolName: "bash", args: {}, partialResult: { content: [{ type: "text", text: "ok 1" }] } },
+    { type: "tool_execution_end", toolCallId: "c1", toolName: "bash", result: { content: [{ type: "text", text: "ok 1\nok 2" }] }, isError: false },
+    { type: "tool_execution_start", toolCallId: "c2", toolName: "edit", args: { path: "src/a.ts" } },
+    { type: "agent_start" },
+  ] as unknown as AgentSessionEvent[];
+  expect(events.map((event) => activityOf(event, 3))).toEqual([
+    { type: "reply", message: 3, text: "Checking \nthe tests.", final: false },
+    { type: "reply", message: 3, text: "Checking \nthe tests.", final: true },
+    undefined,
+    { type: "tool_started", call: "c1", tool: "bash", subject: "npm test" },
+    { type: "tool_output", call: "c1", output: "ok 1" },
+    { type: "tool_finished", call: "c1", failed: false, output: "ok 1\nok 2" },
+    { type: "tool_started", call: "c2", tool: "edit", subject: "src/a.ts" },
+    undefined,
+  ]);
 });

@@ -15,7 +15,7 @@ function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = 
     write: (text) => { output.push(text); },
     ask: async () => answers.shift() ?? "",
     report: (event) => { progress.push(event); },
-    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", reply: "Done.", changes: [change, added] })),
+    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [change, added] })),
     checks: () => checks,
     suggestChecks: () => ["bun run check"],
     setChecks: vi.fn((commands: readonly string[]) => { checks = commands; }),
@@ -44,12 +44,13 @@ it("starts preparing the environment before asking for the first request", async
   expect(order).toEqual(["prepare", "ask"]);
 });
 
-it("answers without a review when the agent changed nothing", async () => {
+it("asks for the next request without a review when the agent changed nothing", async () => {
   const fixture = shell(["Explain pricing", ""], {
-    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", reply: "Prices are in cents.", changes: [] })),
+    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [] })),
   });
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
-  expect(fixture.text()).toContain("Prices are in cents.\n");
+  // The agent's reply streams to the surface during work; the loop adds nothing about it.
+  expect(fixture.text()).toBe("Session ended.\n");
   expect(fixture.dependencies.review).not.toHaveBeenCalled();
 });
 
@@ -60,8 +61,9 @@ it("chooses checks once, reviews the changes and applies them on request", async
   expect(fixture.dependencies.setChecks).toHaveBeenCalledWith(["bun run check"]);
   expect(fixture.dependencies.review).toHaveBeenCalledWith(["bun run check"]);
   expect(fixture.dependencies.apply).toHaveBeenCalledTimes(2);
-  expect(fixture.text()).toContain("  edit src/price.ts\n  add src/tax.ts\nChecks:\n  passed: bun run check\n");
-  expect(fixture.text()).toContain("Applied to your repository:\n");
+  // The review itself is presented once, by the review dependency; the loop only reports what was applied.
+  expect(fixture.text()).not.toContain("Checks:");
+  expect(fixture.text()).toContain("Applied to your repository:\n  edit src/price.ts\n  add src/tax.ts\n");
   expect(fixture.progress.map((event) => event.phase)).toEqual(
     ["working", "checking", "awaiting_decision", "applying", "working", "checking", "awaiting_decision", "applying"]);
 });

@@ -4,14 +4,21 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import * as z from "zod";
 import { isNetworkDestination } from "./execution-environment.js";
+import type { TranscriptEntry } from "./tesota-shell-transcript.js";
 
-const entrySchema: z.ZodType<{ role: "user" | "tesota"; text: string }> =
-  z.strictObject({ role: z.enum(["user", "tesota"]), text: z.string().max(2_000_000) });
+const text = z.string().max(2_000_000);
+const entrySchema: z.ZodType<TranscriptEntry> = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("user"), text }),
+  z.strictObject({ kind: z.literal("agent"), text }),
+  z.strictObject({ kind: z.literal("notice"), text, tone: z.enum(["info", "warning", "success"]) }),
+  z.strictObject({ kind: z.literal("tool"), tool: z.string().max(100), subject: z.string().max(10_000), failed: z.boolean() }),
+  z.strictObject({ kind: z.literal("review"), title: z.string().max(100), text }),
+]);
 const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: string }> =
   z.strictObject({ title: z.string().max(100), summary: z.string().max(10_000),
     detail: z.string().max(2_000_000) });
 const sessionSchema: z.ZodType<{ id: string; title: string;
-  engineId: string; entries: { role: "user" | "tesota"; text: string }[];
+  engineId: string; entries: TranscriptEntry[];
   inspections: { title: string; summary: string; detail: string }[];
   workspace: string | null;
   interrupted: boolean; blocked: boolean }> =
@@ -19,7 +26,7 @@ const sessionSchema: z.ZodType<{ id: string; title: string;
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
       workspace: z.string().min(1).nullable(),
       interrupted: z.boolean(), blocked: z.boolean() });
-const snapshotVersion = 4;
+const snapshotVersion = 5;
 const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: typeof snapshotVersion; source: string;
   checks: string[] | null; network: string[]; sessions: z.infer<typeof sessionSchema>[] }> =
     z.strictObject({ format: z.literal("tesota-shell-sessions"), version: z.literal(snapshotVersion),
@@ -33,7 +40,7 @@ export interface ShellSessionStore {
   list(): readonly ShellSessionRecord[];
   create(): ShellSessionRecord;
   remove(id: string): void;
-  append(id: string, role: "user" | "tesota", text: string): void;
+  append(id: string, entry: TranscriptEntry): void;
   inspect(id: string, inspection: { title: string; summary: string; detail: string }): void;
   setWorkspace(id: string, directory: string): void;
   /** Check commands the operator approved for this repository, or null before the first choice. */
@@ -154,9 +161,9 @@ export function openShellSessionStore(sourceDirectory: string,
         sessions.delete(id);
         try { save(); } catch (error) { sessions.set(id, session); throw error; }
       },
-      append: (id, role, text) => {
+      append: (id, entry) => {
         const session = find(id);
-        session.entries.push(entrySchema.parse({ role, text }));
+        session.entries.push(entrySchema.parse(entry));
         try { save(); } catch (error) { session.entries.pop(); throw error; }
       },
       inspect: (id, inspection) => {

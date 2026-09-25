@@ -1,6 +1,7 @@
 import { stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
 import { createTesotaShellTerminal } from "../src/tesota-shell-terminal.js";
+import type { TranscriptEntry } from "../src/tesota-shell-transcript.js";
 
 class TestTerminal implements Terminal {
   readonly writes: string[] = [];
@@ -72,10 +73,8 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   await expect(answer).resolves.toBe("Explain the shell");
   tui.renderNow(true);
   const screen = visible(terminal);
-  expect(screen).toContain("Tesota");
-  expect(screen).toContain("C:\\work\\tesota");
+  expect(screen).toContain("Tesota tesota");
   expect(screen).toContain("The repository is bounded.");
-  expect(screen).toContain("You");
   expect(screen).toContain("Explain the shell");
   expect(screen).toContain("Ready");
   shell.stop();
@@ -231,7 +230,7 @@ it("offers a view-only comparison while one session keeps input focus", async ()
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Research · view only");
   expect(visible(terminal)).toContain("The other session found a source.");
-  expect(visible(terminal)).toContain("Session 1 · input here");
+  expect(visible(terminal)).toContain("▸ Session 1");
   terminal.send("reply");
   terminal.send("\r");
   await expect(pending).resolves.toBe("reply");
@@ -258,10 +257,10 @@ it("keeps the result accessible on a narrow terminal without moving the input ta
   shell.start();
   shell.inspect({ title: "Candidate result", summary: "A result is ready", detail: "Changed src/value.ts" });
   const answer = shell.ask("Accept? [y/N] ");
-  terminal.send("\x1b3"); // Alt+3: inspector
+  terminal.send("\x1br"); // Alt+R: result panel, in place of the conversation at this width
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Changed src/value.ts");
-  terminal.send("\x1b2"); // Alt+2: conversation
+  terminal.send("\x1br"); // Alt+R again: back to the conversation
   terminal.send("n");
   terminal.send("\r");
   await expect(answer).resolves.toBe("n");
@@ -284,5 +283,102 @@ it("closes the selected session with Ctrl+W and moves input to the next one", as
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Session 2");
   expect(() => { shell.removeSession("second"); }).toThrow("last Tesota session");
+  shell.stop();
+});
+
+
+function wideShell(options: { onEntry?: (id: string, entry: TranscriptEntry) => void } = {}) {
+  const terminal = new TestTerminal();
+  terminal.columns = 150;
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui, ...options });
+  shell.start();
+  const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
+  return { terminal, shell, render };
+}
+
+it("sets the operator's messages, the agent's replies and Tesota's notices apart", async () => {
+  const { terminal, shell, render } = wideShell();
+  const answer = shell.ask("> ");
+  terminal.send("Fix the bug");
+  terminal.send("\r");
+  await answer;
+  shell.showActivity("default", { type: "reply", message: 1, text: "Fixed **it**.", final: true });
+  shell.write("Brought 1 newer change from your repository.");
+  const rendered = render();
+  // The operator's message sits on its own background; the agent's Markdown is rendered, not shown raw.
+  const background = rendered.indexOf("\x1b[48;2;47;42;53m");
+  expect(background).toBeGreaterThanOrEqual(0);
+  expect(rendered.indexOf("Fix the bug", background)).toBeGreaterThan(background);
+  expect(stripTerminalSequences(rendered)).toContain("Fixed it.");
+  expect(stripTerminalSequences(rendered)).not.toContain("**it**");
+  expect(rendered).toContain("\x1b[38;2;185;183;170mBrought 1 newer change");
+  shell.stop();
+});
+
+it("grows one reply while it streams and records it once", () => {
+  const entries: TranscriptEntry[] = [];
+  const { shell, render } = wideShell({ onEntry: (_id, entry) => { entries.push(entry); } });
+  shell.showActivity("default", { type: "reply", message: 1, text: "Reading the", final: false });
+  shell.showActivity("default", { type: "reply", message: 1, text: "Reading the pricing code.", final: false });
+  shell.showActivity("default", { type: "reply", message: 1, text: "Reading the pricing code.", final: true });
+  const screen = stripTerminalSequences(render());
+  expect(screen.split("Reading the").length - 1).toBe(1);
+  expect(entries).toEqual([{ kind: "agent", text: "Reading the pricing code." }]);
+  shell.stop();
+});
+
+it("shows each tool call with its command's last output lines and marks interrupted ones", async () => {
+  const entries: TranscriptEntry[] = [];
+  const { shell, render } = wideShell({ onEntry: (_id, entry) => { entries.push(entry); } });
+  shell.showActivity("default", { type: "tool_started", call: "1", tool: "edit", subject: "src/price.ts" });
+  shell.showActivity("default", { type: "tool_finished", call: "1", failed: false, output: "Applied edit" });
+  shell.showActivity("default", { type: "tool_started", call: "2", tool: "bash", subject: "npm test" });
+  shell.showActivity("default", { type: "tool_finished", call: "2", failed: true,
+    output: "line 1\nline 2\nline 3\nline 4\nnot ok 1 discount" });
+  shell.showActivity("default", { type: "tool_started", call: "3", tool: "bash", subject: "sleep 60" });
+  shell.ask("> ").catch(() => undefined);
+  const screen = stripTerminalSequences(render());
+  expect(screen).toContain("● Edit src/price.ts");
+  expect(screen).not.toContain("Applied edit");
+  expect(screen).toContain("● Run npm test");
+  expect(screen).toContain("… 1 earlier lines");
+  expect(screen).toContain("not ok 1 discount");
+  expect(screen).not.toContain("line 1\n");
+  expect(screen).toContain("● Run sleep 60 (stopped)");
+  expect(entries).toEqual([{ kind: "tool", tool: "edit", subject: "src/price.ts", failed: false },
+    { kind: "tool", tool: "bash", subject: "npm test", failed: true }]);
+  shell.stop();
+});
+
+it("presents a review once in the conversation and its diff beside it on a wide terminal", () => {
+  const entries: TranscriptEntry[] = [];
+  const { shell, render } = wideShell({ onEntry: (_id, entry) => { entries.push(entry); } });
+  shell.inspect({ title: "Review · 1 file", summary: "  edit   src/price.ts\n  ✓ npm test",
+    detail: "Diff\n-  return price + discount;\n+  return price - discount;" });
+  const rendered = render();
+  const screen = stripTerminalSequences(rendered);
+  expect(screen.split("Review · 1 file").length - 1).toBe(2);
+  expect(screen.split("✓ npm test").length - 1).toBe(1);
+  expect(screen).toContain("+  return price - discount;");
+  expect(rendered).toContain("\x1b[38;2;154;176;143m+  return price - discount;");
+  expect(entries).toEqual([{ kind: "review", title: "Review · 1 file", text: "  edit   src/price.ts\n  ✓ npm test" }]);
+  shell.stop();
+});
+
+it("restores a recorded conversation with the same presentation", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui, initialSession: { id: "default", title: "Session 1",
+    entries: [{ kind: "user", text: "Earlier request" }, { kind: "tool", tool: "read", subject: "README.md", failed: false },
+      { kind: "agent", text: "Earlier `answer`" }, { kind: "notice", text: "Applied to your repository.", tone: "success" }] } });
+  shell.start();
+  tui.renderNow(true);
+  const screen = visible(terminal);
+  expect(screen).toContain("Earlier request");
+  expect(screen).toContain("● Read README.md");
+  expect(screen).toContain("Earlier answer");
+  expect(screen).toContain("Applied to your repository.");
   shell.stop();
 });

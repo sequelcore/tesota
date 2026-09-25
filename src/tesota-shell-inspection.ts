@@ -8,18 +8,24 @@ function checkDetail(check: CheckResult): string {
   return `${check.outcome.replace("_", " ")}${exit}: ${check.command}${output}`;
 }
 
+const verbs: Readonly<Record<WorkspaceSnapshot["changes"][number]["status"], string>> =
+  { added: "add   ", modified: "edit  ", deleted: "delete" };
+
+/**
+ * The review of pending changes: a summary for the conversation, listing each
+ * file and check once, and the full evidence for the result panel.
+ */
 export function inspectReview(snapshot: WorkspaceSnapshot, checks: readonly CheckResult[]): ShellInspection {
-  const failed = checks.filter((check) => check.outcome !== "passed");
-  const checkSummary = checks.length === 0 ? "No checks ran." :
-    failed.length === 0 ? `All ${checks.length} checks passed.` : `${failed.length} of ${checks.length} checks did not pass.`;
   const first = checks[0];
-  const where = first === undefined ? "" : first.guarantees.filesystem === "host"
-    ? ` Checks ran on this exact content in the ${first.environment} environment, without isolation.`
-    : ` Checks ran on this exact content in the isolated ${first.environment} environment.`;
+  const where = first === undefined ? "No checks ran." : first.guarantees.filesystem === "host"
+    ? `Checks ran on this exact content on this computer (${first.environment}), without isolation.`
+    : `Checks ran on this exact content in the isolated ${first.environment} environment.`;
+  const files = snapshot.changes.map((change) => `  ${verbs[change.status]} ${change.path}`);
+  const results = checks.map((check) => `  ${check.outcome === "passed" ? "✓" : "✗"} ${check.command}` +
+    (check.outcome === "passed" ? "" : ` (${check.outcome.replace("_", " ")}${check.exitCode === null ? "" : `, exit ${check.exitCode}`})`));
   return {
-    title: "Changes",
-    summary: `${snapshot.changes.length} changed files. ${checkSummary}${where} ` +
-      "Checks do not show the change does what you asked.",
+    title: `Review · ${snapshot.changes.length} ${snapshot.changes.length === 1 ? "file" : "files"}`,
+    summary: [...files, ...results, `${where} Checks do not show the change does what you asked.`].join("\n"),
     detail: `Files\n${snapshot.changes.map((change) => `  ${change.status} ${change.path}`).join("\n")}` +
       `\n\nChecks\n${checks.map(checkDetail).join("\n\n") || "  None"}` +
       `\n\nContent\n  tree ${snapshot.tree}\n  base ${snapshot.base}\n\nDiff\n${snapshot.diff}`,

@@ -17,15 +17,17 @@ it("restores recorded conversation without treating it as task authority", () =>
   const { root, source } = fixture();
   const first = openShellSessionStore(source, root);
   const session = first.create();
-  first.append(session.id, "user", "Inspect the repo");
-  first.append(session.id, "tesota", "One answer with limits");
+  first.append(session.id, { kind: "user", text: "Inspect the repo" });
+  first.append(session.id, { kind: "agent", text: "One answer with limits" });
+  first.append(session.id, { kind: "tool", tool: "bash", subject: "bun test", failed: false });
   first.markActive(session.id, true);
   expect(() => openShellSessionStore(source, root)).toThrow(/already has an open/);
   first.close();
 
   const reopened = openShellSessionStore(source, root);
   expect(reopened.list()).toEqual([{ ...session, entries: [
-    { role: "user", text: "Inspect the repo" }, { role: "tesota", text: "One answer with limits" },
+    { kind: "user", text: "Inspect the repo" }, { kind: "agent", text: "One answer with limits" },
+    { kind: "tool", tool: "bash", subject: "bun test", failed: false },
   ], interrupted: true }]);
   reopened.close();
 });

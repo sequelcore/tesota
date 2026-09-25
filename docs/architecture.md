@@ -24,7 +24,11 @@ not a dependability claim. Trademark clearance has not been done.
 ## Components
 
 Tesota owns the workspace, command approval, checks, review and application.
-Pi (`@earendil-works/pi-*`) is the agent engine and terminal UI toolkit.
+Pi (`@earendil-works/pi-*`) is the agent engine and terminal UI toolkit. The
+shell builds its conversation from pi-tui's public components (`Markdown`,
+`Box`, `ScrollView`, `Editor`) rather than Pi's own chat components, whose
+colors and per-tool renderers depend on Pi's internal global theme and
+renderer registry; Tesota's themes then apply to everything on screen.
 Codex, through Pi's OAuth support, is the only model route (see
 [authentication](authentication.md)). Replacing the engine or model needs the
 affected behavior re-exercised; there is no engine registry.
@@ -37,7 +41,7 @@ request
                           file tools confined to the checkout; each shell command approved
   -> Workspace.snapshot   all work staged: changed paths, diff and Git tree id
   -> runChecks            approved commands run on that tree; a check that edits files is flagged
-  -> review               diff and check output in the result panel
+  -> review               a summary in the conversation; diff and check output in the result panel
   -> apply | reject | keep working
        apply:  applyWorkspace writes only files whose source still matches the base,
                then the workspace records the applied tree as its new base
@@ -70,9 +74,10 @@ at once; applications are serialized.
 | `cli.ts` | Commands and shell startup |
 | `tesota-shell.ts` | Surface-independent loop: request, review, decision |
 | `tesota-shell-command.ts` | Per-session composition of workspace, agent, checks and application |
-| `tesota-shell-terminal.ts`, `tesota-shell-theme.ts`, `tesota-shell-inspection.ts`, `shell-progress.ts` | Terminal layout, themes, result panel and status |
+| `tesota-shell-terminal.ts`, `tesota-shell-theme.ts`, `tesota-shell-inspection.ts`, `shell-progress.ts` | Terminal layout, session tabs, themes, result panel and status |
+| `tesota-shell-transcript.ts` | How a conversation looks: operator messages, streamed agent replies, tool calls, notices and reviews, built on pi-tui components |
 | `shell-session-store.ts` | Saved transcripts, workspace location and approved checks per session |
-| `integrations/pi-coding-session.ts` | Pi session, confined file tools, command approval, cancellation |
+| `integrations/pi-coding-session.ts` | Pi session, confined file tools, command approval, cancellation, and the agent's replies and tool calls as they happen |
 | `workspace-checkout.ts` | Creating, verifying and listing independent clones |
 | `source-snapshot.ts` | Capturing the source's uncommitted changes without writing to it |
 | `workspace-prune.ts` | Deciding which workspaces `tesota prune` may remove |

@@ -42,12 +42,8 @@ export interface TesotaShellCommandDependencies {
   readonly configureWorkspace: (callbacks: WorkspaceCallbacks) => void;
 }
 
-function describeMode(mode: SessionMode): string {
-  return mode.mode === "autonomous"
-    ? `Autonomous: commands run without asking in an isolated ${mode.provider.name} sandbox that sees only ` +
-      "this workspace and reaches only package registries."
-    : "Supervised: each shell command asks first and runs on this computer without isolation. " +
-      "Run tesota setup to see what autonomous sessions need.";
+function modeLabel(mode: SessionMode): string {
+  return mode.mode === "autonomous" ? `autonomous · ${mode.provider.name} sandbox` : "supervised · commands ask first";
 }
 
 function describePreparation(steps: readonly PreparationStep[]): string | undefined {
@@ -166,7 +162,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     }
   };
   const surface = createTesotaShellTerminal({ cwd, tui, interrupt, theme,
-    initialSession: initial, onEntry: (id, role, text) => { store.append(id, role, text); },
+    initialSession: initial, onEntry: (id, entry) => { store.append(id, entry); },
     onInspection: (id, inspection) => { store.inspect(id, inspection); },
     onNewSession: () => {
       const session = store.create();
@@ -186,7 +182,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     }
     if (session.blocked) {
       surface.blockSession(session.id);
-      surface.writeTo(session.id, "This session stopped with unresolved effects. Check your repository and start a new session.");
+      surface.writeTo(session.id, "This session stopped with unresolved effects. Check your repository and start a new session.", "warning");
     }
   }
   const saved = (id: string): ReturnType<ShellSessionStore["list"]>[number] | undefined =>
@@ -218,7 +214,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const state = stateFor(id);
     state.environment ??= (async () => {
       const [workspace, mode] = await Promise.all([workspaceFor(id), sessionMode()]);
-      surface.writeTo(id, describeMode(mode));
+      surface.setMode(modeLabel(mode));
+      if (mode.mode === "supervised") {
+        surface.writeTo(id, "Commands ask before running and run on this computer without isolation. " +
+          "Run tesota setup to see what autonomous sessions need.", "warning");
+      }
       let environment: ExecutionEnvironment;
       surface.reportFor(id, { phase: "preparing" });
       try {
@@ -235,7 +235,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       }
       const summary = describePreparation(environment.preparation);
       if (summary !== undefined) {
-        surface.writeTo(id, summary);
+        surface.writeTo(id, summary, environment.preparation.some((step) => step.outcome === "failed") ? "warning" : "info");
         state.note = [state.note, `Note: ${summary}`].filter((note) => note !== undefined).join("\n\n");
       }
       return environment;
@@ -274,7 +274,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           if (decision === "repository") store.allowNetwork(destinations);
           return decision;
         },
-        onActivity: (activity) => { surface.reportFor(id, { phase: "working", activity }); } });
+        onActivity: (activity) => { surface.showActivity(id, activity); } });
     })();
     state.coding.catch(() => { state.coding = undefined; });
     return state.coding;
@@ -349,13 +349,13 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     let update: WorkspaceUpdate;
     try { update = await (await workspaceFor(id)).update(); } catch (error) {
       surface.writeTo(id, "Could not bring your latest repository changes into the workspace" +
-        `${error instanceof UnsupportedSourceChange ? `: ${error.message}` : ""}. The agent works on the earlier state.`);
+        `${error instanceof UnsupportedSourceChange ? `: ${error.message}` : ""}. The agent works on the earlier state.`, "warning");
       return undefined;
     }
     if (update.status === "current") return undefined;
     if (update.status === "conflict") {
       surface.writeTo(id, "Your repository changed in files that also have pending changes in this workspace:\n" +
-        `${update.paths.map((path) => `  ${path}`).join("\n")}\nThe workspace was not updated; apply or reject the pending changes first.`);
+        `${update.paths.map((path) => `  ${path}`).join("\n")}\nThe workspace was not updated; apply or reject the pending changes first.`, "warning");
       return undefined;
     }
     const files = update.changes.map((change) => `  ${change.status} ${change.path}`).join("\n");
@@ -368,7 +368,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     prepare: () => {
       environmentFor(id).catch((error: unknown) => {
         // The first request prepares again and reports its own outcome.
-        if (states.has(id)) surface.writeTo(id, `${error instanceof Error ? error.message : "The environment could not start."}`);
+        if (states.has(id)) surface.writeTo(id, `${error instanceof Error ? error.message : "The environment could not start."}`, "warning");
       });
     },
     work: (request) => runOperation(id, async (signal): Promise<WorkResult> => {
@@ -382,7 +382,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         if (result.status === "unsettled") { blockSession(id); return result; }
         if (result.status !== "completed") return result;
         const workspace = await workspaceFor(id);
-        return { status: "completed", reply: result.reply, changes: workspace.snapshot().changes };
+        return { status: "completed", changes: workspace.snapshot().changes };
       } catch (error) {
         if (signal.aborted || isAbort(error)) return { status: "cancelled" };
         return { status: "failed", reason: error instanceof Error ? error.message : "Unknown failure" };
@@ -463,7 +463,7 @@ export async function runTesotaShellCommand(
       const operation = runTesotaShell({
         ...dependencies.session(id),
         ask: (prompt) => surface.askIn(id, prompt),
-        write: (text) => { surface.writeTo(id, text); },
+        write: (text, tone) => { surface.writeTo(id, text, tone); },
         report: (progress: TesotaShellProgress) => { surface.reportFor(id, progress); },
       }).then(() => {
         ended.add(id);

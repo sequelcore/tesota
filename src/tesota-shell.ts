@@ -1,9 +1,10 @@
 import type { TesotaShellProgress } from "./shell-progress.js";
+import type { NoticeTone } from "./tesota-shell-transcript.js";
 import type { WorkspaceChange } from "./workspace.js";
 import type { CheckResult } from "./workspace-checks.js";
 
 export type WorkResult =
-  | Readonly<{ status: "completed"; reply: string; changes: readonly WorkspaceChange[] }>
+  | Readonly<{ status: "completed"; changes: readonly WorkspaceChange[] }>
   | Readonly<{ status: "failed"; reason: string }>
   | Readonly<{ status: "cancelled" }>
   | Readonly<{ status: "unsettled" }>;
@@ -23,16 +24,17 @@ export interface TesotaShellDependencies {
    * agents do when a task opens, so it is usually ready by the first request.
    */
   readonly prepare?: () => void;
-  readonly write: (text: string) => void;
+  /** Add a Tesota notice; the agent's own replies reach the surface as they stream. */
+  readonly write: (text: string, tone?: NoticeTone) => void;
   readonly ask: (prompt: string) => Promise<string>;
   readonly report?: (progress: TesotaShellProgress) => void;
-  /** Run one request in the workspace and report the pending changes afterwards. */
+  /** Run one request in the workspace, showing the agent's work as it happens, and report the pending changes. */
   readonly work: (request: string) => Promise<WorkResult>;
   /** Checks the operator approved earlier, or null when none were chosen yet. */
   readonly checks: () => readonly string[] | null;
   readonly suggestChecks: () => readonly string[];
   readonly setChecks: (commands: readonly string[]) => void;
-  /** Snapshot the pending changes, run the approved checks on them and present the review. */
+  /** Snapshot the pending changes, run the approved checks on them and present the review, once. */
   readonly review: (checks: readonly string[]) => Promise<ReviewResult>;
   readonly apply: () => Promise<ApplyResult>;
   readonly reject: () => Promise<void>;
@@ -44,11 +46,6 @@ const changeVerbs: Readonly<Record<WorkspaceChange["status"], string>> = { added
 
 function describeChanges(changes: readonly WorkspaceChange[]): string {
   return changes.map((change) => `  ${changeVerbs[change.status]} ${change.path}`).join("\n");
-}
-
-function describeChecks(checks: readonly CheckResult[]): string {
-  if (checks.length === 0) return "No checks ran.";
-  return checks.map((check) => `  ${check.outcome.replace("_", " ")}: ${check.command}`).join("\n");
 }
 
 async function chooseChecks(dependencies: TesotaShellDependencies): Promise<readonly string[]> {
@@ -87,8 +84,6 @@ async function reviewChanges(dependencies: TesotaShellDependencies,
     dependencies.write("Checks cancelled. The changes stay in the workspace.\n");
     return true;
   }
-  dependencies.write(`\nChanges:\n${describeChanges(review.changes)}\nChecks:\n${describeChecks(review.checks)}\n` +
-    "The full diff and check output are in the result panel.\n");
   report({ phase: "awaiting_decision" });
   const decision = await askDecision(dependencies);
   if (decision === "keep") {
@@ -103,18 +98,18 @@ async function reviewChanges(dependencies: TesotaShellDependencies,
   report({ phase: "applying" });
   const applied = await dependencies.apply();
   if (applied.status === "applied") {
-    dependencies.write(`Applied to your repository:\n${describeChanges(applied.changes)}\n`);
+    dependencies.write(`Applied to your repository:\n${describeChanges(applied.changes)}\n`, "success");
     return true;
   }
   if (applied.status === "conflict") {
     dependencies.write(`Not applied: ${applied.reason}.\n` +
       (applied.paths.length > 0 ? `${applied.paths.map((path) => `  ${path}`).join("\n")}\n` : "") +
-      "Nothing was written. The changes stay in the workspace.\n");
+      "Nothing was written. The changes stay in the workspace.\n", "warning");
     return true;
   }
   dependencies.write("Application stopped partway. These files may have changed:\n" +
     `${applied.applied.map((path) => `  ${path}`).join("\n") || "  (unknown)"}\n` +
-    "Check your repository before continuing. This session is closed.\n");
+    "Check your repository before continuing. This session is closed.\n", "warning");
   return false;
 }
 
@@ -128,11 +123,10 @@ export async function runTesotaShell(dependencies: TesotaShellDependencies): Pro
       dependencies.write("Session ended.\n");
       return 0;
     }
-    dependencies.write("\n");
     report({ phase: "working" });
     const result = await dependencies.work(request);
     if (result.status === "unsettled") {
-      dependencies.write("The agent did not stop cleanly. This session is closed; check the workspace before continuing.\n");
+      dependencies.write("The agent did not stop cleanly. This session is closed; check the workspace before continuing.\n", "warning");
       return 1;
     }
     if (result.status === "cancelled") {
@@ -140,10 +134,9 @@ export async function runTesotaShell(dependencies: TesotaShellDependencies): Pro
       continue;
     }
     if (result.status === "failed") {
-      dependencies.write(`The request failed: ${result.reason}\n`);
+      dependencies.write(`The request failed: ${result.reason}\n`, "warning");
       continue;
     }
-    if (result.reply.length > 0) dependencies.write(`${result.reply}\n`);
     if (result.changes.length === 0) continue;
     if (!(await reviewChanges(dependencies, report))) return 1;
   }
