@@ -109,6 +109,7 @@ class ToolBlock implements Component {
 function reviewLine(line: string, theme: TesotaShellTheme): string {
   if (/^\s*✓/u.test(line)) return colorText(line, theme.success);
   if (/^\s*✗/u.test(line)) return colorText(line, theme.error);
+  if (/^\s*⚠/u.test(line)) return colorText(line, theme.warning);
   return line;
 }
 

@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { appendFile, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import * as z from "zod";
 import { isGitObjectId, runRepositoryGit as git } from "./repository-git.js";
 import { SourceSnapshot } from "./source-snapshot.js";
 import { commitAll, createWorkspaceCheckout, DEFAULT_WORKSPACES_ROOT, inspectWorkspaceCheckout,
@@ -42,6 +46,10 @@ function parseChanges(value: string): WorkspaceChange[] {
 }
 
 function nulSeparated(value: string): string[] { return value.split("\0").filter((entry) => entry.length > 0); }
+
+/** Kept beside the checkout, where neither the agent's file tools nor a sandbox reach. */
+const requestsFile = "requests.jsonl";
+const requestSchema = z.strictObject({ text: z.string().max(1_000_000), at: z.iso.datetime() });
 
 /**
  * An independent checkout the agent may change freely. Its base commit is the
@@ -130,6 +138,31 @@ export class Workspace {
     if (this.#base === previous) return { status: "current" };
     return { status: "updated", changes: parseChanges(git(this.checkout, ["diff", "--no-renames", "--name-status", "-z",
       previous, this.#base, "--"])) };
+  }
+
+  /**
+   * Record an operator request verbatim. The record holds the requests behind
+   * the pending changes (decision 015): when nothing is pending, it starts over.
+   */
+  async recordRequest(text: string): Promise<void> {
+    const line = `${JSON.stringify(requestSchema.parse({ text, at: new Date().toISOString() }))}\n`;
+    const path = join(this.directory, requestsFile);
+    if (this.snapshot().changes.length === 0) await writeFile(path, line, { encoding: "utf8", mode: 0o600 });
+    else await appendFile(path, line, "utf8");
+  }
+
+  /** The operator's requests behind the pending changes, in order. */
+  async requests(): Promise<readonly string[]> {
+    const path = join(this.directory, requestsFile);
+    if (!existsSync(path)) return [];
+    return (await readFile(path, "utf8")).split("\n").filter((line) => line.length > 0)
+      .map((line) => requestSchema.parse(JSON.parse(line)).text);
+  }
+
+  /** A file as a commit or tree holds it, or undefined when it is absent there. */
+  contentAt(revision: string, path: string): string | undefined {
+    if (!isGitObjectId(revision)) throw new Error("Invalid revision");
+    try { return git(this.checkout, ["show", `${revision}:${path}`]); } catch { return undefined; }
   }
 
   /** Discard all work after the base, keeping ignored files such as installed dependencies. */

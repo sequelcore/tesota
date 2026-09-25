@@ -60,6 +60,10 @@ independent read-only reviewer; the correction loop; the verifier contract
 with Oxlint and LemmaScript with Dafny; ClaimCheck's method and Gentle AI's
 review as further reviewers; per-repository workflow profiles.
 
+Done on 2026-09-25: the request record, kept beside the checkout and started
+over whenever nothing is pending, and ⚠ flags on changes to tests, check
+configuration, CI, formal specifications, package scripts and Tesota setup.
+
 **Done when:** a change to Tesota goes through verification, an independent
 review and a correction round, and the operator decides on the whole record.
 

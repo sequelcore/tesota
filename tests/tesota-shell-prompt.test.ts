@@ -25,8 +25,9 @@ it.each([
     output: outcome === "failed" ? "install failed" : "" }] as PreparationStep[];
   const environment = { provider: "test", guarantees: hostProvider.guarantees, preparation,
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
+  const recordRequest = vi.fn(async () => {});
   const workspace = { directory: "workspace", checkout: "workspace/repo", included: [],
-    update: () => ({ status: "current" }), snapshot: () => ({ changes: [] }) } as unknown as Workspace;
+    update: () => ({ status: "current" }), snapshot: () => ({ changes: [] }), recordRequest } as unknown as Workspace;
   const run = vi.fn(async () => ({ status: "completed" as const, reply: "ok" }));
   const coding = { run, dispose: vi.fn() } as unknown as CodingSession;
   const spies = [
@@ -44,6 +45,8 @@ it.each([
     const result = await shell.session("session").work("hello");
     expect(result).toEqual({ status: "completed", changes: [] });
     expect(run).toHaveBeenCalledWith(expected, expect.any(AbortSignal));
+    // The request record keeps the operator's words only, never Tesota's added context.
+    expect(recordRequest).toHaveBeenCalledWith("hello");
     expect(notices).toHaveBeenCalledWith("session", expect.stringContaining("Install dependencies"),
       outcome === "failed" ? "warning" : "info");
   } finally {

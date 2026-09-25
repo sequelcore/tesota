@@ -20,6 +20,7 @@ import { UnsupportedSourceChange } from "./source-snapshot.js";
 import { Workspace, type WorkspaceSnapshot, type WorkspaceUpdate } from "./workspace.js";
 import { applyWorkspace, ApplyConflictError, ApplyUncertainError } from "./workspace-apply.js";
 import { runChecks, suggestChecks } from "./workspace-checks.js";
+import { flagVerificationChanges } from "./verification-changes.js";
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
 
@@ -377,6 +378,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         const coding = await codingFor(id, signal);
         const state = stateFor(id);
         const notes = [state.note, await updateFromSource(id)].filter((note) => note !== undefined);
+        await (await workspaceFor(id)).recordRequest(request);
         const prompt = notes.length === 0 ? request
           : `Tesota context (not written by the user):\n${notes.join("\n\n")}\n\nUser request:\n${request}`;
         state.note = undefined;
@@ -404,7 +406,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const checks = await runChecks(await environmentFor(id), workspace, snapshot, commands, signal);
       if (signal.aborted) return { status: "cancelled" };
       state.reviewed = snapshot;
-      surface.inspectFor(id, inspectReview(snapshot, checks));
+      const flags = flagVerificationChanges(snapshot, (revision, path) => workspace.contentAt(revision, path));
+      surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests: await workspace.requests() }));
       return { status: "ready", changes: snapshot.changes, checks };
     }),
     apply: () => serialized(async (): Promise<ApplyResult> => {

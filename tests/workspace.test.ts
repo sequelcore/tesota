@@ -167,3 +167,27 @@ it("suggests the repository's own check script", async () => {
   await writeFile(join(workspace.checkout, "package.json"), JSON.stringify({ scripts: { check: "all", test: "vitest" } }));
   expect(suggestChecks(workspace.checkout)).toEqual(["bun run check"]);
 });
+
+it("keeps the requests behind the pending changes outside the checkout, starting over when nothing is pending", async () => {
+  const { workspace } = await fixture();
+  await workspace.recordRequest("Explain pricing");
+  await workspace.recordRequest("Double the price");
+  expect(await workspace.requests()).toEqual(["Double the price"]);
+  await writeFile(join(workspace.checkout, "src/price.ts"), "export const price = 2;\n");
+  await workspace.recordRequest("Also add a tax");
+  expect(await workspace.requests()).toEqual(["Double the price", "Also add a tax"]);
+  expect(git(workspace.checkout, ["status", "--porcelain", "--ignored"])).not.toContain("request");
+  expect(await (await Workspace.open(workspace.directory)).requests()).toEqual(["Double the price", "Also add a tax"]);
+  workspace.revert();
+  await workspace.recordRequest("Start over");
+  expect(await workspace.requests()).toEqual(["Start over"]);
+});
+
+it("reads a file as the base or a candidate tree holds it", async () => {
+  const { workspace } = await fixture();
+  await writeFile(join(workspace.checkout, "src/price.ts"), "export const price = 2;\n");
+  const snapshot = workspace.snapshot();
+  expect(workspace.contentAt(snapshot.base, "src/price.ts")).toBe("export const price = 1;\n");
+  expect(workspace.contentAt(snapshot.tree, "src/price.ts")).toBe("export const price = 2;\n");
+  expect(workspace.contentAt(snapshot.base, "src/missing.ts")).toBeUndefined();
+});

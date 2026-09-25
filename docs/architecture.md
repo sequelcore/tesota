@@ -81,7 +81,7 @@ at once; applications are serialized.
 | `workspace-checkout.ts` | Creating, verifying and listing independent clones |
 | `source-snapshot.ts` | Capturing the source's uncommitted changes without writing to it |
 | `workspace-prune.ts` | Deciding which workspaces `tesota prune` may remove |
-| `workspace.ts` | Base commit, snapshots, revert and settling applied work |
+| `workspace.ts` | Base commit, snapshots, revert, settling applied work, and the request record behind the pending changes |
 | `execution-environment.ts` | Provider-neutral interface for where commands run, and the guarantees a provider declares |
 | `host-environment.ts` | The `host` provider: commands run directly on this machine |
 | `docker-sandboxes-kit.ts` | The Sandbox Kit Spec workload that bakes pinned runtimes into a cached sandbox image and keeps `node_modules` on the sandbox's disk |
@@ -89,6 +89,7 @@ at once; applications are serialized.
 | `toolchain.ts` | Reading a repository's pinned runtimes, setup script and dependency install, and the pinned mise installer |
 | `execution-providers.ts` | Choosing a session's mode and provider, `tesota setup`, and releasing provider resources |
 | `workspace-checks.ts` | Check suggestions and running approved checks in the session's environment |
+| `verification-changes.ts` | Flagging a candidate's changes to tests, check configuration, CI, formal specifications, package scripts and Tesota setup |
 | `workspace-apply.ts` | Conflict-checked writes to the source repository and their journal |
 | `repository-git.ts` | Git invocation without ambient config, hooks or network |
 | `integrations/codex-credentials.ts`, `auth.ts` | Codex login storage |

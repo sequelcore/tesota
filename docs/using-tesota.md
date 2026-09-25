@@ -91,7 +91,11 @@ example `bun run check`); press Enter to accept, type your own separated by
 `;`, or type `none`. Tesota remembers the choice for that repository.
 
 The conversation shows a review once: each changed file and each check with
-✓ or ✗. The full diff and check output open beside it on a wide terminal;
+✓ or ✗. Changes to what checks the result, such as an edited test, lint or
+type configuration, CI workflow, package scripts or a formal specification,
+are marked ⚠: they can be a legitimate fix or a way to make checks pass, and
+only you can tell which. The result panel starts with your requests behind
+the changes, word for word, since everything else is measured against them. The full diff and check output open beside it on a wide terminal;
 `Alt+R` shows or hides them, in place of the conversation on a narrow one.
 The prompt stays visible in either view.
 Then choose:
