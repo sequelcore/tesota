@@ -38,7 +38,7 @@ source edits, carrying pending work onto them.
 
 ### 2. Isolated environments and autonomous sessions
 
-Done on 2026-09-26: the Docker Sandboxes provider, qualified by the live
+Done on 2026-09-25: the Docker Sandboxes provider, qualified by the live
 isolation controls; autonomous sessions when it is ready and supervised ones
 otherwise; a default package-registry allowlist; `tesota setup`; and sandbox
 preparation from the repository's pinned runtimes, `.tesota/setup.sh` and

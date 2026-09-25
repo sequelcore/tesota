@@ -3,7 +3,7 @@
 How coding-agent harnesses isolate command execution, control network and
 credentials, run unattended, and support remote clients. Researched on
 2026-09-24 and 2026-09-25, and the Windows sandbox status rechecked on
-2026-09-26, from vendor documentation, the source of projects
+2026-09-25, from vendor documentation, the source of projects
 cloned under `Sequel/cloned` (Codex at `32329b28`, 2026-07-24), and one
 source-code study. It informs
 [decision 014](../decisions/014-execution-and-autonomy.md). Product behavior
@@ -47,7 +47,7 @@ copy from a chosen state and never mirror later edits automatically:
 
 ## Repository toolchains in isolated environments
 
-Researched on 2026-09-26. Every surveyed system prepares the environment
+Researched on 2026-09-25. Every surveyed system prepares the environment
 before the agent starts, keeps the result, and rebuilds it when its
 definition changes:
 
@@ -109,7 +109,7 @@ Sources: [Copilot environment](https://docs.github.com/en/copilot/how-tos/use-co
 
 ## Native OS sandboxes on Windows
 
-Rechecked on 2026-09-26 because a local OS sandbox would start faster than a
+Rechecked on 2026-09-25 because a local OS sandbox would start faster than a
 microVM and use the host's own toolchain.
 
 | Option | Status on native Windows |
@@ -137,7 +137,7 @@ verify it on the real repositories and host.
   [Architecture](https://docs.docker.com/ai/sandboxes/architecture/),
   [Agents](https://docs.docker.com/ai/sandboxes/agents/),
   [Sandbox Kit Spec](https://www.docker.com/blog/docker-sandbox-kit-spec/).
-- Windows sandbox status, 2026-09-26: [Claude Code #46740](https://github.com/anthropics/claude-code/issues/46740),
+- Windows sandbox status, 2026-09-25: [Claude Code #46740](https://github.com/anthropics/claude-code/issues/46740),
   [Building the Codex Windows sandbox](https://openai.com/index/building-codex-windows-sandbox/),
   [Codex #47430](https://github.com/openai/codex/issues/47430),
   [Local AI agent sandboxes compared](https://rywalker.com/research/local-agent-sandboxes).

@@ -167,7 +167,7 @@ directory, user; no detached mode); per-sandbox `--cpus` and `--memory`;
 experimental `secret set-custom`, where the sandbox sees a placeholder and the
 proxy substitutes the real value for listed hosts; and `rm --force` cleanup.
 
-Observed on 2026-09-26 with a running shell sandbox (`sbx` v0.45.1, Windows 11
+Observed on 2026-09-25 with a running shell sandbox (`sbx` v0.45.1, Windows 11
 build 26200, global policy `deny-all`):
 
 - A Windows workspace path appears inside the VM in Git Bash form
@@ -198,7 +198,7 @@ Copilot, Codex and Claude Code cloud environments: pinned runtimes through
 mise, then `.tesota/setup.sh` or the lockfile install. Toolchain download hosts
 are allowed only during that phase and removed before the agent runs; the
 provider confirms their removal from the sandbox's rule list, or deletes the
-sandbox. On 2026-09-26 this prepared Tesota's own repository (Node 24.15.0,
+sandbox. On 2026-09-25 this prepared Tesota's own repository (Node 24.15.0,
 Bun 1.4.2, `bun install --frozen-lockfile`) in 69 s, `bun run typecheck`
 passed inside, a second preparation was skipped in 2 s, and nodejs.org was
 refused afterward.
@@ -215,7 +215,7 @@ over the workspace's `node_modules` whenever the repository root has a
 `package.json`, because dependency installs through the workspace mount took
 about 60 s against 3 s on the sandbox's disk. The in-sandbox path arrives as
 a create-phase environment argument, never spliced into the command, and the
-host checkout keeps an empty `node_modules`. On 2026-09-26 each new session
+host checkout keeps an empty `node_modules`. On 2026-09-25 each new session
 on Tesota's repository was prepared in 31 s, down from 116 s for the first
 and 70 s for later ones, and `bun run typecheck` passed inside in 2 s.
 
@@ -235,7 +235,7 @@ the outcome is `unconfirmed`. The opt-in suite
 `tests/docker-sandboxes.live.test.ts` (`TESOTA_LIVE_SANDBOX=1`) reruns the
 workspace, network, variable, cancellation and timeout controls, as the
 `agent` user and as root, the dependency volume, and reporting and opening a
-refused destination; it passed on 2026-09-26. The same day, a live agent asked
+refused destination; it passed on 2026-09-25. The same day, a live agent asked
 to fetch example.com had its `curl` refused, the operator was asked once, and
 after allowing it the agent reran the command and answered.
 
@@ -259,7 +259,7 @@ after allowing it the agent reran the command and answered.
   dedicated identities, ACL management and firewall rules, and SRT's alpha
   shows how hard the write boundary is. Tesota's value is not there.
 - **Use an OS-level sandbox for autonomous sessions on Windows.** It would
-  start instantly and use the host's toolchain, but on 2026-09-26 the only
+  start instantly and use the host's toolchain, but on 2026-09-25 the only
   mature native option is Codex's, with the costs above; Claude Code's does not
   support native Windows, and official guidance asks for a container or VM
   for unattended runs. Tesota accepts a microVM's start time (about 30 s per
