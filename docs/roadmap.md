@@ -95,11 +95,19 @@ reviewers. Keep it only if it reports defects they miss; then open an issue
 upstream with the measurements, and send approved work as pull requests of at
 most 400 changed lines. The modified build stays for personal use.
 
-### 4. Daemon and remote access
+### 4. Session service and remote access
 
-Move sessions into a background daemon with terminal clients, then reach it
-over SSH through a private network such as Tailscale. A web and mobile client
-may follow inside that network.
+[Decision 017](decisions/017-session-service-and-remote-access.md): one
+session service per operator account owns every session, and terminals attach
+to it over JSON-RPC on a named pipe or Unix socket, with no network port.
+Questions to the operator are session state, answerable from any client. On
+Windows the service starts from a Scheduled Task so it survives SSH, and the
+operator reaches the PC with Windows OpenSSH Server over Tailscale. Building
+it waits for section 1; web and mobile clients come after SSH access is in use.
+
+**Done when:** over SSH from another device on the tailnet, the operator
+attaches to running sessions, answers a pending question, disconnects
+mid-work, and finds the work finished on reconnecting.
 
 ### Later
 
