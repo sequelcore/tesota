@@ -25,7 +25,8 @@ import { flagVerificationChanges } from "./verification-changes.js";
 import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
 import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
 import { createPiReviewer } from "./integrations/pi-reviewer.js";
-import type { ReviewInput, ReviewReport } from "./review.js";
+import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
+import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
 
@@ -258,17 +259,34 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     return { runtime, model };
   };
   /** Tesota's reviewer, with its investigation shown as progress rather than as the agent's conversation. */
-  const reviewCandidate = async (id: string, input: ReviewInput, signal: AbortSignal): Promise<ReviewReport> => {
+  /**
+   * Every reviewer that applies to the candidate, in turn: Tesota's reviewer
+   * always, and ClaimCheck's method when LemmaScript proved contracts in it.
+   */
+  const reviewCandidate = async (id: string, input: ReviewInput, read: (path: string) => string | undefined,
+    signal: AbortSignal): Promise<ReviewReport[]> => {
     surface.reportFor(id, { phase: "reviewing" });
+    const reviewers: Reviewer[] = [];
     try {
       const { runtime, model } = await openModel(signal);
-      return await createPiReviewer({ modelRuntime: runtime, model, onActivity: (activity) => {
+      reviewers.push(createPiReviewer({ modelRuntime: runtime, model, onActivity: (activity) => {
         if (activity.type === "tool_started") surface.reportFor(id, { phase: "reviewing", activity: `Reviewing · ${activity.subject || activity.tool}` });
-      } }).review(input, signal);
+      } }));
+      if (input.checks.some((check) => check.verifier === "lemmascript" && check.outcome === "passed")) {
+        reviewers.push(createClaimCheckReviewer({ modelRuntime: runtime, model, read }));
+      }
     } catch (error) {
-      return { reviewer: "Tesota reviewer", tree: input.snapshot.tree, status: "incomplete",
-        reason: error instanceof Error ? error.message : "the reviewer could not start" };
+      return [{ reviewer: "Tesota reviewer", tree: input.snapshot.tree, status: "incomplete",
+        reason: error instanceof Error ? error.message : "the reviewer could not start" }];
     }
+    const reports: ReviewReport[] = [];
+    for (const reviewer of reviewers) {
+      if (signal.aborted) break;
+      surface.reportFor(id, { phase: "reviewing", activity: `Reviewing · ${reviewer.name}` });
+      reports.push(await reviewer.review(input, signal).catch((error: unknown): ReviewReport => ({ reviewer: reviewer.name,
+        tree: input.snapshot.tree, status: "incomplete", reason: error instanceof Error ? error.message : "the reviewer failed" })));
+    }
+    return reports;
   };
   const codingFor = (id: string, signal: AbortSignal): Promise<CodingSession> => {
     const state = stateFor(id);
@@ -433,14 +451,16 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       if (signal.aborted) return { status: "cancelled" };
       const flags = flagVerificationChanges(snapshot, read);
       const requests = await workspace.requests();
-      let review = await reviewCandidate(id, { checkout: workspace.checkout, requests, snapshot, checks, flags }, signal);
+      const reports = await reviewCandidate(id, { checkout: workspace.checkout, requests, snapshot, checks, flags },
+        (path) => read(snapshot.tree, path), signal);
       if (signal.aborted) return { status: "cancelled" };
-      // The reviewer has no tool that writes, but only an unchanged candidate may be applied.
+      // Reviewers have no tool that writes, but only an unchanged candidate may be applied.
       const unchanged = workspace.snapshot().tree === snapshot.tree;
-      if (!unchanged) review = { reviewer: review.reviewer, tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" };
+      const reviews: ReviewReport[] = unchanged ? reports : reports.map((report) => ({ reviewer: report.reviewer,
+        tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" }));
       if (unchanged) state.reviewed = snapshot;
-      surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews: [review] }));
-      return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews: [review], requests };
+      surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews }));
+      return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews, requests };
     }),
     apply: () => serialized(async (): Promise<ApplyResult> => {
       const state = stateFor(id);

@@ -113,6 +113,13 @@ weakened test. A reviewer that does not finish says so; it is never shown as
 a clean review. Findings are advice, and a clean review does not replace
 reading the change.
 
+When LemmaScript proved contracts in the changes, a second reviewer follows
+ClaimCheck's method: one session restates each proved contract without
+seeing your requests, and another compares that restatement with them. A
+proof can hold and still prove less than you asked, such as "denied and not
+allowed is refused" when you asked that denied always wins; this reviewer
+reports that gap.
+
 When checks fail or the reviewer finds a defect, Tesota first sends those
 problems back to the agent, with your requests unchanged, and checks and
 reviews the corrected result: at most two rounds, fewer if a round changes

@@ -121,7 +121,11 @@ changes before the next.
 4. **The verifier contract**, with approved checks moved onto it, then Oxlint
    and LemmaScript with Dafny as adapters.
 5. **Further reviewers:** ClaimCheck's method through Tesota's model route,
-   and Gentle AI's review through its published contract.
+   and Gentle AI's review through its published contract. On 2026-09-25
+   Gentle AI 2.5.0-rc.1 refused Tesota's read-only status request: for Pi it
+   admits only the gentle-pi host, which declares a relay contract on every
+   call. Tesota does not declare it on gentle-pi's behalf; this reviewer waits
+   for a contract that admits other hosts.
 6. **Workflow profiles** that choose verifiers, reviewers and loop limits per
    repository, once two real alternatives exist.
 

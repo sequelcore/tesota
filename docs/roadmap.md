@@ -68,7 +68,9 @@ findings, qualified on seeded defects (see [findings](findings.md)); and the
 correction loop, at most two rounds, stopping when a round changes nothing;
 and the verifier contract, where each result states its claim and limits, with
 Oxlint on introduced diagnostics and LemmaScript with Dafny as the first
-verifiers beyond approved checks.
+verifiers beyond approved checks; and ClaimCheck's method as a second
+reviewer of proved contracts. Gentle AI's review waits for a contract that
+admits hosts other than gentle-pi.
 
 **Done when:** a change to Tesota goes through verification, an independent
 review and a correction round, and the operator decides on the whole record.

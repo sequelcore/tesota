@@ -93,6 +93,7 @@ at once; applications are serialized.
 | `verification/lemmascript-verifier.ts` | LemmaScript with Dafny on changed files with `//@` annotations, in a private copy |
 | `correction.ts` | Which failures and findings go back to the agent, the correction message, and the round limit |
 | `review.ts` | The reviewer contract: what a reviewer sees, its findings, and incomplete reviews |
+| `integrations/pi-claimcheck.ts` | ClaimCheck's round-trip method on contracts LemmaScript proved: restated without the requests, then compared with them |
 | `integrations/pi-reviewer.ts` | Tesota's reviewer: a fresh Pi session with read-only file tools and a structured submission |
 | `verification-changes.ts` | Flagging a candidate's changes to tests, check configuration, CI, formal specifications, package scripts and Tesota setup |
 | `workspace-apply.ts` | Conflict-checked writes to the source repository and their journal |
