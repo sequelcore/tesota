@@ -8,6 +8,7 @@ Usage: tesota [--help | -h | help]
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout>
        tesota prune [--force]
+       tesota setup
 
 Starts a coding session in the current repository. The agent works in a
 separate copy; you review its changes and checks before anything is applied.
@@ -40,6 +41,11 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   } else if (plan.remove.length > 0) {
     process.stdout.write("Nothing was removed. Run tesota prune --force to remove the listed workspaces.\n");
   }
+} else if (args.length === 1 && args[0] === "setup") {
+  const { chooseSessionMode, formatSetup } = await import("./execution-providers.js");
+  const mode = await chooseSessionMode();
+  process.stdout.write(formatSetup(mode));
+  process.exitCode = mode.mode === "autonomous" ? 0 : 1;
 } else if (args.length === 2 && args[0] === "verify" && args[1] !== undefined) {
   const result = await runOxlint(configuredOxlint(process.cwd(), process.execPath), args[1]);
   process.stdout.write(`${JSON.stringify(result)}\n`);

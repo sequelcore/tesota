@@ -16,7 +16,11 @@ export interface EnvironmentGuarantees {
   readonly resources: ResourceGuarantee;
 }
 
-export type RunOutcome = "exited" | "timed_out" | "cancelled" | "not_started";
+/**
+ * How a command ended. `unconfirmed` means a stop was requested but the
+ * provider could not confirm that the command and its children are gone.
+ */
+export type RunOutcome = "exited" | "timed_out" | "cancelled" | "not_started" | "unconfirmed";
 
 export interface RunResult {
   readonly outcome: RunOutcome;
@@ -42,8 +46,31 @@ export interface ExecutionEnvironment {
   dispose(): Promise<void>;
 }
 
+/** One thing the operator must do before a provider can be used. */
+export interface SetupStep {
+  readonly description: string;
+  /** The command that does it, when there is one. */
+  readonly command?: string;
+  /** Whether the command needs an administrator prompt, and a restart after. */
+  readonly elevated?: boolean;
+  readonly restart?: boolean;
+}
+
+export type ProviderReadiness =
+  | Readonly<{ ready: true }>
+  | Readonly<{ ready: false; steps: readonly SetupStep[] }>;
+
 export interface ExecutionProvider {
   readonly name: string;
   readonly guarantees: EnvironmentGuarantees;
+  /** Whether this machine can use the provider now, and what is missing otherwise. */
+  readiness(): Promise<ProviderReadiness>;
   prepare(workspace: string): Promise<ExecutionEnvironment>;
+  /** Remove anything the provider keeps for a workspace that is being deleted. */
+  release(workspace: string): Promise<void>;
+}
+
+/** Commands may run without asking only where files and network are both confined. */
+export function allowsAutonomy(guarantees: EnvironmentGuarantees): boolean {
+  return guarantees.filesystem === "workspace" && guarantees.network === "allowlist";
 }

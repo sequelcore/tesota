@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { EnvironmentGuarantees, ExecutionEnvironment } from "./execution-environment.js";
 import type { Workspace, WorkspaceSnapshot } from "./workspace.js";
 
-export type CheckOutcome = "passed" | "failed" | "timed_out" | "cancelled" | "not_started" | "changed_files";
+export type CheckOutcome = "passed" | "failed" | "timed_out" | "cancelled" | "not_started" | "unconfirmed" | "changed_files";
 
 /** What one check command observed about one exact workspace tree. */
 export interface CheckResult {
@@ -71,7 +71,7 @@ Promise<readonly CheckResult[]> {
       : run.outcome;
     results.push({ command, tree: snapshot.tree, environment: environment.provider,
       guarantees: environment.guarantees, outcome, exitCode: run.exitCode, durationMs: Date.now() - started, output });
-    if (outcome === "cancelled" || outcome === "changed_files") break;
+    if (outcome === "cancelled" || outcome === "unconfirmed" || outcome === "changed_files") break;
   }
   return results;
 }

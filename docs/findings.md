@@ -24,6 +24,7 @@ observed on. None of them establishes representative usefulness.
 | Date | What was tried | Outcome | Lesson |
 | --- | --- | --- | --- |
 | 2026-09-24 | One live run of the new loop on a throwaway two-file JavaScript repository: fix a subtraction bug and add a `node:test` file, with commands denied | About 17 s. The agent edited one file and created another without requesting a command. `node --test` passed on the reviewed tree, and both files were applied. | The general loop does in one request what the fixed shapes could not: it created a new file. Not yet exercised in the interactive shell or on a real repository. |
+| 2026-09-26 | Autonomous loop in a Docker Sandboxes microVM on a throwaway JavaScript repository | Sandbox ready in 5 s. The agent ran `npm test`, fixed the bug and reran the tests without any approval prompt, in 20 s; the fix was applied. The `npm test` check still failed inside because the sandbox has Node 22, where `node --test src/` did not resolve. | Isolation works; toolchain parity with the repository is the next gap. |
 
 ## Isolation
 

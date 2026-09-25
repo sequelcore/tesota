@@ -162,12 +162,38 @@ directory, user; no detached mode); per-sandbox `--cpus` and `--memory`;
 experimental `secret set-custom`, where the sandbox sees a placeholder and the
 proxy substitutes the real value for listed hosts; and `rm --force` cleanup.
 
-To verify with a running sandbox during delivery step 3:
+Observed on 2026-09-26 with a running shell sandbox (`sbx` v0.45.1, Windows 11
+build 26200, global policy `deny-all`):
 
-- how the Windows workspace path appears inside the Linux VM;
-- whether ending the `sbx exec` client stops the process inside the sandbox;
-- whether local use requires signing in to a Docker account;
-- file performance of the mounted workspace for `bun install` and tests.
+- A Windows workspace path appears inside the VM in Git Bash form
+  (`C:\Users\...` becomes `/c/Users/...`), and `exec` starts there. Only the
+  mounted folder is visible: reading or writing its parent failed, and
+  `~/.tesota` did not exist inside.
+- Ending the `sbx exec` client does not stop the command or its children
+  inside the sandbox, as with `docker exec`. The provider must stop them
+  itself and confirm they are gone.
+- Local use requires signing in to a Docker account, and the daemon must be
+  running when the operator signs in; `sbx daemon start` runs in the
+  foreground.
+- Outbound requests to the npm registry and to example.com were refused with
+  `403` by the proxy, and DNS resolved nothing.
+- Secret-like variables inside (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GH_TOKEN` and others) held sandbox-generated placeholders that matched no
+  host value.
+- Writing 2,000 small files took 840 ms on the mounted workspace against 63 ms
+  on the VM's own disk, and reading them 905 ms against 40 ms. Each `exec`
+  adds about 0.6 s. Creating the first sandbox took 40 s, including the image
+  download. An idle sandbox stops and `exec` starts it again.
+- The shell sandbox has its own toolchain: Node 22.22.1, npm 9.2.0, Git 2.53
+  and Python 3.14, and no Bun. The host had Node 24.15.0 and Bun 1.4.2, so a
+  repository's own check commands can fail inside for toolchain reasons alone.
+
+The provider stops a command by tagging it with a unique environment variable,
+killing every process that carries it, and confirming none remain; otherwise
+the outcome is `unconfirmed`. The opt-in suite
+`tests/docker-sandboxes.live.test.ts` (`TESOTA_LIVE_SANDBOX=1`) reruns the
+workspace, network, variable, cancellation and timeout controls; it passed on
+2026-09-26.
 
 ## Consequences
 

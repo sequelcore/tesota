@@ -38,10 +38,15 @@ source edits, carrying pending work onto them.
 
 ### 2. Isolated environments and autonomous sessions
 
-Add the first isolated provider (Docker Sandboxes), qualify its guarantees
-with the isolation controls, and enable autonomous sessions, pending
-decisions, a default package-registry allowlist and a guided `tesota setup`.
-Supervised mode keeps working with no setup.
+Done on 2026-09-26: the Docker Sandboxes provider, qualified by the live
+isolation controls; autonomous sessions when it is ready and supervised ones
+otherwise; a default package-registry allowlist; and `tesota setup`. Next:
+
+- Make the repository's toolchain available in the sandbox (Tesota's own
+  checks need Bun and Node 24).
+- Pending decisions: a blocked network destination becomes a question the
+  operator can answer.
+- Setup that runs the missing steps instead of only listing them.
 
 ### 3. Daemon and remote access
 

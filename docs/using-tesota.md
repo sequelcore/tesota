@@ -20,6 +20,13 @@ tesota auth login
 Login stores a Codex credential under `~/.tesota/auth`; see
 [authentication](authentication.md). `bun unlink` removes the command.
 
+Sessions are **autonomous** when Docker Sandboxes is set up, and
+**supervised** otherwise. Run `tesota setup` to see which, and what is
+missing. On Windows 11, autonomous sessions need the Windows Hypervisor
+Platform (an administrator command and a restart), Docker Sandboxes
+(`winget install -h Docker.sbx`), a Docker sign-in (`sbx login`) and a
+deny-all network policy (`sbx policy init deny-all`).
+
 ## Work
 
 From a Git repository with at least one commit:
@@ -36,12 +43,15 @@ Then ask for what you need:
 ```
 
 The agent reads, searches, edits, creates and deletes files in its own copy of
-your repository. The copy includes your uncommitted changes, but not files your
+your repository. In an autonomous session its shell commands run without
+asking, inside a sandbox that sees only that copy and reaches only package
+registries. The copy includes your uncommitted changes, but not files your
 `.gitignore` excludes, such as `.env` or `node_modules`. Before each request,
 Tesota brings in anything you changed since, and keeps the agent's pending
 changes on top. If you and the agent changed the same lines, Tesota leaves the
 copy as it was and names the files; apply or reject the pending changes to
-continue with your newer version. Before any shell command runs, Tesota asks:
+continue with your newer version. In a supervised session, Tesota asks before
+any shell command runs:
 
 ```text
 Run `bun install`? [y]es, [a]lways this session, [n]o:
@@ -93,7 +103,10 @@ one run.
 
 - Exercised live only on Windows.
 - Changes to symbolic links and submodules cannot be applied.
-- Shell commands are approved one by one but not sandboxed.
+- Supervised sessions run approved commands on your computer without
+  isolation.
+- Autonomous sessions use the sandbox's own Node and npm, and have no Bun, so
+  some repository checks fail inside until your toolchain is available there.
 - Closing a session removes its workspace. `tesota prune` lists other
   workspaces it would remove, and `tesota prune --force` removes those that no
   session uses and that hold no unapplied changes.

@@ -40,7 +40,8 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota [--theme <tesota-dark|tesota-light|terminal>]\n" +
     "       tesota verify <file.ts|file.js>\n" +
     "       tesota auth <login|status|logout>\n" +
-    "       tesota prune [--force]\n\n" +
+    "       tesota prune [--force]\n" +
+    "       tesota setup\n\n" +
     "Starts a coding session in the current repository. The agent works in a\n" +
     "separate copy; you review its changes and checks before anything is applied.\n",
   );

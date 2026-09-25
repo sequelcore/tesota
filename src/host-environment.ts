@@ -13,7 +13,9 @@ const guarantees: EnvironmentGuarantees = Object.freeze({
 export const hostProvider: ExecutionProvider = {
   name: "host",
   guarantees,
+  readiness: async () => ({ ready: true }),
   prepare: async () => hostEnvironment(),
+  release: async () => {},
 };
 
 function hostEnvironment(): ExecutionEnvironment {

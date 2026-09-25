@@ -1,5 +1,6 @@
 import { rm } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { releaseWorkspace } from "./execution-providers.js";
 import { DEFAULT_SESSION_STORE_ROOT, isRepositoryShellOpen, referencedWorkspaces } from "./shell-session-store.js";
 import { Workspace } from "./workspace.js";
 import { DEFAULT_WORKSPACES_ROOT, listWorkspaceCheckouts } from "./workspace-checkout.js";
@@ -40,7 +41,10 @@ export async function planWorkspacePrune(workspacesRoot: string = DEFAULT_WORKSP
 }
 
 export async function removeWorkspaces(plan: PrunePlan): Promise<void> {
-  for (const entry of plan.remove) await rm(entry.directory, { recursive: true, force: true, maxRetries: 3 });
+  for (const entry of plan.remove) {
+    await releaseWorkspace(join(entry.directory, "repo"));
+    await rm(entry.directory, { recursive: true, force: true, maxRetries: 3 });
+  }
 }
 
 const reasonText: Readonly<Record<PruneReason | KeepReason, string>> = {

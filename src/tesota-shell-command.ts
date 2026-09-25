@@ -4,8 +4,8 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
-import type { ExecutionEnvironment, ExecutionProvider } from "./execution-environment.js";
-import { hostProvider } from "./host-environment.js";
+import { allowsAutonomy, type ExecutionEnvironment } from "./execution-environment.js";
+import { chooseSessionMode, releaseWorkspace, type SessionMode } from "./execution-providers.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { CodingSession, type CommandApproval } from "./integrations/pi-coding-session.js";
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
@@ -40,6 +40,14 @@ export interface TesotaShellCommandDependencies {
   readonly initialSessionId?: string;
   readonly blockedSessionIds?: readonly string[];
   readonly configureWorkspace: (callbacks: WorkspaceCallbacks) => void;
+}
+
+function describeMode(mode: SessionMode): string {
+  return mode.mode === "autonomous"
+    ? `Autonomous: commands run without asking in an isolated ${mode.provider.name} sandbox that sees only ` +
+      "this workspace and reaches only package registries."
+    : "Supervised: each shell command asks first and runs on this computer without isolation. " +
+      "Run tesota setup to see what autonomous sessions need.";
 }
 
 /** A second Ctrl+W within this time confirms closing a session that holds work. */
@@ -77,7 +85,12 @@ class SessionState {
 
 export function createProcessTesotaShell(cwd: string = process.cwd(),
   theme: TesotaShellThemeName = "tesota-dark",
-  provider: ExecutionProvider = hostProvider): TesotaShellCommandDependencies {
+  chooseMode: () => Promise<SessionMode> = chooseSessionMode): TesotaShellCommandDependencies {
+  let modeChoice: Promise<SessionMode> | undefined;
+  const sessionMode = (): Promise<SessionMode> => {
+    modeChoice ??= chooseMode();
+    return modeChoice;
+  };
   const activeOperations = new Map<string, AbortController>();
   const states = new Map<string, SessionState>();
   const waiters: { readonly signal: AbortSignal; readonly grant: () => void;
@@ -187,7 +200,14 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   };
   const environmentFor = (id: string): Promise<ExecutionEnvironment> => {
     const state = stateFor(id);
-    state.environment ??= workspaceFor(id).then((workspace) => provider.prepare(workspace.checkout));
+    state.environment ??= (async () => {
+      const [workspace, mode] = await Promise.all([workspaceFor(id), sessionMode()]);
+      surface.writeTo(id, describeMode(mode));
+      try { return await mode.provider.prepare(workspace.checkout); } catch (error) {
+        throw new Error(`The ${mode.provider.name} environment could not start` +
+          `${error instanceof Error ? `: ${error.message}` : ""}. Run tesota setup to check it.`);
+      }
+    })();
     state.environment.catch(() => { state.environment = undefined; });
     return state.environment;
   };
@@ -206,6 +226,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         ? SessionManager.create(workspace.checkout, piSessionsDirectory, { id: engineId })
         : SessionManager.open(existing, piSessionsDirectory, workspace.checkout);
       return CodingSession.create({ cwd: workspace.checkout, modelRuntime: runtime, model, sessionManager, environment,
+        autonomous: allowsAutonomy(environment.guarantees),
         approveCommand: async (command) => {
           surface.reportFor(id, { phase: "awaiting_command" });
           const answer = await surface.askIn(id, `Run \`${command}\`? [y]es, [a]lways this session, [n]o: `);
@@ -248,6 +269,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     await state?.coding?.then((coding) => { coding.dispose(); }, () => undefined);
     await state?.environment?.then((environment) => environment.dispose(), () => undefined);
     if (record.workspace !== null) {
+      await releaseWorkspace(join(record.workspace, "repo"));
       const transcript = SessionManager.findById(join(record.workspace, "repo"), record.engineId, piSessionsDirectory);
       if (transcript !== undefined) await rm(transcript, { force: true });
       if (!record.blocked) await rm(record.workspace, { recursive: true, force: true, maxRetries: 3 });

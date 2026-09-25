@@ -6,7 +6,7 @@ import { type AgentSession, type BashOperations, type ModelRuntime, type Session
   createWriteToolDefinition, DefaultResourceLoader, defineTool, SessionManager as PiSessionManager, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
-import type { ExecutionEnvironment } from "../execution-environment.js";
+import { allowsAutonomy, type ExecutionEnvironment } from "../execution-environment.js";
 
 export type CommandApproval = "once" | "always" | "deny";
 
@@ -24,6 +24,8 @@ export interface CodingSessionOptions {
   readonly sessionManager?: SessionManager;
   /** Where shell commands run. File tools always act on the workspace from the host. */
   readonly environment: ExecutionEnvironment;
+  /** Commands run without approval; only allowed for an environment that confines them. */
+  readonly autonomous: boolean;
   readonly approveCommand: (command: string, signal: AbortSignal | undefined) => Promise<CommandApproval>;
   readonly onActivity?: (text: string) => void;
 }
@@ -76,11 +78,12 @@ function confine<P extends TSchema, D, S>(root: string, tool: ToolDefinition<P, 
  * host process environment with each command; it is dropped so no provider
  * receives host variables by default.
  */
-function environmentBash(environment: ExecutionEnvironment, approve: CodingSessionOptions["approveCommand"]): BashOperations {
-  let alwaysAllowed = false;
+function environmentBash(environment: ExecutionEnvironment,
+  approve: CodingSessionOptions["approveCommand"] | undefined): BashOperations {
+  let alwaysAllowed = approve === undefined;
   return {
     exec: async (command, cwd, options) => {
-      if (!alwaysAllowed) {
+      if (!alwaysAllowed && approve !== undefined) {
         const answer = await approve(command, options.signal);
         if (answer === "deny") {
           options.onData(Buffer.from("The operator declined this command. Do not retry it; ask or choose another approach.\n"));
@@ -94,6 +97,7 @@ function environmentBash(environment: ExecutionEnvironment, approve: CodingSessi
       if (result.outcome === "cancelled") throw new Error("aborted");
       if (result.outcome === "timed_out") throw new Error(`timeout:${options.timeout ?? 0}`);
       if (result.outcome === "not_started") throw new Error(`The command could not start in the ${environment.provider} environment`);
+      if (result.outcome === "unconfirmed") throw new Error("The command was stopped, but it could not be confirmed that it ended");
       return { exitCode: result.exitCode };
     },
   };
@@ -109,11 +113,18 @@ function repositoryInstructions(root: string): string {
   return "";
 }
 
-function systemPrompt(root: string): string {
+function commandGuidance(autonomous: boolean): string {
+  return autonomous
+    ? "Shell commands run without asking in an isolated sandbox that sees only this copy of the repository; " +
+      "network access is limited to package registries, so a download from any other host fails. "
+    : "Every shell command asks the user for approval first; prefer the file tools for reading and editing, " +
+      "and run commands when they are worth an approval, such as installing dependencies or running tests. ";
+}
+
+function systemPrompt(root: string, autonomous: boolean): string {
   return "You are Tesota, a coding agent working in a private copy of the user's repository. " +
-    "Read, search, edit, create and delete files as the task needs. Every shell command asks the user " +
-    "for approval first; prefer the file tools for reading and editing, and run commands when they are " +
-    "worth an approval, such as installing dependencies or running tests. Do not commit, push or change Git " +
+    "Read, search, edit, create and delete files as the task needs. " + commandGuidance(autonomous) +
+    "Do not commit, push or change Git " +
     "history: when you finish, Tesota shows the user your changes, runs the repository's checks and lets " +
     "the user apply or reject them. End each turn with a short summary of what you changed and anything " +
     "the user should verify. If a request needs no changes, just answer it." +
@@ -151,6 +162,9 @@ export class CodingSession {
   }
 
   static async create(options: CodingSessionOptions): Promise<CodingSession> {
+    if (options.autonomous && !allowsAutonomy(options.environment.guarantees)) {
+      throw new Error("Autonomous sessions require an environment that confines files and network");
+    }
     const root = realpathSync(options.cwd);
     const tools: ToolDefinition[] = [
       defineTool(confine(root, createReadToolDefinition(root), false)),
@@ -159,14 +173,15 @@ export class CodingSession {
       defineTool(confine(root, createLsToolDefinition(root), false)),
       defineTool(confine(root, createEditToolDefinition(root), true)),
       defineTool(confine(root, createWriteToolDefinition(root), true)),
-      defineTool(createBashToolDefinition(root, { operations: environmentBash(options.environment, options.approveCommand),
+      defineTool(createBashToolDefinition(root, { operations: environmentBash(options.environment,
+        options.autonomous ? undefined : options.approveCommand),
         exposeSessionEnvironment: false })),
     ];
     const settingsManager = SettingsManager.inMemory({ defaultTools: [], enableSkillCommands: false },
       { projectTrusted: false });
     const resourceLoader = new DefaultResourceLoader({ cwd: root, agentDir: root, settingsManager,
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-      systemPrompt: systemPrompt(root) });
+      systemPrompt: systemPrompt(root, options.autonomous) });
     await resourceLoader.reload();
     const { session } = await createAgentSession({ cwd: root, modelRuntime: options.modelRuntime, model: options.model,
       thinkingLevel: "medium", sessionManager: options.sessionManager ?? PiSessionManager.inMemory(root),
