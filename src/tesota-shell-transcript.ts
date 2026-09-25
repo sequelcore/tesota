@@ -1,7 +1,7 @@
 import { highlightCode } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Markdown, Spacer, Text, truncateToWidth, type Component,
   type MarkdownTheme } from "@earendil-works/pi-tui";
-import type { AgentActivity } from "./integrations/pi-coding-session.js";
+import type { AgentActivity, AgentChange } from "./integrations/pi-coding-session.js";
 import { backgroundText, bold, colorText, mutedText, type TesotaShellTheme } from "./tesota-shell-theme.js";
 
 export type NoticeTone = "info" | "warning" | "success";
@@ -11,7 +11,7 @@ export type TranscriptEntry =
   | Readonly<{ kind: "user"; text: string }>
   | Readonly<{ kind: "agent"; text: string }>
   | Readonly<{ kind: "notice"; text: string; tone: NoticeTone }>
-  | Readonly<{ kind: "tool"; tool: string; subject: string; failed: boolean }>
+  | Readonly<{ kind: "tool"; tool: string; subject: string; failed: boolean; change?: AgentChange | undefined }>
   | Readonly<{ kind: "review"; title: string; text: string }>;
 
 /** Escape control characters so recorded or model text cannot drive the terminal. */
@@ -56,6 +56,7 @@ const outputTail = 4;
 class ToolBlock implements Component {
   #state: "running" | "done" | "failed" | "stopped" = "running";
   #output = "";
+  #change: AgentChange | undefined;
 
   private readonly theme: TesotaShellTheme;
   readonly tool: string;
@@ -68,7 +69,11 @@ class ToolBlock implements Component {
   }
 
   update(output: string): void { this.#output = output; }
-  finish(failed: boolean, output: string): void { this.#state = failed ? "failed" : "done"; this.#output = output; }
+  finish(failed: boolean, output: string, change?: AgentChange): void {
+    this.#state = failed ? "failed" : "done";
+    this.#output = output;
+    this.#change = failed ? undefined : change;
+  }
   stop(): void { if (this.#state === "running") this.#state = "stopped"; }
 
   invalidate(): void {}
@@ -77,9 +82,18 @@ class ToolBlock implements Component {
     const color = this.#state === "failed" ? this.theme.error : this.#state === "done" ? this.theme.success :
       this.#state === "stopped" ? this.theme.warning : this.theme.accent;
     const name = toolNames[this.tool] ?? this.tool;
+    const counts = this.#change === undefined ? "" : ` (+${this.#change.added} −${this.#change.removed})`;
     const head = ` ${colorText("•", color)} ${bold(name)} ${mutedText(safeTerminalText(this.subject), this.theme)}` +
+      colorText(counts, this.theme.success) +
       (this.#state === "stopped" ? mutedText(" (stopped)", this.theme) : "");
     const lines = [truncateToWidth(head, width)];
+    if (this.#change !== undefined) {
+      for (const line of this.#change.lines) {
+        const color = line.startsWith("+") ? this.theme.success : line.startsWith("-") ? this.theme.error : this.theme.accent;
+        lines.push(truncateToWidth(`   ${colorText(safeTerminalText(line), color)}`, width));
+      }
+      return lines;
+    }
     if (this.tool !== "bash" && this.#state !== "failed") return lines;
     const output = safeTerminalText(this.#output.trimEnd()).split(/\r?\n/u).filter((line) => line.length > 0);
     const shown = output.slice(-outputTail);
@@ -140,9 +154,10 @@ export class Transcript {
       case "tool_finished": {
         const block = this.#tools.get(activity.call);
         if (block === undefined) return undefined;
-        block.finish(activity.failed, activity.output);
+        block.finish(activity.failed, activity.output, activity.change);
         this.#tools.delete(activity.call);
-        return { kind: "tool", tool: block.tool, subject: block.subject, failed: activity.failed };
+        return { kind: "tool", tool: block.tool, subject: block.subject, failed: activity.failed,
+          ...(activity.change === undefined ? {} : { change: activity.change }) };
       }
     }
   }
@@ -186,7 +201,7 @@ export class Transcript {
       }
       case "tool": {
         const block = new ToolBlock(theme, entry.tool, entry.subject);
-        block.finish(entry.failed, "");
+        block.finish(entry.failed, "", entry.change);
         return block;
       }
       case "review": {

@@ -71,8 +71,9 @@ far stay in the workspace.
 
 The conversation shows your messages on a tinted background, the agent's
 replies as formatted text while it writes them, and each file it reads or
-edits and each command it runs as one line; a command also shows its last
-few output lines. Tesota's own notes, such as preparation or newer changes
+edits and each command it runs as one line; successful edits show line counts
+and a short inline patch, while commands show their last few output lines.
+The review still holds the complete diff. Tesota's own notes, such as preparation or newer changes
 from your repository, are dimmed, and warnings are colored. The line above
 the input shows what the session is doing or the question it is waiting on.
 

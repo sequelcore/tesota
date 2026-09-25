@@ -56,6 +56,11 @@ it("turns the agent's streamed text and tool calls into activity a surface can s
     { type: "tool_execution_update", toolCallId: "c1", toolName: "bash", args: {}, partialResult: { content: [{ type: "text", text: "ok 1" }] } },
     { type: "tool_execution_end", toolCallId: "c1", toolName: "bash", result: { content: [{ type: "text", text: "ok 1\nok 2" }] }, isError: false },
     { type: "tool_execution_start", toolCallId: "c2", toolName: "edit", args: { path: "src/a.ts" } },
+    { type: "tool_execution_end", toolCallId: "c2", toolName: "edit", isError: false,
+      result: { content: [{ type: "text", text: "Edited src/a.ts" }],
+        details: { patch: "--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n" } } },
+    { type: "tool_execution_end", toolCallId: "c3", toolName: "edit", isError: true,
+      result: { content: [{ type: "text", text: "Edit failed" }], details: { patch: "+not-applied\n" } } },
     { type: "agent_start" },
   ] as unknown as AgentSessionEvent[];
   expect(events.map((event) => activityOf(event, 3))).toEqual([
@@ -66,6 +71,9 @@ it("turns the agent's streamed text and tool calls into activity a surface can s
     { type: "tool_output", call: "c1", output: "ok 1" },
     { type: "tool_finished", call: "c1", failed: false, output: "ok 1\nok 2" },
     { type: "tool_started", call: "c2", tool: "edit", subject: "src/a.ts" },
+    { type: "tool_finished", call: "c2", failed: false, output: "Edited src/a.ts",
+      change: { added: 1, removed: 1, lines: ["@@ -1 +1 @@", "-old", "+new"] } },
+    { type: "tool_finished", call: "c3", failed: true, output: "Edit failed" },
     undefined,
   ]);
 });

@@ -21,7 +21,13 @@ export type AgentActivity =
   | Readonly<{ type: "reply"; message: number; text: string; final: boolean }>
   | Readonly<{ type: "tool_started"; call: string; tool: string; subject: string }>
   | Readonly<{ type: "tool_output"; call: string; output: string }>
-  | Readonly<{ type: "tool_finished"; call: string; failed: boolean; output: string }>;
+  | Readonly<{ type: "tool_finished"; call: string; failed: boolean; output: string; change?: AgentChange }>;
+
+export interface AgentChange {
+  readonly added: number;
+  readonly removed: number;
+  readonly lines: readonly string[];
+}
 
 export type CodingTurnResult =
   | Readonly<{ status: "completed"; reply: string }>
@@ -201,6 +207,19 @@ function resultText(result: unknown): string {
   return typeof result === "object" && result !== null ? textOf(Reflect.get(result, "content")) : "";
 }
 
+/** A bounded view of the patch Pi reports after a successful edit. */
+function editChange(result: unknown): AgentChange | undefined {
+  if (typeof result !== "object" || result === null) return undefined;
+  const details: unknown = Reflect.get(result, "details");
+  const patch: unknown = typeof details === "object" && details !== null ? Reflect.get(details, "patch") : undefined;
+  if (typeof patch !== "string") return undefined;
+  const lines = patch.split(/\r?\n/u).filter((line) => line.startsWith("@@") ||
+    line.startsWith("+") && !line.startsWith("+++") || line.startsWith("-") && !line.startsWith("---"));
+  const added = lines.filter((line) => line.startsWith("+")).length;
+  const removed = lines.filter((line) => line.startsWith("-")).length;
+  return { added, removed, lines: lines.slice(0, 8).map((line) => line.slice(0, 400)) };
+}
+
 /** Map one Pi session event to what a surface shows; other events show nothing. */
 export function activityOf(event: AgentSessionEvent, message: number): AgentActivity | undefined {
   switch (event.type) {
@@ -213,8 +232,11 @@ export function activityOf(event: AgentSessionEvent, message: number): AgentActi
       return { type: "tool_started", call: event.toolCallId, tool: event.toolName, subject: toolSubject(event.toolName, event.args) };
     case "tool_execution_update":
       return { type: "tool_output", call: event.toolCallId, output: resultText(event.partialResult) };
-    case "tool_execution_end":
-      return { type: "tool_finished", call: event.toolCallId, failed: event.isError, output: resultText(event.result) };
+    case "tool_execution_end": {
+      const change = event.toolName === "edit" && !event.isError ? editChange(event.result) : undefined;
+      return { type: "tool_finished", call: event.toolCallId, failed: event.isError, output: resultText(event.result),
+        ...(change === undefined ? {} : { change }) };
+    }
     default:
       return undefined;
   }

@@ -7,11 +7,14 @@ import { isNetworkDestination } from "./execution-environment.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
 
 const text = z.string().max(2_000_000);
+const changeSchema = z.strictObject({ added: z.number().int().nonnegative(), removed: z.number().int().nonnegative(),
+  lines: z.array(z.string().max(400)).max(8) });
 const entrySchema: z.ZodType<TranscriptEntry> = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("user"), text }),
   z.strictObject({ kind: z.literal("agent"), text }),
   z.strictObject({ kind: z.literal("notice"), text, tone: z.enum(["info", "warning", "success"]) }),
-  z.strictObject({ kind: z.literal("tool"), tool: z.string().max(100), subject: z.string().max(10_000), failed: z.boolean() }),
+  z.strictObject({ kind: z.literal("tool"), tool: z.string().max(100), subject: z.string().max(10_000), failed: z.boolean(),
+    change: changeSchema.optional() }),
   z.strictObject({ kind: z.literal("review"), title: z.string().max(100), text }),
 ]);
 const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: string }> =

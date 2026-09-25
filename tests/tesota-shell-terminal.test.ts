@@ -402,6 +402,29 @@ it("shows each tool call with its command's last output lines and marks interrup
   shell.stop();
 });
 
+it("shows and restores a successful edit's bounded inline patch", () => {
+  const entries: TranscriptEntry[] = [];
+  const first = wideShell({ onEntry: (_id, entry) => { entries.push(entry); } });
+  const change = { added: 1, removed: 1, lines: ["@@ -1 +1 @@", "-old", "+new"] };
+  first.shell.showActivity("default", { type: "tool_started", call: "edit-1", tool: "edit", subject: "src/a.ts" });
+  first.shell.showActivity("default", { type: "tool_finished", call: "edit-1", failed: false,
+    output: "Edited src/a.ts", change });
+  expect(stripTerminalSequences(first.render())).toContain("• Edit src/a.ts (+1 −1)");
+  expect(stripTerminalSequences(first.render())).toContain("-old");
+  expect(entries).toEqual([{ kind: "tool", tool: "edit", subject: "src/a.ts", failed: false, change }]);
+  first.shell.stop();
+
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const restored = createTesotaShellTerminal({ cwd: "work/tesota", tui,
+    initialSession: { id: "default", title: "Session 1", entries } });
+  restored.start();
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("• Edit src/a.ts (+1 −1)");
+  expect(visible(terminal)).toContain("+new");
+  restored.stop();
+});
+
 it("presents a review once in the conversation and its diff beside it on a wide terminal", () => {
   const entries: TranscriptEntry[] = [];
   const { shell, render } = wideShell({ onEntry: (_id, entry) => { entries.push(entry); } });
