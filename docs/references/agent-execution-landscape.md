@@ -2,7 +2,8 @@
 
 How coding-agent harnesses isolate command execution, control network and
 credentials, run unattended, and support remote clients. Researched on
-2026-09-24 and 2026-09-25 from vendor documentation, the source of projects
+2026-09-24 and 2026-09-25, and the Windows sandbox status rechecked on
+2026-09-26, from vendor documentation, the source of projects
 cloned under `Sequel/cloned` (Codex at `32329b28`, 2026-07-24), and one
 source-code study. It informs
 [decision 014](../decisions/014-execution-and-autonomy.md). Product behavior
@@ -97,6 +98,31 @@ Sources: [Copilot environment](https://docs.github.com/en/copilot/how-tos/use-co
    VMs; SRT's Windows support is alpha and failed Tesota's write test (see
    [findings](../findings.md#isolation)). A hypervisor-backed microVM is the
    practical strong boundary on a Windows 11 host.
+6. **Isolation that removes prompts is a container or VM in official
+   guidance.** Claude Code's documentation says its per-command sandbox "is not
+   sufficient for fully unattended runs" and asks for a container, a VM or its
+   sandbox runtime; for a native Windows host it recommends a container or VM.
+7. **Cloud agents create an environment per task from a cached image or
+   snapshot** and start it when the task opens: Codex caches environments for
+   about 12 hours, Claude Code cloud sessions start from a snapshot, and
+   Copilot's coding agent reruns its setup steps for each task.
+
+## Native OS sandboxes on Windows
+
+Rechecked on 2026-09-26 because a local OS sandbox would start faster than a
+microVM and use the host's own toolchain.
+
+| Option | Status on native Windows |
+| --- | --- |
+| Claude Code sandboxed Bash tool | Not supported; macOS, Linux and WSL2 only. The request for native Windows support ([#46740](https://github.com/anthropics/claude-code/issues/46740), opened 2026-04-11) is still open. |
+| Anthropic Sandbox Runtime | Windows path is alpha; it failed Tesota's write test. |
+| Codex sandbox | Ships natively. The elevated mode adds a dedicated sandbox user group, filesystem ACLs, Windows Firewall rules and local policy changes; setup failures are still reported ([#47430](https://github.com/openai/codex/issues/47430)). |
+| GitHub Copilot local sandbox | Reported to use a Windows 11 container feature (BaseContainer) by a third-party comparison; not verified against GitHub's documentation. |
+
+The comparison of local agent sandboxes by Ry Walker names no single winner:
+OS wrappers still trust the host kernel, microVMs separate it, and the advice is
+to choose the smallest environment that supplies the required boundary and
+verify it on the real repositories and host.
 
 ## Sources
 
@@ -111,6 +137,10 @@ Sources: [Copilot environment](https://docs.github.com/en/copilot/how-tos/use-co
   [Architecture](https://docs.docker.com/ai/sandboxes/architecture/),
   [Agents](https://docs.docker.com/ai/sandboxes/agents/),
   [Sandbox Kit Spec](https://www.docker.com/blog/docker-sandbox-kit-spec/).
+- Windows sandbox status, 2026-09-26: [Claude Code #46740](https://github.com/anthropics/claude-code/issues/46740),
+  [Building the Codex Windows sandbox](https://openai.com/index/building-codex-windows-sandbox/),
+  [Codex #47430](https://github.com/openai/codex/issues/47430),
+  [Local AI agent sandboxes compared](https://rywalker.com/research/local-agent-sandboxes).
 - GitHub: [Customize the agent firewall](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-firewall),
   [Allowlist reference](https://docs.github.com/en/copilot/reference/copilot-allowlist-reference).
 - OpenHands: [Runtime architecture](https://docs.openhands.dev/openhands/usage/architecture/runtime).
@@ -129,5 +159,7 @@ Sources: [Copilot environment](https://docs.github.com/en/copilot/how-tos/use-co
   installing. No sandbox was started.
 
 Not verified: Codex's hosted sandbox documentation (moved; the source was used
-instead), Cursor's and Devin's cloud agents, and `sbx` behavior with a running
-sandbox (path mapping, cancellation, sign-in requirement, file performance).
+instead), Cursor's and Devin's cloud agents, and Copilot's local Windows
+sandbox. `sbx` behavior with a running sandbox was verified later; see
+[decision 014](../decisions/014-execution-and-autonomy.md) and
+[findings](../findings.md).

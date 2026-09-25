@@ -18,6 +18,11 @@ export type ApplyResult =
   | Readonly<{ status: "uncertain"; applied: readonly string[] }>;
 
 export interface TesotaShellDependencies {
+  /**
+   * Start preparing the session's environment in the background, as cloud
+   * agents do when a task opens, so it is usually ready by the first request.
+   */
+  readonly prepare?: () => void;
   readonly write: (text: string) => void;
   readonly ask: (prompt: string) => Promise<string>;
   readonly report?: (progress: TesotaShellProgress) => void;
@@ -116,6 +121,7 @@ async function reviewChanges(dependencies: TesotaShellDependencies,
 /** Surface-independent conversation loop: work, review, then apply or reject. */
 export async function runTesotaShell(dependencies: TesotaShellDependencies): Promise<number> {
   const report = dependencies.report ?? ignoreProgress;
+  dependencies.prepare?.();
   for (;;) {
     const request = (await dependencies.ask("> ")).trim();
     if (request.length === 0) {

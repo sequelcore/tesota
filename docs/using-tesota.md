@@ -118,7 +118,8 @@ one run.
   `mise.toml`), then your `.tesota/setup.sh` or the lockfile install. The first
   session with a new set of runtime versions builds them into a cached image,
   which can take a few minutes; later sessions reuse it and prepare in about
-  half a minute. Installed `node_modules` stay inside the sandbox, so your
+  half a minute. Preparation starts as soon as a session opens, and the status
+  line shows it, so it is often done before you send your first request. Installed `node_modules` stay inside the sandbox, so your
   workspace folder shows it empty. Dev Container definitions are not read yet.
 - Closing a session removes its workspace. `tesota prune` lists other
   workspaces it would remove, and `tesota prune --force` removes those that no

@@ -224,6 +224,11 @@ full capabilities inside the VM. That does not widen the boundary: root can
 change only the VM's own filesystem, and the live suite confirms root cannot
 read or write the host outside the workspace or pass the network allowlist.
 
+Following cloud agents, which start a task's environment when the task
+opens, the shell starts preparing a session's environment as soon as the
+session opens rather than at its first request. The first request waits for
+preparation still in progress.
+
 The provider stops a command by tagging it with a unique environment variable,
 killing every process that carries it, and confirming none remain; otherwise
 the outcome is `unconfirmed`. The opt-in suite
@@ -253,6 +258,14 @@ after allowing it the agent reran the command and answered.
 - **Build a native Windows sandbox.** Codex's needs an elevated setup,
   dedicated identities, ACL management and firewall rules, and SRT's alpha
   shows how hard the write boundary is. Tesota's value is not there.
+- **Use an OS-level sandbox for autonomous sessions on Windows.** It would
+  start instantly and use the host's toolchain, but on 2026-09-26 the only
+  mature native option is Codex's, with the costs above; Claude Code's does not
+  support native Windows, and official guidance asks for a container or VM
+  for unattended runs. Tesota accepts a microVM's start time (about 30 s per
+  session, hidden by preparing at session open) and Linux commands instead.
+  Revisit when a native Windows sandbox passes the live suite's controls; it
+  would be one more provider behind the same interface.
 - **Require isolation setup before first use.** It adds friction for work
   that supervised mode already covers.
 - **Keep per-command approval as the only control.** It defeats unattended and

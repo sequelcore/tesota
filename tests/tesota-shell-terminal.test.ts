@@ -97,6 +97,29 @@ it("clears progress and input when a workspace session ends", async () => {
   shell.stop();
 });
 
+it("keeps environment preparation visible at the first prompt until it finishes", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  shell.start();
+  terminal.resizeTo(140, 30);
+  shell.reportFor("default", { phase: "preparing", activity: "Creating the sandbox" });
+  shell.askIn("default", "> ").catch(() => undefined);
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Creating the sandbox");
+  expect(visible(terminal)).toContain("Session 1 · preparing");
+  shell.reportFor("default", { phase: "working" });
+  shell.clearProgressFor("default", "preparing");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Working");
+  shell.clearProgressFor("default", "working");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Ready");
+  shell.stop();
+});
+
 it.each([
   { theme: "tesota-dark" as const, accent: "198;168;210" },
   { theme: "tesota-light" as const, accent: "109;75;120" },

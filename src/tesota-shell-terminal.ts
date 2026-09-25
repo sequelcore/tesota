@@ -35,6 +35,8 @@ export interface TesotaShellTerminal {
   writeTo(id: string, text: string): void;
   askIn(id: string, prompt: string): Promise<string>;
   reportFor(id: string, progress: TesotaShellProgress): void;
+  /** Clear a session's progress only while it is still in this phase, so newer progress is kept. */
+  clearProgressFor(id: string, phase: TesotaShellProgress["phase"]): void;
   inspectFor(id: string, inspection: ShellInspection): void;
   blockSession(id: string): void;
   endSession(id: string): void;
@@ -207,7 +209,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       const attention = session.blocked ? " · unresolved" : session.ended ? " · ended" :
         session.pending !== undefined && session.prompt !== "> " ? " · needs you" :
         session.progress?.value.phase === "working" || session.progress?.value.phase === "checking" ?
-          " · working" : "";
+          " · working" : session.progress?.value.phase === "preparing" ? " · preparing" : "";
       rows.push(`${session.id === this.selectedId ? ">" : " "} ${session.title}${attention}${session.unread ? " · new" : ""}`);
     }
     this.sessionList.setText(rows.join("\n"));
@@ -387,7 +389,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (session.blocked) return Promise.reject(new Error("Tesota session has unresolved effects"));
     if (session.ended) return Promise.reject(new Error("Tesota session has ended"));
     if (session.pending !== undefined) return Promise.reject(new Error("Tesota Shell prompt already active"));
-    if (prompt === "> ") session.progress = undefined;
+    // The first prompt may appear while the environment is still preparing; that progress stays visible.
+    if (prompt === "> " && session.progress?.value.phase !== "preparing") session.progress = undefined;
     session.prompt = prompt;
     const answer = new Promise<string>((resolve, reject) => { session.pending = { resolve, reject }; });
     this.updateSessionList();
@@ -409,6 +412,14 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.refreshElapsed();
   }
 
+  clearProgressFor(id: string, phase: TesotaShellProgress["phase"]): void {
+    const session = this.sessions.get(id);
+    if (session?.progress?.value.phase !== phase) return;
+    session.progress = undefined;
+    this.updateSessionList();
+    this.refreshElapsed();
+  }
+
   refreshElapsed(): void { this.updateStatus(); this.tui.requestRender(); }
 
   private updateStatus(): void {
@@ -421,8 +432,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       const label = tesotaShellProgressLabel(progress.value);
       this.status.setText(`${colorText(label, progressColor(progress.value, this.theme))} · ${elapsed}s`);
     }
-    this.tui.terminal.setProgress(!this.selected().blocked &&
-      (progress?.value.phase === "working" || progress?.value.phase === "checking"));
+    this.tui.terminal.setProgress(!this.selected().blocked && (progress?.value.phase === "working" ||
+      progress?.value.phase === "checking" || progress?.value.phase === "preparing"));
   }
 
   private submit(answer: string): void {

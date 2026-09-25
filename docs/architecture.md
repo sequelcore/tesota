@@ -114,7 +114,9 @@ operator confirms it, and stops at a restart or a failure. The sandbox is
 created per workspace and removed when the session closes or the workspace is
 pruned.
 
-Before the agent starts, the sandbox is prepared for the repository, as
+Preparation starts when a session opens, not at its first request, so it
+usually finishes while the operator types; the first request waits for it
+otherwise. Before the agent starts, the sandbox is prepared for the repository, as
 Copilot's setup steps and Codex and Claude Code cloud environments do. Tesota
 reads the runtimes the repository pins (`package.json` `packageManager` and
 `engines`, `.nvmrc`, `.node-version`, `.bun-version`, `.python-version`) and

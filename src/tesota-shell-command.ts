@@ -220,13 +220,14 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const [workspace, mode] = await Promise.all([workspaceFor(id), sessionMode()]);
       surface.writeTo(id, describeMode(mode));
       let environment: ExecutionEnvironment;
+      surface.reportFor(id, { phase: "preparing" });
       try {
         environment = await mode.provider.prepare(workspace.checkout,
-          { onProgress: (activity) => { surface.reportFor(id, { phase: "working", activity }); } });
+          { onProgress: (activity) => { surface.reportFor(id, { phase: "preparing", activity }); } });
       } catch (error) {
         throw new Error(`The ${mode.provider.name} environment could not start` +
           `${error instanceof Error ? `: ${error.message}` : ""}. Run tesota setup to check it.`);
-      }
+      } finally { surface.clearProgressFor(id, "preparing"); }
       const remembered = store.allowedNetwork();
       if (remembered.length > 0 && environment.network !== undefined) {
         await environment.network.allow(remembered);
@@ -364,6 +365,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   };
 
   const sessionWork = (id: string): SessionWork => ({
+    prepare: () => {
+      environmentFor(id).catch((error: unknown) => {
+        // The first request prepares again and reports its own outcome.
+        if (states.has(id)) surface.writeTo(id, `${error instanceof Error ? error.message : "The environment could not start."}`);
+      });
+    },
     work: (request) => runOperation(id, async (signal): Promise<WorkResult> => {
       try {
         const coding = await codingFor(id, signal);

@@ -36,6 +36,14 @@ it("ends the session on an empty request without doing work", async () => {
   expect(fixture.text()).toBe("Session ended.\n");
 });
 
+it("starts preparing the environment before asking for the first request", async () => {
+  const order: string[] = [];
+  const fixture = shell([], { prepare: () => { order.push("prepare"); },
+    ask: async () => { order.push("ask"); return ""; } });
+  await runTesotaShell(fixture.dependencies);
+  expect(order).toEqual(["prepare", "ask"]);
+});
+
 it("answers without a review when the agent changed nothing", async () => {
   const fixture = shell(["Explain pricing", ""], {
     work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", reply: "Prices are in cents.", changes: [] })),

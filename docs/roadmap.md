@@ -46,7 +46,8 @@ lockfile, with download hosts open only during setup; the pinned runtimes
 cached as a sandbox kit reused across sessions, with `node_modules` on the
 sandbox's own disk; refused network destinations become a question the
 operator answers for the session or the repository; `tesota setup` runs the
-missing steps once the operator confirms each.
+missing steps once the operator confirms each; and preparation starts when a
+session opens.
 
 ### 3. Daemon and remote access
 
@@ -63,7 +64,9 @@ environment need nothing Tesota-specific.
 
 
 A non-TypeScript repository and another platform; more providers (WSL2,
-native Windows candidates, remote machines) once they pass the same controls; a review queue and notifications across sessions;
+remote machines, and a native Windows OS sandbox for faster supervised or
+autonomous sessions, possibly built as its own project with Tesota) once they
+pass the same live controls; a review queue and notifications across sessions;
 non-code tasks; independent AI reviewers and user-supplied verification
 methods, chosen by observed need.
 
