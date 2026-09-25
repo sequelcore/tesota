@@ -43,7 +43,7 @@ function visible(terminal: TestTerminal): string {
 it("retains the last message when stopping before the scheduled render", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
   shell.start();
   for (let index = 0; index < 30; index++) shell.write(`Earlier message ${index}\n`);
   tui.renderNow(true);
@@ -57,7 +57,7 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const now = vi.fn(() => 1_000);
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui, now });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, now });
 
   shell.start();
   shell.write("The repository is bounded.\n");
@@ -84,7 +84,7 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
 it("clears progress and input when a workspace session ends", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
   shell.start();
   shell.reportFor("default", { phase: "working" });
   shell.endSession("default");
@@ -99,7 +99,7 @@ it("clears progress and input when a workspace session ends", async () => {
 it("keeps environment preparation visible at the first prompt until it finishes", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
   shell.start();
   terminal.resizeTo(140, 30);
   shell.reportFor("default", { phase: "preparing", activity: "Creating the sandbox" });
@@ -126,7 +126,7 @@ it.each([
 ])("renders $theme without changing the visible work state", ({ theme, accent }) => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui, theme });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, theme });
   shell.start();
   shell.report({ phase: "awaiting_decision" });
   shell.write("Scope approval is required before execution.");
@@ -146,7 +146,7 @@ it("routes Ctrl+C to the active prompt or active operation and restores the term
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const interrupt = vi.fn();
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui, interrupt });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, interrupt });
   shell.start();
 
   const answer = shell.ask("Answer: ");
@@ -163,7 +163,7 @@ it("routes Ctrl+C to the active prompt or active operation and restores the term
 it("reflows the persistent layout after terminal resize", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
   shell.start();
   shell.write("A long transcript line that must remain visible when the terminal becomes narrow.\n");
   terminal.resizeTo(44, 14);
@@ -178,7 +178,7 @@ it("lets the operator scroll the persistent transcript with the keyboard", () =>
   const terminal = new TestTerminal();
   terminal.rows = 12;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
   shell.start();
   for (let index = 1; index <= 20; index++) shell.write(`Transcript entry ${index}\n`);
   tui.renderNow(true);
@@ -195,7 +195,7 @@ it("keeps input and decisions attached to the selected session", async () => {
   const terminal = new TestTerminal();
   terminal.columns = 150;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
   shell.addSession("other", "Session 2");
   shell.start();
   const first = shell.askIn("default", "Approve these exact bytes? [y/N] ");
@@ -221,7 +221,7 @@ it("offers a view-only comparison while one session keeps input focus", async ()
   const terminal = new TestTerminal();
   terminal.columns = 190;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
   shell.addSession("other", "Research");
   shell.writeTo("other", "The other session found a source.");
   shell.start();
@@ -241,7 +241,7 @@ it("shows source control bytes as text in the inspector", () => {
   const terminal = new TestTerminal();
   terminal.columns = 150;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui, theme: "terminal" });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, theme: "terminal" });
   shell.start();
   shell.inspect({ title: "Diff", summary: "Review the change", detail: "+ value = \"\x1b[2J\"" });
   tui.renderNow(true);
@@ -253,7 +253,7 @@ it("keeps the result accessible on a narrow terminal without moving the input ta
   const terminal = new TestTerminal();
   terminal.columns = 70;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
   shell.start();
   shell.inspect({ title: "Candidate result", summary: "A result is ready", detail: "Changed src/value.ts" });
   const answer = shell.ask("Accept? [y/N] ");
@@ -271,7 +271,7 @@ it("closes the selected session with Ctrl+W and moves input to the next one", as
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const closeRequests: string[] = [];
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui,
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui,
     onCloseSession: (id) => { closeRequests.push(id); } });
   shell.start();
   shell.addSession("second", "Session 2");
@@ -292,7 +292,7 @@ function wideShell(options: { onEntry?: (id: string, entry: TranscriptEntry) => 
   terminal.columns = 150;
   terminal.rows = 40;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui, ...options });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, ...options });
   shell.start();
   const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
   return { terminal, shell, render };
@@ -370,7 +370,7 @@ it("presents a review once in the conversation and its diff beside it on a wide 
 it("restores a recorded conversation with the same presentation", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
-  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui, initialSession: { id: "default", title: "Session 1",
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, initialSession: { id: "default", title: "Session 1",
     entries: [{ kind: "user", text: "Earlier request" }, { kind: "tool", tool: "read", subject: "README.md", failed: false },
       { kind: "agent", text: "Earlier `answer`" }, { kind: "notice", text: "Applied to your repository.", tone: "success" }] } });
   shell.start();

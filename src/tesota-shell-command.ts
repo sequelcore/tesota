@@ -235,8 +235,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       }
       const summary = describePreparation(environment.preparation);
       if (summary !== undefined) {
-        surface.writeTo(id, summary, environment.preparation.some((step) => step.outcome === "failed") ? "warning" : "info");
-        state.note = [state.note, `Note: ${summary}`].filter((note) => note !== undefined).join("\n\n");
+        const failed = environment.preparation.some((step) => step.outcome === "failed");
+        surface.writeTo(id, summary, failed ? "warning" : "info");
+        if (failed) state.note = [state.note, `Note: ${summary}`].filter((note) => note !== undefined).join("\n\n");
       }
       return environment;
     })();
@@ -376,7 +377,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         const coding = await codingFor(id, signal);
         const state = stateFor(id);
         const notes = [state.note, await updateFromSource(id)].filter((note) => note !== undefined);
-        const prompt = notes.length === 0 ? request : `${notes.join("\n\n")}\n\n${request}`;
+        const prompt = notes.length === 0 ? request
+          : `Tesota context (not written by the user):\n${notes.join("\n\n")}\n\nUser request:\n${request}`;
         state.note = undefined;
         const result = await coding.run(prompt, signal);
         if (result.status === "unsettled") { blockSession(id); return result; }
