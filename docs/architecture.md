@@ -46,7 +46,13 @@ request
 
 Each shell session owns one workspace: an independent clone of the source's
 committed HEAD under `~/.tesota/workspaces/`, without the source's remotes,
-hooks, config or uncommitted files. The agent keeps its conversation across
+hooks or config. The source's uncommitted, non-ignored changes are captured
+through a temporary index and object directory, so nothing is written to the
+source repository, and added to the workspace as one commit; that commit is
+the base, so later diffs show only the agent's work. Line endings are read as
+the operator's `core.autocrlf` setting shows them. Symbolic links are checked
+out as plain files holding the link text (`core.symlinks=false`) and
+submodules stay uninitialized; application refuses changes to either. The agent keeps its conversation across
 requests, so "keep working" builds on pending changes. Up to two sessions work
 at once; applications are serialized.
 
@@ -60,7 +66,9 @@ at once; applications are serialized.
 | `tesota-shell-terminal.ts`, `tesota-shell-theme.ts`, `tesota-shell-inspection.ts`, `shell-progress.ts` | Terminal layout, themes, result panel and status |
 | `shell-session-store.ts` | Saved transcripts, workspace location and approved checks per session |
 | `integrations/pi-coding-session.ts` | Pi session, confined file tools, command approval, cancellation |
-| `workspace-checkout.ts` | Creating and verifying independent clones |
+| `workspace-checkout.ts` | Creating, verifying and listing independent clones |
+| `source-snapshot.ts` | Capturing the source's uncommitted changes without writing to it |
+| `workspace-prune.ts` | Deciding which workspaces `tesota prune` may remove |
 | `workspace.ts` | Base commit, snapshots, revert and settling applied work |
 | `execution-environment.ts` | Provider-neutral interface for where commands run, and the guarantees a provider declares |
 | `host-environment.ts` | The `host` provider: commands run directly on this machine |
@@ -121,11 +129,12 @@ LemmaScript and Dafny.
 
 ## Current limits
 
-- Exercised live only on Windows. Repositories with symbolic links or
-  submodules are refused.
+- Exercised live only on Windows. Changes to symbolic links and submodules
+  cannot be applied.
 - Only the `host` environment exists, so shell commands are approved but not
   sandboxed.
-- The workspace starts from committed HEAD; your uncommitted changes are not
-  visible to the agent, although conflicting files are protected at
-  application.
-- Old workspaces are not cleaned up automatically.
+- Uncommitted changes are captured when the workspace is created; later edits
+  in the source are not visible to the agent, although conflicting files are
+  protected at application.
+- Sessions cannot be closed yet, so their workspaces stay until pruned
+  manually; `tesota prune` removes only unused ones.

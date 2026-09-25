@@ -1,5 +1,6 @@
 import { isGitObjectId, runRepositoryGit as git } from "./repository-git.js";
-import { createWorkspaceCheckout, DEFAULT_WORKSPACES_ROOT, inspectWorkspaceCheckout } from "./workspace-checkout.js";
+import { createWorkspaceCheckout, DEFAULT_WORKSPACES_ROOT, inspectWorkspaceCheckout,
+  type WorkspaceCheckout } from "./workspace-checkout.js";
 
 export type WorkspaceChangeStatus = "added" | "modified" | "deleted";
 
@@ -17,7 +18,8 @@ export interface WorkspaceSnapshot {
 }
 
 const identity = ["-c", "user.name=Tesota", "-c", "user.email=tesota@localhost", "-c", "commit.gpgsign=false"];
-const statusNames: Readonly<Record<string, WorkspaceChangeStatus>> = { A: "added", M: "modified", D: "deleted" };
+// A type change (T), such as a link replaced by a file, is a modification; application refuses it.
+const statusNames: Readonly<Record<string, WorkspaceChangeStatus>> = { A: "added", M: "modified", T: "modified", D: "deleted" };
 
 function parseChanges(value: string): WorkspaceChange[] {
   const fields = value.split("\0");
@@ -43,24 +45,25 @@ export class Workspace {
   readonly checkout: string;
   /** The repository this workspace was cloned from and applies back to. */
   readonly source: string;
+  /** Uncommitted source changes included when the workspace was created; empty when reopened. */
+  readonly included: readonly Pick<WorkspaceChange, "status" | "path">[];
   #base: string;
 
-  private constructor(directory: string, checkout: string, source: string, base: string) {
-    this.directory = directory;
-    this.checkout = checkout;
-    this.source = source;
-    this.#base = base;
+  private constructor(checkout: WorkspaceCheckout) {
+    this.directory = checkout.directory;
+    this.checkout = checkout.checkout;
+    this.source = checkout.source;
+    this.included = checkout.included;
+    this.#base = checkout.head;
   }
 
   static async create(sourceDirectory: string, root: string = DEFAULT_WORKSPACES_ROOT): Promise<Workspace> {
-    const created = await createWorkspaceCheckout(sourceDirectory, root);
-    return new Workspace(created.directory, created.checkout, created.source, created.head);
+    return new Workspace(await createWorkspaceCheckout(sourceDirectory, root));
   }
 
   /** Reopen a workspace; its current HEAD becomes the base, and uncommitted work stays pending. */
   static async open(directory: string): Promise<Workspace> {
-    const checkout = await inspectWorkspaceCheckout(directory);
-    return new Workspace(checkout.directory, checkout.checkout, checkout.source, checkout.head);
+    return new Workspace(await inspectWorkspaceCheckout(directory));
   }
 
   get base(): string { return this.#base; }

@@ -27,13 +27,13 @@ local agent flow is dependable.
 
 ### 1. General agent flow for daily use
 
-Use Tesota for its own changes on Windows and fix what gets in the way:
+Use Tesota for its own changes on Windows and fix what gets in the way.
+Done on 2026-09-25: workspaces include uncommitted changes, repositories with
+symbolic links and submodules open, approved checks are remembered per
+repository, and `tesota prune` removes unused workspaces. Known gaps:
 
-- The workspace starts from committed HEAD, so uncommitted work is invisible
-  to the agent.
-- Repositories with symbolic links or submodules are refused.
-- Old workspaces are never cleaned up.
-- Approved checks are chosen per session instead of per repository.
+- Sessions cannot be closed from the shell.
+- Edits made in the source after a workspace starts are not visible to it.
 
 **Done when:** a normal week of Tesota's own changes goes through Tesota.
 

@@ -42,23 +42,24 @@ it("rejects a corrupt session snapshot instead of showing a clean history", () =
   expect(() => openShellSessionStore(source, root)).toThrow();
 });
 
-it("persists the session workspace, approved checks and engine identity", () => {
+it("persists session workspaces, the repository's approved checks and engine identity", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);
   const session = store.create();
   store.setWorkspace(session.id, join(root, "workspace"));
-  store.setChecks(session.id, ["bun run check"]);
+  expect(store.checks()).toBeNull();
+  store.setChecks(["bun run check"]);
   const previousEngine = session.engineId;
   const nextEngine = store.rotateEngine(session.id);
   expect(nextEngine).not.toBe(previousEngine);
   store.close();
   const reopened = openShellSessionStore(source, root);
-  expect(reopened.list()[0]).toMatchObject({ workspace: join(root, "workspace"), checks: ["bun run check"],
-    engineId: nextEngine });
+  expect(reopened.list()[0]).toMatchObject({ workspace: join(root, "workspace"), engineId: nextEngine });
+  expect(reopened.checks()).toEqual(["bun run check"]);
   reopened.close();
 });
 
-it("discards a version 1 snapshot and starts with no sessions", () => {
+it("discards an older snapshot version and starts with no sessions", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);
   store.create();

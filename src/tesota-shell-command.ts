@@ -149,6 +149,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       }
       const workspace = await Workspace.create(cwd);
       store.setWorkspace(id, workspace.directory);
+      if (workspace.included.length > 0) {
+        surface.writeTo(id, `The workspace includes your ${workspace.included.length} uncommitted ` +
+          `${workspace.included.length === 1 ? "change" : "changes"}. Later edits in your repository are not visible to the agent.`);
+      }
       return workspace;
     })();
     state.workspace.catch(() => { state.workspace = undefined; });
@@ -207,12 +211,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         return { status: "failed", reason: error instanceof Error ? error.message : "Unknown failure" };
       }
     }),
-    checks: () => saved(id)?.checks ?? null,
+    checks: () => store.checks(),
     suggestChecks: () => {
       const directory = saved(id)?.workspace;
       return suggestChecks(directory === null || directory === undefined ? cwd : join(directory, "repo"));
     },
-    setChecks: (commands) => { store.setChecks(id, commands); },
+    setChecks: (commands) => { store.setChecks(commands); },
     review: (commands) => runOperation(id, async (signal): Promise<ReviewResult> => {
       const workspace = await workspaceFor(id);
       const state = stateFor(id);

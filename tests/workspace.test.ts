@@ -99,6 +99,42 @@ it("treats a CRLF checkout of the base content as unchanged and keeps its line e
   expect(await readFile(join(source, "src/price.ts"), "utf8")).toBe("export const price = 2;\r\n");
 });
 
+it("builds on uncommitted work and applies only the agent's changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tesota-workspace-dirty-"));
+  roots.push(root);
+  const source = join(root, "source");
+  await mkdir(join(source, "src"), { recursive: true });
+  git(source, ["init", "--quiet"]);
+  await writeFile(join(source, "src/price.ts"), "export const price = 1;\n");
+  git(source, ["add", "--all"]);
+  git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
+  await writeFile(join(source, "src/price.ts"), "export const price = 5;\n");
+  await writeFile(join(source, "notes.md"), "operator notes\n");
+  const workspace = await Workspace.create(source, join(root, "workspaces"));
+  expect(workspace.included).toEqual([{ status: "added", path: "notes.md" }, { status: "modified", path: "src/price.ts" }]);
+  expect(workspace.snapshot().changes).toEqual([]);
+  await writeFile(join(workspace.checkout, "src/price.ts"), "export const price = 6;\n");
+  const snapshot = workspace.snapshot();
+  expect(snapshot.changes).toEqual([{ status: "modified", path: "src/price.ts" }]);
+  await applyWorkspace(workspace, snapshot);
+  expect(await readFile(join(source, "src/price.ts"), "utf8")).toBe("export const price = 6;\n");
+  expect(await readFile(join(source, "notes.md"), "utf8")).toBe("operator notes\n");
+});
+
+it("refuses to change a symbolic link and writes nothing", async () => {
+  const { source, workspace: initial } = await fixture();
+  await writeFile(join(source, "link"), "src/price.ts");
+  const blob = git(source, ["hash-object", "-w", "link"]).trim();
+  git(source, ["update-index", "--add", "--cacheinfo", `120000,${blob},link`]);
+  git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Link"]);
+  const workspace = await Workspace.create(source, join(initial.directory, "..", "more"));
+  await writeFile(join(workspace.checkout, "link"), "../../elsewhere");
+  await writeFile(join(workspace.checkout, "src/tax.ts"), "export const tax = 0.2;\n");
+  const failure = applyWorkspace(workspace, workspace.snapshot());
+  await expect(failure).rejects.toThrow("Symbolic links and submodules cannot be changed");
+  expect(existsSync(join(source, "src/tax.ts"))).toBe(false);
+});
+
 it("refuses content that changed after review", async () => {
   const { workspace } = await fixture();
   await changeEverything(workspace);

@@ -39,14 +39,15 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "Tesota\nUsage: tesota [--help | -h | help]\n" +
     "       tesota [--theme <tesota-dark|tesota-light|terminal>]\n" +
     "       tesota verify <file.ts|file.js>\n" +
-    "       tesota auth <login|status|logout>\n\n" +
+    "       tesota auth <login|status|logout>\n" +
+    "       tesota prune [--force]\n\n" +
     "Starts a coding session in the current repository. The agent works in a\n" +
     "separate copy; you review its changes and checks before anything is applied.\n",
   );
 });
 
 it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["--theme"], ["--execution", "host-local"],
-  ["task", "propose", "Explain"], ["candidate", "list"], ["isolation", "qualify"]])(
+  ["task", "propose", "Explain"], ["candidate", "list"], ["isolation", "qualify"], ["prune", "--all"]])(
   "rejects invalid compiled CLI arguments %j",
   (...args) => {
     const result = run(args);

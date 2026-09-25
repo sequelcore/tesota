@@ -36,7 +36,9 @@ Then ask for what you need:
 ```
 
 The agent reads, searches, edits, creates and deletes files in its own copy of
-your repository. Before any shell command runs, Tesota asks:
+your repository. The copy includes your uncommitted changes at the moment the
+session's workspace is created, but not files your `.gitignore` excludes, such
+as `.env` or `node_modules`. Before any shell command runs, Tesota asks:
 
 ```text
 Run `bun install`? [y]es, [a]lways this session, [n]o:
@@ -52,9 +54,9 @@ continues, so follow-up requests keep their context.
 ## Review and apply
 
 When a request leaves changes, Tesota runs your checks on exactly that
-content. The first time in a session it suggests commands from the repository
-(for example `bun run check`); press Enter to accept, type your own separated
-by `;`, or type `none`.
+content. The first time in a repository it suggests commands from it (for
+example `bun run check`); press Enter to accept, type your own separated by
+`;`, or type `none`. Tesota remembers the choice for that repository.
 
 The transcript lists the changed files and each check's outcome. The result
 panel shows the full diff and check output. Then choose:
@@ -84,7 +86,10 @@ one run.
 ## Limits
 
 - Exercised live only on Windows.
-- The agent sees your last commit, not uncommitted changes.
-- Repositories with symbolic links or submodules are refused.
+- Edits you make in your repository after a session starts are not visible to
+  its agent.
+- Changes to symbolic links and submodules cannot be applied.
 - Shell commands are approved one by one but not sandboxed.
-- Workspaces under `~/.tesota/workspaces` are not cleaned up automatically.
+- Workspaces under `~/.tesota/workspaces` stay until you run `tesota prune`,
+  which lists what it would remove; `tesota prune --force` removes workspaces
+  that no session uses and that hold no unapplied changes.

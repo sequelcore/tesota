@@ -56,11 +56,15 @@ export function assertNoRepositoryGitPrograms(cwd: string): void {
   }
 }
 
+/** Git's own variables a caller may set, such as a temporary index or object directory. */
+export type RepositoryGitEnvironment = Readonly<Partial<Record<
+  "GIT_INDEX_FILE" | "GIT_OBJECT_DIRECTORY" | "GIT_ALTERNATE_OBJECT_DIRECTORIES", string>>>;
+
 /** Run a fixed, shell-free local Git text operation without ambient config, hooks, credentials or network protocols. */
-export function runRepositoryGit(cwd: string, args: readonly string[]): string {
+export function runRepositoryGit(cwd: string, args: readonly string[], extra: RepositoryGitEnvironment = {}): string {
   const source = resolve(cwd);
   const result = spawnSync("git", ["-C", source, ...repositoryGitArguments(args)], {
-    cwd: gitExecutionDirectory(source), env: repositoryGitEnvironment(source), windowsHide: true, shell: false, encoding: "utf8",
+    cwd: gitExecutionDirectory(source), env: { ...repositoryGitEnvironment(source), ...extra }, windowsHide: true, shell: false, encoding: "utf8",
     timeout: gitTimeoutMs, maxBuffer: gitLimit,
   });
   if (result.error !== undefined || result.status !== 0 || result.signal !== null) {
@@ -70,10 +74,10 @@ export function runRepositoryGit(cwd: string, args: readonly string[]): string {
 }
 
 /** Preserve exact blob bytes for callers that perform their own bounded decoding. */
-export function runRepositoryGitBytes(cwd: string, args: readonly string[]): Buffer {
+export function runRepositoryGitBytes(cwd: string, args: readonly string[], extra: RepositoryGitEnvironment = {}): Buffer {
   const source = resolve(cwd);
   const result = spawnSync("git", ["-C", source, ...repositoryGitArguments(args)], {
-    cwd: gitExecutionDirectory(source), env: repositoryGitEnvironment(source), windowsHide: true, shell: false, encoding: "buffer",
+    cwd: gitExecutionDirectory(source), env: { ...repositoryGitEnvironment(source), ...extra }, windowsHide: true, shell: false, encoding: "buffer",
     timeout: gitTimeoutMs, maxBuffer: gitLimit,
   });
   if (result.error !== undefined || result.status !== 0 || result.signal !== null) {
@@ -84,4 +88,19 @@ export function runRepositoryGitBytes(cwd: string, args: readonly string[]): Buf
 
 export function isGitObjectId(value: unknown): value is string {
   return typeof value === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
+}
+
+/**
+ * The operator's own `core.autocrlf` setting, read with their normal Git
+ * configuration so a snapshot sees line endings as their `git status` does.
+ * Only this built-in conversion is honored; filters and programs stay disabled.
+ */
+export function operatorLineEndingSetting(cwd: string): "true" | "input" | "false" {
+  const source = resolve(cwd);
+  const env: NodeJS.ProcessEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", LC_ALL: "C" };
+  const result = spawnSync("git", ["-C", source, "config", "--type=bool-or-str", "--get", "core.autocrlf"], {
+    cwd: gitExecutionDirectory(source), env, windowsHide: true, shell: false, encoding: "utf8", timeout: gitTimeoutMs,
+  });
+  const value = result.status === 0 ? result.stdout.trim().toLowerCase() : "false";
+  return value === "true" || value === "input" ? value : "false";
 }

@@ -3,6 +3,7 @@ import { lstat, mkdir, open, readFile, realpath, rename, unlink } from "node:fs/
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { runRepositoryGit as git, runRepositoryGitBytes as gitBytes } from "./repository-git.js";
 import type { Workspace, WorkspaceChange, WorkspaceSnapshot } from "./workspace.js";
+import { isRepositoryPath, isUnchangeableMode } from "./workspace-checkout.js";
 
 /** Nothing was written to the source repository. */
 export class ApplyConflictError extends Error {
@@ -37,11 +38,6 @@ interface PlannedWrite {
 function contains(parent: string, child: string): boolean {
   const difference = relative(parent, child);
   return difference === "" || !isAbsolute(difference) && difference !== ".." && !difference.startsWith(`..${sep}`);
-}
-
-function validPath(path: string): boolean {
-  return path.length > 0 && !isAbsolute(path) && !path.includes("\\") &&
-    path.split("/").every((part) => part !== "" && part !== "." && part !== ".." && part.toLowerCase() !== ".git");
 }
 
 function isText(bytes: Buffer): boolean { return !bytes.includes(0); }
@@ -85,17 +81,26 @@ async function nearestExistingParent(path: string): Promise<string> {
   }
 }
 
+/** The Git mode of a path in a tree, or an empty string when the path is absent. */
+function treeMode(workspace: Workspace, tree: string, path: string): string {
+  return git(workspace.checkout, ["ls-tree", tree, "--", path]).split(" ")[0] ?? "";
+}
+
 async function planWrites(workspace: Workspace, snapshot: WorkspaceSnapshot, source: string): Promise<PlannedWrite[]> {
   const planned: PlannedWrite[] = [];
   const conflicts: string[] = [];
   for (const change of snapshot.changes) {
-    if (!validPath(change.path)) throw new ApplyConflictError("Unsupported path", [change.path]);
+    if (!isRepositoryPath(change.path)) throw new ApplyConflictError("Unsupported path", [change.path]);
     const target = join(source, ...change.path.split("/"));
     if (!contains(source, await nearestExistingParent(target))) throw new ApplyConflictError("Path leaves the repository", [change.path]);
     const existing = await readExisting(target);
+    const baseMode = treeMode(workspace, snapshot.base, change.path);
+    const newMode = treeMode(workspace, snapshot.tree, change.path);
+    if (isUnchangeableMode(baseMode) || isUnchangeableMode(newMode)) {
+      throw new ApplyConflictError("Symbolic links and submodules cannot be changed", [change.path]);
+    }
     const reviewed = change.status === "deleted" ? null : gitBytes(workspace.checkout, ["cat-file", "blob", `${snapshot.tree}:${change.path}`]);
-    const executable = change.status !== "deleted" &&
-      git(workspace.checkout, ["ls-tree", snapshot.tree, "--", change.path]).startsWith("100755 ");
+    const executable = newMode === "100755";
     if (change.status === "added") {
       if (existing !== null) { conflicts.push(change.path); continue; }
       planned.push({ change, target, before: null, after: reviewed, mode: executable ? 0o755 : 0o644 });

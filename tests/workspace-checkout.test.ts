@@ -55,7 +55,7 @@ async function fixture() {
   return { root, source, workspaces: join(root, "workspaces"), baseline: templateBaseline };
 }
 
-it("creates an independent detached checkout and preserves dirty source files, refs, index and config", async () => {
+it("includes uncommitted work without changing the source's index, refs, config or objects", async () => {
   const { source, workspaces, baseline } = await fixture();
   await writeFile(join(source, "source.ts"), "operator work\n");
   git(source, ["add", "source.ts"]);
@@ -66,22 +66,42 @@ it("creates an independent detached checkout and preserves dirty source files, r
   const beforeRefs = git(source, ["show-ref"]);
   const beforeIndex = await readFile(join(source, ".git/index"));
   const beforeConfig = await readFile(join(source, ".git/config"));
+  const beforeObjects = git(source, ["count-objects", "-v"]);
   const created = await createWorkspaceCheckout(source, workspaces);
-  expect(created).toMatchObject({ baseline, head: baseline });
-  expect(await readFile(join(created.checkout, "source.ts"), "utf8")).toBe("export const value = 1;\n");
-  expect(await readdir(created.checkout)).not.toContain("untracked.txt");
+  expect(created.baseline).toBe(baseline);
+  expect(created.head).not.toBe(baseline);
+  expect(created.included).toEqual([{ status: "modified", path: "source.ts" }, { status: "added", path: "untracked.txt" }]);
+  expect(await readFile(join(created.checkout, "source.ts"), "utf8")).toBe("operator work\n");
+  expect(await readFile(join(created.checkout, "untracked.txt"), "utf8")).toBe("private\n");
   expect(await readdir(created.checkout)).not.toContain("ignored");
   expect(git(created.checkout, ["rev-parse", "--abbrev-ref", "HEAD"]).trim()).toBe("HEAD");
   expect(git(created.checkout, ["remote"])).toBe("");
   expect(git(created.checkout, ["status", "--porcelain"])).toBe("");
   expect(await readFile(join(source, ".git/index"))).toEqual(beforeIndex);
   expect(await readFile(join(source, ".git/config"))).toEqual(beforeConfig);
+  expect(git(source, ["count-objects", "-v"])).toBe(beforeObjects);
   expect(git(source, ["show-ref"])).toBe(beforeRefs);
   expect(git(source, ["status", "--porcelain=v1", "-z", "--ignored"])).toBe(beforeStatus);
   await writeFile(join(created.checkout, "source.ts"), "workspace change\n");
   expect(await readFile(join(source, "source.ts"), "utf8")).toBe("operator work\n");
   await rm(join(source, ".git"), { recursive: true, force: true });
-  expect((await inspectWorkspaceCheckout(created.directory)).head).toBe(baseline);
+  expect((await inspectWorkspaceCheckout(created.directory)).head).toBe(created.head);
+});
+
+it("sees line endings as the operator's Git does and captures deletions", async () => {
+  const { source, workspaces } = await fixture();
+  git(source, ["config", "core.autocrlf", "true"]);
+  await writeFile(join(source, "source.ts"), "export const value = 1;\r\n");
+  await rm(join(source, ".gitignore"));
+  const created = await createWorkspaceCheckout(source, workspaces);
+  expect(created.included).toEqual([{ status: "deleted", path: ".gitignore" }]);
+  expect(await readdir(created.checkout)).not.toContain(".gitignore");
+});
+
+it("starts at the committed baseline when the source is clean", async () => {
+  const { source, workspaces, baseline } = await fixture();
+  const created = await createWorkspaceCheckout(source, workspaces);
+  expect(created).toMatchObject({ baseline, head: baseline, included: [] });
 });
 
 it("accepts a source worktree without changing its shared worktree registry", async () => {
@@ -104,12 +124,23 @@ it("rejects overlapping storage and redirected ancestors before allocating state
   await rm(redirect);
 });
 
-it("rejects tracked symbolic links before allocating a workspace", async () => {
+it("checks tracked symbolic links out as plain files holding the link text", async () => {
   const { source, workspaces } = await fixture();
   const blob = git(source, ["hash-object", "-w", "--stdin"], "../outside\n").trim();
   git(source, ["update-index", "--add", "--cacheinfo", "120000," + blob + ",link"]);
-  git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Unsupported link"]);
-  await expect(createWorkspaceCheckout(source, workspaces)).rejects.toThrow("regular tracked files");
+  git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Link"]);
+  git(source, ["checkout", "--", "link"]);
+  const created = await createWorkspaceCheckout(source, workspaces);
+  expect(created.included).toEqual([]);
+  expect(await readFile(join(created.checkout, "link"), "utf8")).toBe("../outside\n");
+  expect(git(created.checkout, ["ls-files", "-s", "link"])).toMatch(/^120000 /u);
+});
+
+it("rejects an empty commit before allocating a workspace", async () => {
+  const { source, workspaces } = await fixture();
+  git(source, ["rm", "--quiet", "-r", "--", "."]);
+  git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Empty"]);
+  await expect(createWorkspaceCheckout(source, workspaces)).rejects.toThrow("Workspaces require a commit");
   await expect(readdir(workspaces)).rejects.toMatchObject({ code: "ENOENT" });
 });
 

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import * as z from "zod";
@@ -12,16 +12,18 @@ const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: stri
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: { role: "user" | "tesota"; text: string }[];
   inspections: { title: string; summary: string; detail: string }[];
-  workspace: string | null; checks: string[] | null;
+  workspace: string | null;
   interrupted: boolean; blocked: boolean }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
-      workspace: z.string().min(1).nullable(), checks: z.array(z.string().min(1).max(1000)).max(20).nullable(),
+      workspace: z.string().min(1).nullable(),
       interrupted: z.boolean(), blocked: z.boolean() });
-const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: 2; source: string;
-  sessions: z.infer<typeof sessionSchema>[] }> =
-    z.strictObject({ format: z.literal("tesota-shell-sessions"), version: z.literal(2),
-      source: z.string(), sessions: z.array(sessionSchema) });
+const snapshotVersion = 3;
+const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: typeof snapshotVersion; source: string;
+  checks: string[] | null; sessions: z.infer<typeof sessionSchema>[] }> =
+    z.strictObject({ format: z.literal("tesota-shell-sessions"), version: z.literal(snapshotVersion),
+      source: z.string(), checks: z.array(z.string().min(1).max(1000)).max(20).nullable(),
+      sessions: z.array(sessionSchema) });
 export type ShellSessionRecord = z.infer<typeof sessionSchema>;
 type Snapshot = z.infer<typeof snapshotSchema>;
 
@@ -31,7 +33,9 @@ export interface ShellSessionStore {
   append(id: string, role: "user" | "tesota", text: string): void;
   inspect(id: string, inspection: { title: string; summary: string; detail: string }): void;
   setWorkspace(id: string, directory: string): void;
-  setChecks(id: string, commands: readonly string[]): void;
+  /** Check commands the operator approved for this repository, or null before the first choice. */
+  checks(): readonly string[] | null;
+  setChecks(commands: readonly string[]): void;
   markActive(id: string, active: boolean): void;
   block(id: string): void;
   rotateEngine(id: string): string;
@@ -39,31 +43,66 @@ export interface ShellSessionStore {
 }
 
 function readSnapshot(path: string, source: string): Snapshot {
-  if (!existsSync(path)) return { format: "tesota-shell-sessions", version: 2, source, sessions: [] };
+  const empty: Snapshot = { format: "tesota-shell-sessions", version: snapshotVersion, source, checks: null, sessions: [] };
+  if (!existsSync(path)) return empty;
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-  // Sessions from the retired task-shape flow are discarded; the next save replaces the file.
-  if (typeof value === "object" && value !== null && Reflect.get(value, "version") === 1) {
-    return { format: "tesota-shell-sessions", version: 2, source, sessions: [] };
-  }
+  // Snapshots from earlier versions are discarded; the next save replaces the file.
+  const version: unknown = typeof value === "object" && value !== null ? Reflect.get(value, "version") : undefined;
+  if (typeof version === "number" && version < snapshotVersion) return empty;
   return snapshotSchema.parse(value);
 }
 
-/** The store records the human transcript and workspace location, never approval or check results. */
+export const DEFAULT_SESSION_STORE_ROOT: string = join(homedir(), ".tesota", "shell-sessions");
+
+function storePath(source: string, root: string): string {
+  return join(root, createHash("sha256").update(resolve(source).toLocaleLowerCase("en-US")).digest("hex") + ".json");
+}
+
+/** Whether a live process holds the lock; an unreadable lock counts as held. */
+function lockHeld(lockPath: string): boolean {
+  let text: string;
+  try { text = readFileSync(lockPath, "utf8"); } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    return true;
+  }
+  const owner = Number(text);
+  if (!Number.isSafeInteger(owner) || owner <= 0) return true;
+  try { process.kill(owner, 0); return true; }
+  catch (error) { return !(error instanceof Error && "code" in error && error.code === "ESRCH"); }
+}
+
+/** Whether a Tesota shell is currently open for a repository. */
+export function isRepositoryShellOpen(source: string, root: string = DEFAULT_SESSION_STORE_ROOT): boolean {
+  return lockHeld(`${storePath(source, root)}.lock`);
+}
+
+/** Workspace directories referenced by any saved session, across all repositories. */
+export function referencedWorkspaces(root: string = DEFAULT_SESSION_STORE_ROOT): ReadonlySet<string> {
+  const referenced = new Set<string>();
+  let names: string[];
+  try { names = readdirSync(root); } catch { return referenced; }
+  for (const name of names.filter((entry) => entry.endsWith(".json"))) {
+    const parsed = snapshotSchema.safeParse(JSON.parse(readFileSync(join(root, name), "utf8")));
+    if (!parsed.success) continue;
+    for (const session of parsed.data.sessions) if (session.workspace !== null) referenced.add(resolve(session.workspace));
+  }
+  return referenced;
+}
+
+/**
+ * The store records the human transcript, workspace locations and the
+ * repository's approved check commands; never command approvals or check results.
+ */
 export function openShellSessionStore(sourceDirectory: string,
-  root: string = join(homedir(), ".tesota", "shell-sessions")): ShellSessionStore {
+  root: string = DEFAULT_SESSION_STORE_ROOT): ShellSessionStore {
   const source = resolve(sourceDirectory);
-  const path = join(root, createHash("sha256").update(source.toLocaleLowerCase("en-US")).digest("hex") + ".json");
+  const path = storePath(source, root);
   const lockPath = `${path}.lock`;
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   let lock: number;
   try { lock = openSync(lockPath, "wx", 0o600); }
   catch {
-    const owner = Number(readFileSync(lockPath, "utf8"));
-    if (!Number.isSafeInteger(owner) || owner <= 0) throw new Error("Tesota shell lock cannot be read safely");
-    let alive = true;
-    try { process.kill(owner, 0); }
-    catch (error) { if (error instanceof Error && "code" in error && error.code === "ESRCH") alive = false; }
-    if (alive) throw new Error("This repository already has an open Tesota shell. Close it before opening another.");
+    if (lockHeld(lockPath)) throw new Error("This repository already has an open Tesota shell. Close it before opening another.");
     unlinkSync(lockPath);
     lock = openSync(lockPath, "wx", 0o600);
   }
@@ -74,13 +113,14 @@ export function openShellSessionStore(sourceDirectory: string,
     const sessions = new Map(snapshot.sessions.map((session) => [session.id,
       { ...session, entries: [...session.entries], inspections: [...session.inspections] }]));
     if (sessions.size !== snapshot.sessions.length) throw new Error("Duplicate saved Tesota session");
+    let checks = snapshot.checks;
     let closed = false;
     const save = (): void => {
       if (closed) throw new Error("Tesota session store closed");
       const temporary = `${path}.${randomUUID()}.tmp`;
       try {
-        writeFileSync(temporary, JSON.stringify({ format: "tesota-shell-sessions", version: 2,
-          source, sessions: [...sessions.values()] }) + "\n", { encoding: "utf8", mode: 0o600 });
+        writeFileSync(temporary, JSON.stringify({ format: "tesota-shell-sessions", version: snapshotVersion,
+          source, checks, sessions: [...sessions.values()] }) + "\n", { encoding: "utf8", mode: 0o600 });
         renameSync(temporary, path);
       } finally { if (existsSync(temporary)) unlinkSync(temporary); }
     };
@@ -93,7 +133,7 @@ export function openShellSessionStore(sourceDirectory: string,
       list: () => [...sessions.values()],
       create: () => {
         const session = { id: randomUUID(), title: `Session ${sessions.size + 1}`,
-          engineId: randomUUID(), entries: [], inspections: [], workspace: null, checks: null,
+          engineId: randomUUID(), entries: [], inspections: [], workspace: null,
           interrupted: false, blocked: false };
         sessions.set(session.id, session);
         try { save(); } catch (error) { sessions.delete(session.id); throw error; }
@@ -115,11 +155,11 @@ export function openShellSessionStore(sourceDirectory: string,
         session.workspace = directory;
         try { save(); } catch (error) { session.workspace = previous; throw error; }
       },
-      setChecks: (id, commands) => {
-        const session = find(id);
-        const previous = session.checks;
-        session.checks = [...commands];
-        try { save(); } catch (error) { session.checks = previous; throw error; }
+      checks: () => checks,
+      setChecks: (commands) => {
+        const previous = checks;
+        checks = [...commands];
+        try { save(); } catch (error) { checks = previous; throw error; }
       },
       markActive: (id, active) => {
         const session = find(id);

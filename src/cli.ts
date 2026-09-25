@@ -7,6 +7,7 @@ Usage: tesota [--help | -h | help]
        tesota [--theme <tesota-dark|tesota-light|terminal>]
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout>
+       tesota prune [--force]
 
 Starts a coding session in the current repository. The agent works in a
 separate copy; you review its changes and checks before anything is applied.
@@ -29,6 +30,16 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
 } else if (args.length === 2 && args[0] === "auth" && args[1] !== undefined) {
   const { runAuthCommand } = await import("./auth.js");
   process.exit(await runAuthCommand(args[1]));
+} else if (args[0] === "prune" && (args.length === 1 || args.length === 2 && args[1] === "--force")) {
+  const { formatPrunePlan, planWorkspacePrune, removeWorkspaces } = await import("./workspace-prune.js");
+  const plan = await planWorkspacePrune();
+  process.stdout.write(formatPrunePlan(plan));
+  if (args[1] === "--force") {
+    await removeWorkspaces(plan);
+    process.stdout.write(`Removed ${plan.remove.length} workspaces.\n`);
+  } else if (plan.remove.length > 0) {
+    process.stdout.write("Nothing was removed. Run tesota prune --force to remove the listed workspaces.\n");
+  }
 } else if (args.length === 2 && args[0] === "verify" && args[1] !== undefined) {
   const result = await runOxlint(configuredOxlint(process.cwd(), process.execPath), args[1]);
   process.stdout.write(`${JSON.stringify(result)}\n`);
