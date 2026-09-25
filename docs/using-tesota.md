@@ -95,7 +95,15 @@ The conversation shows a review once: each changed file and each check with
 type configuration, CI workflow, package scripts or a formal specification,
 are marked ⚠: they can be a legitimate fix or a way to make checks pass, and
 only you can tell which. The result panel starts with your requests behind
-the changes, word for word, since everything else is measured against them. The full diff and check output open beside it on a wide terminal;
+the changes, word for word, since everything else is measured against them.
+
+After the checks, an independent reviewer reads your requests, the changes
+and the check results, investigates the repository without being able to
+change it, and reports problems: ✗ for a defect against what you asked, ⚠
+for something only you can decide, such as an ambiguous requirement or a
+weakened test. A reviewer that does not finish says so; it is never shown as
+a clean review. Findings are advice, and a clean review does not replace
+reading the change. The full diff and check output open beside it on a wide terminal;
 `Alt+R` shows or hides them, in place of the conversation on a narrow one.
 The prompt stays visible in either view.
 Then choose:

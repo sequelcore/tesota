@@ -187,7 +187,8 @@ function editorTheme(theme: TesotaShellTheme): EditorTheme {
 }
 
 function busy(progress: TesotaShellProgress | undefined): boolean {
-  return progress?.phase === "working" || progress?.phase === "checking" || progress?.phase === "preparing";
+  return progress?.phase === "working" || progress?.phase === "checking" || progress?.phase === "preparing" ||
+    progress?.phase === "reviewing";
 }
 
 /** Color a unified diff and check output for the result panel. */

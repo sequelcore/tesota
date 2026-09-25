@@ -3,6 +3,7 @@ import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { allowsAutonomy, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
 import { chooseSessionMode, releaseWorkspace, type SessionMode } from "./execution-providers.js";
@@ -21,6 +22,8 @@ import { Workspace, type WorkspaceSnapshot, type WorkspaceUpdate } from "./works
 import { applyWorkspace, ApplyConflictError, ApplyUncertainError } from "./workspace-apply.js";
 import { runChecks, suggestChecks } from "./workspace-checks.js";
 import { flagVerificationChanges } from "./verification-changes.js";
+import { createPiReviewer } from "./integrations/pi-reviewer.js";
+import type { ReviewInput, ReviewReport } from "./review.js";
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
 
@@ -245,15 +248,32 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     state.environment.catch(() => { state.environment = undefined; });
     return state.environment;
   };
+  const openModel = async (signal: AbortSignal): Promise<{ runtime: ModelRuntime; model: Model<Api> }> => {
+    const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false,
+      allowModelNetwork: false, signal });
+    const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
+    if (model === undefined) throw new Error("The Codex model is unavailable. Run tesota auth login.");
+    return { runtime, model };
+  };
+  /** Tesota's reviewer, with its investigation shown as progress rather than as the agent's conversation. */
+  const reviewCandidate = async (id: string, input: ReviewInput, signal: AbortSignal): Promise<ReviewReport> => {
+    surface.reportFor(id, { phase: "reviewing" });
+    try {
+      const { runtime, model } = await openModel(signal);
+      return await createPiReviewer({ modelRuntime: runtime, model, onActivity: (activity) => {
+        if (activity.type === "tool_started") surface.reportFor(id, { phase: "reviewing", activity: `Reviewing · ${activity.subject || activity.tool}` });
+      } }).review(input, signal);
+    } catch (error) {
+      return { reviewer: "Tesota reviewer", tree: input.snapshot.tree, status: "incomplete",
+        reason: error instanceof Error ? error.message : "the reviewer could not start" };
+    }
+  };
   const codingFor = (id: string, signal: AbortSignal): Promise<CodingSession> => {
     const state = stateFor(id);
     state.coding ??= (async () => {
       const workspace = await workspaceFor(id);
       const environment = await environmentFor(id);
-      const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false,
-        allowModelNetwork: false, signal });
-      const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
-      if (model === undefined) throw new Error("The Codex model is unavailable. Run tesota auth login.");
+      const { runtime, model } = await openModel(signal);
       const engineId = saved(id)?.engineId ?? store.rotateEngine(id);
       const existing = SessionManager.findById(workspace.checkout, engineId, piSessionsDirectory);
       const sessionManager = existing === undefined
@@ -405,9 +425,15 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const snapshot = workspace.snapshot();
       const checks = await runChecks(await environmentFor(id), workspace, snapshot, commands, signal);
       if (signal.aborted) return { status: "cancelled" };
-      state.reviewed = snapshot;
       const flags = flagVerificationChanges(snapshot, (revision, path) => workspace.contentAt(revision, path));
-      surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests: await workspace.requests() }));
+      const requests = await workspace.requests();
+      let review = await reviewCandidate(id, { checkout: workspace.checkout, requests, snapshot, checks, flags }, signal);
+      if (signal.aborted) return { status: "cancelled" };
+      // The reviewer has no tool that writes, but only an unchanged candidate may be applied.
+      const unchanged = workspace.snapshot().tree === snapshot.tree;
+      if (!unchanged) review = { reviewer: review.reviewer, tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" };
+      if (unchanged) state.reviewed = snapshot;
+      surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews: [review] }));
       return { status: "ready", changes: snapshot.changes, checks };
     }),
     apply: () => serialized(async (): Promise<ApplyResult> => {

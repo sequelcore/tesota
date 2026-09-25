@@ -89,6 +89,8 @@ at once; applications are serialized.
 | `toolchain.ts` | Reading a repository's pinned runtimes, setup script and dependency install, and the pinned mise installer |
 | `execution-providers.ts` | Choosing a session's mode and provider, `tesota setup`, and releasing provider resources |
 | `workspace-checks.ts` | Check suggestions and running approved checks in the session's environment |
+| `review.ts` | The reviewer contract: what a reviewer sees, its findings, and incomplete reviews |
+| `integrations/pi-reviewer.ts` | Tesota's reviewer: a fresh Pi session with read-only file tools and a structured submission |
 | `verification-changes.ts` | Flagging a candidate's changes to tests, check configuration, CI, formal specifications, package scripts and Tesota setup |
 | `workspace-apply.ts` | Conflict-checked writes to the source repository and their journal |
 | `repository-git.ts` | Git invocation without ambient config, hooks or network |

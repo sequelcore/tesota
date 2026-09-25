@@ -152,7 +152,8 @@ export function environmentBash(environment: ExecutionEnvironment,
   };
 }
 
-function repositoryInstructions(root: string): string {
+/** The repository's AGENTS.md or CLAUDE.md, for an agent's context. */
+export function repositoryInstructions(root: string): string {
   for (const name of instructionFiles) {
     const path = join(root, name);
     if (!existsSync(path)) continue;
@@ -242,6 +243,26 @@ export function activityOf(event: AgentSessionEvent, message: number): AgentActi
   }
 }
 
+/** The file tools that only read, each confined to the workspace. */
+export function readOnlyFileTools(root: string): ToolDefinition[] {
+  return [
+    defineTool(confine(root, createReadToolDefinition(root), false)),
+    defineTool(confine(root, createGrepToolDefinition(root), false)),
+    defineTool(confine(root, createFindToolDefinition(root), false)),
+    defineTool(confine(root, createLsToolDefinition(root), false)),
+  ];
+}
+
+export interface SessionStartOptions {
+  readonly cwd: string;
+  readonly modelRuntime: ModelRuntime;
+  readonly model: Model<Api>;
+  readonly sessionManager?: SessionManager;
+  readonly systemPrompt: string;
+  readonly tools: readonly ToolDefinition[];
+  readonly onActivity?: (activity: AgentActivity) => void;
+}
+
 /** A general coding conversation whose file tools cannot leave the workspace. */
 export class CodingSession {
   readonly #session: AgentSession;
@@ -258,31 +279,37 @@ export class CodingSession {
     });
   }
 
+  /** The working agent: every file tool confined to the workspace, and commands in its environment. */
   static async create(options: CodingSessionOptions): Promise<CodingSession> {
     if (options.autonomous && !allowsAutonomy(options.environment.guarantees)) {
       throw new Error("Autonomous sessions require an environment that confines files and network");
     }
     const root = realpathSync(options.cwd);
-    const tools: ToolDefinition[] = [
-      defineTool(confine(root, createReadToolDefinition(root), false)),
-      defineTool(confine(root, createGrepToolDefinition(root), false)),
-      defineTool(confine(root, createFindToolDefinition(root), false)),
-      defineTool(confine(root, createLsToolDefinition(root), false)),
+    return CodingSession.start({ ...options, systemPrompt: systemPrompt(root, options.autonomous), tools: [
+      ...readOnlyFileTools(root),
       defineTool(confine(root, createEditToolDefinition(root), true)),
       defineTool(confine(root, createWriteToolDefinition(root), true)),
       defineTool(createBashToolDefinition(root, { operations: environmentBash(options.environment,
         options.autonomous ? undefined : options.approveCommand, options.decideNetwork),
         exposeSessionEnvironment: false })),
-    ];
+    ] });
+  }
+
+  /**
+   * A Pi session with exactly these tools and this system prompt: no
+   * extensions, skills, prompt templates or context files are loaded.
+   */
+  static async start(options: SessionStartOptions): Promise<CodingSession> {
+    const root = realpathSync(options.cwd);
     const settingsManager = SettingsManager.inMemory({ defaultTools: [], enableSkillCommands: false },
       { projectTrusted: false });
     const resourceLoader = new DefaultResourceLoader({ cwd: root, agentDir: root, settingsManager,
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-      systemPrompt: systemPrompt(root, options.autonomous) });
+      systemPrompt: options.systemPrompt });
     await resourceLoader.reload();
     const { session } = await createAgentSession({ cwd: root, modelRuntime: options.modelRuntime, model: options.model,
       thinkingLevel: "medium", sessionManager: options.sessionManager ?? PiSessionManager.inMemory(root),
-      settingsManager, resourceLoader, tools: tools.map((tool) => tool.name), customTools: tools });
+      settingsManager, resourceLoader, tools: options.tools.map((tool) => tool.name), customTools: [...options.tools] });
     return new CodingSession(session, options.onActivity);
   }
 
