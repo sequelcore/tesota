@@ -46,12 +46,30 @@ export interface PreparationStep {
   readonly output: string;
 }
 
+/**
+ * What an allowlisted network refused, and a way to open more of it. A
+ * destination is `host:port`, as the environment's proxy reports it.
+ */
+export interface NetworkControl {
+  /** Destinations refused at or after this time. */
+  blockedSince(time: Date): Promise<readonly string[]>;
+  /** Allow these destinations in this environment until it is released. */
+  allow(destinations: readonly string[]): Promise<void>;
+}
+
+/** A network destination as `host:port`, `[IPv6]:port` included; nothing else becomes a rule. */
+export function isNetworkDestination(value: string): boolean {
+  return /^(?:(?:[A-Za-z0-9-]+\.)*[A-Za-z0-9-]+|\[[0-9A-Fa-f:.]+\]):\d{1,5}$/u.test(value);
+}
+
 /** A prepared environment for one workspace. */
 export interface ExecutionEnvironment {
   readonly provider: string;
   readonly guarantees: EnvironmentGuarantees;
   /** What preparing this environment ran now; empty when nothing was needed or it was already prepared. */
   readonly preparation: readonly PreparationStep[];
+  /** Present when the environment's network is an allowlist it can report on. */
+  readonly network?: NetworkControl;
   run(command: string, options: RunOptions): Promise<RunResult>;
   dispose(): Promise<void>;
 }

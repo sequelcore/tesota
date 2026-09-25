@@ -59,6 +59,19 @@ it("persists session workspaces, the repository's approved checks and engine ide
   reopened.close();
 });
 
+it("persists network destinations allowed for the repository and refuses anything else", () => {
+  const { root, source } = fixture();
+  const store = openShellSessionStore(source, root);
+  expect(store.allowedNetwork()).toEqual([]);
+  store.allowNetwork(["api.github.com:443"]);
+  store.allowNetwork(["api.github.com:443", "example.org:80"]);
+  expect(() => { store.allowNetwork(["**"]); }).toThrow();
+  store.close();
+  const reopened = openShellSessionStore(source, root);
+  expect(reopened.allowedNetwork()).toEqual(["api.github.com:443", "example.org:80"]);
+  reopened.close();
+});
+
 it("discards an older snapshot version and starts with no sessions", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);

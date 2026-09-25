@@ -7,7 +7,7 @@ import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { allowsAutonomy, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
 import { chooseSessionMode, releaseWorkspace, type SessionMode } from "./execution-providers.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
-import { CodingSession, type CommandApproval } from "./integrations/pi-coding-session.js";
+import { CodingSession, type CommandApproval, type NetworkDecision } from "./integrations/pi-coding-session.js";
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
@@ -75,6 +75,13 @@ function parseApproval(answer: string): CommandApproval {
   const value = answer.trim().toLowerCase();
   if (value === "y" || value === "yes") return "once";
   if (value === "a" || value === "always") return "always";
+  return "deny";
+}
+
+function parseNetworkDecision(answer: string): NetworkDecision {
+  const value = answer.trim().toLowerCase();
+  if (value === "y" || value === "yes") return "session";
+  if (value === "a" || value === "always") return "repository";
   return "deny";
 }
 
@@ -220,6 +227,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         throw new Error(`The ${mode.provider.name} environment could not start` +
           `${error instanceof Error ? `: ${error.message}` : ""}. Run tesota setup to check it.`);
       }
+      const remembered = store.allowedNetwork();
+      if (remembered.length > 0 && environment.network !== undefined) {
+        await environment.network.allow(remembered);
+        surface.writeTo(id, `Also allowed for this repository: ${remembered.join(", ")}.`);
+      }
       const summary = describePreparation(environment.preparation);
       if (summary !== undefined) {
         surface.writeTo(id, summary);
@@ -251,6 +263,15 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           const answer = await surface.askIn(id, `Run \`${command}\`? [y]es, [a]lways this session, [n]o: `);
           surface.reportFor(id, { phase: "working" });
           return parseApproval(answer);
+        },
+        decideNetwork: async (destinations) => {
+          surface.reportFor(id, { phase: "awaiting_command" });
+          const answer = await surface.askIn(id, `The sandbox refused network access to ${destinations.join(", ")}. ` +
+            "Allow it? [y]es this session, [a]lways for this repository, [n]o: ");
+          surface.reportFor(id, { phase: "working" });
+          const decision = parseNetworkDecision(answer);
+          if (decision === "repository") store.allowNetwork(destinations);
+          return decision;
         },
         onActivity: (activity) => { surface.reportFor(id, { phase: "working", activity }); } });
     })();

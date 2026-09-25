@@ -45,7 +45,14 @@ Then ask for what you need:
 The agent reads, searches, edits, creates and deletes files in its own copy of
 your repository. In an autonomous session its shell commands run without
 asking, inside a sandbox that sees only that copy and reaches only package
-registries. The copy includes your uncommitted changes, but not files your
+registries. If a command tries to reach another host, Tesota asks you:
+
+```text
+The sandbox refused network access to api.github.com:443. Allow it? [y]es this session, [a]lways for this repository, [n]o:
+```
+
+The agent is told your answer and reruns the command if you allowed it. The
+copy includes your uncommitted changes, but not files your
 `.gitignore` excludes, such as `.env` or `node_modules`. Before each request,
 Tesota brings in anything you changed since, and keeps the agent's pending
 changes on top. If you and the agent changed the same lines, Tesota leaves the

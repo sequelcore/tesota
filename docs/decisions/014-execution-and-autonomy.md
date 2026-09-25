@@ -101,6 +101,11 @@ wait without blocking other sessions.
 - In an `allowlist` environment, the default allowlist covers package
   registries (for example npm, PyPI, crates.io and the Go module proxy).
   Repositories can extend it; any other destination is a pending decision.
+  The proxy cannot hold a connection open for an answer, so after each agent
+  command the environment reports what it refused; the operator allows it for
+  the session, for the repository, or not at all, and the agent is told to
+  rerun the command or not to work around the refusal. Destinations are exact
+  `host:port` values from the proxy's log, never patterns the agent supplies.
 - The agent loop runs on the host and calls the model from there. The model
   login never enters an environment.
 - Workspaces are cloned from committed HEAD, so untracked secret files such as
@@ -224,7 +229,10 @@ killing every process that carries it, and confirming none remain; otherwise
 the outcome is `unconfirmed`. The opt-in suite
 `tests/docker-sandboxes.live.test.ts` (`TESOTA_LIVE_SANDBOX=1`) reruns the
 workspace, network, variable, cancellation and timeout controls, as the
-`agent` user and as root, and the dependency volume; it passed on 2026-09-26.
+`agent` user and as root, the dependency volume, and reporting and opening a
+refused destination; it passed on 2026-09-26. The same day, a live agent asked
+to fetch example.com had its `curl` refused, the operator was asked once, and
+after allowing it the agent reran the command and answered.
 
 ## Consequences
 

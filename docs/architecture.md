@@ -107,7 +107,9 @@ workspace's commands in a Docker Sandboxes microVM that mounts only the
 workspace, sends egress through a deny-all proxy that allows only package
 registries, and caps CPU and memory. When it is ready, sessions are
 autonomous: commands run without asking, and the agent is told what it can
-reach. `tesota setup` reports what is missing otherwise. The sandbox is
+reach. When an agent command is refused a destination, the operator is asked
+whether to allow it for the session or for the repository; repository choices
+are stored with the approved checks and applied to each new sandbox. `tesota setup` reports what is missing otherwise. The sandbox is
 created per workspace and removed when the session closes or the workspace is
 pruned.
 

@@ -4,8 +4,10 @@ import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { cpus, totalmem } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { EnvironmentGuarantees, ExecutionEnvironment, ExecutionProvider, PrepareOptions, PreparationStep,
-  ProviderReadiness, RunOptions, RunResult, SetupStep } from "./execution-environment.js";
+import * as z from "zod";
+import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionProvider, isNetworkDestination,
+  type NetworkControl, type PrepareOptions, type PreparationStep, type ProviderReadiness, type RunOptions,
+  type RunResult, type SetupStep } from "./execution-environment.js";
 import { DEPENDENCIES_ARGUMENT, KIT_RUNTIMES, kitRuntimes, writeToolchainKit } from "./docker-sandboxes-kit.js";
 import { hasNodeModules, miseFilesInstallScript, miseInstallScript, needsDownloadHosts, needsSetup, planToolchain,
   TOOLCHAIN_HOSTS, type ToolchainPlan } from "./toolchain.js";
@@ -118,11 +120,40 @@ function variableFlags(variables: Readonly<Record<string, string>>): string[] {
   return Object.entries(variables).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
 }
 
+const logSlackMs = 2_000;
+const policyLogSchema = z.object({ blocked_hosts: z.array(z.object({
+  host: z.string(), vm_name: z.string(), last_seen: z.string() })).nullish() });
+
+/** Destinations `sbx policy log --json` reports as refused for this sandbox at or after a time. */
+export function blockedDestinations(log: string, sandbox: string, since: Date): string[] {
+  const entries = policyLogSchema.parse(JSON.parse(log)).blocked_hosts ?? [];
+  return [...new Set(entries.filter((entry) => entry.vm_name === sandbox && isNetworkDestination(entry.host) &&
+    Date.parse(entry.last_seen) >= since.getTime()).map((entry) => entry.host))];
+}
+
+function sandboxNetwork(sbx: string, name: string): NetworkControl {
+  return {
+    async blockedSince(time) {
+      const log = await invoke(sbx, ["policy", "log", name, "--json"]);
+      if (log.status !== 0) throw new Error(`The sandbox's network log is unavailable: ${log.stderr.trim().slice(-300)}`);
+      // The proxy's clock and ours can differ by the time a log entry takes to land.
+      return blockedDestinations(log.stdout, name, new Date(time.getTime() - logSlackMs));
+    },
+    async allow(destinations) {
+      if (destinations.length === 0) return;
+      if (!destinations.every(isNetworkDestination)) throw new Error("Only host:port destinations can be allowed");
+      const result = await invoke(sbx, ["policy", "allow", "network", "--sandbox", name, destinations.join(",")]);
+      if (result.status !== 0) throw new Error(`The sandbox did not accept the rule: ${`${result.stdout}${result.stderr}`.trim().slice(-300)}`);
+    },
+  };
+}
+
 function sandboxEnvironment(sbx: string, name: string, workspace: string, prepared: PreparedToolchain): ExecutionEnvironment {
   return {
     provider: "docker-sandboxes",
     guarantees,
     preparation: prepared.steps,
+    network: sandboxNetwork(sbx, name),
     async run(command: string, options: RunOptions): Promise<RunResult> {
       if (!contains(workspace, resolve(options.cwd))) return { outcome: "not_started", exitCode: null };
       if (options.signal?.aborted === true) return { outcome: "cancelled", exitCode: null };

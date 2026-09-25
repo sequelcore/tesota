@@ -9,6 +9,8 @@ import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
 import { allowsAutonomy, type ExecutionEnvironment } from "../execution-environment.js";
 
 export type CommandApproval = "once" | "always" | "deny";
+/** How the operator answered a refused network destination: for this session, for the repository, or not at all. */
+export type NetworkDecision = "session" | "repository" | "deny";
 
 export type CodingTurnResult =
   | Readonly<{ status: "completed"; reply: string }>
@@ -27,6 +29,8 @@ export interface CodingSessionOptions {
   /** Commands run without approval; only allowed for an environment that confines them. */
   readonly autonomous: boolean;
   readonly approveCommand: (command: string, signal: AbortSignal | undefined) => Promise<CommandApproval>;
+  /** Asked after a command whose network access the environment refused. */
+  readonly decideNetwork?: (destinations: readonly string[]) => Promise<NetworkDecision>;
   readonly onActivity?: (text: string) => void;
 }
 
@@ -74,12 +78,36 @@ function confine<P extends TSchema, D, S>(root: string, tool: ToolDefinition<P, 
 }
 
 /**
+ * Ask the operator about destinations the environment refused during a
+ * command, open the allowed ones, and tell the agent the outcome in the
+ * command's output. The proxy cannot hold a connection open for an answer,
+ * so the agent reruns the command instead.
+ */
+async function answerRefusedNetwork(environment: ExecutionEnvironment,
+  decide: NonNullable<CodingSessionOptions["decideNetwork"]>, since: Date, onData: (data: Buffer) => void): Promise<void> {
+  const network = environment.network;
+  if (network === undefined) return;
+  const refused = await network.blockedSince(since);
+  if (refused.length === 0) return;
+  const list = refused.join(", ");
+  if (await decide(refused) === "deny") {
+    onData(Buffer.from(`\nTesota: the sandbox refused network access to ${list}, and the user declined to allow it. ` +
+      "Do not try to reach it another way; continue without it or explain what you need.\n"));
+    return;
+  }
+  await network.allow(refused);
+  onData(Buffer.from(`\nTesota: the sandbox refused network access to ${list}; the user has now allowed it. ` +
+    "Run the command again if it needed that access.\n"));
+}
+
+/**
  * Adapt Pi's shell tool to the session's execution environment. Pi passes the
  * host process environment with each command; it is dropped so no provider
  * receives host variables by default.
  */
-function environmentBash(environment: ExecutionEnvironment,
-  approve: CodingSessionOptions["approveCommand"] | undefined): BashOperations {
+export function environmentBash(environment: ExecutionEnvironment,
+  approve: CodingSessionOptions["approveCommand"] | undefined,
+  decideNetwork?: CodingSessionOptions["decideNetwork"]): BashOperations {
   let alwaysAllowed = approve === undefined;
   return {
     exec: async (command, cwd, options) => {
@@ -91,9 +119,13 @@ function environmentBash(environment: ExecutionEnvironment,
         }
         if (answer === "always") alwaysAllowed = true;
       }
+      const started = new Date();
       const result = await environment.run(command, { cwd, onOutput: options.onData,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ...(options.timeout === undefined ? {} : { timeoutSeconds: options.timeout }) });
+      if (decideNetwork !== undefined && (result.outcome === "exited" || result.outcome === "timed_out")) {
+        await answerRefusedNetwork(environment, decideNetwork, started, options.onData);
+      }
       if (result.outcome === "cancelled") throw new Error("aborted");
       if (result.outcome === "timed_out") throw new Error(`timeout:${options.timeout ?? 0}`);
       if (result.outcome === "not_started") throw new Error(`The command could not start in the ${environment.provider} environment`);
@@ -116,7 +148,8 @@ function repositoryInstructions(root: string): string {
 function commandGuidance(autonomous: boolean): string {
   return autonomous
     ? "Shell commands run without asking in an isolated sandbox that sees only this copy of the repository; " +
-      "network access is limited to package registries, so a download from any other host fails. "
+      "network access is limited to package registries and hosts the user allowed. When a command reaches " +
+      "another host, the user is asked whether to allow it and you are told the answer. "
     : "Every shell command asks the user for approval first; prefer the file tools for reading and editing, " +
       "and run commands when they are worth an approval, such as installing dependencies or running tests. ";
 }
@@ -174,7 +207,7 @@ export class CodingSession {
       defineTool(confine(root, createEditToolDefinition(root), true)),
       defineTool(confine(root, createWriteToolDefinition(root), true)),
       defineTool(createBashToolDefinition(root, { operations: environmentBash(options.environment,
-        options.autonomous ? undefined : options.approveCommand),
+        options.autonomous ? undefined : options.approveCommand, options.decideNetwork),
         exposeSessionEnvironment: false })),
     ];
     const settingsManager = SettingsManager.inMemory({ defaultTools: [], enableSkillCommands: false },

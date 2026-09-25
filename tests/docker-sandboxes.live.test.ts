@@ -78,6 +78,15 @@ it.runIf(live)("reaches package registries and nothing else", async () => {
   expect(allowed.output).toContain("200");
 }, 120_000);
 
+it.runIf(live)("reports a refused destination and opens only what is allowed", async () => {
+  const started = new Date();
+  expect((await run("curl -sS -m 10 -o /dev/null -w '%{http_code}' https://example.com/ || true")).output).not.toContain("200");
+  expect(await sandbox?.network?.blockedSince(started)).toContain("example.com:443");
+  await sandbox?.network?.allow(["example.com:443"]);
+  expect((await run("curl -sS -m 20 -o /dev/null -w '%{http_code}' https://example.com/")).output).toContain("200");
+  expect((await run("curl -sS -m 10 -o /dev/null -w '%{http_code}' https://example.org/ || true")).output).not.toContain("200");
+}, 120_000);
+
 it.runIf(live)("passes only the variables it is given", async () => {
   let shown = "";
   const result = await sandbox?.run("echo \"probe=$TESOTA_PROBE\"", { cwd: workspace, env: { TESOTA_PROBE: "given" },
