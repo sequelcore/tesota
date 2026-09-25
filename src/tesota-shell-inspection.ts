@@ -30,19 +30,27 @@ function location(finding: Finding): string {
   return `${finding.path}${finding.line === undefined ? "" : `:${finding.line}`} — `;
 }
 
-/** One line per finding: ✗ for a defect to fix, ⚠ for the operator's call; an unfinished review never looks clean. */
+/**
+ * One line per finding: ✗ for a defect this change introduced, ⚠ for the
+ * operator's call, · for a problem that was already there. An unfinished
+ * review never looks clean.
+ */
 function reviewLines(report: ReviewReport): string[] {
   if (report.status === "incomplete") return [`  ✗ ${report.reviewer} did not finish: ${report.reason}`];
-  if (report.findings.length === 0) return [`  ✓ ${report.reviewer}: no problems found`];
-  return report.findings.map((finding) => finding.disposition === "operator"
+  const introduced = report.findings.filter((finding) => finding.origin === "introduced");
+  const lines = introduced.map((finding) => finding.disposition === "operator"
     ? `  ⚠ needs you · ${location(finding)}${finding.statement}`
     : `  ✗ ${finding.severity} · ${location(finding)}${finding.statement}`);
+  if (introduced.length === 0) lines.push(`  ✓ ${report.reviewer}: no problems introduced`);
+  return [...lines, ...report.findings.filter((finding) => finding.origin === "preexisting")
+    .map((finding) => `  · already there · ${location(finding)}${finding.statement}`)];
 }
 
 function reviewDetail(report: ReviewReport): string {
   if (report.status === "incomplete") return `  ${report.reviewer}: did not finish (${report.reason})`;
   return `  ${report.reviewer}\n  ${report.summary}` + report.findings.map((finding) =>
-    `\n\n  ${finding.disposition === "operator" ? "needs you" : `${finding.severity}, fixable`}: ` +
+    `\n\n  ${finding.origin === "preexisting" ? "already there" : finding.disposition === "operator" ? "needs you" :
+      `${finding.severity}, fixable`}: ` +
     `${location(finding)}${finding.statement}\n  ${finding.reason}`).join("");
 }
 

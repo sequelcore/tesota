@@ -27,9 +27,9 @@ it("shows each finding once, marks the operator's calls, and never shows an unfi
   const tree = snapshot.tree;
   const review = inspectReview({ snapshot, checks: [check], requests: ["Charge over $100 less"], flags: [], reviews: [
     { reviewer: "Tesota reviewer", tree, status: "completed", summary: "The boundary is wrong.", findings: [
-      { severity: "high", disposition: "fixable", path: "src/price.ts", line: 3, statement: "Exactly $100 is discounted",
+      { severity: "high", disposition: "fixable", origin: "introduced" as const, path: "src/price.ts", line: 3, statement: "Exactly $100 is discounted",
         reason: "The request says over $100" },
-      { severity: "medium", disposition: "operator", statement: "Rounding is unspecified", reason: "Cents or dollars?" },
+      { severity: "medium", disposition: "operator", origin: "introduced" as const, statement: "Rounding is unspecified", reason: "Cents or dollars?" },
     ] },
     { reviewer: "Second reviewer", tree, status: "incomplete", reason: "the review was stopped" },
   ] });
@@ -39,5 +39,10 @@ it("shows each finding once, marks the operator's calls, and never shows an unfi
     "Exactly $100 is discounted\n  The request says over $100");
   const clean = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
     { reviewer: "Tesota reviewer", tree, status: "completed", summary: "Fine.", findings: [] }] });
-  expect(clean.summary).toContain("  ✓ Tesota reviewer: no problems found");
+  expect(clean.summary).toContain("  ✓ Tesota reviewer: no problems introduced");
+  const context = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
+    { reviewer: "Tesota reviewer", tree, status: "completed", summary: "Only an old problem.", findings: [
+      { severity: "high", disposition: "fixable", origin: "preexisting", path: "src/tax.ts", statement: "Tax ignores refunds",
+        reason: "Unchanged code" }] }] });
+  expect(context.summary).toContain("  ✓ Tesota reviewer: no problems introduced\n  · already there · src/tax.ts — Tax ignores refunds");
 });

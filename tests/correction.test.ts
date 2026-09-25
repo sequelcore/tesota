@@ -11,15 +11,20 @@ function check(outcome: CheckResult["outcome"], command = "bun run check"): Chec
     output: outcome === "failed" ? "FAIL price.test.ts\nexpected 90" : "" };
 }
 const review: ReviewReport = { reviewer: "Tesota reviewer", tree, status: "completed", summary: "Two problems.", findings: [
-  { severity: "high", disposition: "fixable", path: "src/price.ts", line: 3, statement: "Exactly $100 is discounted",
+  { severity: "high", disposition: "fixable", origin: "introduced" as const, path: "src/price.ts", line: 3, statement: "Exactly $100 is discounted",
     reason: "The request says over $100" },
-  { severity: "medium", disposition: "operator", statement: "Rounding is unspecified", reason: "Cents or dollars?" },
+  { severity: "medium", disposition: "operator", origin: "introduced" as const, statement: "Rounding is unspecified", reason: "Cents or dollars?" },
 ] };
 
 it("sends back failed checks and fixable findings, and keeps the operator's calls with the operator", () => {
   expect(correctionFor([check("failed"), check("passed", "lint"), check("not_started", "e2e")], [review])).toEqual({
     failedChecks: [check("failed")], findings: [review.findings[0]] });
   expect(correctionFor([check("timed_out")], [])).toEqual({ failedChecks: [check("timed_out")], findings: [] });
+});
+
+it("never sends back a problem the candidate did not introduce", () => {
+  const old: ReviewReport = { ...review, findings: [{ ...review.findings[0]!, origin: "preexisting" }] };
+  expect(correctionFor([check("passed")], [old])).toBeUndefined();
 });
 
 it("asks for no correction when only the operator can settle what is left", () => {

@@ -15,6 +15,8 @@ const findingSchema = Type.Object({
   disposition: Type.Union([Type.Literal("fixable"), Type.Literal("operator")],
     { description: "fixable: a clear defect against the requests that can be fixed without asking the user; " +
       "operator: needs the user's judgment" }),
+  origin: Type.Union([Type.Literal("introduced"), Type.Literal("preexisting")],
+    { description: "introduced: this change caused it; preexisting: it was already there before the change" }),
   path: Type.Optional(Type.String({ description: "Repository-relative file, when the finding has a location" })),
   line: Type.Optional(Type.Integer({ minimum: 1 })),
   statement: Type.String({ description: "The problem, in one sentence" }),
@@ -27,7 +29,7 @@ const submissionSchema = Type.Object({
 type Submission = Static<typeof submissionSchema>;
 
 function finding(submitted: Submission["findings"][number]): Finding {
-  return { severity: submitted.severity, disposition: submitted.disposition, statement: submitted.statement,
+  return { severity: submitted.severity, disposition: submitted.disposition, origin: submitted.origin, statement: submitted.statement,
     reason: submitted.reason,
     ...(submitted.path === undefined ? {} : { path: submitted.path }),
     ...(submitted.line === undefined ? {} : { line: submitted.line }) };
@@ -52,7 +54,10 @@ function reviewerPrompt(root: string): string {
     "requests; Tesota froze the result and ran the repository's checks on it. Judge whether the result does what " +
     "the user asked and whether the checks' evidence covers it. You cannot change files: investigate with the " +
     "read, search and list tools, reading the changed files and whatever they touch. Passing checks show only " +
-    "that the code meets its tests; ask whether those tests reflect the requests. For every change Tesota lists " +
+    "that the code meets its tests; ask whether those tests reflect the requests. Judge what this change " +
+    "introduced: mark a problem that was already there before the change as preexisting, and for an introduced " +
+    "problem outside the diff, name the code that is provably affected rather than speculating. Do not rely on " +
+    "assumptions about intent that the requests do not state. For every change Tesota lists " +
     "as altering what checks the result, say whether it weakens what is checked. Report only real problems, not " +
     "style preferences. Use disposition `operator` for an ambiguous requirement, a trade-off without one right " +
     "answer, a changed test or check whose legitimacy depends on intent, work beyond what was asked, or a " +

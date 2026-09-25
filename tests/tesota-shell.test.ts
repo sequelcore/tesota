@@ -124,9 +124,9 @@ it.each([
   expect(fixture.dependencies.review).not.toHaveBeenCalled();
 });
 
-const fixable: Finding = { severity: "high", disposition: "fixable", path: "src/price.ts", line: 3,
+const fixable: Finding = { severity: "high", disposition: "fixable", origin: "introduced" as const, path: "src/price.ts", line: 3,
   statement: "Exactly $100 is discounted", reason: "The request says over $100" };
-const operatorCall: Finding = { severity: "medium", disposition: "operator", statement: "Rounding is unspecified",
+const operatorCall: Finding = { severity: "medium", disposition: "operator", origin: "introduced" as const, statement: "Rounding is unspecified",
   reason: "Cents or dollars?" };
 
 /** A review dependency that returns one prepared review per call, each for its own tree. */

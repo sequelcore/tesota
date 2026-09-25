@@ -11,10 +11,13 @@ import type { CheckResult } from "./workspace-checks.js";
 export type FindingSeverity = "high" | "medium" | "low";
 /** `fixable`: a defect against the request the agent can fix. `operator`: needs the operator's judgment. */
 export type FindingDisposition = "fixable" | "operator";
+/** Whether this candidate introduced the problem or it was already there (decision 016). */
+export type FindingOrigin = "introduced" | "preexisting";
 
 export interface Finding {
   readonly severity: FindingSeverity;
   readonly disposition: FindingDisposition;
+  readonly origin: FindingOrigin;
   readonly path?: string;
   readonly line?: number;
   /** The problem, in one sentence. */

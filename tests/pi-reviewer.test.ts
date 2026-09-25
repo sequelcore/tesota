@@ -30,7 +30,7 @@ it("cuts a long diff and says so", () => {
   expect(message.length).toBeLessThan(160_000);
 });
 
-const finding: Finding = { severity: "high", disposition: "fixable", path: "src/price.ts", line: 3,
+const finding: Finding = { severity: "high", disposition: "fixable", origin: "introduced" as const, path: "src/price.ts", line: 3,
   statement: "Orders of exactly $100 get the discount", reason: "The request says over $100; the code uses >=" };
 
 it("counts a review only when it was submitted and not stopped", () => {

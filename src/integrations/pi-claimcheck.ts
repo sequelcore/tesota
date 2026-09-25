@@ -114,7 +114,9 @@ function finding(item: Contract, comparison: Comparison): Finding | undefined {
   if (comparison.verdict === "justified") return undefined;
   const verdict = comparison.verdict === "vacuous" ? "proves nothing beyond its assumptions" :
     comparison.verdict === "partially_justified" ? "covers only part of what was asked" : "does not express what was asked";
+  // The proved contracts are part of this candidate, so a gap in them is one it introduced.
   return { severity: comparison.verdict === "partially_justified" ? "medium" : "high", disposition: comparison.disposition,
+    origin: "introduced",
     path: item.path, statement: `The proved contract of ${item.name} ${verdict}.`, reason: comparison.explanation };
 }
 

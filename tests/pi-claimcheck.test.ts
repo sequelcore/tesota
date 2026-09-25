@@ -45,7 +45,7 @@ it("reports contracts that miss the request, and is unfinished when a contract w
     { name: "double", verdict: "vacuous", disposition: "operator", explanation: "Always true for doubles of non-negatives." },
   ], done)).toEqual({ reviewer: "ClaimCheck method", tree, status: "completed",
     summary: "1 of 2 proved contracts express what was asked.", findings: [
-      { severity: "high", disposition: "operator", path: "src/policy.ts",
+      { severity: "high", disposition: "operator", origin: "introduced", path: "src/policy.ts",
         statement: "The proved contract of double proves nothing beyond its assumptions.",
         reason: "Always true for doubles of non-negatives." }] });
   expect(claimcheckReport(tree, items, [{ name: "canAccess", verdict: "justified", disposition: "fixable", explanation: "" }], done))
