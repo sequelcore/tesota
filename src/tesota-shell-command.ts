@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
-import { allowsAutonomy, type ExecutionEnvironment } from "./execution-environment.js";
+import { allowsAutonomy, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
 import { chooseSessionMode, releaseWorkspace, type SessionMode } from "./execution-providers.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { CodingSession, type CommandApproval } from "./integrations/pi-coding-session.js";
@@ -48,6 +48,15 @@ function describeMode(mode: SessionMode): string {
       "this workspace and reaches only package registries."
     : "Supervised: each shell command asks first and runs on this computer without isolation. " +
       "Run tesota setup to see what autonomous sessions need.";
+}
+
+function describePreparation(steps: readonly PreparationStep[]): string | undefined {
+  if (steps.length === 0) return undefined;
+  const failed = steps.find((step) => step.outcome === "failed");
+  const done = steps.filter((step) => step.outcome === "done").map((step) => `  ${step.description}`).join("\n");
+  if (failed === undefined) return `The sandbox was prepared for this repository:\n${done}`;
+  return `Preparing the sandbox stopped at "${failed.description}"; later steps did not run.` +
+    `${done.length > 0 ? `\nCompleted:\n${done}` : ""}\n${failed.output.trim()}`;
 }
 
 /** A second Ctrl+W within this time confirms closing a session that holds work. */
@@ -203,10 +212,20 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     state.environment ??= (async () => {
       const [workspace, mode] = await Promise.all([workspaceFor(id), sessionMode()]);
       surface.writeTo(id, describeMode(mode));
-      try { return await mode.provider.prepare(workspace.checkout); } catch (error) {
+      let environment: ExecutionEnvironment;
+      try {
+        environment = await mode.provider.prepare(workspace.checkout,
+          { onProgress: (activity) => { surface.reportFor(id, { phase: "working", activity }); } });
+      } catch (error) {
         throw new Error(`The ${mode.provider.name} environment could not start` +
           `${error instanceof Error ? `: ${error.message}` : ""}. Run tesota setup to check it.`);
       }
+      const summary = describePreparation(environment.preparation);
+      if (summary !== undefined) {
+        surface.writeTo(id, summary);
+        state.note = [state.note, `Note: ${summary}`].filter((note) => note !== undefined).join("\n\n");
+      }
+      return environment;
     })();
     state.environment.catch(() => { state.environment = undefined; });
     return state.environment;

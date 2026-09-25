@@ -105,8 +105,12 @@ one run.
 - Changes to symbolic links and submodules cannot be applied.
 - Supervised sessions run approved commands on your computer without
   isolation.
-- Autonomous sessions use the sandbox's own Node and npm, and have no Bun, so
-  some repository checks fail inside until your toolchain is available there.
+- An autonomous session's sandbox gets the runtimes your repository pins
+  (for example `packageManager` and `engines` in `package.json`, `.nvmrc`,
+  `mise.toml`), then your `.tesota/setup.sh` or the lockfile install. The first
+  preparation downloads them and can take a minute or two, and each new
+  session prepares its own sandbox again. Dev Container
+  definitions are not read yet.
 - Closing a session removes its workspace. `tesota prune` lists other
   workspaces it would remove, and `tesota prune --force` removes those that no
   session uses and that hold no unapplied changes.

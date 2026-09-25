@@ -79,7 +79,8 @@ at once; applications are serialized.
 | `workspace.ts` | Base commit, snapshots, revert and settling applied work |
 | `execution-environment.ts` | Provider-neutral interface for where commands run, and the guarantees a provider declares |
 | `host-environment.ts` | The `host` provider: commands run directly on this machine |
-| `docker-sandboxes-environment.ts` | The `docker-sandboxes` provider: readiness, sandbox lifecycle, allowlist and confirmed stops |
+| `docker-sandboxes-environment.ts` | The `docker-sandboxes` provider: readiness, sandbox lifecycle, setup network phase, allowlist and confirmed stops |
+| `toolchain.ts` | Reading a repository's pinned runtimes, setup script and dependency install, and the pinned mise installer |
 | `execution-providers.ts` | Choosing a session's mode and provider, `tesota setup`, and releasing provider resources |
 | `workspace-checks.ts` | Check suggestions and running approved checks in the session's environment |
 | `workspace-apply.ts` | Conflict-checked writes to the source repository and their journal |
@@ -107,7 +108,22 @@ registries, and caps CPU and memory. When it is ready, sessions are
 autonomous: commands run without asking, and the agent is told what it can
 reach. `tesota setup` reports what is missing otherwise. The sandbox is
 created per workspace and removed when the session closes or the workspace is
-pruned. A command that is cancelled or times out is stopped inside the
+pruned.
+
+Before the agent starts, the sandbox is prepared for the repository, as
+Copilot's setup steps and Codex and Claude Code cloud environments do. Tesota
+reads the runtimes the repository pins (`package.json` `packageManager` and
+`engines`, `.nvmrc`, `.node-version`, `.bun-version`, `.python-version`) and
+installs them with mise, whose pinned binary is checked against a known
+SHA-256; mise also installs what `mise.toml` or `.tool-versions` declare. Then
+it runs `.tesota/setup.sh` if the repository has one, or otherwise the
+lockfile install (`bun install --frozen-lockfile` or `npm ci`). Only during
+this phase may the sandbox also reach the hosts toolchains download from,
+such as nodejs.org and GitHub release assets; Tesota removes those rules and
+reads the sandbox's rule list back before the agent runs, and deletes the
+sandbox if it cannot confirm they are gone. A failed step stops setup but not
+the session, and the operator and agent are told what failed. A fingerprint of
+the setup inputs skips setup when nothing changed. A command that is cancelled or times out is stopped inside the
 sandbox and confirmed gone; otherwise it is reported as unconfirmed.
 
 ## Trust and effects
@@ -148,8 +164,9 @@ LemmaScript and Dafny.
 - Exercised live only on Windows. Changes to symbolic links and submodules
   cannot be applied.
 - Supervised sessions run approved commands on the host without isolation.
-- The sandbox's toolchain differs from the host's (for example, no Bun), so a
-  repository's checks may fail inside for that reason alone.
+- Only runtimes pinned in the files above, `mise.toml` or `.tool-versions` are
+  installed; anything else needs `.tesota/setup.sh`. Dev Container
+  definitions are not read yet.
 - Newer source edits that conflict with pending work wait until that work is
   applied or rejected.
 - Closing a session (`Ctrl+W`) removes its record, transcript and workspace;

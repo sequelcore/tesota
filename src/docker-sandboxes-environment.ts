@@ -3,8 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cpus, totalmem } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import type { EnvironmentGuarantees, ExecutionEnvironment, ExecutionProvider, ProviderReadiness, RunOptions,
-  RunResult, SetupStep } from "./execution-environment.js";
+import type { EnvironmentGuarantees, ExecutionEnvironment, ExecutionProvider, PrepareOptions, PreparationStep,
+  ProviderReadiness, RunOptions, RunResult, SetupStep } from "./execution-environment.js";
+import { miseInstallScript, needsSetup, planToolchain, TOOLCHAIN_HOSTS, toolsInstallScript,
+  type ToolchainPlan } from "./toolchain.js";
 
 /**
  * Commands run in a Docker Sandboxes microVM per workspace. Only the workspace
@@ -105,15 +107,20 @@ async function stopRun(sbx: string, name: string, tag: string): Promise<boolean>
   return false;
 }
 
-function sandboxEnvironment(sbx: string, name: string, workspace: string): ExecutionEnvironment {
+function variableFlags(variables: Readonly<Record<string, string>>): string[] {
+  return Object.entries(variables).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
+}
+
+function sandboxEnvironment(sbx: string, name: string, workspace: string, prepared: PreparedToolchain): ExecutionEnvironment {
   return {
     provider: "docker-sandboxes",
     guarantees,
+    preparation: prepared.steps,
     async run(command: string, options: RunOptions): Promise<RunResult> {
       if (!contains(workspace, resolve(options.cwd))) return { outcome: "not_started", exitCode: null };
       if (options.signal?.aborted === true) return { outcome: "cancelled", exitCode: null };
       const tag = `TESOTA_RUN=${randomUUID()}`;
-      const variables = Object.entries(options.env ?? {}).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
+      const variables = variableFlags({ ...prepared.variables, ...options.env });
       const child = spawn(sbx, ["exec", "-w", sandboxPath(resolve(options.cwd)), "-e", tag, ...variables, name, "sh", "-c", command],
         { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
       child.stdout.on("data", options.onOutput);
@@ -143,6 +150,91 @@ function sandboxEnvironment(sbx: string, name: string, workspace: string): Execu
   };
 }
 
+interface PreparedToolchain {
+  readonly steps: readonly PreparationStep[];
+  /** Variables every command needs, such as the PATH that puts the installed runtimes first. */
+  readonly variables: Readonly<Record<string, string>>;
+}
+
+const setupStepMs = 15 * 60_000;
+const outputTail = 4 * 1024;
+const setupMarker = "$HOME/.tesota-setup";
+
+function execScript(sbx: string, name: string, cwd: string, script: string, variables: Readonly<Record<string, string>>,
+  timeoutMs: number = commandTimeoutMs): Promise<Invocation> {
+  return invoke(sbx, ["exec", "-w", cwd, ...variableFlags(variables), name, "sh", "-c", script], timeoutMs);
+}
+
+/** Close the setup-only hosts; true only when the sandbox's rule list no longer allows any of them. */
+async function closeToolchainHosts(sbx: string, name: string): Promise<boolean> {
+  for (const host of TOOLCHAIN_HOSTS) {
+    await invoke(sbx, ["policy", "rm", "network", "--sandbox", name, "--resource", host, "--force"]);
+  }
+  const rules = await invoke(sbx, ["policy", "ls", name, "--wide"]);
+  if (rules.status !== 0) return false;
+  const resources = new Set(rules.stdout.split(/\r?\n/u).map((line) => line.trim().split(/\s+/u).at(-1)));
+  return TOOLCHAIN_HOSTS.every((host) => !resources.has(host));
+}
+
+function setupStages(plan: ToolchainPlan): { description: string; script: string }[] {
+  const specs = Object.entries(plan.tools).map(([tool, version]) => `${tool} ${version}`);
+  const stages: { description: string; script: string }[] = [];
+  if (specs.length > 0 || plan.sources.length > 0) {
+    stages.push({ description: "Install mise", script: miseInstallScript() });
+    stages.push({ description: specs.length > 0 ? `Install ${specs.join(", ")}` : "Install the repository's declared tools",
+      script: toolsInstallScript(plan) });
+  }
+  if (plan.setupScript !== null) stages.push({ description: `Run ${plan.setupScript}`, script: `sh ${plan.setupScript}` });
+  if (plan.dependencies !== null) stages.push({ description: `Install dependencies (${plan.dependencies})`, script: plan.dependencies });
+  return stages;
+}
+
+/** Run each setup stage in order, stopping at the first failure as other agents' setup steps do. */
+async function runSetupStages(sbx: string, name: string, cwd: string, plan: ToolchainPlan,
+  variables: Readonly<Record<string, string>>, onProgress: (text: string) => void): Promise<PreparationStep[]> {
+  const steps: PreparationStep[] = [];
+  for (const stage of setupStages(plan)) {
+    onProgress(`Preparing the sandbox: ${stage.description}`);
+    const result = await execScript(sbx, name, cwd, stage.script, variables, setupStepMs);
+    const done = result.status === 0;
+    steps.push({ description: stage.description, outcome: done ? "done" : "failed",
+      output: done ? "" : `${result.stdout}${result.stderr}`.slice(-outputTail) });
+    if (!done) break;
+  }
+  return steps;
+}
+
+/**
+ * Install what the repository pins, with the toolchain hosts open only for
+ * this phase. If they cannot be closed again, the sandbox is removed so no
+ * agent runs with wider network access. A marker skips unchanged setups.
+ */
+async function prepareToolchain(sbx: string, name: string, workspace: string,
+  onProgress: (text: string) => void): Promise<PreparedToolchain> {
+  const cwd = sandboxPath(workspace);
+  const [home, defaultPath] = (await execScript(sbx, name, cwd, "printf '%s\\n%s' \"$HOME\" \"$PATH\"", {})).stdout.split("\n");
+  if (home === undefined || defaultPath === undefined) throw new Error("The sandbox environment could not be read");
+  const variables = { MISE_YES: "1", MISE_TRUSTED_CONFIG_PATHS: cwd,
+    PATH: `${home}/.local/share/mise/shims:${home}/.local/bin:${defaultPath.trim()}` };
+  const plan = planToolchain(workspace);
+  if (!needsSetup(plan)) return { steps: [], variables };
+  const marker = await execScript(sbx, name, cwd, `cat "${setupMarker}" 2>/dev/null || true`, {});
+  if (marker.stdout.trim() === plan.fingerprint) return { steps: [], variables };
+  if ((await invoke(sbx, ["policy", "allow", "network", "--sandbox", name, TOOLCHAIN_HOSTS.join(",")])).status !== 0) {
+    throw new Error("The setup network rules could not be added");
+  }
+  const steps = await runSetupStages(sbx, name, cwd, plan, variables, onProgress).catch((error: unknown) => error);
+  if (!await closeToolchainHosts(sbx, name)) {
+    await invoke(sbx, ["rm", "--force", name]);
+    throw new Error("The setup network rules could not be removed, so the sandbox was deleted");
+  }
+  if (!Array.isArray(steps)) throw steps instanceof Error ? steps : new Error("Sandbox setup failed");
+  if (steps.every((step) => step.outcome === "done")) {
+    await execScript(sbx, name, cwd, `echo ${plan.fingerprint} > "${setupMarker}"`, {});
+  }
+  return { steps, variables };
+}
+
 async function readinessSteps(): Promise<SetupStep[]> {
   if (!await hypervisorPlatformEnabled()) {
     return [{ description: "Turn on the Windows Hypervisor Platform", elevated: true, restart: true,
@@ -166,7 +258,7 @@ export const dockerSandboxesProvider: ExecutionProvider = {
     const steps = await readinessSteps();
     return steps.length === 0 ? { ready: true } : { ready: false, steps };
   },
-  async prepare(workspace: string): Promise<ExecutionEnvironment> {
+  async prepare(workspace: string, options: PrepareOptions = {}): Promise<ExecutionEnvironment> {
     const sbx = await locateSbx();
     if (sbx === null || !await ensureDaemon(sbx)) throw new Error("Docker Sandboxes is not available");
     const name = sandboxName(workspace);
@@ -182,7 +274,8 @@ export const dockerSandboxesProvider: ExecutionProvider = {
         throw new Error("The sandbox network rules could not be set");
       }
     }
-    return sandboxEnvironment(sbx, name, resolve(workspace));
+    const prepared = await prepareToolchain(sbx, name, resolve(workspace), options.onProgress ?? (() => {}));
+    return sandboxEnvironment(sbx, name, resolve(workspace), prepared);
   },
   async release(workspace: string): Promise<void> {
     const sbx = await locateSbx();

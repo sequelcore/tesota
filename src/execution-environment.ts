@@ -38,12 +38,26 @@ export interface RunOptions {
   readonly onOutput: (chunk: Buffer) => void;
 }
 
+/** One step a provider took to prepare an environment, such as installing a runtime. */
+export interface PreparationStep {
+  readonly description: string;
+  readonly outcome: "done" | "failed";
+  /** The end of the step's output, kept for the operator when it failed. */
+  readonly output: string;
+}
+
 /** A prepared environment for one workspace. */
 export interface ExecutionEnvironment {
   readonly provider: string;
   readonly guarantees: EnvironmentGuarantees;
+  /** What preparing this environment ran now; empty when nothing was needed or it was already prepared. */
+  readonly preparation: readonly PreparationStep[];
   run(command: string, options: RunOptions): Promise<RunResult>;
   dispose(): Promise<void>;
+}
+
+export interface PrepareOptions {
+  readonly onProgress?: (text: string) => void;
 }
 
 /** One thing the operator must do before a provider can be used. */
@@ -65,7 +79,7 @@ export interface ExecutionProvider {
   readonly guarantees: EnvironmentGuarantees;
   /** Whether this machine can use the provider now, and what is missing otherwise. */
   readiness(): Promise<ProviderReadiness>;
-  prepare(workspace: string): Promise<ExecutionEnvironment>;
+  prepare(workspace: string, options?: PrepareOptions): Promise<ExecutionEnvironment>;
   /** Remove anything the provider keeps for a workspace that is being deleted. */
   release(workspace: string): Promise<void>;
 }

@@ -23,6 +23,7 @@ function hostEnvironment(): ExecutionEnvironment {
   return {
     provider: "host",
     guarantees,
+    preparation: [],
     async run(command: string, options: RunOptions): Promise<RunResult> {
       const cancelled = (): boolean => options.signal?.aborted === true;
       if (cancelled()) return { outcome: "cancelled", exitCode: null };

@@ -188,6 +188,16 @@ build 26200, global policy `deny-all`):
   and Python 3.14, and no Bun. The host had Node 24.15.0 and Bun 1.4.2, so a
   repository's own check commands can fail inside for toolchain reasons alone.
 
+Sandboxes are prepared before the agent starts, following the setup phase of
+Copilot, Codex and Claude Code cloud environments: pinned runtimes through
+mise, then `.tesota/setup.sh` or the lockfile install. Toolchain download hosts
+are allowed only during that phase and removed before the agent runs; the
+provider confirms their removal from the sandbox's rule list, or deletes the
+sandbox. On 2026-09-26 this prepared Tesota's own repository (Node 24.15.0,
+Bun 1.4.2, `bun install --frozen-lockfile`) in 69 s, `bun run typecheck`
+passed inside, a second preparation was skipped in 2 s, and nodejs.org was
+refused afterward.
+
 The provider stops a command by tagging it with a unique environment variable,
 killing every process that carries it, and confirming none remain; otherwise
 the outcome is `unconfirmed`. The opt-in suite

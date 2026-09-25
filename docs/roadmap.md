@@ -40,13 +40,15 @@ source edits, carrying pending work onto them.
 
 Done on 2026-09-26: the Docker Sandboxes provider, qualified by the live
 isolation controls; autonomous sessions when it is ready and supervised ones
-otherwise; a default package-registry allowlist; and `tesota setup`. Next:
+otherwise; a default package-registry allowlist; `tesota setup`; and sandbox
+preparation from the repository's pinned runtimes, `.tesota/setup.sh` and
+lockfile, with download hosts open only during setup. Next:
 
-- Make the repository's toolchain available in the sandbox (Tesota's own
-  checks need Bun and Node 24).
 - Pending decisions: a blocked network destination becomes a question the
   operator can answer.
 - Setup that runs the missing steps instead of only listing them.
+- Reuse prepared toolchains across sessions, for example as a cached image
+  keyed by the setup fingerprint, as Codex, Claude Code and Cursor do.
 
 ### 3. Daemon and remote access
 
@@ -55,6 +57,12 @@ over SSH through a private network such as Tailscale. A web and mobile client
 may follow inside that network.
 
 ### Later
+
+Read `.devcontainer/devcontainer.json` (the open Dev Containers
+specification) as a toolchain definition: its image or Dockerfile, Features
+and lifecycle commands, so repositories that already describe their
+environment need nothing Tesota-specific.
+
 
 A non-TypeScript repository and another platform; more providers (WSL2,
 native Windows candidates, remote machines) once they pass the same controls; a review queue and notifications across sessions;
