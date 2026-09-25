@@ -11,6 +11,7 @@ export interface TesotaShellTerminalOptions {
   readonly interrupt?: (sessionId: string) => void;
   readonly theme?: TesotaShellThemeName;
   readonly onNewSession?: () => void;
+  readonly onCloseSession?: (sessionId: string) => void;
   readonly onQuit?: () => void;
   readonly onEntry?: (sessionId: string, role: "user" | "tesota", text: string) => void;
   readonly onInspection?: (sessionId: string, inspection: ShellInspection) => void;
@@ -37,6 +38,8 @@ export interface TesotaShellTerminal {
   inspectFor(id: string, inspection: ShellInspection): void;
   blockSession(id: string): void;
   endSession(id: string): void;
+  /** Remove a session from the workspace; its pending prompt fails with a closed error. */
+  removeSession(id: string): void;
 }
 
 export interface ShellInspection {
@@ -254,6 +257,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         return { consume: true };
       }
       if (matchesKey(data, "ctrl+n")) { this.options.onNewSession?.(); return { consume: true }; }
+      if (matchesKey(data, "ctrl+w")) { this.options.onCloseSession?.(this.selectedId); return { consume: true }; }
       if (matchesKey(data, "ctrl+q")) { this.options.onQuit?.(); return { consume: true }; }
       if (matchesKey(data, "ctrl+tab") || matchesKey(data, "alt+j")) {
         const ids = [...this.sessions.keys()];
@@ -349,6 +353,23 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.refreshElapsed();
   }
 
+  removeSession(id: string): void {
+    const session = this.sessions.get(id);
+    if (session === undefined) return;
+    if (this.sessions.size === 1) throw new Error("The last Tesota session cannot be removed");
+    if (id === this.selectedId) {
+      const ids = [...this.sessions.keys()];
+      this.selectSession(ids[(ids.indexOf(id) + 1) % ids.length] ?? id);
+    }
+    const pending = session.pending;
+    session.pending = undefined;
+    this.sessions.delete(id);
+    if (this.comparisonId === id) this.comparisonId = undefined;
+    pending?.reject(new DOMException("closed", "AbortError"));
+    this.updateSessionList();
+    if (this.started) this.compose();
+  }
+
   endSession(id: string): void {
     const session = this.sessions.get(id);
     if (session === undefined) throw new Error("Tesota session unavailable");
@@ -393,8 +414,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private updateStatus(): void {
     const progress = this.selected().progress;
     if (this.selected().blocked) this.status.setText(colorText("Unresolved effects · inspect evidence before new work", this.theme.warning));
-    else if (this.selected().ended) this.status.setText(colorText("Session ended · Ctrl+N new · Alt+J switch · Ctrl+Q quit", this.theme.muted));
-    else if (progress === undefined) this.status.setText(colorText("Ready · Ctrl+N new · Alt+J switch · Ctrl+Q quit", this.theme.muted));
+    else if (this.selected().ended) this.status.setText(colorText("Session ended · Ctrl+N new · Ctrl+W close · Alt+J switch · Ctrl+Q quit", this.theme.muted));
+    else if (progress === undefined) this.status.setText(colorText("Ready · Ctrl+N new · Ctrl+W close · Alt+J switch · Ctrl+Q quit", this.theme.muted));
     else {
       const elapsed = Math.max(0, Math.floor((this.now() - progress.startedAt) / 1_000));
       const label = tesotaShellProgressLabel(progress.value);

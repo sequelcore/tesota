@@ -1,9 +1,9 @@
 import { expect, it, vi } from "vitest";
-import { runTesotaShellCommand, type SessionWork } from "../src/tesota-shell-command.js";
+import { runTesotaShellCommand, type SessionWork, type WorkspaceCallbacks } from "../src/tesota-shell-command.js";
 import type { WorkResult } from "../src/tesota-shell.js";
 import type { TesotaShellTerminal } from "../src/tesota-shell-terminal.js";
 
-type Controls = { newSession: (id: string) => void; selectSession: (id: string) => void; quit: () => void };
+type Controls = WorkspaceCallbacks;
 
 function surface(overrides: Partial<TesotaShellTerminal> = {}): { surface: TesotaShellTerminal; events: string[] } {
   const events: string[] = [];
@@ -12,7 +12,7 @@ function surface(overrides: Partial<TesotaShellTerminal> = {}): { surface: Tesot
     write: (text) => { events.push(text); }, ask: async () => "",
     report: () => {}, refreshElapsed: () => {}, inspect: () => {}, addSession: () => {}, selectSession: () => {},
     writeTo: (_id, text) => { events.push(text); }, askIn: async () => "",
-    reportFor: () => {}, inspectFor: () => {}, blockSession: () => {}, endSession: () => {},
+    reportFor: () => {}, inspectFor: () => {}, blockSession: () => {}, endSession: () => {}, removeSession: () => {},
     ...overrides,
   } };
 }
@@ -92,4 +92,26 @@ it("reports a failed session and keeps the shell open", async () => {
   expect(fixture.events).toContain("Session failed. Pending changes stay in the workspace.\n");
   controls?.quit();
   await expect(running).resolves.toBe(0);
+});
+
+it("stops a closed session's runner without writing to it", async () => {
+  const pending = new Map<string, (error: Error) => void>();
+  const ended: string[] = [];
+  const written: string[] = [];
+  let controls: Controls | undefined;
+  const fixture = surface({
+    askIn: (id) => new Promise<string>((_resolve, reject) => { pending.set(id, reject); }),
+    writeTo: (id, text) => { written.push(`${id}:${text}`); },
+    endSession: (id) => { ended.push(id); },
+  });
+  const running = runTesotaShellCommand({ surface: fixture.surface, initialSessionId: "default",
+    session: () => work(vi.fn()), configureWorkspace: (callbacks) => { controls = callbacks; } });
+  await vi.waitFor(() => { expect(pending.has("default")).toBe(true); });
+  controls?.closed("default");
+  pending.get("default")?.(new DOMException("closed", "AbortError"));
+  controls?.selectSession("default");
+  controls?.quit();
+  await expect(running).resolves.toBe(0);
+  expect(ended).toEqual([]);
+  expect(written.filter((entry) => entry.startsWith("default:"))).toEqual([]);
 });

@@ -136,5 +136,6 @@ LemmaScript and Dafny.
 - Uncommitted changes are captured when the workspace is created; later edits
   in the source are not visible to the agent, although conflicting files are
   protected at application.
-- Sessions cannot be closed yet, so their workspaces stay until pruned
-  manually; `tesota prune` removes only unused ones.
+- Closing a session (`Ctrl+W`) removes its record, transcript and workspace;
+  a session with unresolved effects keeps its workspace as evidence.
+  `tesota prune` removes other unused workspaces.

@@ -244,3 +244,22 @@ it("keeps the result accessible on a narrow terminal without moving the input ta
   await expect(answer).resolves.toBe("n");
   shell.stop();
 });
+
+it("closes the selected session with Ctrl+W and moves input to the next one", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const closeRequests: string[] = [];
+  const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui,
+    onCloseSession: (id) => { closeRequests.push(id); } });
+  shell.start();
+  shell.addSession("second", "Session 2");
+  terminal.send("\x17");
+  expect(closeRequests).toEqual(["default"]);
+  const pending = shell.askIn("default", "> ");
+  shell.removeSession("default");
+  await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Session 2");
+  expect(() => { shell.removeSession("second"); }).toThrow("last Tesota session");
+  shell.stop();
+});

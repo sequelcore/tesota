@@ -72,3 +72,18 @@ it("discards an older snapshot version and starts with no sessions", () => {
   expect(readdirSync(root).filter((name) => name.includes(".bak"))).toEqual([]);
   reopened.close();
 });
+
+it("removes a session and never reuses a title number while others remain", () => {
+  const { root, source } = fixture();
+  const store = openShellSessionStore(source, root);
+  const first = store.create();
+  const second = store.create();
+  store.remove(first.id);
+  expect(store.create().title).toBe("Session 3");
+  expect(store.list().map((session) => session.id)).not.toContain(first.id);
+  expect(() => { store.remove(first.id); }).toThrow("unavailable");
+  store.close();
+  const reopened = openShellSessionStore(source, root);
+  expect(reopened.list().map((session) => session.title)).toEqual([second.title, "Session 3"]);
+  reopened.close();
+});

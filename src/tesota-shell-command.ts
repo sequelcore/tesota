@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -9,7 +10,7 @@ import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { CodingSession, type CommandApproval } from "./integrations/pi-coding-session.js";
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
-import { openShellSessionStore, type ShellSessionStore } from "./shell-session-store.js";
+import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
 import { runTesotaShell, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
   type WorkResult } from "./tesota-shell.js";
 import { inspectReview } from "./tesota-shell-inspection.js";
@@ -21,6 +22,15 @@ import { runChecks, suggestChecks } from "./workspace-checks.js";
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
 
+/** How the process shell tells the session runner about workspace-level events. */
+export interface WorkspaceCallbacks {
+  readonly newSession: (id: string) => void;
+  readonly selectSession: (id: string) => void;
+  /** The session was closed; its runner must stop without writing to it. */
+  readonly closed: (id: string) => void;
+  readonly quit: () => void;
+}
+
 export interface TesotaShellCommandDependencies {
   readonly surface: TesotaShellTerminal;
   readonly session: (id: string) => SessionWork;
@@ -28,8 +38,19 @@ export interface TesotaShellCommandDependencies {
   readonly abortActive?: () => void;
   readonly initialSessionId?: string;
   readonly blockedSessionIds?: readonly string[];
-  readonly configureWorkspace: (callbacks: { readonly newSession: (id: string) => void;
-    readonly selectSession: (id: string) => void; readonly quit: () => void }) => void;
+  readonly configureWorkspace: (callbacks: WorkspaceCallbacks) => void;
+}
+
+/** A second Ctrl+W within this time confirms closing a session that holds work. */
+const closeConfirmationMs = 5_000;
+
+function closeWarning(record: ShellSessionRecord, pending: number): string {
+  if (record.blocked) {
+    return "This session stopped with unresolved effects. Press Ctrl+W again to close it; " +
+      `its workspace stays at ${record.workspace ?? "(none)"}.`;
+  }
+  const noun = pending === 1 ? "change" : "changes";
+  return `This session has ${pending} unapplied ${noun}. Press Ctrl+W again to close it and discard ${pending === 1 ? "it" : "them"}.`;
 }
 
 function parseApproval(answer: string): CommandApproval {
@@ -90,8 +111,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const store: ShellSessionStore = openShellSessionStore(cwd);
   const savedSessions = store.list();
   const initial = savedSessions[0] ?? store.create();
-  let workspaceCallbacks: { readonly newSession: (id: string) => void;
-    readonly selectSession: (id: string) => void; readonly quit: () => void } | undefined;
+  let workspaceCallbacks: WorkspaceCallbacks | undefined;
+  const piSessionsDirectory = join(homedir(), ".tesota", "pi-sessions",
+    createHash("sha256").update(resolve(cwd).toLocaleLowerCase("en-US")).digest("hex"));
+  const closeWarnings = new Map<string, number>();
+  /** Sessions writing to the source repository; they cannot be closed until it settles. */
+  const applying = new Set<string>();
   const tui = new TuiAltScreen(new ProcessTerminal(), false, undefined, { mouse: true });
   const interrupt = (sessionId: string): void => { activeOperations.get(sessionId)?.abort(); };
   const runOperation = async <T>(sessionId: string, operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
@@ -119,6 +144,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       surface.selectSession(session.id);
       workspaceCallbacks?.newSession(session.id);
     },
+    onCloseSession: (id) => { void closeSession(id); },
     onSessionChange: (id) => { workspaceCallbacks?.selectSession(id); },
     onQuit: () => { workspaceCallbacks?.quit(); } });
   for (const session of savedSessions.slice(1)) surface.addSession(session.id, session.title,
@@ -174,12 +200,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
       if (model === undefined) throw new Error("The Codex model is unavailable. Run tesota auth login.");
       const engineId = saved(id)?.engineId ?? store.rotateEngine(id);
-      const sessions = join(homedir(), ".tesota", "pi-sessions",
-        createHash("sha256").update(resolve(cwd).toLocaleLowerCase("en-US")).digest("hex"));
-      const existing = SessionManager.findById(workspace.checkout, engineId, sessions);
+      const existing = SessionManager.findById(workspace.checkout, engineId, piSessionsDirectory);
       const sessionManager = existing === undefined
-        ? SessionManager.create(workspace.checkout, sessions, { id: engineId })
-        : SessionManager.open(existing, sessions, workspace.checkout);
+        ? SessionManager.create(workspace.checkout, piSessionsDirectory, { id: engineId })
+        : SessionManager.open(existing, piSessionsDirectory, workspace.checkout);
       return CodingSession.create({ cwd: workspace.checkout, modelRuntime: runtime, model, sessionManager, environment,
         approveCommand: async (command) => {
           surface.reportFor(id, { phase: "awaiting_command" });
@@ -193,6 +217,65 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     return state.coding;
   };
   const blockSession = (id: string): void => { store.block(id); surface.blockSession(id); };
+
+  /** Pending changes in a session's existing workspace; never creates one. */
+  const pendingChangeCount = async (id: string): Promise<number> => {
+    const directory = saved(id)?.workspace;
+    const loaded = states.get(id)?.workspace;
+    if (loaded === undefined && (directory === null || directory === undefined)) return 0;
+    try { return (await (loaded ?? Workspace.open(directory ?? ""))).snapshot().changes.length; }
+    catch { return 0; }
+  };
+
+  /** True when this close request must wait for a second Ctrl+W, after warning once. */
+  const awaitingConfirmation = (id: string, record: ShellSessionRecord, pending: number): boolean => {
+    if (pending === 0 && !record.blocked) return false;
+    const warnedAt = closeWarnings.get(id);
+    if (warnedAt !== undefined && Date.now() - warnedAt <= closeConfirmationMs) {
+      closeWarnings.delete(id);
+      return false;
+    }
+    closeWarnings.set(id, Date.now());
+    surface.writeTo(id, closeWarning(record, pending));
+    return true;
+  };
+
+  /** Remove a closed session's engine, transcript, workspace and record. */
+  const discardSession = async (id: string, record: ShellSessionRecord): Promise<void> => {
+    const state = states.get(id);
+    states.delete(id);
+    await state?.coding?.then((coding) => { coding.dispose(); }, () => undefined);
+    await state?.environment?.then((environment) => environment.dispose(), () => undefined);
+    if (record.workspace !== null) {
+      const transcript = SessionManager.findById(join(record.workspace, "repo"), record.engineId, piSessionsDirectory);
+      if (transcript !== undefined) await rm(transcript, { force: true });
+      if (!record.blocked) await rm(record.workspace, { recursive: true, force: true, maxRetries: 3 });
+    }
+    store.remove(id);
+  };
+
+  /**
+   * Close a session: its record, agent transcript and workspace are removed. A
+   * session holding unapplied changes or unresolved effects needs a second
+   * Ctrl+W; one with unresolved effects keeps its workspace as evidence.
+   */
+  const closeSession = async (id: string): Promise<void> => {
+    const record = saved(id);
+    if (record === undefined) return;
+    if (activeOperations.has(id) || applying.has(id)) {
+      surface.writeTo(id, "Stop the current work with Ctrl+C before closing this session.");
+      return;
+    }
+    if (awaitingConfirmation(id, record, await pendingChangeCount(id))) return;
+    if (store.list().length === 1) {
+      const replacement = store.create();
+      surface.addSession(replacement.id, replacement.title);
+      workspaceCallbacks?.newSession(replacement.id);
+    }
+    workspaceCallbacks?.closed(id);
+    surface.removeSession(id);
+    await discardSession(id, record);
+  };
 
   const sessionWork = (id: string): SessionWork => ({
     work: (request) => runOperation(id, async (signal): Promise<WorkResult> => {
@@ -233,13 +316,14 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const reviewed = state.reviewed;
       if (reviewed === undefined) return { status: "conflict", reason: "there is no current review", paths: [] };
       state.reviewed = undefined;
+      applying.add(id);
       try {
         return { status: "applied", changes: await applyWorkspace(await workspaceFor(id), reviewed) };
       } catch (error) {
         if (error instanceof ApplyConflictError) return { status: "conflict", reason: error.message, paths: error.paths };
         blockSession(id);
         return { status: "uncertain", applied: error instanceof ApplyUncertainError ? error.applied : [] };
-      }
+      } finally { applying.delete(id); }
     }),
     reject: async () => {
       const state = stateFor(id);
@@ -277,6 +361,7 @@ export async function runTesotaShellCommand(
     const quit = new Promise<void>((resolveQuitPromise) => { resolveQuit = resolveQuitPromise; });
     const started = new Set<string>();
     const ended = new Set<string>();
+    const closed = new Set<string>();
     let closing = false;
     const runSession = (id: string): void => {
       if (dependencies.blockedSessionIds?.includes(id) || ended.has(id) || started.has(id)) return;
@@ -288,9 +373,9 @@ export async function runTesotaShellCommand(
         report: (progress: TesotaShellProgress) => { surface.reportFor(id, progress); },
       }).then(() => {
         ended.add(id);
-        surface.endSession(id);
+        if (!closed.has(id)) surface.endSession(id);
       }, (error: unknown) => {
-        if (closing && isAbort(error)) return;
+        if (closed.has(id) || closing && isAbort(error)) return;
         ended.add(id);
         try {
           surface.writeTo(id, isAbort(error) ? "Session cancelled.\n" : "Session failed. Pending changes stay in the workspace.\n");
@@ -302,6 +387,7 @@ export async function runTesotaShellCommand(
     dependencies.configureWorkspace({
       newSession: (id) => { runSession(id); },
       selectSession: (id) => { runSession(id); },
+      closed: (id) => { closed.add(id); ended.add(id); },
       quit: () => { resolveQuit?.(); },
     });
     runSession(dependencies.initialSessionId ?? "default");

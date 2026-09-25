@@ -74,7 +74,10 @@ not show the change does what you asked; read the diff.
 ## Sessions and appearance
 
 The left column lists sessions. `Ctrl+N` starts a new one; `Alt+J` (or
-`Ctrl+Tab`) selects the next. At wide sizes, `Alt+S` shows a second session
+`Ctrl+Tab`) selects the next. `Ctrl+W` closes the selected session and removes
+its workspace and conversation. If the session has unapplied changes, the
+first `Ctrl+W` warns and a second one within five seconds confirms. Stop
+running work with `Ctrl+C` first. Closing the last session opens a new one. At wide sizes, `Alt+S` shows a second session
 read-only; on a narrow terminal, `Alt+1`, `Alt+2` and `Alt+3` show sessions,
 conversation and result panel. `Alt+,` and `Alt+.` browse earlier results.
 `Ctrl+Q` closes the shell. Sessions, their workspaces and their conversations
@@ -90,6 +93,6 @@ one run.
   its agent.
 - Changes to symbolic links and submodules cannot be applied.
 - Shell commands are approved one by one but not sandboxed.
-- Workspaces under `~/.tesota/workspaces` stay until you run `tesota prune`,
-  which lists what it would remove; `tesota prune --force` removes workspaces
-  that no session uses and that hold no unapplied changes.
+- Closing a session removes its workspace. `tesota prune` lists other
+  workspaces it would remove, and `tesota prune --force` removes those that no
+  session uses and that hold no unapplied changes.

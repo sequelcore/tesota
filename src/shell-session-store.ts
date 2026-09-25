@@ -30,6 +30,7 @@ type Snapshot = z.infer<typeof snapshotSchema>;
 export interface ShellSessionStore {
   list(): readonly ShellSessionRecord[];
   create(): ShellSessionRecord;
+  remove(id: string): void;
   append(id: string, role: "user" | "tesota", text: string): void;
   inspect(id: string, inspection: { title: string; summary: string; detail: string }): void;
   setWorkspace(id: string, directory: string): void;
@@ -132,12 +133,18 @@ export function openShellSessionStore(sourceDirectory: string,
     return {
       list: () => [...sessions.values()],
       create: () => {
-        const session = { id: randomUUID(), title: `Session ${sessions.size + 1}`,
+        const numbers = [...sessions.values()].map((existing) => Number(/^Session (\d+)$/u.exec(existing.title)?.[1] ?? 0));
+        const session = { id: randomUUID(), title: `Session ${Math.max(0, ...numbers) + 1}`,
           engineId: randomUUID(), entries: [], inspections: [], workspace: null,
           interrupted: false, blocked: false };
         sessions.set(session.id, session);
         try { save(); } catch (error) { sessions.delete(session.id); throw error; }
         return session;
+      },
+      remove: (id) => {
+        const session = find(id);
+        sessions.delete(id);
+        try { save(); } catch (error) { sessions.set(id, session); throw error; }
       },
       append: (id, role, text) => {
         const session = find(id);
