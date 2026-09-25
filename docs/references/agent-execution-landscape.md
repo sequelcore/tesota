@@ -44,6 +44,40 @@ copy from a chosen state and never mirror later edits automatically:
 - Docker Sandboxes either mounts the workspace directly, so both sides see the
   same files, or works on a private clone of a read-only mount (`--clone`).
 
+## Repository toolchains in isolated environments
+
+Researched on 2026-09-26. Every surveyed system prepares the environment
+before the agent starts, keeps the result, and rebuilds it when its
+definition changes:
+
+| System | Where the definition lives | What runs, and when | Network during setup | Reuse |
+| --- | --- | --- | --- | --- |
+| GitHub Copilot cloud agent | `.github/workflows/copilot-setup-steps.yml`, job `copilot-setup-steps` | Actions steps such as `actions/setup-node` and `npm ci`, before the agent; a failed step lets the agent start anyway | "The firewall only applies to processes started by the agent via its Bash tool. It does not apply ... to processes started in configured Copilot setup steps." | Runner per task |
+| Codex cloud | Environment settings | A `universal` image with pinned runtime versions (`CODEX_ENV_NODE_VERSION` and others; Node 18, 20, 22; Bun 1.2.10 included), then a setup script; a maintenance script on resumed containers | "Setup scripts run with internet access. Agent internet access is off by default." | Container state cached up to 12 hours; invalidated when scripts, variables or secrets change |
+| Claude Code cloud sessions | Environment settings, plus a repository `SessionStart` hook for project dependencies | Setup script as root on Ubuntu 24.04 before Claude Code starts; Node 20 to 22 preinstalled, Bun installed but with "known proxy compatibility issues" for package fetching | The agent proxy starts after the setup script | Filesystem snapshot reused; rebuilt when the script or allowed hosts change, or after about seven days |
+| Cursor cloud agents | `.cursor/environment.json`, committed | `install` when a build is created (must be idempotent), `start` when an agent boots, or a Dockerfile | Not stated | Successful builds become the starting disk; Dockerfile layers cached |
+| Dev Containers (open specification) | `.devcontainer/devcontainer.json` | Image or Dockerfile, versioned Features, then `onCreateCommand`, `updateContentCommand`, `postCreateCommand`, `postStartCommand` | Not constrained by the specification | Image layers |
+| Docker Sandboxes | `sbxenv.yaml` beside the workspace (experimental), kits, or a template image | Kits are OCI images built from Dockerfile stages, with install hooks run as root after all kits are combined | Kit mixins carry their tools' network rules | Kit images |
+
+Two layers recur: the toolchain (runtimes and CLIs, provisioned once and
+cached) and project dependencies (`npm ci` and similar, per session). Version
+files that repositories already commit can drive the toolchain layer: mise
+reads `mise.toml`, `.tool-versions` and idiomatic files such as `.nvmrc`,
+`.node-version`, `.bun-version` and `package.json`, although idiomatic files
+are disabled by default, and it downloads Node.js from nodejs.org by default.
+
+Sources: [Copilot environment](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-environment),
+[Copilot firewall](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/customize-the-agent-firewall),
+[Codex cloud environments](https://learn.chatgpt.com/docs/environments/cloud-environment.md),
+[codex-universal](https://github.com/openai/codex-universal/blob/main/README.md),
+[Claude Code cloud environments](https://code.claude.com/docs/en/cloud-environments),
+[Cursor cloud setup](https://cursor.com/docs/cloud-agent/setup),
+[devcontainer.json reference](https://containers.dev/implementors/json_reference/),
+[sbxenv.yaml](https://docs.docker.com/ai/sandboxes/configuration/environment-files/),
+[kit authoring patterns](https://docs.docker.com/ai/sandboxes/customize/author/patterns/),
+[mise configuration](https://mise.jdx.dev/configuration.html),
+[mise Node.js](https://mise.jdx.dev/lang/node.html).
+
 ## Patterns
 
 1. **Approval and isolation are separate settings.** Codex and Claude Code both
