@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { hostProvider } from "../src/host-environment.js";
 import { Workspace } from "../src/workspace.js";
 import { applyWorkspace, ApplyConflictError } from "../src/workspace-apply.js";
 import { runChecks, suggestChecks } from "../src/workspace-checks.js";
@@ -111,11 +112,12 @@ it("binds check outcomes to the reviewed tree", async () => {
   await changeEverything(workspace);
   const snapshot = workspace.snapshot();
   const signal = new AbortController().signal;
-  const results = await runChecks(workspace, snapshot, ["node -e \"process.exit(0)\"", "node -e \"process.exit(3)\""], signal);
-  expect(results.map((result) => [result.outcome, result.exitCode, result.tree])).toEqual([
-    ["passed", 0, snapshot.tree], ["failed", 3, snapshot.tree],
+  const environment = await hostProvider.prepare(workspace.checkout);
+  const results = await runChecks(environment, workspace, snapshot, ["node -e \"process.exit(0)\"", "node -e \"process.exit(3)\""], signal);
+  expect(results.map((result) => [result.outcome, result.exitCode, result.tree, result.environment])).toEqual([
+    ["passed", 0, snapshot.tree, "host"], ["failed", 3, snapshot.tree, "host"],
   ]);
-  const changing = await runChecks(workspace, snapshot,
+  const changing = await runChecks(environment, workspace, snapshot,
     ["node -e \"require('fs').writeFileSync('src/price.ts', 'formatted')\"", "node -e \"process.exit(0)\""], signal);
   expect(changing.map((result) => result.outcome)).toEqual(["changed_files"]);
 });

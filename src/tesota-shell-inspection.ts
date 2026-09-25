@@ -12,10 +12,14 @@ export function inspectReview(snapshot: WorkspaceSnapshot, checks: readonly Chec
   const failed = checks.filter((check) => check.outcome !== "passed");
   const checkSummary = checks.length === 0 ? "No checks ran." :
     failed.length === 0 ? `All ${checks.length} checks passed.` : `${failed.length} of ${checks.length} checks did not pass.`;
+  const first = checks[0];
+  const where = first === undefined ? "" : first.guarantees.filesystem === "host"
+    ? ` Checks ran on this exact content in the ${first.environment} environment, without isolation.`
+    : ` Checks ran on this exact content in the isolated ${first.environment} environment.`;
   return {
     title: "Changes",
-    summary: `${snapshot.changes.length} changed files. ${checkSummary} Checks ran on this exact content, ` +
-      "without a sandbox. They do not show the change does what you asked.",
+    summary: `${snapshot.changes.length} changed files. ${checkSummary}${where} ` +
+      "Checks do not show the change does what you asked.",
     detail: `Files\n${snapshot.changes.map((change) => `  ${change.status} ${change.path}`).join("\n")}` +
       `\n\nChecks\n${checks.map(checkDetail).join("\n\n") || "  None"}` +
       `\n\nContent\n  tree ${snapshot.tree}\n  base ${snapshot.base}\n\nDiff\n${snapshot.diff}`,

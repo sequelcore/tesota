@@ -2,10 +2,11 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type AgentSession, type BashOperations, type ModelRuntime, type SessionManager, type ToolDefinition,
   createAgentSession, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition,
-  createGrepToolDefinition, createLocalBashOperations, createLsToolDefinition, createReadToolDefinition,
+  createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition,
   createWriteToolDefinition, DefaultResourceLoader, defineTool, SessionManager as PiSessionManager, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
+import type { ExecutionEnvironment } from "../execution-environment.js";
 
 export type CommandApproval = "once" | "always" | "deny";
 
@@ -21,6 +22,8 @@ export interface CodingSessionOptions {
   readonly modelRuntime: ModelRuntime;
   readonly model: Model<Api>;
   readonly sessionManager?: SessionManager;
+  /** Where shell commands run. File tools always act on the workspace from the host. */
+  readonly environment: ExecutionEnvironment;
   readonly approveCommand: (command: string, signal: AbortSignal | undefined) => Promise<CommandApproval>;
   readonly onActivity?: (text: string) => void;
 }
@@ -68,8 +71,12 @@ function confine<P extends TSchema, D, S>(root: string, tool: ToolDefinition<P, 
   } };
 }
 
-function approvedBash(approve: CodingSessionOptions["approveCommand"]): BashOperations {
-  const local = createLocalBashOperations();
+/**
+ * Adapt Pi's shell tool to the session's execution environment. Pi passes the
+ * host process environment with each command; it is dropped so no provider
+ * receives host variables by default.
+ */
+function environmentBash(environment: ExecutionEnvironment, approve: CodingSessionOptions["approveCommand"]): BashOperations {
   let alwaysAllowed = false;
   return {
     exec: async (command, cwd, options) => {
@@ -81,7 +88,13 @@ function approvedBash(approve: CodingSessionOptions["approveCommand"]): BashOper
         }
         if (answer === "always") alwaysAllowed = true;
       }
-      return local.exec(command, cwd, options);
+      const result = await environment.run(command, { cwd, onOutput: options.onData,
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.timeout === undefined ? {} : { timeoutSeconds: options.timeout }) });
+      if (result.outcome === "cancelled") throw new Error("aborted");
+      if (result.outcome === "timed_out") throw new Error(`timeout:${options.timeout ?? 0}`);
+      if (result.outcome === "not_started") throw new Error(`The command could not start in the ${environment.provider} environment`);
+      return { exitCode: result.exitCode };
     },
   };
 }
@@ -146,7 +159,7 @@ export class CodingSession {
       defineTool(confine(root, createLsToolDefinition(root), false)),
       defineTool(confine(root, createEditToolDefinition(root), true)),
       defineTool(confine(root, createWriteToolDefinition(root), true)),
-      defineTool(createBashToolDefinition(root, { operations: approvedBash(options.approveCommand),
+      defineTool(createBashToolDefinition(root, { operations: environmentBash(options.environment, options.approveCommand),
         exposeSessionEnvironment: false })),
     ];
     const settingsManager = SettingsManager.inMemory({ defaultTools: [], enableSkillCommands: false },

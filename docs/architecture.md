@@ -62,21 +62,39 @@ at once; applications are serialized.
 | `integrations/pi-coding-session.ts` | Pi session, confined file tools, command approval, cancellation |
 | `workspace-checkout.ts` | Creating and verifying independent clones |
 | `workspace.ts` | Base commit, snapshots, revert and settling applied work |
-| `workspace-checks.ts` | Check suggestions and bounded check processes |
+| `execution-environment.ts` | Provider-neutral interface for where commands run, and the guarantees a provider declares |
+| `host-environment.ts` | The `host` provider: commands run directly on this machine |
+| `workspace-checks.ts` | Check suggestions and running approved checks in the session's environment |
 | `workspace-apply.ts` | Conflict-checked writes to the source repository and their journal |
 | `repository-git.ts` | Git invocation without ambient config, hooks or network |
 | `integrations/codex-credentials.ts`, `auth.ts` | Codex login storage |
 | `verification/` | Standalone Oxlint profile and the formal invocation-budget predicate |
 | `live-codex.ts`, `integrations/pi-live*.ts` | Live Codex probe and model route |
 
+## Execution environments
+
+Every command a session runs, the agent's shell commands and its checks, goes
+through an execution environment ([decision 014](decisions/014-execution-and-autonomy.md)).
+The interface names no vendor. A provider declares what it enforces for
+filesystem (`host` or `workspace`), network (`open` or `allowlist`), secrets
+(`none` or `placeholder`) and resources (`unbounded` or `bounded`); each check
+result records the provider and those guarantees. Pi's shell tool reaches the
+environment through an adapter that drops the host environment variables Pi
+would otherwise pass along.
+
+Only the `host` provider exists today: it isolates nothing, so every shell
+command needs approval. An isolated provider and autonomous sessions follow in
+[roadmap](roadmap.md) step 2.
+
 ## Trust and effects
 
 Repository content and model output are untrusted. The file tools (read,
 grep, find, ls, edit, write) resolve every path against the checkout and
 refuse anything outside it, including through links; edit and write also
-refuse `.git`. Shell commands are not confined: each needs the operator's
-approval ("always" lasts for the session), and an approved command runs with
-the operator's permissions, files, network and credentials. Repository
+refuse `.git`. In the `host` environment shell commands are not confined:
+each needs the operator's approval ("always" lasts for the session), and an
+approved command runs with the operator's permissions, files, network and
+credentials. Repository
 instructions in `AGENTS.md` or `CLAUDE.md` are passed to the agent as context.
 
 Application writes exactly the reviewed tree. For each changed file, the
@@ -91,8 +109,8 @@ reported as uncertain and closes the session.
 The operator approves check commands once per session. Tesota suggests the
 repository's `check` script, or its `typecheck`, `lint` and `test` scripts,
 using the lockfile's package manager; `cargo test` and `go test ./...` are
-suggested for Rust and Go. Checks run in the workspace without a sandbox, with
-a 15-minute limit each; only the end of their output is kept. A result is
+suggested for Rust and Go. Checks run in the session's execution environment,
+with a 15-minute limit each; only the end of their output is kept. A result is
 bound to the tree it ran on. A check that changes files is reported as
 `changed_files`, and the review content no longer matches, so application is
 refused until the work is reviewed again.
@@ -105,7 +123,8 @@ LemmaScript and Dafny.
 
 - Exercised live only on Windows. Repositories with symbolic links or
   submodules are refused.
-- Shell commands are approved but not sandboxed.
+- Only the `host` environment exists, so shell commands are approved but not
+  sandboxed.
 - The workspace starts from committed HEAD; your uncommitted changes are not
   visible to the agent, although conflicting files are protected at
   application.

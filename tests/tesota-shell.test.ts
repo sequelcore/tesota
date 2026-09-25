@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vitest";
+import { hostProvider } from "../src/host-environment.js";
 import type { TesotaShellProgress } from "../src/shell-progress.js";
 import { runTesotaShell, type ApplyResult, type TesotaShellDependencies, type WorkResult } from "../src/tesota-shell.js";
 import type { WorkspaceChange } from "../src/workspace.js";
@@ -19,8 +20,8 @@ function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = 
     suggestChecks: () => ["bun run check"],
     setChecks: vi.fn((commands: readonly string[]) => { checks = commands; }),
     review: vi.fn(async (commands: readonly string[]) => ({ status: "ready" as const, changes: [change, added],
-      checks: commands.map((command) => ({ command, tree: "b".repeat(40), outcome: "passed" as const, exitCode: 0,
-        durationMs: 1, output: "" })) })),
+      checks: commands.map((command) => ({ command, tree: "b".repeat(40), environment: "host",
+        guarantees: hostProvider.guarantees, outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" })) })),
     apply: vi.fn(async (): Promise<ApplyResult> => ({ status: "applied", changes: [change, added] })),
     reject: vi.fn(async () => {}),
     ...overrides,

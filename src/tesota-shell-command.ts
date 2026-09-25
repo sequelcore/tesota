@@ -3,6 +3,8 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
+import type { ExecutionEnvironment, ExecutionProvider } from "./execution-environment.js";
+import { hostProvider } from "./host-environment.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { CodingSession, type CommandApproval } from "./integrations/pi-coding-session.js";
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
@@ -44,6 +46,7 @@ function isAbort(error: unknown): boolean {
 /** One shell session's workspace, agent conversation and pending review. */
 class SessionState {
   workspace: Promise<Workspace> | undefined;
+  environment: Promise<ExecutionEnvironment> | undefined;
   coding: Promise<CodingSession> | undefined;
   reviewed: WorkspaceSnapshot | undefined;
   /** Context the agent needs with the next request, such as a rejected change. */
@@ -51,7 +54,8 @@ class SessionState {
 }
 
 export function createProcessTesotaShell(cwd: string = process.cwd(),
-  theme: TesotaShellThemeName = "tesota-dark"): TesotaShellCommandDependencies {
+  theme: TesotaShellThemeName = "tesota-dark",
+  provider: ExecutionProvider = hostProvider): TesotaShellCommandDependencies {
   const activeOperations = new Map<string, AbortController>();
   const states = new Map<string, SessionState>();
   const waiters: { readonly signal: AbortSignal; readonly grant: () => void;
@@ -150,10 +154,17 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     state.workspace.catch(() => { state.workspace = undefined; });
     return state.workspace;
   };
+  const environmentFor = (id: string): Promise<ExecutionEnvironment> => {
+    const state = stateFor(id);
+    state.environment ??= workspaceFor(id).then((workspace) => provider.prepare(workspace.checkout));
+    state.environment.catch(() => { state.environment = undefined; });
+    return state.environment;
+  };
   const codingFor = (id: string, signal: AbortSignal): Promise<CodingSession> => {
     const state = stateFor(id);
     state.coding ??= (async () => {
       const workspace = await workspaceFor(id);
+      const environment = await environmentFor(id);
       const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false,
         allowModelNetwork: false, signal });
       const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
@@ -165,7 +176,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const sessionManager = existing === undefined
         ? SessionManager.create(workspace.checkout, sessions, { id: engineId })
         : SessionManager.open(existing, sessions, workspace.checkout);
-      return CodingSession.create({ cwd: workspace.checkout, modelRuntime: runtime, model, sessionManager,
+      return CodingSession.create({ cwd: workspace.checkout, modelRuntime: runtime, model, sessionManager, environment,
         approveCommand: async (command) => {
           surface.reportFor(id, { phase: "awaiting_command" });
           const answer = await surface.askIn(id, `Run \`${command}\`? [y]es, [a]lways this session, [n]o: `);
@@ -207,7 +218,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const state = stateFor(id);
       state.reviewed = undefined;
       const snapshot = workspace.snapshot();
-      const checks = await runChecks(workspace, snapshot, commands, signal);
+      const checks = await runChecks(await environmentFor(id), workspace, snapshot, commands, signal);
       if (signal.aborted) return { status: "cancelled" };
       state.reviewed = snapshot;
       surface.inspectFor(id, inspectReview(snapshot, checks));
@@ -242,7 +253,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     configureWorkspace: (callbacks) => { workspaceCallbacks = callbacks; },
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },
     dispose: () => {
-      for (const state of states.values()) void state.coding?.then((coding) => { coding.dispose(); }, () => undefined);
+      for (const state of states.values()) {
+        void state.coding?.then((coding) => { coding.dispose(); }, () => undefined);
+        void state.environment?.then((environment) => environment.dispose(), () => undefined);
+      }
       store.close();
     },
   };
