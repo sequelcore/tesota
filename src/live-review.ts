@@ -112,6 +112,11 @@ try {
       ...(deep ? applicableLenses(workspace.checkout).map((lens) => createPiReviewer({ ...ai, lens })) : [])]
       .map((reviewer) => reviewer.review(input, signal)));
     const reviewed = Date.now();
+    // A run where no reviewer finished measures the environment, not the review: stop instead of recording zeros.
+    const failed = reviews.find((report) => report.status === "incomplete");
+    if (failed !== undefined && reviews.every((report) => report.status === "incomplete")) {
+      throw new Error(`Every reviewer failed on "${testCase.name}", so nothing was measured: ${failed.reason}`);
+    }
     const tested = await refuteFindings(ai, input, reviews, signal);
     const done = Date.now();
     // Measure the refuter directly: a planted false finding it should kill.
