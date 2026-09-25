@@ -1,3 +1,5 @@
+import { correctionFor, correctionPrompt, MAX_CORRECTION_ROUNDS, problemCount } from "./correction.js";
+import type { ReviewReport } from "./review.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import type { NoticeTone } from "./tesota-shell-transcript.js";
 import type { WorkspaceChange } from "./workspace.js";
@@ -10,13 +12,17 @@ export type WorkResult =
   | Readonly<{ status: "unsettled" }>;
 
 export type ReviewResult =
-  | Readonly<{ status: "ready"; changes: readonly WorkspaceChange[]; checks: readonly CheckResult[] }>
+  | Readonly<{ status: "ready"; tree: string; changes: readonly WorkspaceChange[]; checks: readonly CheckResult[];
+      reviews: readonly ReviewReport[]; requests: readonly string[] }>
   | Readonly<{ status: "cancelled" }>;
 
 export type ApplyResult =
   | Readonly<{ status: "applied"; changes: readonly WorkspaceChange[] }>
   | Readonly<{ status: "conflict"; reason: string; paths: readonly string[] }>
   | Readonly<{ status: "uncertain"; applied: readonly string[] }>;
+
+/** Who wrote a message to the working agent: the operator, or Tesota in a correction round. */
+export type RequestOrigin = "operator" | "tesota";
 
 export interface TesotaShellDependencies {
   /**
@@ -28,8 +34,12 @@ export interface TesotaShellDependencies {
   readonly write: (text: string, tone?: NoticeTone) => void;
   readonly ask: (prompt: string) => Promise<string>;
   readonly report?: (progress: TesotaShellProgress) => void;
-  /** Run one request in the workspace, showing the agent's work as it happens, and report the pending changes. */
-  readonly work: (request: string) => Promise<WorkResult>;
+  /**
+   * Run one request in the workspace, showing the agent's work as it happens,
+   * and report the pending changes. Only the operator's own requests join the
+   * request record; Tesota's correction messages do not.
+   */
+  readonly work: (request: string, origin?: RequestOrigin) => Promise<WorkResult>;
   /** Checks the operator approved earlier, or null when none were chosen yet. */
   readonly checks: () => readonly string[] | null;
   readonly suggestChecks: () => readonly string[];
@@ -75,15 +85,53 @@ async function askDecision(dependencies: TesotaShellDependencies): Promise<Decis
   }
 }
 
+type Assessment = "ready" | "stopped" | "unsettled";
+
+/**
+ * Check and review the candidate; send failed checks and fixable findings back
+ * to the agent for at most MAX_CORRECTION_ROUNDS rounds, stopping early when a
+ * round changes nothing (decision 015).
+ */
+async function assess(dependencies: TesotaShellDependencies,
+  report: (progress: TesotaShellProgress) => void): Promise<Assessment> {
+  const checks = await chooseChecks(dependencies);
+  let previousTree: string | undefined;
+  for (let round = 0; ; round++) {
+    report({ phase: "checking" });
+    const review = await dependencies.review(checks);
+    if (review.status === "cancelled") {
+      dependencies.write("Checks cancelled. The changes stay in the workspace.\n");
+      return "stopped";
+    }
+    const correction = correctionFor(review.checks, review.reviews);
+    if (correction === undefined || round >= MAX_CORRECTION_ROUNDS) return "ready";
+    if (review.tree === previousTree) {
+      dependencies.write("The agent's correction changed nothing; the remaining problems are yours to judge.\n", "warning");
+      return "ready";
+    }
+    previousTree = review.tree;
+    const count = problemCount(correction);
+    dependencies.write(`Correction round ${round + 1} of ${MAX_CORRECTION_ROUNDS}: sending ${count} ` +
+      `${count === 1 ? "problem" : "problems"} back to the agent.\n`);
+    report({ phase: "working" });
+    const result = await dependencies.work(correctionPrompt(review.requests, correction), "tesota");
+    if (result.status === "unsettled") return "unsettled";
+    if (result.status !== "completed") {
+      dependencies.write(`The correction ${result.status === "cancelled" ? "was stopped" : `failed: ${result.reason}`}. ` +
+        "The changes stay in the workspace; continue with another request.\n", "warning");
+      return "stopped";
+    }
+  }
+}
+
 async function reviewChanges(dependencies: TesotaShellDependencies,
   report: (progress: TesotaShellProgress) => void): Promise<boolean> {
-  const checks = await chooseChecks(dependencies);
-  report({ phase: "checking" });
-  const review = await dependencies.review(checks);
-  if (review.status === "cancelled") {
-    dependencies.write("Checks cancelled. The changes stay in the workspace.\n");
-    return true;
+  const assessment = await assess(dependencies, report);
+  if (assessment === "unsettled") {
+    dependencies.write("The agent did not stop cleanly. This session is closed; check the workspace before continuing.\n", "warning");
+    return false;
   }
+  if (assessment === "stopped") return true;
   report({ phase: "awaiting_decision" });
   const decision = await askDecision(dependencies);
   if (decision === "keep") {

@@ -61,3 +61,27 @@ it("records only the first submission and ends the review", async () => {
   expect(recorded).toEqual([{ summary: "One problem", findings: [{ severity: "high", disposition: "fixable",
     statement: finding.statement, reason: finding.reason }] }]);
 });
+
+it("reminds a reviewer that answered in prose once, and then accepts its submission", async () => {
+  const { vi } = await import("vitest");
+  const { CodingSession } = await import("../src/integrations/pi-coding-session.js");
+  const { createPiReviewer } = await import("../src/integrations/pi-reviewer.js");
+  const prompts: string[] = [];
+  const start = vi.spyOn(CodingSession, "start").mockImplementation(async (options) => {
+    const submit = options.tools.find((tool) => tool.name === "submit_review");
+    return { dispose: vi.fn(), run: vi.fn(async (prompt: string) => {
+      prompts.push(prompt);
+      if (prompts.length === 2) {
+        await submit?.execute("call", { summary: "Late but complete", findings: [] }, undefined, undefined, {} as ExtensionContext);
+      }
+      return { status: "completed" as const, reply: "It looks fine." };
+    }) } as unknown as Awaited<ReturnType<typeof CodingSession.start>>;
+  });
+  try {
+    const reviewer = createPiReviewer({ modelRuntime: {} as never, model: {} as never });
+    const report = await reviewer.review({ ...input, checkout: process.cwd() }, new AbortController().signal);
+    expect(report).toEqual({ reviewer: "Tesota reviewer", tree, status: "completed", summary: "Late but complete", findings: [] });
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("You finished without calling submit_review");
+  } finally { start.mockRestore(); }
+});

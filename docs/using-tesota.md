@@ -103,7 +103,14 @@ change it, and reports problems: ✗ for a defect against what you asked, ⚠
 for something only you can decide, such as an ambiguous requirement or a
 weakened test. A reviewer that does not finish says so; it is never shown as
 a clean review. Findings are advice, and a clean review does not replace
-reading the change. The full diff and check output open beside it on a wide terminal;
+reading the change.
+
+When checks fail or the reviewer finds a defect, Tesota first sends those
+problems back to the agent, with your requests unchanged, and checks and
+reviews the corrected result: at most two rounds, fewer if a round changes
+nothing. Each round shows its own review, and `Ctrl+C` stops it. Only then
+does Tesota ask for your decision. What only you can decide never goes back
+to the agent. The full diff and check output open beside it on a wide terminal;
 `Alt+R` shows or hides them, in place of the conversation on a narrow one.
 The prompt stays visible in either view.
 Then choose:

@@ -1,7 +1,8 @@
 import { expect, it, vi } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import type { TesotaShellProgress } from "../src/shell-progress.js";
-import { runTesotaShell, type ApplyResult, type TesotaShellDependencies, type WorkResult } from "../src/tesota-shell.js";
+import type { Finding } from "../src/review.js";
+import { runTesotaShell, type ApplyResult, type ReviewResult, type TesotaShellDependencies, type WorkResult } from "../src/tesota-shell.js";
 import type { WorkspaceChange } from "../src/workspace.js";
 
 const change: WorkspaceChange = { status: "modified", path: "src/price.ts" };
@@ -19,7 +20,8 @@ function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = 
     checks: () => checks,
     suggestChecks: () => ["bun run check"],
     setChecks: vi.fn((commands: readonly string[]) => { checks = commands; }),
-    review: vi.fn(async (commands: readonly string[]) => ({ status: "ready" as const, changes: [change, added],
+    review: vi.fn(async (commands: readonly string[]) => ({ status: "ready" as const, tree: "b".repeat(40),
+      changes: [change, added], reviews: [], requests: ["Fix the discount"],
       checks: commands.map((command) => ({ command, tree: "b".repeat(40), environment: "host",
         guarantees: hostProvider.guarantees, outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" })) })),
     apply: vi.fn(async (): Promise<ApplyResult> => ({ status: "applied", changes: [change, added] })),
@@ -120,4 +122,71 @@ it.each([
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(exit);
   expect(fixture.text()).toContain(message);
   expect(fixture.dependencies.review).not.toHaveBeenCalled();
+});
+
+const fixable: Finding = { severity: "high", disposition: "fixable", path: "src/price.ts", line: 3,
+  statement: "Exactly $100 is discounted", reason: "The request says over $100" };
+const operatorCall: Finding = { severity: "medium", disposition: "operator", statement: "Rounding is unspecified",
+  reason: "Cents or dollars?" };
+
+/** A review dependency that returns one prepared review per call, each for its own tree. */
+function reviews(...rounds: { tree: string; findings: readonly Finding[] }[]): TesotaShellDependencies["review"] {
+  return vi.fn(async (commands: readonly string[]): Promise<ReviewResult> => {
+    const round = rounds.shift() ?? { tree: "z".repeat(40), findings: [] };
+    return { status: "ready", tree: round.tree, changes: [change], requests: ["Charge over $100 less"],
+      checks: commands.map((command) => ({ command, tree: round.tree, environment: "host", guarantees: hostProvider.guarantees,
+        outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" })),
+      reviews: [{ reviewer: "Tesota reviewer", tree: round.tree, status: "completed", summary: "", findings: round.findings }] };
+  });
+}
+
+it("sends fixable findings back with the unchanged requests, then asks the operator on the corrected result", async () => {
+  const fixture = shell(["Charge over $100 less", "", "a", ""],
+    { review: reviews({ tree: "1".repeat(40), findings: [fixable] }, { tree: "2".repeat(40), findings: [] }) });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.work).toHaveBeenNthCalledWith(1, "Charge over $100 less");
+  expect(fixture.dependencies.work).toHaveBeenNthCalledWith(2,
+    expect.stringContaining("The user's requests, unchanged:\n1. Charge over $100 less"), "tesota");
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
+  expect(fixture.dependencies.review).toHaveBeenCalledTimes(2);
+  expect(fixture.text()).toContain("Correction round 1 of 2: sending 1 problem back to the agent.");
+  expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);
+});
+
+it("stops correcting after two rounds and leaves the rest to the operator", async () => {
+  const fixture = shell(["Charge over $100 less", "", "k", ""], { review: reviews(
+    { tree: "1".repeat(40), findings: [fixable] }, { tree: "2".repeat(40), findings: [fixable] },
+    { tree: "3".repeat(40), findings: [fixable] }) });
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(3);
+  expect(fixture.dependencies.review).toHaveBeenCalledTimes(3);
+  expect(fixture.progress.map((event) => event.phase)).toContain("awaiting_decision");
+});
+
+it("stops early when a correction changes nothing", async () => {
+  const fixture = shell(["Charge over $100 less", "", "k", ""], { review: reviews(
+    { tree: "1".repeat(40), findings: [fixable] }, { tree: "1".repeat(40), findings: [fixable] }) });
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
+  expect(fixture.text()).toContain("The agent's correction changed nothing; the remaining problems are yours to judge.");
+});
+
+it("never sends the operator's calls back to the agent", async () => {
+  const fixture = shell(["Charge over $100 less", "", "k", ""],
+    { review: reviews({ tree: "1".repeat(40), findings: [operatorCall] }) });
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
+  expect(fixture.text()).not.toContain("Correction round");
+});
+
+it("skips the decision when a correction is stopped, keeping the changes", async () => {
+  let calls = 0;
+  const fixture = shell(["Charge over $100 less", "", ""], {
+    review: reviews({ tree: "1".repeat(40), findings: [fixable] }),
+    work: vi.fn(async (): Promise<WorkResult> => ++calls === 1 ? { status: "completed", changes: [change] } : { status: "cancelled" }),
+  });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.text()).toContain("The correction was stopped. The changes stay in the workspace");
+  expect(fixture.progress.map((event) => event.phase)).not.toContain("awaiting_decision");
+  expect(fixture.dependencies.apply).not.toHaveBeenCalled();
 });

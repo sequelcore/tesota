@@ -97,9 +97,10 @@ reviewers behind the same contract.
 When verifiers fail or reviewers report `fixable` findings, Tesota sends the
 working agent the request record unchanged together with those results, then
 verifies and reviews the new candidate. At most two correction rounds run.
-The loop stops early when a round leaves the tree unchanged or reports the
-same findings. `operator` findings never go back to the agent. The operator
-sees each round, and can stop it.
+The loop stops early when a round leaves the tree unchanged; findings are
+worded anew by each review, so their text cannot show that nothing improved.
+`operator` findings, incomplete reviews and checks that could not run never go
+back to the agent. The operator sees each round, and can stop it.
 
 ### 6. The operator decides on the whole record
 

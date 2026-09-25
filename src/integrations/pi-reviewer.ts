@@ -95,6 +95,9 @@ export function reviewReport(tree: string, turn: CodingTurnResult,
   return incomplete("the reviewer finished without submitting its findings");
 }
 
+const submissionReminder = "You finished without calling submit_review, so Tesota has no review. Call submit_review " +
+  "now with the findings you reached, or an empty list if there are none. Do not investigate further.";
+
 export interface PiReviewerOptions {
   readonly modelRuntime: ModelRuntime;
   readonly model: Model<Api>;
@@ -120,7 +123,10 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
         })],
         ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
       try {
-        return reviewReport(input.snapshot.tree, await session.run(reviewMessage(input), signal), submitted);
+        let turn = await session.run(reviewMessage(input), signal);
+        // A model sometimes answers in prose; one reminder, without new investigation, before the review counts as unfinished.
+        if (turn.status === "completed" && submitted === undefined) turn = await session.run(submissionReminder, signal);
+        return reviewReport(input.snapshot.tree, turn, submitted);
       } finally { session.dispose(); }
     },
   };

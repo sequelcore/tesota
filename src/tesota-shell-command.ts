@@ -393,12 +393,14 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         if (states.has(id)) surface.writeTo(id, `${error instanceof Error ? error.message : "The environment could not start."}`, "warning");
       });
     },
-    work: (request) => runOperation(id, async (signal): Promise<WorkResult> => {
+    work: (request, origin = "operator") => runOperation(id, async (signal): Promise<WorkResult> => {
       try {
         const coding = await codingFor(id, signal);
         const state = stateFor(id);
         const notes = [state.note, await updateFromSource(id)].filter((note) => note !== undefined);
-        await (await workspaceFor(id)).recordRequest(request);
+        // A new request makes any earlier review stale, whether or not the work finishes.
+        stateFor(id).reviewed = undefined;
+        if (origin === "operator") await (await workspaceFor(id)).recordRequest(request);
         const prompt = notes.length === 0 ? request
           : `Tesota context (not written by the user):\n${notes.join("\n\n")}\n\nUser request:\n${request}`;
         state.note = undefined;
@@ -434,7 +436,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       if (!unchanged) review = { reviewer: review.reviewer, tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" };
       if (unchanged) state.reviewed = snapshot;
       surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews: [review] }));
-      return { status: "ready", changes: snapshot.changes, checks };
+      return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews: [review], requests };
     }),
     apply: () => serialized(async (): Promise<ApplyResult> => {
       const state = stateFor(id);
