@@ -86,7 +86,11 @@ export function reviewMessage(input: ReviewInput): string {
     `Changes that alter what checks the result (Tesota's fixed rules):\n${input.flags.map((flag) =>
       `- ${flag.status} ${flag.path} (${flag.kind})`).join("\n") || "- none"}`,
     `Checks Tesota ran on this exact content:\n${input.checks.map(checkLine).join("\n") || "- none ran"}`,
-    `Diff from the starting point:\n\`\`\`\`\`diff\n${diff}\n\`\`\`\`\``,
+    ...(input.correction === undefined ? [] : [`This is a correction round. These problems were sent back to the agent ` +
+      `and a separate validator checks them; report only problems the correction itself introduced:\n` +
+      input.correction.sentBack.map((finding) => `- ${finding.statement}`).join("\n")]),
+    `${input.correction === undefined ? "Diff from the starting point" :
+      "Diff of the correction, from the result that was sent back to the current one"}:\n\`\`\`\`\`diff\n${diff}\n\`\`\`\`\``,
   ].join("\n\n");
 }
 

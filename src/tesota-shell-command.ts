@@ -27,6 +27,7 @@ import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
 import { createPiReviewer } from "./integrations/pi-reviewer.js";
 import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
 import { applyRefutation, refuteFindings } from "./integrations/pi-refuter.js";
+import { validateFixes, validationReport } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
 import { appendAssurance, decisionEntry, reviewEntry, type AssuranceEntry } from "./assurance-journal.js";
 
@@ -265,7 +266,29 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
    * Every reviewer that applies to the candidate, in turn: Tesota's reviewer
    * always, and ClaimCheck's method when LemmaScript proved contracts in it.
    */
+  /** In a correction round, whether each finding sent back is resolved; a validator that cannot run settles nothing. */
+  const validateCorrection = async (id: string, input: ReviewInput, signal: AbortSignal): Promise<ReviewReport | undefined> => {
+    const sentBack = input.correction?.sentBack ?? [];
+    if (sentBack.length === 0) return undefined;
+    surface.reportFor(id, { phase: "reviewing", activity: "Checking each fix" });
+    try {
+      const { runtime, model } = await openModel(signal);
+      return await validateFixes({ modelRuntime: runtime, model }, input, sentBack, signal);
+    } catch {
+      return validationReport(input.snapshot.tree, sentBack, { status: "cancelled" }, undefined);
+    }
+  };
+  /**
+   * The review of a candidate, or in a correction round the validation of what
+   * was sent back followed by the review of the correction's own diff.
+   */
   const reviewCandidate = async (id: string, input: ReviewInput, read: (path: string) => string | undefined,
+    signal: AbortSignal): Promise<ReviewReport[]> => {
+    const validation = await validateCorrection(id, input, signal);
+    const reports = await reviewAndRefute(id, input, read, signal);
+    return validation === undefined ? reports : [validation, ...reports];
+  };
+  const reviewAndRefute = async (id: string, input: ReviewInput, read: (path: string) => string | undefined,
     signal: AbortSignal): Promise<ReviewReport[]> => {
     surface.reportFor(id, { phase: "reviewing" });
     const reviewers: Reviewer[] = [];
@@ -456,7 +479,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       return suggestChecks(directory === null || directory === undefined ? cwd : join(directory, "repo"));
     },
     setChecks: (commands) => { store.setChecks(commands); },
-    review: (commands) => runOperation(id, async (signal): Promise<ReviewResult> => {
+    review: (commands, correction) => runOperation(id, async (signal): Promise<ReviewResult> => {
       const workspace = await workspaceFor(id);
       const state = stateFor(id);
       state.reviewed = undefined;
@@ -467,8 +490,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       if (signal.aborted) return { status: "cancelled" };
       const flags = flagVerificationChanges(snapshot, read);
       const requests = await workspace.requests();
-      const reports = await reviewCandidate(id, { checkout: workspace.checkout, requests, snapshot, checks, flags },
-        (path) => read(snapshot.tree, path), signal);
+      // A correction round reviews only the correction; the verifiers above always cover the whole candidate.
+      const scope = correction === undefined ? snapshot
+        : { ...snapshot, base: correction.previousTree, ...workspace.compare(correction.previousTree, snapshot.tree) };
+      const reports = await reviewCandidate(id, { checkout: workspace.checkout, requests, snapshot: scope, checks, flags,
+        ...(correction === undefined ? {} : { correction: { sentBack: correction.sentBack } }) },
+      (path) => read(snapshot.tree, path), signal);
       if (signal.aborted) return { status: "cancelled" };
       // Reviewers have no tool that writes, but only an unchanged candidate may be applied.
       const unchanged = workspace.snapshot().tree === snapshot.tree;

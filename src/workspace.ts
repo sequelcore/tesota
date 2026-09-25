@@ -159,6 +159,15 @@ export class Workspace {
       .map((line) => requestSchema.parse(JSON.parse(line)).text);
   }
 
+  /** The changes and diff between two trees or commits, such as one candidate and its correction. */
+  compare(from: string, to: string): Pick<WorkspaceSnapshot, "changes" | "diff"> {
+    if (!isGitObjectId(from) || !isGitObjectId(to)) throw new Error("Invalid revision");
+    return {
+      changes: parseChanges(git(this.checkout, ["diff", "--no-renames", "--name-status", "-z", from, to, "--"])),
+      diff: git(this.checkout, ["diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", from, to, "--"]),
+    };
+  }
+
   /** A file as a commit or tree holds it, or undefined when it is absent there. */
   contentAt(revision: string, path: string): string | undefined {
     if (!isGitObjectId(revision)) throw new Error("Invalid revision");

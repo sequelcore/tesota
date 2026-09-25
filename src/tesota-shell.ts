@@ -1,5 +1,5 @@
 import { correctionFor, correctionPrompt, MAX_CORRECTION_ROUNDS, problemCount } from "./correction.js";
-import type { ReviewReport } from "./review.js";
+import type { Finding, ReviewReport } from "./review.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import type { NoticeTone } from "./tesota-shell-transcript.js";
 import type { WorkspaceChange } from "./workspace.js";
@@ -20,6 +20,12 @@ export type ApplyResult =
   | Readonly<{ status: "applied"; changes: readonly WorkspaceChange[] }>
   | Readonly<{ status: "conflict"; reason: string; paths: readonly string[] }>
   | Readonly<{ status: "uncertain"; applied: readonly string[] }>;
+
+/** The result a correction round started from, and the findings it sent back. */
+export interface CorrectionContext {
+  readonly previousTree: string;
+  readonly sentBack: readonly Finding[];
+}
 
 /** Who wrote a message to the working agent: the operator, or Tesota in a correction round. */
 export type RequestOrigin = "operator" | "tesota";
@@ -44,8 +50,13 @@ export interface TesotaShellDependencies {
   readonly checks: () => readonly string[] | null;
   readonly suggestChecks: () => readonly string[];
   readonly setChecks: (commands: readonly string[]) => void;
-  /** Snapshot the pending changes, run the approved checks on them and present the review, once. */
-  readonly review: (checks: readonly string[]) => Promise<ReviewResult>;
+  /**
+   * Snapshot the pending changes, run the approved checks on them and present
+   * the review, once. After a correction round, `correction` names the result
+   * sent back and what was sent, so only the correction is reviewed and the
+   * sent-back findings are validated (decision 016).
+   */
+  readonly review: (checks: readonly string[], correction?: CorrectionContext) => Promise<ReviewResult>;
   readonly apply: () => Promise<ApplyResult>;
   readonly reject: () => Promise<void>;
 }
@@ -96,9 +107,10 @@ async function assess(dependencies: TesotaShellDependencies,
   report: (progress: TesotaShellProgress) => void): Promise<Assessment> {
   const checks = await chooseChecks(dependencies);
   let previousTree: string | undefined;
+  let context: CorrectionContext | undefined;
   for (let round = 0; ; round++) {
     report({ phase: "checking" });
-    const review = await dependencies.review(checks);
+    const review = context === undefined ? await dependencies.review(checks) : await dependencies.review(checks, context);
     if (review.status === "cancelled") {
       dependencies.write("Checks cancelled. The changes stay in the workspace.\n");
       return "stopped";
@@ -110,6 +122,7 @@ async function assess(dependencies: TesotaShellDependencies,
       return "ready";
     }
     previousTree = review.tree;
+    context = { previousTree: review.tree, sentBack: correction.findings };
     const count = problemCount(correction);
     dependencies.write(`Correction round ${round + 1} of ${MAX_CORRECTION_ROUNDS}: sending ${count} ` +
       `${count === 1 ? "problem" : "problems"} back to the agent.\n`);

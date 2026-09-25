@@ -40,6 +40,12 @@ export interface ReviewInput {
   readonly snapshot: WorkspaceSnapshot;
   readonly checks: readonly CheckResult[];
   readonly flags: readonly VerificationChange[];
+  /**
+   * Present when reviewing a correction round: `snapshot` then holds only the
+   * correction's own diff, from the result sent back to this one, and these
+   * findings, sent back to the agent, are checked by the fix validator.
+   */
+  readonly correction?: { readonly sentBack: readonly Finding[] };
 }
 
 export type ReviewReport =

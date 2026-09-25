@@ -191,3 +191,16 @@ it("reads a file as the base or a candidate tree holds it", async () => {
   expect(workspace.contentAt(snapshot.tree, "src/price.ts")).toBe("export const price = 2;\n");
   expect(workspace.contentAt(snapshot.base, "src/missing.ts")).toBeUndefined();
 });
+
+it("compares one candidate with its correction", async () => {
+  const { workspace } = await fixture();
+  await writeFile(join(workspace.checkout, "src/price.ts"), "export const price = 2;\n");
+  const first = workspace.snapshot();
+  await writeFile(join(workspace.checkout, "src/price.ts"), "export const price = 3;\n");
+  await writeFile(join(workspace.checkout, "src/tax.ts"), "export const tax = 1;\n");
+  const second = workspace.snapshot();
+  const correction = workspace.compare(first.tree, second.tree);
+  expect(correction.changes).toEqual([{ status: "modified", path: "src/price.ts" }, { status: "added", path: "src/tax.ts" }]);
+  expect(correction.diff).toContain("-export const price = 2;\n+export const price = 3;");
+  expect(correction.diff).not.toContain("price = 1");
+});

@@ -133,9 +133,11 @@ checkout: for every reviewed version, your requests, each verifier's claim and
 outcome, each reviewer's findings, and whether you applied or rejected it.
 
 When checks fail or the reviewer finds a defect, Tesota first sends those
-problems back to the agent, with your requests unchanged, and checks and
-reviews the corrected result: at most two rounds, fewer if a round changes
-nothing. Each round shows its own review, and `Ctrl+C` stops it. Only then
+problems back to the agent, with your requests unchanged. It then runs every
+check on the corrected result, has a separate validator confirm that each
+problem sent back is resolved, and reviews only what the correction changed,
+so a round settles what it was sent instead of raising a fresh list: at most
+two rounds, fewer if a round changes nothing. Each round shows its own review, and `Ctrl+C` stops it. Only then
 does Tesota ask for your decision. What only you can decide never goes back
 to the agent. The full diff and check output open beside it on a wide terminal;
 `Alt+R` shows or hides them, in place of the conversation on a narrow one.

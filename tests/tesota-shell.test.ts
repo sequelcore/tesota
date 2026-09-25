@@ -150,6 +150,9 @@ it("sends fixable findings back with the unchanged requests, then asks the opera
     expect.stringContaining("The user's requests, unchanged:\n1. Charge over $100 less"), "tesota");
   expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
   expect(fixture.dependencies.review).toHaveBeenCalledTimes(2);
+  // The second review knows the result it corrects and what was sent back, so it can review only the correction.
+  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(1, ["bun run check"]);
+  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(2, ["bun run check"], { previousTree: "1".repeat(40), sentBack: [fixable] });
   expect(fixture.text()).toContain("Correction round 1 of 2: sending 1 problem back to the agent.");
   expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);
 });

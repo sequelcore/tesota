@@ -22,6 +22,8 @@ export interface EvaluationCase {
   readonly acceptable?: readonly SeededDefect[];
   /** A plausible but false finding, planted to measure whether the refuter kills it. */
   readonly falseClaim?: Pick<Finding, "path" | "statement" | "reason">;
+  /** Two known corrections of the planted defect, to measure fix validation and the review of a correction. */
+  readonly corrections?: { readonly fixed: Readonly<Record<string, string>>; readonly unfixed: Readonly<Record<string, string>> };
 }
 
 const test = (body: string): string => `import test from "node:test";\nimport assert from "node:assert";\n${body}\n`;
@@ -34,7 +36,13 @@ export const EVALUATION_CASES: readonly EvaluationCase[] = [
       "src/price.test.js": test(`import { total } from "./price.js";\ntest("small", () => assert.equal(total(50), 50));\n` +
         `test("large", () => assert.equal(total(200), 180));`) },
     defects: [{ paths: ["src/price.js"], keywords: ["100", ">=", "boundary", "exactly"] }],
-    acceptable: [{ paths: ["src/price.test.js"], keywords: ["test", "cover"] }] },
+    acceptable: [{ paths: ["src/price.test.js"], keywords: ["test", "cover"] }],
+    corrections: {
+      fixed: { "src/price.js": "export function total(amount) {\n  return amount > 100 ? amount * 0.9 : amount;\n}\n",
+        "src/price.test.js": test(`import { total } from "./price.js";\ntest("small", () => assert.equal(total(50), 50));\n` +
+          `test("exactly 100", () => assert.equal(total(100), 100));\ntest("large", () => assert.equal(total(200), 180));`) },
+      unfixed: { "src/price.js": "// Applies the order discount.\nexport function total(amount) {\n  return amount >= 100 ? amount * 0.9 : amount;\n}\n" },
+    } },
   { name: "weakened test", request: "Fix the tax calculation: tax is 16%.",
     base: { "src/tax.js": "export function tax(amount) {\n  return amount * 0.15;\n}\n",
       "src/tax.test.js": test(`import { tax } from "./tax.js";\ntest("tax", () => assert.equal(tax(100), 16));`) },
@@ -46,7 +54,12 @@ export const EVALUATION_CASES: readonly EvaluationCase[] = [
     candidate: { "src/orders.js": "export const orders = [];\nexport function toCsv(rows) {\n  return rows.map((row) => row.join(\",\")).join(\"\\n\");\n}\n",
       "src/orders.test.js": test(`import { toCsv } from "./orders.js";\ntest("csv", () => assert.equal(toCsv([["a", 1]]), "a,1"));`) },
     defects: [{ paths: ["src/orders.js"], keywords: ["log"] }],
-    acceptable: [{ paths: ["src/orders.js", "src/orders.test.js"], keywords: ["escap", "quot", "test"] }] },
+    acceptable: [{ paths: ["src/orders.js", "src/orders.test.js"], keywords: ["escap", "quot", "test"] }],
+    corrections: {
+      fixed: { "src/orders.js": "export const orders = [];\nexport function toCsv(rows) {\n  const csv = rows.map((row) => row.join(\",\")).join(\"\\n\");\n" +
+        "  console.log(`Exported ${rows.length} rows`);\n  return csv;\n}\n" },
+      unfixed: { "src/orders.js": "export const orders = [];\n// Serializes rows as CSV.\nexport function toCsv(rows) {\n  return rows.map((row) => row.join(\",\")).join(\"\\n\");\n}\n" },
+    } },
   { name: "authority flaw", request: "Admins can delete any post; other users can delete only their own posts.",
     base: { "src/auth/posts.js": "export function canDelete(user, post) {\n  return user.role === \"admin\";\n}\n",
       "src/auth/posts.test.js": test(`import { canDelete } from "./posts.js";\ntest("admin", () => assert.equal(canDelete({ role: "admin" }, { authorId: 2 }), true));`) },
@@ -54,7 +67,14 @@ export const EVALUATION_CASES: readonly EvaluationCase[] = [
       "src/auth/posts.test.js": test(`import { canDelete } from "./posts.js";\ntest("admin", () => assert.equal(canDelete({ role: "admin" }, { authorId: 2 }), true));\n` +
         `test("author", () => assert.equal(canDelete({ id: 2, role: "user" }, { authorId: 2 }), true));`) },
     defects: [{ paths: ["src/auth/posts.js"], keywords: ["author", "own", "any user", "authorid", "anyone"] }],
-    acceptable: [{ paths: ["src/auth/posts.test.js"], keywords: ["test", "denial", "deny", "non-owner", "cover"] }] },
+    acceptable: [{ paths: ["src/auth/posts.test.js"], keywords: ["test", "denial", "deny", "non-owner", "cover"] }],
+    corrections: {
+      fixed: { "src/auth/posts.js": "export function canDelete(user, post) {\n  return user.role === \"admin\" || (user.id !== undefined && post.authorId === user.id);\n}\n",
+        "src/auth/posts.test.js": test(`import { canDelete } from "./posts.js";\ntest("admin", () => assert.equal(canDelete({ role: "admin" }, { authorId: 2 }), true));\n` +
+          `test("author", () => assert.equal(canDelete({ id: 2, role: "user" }, { authorId: 2 }), true));\n` +
+          `test("other user", () => assert.equal(canDelete({ id: 3, role: "user" }, { authorId: 2 }), false));`) },
+      unfixed: { "src/auth/posts.js": "export function canDelete(user, post) {\n  const isAdmin = user.role === \"admin\";\n  return isAdmin || post.authorId !== undefined;\n}\n" },
+    } },
   { name: "pre-existing bug untouched", request: "Make greet() say 'Hello, <name>!' instead of 'Hi <name>'.",
     base: { "src/greet.js": "export function greet(name) {\n  return `Hi ${name}`;\n}\n",
       "src/greet.test.js": test(`import { greet } from "./greet.js";\ntest("greet", () => assert.equal(greet("Ana"), "Hi Ana"));`),

@@ -3,13 +3,17 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { hostProvider } from "./host-environment.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
 import { refuteFindings } from "./integrations/pi-refuter.js";
 import { createPiReviewer } from "./integrations/pi-reviewer.js";
 import type { ReviewReport } from "./review.js";
-import { EVALUATION_CASES, scoreCase, type CaseScore } from "./review-evaluation.js";
+import { EVALUATION_CASES, scoreCase, type CaseScore, type EvaluationCase } from "./review-evaluation.js";
+import { validateFixes } from "./integrations/pi-fix-validator.js";
+import type { ReviewInput } from "./review.js";
+import type { WorkspaceSnapshot } from "./workspace.js";
 import { flagVerificationChanges } from "./verification-changes.js";
 import { Workspace } from "./workspace.js";
 import { runChecks } from "./workspace-checks.js";
@@ -30,6 +34,41 @@ function totals(scores: readonly CaseScore[]): Record<string, number> {
   const sum = (key: keyof Omit<CaseScore, "name">): number => scores.reduce((total, score) => total + score[key], 0);
   return { found: sum("found"), seeded: sum("seeded"), falsePositives: sum("falsePositives"),
     unsettled: sum("unsettled"), refuted: sum("refuted") };
+}
+
+/**
+ * Send back the confirmed findings that match the planted defect, then judge
+ * a correction that fixes it and one that does not: the validator should
+ * resolve the first and not the second, and the review of the real fix should
+ * confirm nothing new.
+ */
+async function measureCorrections(ai: { readonly modelRuntime: ModelRuntime; readonly model: Model<Api> },
+  testCase: EvaluationCase, workspace: Workspace, snapshot: WorkspaceSnapshot,
+  input: ReviewInput, tested: readonly ReviewReport[], signal: AbortSignal): Promise<unknown> {
+  if (testCase.corrections === undefined) return undefined;
+  const sentBack = tested.flatMap((report) => report.status === "completed" ? report.findings : [])
+    .filter((finding) => finding.standing === "confirmed" && finding.origin === "introduced" &&
+      testCase.defects.some((defect) => defect.paths.some((path) => finding.path?.replaceAll("\\", "/").endsWith(path) === true)));
+  if (sentBack.length === 0) return { skipped: "no confirmed finding matched the planted defect" };
+  const results: Record<string, unknown> = {};
+  for (const [variant, files] of Object.entries(testCase.corrections)) {
+    write(workspace.checkout, testCase.candidate);
+    write(workspace.checkout, files);
+    const corrected = workspace.snapshot();
+    const scope = { ...corrected, base: snapshot.tree, ...workspace.compare(snapshot.tree, corrected.tree) };
+    const correctionInput: ReviewInput = { ...input, snapshot: scope, correction: { sentBack } };
+    const validation = await validateFixes(ai, correctionInput, sentBack, signal);
+    const delta = await refuteFindings(ai, correctionInput, [await createPiReviewer(ai).review(correctionInput, signal)], signal);
+    const remaining = validation.status === "completed" ? validation.findings : [];
+    results[variant] = { sentBack: sentBack.length, resolved: sentBack.length - remaining.length,
+      unresolved: remaining.filter((finding) => finding.standing === "confirmed").length,
+      newConfirmed: delta.flatMap((report) => report.status === "completed" ? report.findings : [])
+        .filter((finding) => finding.standing === "confirmed" && finding.origin === "introduced").length,
+      validation, delta };
+    console.log(`  ${variant} correction: ${JSON.stringify({ ...results[variant] as object, validation: undefined, delta: undefined })}`);
+  }
+  write(workspace.checkout, testCase.candidate);
+  return results;
 }
 
 const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false, allowModelNetwork: false });
@@ -74,8 +113,9 @@ try {
     }
     raw.push(scoreCase(testCase, [review], "raw"));
     refuted.push(scoreCase(testCase, tested, "refuted"));
+    const corrections = await measureCorrections({ modelRuntime: runtime, model }, testCase, workspace, snapshot, input, tested, signal);
     cases.push({ name: testCase.name, checks: checks.map((check) => check.outcome), reviewMs: reviewed - started,
-      refuteMs: done - reviewed, raw: raw.at(-1), refuted: refuted.at(-1), plantedFalseClaim: planted, reports: tested });
+      refuteMs: done - reviewed, raw: raw.at(-1), refuted: refuted.at(-1), plantedFalseClaim: planted, corrections, reports: tested });
     console.log(`${testCase.name}: raw ${JSON.stringify(raw.at(-1))} | refuted ${JSON.stringify(refuted.at(-1))} | ` +
       `review ${Math.round((reviewed - started) / 1000)} s, refuter ${Math.round((done - reviewed) / 1000)} s` +
       (planted === undefined ? "" : ` | planted false claim: ${planted}`));

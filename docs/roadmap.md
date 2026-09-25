@@ -77,9 +77,9 @@ different set of verifiers, reviewers or rounds.
 
 [Decision 016](decisions/016-review-precision.md): findings carry their origin
 and face a refuter before they act, and `bun run live:review` measures review
-on an evaluation set with known truth. Next: correction rounds that validate
-fixes and review only their own diff, then depth and lenses that follow facts
-Tesota computes.
+on an evaluation set with known truth; correction rounds validate each fix and
+review only their own diff. Next: depth and lenses that follow facts Tesota
+computes.
 
 **Done when:** a change to Tesota goes through verification, an independent
 review and a correction round, and the operator decides on the whole record.
