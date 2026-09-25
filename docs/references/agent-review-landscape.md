@@ -52,6 +52,23 @@ quickly; recheck a claim before relying on it.
 5. **Measure before trusting a change.** Bugbot's measured iterations often
    regressed; the review itself needs an evaluation set.
 
+## Gentle AI's review host boundary
+
+Read on 2026-09-25 from gentle-ai `internal/cli/review_transport_capability.go`
+(commit `8b52c465`) and gentle-pi `lib/review-host-relay.ts` (commit
+`b50b417c`). Gentle AI admits a runtime for review only through a compiled
+transport per agent: Claude Code, Codex and OpenCode have their own, and Pi's
+`pi_host_relay` is admitted only while the gentle-pi host declares
+`gentle-pi.review-relay/v1`. That relay is narrow: for each lens it takes the
+Go-issued prompt with `--materialize`, completes it once through Pi with no
+tools and nothing discovered from the repository, and submits the raw text
+through the exact provider-issued command. Go keeps the prompt, lenses,
+admission, budgets, receipts and gates. Pi's agent identity appears in about
+twenty Go source files, so admitting another host means registering a new
+agent, not changing one condition. Contributions require an issue approved by
+a maintainer before any pull request, pull requests of at most 400 changed
+lines, and the project's AI-assisted contribution policy.
+
 ## Open-source reviewers worth evaluating
 
 - **PR-Agent** (github.com/The-PR-Agent/pr-agent): community-owned since
