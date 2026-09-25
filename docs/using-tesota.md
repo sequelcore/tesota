@@ -21,11 +21,12 @@ Login stores a Codex credential under `~/.tesota/auth`; see
 [authentication](authentication.md). `bun unlink` removes the command.
 
 Sessions are **autonomous** when Docker Sandboxes is set up, and
-**supervised** otherwise. Run `tesota setup` to see which, and what is
-missing. On Windows 11, autonomous sessions need the Windows Hypervisor
-Platform (an administrator command and a restart), Docker Sandboxes
-(`winget install -h Docker.sbx`), a Docker sign-in (`sbx login`) and a
-deny-all network policy (`sbx policy init deny-all`).
+**supervised** otherwise. On Windows 11, autonomous sessions need the Windows
+Hypervisor Platform (an administrator prompt and a restart), Docker Sandboxes,
+a Docker sign-in and a deny-all network policy. Run `tesota setup` to go
+through them: it shows each missing step and its command, runs it when you
+confirm, and checks again. It stops when Windows needs a restart; run it again
+afterward. Without a terminal to ask in, it only lists what is missing.
 
 ## Work
 

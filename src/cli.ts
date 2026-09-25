@@ -42,10 +42,14 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
     process.stdout.write("Nothing was removed. Run tesota prune --force to remove the listed workspaces.\n");
   }
 } else if (args.length === 1 && args[0] === "setup") {
-  const { chooseSessionMode, formatSetup } = await import("./execution-providers.js");
-  const mode = await chooseSessionMode();
-  process.stdout.write(formatSetup(mode));
-  process.exitCode = mode.mode === "autonomous" ? 0 : 1;
+  const { runSetup, runSetupAction } = await import("./execution-providers.js");
+  const { createInterface } = await import("node:readline/promises");
+  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
+  process.exitCode = await runSetup({ write: (text) => { process.stdout.write(text); }, run: runSetupAction,
+    confirm: interactive ? async (question) => {
+      const prompt = createInterface({ input: process.stdin, output: process.stdout });
+      try { return /^(y|yes)?$/iu.test((await prompt.question(question)).trim()); } finally { prompt.close(); }
+    } : null });
 } else if (args.length === 2 && args[0] === "verify" && args[1] !== undefined) {
   const result = await runOxlint(configuredOxlint(process.cwd(), process.execPath), args[1]);
   process.stdout.write(`${JSON.stringify(result)}\n`);

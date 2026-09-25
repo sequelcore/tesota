@@ -78,6 +78,14 @@ export interface PrepareOptions {
   readonly onProgress?: (text: string) => void;
 }
 
+/**
+ * How Tesota can run a setup step itself once the operator confirms: a
+ * program with arguments, or a PowerShell script behind an administrator prompt.
+ */
+export type SetupAction =
+  | Readonly<{ kind: "process"; program: string; args: readonly string[] }>
+  | Readonly<{ kind: "elevated-powershell"; script: string }>;
+
 /** One thing the operator must do before a provider can be used. */
 export interface SetupStep {
   readonly description: string;
@@ -86,6 +94,8 @@ export interface SetupStep {
   /** Whether the command needs an administrator prompt, and a restart after. */
   readonly elevated?: boolean;
   readonly restart?: boolean;
+  /** Present when Tesota can run the step; otherwise only the operator can. */
+  readonly action?: SetupAction;
 }
 
 export type ProviderReadiness =

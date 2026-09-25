@@ -1,5 +1,7 @@
+import { spawn } from "node:child_process";
 import { dockerSandboxesProvider } from "./docker-sandboxes-environment.js";
-import { allowsAutonomy, type ExecutionProvider, type ProviderReadiness } from "./execution-environment.js";
+import { allowsAutonomy, type ExecutionProvider, type ProviderReadiness, type SetupAction,
+  type SetupStep } from "./execution-environment.js";
 import { hostProvider } from "./host-environment.js";
 
 /** Providers that can confine commands enough for autonomous sessions, in order of preference. */
@@ -33,6 +35,62 @@ export async function chooseSessionMode(candidates: readonly ExecutionProvider[]
 /** Release every provider's resources for a workspace checkout that is being deleted. */
 export async function releaseWorkspace(checkout: string, providers: readonly ExecutionProvider[] = allProviders): Promise<void> {
   for (const provider of providers) await provider.release(checkout).catch(() => undefined);
+}
+
+/** Run a setup action with the operator's terminal attached, so sign-in and installer prompts reach them. */
+export function runSetupAction(action: SetupAction): Promise<number | null> {
+  const [program, args] = action.kind === "process" ? [action.program, action.args] : ["powershell.exe", [
+    "-NoProfile", "-Command",
+    // The script travels encoded, so no quoting survives into the elevated process.
+    "$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList " +
+      `'-NoProfile','-EncodedCommand','${Buffer.from(action.script, "utf16le").toString("base64")}'; exit $p.ExitCode`]];
+  return new Promise((settle) => {
+    const child = spawn(program, args, { stdio: "inherit" });
+    child.once("error", () => { settle(null); });
+    child.once("close", (code) => { settle(code); });
+  });
+}
+
+export interface SetupRunner {
+  readonly write: (text: string) => void;
+  /** Null when there is no one to ask; setup then only lists what is missing. */
+  readonly confirm: ((question: string) => Promise<boolean>) | null;
+  readonly run: (action: SetupAction) => Promise<number | null>;
+  readonly check?: () => Promise<SessionMode>;
+}
+
+function nextStep(mode: SessionMode): SetupStep | undefined {
+  if (mode.mode === "autonomous") return undefined;
+  return mode.missing.flatMap((entry) => entry.readiness.ready ? [] : entry.readiness.steps)[0];
+}
+
+/**
+ * Take the operator through what autonomous sessions still need: show the
+ * next step and its command, run it once they confirm, and check again. It
+ * stops at a restart, a failure, a step only the operator can do, or a
+ * refusal, and never runs a step twice.
+ */
+export async function runSetup(runner: SetupRunner): Promise<number> {
+  const check = runner.check ?? (() => chooseSessionMode());
+  const attempted = new Set<string>();
+  for (;;) {
+    const mode = await check();
+    const step = nextStep(mode);
+    if (mode.mode === "autonomous" || step === undefined) { runner.write(formatSetup(mode)); return mode.mode === "autonomous" ? 0 : 1; }
+    if (step.action === undefined || runner.confirm === null || attempted.has(step.description)) {
+      if (attempted.has(step.description)) runner.write(`"${step.description}" is still missing after running it.\n\n`);
+      runner.write(formatSetup(mode));
+      return 1;
+    }
+    const elevation = step.elevated === true ? " It opens an administrator prompt." : "";
+    runner.write(`Next: ${step.description}.${elevation}\n  ${step.command ?? ""}\n`);
+    if (!await runner.confirm("Run it now? [Y/n] ")) { runner.write("Stopped. Run tesota setup again to continue.\n"); return 1; }
+    attempted.add(step.description);
+    const code = await runner.run(step.action);
+    if (code !== 0) { runner.write(`It did not finish (exit code ${code ?? "none"}). Nothing else was run.\n`); return 1; }
+    if (step.restart === true) { runner.write("Done. Restart Windows, then run tesota setup again to continue.\n"); return 1; }
+    runner.write("Done.\n\n");
+  }
 }
 
 export function formatSetup(mode: SessionMode): string {

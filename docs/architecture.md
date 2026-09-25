@@ -109,7 +109,8 @@ registries, and caps CPU and memory. When it is ready, sessions are
 autonomous: commands run without asking, and the agent is told what it can
 reach. When an agent command is refused a destination, the operator is asked
 whether to allow it for the session or for the repository; repository choices
-are stored with the approved checks and applied to each new sandbox. `tesota setup` reports what is missing otherwise. The sandbox is
+are stored with the approved checks and applied to each new sandbox. Otherwise `tesota setup` runs the missing steps one at a time, each after the
+operator confirms it, and stops at a restart or a failure. The sandbox is
 created per workspace and removed when the session closes or the workspace is
 pruned.
 

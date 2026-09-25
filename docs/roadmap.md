@@ -45,9 +45,8 @@ preparation from the repository's pinned runtimes, `.tesota/setup.sh` and
 lockfile, with download hosts open only during setup; the pinned runtimes
 cached as a sandbox kit reused across sessions, with `node_modules` on the
 sandbox's own disk; refused network destinations become a question the
-operator answers for the session or the repository. Next:
-
-- Setup that runs the missing steps instead of only listing them.
+operator answers for the session or the repository; `tesota setup` runs the
+missing steps once the operator confirms each.
 
 ### 3. Daemon and remote access
 

@@ -299,18 +299,29 @@ async function createSandbox(sbx: string, name: string, workspace: string, kit: 
   }
 }
 
+/** The first missing step only: each depends on the ones before it. */
 async function readinessSteps(): Promise<SetupStep[]> {
   if (!await hypervisorPlatformEnabled()) {
+    const script = "Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform -All -NoRestart";
     return [{ description: "Turn on the Windows Hypervisor Platform", elevated: true, restart: true,
-      command: "Enable-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform -All" }];
+      command: script, action: { kind: "elevated-powershell", script } }];
   }
   const sbx = await locateSbx();
-  if (sbx === null) return [{ description: "Install Docker Sandboxes", command: "winget install -h Docker.sbx" }];
-  if (!await ensureDaemon(sbx)) return [{ description: "Start the Docker Sandboxes daemon", command: "sbx daemon start" }];
-  if ((await invoke(sbx, ["ls"])).status !== 0) return [{ description: "Sign in to Docker", command: "sbx login" }];
+  if (sbx === null) {
+    const args = ["install", "--exact", "--id", "Docker.sbx"];
+    return [{ description: "Install Docker Sandboxes", command: `winget ${args.join(" ")}`,
+      action: { kind: "process", program: "winget", args } }];
+  }
+  // The daemon runs in the foreground, so it is started here rather than as a step to wait on.
+  if (!await ensureDaemon(sbx)) return [{ description: "Start the Docker Sandboxes daemon; it did not start on its own", command: "sbx daemon start" }];
+  if ((await invoke(sbx, ["ls"])).status !== 0) {
+    return [{ description: "Sign in to Docker", command: "sbx login", action: { kind: "process", program: sbx, args: ["login"] } }];
+  }
   const policy = await invoke(sbx, ["policy", "ls"]);
   if (policy.status !== 0 || !policy.stdout.includes("default-deny-all")) {
-    return [{ description: "Block all sandbox network traffic by default", command: "sbx policy init deny-all" }];
+    const args = ["policy", "init", "deny-all"];
+    return [{ description: "Block all sandbox network traffic by default", command: `sbx ${args.join(" ")}`,
+      action: { kind: "process", program: sbx, args } }];
   }
   return [];
 }
