@@ -58,7 +58,7 @@ it("persists the session workspace, approved checks and engine identity", () => 
   reopened.close();
 });
 
-it("backs up a version 1 snapshot and starts with no sessions", () => {
+it("discards a version 1 snapshot and starts with no sessions", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);
   store.create();
@@ -68,6 +68,6 @@ it("backs up a version 1 snapshot and starts with no sessions", () => {
   writeFileSync(join(root, file), JSON.stringify({ format: "tesota-shell-sessions", version: 1, source, sessions: [] }));
   const reopened = openShellSessionStore(source, root);
   expect(reopened.list()).toEqual([]);
-  expect(readdirSync(root)).toContain(`${file}.v1.bak`);
+  expect(readdirSync(root).filter((name) => name.includes(".bak"))).toEqual([]);
   reopened.close();
 });

@@ -41,8 +41,8 @@ export interface ShellSessionStore {
 function readSnapshot(path: string, source: string): Snapshot {
   if (!existsSync(path)) return { format: "tesota-shell-sessions", version: 2, source, sessions: [] };
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+  // Sessions from the retired task-shape flow are discarded; the next save replaces the file.
   if (typeof value === "object" && value !== null && Reflect.get(value, "version") === 1) {
-    renameSync(path, `${path}.v1.bak`);
     return { format: "tesota-shell-sessions", version: 2, source, sessions: [] };
   }
   return snapshotSchema.parse(value);

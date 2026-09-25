@@ -1,8 +1,13 @@
 # 007: Keep execution policy independent from its environment
 
-Status: adopted architectural direction. The container-backed repository
+Status: adopted architectural direction. Since
+[decision 013](013-general-agent-loop-first.md), the container-backed and
+host-local repository profiles below are removed; approved shell commands and
+checks run unsandboxed, and a protected route returns on top of the general
+loop. The rest of this record describes the state before that change. The
+container-backed repository
 profiles, explicit trusted Windows host-local checks, and fixed native Oxlint
-profile are implemented. One small host-local end-to-end task is qualified on
+profile were implemented. One small host-local end-to-end task is qualified on
 Windows; broader usefulness and confinement remain unproved.
 The Vitest profile described in this decision was later retired because it had
 no task-flow consumer; the TypeScript and targeted Node-test profiles are the
