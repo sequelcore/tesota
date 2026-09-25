@@ -1,10 +1,10 @@
 import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { Editor, HStack, ScrollView, Text, VStack, matchesKey, truncateToWidth,
-  type AutocompleteProvider, type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
+import { Editor, HStack, ScrollView, Text, VStack, matchesKey, truncateToWidth, visibleWidth,
+  type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { AgentActivity } from "./integrations/pi-coding-session.js";
 import { tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
-import { bold, colorText, mutedText, tesotaShellTheme, type TesotaShellTheme,
+import { backgroundText, bold, colorText, mutedText, tesotaShellTheme, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
 
@@ -100,28 +100,50 @@ const shellCommands = [
   { name: "quit", description: "Close Tesota" },
 ] as const;
 
-const commandAutocomplete: AutocompleteProvider = {
-  triggerCharacters: ["/"],
-  async getSuggestions(lines, cursorLine, cursorCol) {
-    const prefix = lines[cursorLine]?.slice(0, cursorCol) ?? "";
-    if (cursorLine !== 0 || !prefix.startsWith("/") || prefix.includes(" ")) return null;
-    const items = shellCommands.filter((command) => command.name.startsWith(prefix.slice(1)))
-      .map((command) => ({ value: `/${command.name}`, label: command.name, description: command.description }));
-    return items.length > 0 ? { items, prefix } : null;
-  },
-  applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
-    const current = lines[cursorLine] ?? "";
-    const from = current.startsWith("/") ? 0 : cursorCol - prefix.length;
-    const typed = current.slice(from, cursorCol);
-    const matching = shellCommands.find((command) => `/${command.name}` === typed) ??
-      shellCommands.find((command) => `/${command.name}`.startsWith(typed) && item.value === `/${command.name}`) ??
-      shellCommands.find((command) => `/${command.name}`.startsWith(typed));
-    const value = matching === undefined ? item.value : `/${matching.name}`;
-    const next = current.slice(0, from) + value + current.slice(cursorCol);
-    return { lines: lines.map((line, index) => index === cursorLine ? next : line),
-      cursorLine, cursorCol: from + value.length };
-  },
-};
+/** A compact command picker above the prompt, with a full-width selected row. */
+class CommandMenu implements Component {
+  readonly #theme: TesotaShellTheme;
+  #query = "";
+  #enabled = false;
+  #dismissed = false;
+  #selected = 0;
+  constructor(theme: TesotaShellTheme) { this.#theme = theme; }
+  get matches(): readonly (typeof shellCommands)[number][] {
+    return shellCommands.filter((command) => command.name.startsWith(this.#query.slice(1)));
+  }
+  get visible(): boolean {
+    return this.#enabled && !this.#dismissed && /^\/[a-z]*$/u.test(this.#query) && this.matches.length > 0;
+  }
+  get selected(): (typeof shellCommands)[number] | undefined { return this.visible ? this.matches[this.#selected] : undefined; }
+  update(query: string, enabled: boolean): void {
+    if (query !== this.#query) { this.#query = query; this.#selected = 0; this.#dismissed = false; }
+    this.#enabled = enabled;
+  }
+  move(offset: number): void {
+    const count = this.matches.length;
+    if (count > 0) this.#selected = (this.#selected + offset + count) % count;
+  }
+  dismiss(): void { this.#dismissed = true; }
+  invalidate(): void {}
+  render(width: number): string[] {
+    if (!this.visible || width < 8) return [];
+    const matches = this.matches;
+    const maxRows = 5;
+    const start = Math.max(0, Math.min(this.#selected - 2, matches.length - maxRows));
+    const rows = matches.slice(start, start + maxRows).map((command, offset) => {
+      const selected = start + offset === this.#selected;
+      const name = `${selected ? "›" : " "} /${command.name}`.padEnd(18);
+      const line = truncateToWidth(`${name}${command.description}`, width);
+      const padded = line + " ".repeat(Math.max(0, width - visibleWidth(line)));
+      if (!selected) return mutedText(padded, this.#theme);
+      const emphasized = bold(padded);
+      return this.#theme.selectionBackground === null ? `\x1b[7m${emphasized}\x1b[27m` :
+        backgroundText(emphasized, this.#theme.selectionBackground);
+    });
+    if (matches.length > maxRows) rows.push(mutedText(`  ↑↓ ${this.#selected + 1}/${matches.length}`, this.#theme));
+    return rows;
+  }
+}
 
 function ignoreInterrupt(): void {}
 
@@ -199,6 +221,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly status = new Line();
   private readonly footer = new Line();
   private readonly result = new Text("", 1, 0);
+  private readonly commandMenu: CommandMenu;
   private readonly editor: Editor;
   private timer: ReturnType<typeof setInterval> | undefined;
   private removeInputListener: (() => void) | undefined;
@@ -212,9 +235,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.theme = tesotaShellTheme(options.theme);
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
     initTheme(this.theme.name === "tesota-light" ? "light" : "dark");
+    this.commandMenu = new CommandMenu(this.theme);
     this.editor = new PromptEditor(this.tui, this.theme);
-    this.editor.setAutocompleteProvider(commandAutocomplete);
     this.editor.disableSubmit = true;
+    this.editor.onChange = (value) => { this.updateCommandMenu(value); };
     this.editor.onSubmit = (answer) => { this.submit(answer); };
     this.selectedId = options.initialSession?.id ?? "default";
     this.addSession(this.selectedId, options.initialSession?.title ?? "Session 1",
@@ -232,6 +256,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const session = this.sessions.get(id);
     if (session === undefined) throw new Error("Tesota session unavailable");
     return session;
+  }
+
+  private updateCommandMenu(value: string): void {
+    const session = this.selected();
+    this.commandMenu.update(value, session.pending !== undefined && session.prompt === "> ");
+    this.tui.requestRender();
   }
 
   private compose(): void {
@@ -258,7 +288,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     ], { gap: 2 });
     const content = new VStack([
       { component: reading, basis: 0, grow: 1, minSize: 1 },
-      { component: new VStack([this.status, this.editor, this.footer]), basis: "auto", shrink: 1, minSize: 3 },
+      { component: new VStack([this.status, this.commandMenu, this.editor, this.footer]),
+        basis: "auto", shrink: 1, minSize: 3 },
     ], { gap: 1 });
     this.tui.setLayoutRoot(new HStack([
       { component: this.sidebarScroll, basis: sidebarWidth, shrink: 0,
@@ -371,6 +402,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       else this.cancelPrompt(session);
       return { consume: true };
     }
+    const menuInput = this.handleCommandMenuKey(data);
+    if (menuInput !== undefined) return menuInput;
     if (matchesKey(data, "ctrl+n")) { this.options.onNewSession?.(); return { consume: true }; }
     if (matchesKey(data, "ctrl+w")) { this.options.onCloseSession?.(this.selectedId); return { consume: true }; }
     if (matchesKey(data, "ctrl+q")) { this.options.onQuit?.(); return { consume: true }; }
@@ -381,16 +414,42 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     }
     if (matchesKey(data, "alt+r")) { this.showResult = !this.showResult; this.compose(); return { consume: true }; }
     if (matchesKey(data, "alt+b")) { this.sidebarVisible = !this.sidebarVisible; this.compose(); return { consume: true }; }
-    if (matchesKey(data, "alt+d")) {
-      if (this.selected().transcript.toggleNotice()) this.tui.requestRender();
-      return { consume: true };
-    }
+    if (matchesKey(data, "alt+d")) { this.toggleLatestNotice(); return { consume: true }; }
     if (matchesKey(data, "alt+,") || matchesKey(data, "alt+.")) {
       this.moveInspection(matchesKey(data, "alt+,") ? -1 : 1);
       return { consume: true };
     }
     if (matchesKey(data, "alt+s")) { this.split = !this.split; this.compose(); return { consume: true }; }
     return undefined;
+  }
+
+  private handleCommandMenuKey(data: string): { consume: true } | undefined {
+    if (this.commandMenu.visible) {
+      if (matchesKey(data, "up") || matchesKey(data, "down")) {
+        this.commandMenu.move(matchesKey(data, "up") ? -1 : 1);
+        this.tui.requestRender();
+        return { consume: true };
+      }
+      if (matchesKey(data, "escape")) {
+        this.commandMenu.dismiss();
+        this.tui.requestRender();
+        return { consume: true };
+      }
+      if (matchesKey(data, "enter") || matchesKey(data, "tab")) {
+        const command = this.commandMenu.selected;
+        if (command !== undefined) {
+          const value = `/${command.name}`;
+          if (matchesKey(data, "enter")) this.submit(value);
+          else { this.editor.setText(value); this.commandMenu.dismiss(); this.tui.requestRender(); }
+          return { consume: true };
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private toggleLatestNotice(): void {
+    if (this.selected().transcript.toggleNotice()) this.tui.requestRender();
   }
 
   private moveInspection(offset: number): void {
@@ -519,6 +578,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (id === this.selectedId) {
       this.editor.disableSubmit = false;
       this.tui.setFocus(this.editor);
+      this.updateCommandMenu(this.editor.getText());
     }
     this.updateSidebar();
     this.refreshElapsed();
@@ -576,6 +636,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     session.pending = undefined;
     session.draft = "";
     this.editor.disableSubmit = true;
+    this.commandMenu.update("", false);
     if (answer.length > 0) {
       this.editor.addToHistory(answer);
       this.record(session, { kind: "user", text: answer }, true);

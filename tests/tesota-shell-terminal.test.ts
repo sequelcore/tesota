@@ -88,9 +88,10 @@ it("opens shell commands on slash and keeps the prompt active after running one"
   shell.start();
   const answer = shell.ask("> ");
   terminal.send("/");
-  await new Promise((resolve) => setTimeout(resolve, 10));
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("Start a session");
+  const menu = visible(terminal);
+  expect(menu).toContain("Start a session");
+  expect(menu.indexOf("Start a session")).toBeLessThan(menu.indexOf("›/"));
   terminal.send("new");
   terminal.send("\r");
   expect(onNewSession).toHaveBeenCalledOnce();
@@ -100,7 +101,7 @@ it("opens shell commands on slash and keeps the prompt active after running one"
   shell.stop();
 });
 
-it("uses the typed slash command when autocomplete has a stale selection", async () => {
+it("filters slash commands before dispatching a typed command", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const onNewSession = vi.fn();
@@ -109,7 +110,6 @@ it("uses the typed slash command when autocomplete has a stale selection", async
   shell.start();
   const answer = shell.ask("> ");
   terminal.send("/");
-  await new Promise((resolve) => setTimeout(resolve, 10));
   terminal.send("close");
   terminal.send("\r");
   expect(onCloseSession).toHaveBeenCalledWith("default");
@@ -117,6 +117,27 @@ it("uses the typed slash command when autocomplete has a stale selection", async
   terminal.send("request");
   terminal.send("\r");
   await expect(answer).resolves.toBe("request");
+  shell.stop();
+});
+
+it.each([
+  { theme: "tesota-dark" as const, highlight: "\x1b[48;2;75;61;83m" },
+  { theme: "tesota-light" as const, highlight: "\x1b[48;2;226;214;232m" },
+  { theme: "terminal" as const, highlight: "\x1b[7m" },
+])("highlights the entire selected command row in $theme", ({ theme, highlight }) => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, theme });
+  shell.start();
+  shell.ask("> ").catch(() => undefined);
+  terminal.send("/");
+  tui.renderNow(true);
+  expect(terminal.writes.join("")).toContain(highlight);
+  expect(visible(terminal)).toContain("› /new");
+  terminal.writes.length = 0;
+  terminal.send("\x1b[B");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("› /next");
   shell.stop();
 });
 
