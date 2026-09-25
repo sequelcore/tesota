@@ -112,6 +112,26 @@ function reviewLine(line: string, theme: TesotaShellTheme): string {
   return line;
 }
 
+/** Keep routine multi-line notices readable without losing their recorded detail. */
+class ExpandableNotice implements Component {
+  #expanded = false;
+  readonly #text: string;
+  readonly #theme: TesotaShellTheme;
+  constructor(text: string, theme: TesotaShellTheme) { this.#text = safeTerminalText(text); this.#theme = theme; }
+  get preview(): string {
+    const lines = this.#text.split("\n");
+    const heading = (lines[0] ?? "Notice").replace(/ from your repository into the workspace:$/u, "")
+      .replace(/:$/u, "");
+    return `${truncateToWidth(heading, 42)} · ${lines.length - 1} lines hidden · Alt+D /details`;
+  }
+  toggle(): void { this.#expanded = !this.#expanded; }
+  invalidate(): void {}
+  render(width: number): string[] {
+    const text = this.#expanded ? `${this.#text}\nAlt+D or /details to collapse` : this.preview;
+    return new Text(mutedText(text, this.#theme), 1, 0).render(width);
+  }
+}
+
 /**
  * A session's conversation as components: the operator's messages on their
  * own background, the agent's replies as Markdown that grows while it
@@ -123,6 +143,7 @@ export class Transcript {
   readonly #markdown: MarkdownTheme;
   readonly #replies = new Map<number, Markdown>();
   readonly #tools = new Map<string, ToolBlock>();
+  readonly #notices: ExpandableNotice[] = [];
   #last = "";
 
   constructor(theme: TesotaShellTheme) {
@@ -134,8 +155,21 @@ export class Transcript {
   get lastMessage(): string { return this.#last; }
 
   add(entry: TranscriptEntry): void {
-    this.#append(this.#render(entry));
-    if (entry.kind === "agent" || entry.kind === "notice") this.#last = safeTerminalText(entry.text);
+    const component = this.#render(entry);
+    this.#append(component);
+    if (component instanceof ExpandableNotice) this.#notices.push(component);
+    if (entry.kind === "agent" || entry.kind === "notice") {
+      this.#last = component instanceof ExpandableNotice ? component.preview : safeTerminalText(entry.text);
+    }
+  }
+
+  /** Toggle one recorded long notice, counting back from the latest. */
+  toggleNotice(index = 0): boolean {
+    const notice = this.#notices.at(-1 - index);
+    if (notice === undefined) return false;
+    notice.toggle();
+    this.container.invalidate();
+    return true;
   }
 
   /** Show agent activity; returns the entry to record once a reply or tool call is complete. */
@@ -195,6 +229,9 @@ export class Transcript {
       }
       case "agent": return new Markdown(safeTerminalText(entry.text), 1, 0, this.#markdown);
       case "notice": {
+        if (entry.tone === "info" && entry.text.split("\n").length > 4) {
+          return new ExpandableNotice(entry.text, theme);
+        }
         const text = safeTerminalText(entry.text);
         return new Text(entry.tone === "warning" ? colorText(text, theme.warning) :
           entry.tone === "success" ? colorText(text, theme.success) : mutedText(text, theme), 1, 0);

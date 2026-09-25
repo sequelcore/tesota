@@ -73,8 +73,11 @@ The conversation shows your messages on a tinted background, the agent's
 replies as formatted text while it writes them, and each file it reads or
 edits and each command it runs as one line; successful edits show line counts
 and a short inline patch, while commands show their last few output lines.
-The review still holds the complete diff. Tesota's own notes, such as preparation or newer changes
-from your repository, are dimmed, and warnings are colored. The line above
+The review still holds the complete diff. Tesota's own notes are dimmed; long
+notes, such as a list of newer repository changes, show one summary line until
+you press `Alt+D` to expand or collapse the latest one, even while the agent works.
+At the normal request prompt, `/details` does the same; `/details 2` selects
+the one before it. Warnings are colored. The line above
 the input shows what the session is doing or the question it is waiting on.
 
 A question that needs no changes ends with an answer. The conversation
@@ -108,7 +111,9 @@ not show the change does what you asked; read the diff.
 The left sidebar names the repository and shows each session's state, such as
 `needs you`, `working`, or `idle`. It hides automatically on narrow terminals;
 `Alt+B` hides or shows it when there is room. The line below the prompt shows
-the mode, repository and selected session. `Ctrl+N` starts a new session;
+the mode, repository and selected session. Type `/` at the normal request prompt to see shell
+commands, or `/help` for commands and keyboard shortcuts. These commands stay
+in the shell and do not become agent requests. `Ctrl+N` starts a new session;
 `Alt+J` (or `Ctrl+Tab`) selects the next. `Ctrl+W` closes the selected session and removes
 its workspace and conversation. If the session has unapplied changes, the
 first `Ctrl+W` warns and a second one within five seconds confirms. Stop

@@ -53,6 +53,127 @@ it("retains the last message when stopping before the scheduled render", () => {
   expect(visible(terminal)).toContain("The response was invalid. No work was applied.");
 });
 
+it("collapses long repository notices and expands them without sending a prompt", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 110;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const entries: TranscriptEntry[] = [];
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui,
+    onEntry: (_id, entry) => entries.push(entry) });
+  shell.start();
+  shell.write("Brought 4 newer changes from your repository into the workspace:\n  modified a.ts\n  modified b.ts\n  deleted c.txt\n  modified d.ts");
+  const answer = shell.ask("> ");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("4 lines hidden · Alt+D /details");
+  expect(visible(terminal)).not.toContain("modified b.ts");
+
+  terminal.writes.length = 0;
+  terminal.send("/details");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("modified b.ts");
+  expect(entries).toHaveLength(1);
+  terminal.send("continue");
+  terminal.send("\r");
+  await expect(answer).resolves.toBe("continue");
+  expect(entries.at(-1)).toEqual({ kind: "user", text: "continue" });
+  shell.stop();
+});
+
+it("opens shell commands on slash and keeps the prompt active after running one", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onNewSession = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onNewSession });
+  shell.start();
+  const answer = shell.ask("> ");
+  terminal.send("/");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Start a session");
+  terminal.send("new");
+  terminal.send("\r");
+  expect(onNewSession).toHaveBeenCalledOnce();
+  terminal.send("actual request");
+  terminal.send("\r");
+  await expect(answer).resolves.toBe("actual request");
+  shell.stop();
+});
+
+it("uses the typed slash command when autocomplete has a stale selection", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onNewSession = vi.fn();
+  const onCloseSession = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onNewSession, onCloseSession });
+  shell.start();
+  const answer = shell.ask("> ");
+  terminal.send("/");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  terminal.send("close");
+  terminal.send("\r");
+  expect(onCloseSession).toHaveBeenCalledWith("default");
+  expect(onNewSession).not.toHaveBeenCalled();
+  terminal.send("request");
+  terminal.send("\r");
+  await expect(answer).resolves.toBe("request");
+  shell.stop();
+});
+
+it("restores long notices collapsed with their full text available", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui,
+    initialSession: { id: "saved", title: "Saved", entries: [
+      { kind: "notice", tone: "info", text: "Brought changes:\na.ts\nb.ts\nc.ts\nd.ts" },
+    ] } });
+  shell.start();
+  const answer = shell.ask("> ");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("4 lines hidden · Alt+D /details");
+  terminal.writes.length = 0;
+  terminal.send("/details");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("d.ts");
+  terminal.send("okay");
+  terminal.send("\r");
+  await expect(answer).resolves.toBe("okay");
+  shell.stop();
+});
+
+it("opens a long notice while the agent is working", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  shell.report({ phase: "working" });
+  shell.write("Brought changes:\na.ts\nb.ts\nc.ts\nd.ts");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("4 lines hidden");
+  terminal.writes.length = 0;
+  terminal.send("\x1bd"); // Alt+D works without an active prompt.
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("d.ts");
+  shell.stop();
+});
+
+it("keeps absolute check commands as answers instead of shell commands", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const check = shell.ask("Checks to run: ");
+  terminal.send("/usr/bin/true");
+  terminal.send("\r");
+  await expect(check).resolves.toBe("/usr/bin/true");
+  const request = shell.ask("> ");
+  terminal.send("/usr/bin/true should exist");
+  terminal.send("\r");
+  await expect(request).resolves.toBe("/usr/bin/true should exist");
+  shell.stop();
+});
+
 it("renders Tesota Shell as one persistent terminal surface", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -108,7 +229,7 @@ it("keeps environment preparation visible at the first prompt until it finishes"
   shell.askIn("default", "> ").catch(() => undefined);
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Creating the sandbox");
-  expect(visible(terminal)).toContain("› ● Session 1");
+  expect(visible(terminal)).toContain("● Session 1");
   expect(visible(terminal)).toContain("preparing");
   shell.reportFor("default", { phase: "working" });
   shell.clearProgressFor("default", "preparing");
@@ -211,7 +332,7 @@ it("keeps input and decisions attached to the selected session", async () => {
   shell.writeTo("default", "Review is waiting in the first session.");
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Session 1");
-  expect(visible(terminal)).toContain("new");
+  expect(visible(terminal)).toContain("idle");
   terminal.send("\x1bj");
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Review is waiting in the first session.");
@@ -231,7 +352,7 @@ it("shows session needs in a rail that can be hidden and collapses on narrow ter
   shell.reportFor("other", { phase: "working" });
   shell.askIn("default", "Approve? [y/N] ").catch(() => undefined);
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("› ● Session 1");
+  expect(visible(terminal)).toContain("● Session 1");
   expect(visible(terminal)).toContain("needs you");
   expect(visible(terminal)).toContain("● Session 2");
   expect(visible(terminal)).toContain("working");
@@ -262,7 +383,7 @@ it("keeps the selected session visible when the sidebar has more rows than the t
   shell.selectSession("session-9");
   terminal.writes.length = 0;
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("› ● Session 9");
+  expect(visible(terminal)).toContain("● Session 9");
   shell.stop();
 });
 
@@ -279,7 +400,7 @@ it("offers a view-only comparison while one session keeps input focus", async ()
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Research · view only");
   expect(visible(terminal)).toContain("The other session found a source.");
-  expect(visible(terminal)).toContain("› ● Session 1");
+  expect(visible(terminal)).toContain("● Session 1");
   terminal.send("reply");
   terminal.send("\r");
   await expect(pending).resolves.toBe("reply");

@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { Editor, HStack, ScrollView, Text, VStack, matchesKey, truncateToWidth,
-  type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
+  type AutocompleteProvider, type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { AgentActivity } from "./integrations/pi-coding-session.js";
 import { tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
 import { bold, colorText, mutedText, tesotaShellTheme, type TesotaShellTheme,
@@ -89,6 +89,39 @@ const resultBesideWidth = 120;
 const comparisonWidth = 160;
 const sidebarWidth = 25;
 const sidebarMinWidth = 88;
+const shellCommands = [
+  { name: "new", description: "Start a session" },
+  { name: "next", description: "Switch to the next session" },
+  { name: "close", description: "Close this session" },
+  { name: "result", description: "Show or hide the review" },
+  { name: "sidebar", description: "Show or hide sessions" },
+  { name: "details", description: "Expand or collapse a long notice" },
+  { name: "help", description: "Show commands and shortcuts" },
+  { name: "quit", description: "Close Tesota" },
+] as const;
+
+const commandAutocomplete: AutocompleteProvider = {
+  triggerCharacters: ["/"],
+  async getSuggestions(lines, cursorLine, cursorCol) {
+    const prefix = lines[cursorLine]?.slice(0, cursorCol) ?? "";
+    if (cursorLine !== 0 || !prefix.startsWith("/") || prefix.includes(" ")) return null;
+    const items = shellCommands.filter((command) => command.name.startsWith(prefix.slice(1)))
+      .map((command) => ({ value: `/${command.name}`, label: command.name, description: command.description }));
+    return items.length > 0 ? { items, prefix } : null;
+  },
+  applyCompletion(lines, cursorLine, cursorCol, item, prefix) {
+    const current = lines[cursorLine] ?? "";
+    const from = current.startsWith("/") ? 0 : cursorCol - prefix.length;
+    const typed = current.slice(from, cursorCol);
+    const matching = shellCommands.find((command) => `/${command.name}` === typed) ??
+      shellCommands.find((command) => `/${command.name}`.startsWith(typed) && item.value === `/${command.name}`) ??
+      shellCommands.find((command) => `/${command.name}`.startsWith(typed));
+    const value = matching === undefined ? item.value : `/${matching.name}`;
+    const next = current.slice(0, from) + value + current.slice(cursorCol);
+    return { lines: lines.map((line, index) => index === cursorLine ? next : line),
+      cursorLine, cursorCol: from + value.length };
+  },
+};
 
 function ignoreInterrupt(): void {}
 
@@ -180,6 +213,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
     initTheme(this.theme.name === "tesota-light" ? "light" : "dark");
     this.editor = new PromptEditor(this.tui, this.theme);
+    this.editor.setAutocompleteProvider(commandAutocomplete);
     this.editor.disableSubmit = true;
     this.editor.onSubmit = (answer) => { this.submit(answer); };
     this.selectedId = options.initialSession?.id ?? "default";
@@ -249,15 +283,13 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       const attention = this.attention(session);
       const selected = session.id === this.selectedId;
       const color = attention === "needs you" || attention === "unresolved" ? this.theme.warning :
-        attention === "working" || attention === "preparing" ? this.theme.accent : this.theme.muted;
+        attention === "working" || attention === "preparing" || selected ? this.theme.accent : this.theme.muted;
       const dot = colorText("●", color);
       const title = safeTerminalText(session.title);
-      rows.push(`${selected ? bold(colorText("›", this.theme.accent)) : " "} ${dot} ` +
+      rows.push(`  ${dot} ` +
         `${selected ? bold(title) : mutedText(title, this.theme)}`);
       rows.push(mutedText(`    ${attention || "idle"}`, this.theme));
     }
-    rows.push("", mutedText("Ctrl+N new · Alt+J next", this.theme),
-      mutedText("Ctrl+W close · Alt+B", this.theme));
     this.sidebar.setRows(rows);
     this.sidebarScroll.updateLayout(rows.length, this.tui.terminal.rows, () => this.tui.requestRender());
     const mode = this.mode.startsWith("autonomous") ? "autonomous" :
@@ -349,6 +381,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     }
     if (matchesKey(data, "alt+r")) { this.showResult = !this.showResult; this.compose(); return { consume: true }; }
     if (matchesKey(data, "alt+b")) { this.sidebarVisible = !this.sidebarVisible; this.compose(); return { consume: true }; }
+    if (matchesKey(data, "alt+d")) {
+      if (this.selected().transcript.toggleNotice()) this.tui.requestRender();
+      return { consume: true };
+    }
     if (matchesKey(data, "alt+,") || matchesKey(data, "alt+.")) {
       this.moveInspection(matchesKey(data, "alt+,") ? -1 : 1);
       return { consume: true };
@@ -529,6 +565,14 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const session = this.selected();
     const pending = session.pending;
     if (pending === undefined) return;
+    const command = answer.trim().slice(1).split(/\s+/u)[0];
+    if (session.prompt === "> " && answer.trimStart().startsWith("/") &&
+      shellCommands.some((item) => item.name === command)) {
+      session.draft = "";
+      this.editor.setText("");
+      this.runShellCommand(session, answer.trim());
+      return;
+    }
     session.pending = undefined;
     session.draft = "";
     this.editor.disableSubmit = true;
@@ -539,6 +583,35 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     session.prompt = "> ";
     this.refreshElapsed();
     pending.resolve(answer);
+  }
+
+  private runShellCommand(session: SessionView, input: string): void {
+    const [command, ...args] = input.slice(1).split(/\s+/u);
+    switch (command) {
+      case "new": this.options.onNewSession?.(); break;
+      case "next": {
+        const ids = [...this.sessions.keys()];
+        this.selectSession(ids[(ids.indexOf(this.selectedId) + 1) % ids.length] ?? this.selectedId);
+        break;
+      }
+      case "close": this.options.onCloseSession?.(session.id); break;
+      case "result": this.showResult = !this.showResult; this.compose(); break;
+      case "sidebar": this.sidebarVisible = !this.sidebarVisible; this.compose(); break;
+      case "details": {
+        const number = args.length === 0 ? 1 : Number(args[0]);
+        if (!Number.isSafeInteger(number) || number < 1 || args.length > 1 ||
+          !session.transcript.toggleNotice(number - 1)) {
+          this.writeTo(session.id, "No long notice at that number. Use /details or /details 2.", "warning");
+        } else this.tui.requestRender();
+        break;
+      }
+      case "help":
+        this.writeTo(session.id, "Commands: /new /next /close /result /sidebar /details [number] /help /quit\n" +
+          "Keys: Ctrl+N new · Alt+J next · Ctrl+W close · Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split · Ctrl+Q quit");
+        break;
+      case "quit": this.options.onQuit?.(); break;
+      default: this.writeTo(session.id, "Unknown command. Type / for commands or /help for shortcuts.", "warning");
+    }
   }
 
   private cancelPrompt(session: SessionView): void {
