@@ -40,6 +40,15 @@ it("shows each finding once, marks the operator's calls, and never shows an unfi
   const clean = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
     { reviewer: "Tesota reviewer", tree, status: "completed", summary: "Fine.", findings: [] }] });
   expect(clean.summary).toContain("  ✓ Tesota reviewer: no problems introduced");
+  const tested = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
+    { reviewer: "Tesota reviewer", tree, status: "completed", summary: "Three claims.", findings: [
+      { severity: "high", disposition: "fixable", origin: "introduced", standing: "confirmed", statement: "Real", reason: "r" },
+      { severity: "high", disposition: "fixable", origin: "introduced", standing: "unsettled", statement: "Unclear", reason: "r" },
+      { severity: "high", disposition: "fixable", origin: "introduced", standing: "refuted", statement: "Wrong", reason: "r",
+        refutation: "Line 4 already handles it" }] }] });
+  expect(tested.summary).toContain("  ✗ high · Real\n  ? unsettled · high · Unclear\n  · 1 finding was refuted; see the result panel");
+  expect(tested.summary).not.toContain("Wrong");
+  expect(tested.detail).toContain("Wrong [refuted]\n  r\n  Refuter: Line 4 already handles it");
   const context = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
     { reviewer: "Tesota reviewer", tree, status: "completed", summary: "Only an old problem.", findings: [
       { severity: "high", disposition: "fixable", origin: "preexisting", path: "src/tax.ts", statement: "Tax ignores refunds",

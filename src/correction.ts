@@ -12,15 +12,16 @@ export interface CorrectionRound {
 }
 
 /**
- * Failed or timed-out checks and fixable findings the candidate introduced go
- * back to the agent. Findings for the operator, problems that were already
+ * Failed or timed-out checks, and fixable findings the candidate introduced
+ * that survived refutation, go back to the agent. Findings for the operator, problems that were already
  * there, incomplete reviews and checks that could not run or changed files
  * stay with the operator: the agent cannot or should not settle them.
  */
 export function correctionFor(checks: readonly CheckResult[], reviews: readonly ReviewReport[]): CorrectionRound | undefined {
   const failedChecks = checks.filter((check) => check.outcome === "failed" || check.outcome === "timed_out");
   const findings = reviews.flatMap((report) => report.status === "completed"
-    ? report.findings.filter((finding) => finding.disposition === "fixable" && finding.origin === "introduced") : []);
+    ? report.findings.filter((finding) => finding.disposition === "fixable" && finding.origin === "introduced" &&
+      finding.standing === "confirmed") : []);
   return failedChecks.length === 0 && findings.length === 0 ? undefined : { failedChecks, findings };
 }
 

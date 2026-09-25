@@ -26,6 +26,7 @@ import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
 import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
 import { createPiReviewer } from "./integrations/pi-reviewer.js";
 import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
+import { applyRefutation, refuteFindings } from "./integrations/pi-refuter.js";
 import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
 import { appendAssurance, decisionEntry, reviewEntry, type AssuranceEntry } from "./assurance-journal.js";
 
@@ -287,7 +288,15 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       reports.push(await reviewer.review(input, signal).catch((error: unknown): ReviewReport => ({ reviewer: reviewer.name,
         tree: input.snapshot.tree, status: "incomplete", reason: error instanceof Error ? error.message : "the reviewer failed" })));
     }
-    return reports;
+    if (signal.aborted || !reports.some((report) => report.status === "completed" && report.findings.length > 0)) return reports;
+    surface.reportFor(id, { phase: "reviewing", activity: "Testing each finding" });
+    try {
+      const { runtime, model } = await openModel(signal);
+      return await refuteFindings({ modelRuntime: runtime, model }, input, reports, signal);
+    } catch {
+      // A refuter that could not run leaves every finding unsettled, never confirmed.
+      return applyRefutation(reports, undefined);
+    }
   };
   const codingFor = (id: string, signal: AbortSignal): Promise<CodingSession> => {
     const state = stateFor(id);

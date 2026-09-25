@@ -113,6 +113,14 @@ weakened test. A reviewer that does not finish says so; it is never shown as
 a clean review. Findings are advice, and a clean review does not replace
 reading the change.
 
+Before a finding can send work back to the agent, a separate refuter, which
+does not see the reviewer's reasoning, tries to disprove it. Confirmed
+findings appear as above; findings it could neither confirm nor disprove are
+marked `? unsettled`; refuted ones are only counted, with the refuter's
+evidence in the result panel. Only confirmed defects that this change
+introduced go back to the agent; problems that were already there appear as
+`· already there`.
+
 When LemmaScript proved contracts in the changes, a second reviewer follows
 ClaimCheck's method: one session restates each proved contract without
 seeing your requests, and another compares that restatement with them. A

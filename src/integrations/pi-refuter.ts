@@ -1,0 +1,110 @@
+import { type ModelRuntime, type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
+import { type Api, type Model, Type } from "@earendil-works/pi-ai";
+import type { Finding, FindingStanding, ReviewInput, ReviewReport } from "../review.js";
+import { type CodingTurnResult, CodingSession, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
+import { reviewMessage } from "./pi-reviewer.js";
+
+/**
+ * The refuter (decision 016): a cold, read-only session that tries to
+ * disprove every finding before any of it can act. It sees the request
+ * record, the candidate, the verifier results and each finding's claim, but
+ * not the reviewer's session, to avoid inheriting its reasoning.
+ */
+
+export type RefutationVerdict = "confirmed" | "refuted" | "undetermined";
+
+export interface Refutation {
+  readonly id: number;
+  readonly verdict: RefutationVerdict;
+  /** The code, output or reasoning that settles it. */
+  readonly evidence: string;
+}
+
+const verdictSchema = Type.Object({ verdicts: Type.Array(Type.Object({
+  id: Type.Integer({ minimum: 1, description: "The finding's number" }),
+  verdict: Type.Union([Type.Literal("confirmed"), Type.Literal("refuted"), Type.Literal("undetermined")]),
+  evidence: Type.String({ description: "For confirmed: the code lines or check output that show the problem. " +
+    "For refuted: what shows it is not a problem. For undetermined: what is missing." }),
+})) });
+
+function recordVerdicts(record: (verdicts: readonly Refutation[]) => void): ToolDefinition {
+  return defineTool({ name: "record_verdicts", label: "Record verdicts",
+    description: "Record one verdict per finding once you have investigated them all. Call it exactly once.",
+    parameters: verdictSchema,
+    execute: async (_id, value) => {
+      record(value.verdicts);
+      return { content: [{ type: "text", text: "Recorded." }], details: undefined, terminate: true };
+    } });
+}
+
+function refuterPrompt(root: string): string {
+  return "You are Tesota's refuter. Reviewers raised findings about a change another agent made; your job is to " +
+    "disprove them. For each finding, investigate the code with the read, search and list tools and decide:\n" +
+    "- confirmed: you can point to the code lines or check output that show the problem exists and that it " +
+    "affects what the user asked for. Quote them.\n" +
+    "- refuted: the code, the requests or the checks show it is not a problem, it was already handled, it rests " +
+    "on an assumption the requests do not state, or it is speculation about code nobody showed is affected.\n" +
+    "- undetermined: you cannot establish either with the evidence available.\n" +
+    "Do not confirm a finding because it sounds plausible or because a reviewer was confident. Correct code is " +
+    "often judged non-conformant by mistake, so look for the evidence that it is correct first. When you are done, " +
+    "call record_verdicts once with a verdict for every finding." +
+    `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
+}
+
+function describeFinding(finding: Finding, id: number): string {
+  const where = finding.path === undefined ? "" : ` at ${finding.path}${finding.line === undefined ? "" : `:${finding.line}`}`;
+  return `${id}. [${finding.severity}, ${finding.origin}]${where}: ${finding.statement}\n   Reviewer's reason: ${finding.reason}`;
+}
+
+/** What the refuter is told: the review input and the findings, numbered across every report. */
+export function refutationMessage(input: ReviewInput, findings: readonly Finding[]): string {
+  return `${reviewMessage(input)}\n\nFindings to test, one verdict each:\n${findings.map((finding, index) =>
+    describeFinding(finding, index + 1)).join("\n")}`;
+}
+
+function standingOf(verdict: RefutationVerdict | undefined): FindingStanding {
+  return verdict === "confirmed" ? "confirmed" : verdict === "refuted" ? "refuted" : "unsettled";
+}
+
+/**
+ * Give each finding its standing from the refuter's verdicts, numbered in
+ * report order. A finding without a verdict, or every finding when the
+ * refuter did not finish, is unsettled: never confirmed or cleared by omission.
+ */
+export function applyRefutation(reports: readonly ReviewReport[], verdicts: readonly Refutation[] | undefined): ReviewReport[] {
+  let id = 0;
+  return reports.map((report) => {
+    if (report.status !== "completed") return report;
+    return { ...report, findings: report.findings.map((finding) => {
+      id += 1;
+      const verdict = verdicts?.find((entry) => entry.id === id);
+      return { ...finding, standing: standingOf(verdict?.verdict),
+        ...(verdict === undefined ? {} : { refutation: verdict.evidence }) };
+    }) };
+  });
+}
+
+/** The refuter's verdicts, or undefined when it did not record them. */
+export function verdictsFrom(turn: CodingTurnResult, recorded: readonly Refutation[] | undefined): readonly Refutation[] | undefined {
+  return turn.status === "cancelled" || turn.status === "unsettled" ? undefined : recorded;
+}
+
+export interface RefuterOptions {
+  readonly modelRuntime: ModelRuntime;
+  readonly model: Model<Api>;
+}
+
+/** Test every finding in the reports and return them with their standing. */
+export async function refuteFindings(options: RefuterOptions, input: ReviewInput, reports: readonly ReviewReport[],
+  signal: AbortSignal): Promise<ReviewReport[]> {
+  const findings = reports.flatMap((report) => report.status === "completed" ? report.findings : []);
+  if (findings.length === 0) return [...reports];
+  let recorded: readonly Refutation[] | undefined;
+  const session = await CodingSession.start({ cwd: input.checkout, modelRuntime: options.modelRuntime, model: options.model,
+    systemPrompt: refuterPrompt(input.checkout),
+    tools: [...readOnlyFileTools(input.checkout), recordVerdicts((verdicts) => { recorded ??= verdicts; })] });
+  try {
+    const turn = await session.run(refutationMessage(input, findings), signal);
+    return applyRefutation(reports, verdictsFrom(turn, recorded));
+  } finally { session.dispose(); }
+}

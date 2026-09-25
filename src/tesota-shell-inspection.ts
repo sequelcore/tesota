@@ -37,13 +37,19 @@ function location(finding: Finding): string {
  */
 function reviewLines(report: ReviewReport): string[] {
   if (report.status === "incomplete") return [`  ✗ ${report.reviewer} did not finish: ${report.reason}`];
-  const introduced = report.findings.filter((finding) => finding.origin === "introduced");
-  const lines = introduced.map((finding) => finding.disposition === "operator"
-    ? `  ⚠ needs you · ${location(finding)}${finding.statement}`
-    : `  ✗ ${finding.severity} · ${location(finding)}${finding.statement}`);
+  const standing = report.findings.filter((finding) => finding.standing !== "refuted");
+  const introduced = standing.filter((finding) => finding.origin === "introduced");
+  const lines = introduced.map((finding) => {
+    const what = finding.disposition === "operator" ? "needs you" : finding.severity;
+    if (finding.standing === "unsettled") return `  ? unsettled · ${what} · ${location(finding)}${finding.statement}`;
+    return `  ${finding.disposition === "operator" ? "⚠" : "✗"} ${what} · ${location(finding)}${finding.statement}`;
+  });
   if (introduced.length === 0) lines.push(`  ✓ ${report.reviewer}: no problems introduced`);
-  return [...lines, ...report.findings.filter((finding) => finding.origin === "preexisting")
-    .map((finding) => `  · already there · ${location(finding)}${finding.statement}`)];
+  lines.push(...standing.filter((finding) => finding.origin === "preexisting")
+    .map((finding) => `  · already there · ${location(finding)}${finding.statement}`));
+  const refuted = report.findings.length - standing.length;
+  if (refuted > 0) lines.push(`  · ${refuted} ${refuted === 1 ? "finding was" : "findings were"} refuted; see the result panel`);
+  return lines;
 }
 
 function reviewDetail(report: ReviewReport): string {
@@ -51,7 +57,8 @@ function reviewDetail(report: ReviewReport): string {
   return `  ${report.reviewer}\n  ${report.summary}` + report.findings.map((finding) =>
     `\n\n  ${finding.origin === "preexisting" ? "already there" : finding.disposition === "operator" ? "needs you" :
       `${finding.severity}, fixable`}: ` +
-    `${location(finding)}${finding.statement}\n  ${finding.reason}`).join("");
+    `${location(finding)}${finding.statement}${finding.standing === undefined ? "" : ` [${finding.standing}]`}\n  ${finding.reason}` +
+    (finding.refutation === undefined ? "" : `\n  Refuter: ${finding.refutation}`)).join("");
 }
 
 /**

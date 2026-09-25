@@ -13,6 +13,8 @@ export type FindingSeverity = "high" | "medium" | "low";
 export type FindingDisposition = "fixable" | "operator";
 /** Whether this candidate introduced the problem or it was already there (decision 016). */
 export type FindingOrigin = "introduced" | "preexisting";
+/** Whether the finding survived refutation; Tesota sets it, never the reviewer (decision 016). */
+export type FindingStanding = "confirmed" | "refuted" | "unsettled";
 
 export interface Finding {
   readonly severity: FindingSeverity;
@@ -24,6 +26,10 @@ export interface Finding {
   readonly statement: string;
   /** What in the request, the code or the checks shows it. */
   readonly reason: string;
+  /** Absent until the refuter has tested the finding. */
+  readonly standing?: FindingStanding;
+  /** The refuter's evidence for its verdict. */
+  readonly refutation?: string;
 }
 
 /** Everything a reviewer may see. The working agent's reasoning is deliberately absent. */
