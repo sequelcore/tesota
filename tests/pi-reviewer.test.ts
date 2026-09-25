@@ -86,3 +86,36 @@ it("reminds a reviewer that answered in prose once, and then accepts its submiss
     expect(prompts[1]).toContain("You finished without calling submit_review");
   } finally { start.mockRestore(); }
 });
+
+it("names each lens, tells it its focus, and offers the rules lens only where the repository has instructions", async () => {
+  const { vi } = await import("vitest");
+  const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { CodingSession } = await import("../src/integrations/pi-coding-session.js");
+  const { applicableLenses, createPiReviewer, REVIEW_LENSES } = await import("../src/integrations/pi-reviewer.js");
+  const root = await mkdtemp(join(tmpdir(), "tesota-lenses-"));
+  try {
+    expect(applicableLenses(root).map((lens) => lens.name)).toEqual(["correctness and regressions", "security and authority"]);
+    await writeFile(join(root, "AGENTS.md"), "- Never log secrets.\n");
+    expect(applicableLenses(root).map((lens) => lens.name)).toEqual(REVIEW_LENSES.map((lens) => lens.name));
+    let prompt = "";
+    const start = vi.spyOn(CodingSession, "start").mockImplementation(async (options) => {
+      prompt = options.systemPrompt;
+      const submit = options.tools.find((tool) => tool.name === "submit_review");
+      return { dispose: vi.fn(), run: vi.fn(async () => {
+        await submit?.execute("call", { summary: "Nothing", findings: [] }, undefined, undefined, {} as ExtensionContext);
+        return { status: "completed" as const, reply: "" };
+      }) } as unknown as Awaited<ReturnType<typeof CodingSession.start>>;
+    });
+    try {
+      const lens = REVIEW_LENSES[1]!;
+      const report = await createPiReviewer({ modelRuntime: {} as never, model: {} as never, lens })
+        .review({ ...input, checkout: root }, new AbortController().signal);
+      expect(report.reviewer).toBe("Tesota reviewer · security and authority");
+      expect(prompt).toContain(`This is a focused review: ${lens.focus} Other reviewers cover the rest: do not report a problem ` +
+        "outside your focus, and submit an empty list when you find none within it.");
+      expect(prompt).toContain("Never log secrets.");
+    } finally { start.mockRestore(); }
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

@@ -125,6 +125,10 @@ export interface CaseScore {
   readonly falsePositives: number;
   readonly unsettled: number;
   readonly refuted: number;
+  /** Findings merged into another reviewer's report of the same problem. */
+  readonly duplicates: number;
+  /** Findings the operator would see: counted, not merged. */
+  readonly shown: number;
 }
 
 function matches(finding: Finding, defect: SeededDefect): boolean {
@@ -141,7 +145,8 @@ function matches(finding: Finding, defect: SeededDefect): boolean {
 export function scoreCase(testCase: EvaluationCase, reports: readonly ReviewReport[], mode: "raw" | "refuted"): CaseScore {
   const findings = reports.flatMap((report) => report.status === "completed" ? report.findings : [])
     .filter((finding) => finding.origin === "introduced");
-  const counted = mode === "raw" ? findings : findings.filter((finding) => finding.standing === "confirmed");
+  const counted = mode === "raw" ? findings
+    : findings.filter((finding) => finding.standing === "confirmed" && finding.duplicateOf === undefined);
   return {
     name: testCase.name,
     found: testCase.defects.filter((defect) => counted.some((finding) => matches(finding, defect))).length,
@@ -150,5 +155,7 @@ export function scoreCase(testCase: EvaluationCase, reports: readonly ReviewRepo
       .some((defect) => matches(finding, defect))).length,
     unsettled: mode === "raw" ? 0 : findings.filter((finding) => finding.standing === "unsettled").length,
     refuted: mode === "raw" ? 0 : findings.filter((finding) => finding.standing === "refuted").length,
+    duplicates: mode === "raw" ? 0 : findings.filter((finding) => finding.duplicateOf !== undefined).length,
+    shown: counted.length,
   };
 }

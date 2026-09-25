@@ -87,7 +87,11 @@ not adopted.
 2. The refuter and finding standing.
 3. The evaluation set, run before and after the refuter.
 4. Delta review and fix validation in correction rounds.
-5. Computed depth and the first lenses.
+5. Computed depth and the first lenses. Measured on 2026-09-25: forced deep
+   review found the same planted defects as standard review with no false
+   positives, but showed up to twice as many findings, because the refuter
+   merged only some duplicates between lenses. Lenses run only when depth is
+   deep; merging duplicates reliably is open.
 6. Executable probes, where the refuter writes a check that demonstrates a
    finding and runs it in the sandbox on a copy of the candidate: after the
    evaluation set shows which findings remain unsettled.

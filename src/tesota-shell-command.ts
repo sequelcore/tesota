@@ -24,7 +24,8 @@ import { runChecks, suggestChecks } from "./workspace-checks.js";
 import { flagVerificationChanges } from "./verification-changes.js";
 import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
 import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
-import { createPiReviewer } from "./integrations/pi-reviewer.js";
+import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.js";
+import { reviewDepth, type DepthDecision } from "./review-depth.js";
 import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
 import { applyRefutation, refuteFindings } from "./integrations/pi-refuter.js";
 import { validateFixes, validationReport } from "./integrations/pi-fix-validator.js";
@@ -282,21 +283,23 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
    * The review of a candidate, or in a correction round the validation of what
    * was sent back followed by the review of the correction's own diff.
    */
-  const reviewCandidate = async (id: string, input: ReviewInput, read: (path: string) => string | undefined,
-    signal: AbortSignal): Promise<ReviewReport[]> => {
+  const reviewCandidate = async (id: string, input: ReviewInput, depth: DepthDecision,
+    read: (path: string) => string | undefined, signal: AbortSignal): Promise<ReviewReport[]> => {
     const validation = await validateCorrection(id, input, signal);
-    const reports = await reviewAndRefute(id, input, read, signal);
+    const reports = await reviewAndRefute(id, input, depth, read, signal);
     return validation === undefined ? reports : [validation, ...reports];
   };
-  const reviewAndRefute = async (id: string, input: ReviewInput, read: (path: string) => string | undefined,
-    signal: AbortSignal): Promise<ReviewReport[]> => {
-    surface.reportFor(id, { phase: "reviewing" });
+  /** The reviewers for this depth, run in parallel, then one refuter over all their findings. */
+  const reviewAndRefute = async (id: string, input: ReviewInput, depth: DepthDecision,
+    read: (path: string) => string | undefined, signal: AbortSignal): Promise<ReviewReport[]> => {
+    surface.reportFor(id, { phase: "reviewing", activity: depth.depth === "deep" ? "Deep review" : "Reviewing" });
     const reviewers: Reviewer[] = [];
     try {
       const { runtime, model } = await openModel(signal);
-      reviewers.push(createPiReviewer({ modelRuntime: runtime, model, onActivity: (activity) => {
-        if (activity.type === "tool_started") surface.reportFor(id, { phase: "reviewing", activity: `Reviewing · ${activity.subject || activity.tool}` });
-      } }));
+      reviewers.push(createPiReviewer({ modelRuntime: runtime, model }));
+      if (depth.depth === "deep") {
+        for (const lens of applicableLenses(input.checkout)) reviewers.push(createPiReviewer({ modelRuntime: runtime, model, lens }));
+      }
       if (input.checks.some((check) => check.verifier === "lemmascript" && check.outcome === "passed")) {
         reviewers.push(createClaimCheckReviewer({ modelRuntime: runtime, model, read }));
       }
@@ -304,13 +307,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       return [{ reviewer: "Tesota reviewer", tree: input.snapshot.tree, status: "incomplete",
         reason: error instanceof Error ? error.message : "the reviewer could not start" }];
     }
-    const reports: ReviewReport[] = [];
-    for (const reviewer of reviewers) {
-      if (signal.aborted) break;
-      surface.reportFor(id, { phase: "reviewing", activity: `Reviewing · ${reviewer.name}` });
-      reports.push(await reviewer.review(input, signal).catch((error: unknown): ReviewReport => ({ reviewer: reviewer.name,
-        tree: input.snapshot.tree, status: "incomplete", reason: error instanceof Error ? error.message : "the reviewer failed" })));
-    }
+    const reports = await Promise.all(reviewers.map((reviewer) => reviewer.review(input, signal)
+      .catch((error: unknown): ReviewReport => ({ reviewer: reviewer.name, tree: input.snapshot.tree, status: "incomplete",
+        reason: error instanceof Error ? error.message : "the reviewer failed" }))));
     if (signal.aborted || !reports.some((report) => report.status === "completed" && report.findings.length > 0)) return reports;
     surface.reportFor(id, { phase: "reviewing", activity: "Testing each finding" });
     try {
@@ -493,17 +492,18 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       // A correction round reviews only the correction; the verifiers above always cover the whole candidate.
       const scope = correction === undefined ? snapshot
         : { ...snapshot, base: correction.previousTree, ...workspace.compare(correction.previousTree, snapshot.tree) };
+      const depth = reviewDepth(scope, flags, checks);
       const reports = await reviewCandidate(id, { checkout: workspace.checkout, requests, snapshot: scope, checks, flags,
         ...(correction === undefined ? {} : { correction: { sentBack: correction.sentBack } }) },
-      (path) => read(snapshot.tree, path), signal);
+      depth, (path) => read(snapshot.tree, path), signal);
       if (signal.aborted) return { status: "cancelled" };
       // Reviewers have no tool that writes, but only an unchanged candidate may be applied.
       const unchanged = workspace.snapshot().tree === snapshot.tree;
       const reviews: ReviewReport[] = unchanged ? reports : reports.map((report) => ({ reviewer: report.reviewer,
         tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" }));
       if (unchanged) state.reviewed = snapshot;
-      surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews }));
-      await journal(id, workspace, reviewEntry(snapshot, requests, checks, flags, reviews));
+      surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews, depth }));
+      await journal(id, workspace, reviewEntry(snapshot, requests, checks, flags, reviews, depth));
       return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews, requests };
     }),
     apply: () => serialized(async (): Promise<ApplyResult> => {

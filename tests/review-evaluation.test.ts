@@ -21,8 +21,8 @@ it("counts a matched planted defect once and every other counted finding as a fa
     reason: "Only one case is covered", standing: "confirmed" }), finding({ path: "src/other.js", statement: "Naming",
     reason: "Unclear", standing: "confirmed" }), finding({ standing: "refuted" }), finding({ origin: "preexisting" })])];
   // The thin-tests finding is a real secondary problem: neither a hit nor a false positive.
-  expect(scoreCase(boundary, reports, "raw")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 0 });
-  expect(scoreCase(boundary, reports, "refuted")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 1 });
+  expect(scoreCase(boundary, reports, "raw")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 0, duplicates: 0, shown: 4 });
+  expect(scoreCase(boundary, reports, "refuted")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 1, duplicates: 0, shown: 3 });
 });
 
 it("scores a refuted or unsettled finding on a control as removed, not as a false positive", () => {

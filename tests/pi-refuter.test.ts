@@ -43,3 +43,16 @@ it("shows the refuter each finding's claim, numbered, with the review input", ()
   expect(message).toContain("1. Discount orders over $100");
   expect(message).toContain("Findings to test, one verdict each:\n1. [high, introduced] at src/price.ts:3: A\n   Reviewer's reason: why A\n2.");
 });
+
+it("merges a finding that repeats an earlier one, and ignores a duplicate that points forward", () => {
+  const tested = applyRefutation(reports, [
+    { id: 1, verdict: "confirmed", evidence: "price.ts:3" },
+    { id: 2, verdict: "confirmed", evidence: "same line", duplicateOf: 1 },
+    { id: 3, verdict: "confirmed", evidence: "ok", duplicateOf: 3 },
+  ]);
+  expect(tested[0]).toMatchObject({ findings: [{ statement: "A" }, { statement: "B", duplicateOf: "Tesota reviewer: A" }] });
+  const first = tested[0];
+  expect(first?.status === "completed" && "duplicateOf" in (first.findings[0] ?? {})).toBe(false);
+  const third = tested[2];
+  expect(third?.status === "completed" && "duplicateOf" in (third.findings[0] ?? {})).toBe(false);
+});

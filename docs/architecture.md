@@ -95,6 +95,7 @@ at once; applications are serialized.
 | `correction.ts` | Which failures and findings go back to the agent, the correction message, and the round limit |
 | `review.ts` | The reviewer contract: what a reviewer sees, its findings, and incomplete reviews |
 | `integrations/pi-claimcheck.ts` | ClaimCheck's round-trip method on contracts LemmaScript proved: restated without the requests, then compared with them |
+| `review-depth.ts` | Choosing standard or deep review from facts about the candidate, with the reasons shown |
 | `integrations/pi-fix-validator.ts` | After a correction round, whether each finding sent back is resolved in the current code |
 | `integrations/pi-refuter.ts` | The refuter: a cold, read-only session that tries to disprove every finding, and the standing each finding gets |
 | `review-evaluation.ts`, `live-review.ts` | The review evaluation set with known truth, its scoring, and `bun run live:review` |

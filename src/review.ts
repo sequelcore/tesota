@@ -30,6 +30,12 @@ export interface Finding {
   readonly standing?: FindingStanding;
   /** The refuter's evidence for its verdict. */
   readonly refutation?: string;
+  /**
+   * Set when another reviewer's finding already reports the same problem: the
+   * reviewer and statement of that finding. A duplicate is kept in the
+   * journal but neither shown twice nor sent back twice.
+   */
+  readonly duplicateOf?: string;
 }
 
 /** Everything a reviewer may see. The working agent's reasoning is deliberately absent. */

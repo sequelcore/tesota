@@ -49,7 +49,32 @@ export function submitReviewTool(record: (summary: string, findings: readonly Fi
   });
 }
 
-function reviewerPrompt(root: string): string {
+/**
+ * A focused review for deep reviews (decision 016), in the manner of Codex's
+ * per-skill reviewers and Gentle AI's lenses (MIT). Each lens reports only
+ * within its focus; the request-conformance reviewer covers the rest.
+ */
+export interface ReviewLens {
+  readonly name: string;
+  readonly focus: string;
+  /** Whether the lens needs the repository's own instruction file. */
+  readonly needsInstructions?: boolean;
+}
+
+export const REVIEW_LENSES: readonly ReviewLens[] = [
+  { name: "correctness and regressions", focus: "Focus only on logic errors, boundary and edge cases, error handling, " +
+    "and callers or data the change breaks. For each problem, name the inputs that trigger it and the affected code." },
+  { name: "security and authority", focus: "Focus only on authorization and access decisions, input validation, " +
+    "secrets and credentials, injection, and unsafe defaults. Report a concrete way the change allows something the " +
+    "requests or the existing code do not allow, not general hardening advice." },
+  { name: "repository rules", needsInstructions: true, focus: "Focus only on the repository's own instructions, " +
+    "quoted at the end. Report a violation only when a specific rule applies to the changed code, and quote the rule " +
+    "with its file and line in the reason." },
+];
+
+function reviewerPrompt(root: string, lens?: ReviewLens): string {
+  const focus = lens === undefined ? "" : `\n\nThis is a focused review: ${lens.focus} Other reviewers cover the rest: ` +
+    "do not report a problem outside your focus, and submit an empty list when you find none within it.";
   return "You are Tesota's reviewer. Another agent changed a private copy of a repository to satisfy the user's " +
     "requests; Tesota froze the result and ran the repository's checks on it. Judge whether the result does what " +
     "the user asked and whether the checks' evidence covers it. You cannot change files: investigate with the " +
@@ -62,7 +87,7 @@ function reviewerPrompt(root: string): string {
     "style preferences. Use disposition `operator` for an ambiguous requirement, a trade-off without one right " +
     "answer, a changed test or check whose legitimacy depends on intent, work beyond what was asked, or a " +
     "security-sensitive choice; use `fixable` for a clear defect against the requests. When you are done, call " +
-    "submit_review exactly once, with an empty list if you found no problems." +
+    "submit_review exactly once, with an empty list if you found no problems." + focus +
     `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
 }
 
@@ -112,6 +137,14 @@ export interface PiReviewerOptions {
   readonly modelRuntime: ModelRuntime;
   readonly model: Model<Api>;
   readonly onActivity?: (activity: AgentActivity) => void;
+  /** A focused lens; without one, the reviewer judges conformance to the requests as a whole. */
+  readonly lens?: ReviewLens;
+}
+
+/** The lenses that apply to a repository: the rules lens only where it has instructions to apply. */
+export function applicableLenses(root: string): ReviewLens[] {
+  const instructions = repositoryInstructions(root) !== "";
+  return REVIEW_LENSES.filter((lens) => lens.needsInstructions !== true || instructions);
 }
 
 /**
@@ -119,13 +152,14 @@ export interface PiReviewerOptions {
  * read-only file tools, no shell, and none of the working agent's context.
  */
 export function createPiReviewer(options: PiReviewerOptions): Reviewer {
+  const name = options.lens === undefined ? REVIEWER : `${REVIEWER} · ${options.lens.name}`;
   return {
-    name: REVIEWER,
+    name,
     async review(input, signal) {
       const root = realpathSync(input.checkout);
       let submitted: { summary: string; findings: readonly Finding[] } | undefined;
       const session = await CodingSession.start({ cwd: root, modelRuntime: options.modelRuntime, model: options.model,
-        systemPrompt: reviewerPrompt(root),
+        systemPrompt: reviewerPrompt(root, options.lens),
         tools: [...readOnlyFileTools(root), submitReviewTool((summary, findings) => {
           if (submitted !== undefined) return false;
           submitted = { summary, findings };
@@ -136,7 +170,7 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
         let turn = await session.run(reviewMessage(input), signal);
         // A model sometimes answers in prose; one reminder, without new investigation, before the review counts as unfinished.
         if (turn.status === "completed" && submitted === undefined) turn = await session.run(submissionReminder, signal);
-        return reviewReport(input.snapshot.tree, turn, submitted);
+        return { ...reviewReport(input.snapshot.tree, turn, submitted), reviewer: name };
       } finally { session.dispose(); }
     },
   };

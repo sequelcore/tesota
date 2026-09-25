@@ -18,6 +18,8 @@ export interface Refutation {
   readonly verdict: RefutationVerdict;
   /** The code, output or reasoning that settles it. */
   readonly evidence: string;
+  /** An earlier finding's number when this one reports the same problem. */
+  readonly duplicateOf?: number;
 }
 
 const verdictSchema = Type.Object({ verdicts: Type.Array(Type.Object({
@@ -25,6 +27,8 @@ const verdictSchema = Type.Object({ verdicts: Type.Array(Type.Object({
   verdict: Type.Union([Type.Literal("confirmed"), Type.Literal("refuted"), Type.Literal("undetermined")]),
   evidence: Type.String({ description: "For confirmed: the code lines or check output that show the problem. " +
     "For refuted: what shows it is not a problem. For undetermined: what is missing." }),
+  duplicateOf: Type.Optional(Type.Integer({ minimum: 1, description:
+    "The number of an earlier finding that reports the same problem at the same place, if any" })),
 })) });
 
 function recordVerdicts(record: (verdicts: readonly Refutation[]) => void): ToolDefinition {
@@ -46,7 +50,9 @@ function refuterPrompt(root: string): string {
     "on an assumption the requests do not state, or it is speculation about code nobody showed is affected.\n" +
     "- undetermined: you cannot establish either with the evidence available.\n" +
     "Do not confirm a finding because it sounds plausible or because a reviewer was confident. Correct code is " +
-    "often judged non-conformant by mistake, so look for the evidence that it is correct first. When you are done, " +
+    "often judged non-conformant by mistake, so look for the evidence that it is correct first. Several reviewers " +
+    "may report the same problem: when a finding reports the same problem at the same place as an earlier one, " +
+    "give that earlier number as duplicateOf. When you are done, " +
     "call record_verdicts once with a verdict for every finding." +
     `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
 }
@@ -72,14 +78,19 @@ function standingOf(verdict: RefutationVerdict | undefined): FindingStanding {
  * refuter did not finish, is unsettled: never confirmed or cleared by omission.
  */
 export function applyRefutation(reports: readonly ReviewReport[], verdicts: readonly Refutation[] | undefined): ReviewReport[] {
+  const numbered = reports.flatMap((report) => report.status === "completed"
+    ? report.findings.map((finding) => ({ reviewer: report.reviewer, finding })) : []);
   let id = 0;
   return reports.map((report) => {
     if (report.status !== "completed") return report;
     return { ...report, findings: report.findings.map((finding) => {
       id += 1;
       const verdict = verdicts?.find((entry) => entry.id === id);
+      // Only a strictly earlier finding can be the original, so duplicates cannot point at each other in a cycle.
+      const original = verdict?.duplicateOf !== undefined && verdict.duplicateOf < id ? numbered[verdict.duplicateOf - 1] : undefined;
       return { ...finding, standing: standingOf(verdict?.verdict),
-        ...(verdict === undefined ? {} : { refutation: verdict.evidence }) };
+        ...(verdict === undefined ? {} : { refutation: verdict.evidence }),
+        ...(original === undefined ? {} : { duplicateOf: `${original.reviewer}: ${original.finding.statement}` }) };
     }) };
   });
 }

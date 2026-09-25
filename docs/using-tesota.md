@@ -121,6 +121,13 @@ evidence in the result panel. Only confirmed defects that this change
 introduced go back to the agent; problems that were already there appear as
 `· already there`.
 
+Tesota reviews more deeply when the changes touch security- or
+authority-sensitive files, change existing tests or what checks the result,
+leave a verifier failing, or are large. The review then says why, and focused
+reviewers for correctness, security and authority, and your repository's
+`AGENTS.md` or `CLAUDE.md` rules join in; findings several of them report are
+merged before you see them.
+
 When LemmaScript proved contracts in the changes, a second reviewer follows
 ClaimCheck's method: one session restates each proved contract without
 seeing your requests, and another compares that restatement with them. A

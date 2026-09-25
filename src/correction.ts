@@ -21,7 +21,7 @@ export function correctionFor(checks: readonly CheckResult[], reviews: readonly 
   const failedChecks = checks.filter((check) => check.outcome === "failed" || check.outcome === "timed_out");
   const findings = reviews.flatMap((report) => report.status === "completed"
     ? report.findings.filter((finding) => finding.disposition === "fixable" && finding.origin === "introduced" &&
-      finding.standing === "confirmed") : []);
+      finding.standing === "confirmed" && finding.duplicateOf === undefined) : []);
   return failedChecks.length === 0 && findings.length === 0 ? undefined : { failedChecks, findings };
 }
 

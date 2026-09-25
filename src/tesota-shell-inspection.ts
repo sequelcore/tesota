@@ -1,4 +1,5 @@
 import type { Finding, ReviewReport } from "./review.js";
+import type { DepthDecision } from "./review-depth.js";
 import type { ShellInspection } from "./tesota-shell-terminal.js";
 import type { VerificationChange } from "./verification-changes.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
@@ -12,6 +13,8 @@ export interface ReviewRecord {
   /** The operator's requests behind the candidate, verbatim. */
   readonly requests: readonly string[];
   readonly reviews: readonly ReviewReport[];
+  /** How deeply the candidate was reviewed and why; absent when no review ran. */
+  readonly depth?: DepthDecision;
 }
 
 function checkDetail(check: CheckResult): string {
@@ -37,17 +40,18 @@ function location(finding: Finding): string {
  */
 function reviewLines(report: ReviewReport): string[] {
   if (report.status === "incomplete") return [`  ✗ ${report.reviewer} did not finish: ${report.reason}`];
-  const standing = report.findings.filter((finding) => finding.standing !== "refuted");
+  const standing = report.findings.filter((finding) => finding.standing !== "refuted" && finding.duplicateOf === undefined);
   const introduced = standing.filter((finding) => finding.origin === "introduced");
   const lines = introduced.map((finding) => {
     const what = finding.disposition === "operator" ? "needs you" : finding.severity;
     if (finding.standing === "unsettled") return `  ? unsettled · ${what} · ${location(finding)}${finding.statement}`;
     return `  ${finding.disposition === "operator" ? "⚠" : "✗"} ${what} · ${location(finding)}${finding.statement}`;
   });
-  if (introduced.length === 0) lines.push(`  ✓ ${report.reviewer}: no problems introduced`);
+  const duplicates = report.findings.filter((finding) => finding.duplicateOf !== undefined).length;
+  if (introduced.length === 0 && duplicates === 0) lines.push(`  ✓ ${report.reviewer}: no problems introduced`);
   lines.push(...standing.filter((finding) => finding.origin === "preexisting")
     .map((finding) => `  · already there · ${location(finding)}${finding.statement}`));
-  const refuted = report.findings.length - standing.length;
+  const refuted = report.findings.filter((finding) => finding.standing === "refuted").length;
   if (refuted > 0) lines.push(`  · ${refuted} ${refuted === 1 ? "finding was" : "findings were"} refuted; see the result panel`);
   return lines;
 }
@@ -58,7 +62,8 @@ function reviewDetail(report: ReviewReport): string {
     `\n\n  ${finding.origin === "preexisting" ? "already there" : finding.disposition === "operator" ? "needs you" :
       `${finding.severity}, fixable`}: ` +
     `${location(finding)}${finding.statement}${finding.standing === undefined ? "" : ` [${finding.standing}]`}\n  ${finding.reason}` +
-    (finding.refutation === undefined ? "" : `\n  Refuter: ${finding.refutation}`)).join("");
+    (finding.refutation === undefined ? "" : `\n  Refuter: ${finding.refutation}`) +
+    (finding.duplicateOf === undefined ? "" : `\n  Same problem as ${finding.duplicateOf}`)).join("");
 }
 
 /**
@@ -66,7 +71,7 @@ function reviewDetail(report: ReviewReport): string {
  * file, check, flagged change and finding once, and the full record for the
  * result panel.
  */
-export function inspectReview({ snapshot, checks, flags, requests, reviews }: ReviewRecord): ShellInspection {
+export function inspectReview({ snapshot, checks, flags, requests, reviews, depth }: ReviewRecord): ShellInspection {
   const first = checks[0];
   const where = first === undefined ? "No checks ran." : first.guarantees.filesystem === "host"
     ? `Checks ran on this exact content on this computer (${first.environment}), without isolation.`
@@ -79,7 +84,9 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews }: Re
     ["Changes marked ⚠ alter what checks this result; only you can decide whether they are legitimate."];
   return {
     title: `Review · ${snapshot.changes.length} ${snapshot.changes.length === 1 ? "file" : "files"}`,
-    summary: [...files, ...results, ...flagged, ...reviews.flatMap(reviewLines), ...flagNote,
+    summary: [...files, ...results, ...flagged,
+      ...(depth?.depth === "deep" ? [`  · deep review: ${depth.reasons.join("; ")}`] : []),
+      ...reviews.flatMap(reviewLines), ...flagNote,
       `${where} Checks and review do not replace reading the change.`].join("\n"),
     detail: `Requested\n${requests.map((request, index) => `  ${index + 1}. ${request}`).join("\n") || "  (not recorded)"}` +
       `\n\nFiles\n${snapshot.changes.map((change) => `  ${change.status} ${change.path}`).join("\n")}` +

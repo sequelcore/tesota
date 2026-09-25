@@ -49,6 +49,11 @@ it("shows each finding once, marks the operator's calls, and never shows an unfi
   expect(tested.summary).toContain("  ✗ high · Real\n  ? unsettled · high · Unclear\n  · 1 finding was refuted; see the result panel");
   expect(tested.summary).not.toContain("Wrong");
   expect(tested.detail).toContain("Wrong [refuted]\n  r\n  Refuter: Line 4 already handles it");
+  const deep = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [],
+    depth: { depth: "deep", reasons: ["changes existing tests (src/price.test.ts)", "changes 500 lines"] } });
+  expect(deep.summary).toContain("  · deep review: changes existing tests (src/price.test.ts); changes 500 lines");
+  expect(inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [], depth: { depth: "standard", reasons: [] } })
+    .summary).not.toContain("deep review");
   const context = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
     { reviewer: "Tesota reviewer", tree, status: "completed", summary: "Only an old problem.", findings: [
       { severity: "high", disposition: "fixable", origin: "preexisting", path: "src/tax.ts", statement: "Tax ignores refunds",

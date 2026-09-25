@@ -31,6 +31,11 @@ it("sends back only findings that survived refutation", () => {
   }
 });
 
+it("sends a problem back once, however many reviewers reported it", () => {
+  const repeated: ReviewReport = { ...review, findings: [review.findings[0]!, { ...review.findings[0]!, duplicateOf: "Tesota reviewer: A" }] };
+  expect(correctionFor([check("passed")], [repeated])?.findings).toHaveLength(1);
+});
+
 it("never sends back a problem the candidate did not introduce", () => {
   const old: ReviewReport = { ...review, findings: [{ ...review.findings[0]!, origin: "preexisting" }] };
   expect(correctionFor([check("passed")], [old])).toBeUndefined();

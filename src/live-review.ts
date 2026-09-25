@@ -8,7 +8,8 @@ import { hostProvider } from "./host-environment.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
 import { refuteFindings } from "./integrations/pi-refuter.js";
-import { createPiReviewer } from "./integrations/pi-reviewer.js";
+import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.js";
+import { reviewDepth } from "./review-depth.js";
 import type { ReviewReport } from "./review.js";
 import { EVALUATION_CASES, scoreCase, type CaseScore, type EvaluationCase } from "./review-evaluation.js";
 import { validateFixes } from "./integrations/pi-fix-validator.js";
@@ -33,7 +34,7 @@ function write(root: string, files: Readonly<Record<string, string>>): void {
 function totals(scores: readonly CaseScore[]): Record<string, number> {
   const sum = (key: keyof Omit<CaseScore, "name">): number => scores.reduce((total, score) => total + score[key], 0);
   return { found: sum("found"), seeded: sum("seeded"), falsePositives: sum("falsePositives"),
-    unsettled: sum("unsettled"), refuted: sum("refuted") };
+    unsettled: sum("unsettled"), refuted: sum("refuted"), duplicates: sum("duplicates"), shown: sum("shown") };
 }
 
 /**
@@ -71,6 +72,12 @@ async function measureCorrections(ai: { readonly modelRuntime: ModelRuntime; rea
   return results;
 }
 
+// --depth=computed (default) chooses depth as Tesota does; standard and deep force one for comparison.
+const depthArgument = process.argv.find((argument) => argument.startsWith("--depth="))?.slice("--depth=".length) ?? "computed";
+if (!["computed", "standard", "deep"].includes(depthArgument)) throw new Error("Use --depth=computed, standard or deep.");
+const depthMode = depthArgument as "computed" | "standard" | "deep";
+const skipCorrections = process.argv.includes("--skip-corrections");
+
 const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false, allowModelNetwork: false });
 const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
 if (model === undefined) throw new Error("The Codex model is unavailable. Run tesota auth login.");
@@ -98,9 +105,14 @@ try {
     const input = { checkout: workspace.checkout, requests: await workspace.requests(), snapshot, checks,
       flags: flagVerificationChanges(snapshot, (revision, path) => workspace.contentAt(revision, path)) };
     const started = Date.now();
-    const review = await createPiReviewer({ modelRuntime: runtime, model }).review(input, signal);
+    const decision = reviewDepth(snapshot, input.flags, checks);
+    const deep = depthMode === "deep" || depthMode === "computed" && decision.depth === "deep";
+    const ai = { modelRuntime: runtime, model };
+    const reviews = await Promise.all([createPiReviewer(ai),
+      ...(deep ? applicableLenses(workspace.checkout).map((lens) => createPiReviewer({ ...ai, lens })) : [])]
+      .map((reviewer) => reviewer.review(input, signal)));
     const reviewed = Date.now();
-    const tested = await refuteFindings({ modelRuntime: runtime, model }, input, [review], signal);
+    const tested = await refuteFindings(ai, input, reviews, signal);
     const done = Date.now();
     // Measure the refuter directly: a planted false finding it should kill.
     let planted: string | undefined;
@@ -111,17 +123,17 @@ try {
       planted = judged?.status === "completed" ? judged.findings[0]?.standing : "unsettled";
       plantedResults.push(planted ?? "unsettled");
     }
-    raw.push(scoreCase(testCase, [review], "raw"));
+    raw.push(scoreCase(testCase, reviews, "raw"));
     refuted.push(scoreCase(testCase, tested, "refuted"));
-    const corrections = await measureCorrections({ modelRuntime: runtime, model }, testCase, workspace, snapshot, input, tested, signal);
-    cases.push({ name: testCase.name, checks: checks.map((check) => check.outcome), reviewMs: reviewed - started,
+    const corrections = skipCorrections ? undefined : await measureCorrections(ai, testCase, workspace, snapshot, input, tested, signal);
+    cases.push({ name: testCase.name, depth: deep ? "deep" : "standard", depthReasons: decision.reasons, checks: checks.map((check) => check.outcome), reviewMs: reviewed - started,
       refuteMs: done - reviewed, raw: raw.at(-1), refuted: refuted.at(-1), plantedFalseClaim: planted, corrections, reports: tested });
     console.log(`${testCase.name}: raw ${JSON.stringify(raw.at(-1))} | refuted ${JSON.stringify(refuted.at(-1))} | ` +
       `review ${Math.round((reviewed - started) / 1000)} s, refuter ${Math.round((done - reviewed) / 1000)} s` +
       (planted === undefined ? "" : ` | planted false claim: ${planted}`));
   }
 } finally { rmSync(root, { recursive: true, force: true }); }
-const record = { at: new Date().toISOString(), model: LIVE_CODEX_MODEL_ID, raw: totals(raw), refuted: totals(refuted),
+const record = { at: new Date().toISOString(), model: LIVE_CODEX_MODEL_ID, depthMode, raw: totals(raw), refuted: totals(refuted),
   plantedFalseClaims: { total: plantedResults.length, refuted: plantedResults.filter((result) => result === "refuted").length,
     confirmed: plantedResults.filter((result) => result === "confirmed").length }, cases };
 mkdirSync(join("live-runs", "review"), { recursive: true });
