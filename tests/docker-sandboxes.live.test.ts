@@ -30,6 +30,7 @@ beforeAll(async () => {
   workspace = join(root, "workspace");
   await mkdir(workspace);
   await writeFile(join(workspace, "hello.txt"), "inside\n");
+  await writeFile(join(workspace, "package.json"), "{}\n");
   await writeFile(join(root, "outside.txt"), "OUTSIDE-SENTINEL\n");
   sandbox = await dockerSandboxesProvider.prepare(workspace);
 }, 600_000);
@@ -50,6 +51,24 @@ it.runIf(live)("reads and writes the workspace and nothing outside it", async ()
   const write = await run("echo escaped > ../escaped.txt");
   expect(write.exitCode).not.toBe(0);
   expect(existsSync(join(root, "escaped.txt"))).toBe(false);
+}, 120_000);
+
+it.runIf(live)("confines root inside the sandbox the same way", async () => {
+  expect((await run("sudo -n id -u")).output.trim()).toBe("0");
+  const read = await run("sudo -n cat ../outside.txt");
+  expect(read.exitCode).not.toBe(0);
+  expect(read.output).not.toContain("OUTSIDE-SENTINEL");
+  // Root can write the VM's copy of the parent directory; the host's must stay untouched.
+  await run("sudo -n sh -c 'echo escaped > ../escaped.txt'");
+  expect(existsSync(join(root, "escaped.txt"))).toBe(false);
+  const blocked = await run("sudo -n curl -sS -m 10 -o /dev/null -w '%{http_code}' https://example.com/ || true");
+  expect(blocked.output).not.toContain("200");
+}, 120_000);
+
+it.runIf(live)("keeps node_modules on the sandbox's own disk", async () => {
+  expect(await run("echo kept > node_modules/probe.txt && cat node_modules/probe.txt"))
+    .toMatchObject({ outcome: "exited", exitCode: 0, output: expect.stringContaining("kept") });
+  expect(existsSync(join(workspace, "node_modules", "probe.txt"))).toBe(false);
 }, 120_000);
 
 it.runIf(live)("reaches package registries and nothing else", async () => {

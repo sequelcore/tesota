@@ -79,6 +79,7 @@ at once; applications are serialized.
 | `workspace.ts` | Base commit, snapshots, revert and settling applied work |
 | `execution-environment.ts` | Provider-neutral interface for where commands run, and the guarantees a provider declares |
 | `host-environment.ts` | The `host` provider: commands run directly on this machine |
+| `docker-sandboxes-kit.ts` | The Sandbox Kit Spec workload that bakes pinned runtimes into a cached sandbox image and keeps `node_modules` on the sandbox's disk |
 | `docker-sandboxes-environment.ts` | The `docker-sandboxes` provider: readiness, sandbox lifecycle, setup network phase, allowlist and confirmed stops |
 | `toolchain.ts` | Reading a repository's pinned runtimes, setup script and dependency install, and the pinned mise installer |
 | `execution-providers.ts` | Choosing a session's mode and provider, `tesota setup`, and releasing provider resources |
@@ -121,7 +122,10 @@ lockfile install (`bun install --frozen-lockfile` or `npm ci`). Only during
 this phase may the sandbox also reach the hosts toolchains download from,
 such as nodejs.org and GitHub release assets; Tesota removes those rules and
 reads the sandbox's rule list back before the agent runs, and deletes the
-sandbox if it cannot confirm they are gone. A failed step stops setup but not
+sandbox if it cannot confirm they are gone. The pinned runtimes are baked into
+a sandbox kit that `sbx` builds once per set of versions and reuses for every
+later session, and a JavaScript repository's `node_modules` lives on a volume
+on the sandbox's own disk instead of the slower workspace mount. A failed step stops setup but not
 the session, and the operator and agent are told what failed. A fingerprint of
 the setup inputs skips setup when nothing changed. A command that is cancelled or times out is stopped inside the
 sandbox and confirmed gone; otherwise it is reported as unconfirmed.

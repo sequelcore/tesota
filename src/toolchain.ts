@@ -4,15 +4,16 @@ import { join } from "node:path";
 
 /**
  * What a repository needs inside an isolated environment before the agent
- * starts: runtimes pinned by files it already commits, an optional
- * `.tesota/setup.sh`, and its dependency install. Toolchains are installed
- * with mise, which also reads `mise.toml` and `.tool-versions` itself.
+ * starts: runtimes pinned by files it already commits, tools declared in
+ * mise's own files, an optional `.tesota/setup.sh`, and its dependency install.
  */
 export interface ToolchainPlan {
   /** Runtime versions Tesota found, such as `{ node: "24.15.0", bun: "1.4.2" }`. */
   readonly tools: Readonly<Record<string, string>>;
-  /** Files the plan was read from, for the operator and the agent. */
+  /** Files the runtime versions were read from, for the operator and the agent. */
   readonly sources: readonly string[];
+  /** `mise.toml` or `.tool-versions` files that mise installs itself inside the environment. */
+  readonly miseFiles: readonly string[];
   readonly setupScript: string | null;
   /** The lockfile-based install, when no setup script takes over project setup. */
   readonly dependencies: string | null;
@@ -28,7 +29,7 @@ export const TOOLCHAIN_HOSTS: readonly string[] = Object.freeze([
 ]);
 
 /** mise v2026.9.13 release binaries, checked against these hashes before use. */
-const mise = Object.freeze({
+export const MISE_RELEASE: Readonly<{ version: string; sha256: Readonly<{ x64: string; arm64: string }> }> = Object.freeze({
   version: "v2026.9.13",
   sha256: Object.freeze({
     x64: "a72f49916b33ba952ba398046c5cc91a58238f0b718fee1d938206ef2af21c6d",
@@ -81,6 +82,11 @@ function runtimeVersions(checkout: string, sources: string[]): Record<string, st
   return tools;
 }
 
+/** Whether the checkout's root is a JavaScript package, whose installs land in its node_modules. */
+export function hasNodeModules(checkout: string): boolean {
+  return existsSync(join(checkout, "package.json"));
+}
+
 function dependencyInstall(checkout: string): string | null {
   if (existsSync(join(checkout, "bun.lock")) || existsSync(join(checkout, "bun.lockb"))) return "bun install --frozen-lockfile";
   if (existsSync(join(checkout, "package-lock.json"))) return "npm ci";
@@ -90,18 +96,23 @@ function dependencyInstall(checkout: string): string | null {
 export function planToolchain(checkout: string): ToolchainPlan {
   const sources: string[] = [];
   const tools = runtimeVersions(checkout, sources);
-  for (const file of ["mise.toml", ".mise.toml", ".tool-versions"]) if (existsSync(join(checkout, file))) sources.push(file);
+  const miseFiles = ["mise.toml", ".mise.toml", ".tool-versions"].filter((file) => existsSync(join(checkout, file)));
   const setupScript = existsSync(join(checkout, ".tesota", "setup.sh")) ? ".tesota/setup.sh" : null;
   const dependencies = setupScript === null ? dependencyInstall(checkout) : null;
-  const fingerprint = createHash("sha256").update(JSON.stringify({ mise: mise.version, tools, sources,
-    setup: setupScript === null ? null : readText(checkout, setupScript),
-    dependencies })).digest("hex");
-  return { tools, sources, setupScript, dependencies, fingerprint };
+  const fingerprint = createHash("sha256").update(JSON.stringify({ mise: MISE_RELEASE.version, tools,
+    miseFiles: Object.fromEntries(miseFiles.map((file) => [file, readText(checkout, file)])),
+    setup: setupScript === null ? null : readText(checkout, setupScript), dependencies })).digest("hex");
+  return { tools, sources, miseFiles, setupScript, dependencies, fingerprint };
 }
 
-/** Whether a plan needs anything installed or run at all. */
+/** Whether anything must run inside the environment after its runtimes are in place. */
 export function needsSetup(plan: ToolchainPlan): boolean {
-  return Object.keys(plan.tools).length > 0 || plan.sources.length > 0 || plan.setupScript !== null || plan.dependencies !== null;
+  return plan.miseFiles.length > 0 || plan.setupScript !== null || plan.dependencies !== null;
+}
+
+/** Whether setup must reach hosts beyond package registries, such as toolchain downloads. */
+export function needsDownloadHosts(plan: ToolchainPlan): boolean {
+  return plan.miseFiles.length > 0 || plan.setupScript !== null;
 }
 
 /** POSIX shell that installs the pinned mise binary into ~/.local/bin after checking its hash. */
@@ -109,9 +120,9 @@ export function miseInstallScript(): string {
   return [
     "set -eu",
     'case "$(uname -m)" in x86_64|amd64) arch=x64 ;; aarch64|arm64) arch=arm64 ;; *) echo "unsupported architecture"; exit 1 ;; esac',
-    `case "$arch" in x64) sum=${mise.sha256.x64} ;; arm64) sum=${mise.sha256.arm64} ;; esac`,
+    `case "$arch" in x64) sum=${MISE_RELEASE.sha256.x64} ;; arm64) sum=${MISE_RELEASE.sha256.arm64} ;; esac`,
     'mkdir -p "$HOME/.local/bin"',
-    `curl -fsSL -o "$HOME/.local/bin/mise.download" "https://github.com/jdx/mise/releases/download/${mise.version}/mise-${mise.version}-linux-$arch"`,
+    `curl -fsSL -o "$HOME/.local/bin/mise.download" "https://github.com/jdx/mise/releases/download/${MISE_RELEASE.version}/mise-${MISE_RELEASE.version}-linux-$arch"`,
     'echo "$sum  $HOME/.local/bin/mise.download" | sha256sum -c -',
     'chmod +x "$HOME/.local/bin/mise.download"',
     'mv "$HOME/.local/bin/mise.download" "$HOME/.local/bin/mise"',
@@ -119,8 +130,7 @@ export function miseInstallScript(): string {
   ].join("\n");
 }
 
-/** Shell that installs the plan's runtimes globally and any tools the repository's mise files declare. */
-export function toolsInstallScript(plan: ToolchainPlan): string {
-  const specs = Object.entries(plan.tools).map(([tool, version]) => `${tool}@${version}`);
-  return ["set -eu", ...(specs.length === 0 ? [] : [`mise use --global ${specs.join(" ")}`]), "mise install"].join("\n");
+/** Shell that installs the tools the repository's own mise files declare. */
+export function miseFilesInstallScript(): string {
+  return "set -eu\nmise install";
 }

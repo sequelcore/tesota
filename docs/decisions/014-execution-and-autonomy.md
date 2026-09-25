@@ -198,12 +198,33 @@ Bun 1.4.2, `bun install --frozen-lockfile`) in 69 s, `bun run typecheck`
 passed inside, a second preparation was skipped in 2 s, and nodejs.org was
 refused afterward.
 
+Prepared toolchains are reused across sessions, as Codex, Claude Code and
+Cursor cache their environments. The provider writes a Sandbox Kit Spec v3
+workload kit whose build stage installs the pinned runtimes with the
+hash-checked mise onto Docker's shell template; `sbx` builds a local kit once
+and reuses it while its content is unchanged, and the kit directory is named
+by that content. Build-phase kit arguments are baked into the kit, so the
+runtime versions are the arguments' defaults. The kit also declares a 20 GB
+volume on the sandbox's own disk and a root startup hook that bind-mounts it
+over the workspace's `node_modules` whenever the repository root has a
+`package.json`, because dependency installs through the workspace mount took
+about 60 s against 3 s on the sandbox's disk. The in-sandbox path arrives as
+a create-phase environment argument, never spliced into the command, and the
+host checkout keeps an empty `node_modules`. On 2026-09-26 each new session
+on Tesota's repository was prepared in 31 s, down from 116 s for the first
+and 70 s for later ones, and `bun run typecheck` passed inside in 2 s.
+
+The sandbox's `agent` user can use `sudo` without a password and root holds
+full capabilities inside the VM. That does not widen the boundary: root can
+change only the VM's own filesystem, and the live suite confirms root cannot
+read or write the host outside the workspace or pass the network allowlist.
+
 The provider stops a command by tagging it with a unique environment variable,
 killing every process that carries it, and confirming none remain; otherwise
 the outcome is `unconfirmed`. The opt-in suite
 `tests/docker-sandboxes.live.test.ts` (`TESOTA_LIVE_SANDBOX=1`) reruns the
-workspace, network, variable, cancellation and timeout controls; it passed on
-2026-09-26.
+workspace, network, variable, cancellation and timeout controls, as the
+`agent` user and as root, and the dependency volume; it passed on 2026-09-26.
 
 ## Consequences
 

@@ -42,13 +42,13 @@ Done on 2026-09-26: the Docker Sandboxes provider, qualified by the live
 isolation controls; autonomous sessions when it is ready and supervised ones
 otherwise; a default package-registry allowlist; `tesota setup`; and sandbox
 preparation from the repository's pinned runtimes, `.tesota/setup.sh` and
-lockfile, with download hosts open only during setup. Next:
+lockfile, with download hosts open only during setup; the pinned runtimes
+cached as a sandbox kit reused across sessions, with `node_modules` on the
+sandbox's own disk. Next:
 
 - Pending decisions: a blocked network destination becomes a question the
   operator can answer.
 - Setup that runs the missing steps instead of only listing them.
-- Reuse prepared toolchains across sessions, for example as a cached image
-  keyed by the setup fingerprint, as Codex, Claude Code and Cursor do.
 
 ### 3. Daemon and remote access
 

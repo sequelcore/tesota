@@ -1,12 +1,14 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { cpus, totalmem } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { EnvironmentGuarantees, ExecutionEnvironment, ExecutionProvider, PrepareOptions, PreparationStep,
   ProviderReadiness, RunOptions, RunResult, SetupStep } from "./execution-environment.js";
-import { miseInstallScript, needsSetup, planToolchain, TOOLCHAIN_HOSTS, toolsInstallScript,
-  type ToolchainPlan } from "./toolchain.js";
+import { DEPENDENCIES_ARGUMENT, KIT_RUNTIMES, kitRuntimes, writeToolchainKit } from "./docker-sandboxes-kit.js";
+import { hasNodeModules, miseFilesInstallScript, miseInstallScript, needsDownloadHosts, needsSetup, planToolchain,
+  TOOLCHAIN_HOSTS, type ToolchainPlan } from "./toolchain.js";
 
 /**
  * Commands run in a Docker Sandboxes microVM per workspace. Only the workspace
@@ -88,8 +90,13 @@ function contains(parent: string, child: string): boolean {
   return difference === "" || !isAbsolute(difference) && difference !== ".." && !difference.startsWith(`..${sep}`);
 }
 
-function sandboxName(workspace: string): string {
-  return `tesota-${createHash("sha256").update(resolve(workspace).toLowerCase()).digest("hex").slice(0, 16)}`;
+/** Every sandbox of a workspace starts with this; the suffix names its toolchain. */
+function sandboxPrefix(workspace: string): string {
+  return `tesota-${createHash("sha256").update(resolve(workspace).toLowerCase()).digest("hex").slice(0, 12)}-`;
+}
+
+function listedSandboxes(listing: string): string[] {
+  return listing.split(/\r?\n/u).map((line) => line.split(/\s+/u)[0] ?? "").filter((name) => name.length > 0);
 }
 
 /** Kill every process tagged with this run and report whether any remain. */
@@ -177,12 +184,10 @@ async function closeToolchainHosts(sbx: string, name: string): Promise<boolean> 
 }
 
 function setupStages(plan: ToolchainPlan): { description: string; script: string }[] {
-  const specs = Object.entries(plan.tools).map(([tool, version]) => `${tool} ${version}`);
   const stages: { description: string; script: string }[] = [];
-  if (specs.length > 0 || plan.sources.length > 0) {
+  if (plan.miseFiles.length > 0) {
     stages.push({ description: "Install mise", script: miseInstallScript() });
-    stages.push({ description: specs.length > 0 ? `Install ${specs.join(", ")}` : "Install the repository's declared tools",
-      script: toolsInstallScript(plan) });
+    stages.push({ description: `Install the tools in ${plan.miseFiles.join(" and ")}`, script: miseFilesInstallScript() });
   }
   if (plan.setupScript !== null) stages.push({ description: `Run ${plan.setupScript}`, script: `sh ${plan.setupScript}` });
   if (plan.dependencies !== null) stages.push({ description: `Install dependencies (${plan.dependencies})`, script: plan.dependencies });
@@ -204,22 +209,10 @@ async function runSetupStages(sbx: string, name: string, cwd: string, plan: Tool
   return steps;
 }
 
-/**
- * Install what the repository pins, with the toolchain hosts open only for
- * this phase. If they cannot be closed again, the sandbox is removed so no
- * agent runs with wider network access. A marker skips unchanged setups.
- */
-async function prepareToolchain(sbx: string, name: string, workspace: string,
-  onProgress: (text: string) => void): Promise<PreparedToolchain> {
-  const cwd = sandboxPath(workspace);
-  const [home, defaultPath] = (await execScript(sbx, name, cwd, "printf '%s\\n%s' \"$HOME\" \"$PATH\"", {})).stdout.split("\n");
-  if (home === undefined || defaultPath === undefined) throw new Error("The sandbox environment could not be read");
-  const variables = { MISE_YES: "1", MISE_TRUSTED_CONFIG_PATHS: cwd,
-    PATH: `${home}/.local/share/mise/shims:${home}/.local/bin:${defaultPath.trim()}` };
-  const plan = planToolchain(workspace);
-  if (!needsSetup(plan)) return { steps: [], variables };
-  const marker = await execScript(sbx, name, cwd, `cat "${setupMarker}" 2>/dev/null || true`, {});
-  if (marker.stdout.trim() === plan.fingerprint) return { steps: [], variables };
+/** Run the stages, opening the toolchain hosts only when they are needed and confirming they close. */
+async function runSetup(sbx: string, name: string, cwd: string, plan: ToolchainPlan,
+  variables: Readonly<Record<string, string>>, onProgress: (text: string) => void): Promise<PreparationStep[]> {
+  if (!needsDownloadHosts(plan)) return runSetupStages(sbx, name, cwd, plan, variables, onProgress);
   if ((await invoke(sbx, ["policy", "allow", "network", "--sandbox", name, TOOLCHAIN_HOSTS.join(",")])).status !== 0) {
     throw new Error("The setup network rules could not be added");
   }
@@ -229,10 +222,50 @@ async function prepareToolchain(sbx: string, name: string, workspace: string,
     throw new Error("The setup network rules could not be removed, so the sandbox was deleted");
   }
   if (!Array.isArray(steps)) throw steps instanceof Error ? steps : new Error("Sandbox setup failed");
+  return steps;
+}
+
+/**
+ * Finish preparing a sandbox whose image already carries the pinned runtimes:
+ * mise's own files, the setup script and the dependency install. A marker
+ * skips unchanged setups.
+ */
+async function prepareToolchain(sbx: string, name: string, workspace: string, plan: ToolchainPlan,
+  onProgress: (text: string) => void): Promise<PreparedToolchain> {
+  const cwd = sandboxPath(workspace);
+  const [home, defaultPath] = (await execScript(sbx, name, cwd, "printf '%s\\n%s' \"$HOME\" \"$PATH\"", {})).stdout.split("\n");
+  if (home === undefined || defaultPath === undefined) throw new Error("The sandbox environment could not be read");
+  const runtimes = KIT_RUNTIMES.map((tool) => `/opt/tesota/${tool}/bin`).join(":");
+  const variables = { MISE_YES: "1", MISE_TRUSTED_CONFIG_PATHS: cwd, NPM_CONFIG_PREFIX: `${home}/.npm-global`,
+    BUN_INSTALL: `${home}/.bun`, PATH: [`${home}/.local/share/mise/shims`, runtimes, `${home}/.local/bin`,
+      `${home}/.npm-global/bin`, `${home}/.bun/bin`, defaultPath.trim()].join(":") };
+  if (!needsSetup(plan)) return { steps: [], variables };
+  const marker = await execScript(sbx, name, cwd, `cat "${setupMarker}" 2>/dev/null || true`, {});
+  if (marker.stdout.trim() === plan.fingerprint) return { steps: [], variables };
+  const steps = await runSetup(sbx, name, cwd, plan, variables, onProgress);
   if (steps.every((step) => step.outcome === "done")) {
     await execScript(sbx, name, cwd, `echo ${plan.fingerprint} > "${setupMarker}"`, {});
   }
   return { steps, variables };
+}
+
+const createTimeoutMs = 20 * 60_000;
+
+/** Create a sandbox from a kit directory, with the registry allowlist and resource caps. */
+async function createSandbox(sbx: string, name: string, workspace: string, kit: string,
+  kitArguments: readonly string[]): Promise<void> {
+  const created = await invoke(sbx, ["create", kit, workspace, "--name", name,
+    ...kitArguments.flatMap((argument) => ["--kit-arg", argument]),
+    "--cpus", String(Math.max(2, Math.floor(cpus().length / 2))),
+    "--memory", `${Math.max(2, Math.min(8, Math.floor(totalmem() / 2 ** 31)))}g`, "--quiet"], createTimeoutMs);
+  if (created.status !== 0) {
+    throw new Error(`The sandbox could not be created: ${`${created.stdout}${created.stderr}`.trim().slice(-600)}`);
+  }
+  const allowed = await invoke(sbx, ["policy", "allow", "network", "--sandbox", name, DEFAULT_ALLOWED_HOSTS.join(",")]);
+  if (allowed.status !== 0) {
+    await invoke(sbx, ["rm", "--force", name]);
+    throw new Error("The sandbox network rules could not be set");
+  }
 }
 
 async function readinessSteps(): Promise<SetupStep[]> {
@@ -261,24 +294,33 @@ export const dockerSandboxesProvider: ExecutionProvider = {
   async prepare(workspace: string, options: PrepareOptions = {}): Promise<ExecutionEnvironment> {
     const sbx = await locateSbx();
     if (sbx === null || !await ensureDaemon(sbx)) throw new Error("Docker Sandboxes is not available");
-    const name = sandboxName(workspace);
+    const onProgress = options.onProgress ?? (() => {});
+    const plan = planToolchain(workspace);
+    const runtimes = kitRuntimes(plan);
+    const kit = await writeToolchainKit(runtimes);
+    const dependencies = hasNodeModules(workspace);
+    const name = `${sandboxPrefix(workspace)}${kit.id.slice(0, 8)}${dependencies ? "-deps" : ""}`;
     const listed = await invoke(sbx, ["ls"]);
     if (listed.status !== 0) throw new Error("Docker Sandboxes is not signed in");
-    if (!listed.stdout.split(/\r?\n/u).some((line) => line.split(/\s+/u)[0] === name)) {
-      const created = await invoke(sbx, ["create", "shell", workspace, "--name", name, "--cpus", String(Math.max(2, Math.floor(cpus().length / 2))),
-        "--memory", `${Math.max(2, Math.min(8, Math.floor(totalmem() / 2 ** 31)))}g`, "--quiet"], 300_000);
-      if (created.status !== 0) throw new Error("The sandbox could not be created");
-      const allowed = await invoke(sbx, ["policy", "allow", "network", "--sandbox", name, DEFAULT_ALLOWED_HOSTS.join(",")]);
-      if (allowed.status !== 0) {
-        await invoke(sbx, ["rm", "--force", name]);
-        throw new Error("The sandbox network rules could not be set");
-      }
+    const existing = listedSandboxes(listed.stdout).filter((sandbox) => sandbox.startsWith(sandboxPrefix(workspace)));
+    for (const stale of existing.filter((sandbox) => sandbox !== name)) await invoke(sbx, ["rm", "--force", stale]);
+    if (!existing.includes(name)) {
+      const tools = Object.entries(runtimes).map(([tool, version]) => `${tool} ${version}`).join(", ");
+      onProgress(`Creating the sandbox${tools.length === 0 ? "" : ` with ${tools}`}`);
+      // The mount point must exist in the shared workspace for the startup bind mount to land on it.
+      if (dependencies) await mkdir(join(workspace, "node_modules"), { recursive: true });
+      await createSandbox(sbx, name, workspace, kit.directory,
+        dependencies ? [`${DEPENDENCIES_ARGUMENT}=${sandboxPath(resolve(workspace))}/node_modules`] : []);
     }
-    const prepared = await prepareToolchain(sbx, name, resolve(workspace), options.onProgress ?? (() => {}));
+    const prepared = await prepareToolchain(sbx, name, resolve(workspace), plan, onProgress);
     return sandboxEnvironment(sbx, name, resolve(workspace), prepared);
   },
   async release(workspace: string): Promise<void> {
     const sbx = await locateSbx();
-    if (sbx !== null) await invoke(sbx, ["rm", "--force", sandboxName(workspace)]);
+    if (sbx === null) return;
+    const listed = await invoke(sbx, ["ls"]);
+    for (const sandbox of listedSandboxes(listed.stdout).filter((entry) => entry.startsWith(sandboxPrefix(workspace)))) {
+      await invoke(sbx, ["rm", "--force", sandbox]);
+    }
   },
 };
