@@ -6,7 +6,7 @@ import type { CheckResult } from "../src/workspace-checks.js";
 
 const tree = "t".repeat(40);
 function check(outcome: CheckResult["outcome"], command = "bun run check"): CheckResult {
-  return { command, tree, environment: "host", guarantees: hostProvider.guarantees, outcome,
+  return { verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree, environment: "host", guarantees: hostProvider.guarantees, outcome,
     exitCode: outcome === "failed" ? 1 : outcome === "passed" ? 0 : null, durationMs: 1,
     output: outcome === "failed" ? "FAIL price.test.ts\nexpected 90" : "" };
 }

@@ -10,7 +10,7 @@ const input: ReviewInput = {
   requests: ["Give orders over $100 a 10% discount", "Keep rounding to cents"],
   snapshot: { base: "b".repeat(40), tree, changes: [{ status: "modified", path: "src/price.ts" },
     { status: "modified", path: "src/price.test.ts" }], diff: "diff --git a/src/price.ts b/src/price.ts\n-a\n+b" },
-  checks: [{ command: "bun run check", tree, environment: "host", guarantees: hostProvider.guarantees,
+  checks: [{ verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command: "bun run check", tree, environment: "host", guarantees: hostProvider.guarantees,
     outcome: "failed", exitCode: 1, durationMs: 5, output: "FAIL price.test.ts\nexpected 90, got 100\n" }],
   flags: [{ path: "src/price.test.ts", status: "modified", kind: "test" }],
 };
@@ -19,7 +19,8 @@ it("tells the reviewer the requests verbatim, the flags, the check evidence and 
   const message = reviewMessage(input);
   expect(message).toContain("1. Give orders over $100 a 10% discount\n2. Keep rounding to cents");
   expect(message).toContain("- modified src/price.test.ts (test)");
-  expect(message).toContain("- bun run check: failed, exit 1\n  last output:\n    FAIL price.test.ts\n    expected 90, got 100");
+  expect(message).toContain("- bun run check: failed, exit 1\n  A pass establishes: exits 0\n" +
+    "  It does not establish: only what it tests\n  last output:\n    FAIL price.test.ts\n    expected 90, got 100");
   expect(message).toContain("`````diff\ndiff --git a/src/price.ts b/src/price.ts\n-a\n+b\n`````");
 });
 

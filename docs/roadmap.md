@@ -65,7 +65,10 @@ over whenever nothing is pending, and ⚠ flags on changes to tests, check
 configuration, CI, formal specifications, package scripts and Tesota setup;
 and Tesota's reviewer, a fresh read-only Pi session that reports structured
 findings, qualified on seeded defects (see [findings](findings.md)); and the
-correction loop, at most two rounds, stopping when a round changes nothing.
+correction loop, at most two rounds, stopping when a round changes nothing;
+and the verifier contract, where each result states its claim and limits, with
+Oxlint on introduced diagnostics and LemmaScript with Dafny as the first
+verifiers beyond approved checks.
 
 **Done when:** a change to Tesota goes through verification, an independent
 review and a correction round, and the operator decides on the whole record.

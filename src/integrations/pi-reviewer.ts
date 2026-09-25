@@ -65,7 +65,8 @@ function checkLine(check: ReviewInput["checks"][number]): string {
   const exit = check.exitCode === null ? "" : `, exit ${check.exitCode}`;
   const output = check.outcome === "passed" || check.output.trim().length === 0 ? "" :
     `\n  last output:\n${check.output.trimEnd().slice(-checkOutputLimit).replace(/^/gmu, "    ")}`;
-  return `- ${check.command}: ${check.outcome.replace("_", " ")}${exit}${output}`;
+  return `- ${check.command}: ${check.outcome.replace("_", " ")}${exit}\n  A pass establishes: ${check.claim}\n` +
+    `  It does not establish: ${check.limits}${output}`;
 }
 
 /** What the reviewer is told: the requests verbatim, the evidence, the flags and the diff; never the worker's reasoning. */

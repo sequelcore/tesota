@@ -22,7 +22,7 @@ function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = 
     setChecks: vi.fn((commands: readonly string[]) => { checks = commands; }),
     review: vi.fn(async (commands: readonly string[]) => ({ status: "ready" as const, tree: "b".repeat(40),
       changes: [change, added], reviews: [], requests: ["Fix the discount"],
-      checks: commands.map((command) => ({ command, tree: "b".repeat(40), environment: "host",
+      checks: commands.map((command) => ({ verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree: "b".repeat(40), environment: "host",
         guarantees: hostProvider.guarantees, outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" })) })),
     apply: vi.fn(async (): Promise<ApplyResult> => ({ status: "applied", changes: [change, added] })),
     reject: vi.fn(async () => {}),
@@ -134,7 +134,7 @@ function reviews(...rounds: { tree: string; findings: readonly Finding[] }[]): T
   return vi.fn(async (commands: readonly string[]): Promise<ReviewResult> => {
     const round = rounds.shift() ?? { tree: "z".repeat(40), findings: [] };
     return { status: "ready", tree: round.tree, changes: [change], requests: ["Charge over $100 less"],
-      checks: commands.map((command) => ({ command, tree: round.tree, environment: "host", guarantees: hostProvider.guarantees,
+      checks: commands.map((command) => ({ verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree: round.tree, environment: "host", guarantees: hostProvider.guarantees,
         outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" })),
       reviews: [{ reviewer: "Tesota reviewer", tree: round.tree, status: "completed", summary: "", findings: round.findings }] };
   });

@@ -22,6 +22,8 @@ import { Workspace, type WorkspaceSnapshot, type WorkspaceUpdate } from "./works
 import { applyWorkspace, ApplyConflictError, ApplyUncertainError } from "./workspace-apply.js";
 import { runChecks, suggestChecks } from "./workspace-checks.js";
 import { flagVerificationChanges } from "./verification-changes.js";
+import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
+import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
 import { createPiReviewer } from "./integrations/pi-reviewer.js";
 import type { ReviewInput, ReviewReport } from "./review.js";
 
@@ -425,9 +427,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const state = stateFor(id);
       state.reviewed = undefined;
       const snapshot = workspace.snapshot();
-      const checks = await runChecks(await environmentFor(id), workspace, snapshot, commands, signal);
+      const read = (revision: string, path: string): string | undefined => workspace.contentAt(revision, path);
+      const checks = [...await runChecks(await environmentFor(id), workspace, snapshot, commands, signal),
+        ...await runOxlintVerifier(snapshot, read), ...await runLemmaScriptVerifier(snapshot, read, signal)];
       if (signal.aborted) return { status: "cancelled" };
-      const flags = flagVerificationChanges(snapshot, (revision, path) => workspace.contentAt(revision, path));
+      const flags = flagVerificationChanges(snapshot, read);
       const requests = await workspace.requests();
       let review = await reviewCandidate(id, { checkout: workspace.checkout, requests, snapshot, checks, flags }, signal);
       if (signal.aborted) return { status: "cancelled" };

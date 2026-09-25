@@ -88,7 +88,9 @@ at once; applications are serialized.
 | `docker-sandboxes-environment.ts` | The `docker-sandboxes` provider: readiness, sandbox lifecycle, setup network phase, allowlist and confirmed stops |
 | `toolchain.ts` | Reading a repository's pinned runtimes, setup script and dependency install, and the pinned mise installer |
 | `execution-providers.ts` | Choosing a session's mode and provider, `tesota setup`, and releasing provider resources |
-| `workspace-checks.ts` | Check suggestions and running approved checks in the session's environment |
+| `workspace-checks.ts` | The verifier result (outcome, claim, limits) and running approved check commands in the session's environment |
+| `verification/oxlint-verifier.ts` | Tesota's Oxlint profile on changed files, counting only diagnostics the change introduced |
+| `verification/lemmascript-verifier.ts` | LemmaScript with Dafny on changed files with `//@` annotations, in a private copy |
 | `correction.ts` | Which failures and findings go back to the agent, the correction message, and the round limit |
 | `review.ts` | The reviewer contract: what a reviewer sees, its findings, and incomplete reviews |
 | `integrations/pi-reviewer.ts` | Tesota's reviewer: a fresh Pi session with read-only file tools and a structured submission |

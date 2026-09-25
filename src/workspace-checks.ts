@@ -5,9 +5,19 @@ import type { Workspace, WorkspaceSnapshot } from "./workspace.js";
 
 export type CheckOutcome = "passed" | "failed" | "timed_out" | "cancelled" | "not_started" | "unconfirmed" | "changed_files";
 
-/** What one check command observed about one exact workspace tree. */
+/** Which verifier produced a result (decision 015). */
+export type VerifierKind = "command" | "oxlint" | "lemmascript";
+
+/**
+ * What one verifier observed about one exact workspace tree: its outcome, the
+ * claim a pass establishes, and what it does not establish.
+ */
 export interface CheckResult {
+  readonly verifier: VerifierKind;
+  /** What ran, as the operator reads it: the command, or the verifier and file. */
   readonly command: string;
+  readonly claim: string;
+  readonly limits: string;
   readonly tree: string;
   /** The provider that ran the check and what it enforced. */
   readonly environment: string;
@@ -69,7 +79,8 @@ Promise<readonly CheckResult[]> {
     const outcome: CheckOutcome = run.outcome === "exited"
       ? !unchanged ? "changed_files" : run.exitCode === 0 ? "passed" : "failed"
       : run.outcome;
-    results.push({ command, tree: snapshot.tree, environment: environment.provider,
+    results.push({ verifier: "command", command, claim: `\`${command}\` exits with code 0 on this tree`,
+      limits: "Establishes only what the command itself tests.", tree: snapshot.tree, environment: environment.provider,
       guarantees: environment.guarantees, outcome, exitCode: run.exitCode, durationMs: Date.now() - started, output });
     if (outcome === "cancelled" || outcome === "unconfirmed" || outcome === "changed_files") break;
   }

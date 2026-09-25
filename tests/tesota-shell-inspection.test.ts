@@ -5,7 +5,7 @@ import type { WorkspaceSnapshot } from "../src/workspace.js";
 
 const snapshot: WorkspaceSnapshot = { base: "b".repeat(40), tree: "t".repeat(40), diff: "diff --git a/src/price.ts b/src/price.ts",
   changes: [{ status: "modified", path: "src/price.ts" }, { status: "modified", path: "src/price.test.ts" }] };
-const check = { command: "bun run check", tree: snapshot.tree, environment: "host", guarantees: hostProvider.guarantees,
+const check = { verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command: "bun run check", tree: snapshot.tree, environment: "host", guarantees: hostProvider.guarantees,
   outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" };
 
 it("lists changes to what gets checked as the operator's decision, and the requests behind the result", () => {

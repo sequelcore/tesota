@@ -97,6 +97,14 @@ are marked ⚠: they can be a legitimate fix or a way to make checks pass, and
 only you can tell which. The result panel starts with your requests behind
 the changes, word for word, since everything else is measured against them.
 
+Besides your checks, Tesota runs its own verifiers on the changed files. Its
+Oxlint profile reports only problems the change introduced, such as an unused
+variable, a new `any`, or a comment that silences a check; a change that adds
+an `eslint-disable` fails. In TypeScript files with LemmaScript `//@`
+annotations, LemmaScript and Dafny prove the annotated properties; this needs
+Dafny installed, and without it the result says nothing was proved. The result
+panel shows, for every verifier, what a pass establishes and what it does not.
+
 After the checks, an independent reviewer reads your requests, the changes
 and the check results, investigates the repository without being able to
 change it, and reports problems: ✗ for a defect against what you asked, ⚠

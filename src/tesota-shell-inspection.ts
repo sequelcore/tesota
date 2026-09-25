@@ -17,7 +17,7 @@ export interface ReviewRecord {
 function checkDetail(check: CheckResult): string {
   const exit = check.exitCode === null ? "" : ` (exit ${check.exitCode})`;
   const output = check.output.trim().length === 0 ? "" : `\n${check.output.trimEnd()}`;
-  return `${check.outcome.replace("_", " ")}${exit}: ${check.command}${output}`;
+  return `${check.outcome.replace("_", " ")}${exit}: ${check.command}\n  Claim: ${check.claim}\n  Limits: ${check.limits}${output}`;
 }
 
 const verbs: Readonly<Record<WorkspaceSnapshot["changes"][number]["status"], string>> =
