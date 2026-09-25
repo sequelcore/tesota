@@ -22,7 +22,8 @@ seconds; the check passed and both files were applied (see
 
 ## Next
 
-The order follows decision 014's delivery plan. Remote access waits until the
+The order follows decision 014's delivery plan, with decision 015's
+verification and review before remote access. Remote access waits until the
 local agent flow is dependable.
 
 ### 1. General agent flow for daily use
@@ -49,7 +50,20 @@ operator answers for the session or the repository; `tesota setup` runs the
 missing steps once the operator confirms each; and preparation starts when a
 session opens.
 
-### 3. Daemon and remote access
+### 3. Verification and review around each result
+
+[Decision 015](decisions/015-assurance-around-the-agent-loop.md): Tesota
+verifies and reviews each candidate before the operator decides, and sends
+fixable problems back to the agent a bounded number of times. In order: the
+request record and flagged changes to tests and check configuration; an
+independent read-only reviewer; the correction loop; the verifier contract
+with Oxlint and LemmaScript with Dafny; ClaimCheck's method and Gentle AI's
+review as further reviewers; per-repository workflow profiles.
+
+**Done when:** a change to Tesota goes through verification, an independent
+review and a correction round, and the operator decides on the whole record.
+
+### 4. Daemon and remote access
 
 Move sessions into a background daemon with terminal clients, then reach it
 over SSH through a private network such as Tailscale. A web and mobile client
@@ -67,8 +81,8 @@ A non-TypeScript repository and another platform; more providers (WSL2,
 remote machines, and a native Windows OS sandbox for faster supervised or
 autonomous sessions, possibly built as its own project with Tesota) once they
 pass the same live controls; a review queue and notifications across sessions;
-non-code tasks; independent AI reviewers and user-supplied verification
-methods, chosen by observed need.
+non-code tasks; user-supplied verifiers and reviewers beyond the workflow
+profiles of section 3, chosen by observed need.
 
 ## Rules
 
