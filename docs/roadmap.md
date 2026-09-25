@@ -75,6 +75,11 @@ assurance journal of every reviewed candidate and the operator's decision.
 Workflow profiles wait until daily use shows a repository that needs a
 different set of verifiers, reviewers or rounds.
 
+Next, [decision 016](decisions/016-review-precision.md): findings carry their
+origin and face a refuter before they act; an evaluation set measures review
+before and after each change; correction rounds validate fixes and review only
+their own diff; depth and lenses follow facts Tesota computes.
+
 **Done when:** a change to Tesota goes through verification, an independent
 review and a correction round, and the operator decides on the whole record.
 
