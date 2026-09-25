@@ -60,11 +60,11 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
 
   shell.start();
   shell.write("The repository is bounded.\n");
-  shell.report({ phase: "discovering", operation: "repository_discovery" });
+  shell.report({ phase: "working" });
   now.mockReturnValue(3_000);
   shell.refreshElapsed();
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("Inspecting the committed repository · 2s");
+  expect(visible(terminal)).toContain("Working · 2s");
   const answer = shell.ask("> ");
   terminal.send("Explain the shell");
   terminal.send("\r");
@@ -87,12 +87,12 @@ it("clears progress and input when a workspace session ends", async () => {
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui });
   shell.start();
-  shell.reportFor("default", { phase: "discovering", operation: "repository_discovery" });
+  shell.reportFor("default", { phase: "working" });
   shell.endSession("default");
   terminal.writes.length = 0;
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Session ended");
-  expect(visible(terminal)).not.toContain("Inspecting the committed repository");
+  expect(visible(terminal)).not.toContain("Working");
   await expect(shell.askIn("default", "> ")).rejects.toThrow("ended");
   shell.stop();
 });
@@ -106,14 +106,14 @@ it.each([
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const shell = createTesotaShellTerminal({ cwd: "C:\\work\\tesota", tui, theme });
   shell.start();
-  shell.report({ phase: "awaiting_approval", operation: "proposal_scope" });
+  shell.report({ phase: "awaiting_decision" });
   shell.write("Scope approval is required before execution.");
   tui.renderNow(true);
 
   const rendered = terminal.writes.join("");
   const screen = visible(terminal);
   expect(screen).toContain("Tesota");
-  expect(screen).toContain("Waiting for scope approval");
+  expect(screen).toContain("Waiting for your decision");
   expect(screen).toContain("Scope approval is required before execution.");
   if (accent === null) expect(rendered).not.toContain("\x1b[38;2;");
   else expect(rendered).toContain(`\x1b[38;2;${accent}mTesota`);

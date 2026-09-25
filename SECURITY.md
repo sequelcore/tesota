@@ -20,13 +20,13 @@ Please include:
 - the affected commit and platform;
 - the violated boundary and expected behavior;
 - a minimal reproduction without real credentials or private data;
-- observed effects and whether they may persist outside a candidate checkout;
+- observed effects and whether they may persist outside a Tesota workspace;
 - any known workaround.
 
-High-priority reports include authority bypass, writes outside the admitted
-candidate, credential or prompt disclosure, unconfirmed processes represented as
-settled, evidence attached to the wrong candidate, acceptance replay and
-promotion of bytes other than those reviewed.
+High-priority reports include file-tool writes outside the workspace, shell
+commands that run without approval, credential or prompt disclosure,
+unconfirmed processes represented as settled, check results attached to the
+wrong content, and application of anything other than the reviewed changes.
 
 ## Disclosure and scope
 

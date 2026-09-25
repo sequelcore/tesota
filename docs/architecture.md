@@ -1,148 +1,112 @@
 # Architecture
 
 **Tesota is an open-source agent for work that carries its evidence.** You
-describe what you need, inspect what the agent did and what its checks
-establish, and decide whether to use the result. The long-term goal is a
-general-purpose harness. Today Tesota handles repository questions and two
-fixed TypeScript change shapes. [Decision 013](decisions/013-general-agent-loop-first.md)
-replaces those shapes with a general coding loop; the [roadmap](roadmap.md)
-tracks that work.
+describe what you need, a coding agent does it in a separate copy of your
+repository, and you review the exact changes and what the checks establish
+before anything reaches your files. The long-term goal is a general-purpose
+harness; [decision 013](decisions/013-general-agent-loop-first.md) puts a
+usable coding loop first. The [roadmap](roadmap.md) tracks what comes next.
 
 The name comes from *Olneya tesota*, the Sonoran Desert ironwood tree. It is
 not a dependability claim. Trademark clearance has not been done.
 
 ## Principles
 
-1. A check states what it observed, about which exact result, under which
+1. A check states what it observed, about which exact content, under which
    conditions.
-2. Evidence for an earlier result does not carry over after the result
-   changes.
+2. Evidence for earlier content does not carry over after the content changes.
 3. Failures, timeouts, cancellations and unconfirmed effects stay distinct.
    None of them becomes a pass.
-4. Checks, review, human acceptance and application are separate facts.
-5. Model output, a check result and a review never grant authority. Approval
-   comes from the operator.
-6. Approval permits an operation; the execution environment limits what it can
-   actually do. Neither substitutes for the other.
+4. Checks, human acceptance and application are separate facts.
+5. Model output and check results never grant authority. The operator
+   approves commands and applies changes.
 
 ## Components
 
-Tesota owns task scope, result identity, evidence, review and application. Pi
-(`@earendil-works/pi-*`) is the agent engine for conversation, tool loops and
-the terminal UI. Codex, through Pi's OAuth support, is the only model route
-(see [authentication](authentication.md)). Gentle AI is an optional review
-provider. None of them grants itself Tesota authority. Replacing the engine or
-model needs the affected behavior re-exercised; there is no engine registry.
+Tesota owns the workspace, command approval, checks, review and application.
+Pi (`@earendil-works/pi-*`) is the agent engine and terminal UI toolkit.
+Codex, through Pi's OAuth support, is the only model route (see
+[authentication](authentication.md)). Replacing the engine or model needs the
+affected behavior re-exercised; there is no engine registry.
 
-## Current runtime flow
+## Flow
 
 ```text
-Tesota Shell
-  -> RepositoryDiscovery      read-only view of committed source
-  -> TaskProposal             model proposal, no authority
-  -> ProposalAdmission        policy + baseline recheck -> immutable grant
-  -> check selection and operator approval
-  -> CandidateTask            edits in an independent checkout
-  -> checks on the final candidate, in the selected environment
-  -> TaskReview               exact diff and current evidence
-  -> optional SemanticRevision (one correction, fresh checks)
-  -> operator decision
-  -> TaskPromotion            guarded write back to the repository
+request
+  -> CodingSession        Pi agent in the workspace checkout
+                          file tools confined to the checkout; each shell command approved
+  -> Workspace.snapshot   all work staged: changed paths, diff and Git tree id
+  -> runChecks            approved commands run on that tree; a check that edits files is flagged
+  -> review               diff and check output in the result panel
+  -> apply | reject | keep working
+       apply:  applyWorkspace writes only files whose source still matches the base,
+               then the workspace records the applied tree as its new base
+       reject: the workspace returns to its base
 ```
 
-Supported task shapes:
-
-- **Source-only:** one or two existing non-test `src/**/*.ts` files, checked by
-  `typescript-no-emit/v1`.
-- **Source and test:** one existing source file and one existing
-  `tests/**/*.test.ts` regression test. The test must fail on the original
-  source and pass after the repair (`node-test-targeted/v1`). The typecheck can
-  also be required.
-
-Both shapes exclude new, deleted or renamed files, dependency and
-configuration changes, arbitrary commands and network access. The model cannot
-choose or weaken a check. `scope-integrity` always runs. Every task ends in
-`human_review_required`.
+Each shell session owns one workspace: an independent clone of the source's
+committed HEAD under `~/.tesota/workspaces/`, without the source's remotes,
+hooks, config or uncommitted files. The agent keeps its conversation across
+requests, so "keep working" builds on pending changes. Up to two sessions work
+at once; applications are serialized.
 
 ## Owners
 
 | Owner | Responsibility |
 | --- | --- |
-| `cli.ts`, `tesota-shell*.ts` | Commands, shell composition, Pi TUI layout and themes |
-| `shell-session-store.ts` | Local transcripts and interrupted-session state; no grants |
-| `repository-discovery.ts` | Bounded read-only view of committed source |
-| `integrations/pi-discovery-session.ts` | Pi SDK session, read-only tools, budgets and cancellation |
-| `task-proposal-contract.ts`, `task-proposal.ts` | Proposal vocabulary, limits and stored proposal evidence |
-| `proposal-admission.ts`, `task-contract.ts` | Task policy, immutable grant, task kinds and grant-derived tool schemas |
-| `candidate-checkout.ts` | Independent candidate creation, inspection and cleanup |
-| `candidate-task.ts` | Candidate edits and composition of scope integrity with selected checks |
-| `repository-check-input.ts` | File, dependency and JSON observations shared by checks |
-| `repository-typecheck*.ts`, `repository-node-test*.ts` | Check profiles, process limits and result semantics |
-| `repository-container-process.ts`, `repository-host-process.ts` | Docker and trusted host-local process settlement |
-| `integrations/pi-task.ts`, `task-run.ts` | Pi task execution, correction evidence and accounting |
-| `task-review.ts`, `semantic-revision.ts` | Exact-candidate review, decisions and the one correction |
-| `task-source.ts`, `task-promotion.ts` | Source-target observation and guarded application |
-| `task-start.ts` | Check selection before approval, then approval-to-application workflow |
-| `task-outcome.ts` | Durable task outcome journal and summary |
-| `gentle-review-host.ts` | Optional Gentle review |
+| `cli.ts` | Commands and shell startup |
+| `tesota-shell.ts` | Surface-independent loop: request, review, decision |
+| `tesota-shell-command.ts` | Per-session composition of workspace, agent, checks and application |
+| `tesota-shell-terminal.ts`, `tesota-shell-theme.ts`, `tesota-shell-inspection.ts`, `shell-progress.ts` | Terminal layout, themes, result panel and status |
+| `shell-session-store.ts` | Saved transcripts, workspace location and approved checks per session |
+| `integrations/pi-coding-session.ts` | Pi session, confined file tools, command approval, cancellation |
+| `workspace-checkout.ts` | Creating and verifying independent clones |
+| `workspace.ts` | Base commit, snapshots, revert and settling applied work |
+| `workspace-checks.ts` | Check suggestions and bounded check processes |
+| `workspace-apply.ts` | Conflict-checked writes to the source repository and their journal |
+| `repository-git.ts` | Git invocation without ambient config, hooks or network |
+| `integrations/codex-credentials.ts`, `auth.ts` | Codex login storage |
 | `verification/` | Standalone Oxlint profile and the formal invocation-budget predicate |
-| `command-isolation.ts`, `isolation-qualification.ts` | Windows isolation comparison command |
-| `live-codex.ts`, `integrations/pi-live*.ts` | Live Codex probe |
+| `live-codex.ts`, `integrations/pi-live*.ts` | Live Codex probe and model route |
 
 ## Trust and effects
 
-Repository content and model output are untrusted. Zod schemas validate
-input; they do not grant effects. Proposal admission issues the only task
-grant after rechecking source identity and paths, and `CandidateTask` derives
-its read and write parsers from that grant.
+Repository content and model output are untrusted. The file tools (read,
+grep, find, ls, edit, write) resolve every path against the checkout and
+refuse anything outside it, including through links; edit and write also
+refuse `.git`. Shell commands are not confined: each needs the operator's
+approval ("always" lasts for the session), and an approved command runs with
+the operator's permissions, files, network and credentials. Repository
+instructions in `AGENTS.md` or `CLAUDE.md` are passed to the agent as context.
 
-Candidate edits are whole-file replacements bound to the latest observed
-SHA-256; concurrent changes close the handle. Application requires a current
-accepted review, the same candidate, an unchanged source revision and unchanged
-target bytes. Its journal separates preparation from applied writes, so an
-uncertain result stays inspectable. Restoring a transcript never restores
-approval or tools.
+Application writes exactly the reviewed tree. For each changed file, the
+source must still hold the base content (a CRLF checkout of that content
+counts as unchanged, and keeps its line endings); an added file must not
+exist yet. If any file conflicts, nothing is written. Writes are journaled in
+the workspace's `applications.jsonl`; a failure after the first write is
+reported as uncertain and closes the session.
 
-## Checks and execution environments
+## Checks
 
-| Check | Command | Establishes | Does not establish |
-| --- | --- | --- | --- |
-| `scope-integrity` | automatic | Only admitted paths changed, with supported change types | Behavior |
-| `typescript-no-emit/v1` | automatic, or `tesota candidate check typecheck` | The bound candidate passed the fixed no-emit compile | Behavior or completion |
-| `node-test-targeted/v1` | automatic (source-and-test) | The approved test passed on the bound candidate after failing on the original | The full suite |
-| Oxlint `oxlint-static/v3` | `tesota verify <file>` | Fixed nine-rule static check on one file snapshot | Runtime behavior; not a sandbox |
-| LemmaScript/Dafny | `bun run formal:check` | The invocation-budget predicate and its postconditions | Whole-program correctness |
-| Gentle AI | `tesota task run gentle-review ...` | One independent review slot for a candidate | Acceptance or correctness |
+The operator approves check commands once per session. Tesota suggests the
+repository's `check` script, or its `typecheck`, `lint` and `test` scripts,
+using the lockfile's package manager; `cargo test` and `go test ./...` are
+suggested for Rust and Go. Checks run in the workspace without a sandbox, with
+a 15-minute limit each; only the end of their output is kept. A result is
+bound to the tree it ran on. A check that changes files is reported as
+`changed_files`, and the review content no longer matches, so application is
+refused until the work is reviewed again.
 
-Repository checks run either in a pinned Docker container (protected) or as a
-trusted Windows host process. Host-local checks can reach host files, network
-and credentials, and only the direct process exit is observed. The selected
-environment is bound before approval and recorded in the evidence. There is no
-silent fallback to a weaker environment. Qualifying a native OS sandbox is
-still open; see [decision 007](decisions/007-execution-environments.md) and
-[findings](findings.md#isolation).
+`tesota verify <file>` runs the fixed Oxlint profile on one file.
+`bun run formal:check` proves the invocation-budget predicate with
+LemmaScript and Dafny.
 
-## Pi integration
+## Current limits
 
-Each shell session has one Pi Coding Agent SDK transcript. Ambient extensions,
-skills, prompt templates, themes and context files are disabled; Tesota
-supplies its own list, search, read and result tools. After approval, the same
-transcript gets only the admitted read, replace and check tools, which become
-inactive when the task turn settles. A conversation and its task turn admit at
-most 12 discovery turns, 36 model invocations and 96 tool calls. Automatic
-compaction, retry and model switching are disabled. At most two operations run
-at once across sessions, and applications to the same repository are
-serialized.
-
-## Lower-level commands
-
-The shell composes these; they exist for diagnosis.
-
-```text
-tesota task propose <request>      tesota candidate create | list | clean
-tesota task start <proposal-id>    tesota candidate inspect <id|dir>
-tesota task outcome <proposal-id>  tesota candidate abandon <id|dir>
-tesota task review <id|dir>        tesota isolation qualify
-tesota task decide <id|dir> <accept|reject> <review-sha256>
-tesota task promote <id|dir> <review-sha256>
-```
+- Exercised live only on Windows. Repositories with symbolic links or
+  submodules are refused.
+- Shell commands are approved but not sandboxed.
+- The workspace starts from committed HEAD; your uncommitted changes are not
+  visible to the agent, although conflicting files are protected at
+  application.
+- Old workspaces are not cleaned up automatically.

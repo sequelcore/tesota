@@ -16,10 +16,9 @@ Dependencies come from registry packages; lifecycle scripts are disabled.
 | `bun run check` | Run the complete repository gate |
 | `bun run formal:check` | Run the optional standalone LemmaScript/Dafny proof; requires Dafny |
 
-`bun run check` does not invoke Dafny, a live model, Docker qualification or an
-external review provider. Tests exercise real Oxlint, controlled Pi boundaries
-and compiled CLI processes. Use `test:fast` for quick feedback on pure code,
-then the affected process-backed suite. Run `bun run check` and
+`bun run check` does not invoke Dafny or a live model. Tests exercise real Git
+workspaces, check processes, Oxlint and compiled CLI processes. Use `test:fast`
+for quick feedback on pure code, then the affected process-backed suite. Run `bun run check` and
 `git diff --check` before completing a change. Report what actually ran;
 passing checks, live observations and human acceptance are different claims.
 
@@ -31,27 +30,20 @@ their owners are in [architecture](architecture.md); authentication is in
 
 `bun run live:codex` runs the live Codex probe with the saved login and writes
 one JSON record per run under the ignored `live-runs/codex/` directory.
-`tesota isolation qualify` reruns the Windows isolation comparison.
-
-The shell defaults to trusted host-local repository checks on Windows. This
-route is not sandboxed. The optional protected Docker route requires its pinned
-image already present locally and a matching Linux/x64 TypeScript dependency
-closure. Tesota does not install dependencies or pull images during a task;
-[Using Tesota](using-tesota.md#prerequisites) gives the setup details.
 
 ## Change scope
 
 Keep one owner per behavior and add modules only for implemented consumers.
 Preserve unrelated work and retained attribution. Changes to verification rules,
 evidence formats, permissions or acceptance criteria need rationale and checks
-at the affected boundary. A candidate must not appear successful because it
+at the affected boundary. A change must not appear successful because it
 removed the condition that detected a failure.
 
 Use the [Kiln reference](references/kiln.md) for a specific code or test need;
 its package structure and roadmap are not defaults for Tesota. The repository
 lint rule limits classic cyclomatic complexity to 20 in `src` and `tests` with
-no file exceptions. Process-backed candidate suites run in separate Vitest
-processes so a timed-out filesystem operation cannot contaminate later suites.
+no file exceptions. The Git workspace suites run in a separate Vitest process
+so a timed-out filesystem operation cannot contaminate later suites.
 
 ## Documentation ownership
 

@@ -19,6 +19,12 @@ observed on. None of them establishes representative usefulness.
 | 2026-09-23 | Combined Node test + typecheck on the same candidate | The first fresh attempt ended with unconfirmed execution. A later internal run succeeded after three failed attempts and took about 64 minutes. | Repeated dependency snapshots made review, decision and application unusably slow. |
 | 2026-09-23 | Execution repair on a one-file fixture | 149 s from scope prompt to applied result, including operator waits; about 27 s of execution. Host-local checks worked without Docker. | Reusing task-owned dependency input fixed the snapshot cost. A CRLF conversion blocked one attempt before approval. |
 
+## General coding loop
+
+| Date | What was tried | Outcome | Lesson |
+| --- | --- | --- | --- |
+| 2026-09-24 | One live run of the new loop on a throwaway two-file JavaScript repository: fix a subtraction bug and add a `node:test` file, with commands denied | About 17 s. The agent edited one file and created another without requesting a command. `node --test` passed on the reviewed tree, and both files were applied. | The general loop does in one request what the fixed shapes could not: it created a new file. Not yet exercised in the interactive shell or on a real repository. |
+
 ## Isolation
 
 - **Docker** (2026-09-13): the pinned Node container passed every control:

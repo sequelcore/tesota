@@ -9,22 +9,18 @@ const entrySchema: z.ZodType<{ role: "user" | "tesota"; text: string }> =
 const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: string }> =
   z.strictObject({ title: z.string().max(100), summary: z.string().max(10_000),
     detail: z.string().max(2_000_000) });
-const budgetSchema: z.ZodType<{ turns: number; modelInvocations: number; toolCalls: number }> =
-  z.strictObject({ turns: z.number().int().nonnegative().max(12),
-    modelInvocations: z.number().int().nonnegative().max(36),
-    toolCalls: z.number().int().nonnegative().max(96) });
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: { role: "user" | "tesota"; text: string }[];
   inspections: { title: string; summary: string; detail: string }[];
-  proposalIds: string[]; budget: z.infer<typeof budgetSchema>;
+  workspace: string | null; checks: string[] | null;
   interrupted: boolean; blocked: boolean }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
-      proposalIds: z.array(z.uuid()), budget: budgetSchema,
+      workspace: z.string().min(1).nullable(), checks: z.array(z.string().min(1).max(1000)).max(20).nullable(),
       interrupted: z.boolean(), blocked: z.boolean() });
-const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: 1; source: string;
+const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: 2; source: string;
   sessions: z.infer<typeof sessionSchema>[] }> =
-    z.strictObject({ format: z.literal("tesota-shell-sessions"), version: z.literal(1),
+    z.strictObject({ format: z.literal("tesota-shell-sessions"), version: z.literal(2),
       source: z.string(), sessions: z.array(sessionSchema) });
 export type ShellSessionRecord = z.infer<typeof sessionSchema>;
 type Snapshot = z.infer<typeof snapshotSchema>;
@@ -34,15 +30,25 @@ export interface ShellSessionStore {
   create(): ShellSessionRecord;
   append(id: string, role: "user" | "tesota", text: string): void;
   inspect(id: string, inspection: { title: string; summary: string; detail: string }): void;
-  linkProposal(id: string, proposalId: string): void;
+  setWorkspace(id: string, directory: string): void;
+  setChecks(id: string, commands: readonly string[]): void;
   markActive(id: string, active: boolean): void;
   block(id: string): void;
   rotateEngine(id: string): string;
-  recordBudget(id: string, budget: z.infer<typeof budgetSchema>): void;
   close(): void;
 }
 
-/** The store records the human transcript, never a task grant or check result. */
+function readSnapshot(path: string, source: string): Snapshot {
+  if (!existsSync(path)) return { format: "tesota-shell-sessions", version: 2, source, sessions: [] };
+  const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+  if (typeof value === "object" && value !== null && Reflect.get(value, "version") === 1) {
+    renameSync(path, `${path}.v1.bak`);
+    return { format: "tesota-shell-sessions", version: 2, source, sessions: [] };
+  }
+  return snapshotSchema.parse(value);
+}
+
+/** The store records the human transcript and workspace location, never approval or check results. */
 export function openShellSessionStore(sourceDirectory: string,
   root: string = join(homedir(), ".tesota", "shell-sessions")): ShellSessionStore {
   const source = resolve(sourceDirectory);
@@ -63,8 +69,7 @@ export function openShellSessionStore(sourceDirectory: string,
   }
   try {
     writeFileSync(lock, String(process.pid));
-    const snapshot: Snapshot = existsSync(path) ? snapshotSchema.parse(JSON.parse(readFileSync(path, "utf8"))) :
-      { format: "tesota-shell-sessions", version: 1, source, sessions: [] };
+    const snapshot = readSnapshot(path, source);
     if (snapshot.source !== source) throw new Error("Saved Tesota sessions belong to another repository");
     const sessions = new Map(snapshot.sessions.map((session) => [session.id,
       { ...session, entries: [...session.entries], inspections: [...session.inspections] }]));
@@ -74,7 +79,7 @@ export function openShellSessionStore(sourceDirectory: string,
       if (closed) throw new Error("Tesota session store closed");
       const temporary = `${path}.${randomUUID()}.tmp`;
       try {
-        writeFileSync(temporary, JSON.stringify({ format: "tesota-shell-sessions", version: 1,
+        writeFileSync(temporary, JSON.stringify({ format: "tesota-shell-sessions", version: 2,
           source, sessions: [...sessions.values()] }) + "\n", { encoding: "utf8", mode: 0o600 });
         renameSync(temporary, path);
       } finally { if (existsSync(temporary)) unlinkSync(temporary); }
@@ -88,8 +93,8 @@ export function openShellSessionStore(sourceDirectory: string,
       list: () => [...sessions.values()],
       create: () => {
         const session = { id: randomUUID(), title: `Session ${sessions.size + 1}`,
-          engineId: randomUUID(), entries: [], inspections: [], proposalIds: [],
-          budget: { turns: 0, modelInvocations: 0, toolCalls: 0 }, interrupted: false, blocked: false };
+          engineId: randomUUID(), entries: [], inspections: [], workspace: null, checks: null,
+          interrupted: false, blocked: false };
         sessions.set(session.id, session);
         try { save(); } catch (error) { sessions.delete(session.id); throw error; }
         return session;
@@ -104,12 +109,17 @@ export function openShellSessionStore(sourceDirectory: string,
         session.inspections.push(inspectionSchema.parse(inspection));
         try { save(); } catch (error) { session.inspections.pop(); throw error; }
       },
-      linkProposal: (id, proposalId) => {
+      setWorkspace: (id, directory) => {
         const session = find(id);
-        const parsed = z.uuid().parse(proposalId);
-        if (session.proposalIds.includes(parsed)) return;
-        session.proposalIds.push(parsed);
-        try { save(); } catch (error) { session.proposalIds.pop(); throw error; }
+        const previous = session.workspace;
+        session.workspace = directory;
+        try { save(); } catch (error) { session.workspace = previous; throw error; }
+      },
+      setChecks: (id, commands) => {
+        const session = find(id);
+        const previous = session.checks;
+        session.checks = [...commands];
+        try { save(); } catch (error) { session.checks = previous; throw error; }
       },
       markActive: (id, active) => {
         const session = find(id);
@@ -128,16 +138,6 @@ export function openShellSessionStore(sourceDirectory: string,
         session.engineId = randomUUID();
         try { save(); } catch (error) { session.engineId = previous; throw error; }
         return session.engineId;
-      },
-      recordBudget: (id, input) => {
-        const session = find(id);
-        const budget = budgetSchema.parse(input);
-        if (budget.turns < session.budget.turns ||
-            budget.modelInvocations < session.budget.modelInvocations ||
-            budget.toolCalls < session.budget.toolCalls) throw new Error("Tesota budget cannot move backwards");
-        const previous = session.budget;
-        session.budget = budget;
-        try { save(); } catch (error) { session.budget = previous; throw error; }
       },
       close: () => {
         if (closed) return;

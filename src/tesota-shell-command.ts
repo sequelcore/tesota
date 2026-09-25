@@ -1,40 +1,59 @@
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
-import { createLiveRepositoryConversationForShell, type ConversationCommandResult,
-  type RepositoryConversationForShell } from "./conversation-turn.js";
-import type { ConversationInput } from "./conversation-turn-contract.js";
+import { CodexCredentials } from "./integrations/codex-credentials.js";
+import { CodingSession, type CommandApproval } from "./integrations/pi-coding-session.js";
+import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
-import { runTesotaShell } from "./tesota-shell.js";
-import { inspectConversationTurn, inspectTaskReview } from "./tesota-shell-inspection.js";
+import { openShellSessionStore, type ShellSessionStore } from "./shell-session-store.js";
+import { runTesotaShell, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
+  type WorkResult } from "./tesota-shell.js";
+import { inspectReview } from "./tesota-shell-inspection.js";
 import { createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
 import type { TesotaShellThemeName } from "./tesota-shell-theme.js";
-import { startTask, type TaskStartProgress, type TaskStartResult } from "./task-start.js";
-import { promoteTask } from "./task-promotion.js";
-import { runProposalTask } from "./task-run.js";
-import { openShellSessionStore } from "./shell-session-store.js";
-import { loadProposalTaskOutcome } from "./task-outcome.js";
-import { loadTaskProposal } from "./task-proposal.js";
+import { Workspace, type WorkspaceSnapshot } from "./workspace.js";
+import { applyWorkspace, ApplyConflictError, ApplyUncertainError } from "./workspace-apply.js";
+import { runChecks, suggestChecks } from "./workspace-checks.js";
+
+export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
 
 export interface TesotaShellCommandDependencies {
   readonly surface: TesotaShellTerminal;
-  readonly discover: (input: ConversationInput, sessionId?: string) => Promise<ConversationCommandResult>;
-  readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void,
-    sessionId?: string) => Promise<TaskStartResult>;
+  readonly session: (id: string) => SessionWork;
   readonly dispose?: () => void;
   readonly abortActive?: () => void;
   readonly initialSessionId?: string;
   readonly blockedSessionIds?: readonly string[];
-  readonly restore?: () => Promise<void>;
-  readonly configureWorkspace?: (callbacks: { readonly newSession: (id: string) => void;
+  readonly configureWorkspace: (callbacks: { readonly newSession: (id: string) => void;
     readonly selectSession: (id: string) => void; readonly quit: () => void }) => void;
 }
 
+function parseApproval(answer: string): CommandApproval {
+  const value = answer.trim().toLowerCase();
+  if (value === "y" || value === "yes") return "once";
+  if (value === "a" || value === "always") return "always";
+  return "deny";
+}
+
+function isAbort(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+/** One shell session's workspace, agent conversation and pending review. */
+class SessionState {
+  workspace: Promise<Workspace> | undefined;
+  coding: Promise<CodingSession> | undefined;
+  reviewed: WorkspaceSnapshot | undefined;
+  /** Context the agent needs with the next request, such as a rejected change. */
+  note: string | undefined;
+}
+
 export function createProcessTesotaShell(cwd: string = process.cwd(),
-  theme: TesotaShellThemeName = "tesota-dark",
-  executionEnvironment: "docker-contained" | "host-local" = "host-local"): TesotaShellCommandDependencies {
+  theme: TesotaShellThemeName = "tesota-dark"): TesotaShellCommandDependencies {
   const activeOperations = new Map<string, AbortController>();
-  const conversations = new Map<string, Promise<RepositoryConversationForShell>>();
+  const states = new Map<string, SessionState>();
   const waiters: { readonly signal: AbortSignal; readonly grant: () => void;
     readonly reject: (error: Error) => void }[] = [];
   let slotsUsed = 0;
@@ -46,8 +65,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const acquireSlot = (signal: AbortSignal): Promise<void> => {
     if (signal.aborted) return Promise.reject(new DOMException("cancelled", "AbortError"));
     if (slotsUsed < 2) { slotsUsed += 1; return Promise.resolve(); }
-    return new Promise<void>((resolve, reject) => {
-      const waiter = { signal, grant: () => { signal.removeEventListener("abort", abort); resolve(); },
+    return new Promise<void>((resolveSlot, reject) => {
+      const waiter = { signal, grant: () => { signal.removeEventListener("abort", abort); resolveSlot(); },
         reject: (error: Error) => { signal.removeEventListener("abort", abort); reject(error); } };
       const abort = (): void => {
         const index = waiters.indexOf(waiter);
@@ -58,18 +77,14 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       waiters.push(waiter);
     });
   };
-  let promotionQueue: Promise<void> = Promise.resolve();
-  const promote: typeof promoteTask = (...args) => {
-    const result = promotionQueue.then(() => promoteTask(...args));
-    promotionQueue = result.then(() => undefined, () => undefined);
+  let applicationQueue: Promise<void> = Promise.resolve();
+  const serialized = <T>(operation: () => Promise<T>): Promise<T> => {
+    const result = applicationQueue.then(operation);
+    applicationQueue = result.then(() => undefined, () => undefined);
     return result;
   };
-  const store = openShellSessionStore(cwd);
+  const store: ShellSessionStore = openShellSessionStore(cwd);
   const savedSessions = store.list();
-  for (const session of savedSessions) if (session.interrupted) {
-    store.rotateEngine(session.id);
-    store.block(session.id);
-  }
   const initial = savedSessions[0] ?? store.create();
   let workspaceCallbacks: { readonly newSession: (id: string) => void;
     readonly selectSession: (id: string) => void; readonly quit: () => void } | undefined;
@@ -85,8 +100,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       await acquireSlot(cancellation.signal);
       acquired = true;
       return await operation(cancellation.signal);
-    }
-    finally {
+    } finally {
       if (acquired) releaseSlot();
       if (activeOperations.get(sessionId) === cancellation) activeOperations.delete(sessionId);
       store.markActive(sessionId, false);
@@ -107,118 +121,130 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     session.entries, session.inspections);
   for (const session of savedSessions) {
     if (session.interrupted) {
-      surface.writeTo(session.id, "The previous shell stopped during work. Inspect retained evidence before continuing; no approval was restored.");
+      surface.writeTo(session.id, "The previous shell stopped during work. Pending changes stay in the workspace.");
       store.markActive(session.id, false);
     }
     if (session.blocked) {
       surface.blockSession(session.id);
-      surface.writeTo(session.id,
-        "This session has unresolved effects. Inspect retained task evidence; this conversation cannot start more work.");
+      surface.writeTo(session.id, "This session stopped with unresolved effects. Check your repository and start a new session.");
     }
   }
+  const saved = (id: string): ReturnType<ShellSessionStore["list"]>[number] | undefined =>
+    store.list().find((session) => session.id === id);
+  const stateFor = (id: string): SessionState => {
+    let state = states.get(id);
+    if (state === undefined) { state = new SessionState(); states.set(id, state); }
+    return state;
+  };
+  const workspaceFor = (id: string): Promise<Workspace> => {
+    const state = stateFor(id);
+    state.workspace ??= (async () => {
+      const directory = saved(id)?.workspace;
+      if (directory !== null && directory !== undefined) {
+        try { return await Workspace.open(directory); } catch { store.rotateEngine(id); }
+      }
+      const workspace = await Workspace.create(cwd);
+      store.setWorkspace(id, workspace.directory);
+      return workspace;
+    })();
+    state.workspace.catch(() => { state.workspace = undefined; });
+    return state.workspace;
+  };
+  const codingFor = (id: string, signal: AbortSignal): Promise<CodingSession> => {
+    const state = stateFor(id);
+    state.coding ??= (async () => {
+      const workspace = await workspaceFor(id);
+      const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false,
+        allowModelNetwork: false, signal });
+      const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
+      if (model === undefined) throw new Error("The Codex model is unavailable. Run tesota auth login.");
+      const engineId = saved(id)?.engineId ?? store.rotateEngine(id);
+      const sessions = join(homedir(), ".tesota", "pi-sessions",
+        createHash("sha256").update(resolve(cwd).toLocaleLowerCase("en-US")).digest("hex"));
+      const existing = SessionManager.findById(workspace.checkout, engineId, sessions);
+      const sessionManager = existing === undefined
+        ? SessionManager.create(workspace.checkout, sessions, { id: engineId })
+        : SessionManager.open(existing, sessions, workspace.checkout);
+      return CodingSession.create({ cwd: workspace.checkout, modelRuntime: runtime, model, sessionManager,
+        approveCommand: async (command) => {
+          surface.reportFor(id, { phase: "awaiting_command" });
+          const answer = await surface.askIn(id, `Run \`${command}\`? [y]es, [a]lways this session, [n]o: `);
+          surface.reportFor(id, { phase: "working" });
+          return parseApproval(answer);
+        },
+        onActivity: (activity) => { surface.reportFor(id, { phase: "working", activity }); } });
+    })();
+    state.coding.catch(() => { state.coding = undefined; });
+    return state.coding;
+  };
+  const blockSession = (id: string): void => { store.block(id); surface.blockSession(id); };
+
+  const sessionWork = (id: string): SessionWork => ({
+    work: (request) => runOperation(id, async (signal): Promise<WorkResult> => {
+      try {
+        const coding = await codingFor(id, signal);
+        const state = stateFor(id);
+        const prompt = state.note === undefined ? request : `${state.note}\n\n${request}`;
+        state.note = undefined;
+        const result = await coding.run(prompt, signal);
+        if (result.status === "unsettled") { blockSession(id); return result; }
+        if (result.status !== "completed") return result;
+        const workspace = await workspaceFor(id);
+        return { status: "completed", reply: result.reply, changes: workspace.snapshot().changes };
+      } catch (error) {
+        if (signal.aborted || isAbort(error)) return { status: "cancelled" };
+        return { status: "failed", reason: error instanceof Error ? error.message : "Unknown failure" };
+      }
+    }),
+    checks: () => saved(id)?.checks ?? null,
+    suggestChecks: () => {
+      const directory = saved(id)?.workspace;
+      return suggestChecks(directory === null || directory === undefined ? cwd : join(directory, "repo"));
+    },
+    setChecks: (commands) => { store.setChecks(id, commands); },
+    review: (commands) => runOperation(id, async (signal): Promise<ReviewResult> => {
+      const workspace = await workspaceFor(id);
+      const state = stateFor(id);
+      state.reviewed = undefined;
+      const snapshot = workspace.snapshot();
+      const checks = await runChecks(workspace, snapshot, commands, signal);
+      if (signal.aborted) return { status: "cancelled" };
+      state.reviewed = snapshot;
+      surface.inspectFor(id, inspectReview(snapshot, checks));
+      return { status: "ready", changes: snapshot.changes, checks };
+    }),
+    apply: () => serialized(async (): Promise<ApplyResult> => {
+      const state = stateFor(id);
+      const reviewed = state.reviewed;
+      if (reviewed === undefined) return { status: "conflict", reason: "there is no current review", paths: [] };
+      state.reviewed = undefined;
+      try {
+        return { status: "applied", changes: await applyWorkspace(await workspaceFor(id), reviewed) };
+      } catch (error) {
+        if (error instanceof ApplyConflictError) return { status: "conflict", reason: error.message, paths: error.paths };
+        blockSession(id);
+        return { status: "uncertain", applied: error instanceof ApplyUncertainError ? error.applied : [] };
+      }
+    }),
+    reject: async () => {
+      const state = stateFor(id);
+      state.reviewed = undefined;
+      (await workspaceFor(id)).revert();
+      state.note = "Note: the user rejected your previous changes, and the workspace was reset to the last applied state.";
+    },
+  });
+
   return {
     surface,
+    session: sessionWork,
     initialSessionId: initial.id,
     blockedSessionIds: savedSessions.filter((session) => session.blocked).map((session) => session.id),
-    restore: async () => {
-      for (const session of savedSessions) {
-        const proposalId = session.proposalIds.at(-1);
-        if (proposalId === undefined) continue;
-        try {
-          const outcome = await loadProposalTaskOutcome(resolve(homedir(), ".tesota", "proposals"), proposalId);
-          surface.recoverFor(session.id, { title: "Recorded task outcome",
-            summary: `Recorded work: ${outcome.status}`,
-            detail: `State: ${outcome.status}\nFirst check: ${outcome.firstCheck}\n` +
-              `Candidate retained: ${outcome.candidate === null ? "No" : "Yes"}\n` +
-              `Decision: ${outcome.operator.decision}\n` +
-              `Application: ${outcome.promotion}\n\nThis is the task's recorded outcome. ` +
-              "Recheck current candidate evidence before relying on an earlier review. No approval was restored." });
-        } catch {
-          try {
-            const proposal = await loadTaskProposal(resolve(homedir(), ".tesota", "proposals"), proposalId);
-            surface.recoverFor(session.id, { title: "Recorded proposal",
-              summary: "A proposal was recorded; no completed task outcome is available.",
-              detail: `Objective: ${proposal.record.proposal.objective}\n` +
-                "No task outcome could be reconstructed. No approval was restored." });
-          } catch {
-            surface.recoverFor(session.id, { title: "Task record unavailable",
-              summary: "The recorded task could not be reconstructed.",
-              detail: "Inspect the retained proposal and candidate records. No approval was restored." });
-          }
-        }
-      }
-    },
     configureWorkspace: (callbacks) => { workspaceCallbacks = callbacks; },
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },
-    discover: (input, sessionId = "default") => runOperation(sessionId, async (signal) => {
-      let conversation = conversations.get(sessionId);
-      if (conversation === undefined) {
-        const saved = store.list().find((session) => session.id === sessionId);
-        conversation = createLiveRepositoryConversationForShell(cwd, signal, saved?.engineId, saved?.budget);
-        conversations.set(sessionId, conversation);
-      }
-      try {
-        let owner = await conversation;
-        let result = await owner.discover(input, signal);
-        store.recordBudget(sessionId, owner.budget());
-        if (result.status === "unavailable" && result.reason === "baseline_changed" &&
-            input.clarification === undefined && !signal.aborted) {
-          owner.dispose();
-          conversations.delete(sessionId);
-          const engineId = store.rotateEngine(sessionId);
-          surface.writeTo(sessionId,
-            "Repository state changed. Refreshing the model context and checking this request again.");
-          conversation = createLiveRepositoryConversationForShell(cwd, signal, engineId,
-            store.list().find((session) => session.id === sessionId)?.budget);
-          conversations.set(sessionId, conversation);
-          owner = await conversation;
-          result = await owner.discover(input, signal);
-          store.recordBudget(sessionId, owner.budget());
-        }
-        if (result.status === "unsettled") { store.block(sessionId); surface.blockSession(sessionId); }
-        if (result.status === "completed" && result.turn.kind === "task_proposal") {
-          store.linkProposal(sessionId, result.turn.proposedTask.record.id);
-        }
-        return result;
-      }
-      catch (error) {
-        const broken = conversations.get(sessionId);
-        conversations.delete(sessionId);
-        void broken?.then((owner) => { owner.dispose(); }, () => undefined);
-        if (signal.aborted || error instanceof Error && error.name === "AbortError") {
-          return { status: "cancelled", exitCode: 130, settlement: "observed" };
-        }
-        surface.writeTo(sessionId, "Repository discovery unavailable or failed; nothing changed and no authority was created.\n");
-        return { status: "unavailable", exitCode: 1, reason: "unavailable" };
-      }
-    }),
-    start: (proposalId, report, sessionId = "default") => runOperation(sessionId, async (signal) => {
-      const owner = await conversations.get(sessionId);
-      if (owner === undefined) throw new Error("Tesota conversation unavailable for approved task");
-      const result = await startTask({
-        proposalsRoot: resolve(homedir(), ".tesota", "proposals"),
-        sourceDirectory: cwd,
-        reference: proposalId,
-        executionEnvironment,
-        ask: (prompt) => surface.askIn(sessionId, prompt),
-        write: (text) => { surface.writeTo(sessionId, text); },
-        report,
-        promote,
-        onReview: (review) => { surface.inspectFor(sessionId, inspectTaskReview(review)); },
-        execute: (grant) => runProposalTask(grant, {
-          signal,
-          session: owner.taskHost(),
-          write: (text) => { surface.writeTo(sessionId, text); },
-          writeError: (text) => { surface.writeTo(sessionId, text); },
-        }),
-      });
-      store.recordBudget(sessionId, owner.budget());
-      if (result.status === "unsettled") { store.block(sessionId); surface.blockSession(sessionId); }
-      return result;
-    }),
-    dispose: () => { for (const conversation of conversations.values()) {
-      void conversation.then((owner) => { owner.dispose(); }, () => undefined);
-    } store.close(); },
+    dispose: () => {
+      for (const state of states.values()) void state.coding?.then((coding) => { coding.dispose(); }, () => undefined);
+      store.close();
+    },
   };
 }
 
@@ -228,66 +254,48 @@ export async function runTesotaShellCommand(
   const { surface } = dependencies;
   surface.start();
   try {
-    await dependencies.restore?.();
     const running = new Set<Promise<void>>();
     let resolveQuit: (() => void) | undefined;
-    const quit = new Promise<void>((resolve) => { resolveQuit = resolve; });
+    const quit = new Promise<void>((resolveQuitPromise) => { resolveQuit = resolveQuitPromise; });
     const started = new Set<string>();
     const ended = new Set<string>();
     let closing = false;
     const runSession = (id: string): void => {
-      if (dependencies.blockedSessionIds?.includes(id)) return;
-      if (ended.has(id)) return;
-      if (started.has(id)) return;
+      if (dependencies.blockedSessionIds?.includes(id) || ended.has(id) || started.has(id)) return;
       started.add(id);
       const operation = runTesotaShell({
+        ...dependencies.session(id),
         ask: (prompt) => surface.askIn(id, prompt),
         write: (text) => { surface.writeTo(id, text); },
-        discover: (input) => dependencies.discover(input, id),
-        start: (proposalId, report) => dependencies.start(proposalId, report, id),
         report: (progress: TesotaShellProgress) => { surface.reportFor(id, progress); },
-        onTurn: (turn) => { surface.inspectFor(id, inspectConversationTurn(turn)); },
       }).then(() => {
         ended.add(id);
         surface.endSession(id);
       }, (error: unknown) => {
-        const cancelled = error instanceof Error && error.name === "AbortError";
-        if (closing && cancelled) return;
+        if (closing && isAbort(error)) return;
         ended.add(id);
         try {
-          surface.writeTo(id, cancelled ? "Session cancelled. Inspect retained evidence before retrying.\n" :
-              "Session failed. Inspect retained evidence before retrying.\n");
+          surface.writeTo(id, isAbort(error) ? "Session cancelled.\n" : "Session failed. Pending changes stay in the workspace.\n");
         } finally { surface.endSession(id); }
       });
       running.add(operation);
       void operation.finally(() => { running.delete(operation); started.delete(id); });
     };
-    if (dependencies.configureWorkspace !== undefined) {
-      dependencies.configureWorkspace({
-        newSession: (id) => { runSession(id); },
-        selectSession: (id) => { runSession(id); },
-        quit: () => { resolveQuit?.(); },
-      });
-      runSession(dependencies.initialSessionId ?? "default");
-      await quit;
-      closing = true;
-      dependencies.abortActive?.();
-      surface.stop();
-      await Promise.all(running);
-      return 0;
-    }
-    return await runTesotaShell({
-      ask: (prompt) => surface.ask(prompt), write: (text) => { surface.write(text); },
-      discover: dependencies.discover, start: dependencies.start,
-      report: (progress) => { surface.report(progress); },
-      onTurn: (turn) => { surface.inspect(inspectConversationTurn(turn)); },
+    dependencies.configureWorkspace({
+      newSession: (id) => { runSession(id); },
+      selectSession: (id) => { runSession(id); },
+      quit: () => { resolveQuit?.(); },
     });
+    runSession(dependencies.initialSessionId ?? "default");
+    await quit;
+    closing = true;
+    dependencies.abortActive?.();
+    surface.stop();
+    await Promise.all(running);
+    return 0;
   } catch (error) {
-    const cancelled = error instanceof Error && error.name === "AbortError";
-    surface.write(cancelled
-      ? "Tesota session cancelled. Inspect retained evidence before retrying.\n"
-      : "Tesota session failed. Inspect retained evidence before retrying.\n");
-    return cancelled ? 130 : 1;
+    surface.write(isAbort(error) ? "Tesota session cancelled.\n" : "Tesota session failed.\n");
+    return isAbort(error) ? 130 : 1;
   } finally {
     dependencies.dispose?.();
     surface.stop();

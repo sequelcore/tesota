@@ -1,8 +1,8 @@
 # Tesota
 
-Pre-release terminal agent: repository questions, two fixed TypeScript change
-shapes in independent checkouts, bound checks, local review and guarded
-application. Decision 013 replaces the fixed shapes with a general coding loop.
+Pre-release terminal coding agent: a Pi agent works in a separate workspace per
+session, shell commands need approval, and approved checks run on the exact
+changes before the operator applies or rejects them (decision 013).
 Keep changes scoped to the active roadmap item.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;

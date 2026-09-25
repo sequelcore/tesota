@@ -4,119 +4,31 @@ import { configuredOxlint, runOxlint } from "./verification/oxlint.js";
 
 const help = `Tesota
 Usage: tesota [--help | -h | help]
-       tesota [--theme <tesota-dark|tesota-light|terminal>] [--execution <host-local|docker-contained>]
+       tesota [--theme <tesota-dark|tesota-light|terminal>]
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout>
-       tesota candidate create
-       tesota candidate inspect <candidate-id|candidate-directory>
-       tesota candidate check typecheck <candidate-id|candidate-directory>
-       tesota candidate list
-       tesota candidate clean
-       tesota candidate abandon <candidate-id|candidate-directory>
-       tesota isolation qualify
-       tesota task propose <request>
-       tesota task start <proposal-id>
-       tesota task outcome <proposal-id>
-       tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>
-       tesota task review <candidate-id|candidate-directory>
-       tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>
-       tesota task promote <candidate-id|candidate-directory> <review-sha256>
 
-Runs bounded verification and scoped repository tasks.
+Starts a coding session in the current repository. The agent works in a
+separate copy; you review its changes and checks before anything is applied.
 `;
 
 const args = process.argv.slice(2);
-const shellFlags = args.length === 0 || args.length === 2 &&
-  (args[0] === "--theme" || args[0] === "--execution") || args.length === 4 &&
-  ((args[0] === "--theme" && args[2] === "--execution") ||
-    (args[0] === "--execution" && args[2] === "--theme"));
-if (shellFlags &&
-    process.stdin.isTTY === true && process.stdout.isTTY === true && process.stderr.isTTY === true) {
+const shellFlags = args.length === 0 || args.length === 2 && args[0] === "--theme";
+if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true && process.stderr.isTTY === true) {
   const { parseTesotaShellTheme } = await import("./tesota-shell-theme.js");
-  const themeArg = args.indexOf("--theme");
-  const executionArg = args.indexOf("--execution");
-  const theme = themeArg < 0 ? "tesota-dark" : parseTesotaShellTheme(args[themeArg + 1] ?? "");
-  const execution = executionArg < 0 ? "host-local" : args[executionArg + 1];
-  if (theme === undefined || execution !== "host-local" && execution !== "docker-contained") {
-    process.stderr.write("Choose a valid shell theme and execution mode (host-local or docker-contained).\n");
+  const theme = args.length === 0 ? "tesota-dark" : parseTesotaShellTheme(args[1] ?? "");
+  if (theme === undefined) {
+    process.stderr.write("Choose a valid shell theme: tesota-dark, tesota-light or terminal.\n");
     process.exitCode = 2;
   } else {
     const { createProcessTesotaShell, runTesotaShellCommand } = await import("./tesota-shell-command.js");
-    process.exit(await runTesotaShellCommand(createProcessTesotaShell(process.cwd(), theme, execution)));
+    process.exit(await runTesotaShellCommand(createProcessTesotaShell(process.cwd(), theme)));
   }
 } else if (args.length === 0 || (args.length === 1 && ["--help", "-h", "help"].includes(args[0] ?? ""))) {
   process.stdout.write(help);
 } else if (args.length === 2 && args[0] === "auth" && args[1] !== undefined) {
   const { runAuthCommand } = await import("./auth.js");
   process.exit(await runAuthCommand(args[1]));
-} else if (args.length === 2 && args[0] === "isolation" && args[1] === "qualify") {
-  const { runIsolationQualificationCommand } = await import("./isolation-qualification.js");
-  process.exit(await runIsolationQualificationCommand());
-} else if (args.length === 4 && args[0] === "task" && args[1] === "promote" && args[2] !== undefined && args[3] !== undefined) {
-  const { promoteTask } = await import("./task-promotion.js");
-  try {
-    process.stdout.write(JSON.stringify(await promoteTask(args[2], process.cwd(), args[3]), null, 2) + "\n");
-  } catch {
-    process.stderr.write("Promotion unavailable or failed. Inspect source and any promotion journal before retrying.\n");
-    process.exitCode = 2;
-  }
-} else if (args.length === 3 && args[0] === "task" && args[1] === "start" && args[2] !== undefined) {
-  const { runTaskStartCommand } = await import("./task-start.js");
-  process.exit(await runTaskStartCommand(args[2]));
-} else if (args.length === 3 && args[0] === "task" && args[1] === "outcome" && args[2] !== undefined) {
-  const { homedir } = await import("node:os");
-  const { resolve } = await import("node:path");
-  const { formatTaskOutcome, loadProposalTaskOutcome } = await import("./task-outcome.js");
-  try {
-    process.stdout.write(formatTaskOutcome(await loadProposalTaskOutcome(resolve(homedir(), ".tesota", "proposals"), args[2])));
-  } catch {
-    process.stderr.write("Task outcome unavailable.\n");
-    process.exitCode = 2;
-  }
-} else if (args.length >= 3 && args[0] === "task" && args[1] === "propose") {
-  const { runTaskProposalCommand } = await import("./conversation-turn.js");
-  process.exit(await runTaskProposalCommand(args.slice(2).join(" ")));
-} else if (args[0] === "task" && (args.length === 3 && args[1] === "review" && args[2] !== undefined ||
-    args.length === 5 && args[1] === "decide" && args[2] !== undefined && args[3] !== undefined && args[4] !== undefined)) {
-  const { reviewTask, decideTask } = await import("./task-review.js");
-  try {
-    const result = args[1] === "review" ? await reviewTask(args[2] ?? "") :
-      await decideTask(args[2] ?? "", { decision: args[3], reviewSha256: args[4] });
-    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-    process.exitCode = args[1] === "decide" && result.operatorDecision?.applicability !== "current" ? 1 : 0;
-  } catch {
-    process.stderr.write("Review or decision unavailable: check scope, fingerprint and existing decision.\n");
-    process.exitCode = 2;
-  }
-} else if (args.length === 6 && args[0] === "task" && args[1] === "run" && args[2] === "gentle-review" &&
-    args[3] !== undefined && args[4] !== undefined && args[5] !== undefined) {
-    const { runGentleReviewHost } = await import("./gentle-review-host.js");
-      try {
-        const result = await runGentleReviewHost({ candidate: args[3] ?? "", executable: args[4] ?? "", lineage: args[5] ?? "" });
-        process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-        process.exitCode = result.status === "submitted" ? 0 : 1;
-      } catch (error) {
-        process.stderr.write(`${error instanceof Error ? error.message : "Gentle relay failed"}\n`);
-        process.exitCode = 2;
-      }
-} else if (args[0] === "candidate" && (args.length === 2 && ["create", "list", "clean"].includes(args[1] ?? "") ||
-    args.length === 3 && args[1] === "abandon" && args[2] !== undefined ||
-    args.length === 3 && args[1] === "inspect" && args[2] !== undefined)) {
-  const { abandonCandidate, cleanCandidateCheckouts, createCandidateCheckout, inspectCandidateCheckout, listCandidateCheckouts } = await import("./candidate-checkout.js");
-  try {
-    const result = args[1] === "create" ? await createCandidateCheckout(process.cwd()) :
-      args[1] === "list" ? await listCandidateCheckouts() : args[1] === "clean" ? await cleanCandidateCheckouts() : args[1] === "abandon" ?
-        await abandonCandidate(args[2] ?? "") :
-        await inspectCandidateCheckout(args[2] ?? "");
-    process.stdout.write(JSON.stringify(result, null, 2) + "\n");
-  } catch (error) {
-    process.stderr.write(error instanceof Error && error.message.startsWith("Candidate ") ? `${error.message}\n` : "Candidate operation failed.\n");
-    process.exitCode = 1;
-  }
-} else if (args.length === 4 && args[0] === "candidate" && args[1] === "check" && args[2] === "typecheck" &&
-    args[3] !== undefined) {
-  const { runRepositoryTypecheckCommand } = await import("./repository-typecheck-command.js");
-  process.exit(await runRepositoryTypecheckCommand(args[3]));
 } else if (args.length === 2 && args[0] === "verify" && args[1] !== undefined) {
   const result = await runOxlint(configuredOxlint(process.cwd(), process.execPath), args[1]);
   process.stdout.write(`${JSON.stringify(result)}\n`);

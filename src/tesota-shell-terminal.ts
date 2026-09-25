@@ -35,7 +35,6 @@ export interface TesotaShellTerminal {
   askIn(id: string, prompt: string): Promise<string>;
   reportFor(id: string, progress: TesotaShellProgress): void;
   inspectFor(id: string, inspection: ShellInspection): void;
-  recoverFor(id: string, inspection: ShellInspection): void;
   blockSession(id: string): void;
   endSession(id: string): void;
 }
@@ -96,8 +95,8 @@ function editorTheme(theme: TesotaShellTheme): EditorTheme {
 }
 
 function progressColor(progress: TesotaShellProgress, theme: TesotaShellTheme): string | null {
-  if (progress.phase === "ready_for_review" || progress.phase === "awaiting_approval") return theme.warning;
-  if (progress.phase === "promoting") return theme.success;
+  if (progress.phase === "awaiting_decision" || progress.phase === "awaiting_command") return theme.warning;
+  if (progress.phase === "applying") return theme.success;
   return theme.accent;
 }
 
@@ -204,7 +203,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     for (const session of this.sessions.values()) {
       const attention = session.blocked ? " · unresolved" : session.ended ? " · ended" :
         session.pending !== undefined && session.prompt !== "> " ? " · needs you" :
-        session.progress?.value.phase === "discovering" || session.progress?.value.phase === "executing" ?
+        session.progress?.value.phase === "working" || session.progress?.value.phase === "checking" ?
           " · working" : "";
       rows.push(`${session.id === this.selectedId ? ">" : " "} ${session.title}${attention}${session.unread ? " · new" : ""}`);
     }
@@ -342,14 +341,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (id === this.selectedId) this.compose();
   }
 
-  recoverFor(id: string, inspection: ShellInspection): void {
-    const session = this.sessions.get(id);
-    if (session === undefined) throw new Error("Tesota session unavailable");
-    session.inspections.push(inspection);
-    session.selectedInspection = session.inspections.length - 1;
-    if (id === this.selectedId) this.compose();
-  }
-
   blockSession(id: string): void {
     const session = this.sessions.get(id);
     if (session === undefined) throw new Error("Tesota session unavailable");
@@ -410,7 +401,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       this.status.setText(`${colorText(label, progressColor(progress.value, this.theme))} · ${elapsed}s`);
     }
     this.tui.terminal.setProgress(!this.selected().blocked &&
-      (progress?.value.phase === "discovering" || progress?.value.phase === "executing"));
+      (progress?.value.phase === "working" || progress?.value.phase === "checking"));
   }
 
   private submit(answer: string): void {

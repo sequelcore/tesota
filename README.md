@@ -1,19 +1,9 @@
 # Tesota
 
-**Tesota is an open-source agent for work that carries its evidence.** Give it
-a task, inspect what it did and what its checks establish, and decide what to
-accept. It is being rebuilt around a general coding loop
-([decision 013](docs/decisions/013-general-agent-loop-first.md)). Today it helps you
-inspect a repository and attempt a bounded TypeScript change, then shows the
-result, applicable checks and remaining unknowns before you decide whether to
-apply it.
-
-The current interface is a local terminal workspace with saved conversations.
-It can answer related
-questions about a committed repository, ask for clarification and propose a
-supported change. After you approve the scope, it works in an independent
-checkout, runs fixed checks and presents the diff for review. Acceptance and
-application are separate steps.
+**Tesota is an open-source agent for work that carries its evidence.** Ask for
+a change in your repository. A coding agent makes it in a separate copy, Tesota
+runs your checks on exactly that result, and you read the diff and decide
+whether to apply it. Nothing reaches your files until you do.
 
 ## Try it
 
@@ -34,29 +24,15 @@ cd my-project
 tesota
 ```
 
-The supported change path currently requires Windows, Git and, for the TypeScript
-profile, a matching dependency installation in the target repository. The shell
-defaults to trusted local checks, which can access host files, network and
-credentials. Choose `tesota --execution docker-contained` for the protected
-container route; that choice requires Docker Desktop and the pinned image already
-available locally. Tesota does not install dependencies or pull images during a task. See
-[Using Tesota](docs/using-tesota.md) for setup, task scope, review and recovery.
-Run `bun unlink` in this checkout to remove the development command.
+The agent can read, edit, create and delete files in its copy. Every shell
+command asks for your approval first and then runs with your permissions; it is
+not sandboxed. See [Using Tesota](docs/using-tesota.md) for the workflow and
+limits. Run `bun unlink` in this checkout to remove the command.
 
-## Scope
-
-The source-only task can change one or two existing non-test TypeScript files
-under `src/` and run a fixed no-emit typecheck. A separate source-and-test
-task can change one existing TypeScript source file and one existing regression
-test. It requires the targeted Node test and can also require the fixed
-typecheck when both profiles are eligible and selected before approval. Both
-task shapes require explicit approval and human review.
-
-Tesota does not currently handle arbitrary repository changes, new or deleted
-files, model-selected shell commands, dependency changes or interrupted-task
-resume. A passing check establishes only its stated claim for the bound result;
-it does not establish that the requested behavior is correct. The
-[roadmap](docs/roadmap.md) owns current status and priorities.
+Tesota is pre-release and has been exercised live only on Windows. A passing
+check shows only that the command succeeded on the reviewed content, not that
+the change does what you asked. The [roadmap](docs/roadmap.md) owns status and
+priorities.
 
 ## Documentation
 

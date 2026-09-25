@@ -60,3 +60,12 @@ Git history.
   protocol before the work starts.
 - The removed `experiments/` records and retired guides remain available at
   commit `b8d28484f9df46291763c0b44665129d3c1bddb0`.
+
+## Implementation note (2026-09-24)
+
+The first implementation removed the Docker check route and the Gentle AI
+review integration together with the fixed task shapes. Both existed only
+for the TypeScript and Node test profiles, which a general loop cannot reuse.
+Checks are now operator-approved repository commands that run without a
+sandbox. A protected execution route and an independent reviewer return
+through [roadmap](../roadmap.md) step 3, built on the general loop.

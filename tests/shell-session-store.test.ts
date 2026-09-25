@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,21 +42,32 @@ it("rejects a corrupt session snapshot instead of showing a clean history", () =
   expect(() => openShellSessionStore(source, root)).toThrow();
 });
 
-it("carries cumulative limits across a fresh Pi engine identity", () => {
+it("persists the session workspace, approved checks and engine identity", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);
   const session = store.create();
-  store.recordBudget(session.id, { turns: 3, modelInvocations: 8, toolCalls: 12 });
-  const proposalId = randomUUID();
-  store.linkProposal(session.id, proposalId);
-  const oldEngine = session.engineId;
+  store.setWorkspace(session.id, join(root, "workspace"));
+  store.setChecks(session.id, ["bun run check"]);
+  const previousEngine = session.engineId;
   const nextEngine = store.rotateEngine(session.id);
-  expect(nextEngine).not.toBe(oldEngine);
-  expect(() => store.recordBudget(session.id, { turns: 2, modelInvocations: 8, toolCalls: 12 }))
-    .toThrow(/cannot move backwards/);
+  expect(nextEngine).not.toBe(previousEngine);
   store.close();
   const reopened = openShellSessionStore(source, root);
-  expect(reopened.list()[0]?.budget).toEqual({ turns: 3, modelInvocations: 8, toolCalls: 12 });
-  expect(reopened.list()[0]?.proposalIds).toEqual([proposalId]);
+  expect(reopened.list()[0]).toMatchObject({ workspace: join(root, "workspace"), checks: ["bun run check"],
+    engineId: nextEngine });
+  reopened.close();
+});
+
+it("backs up a version 1 snapshot and starts with no sessions", () => {
+  const { root, source } = fixture();
+  const store = openShellSessionStore(source, root);
+  store.create();
+  store.close();
+  const file = readdirSync(root).find((name) => name.endsWith(".json"));
+  if (file === undefined) throw new Error("Missing snapshot");
+  writeFileSync(join(root, file), JSON.stringify({ format: "tesota-shell-sessions", version: 1, source, sessions: [] }));
+  const reopened = openShellSessionStore(source, root);
+  expect(reopened.list()).toEqual([]);
+  expect(readdirSync(root)).toContain(`${file}.v1.bak`);
   reopened.close();
 });

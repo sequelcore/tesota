@@ -2,8 +2,8 @@
 
 Tesota is an early-stage, verification-first agent. Software development is its
 first proving ground. Contributions are welcome when they advance a demonstrated
-user need without weakening task authority, candidate identity, evidence
-integrity or human acceptance.
+user need without weakening command approval, review of the exact changes,
+evidence integrity or human acceptance.
 
 ## Before changing code
 
@@ -27,9 +27,8 @@ bun run check
 ```
 
 `bun run check` builds and type-checks the project, runs the test suites and
-executes Oxlint without applying fixes. Live provider, authentication and
-candidate experiments are separate commands and are not part of the offline
-contribution gate.
+executes Oxlint without applying fixes. Live provider and authentication
+probes are separate commands and are not part of the offline contribution gate.
 
 ## Change expectations
 
