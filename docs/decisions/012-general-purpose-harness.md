@@ -1,6 +1,7 @@
 # 012: Build Tesota as a general-purpose verification-first harness
 
-Status: adopted 2026-09-23.
+Status: adopted 2026-09-23. Delivery order and evidence retention superseded by
+[decision 013](013-general-agent-loop-first.md).
 
 ## Context
 

@@ -45,8 +45,8 @@ a silent fallback or maintain two authentication owners preemptively.
 
 ## Evidence and limitations
 
-See [synthetic compatibility](../../experiments/pi/README.md), [live experiments](../../experiments/codex/README.md)
-and [retained evidence](../../experiments/README.md). Authentication, normal/abort
+See [synthetic compatibility](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/experiments/pi/README.md), [live experiments](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/experiments/codex/README.md)
+and [retained evidence](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/experiments/README.md). Authentication, normal/abort
 turns and the fixed verification-tool experiment now have separate live evidence;
 none establishes a complete agent task cycle. Active verifier
 subprocess cancellation through the adapter is unsupported.

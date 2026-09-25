@@ -5,7 +5,7 @@ and tests. Its roadmap and architecture do not define Tesota's requirements.
 Reuse is evaluated for a concrete need, with provenance recorded when code is
 adapted or copied. See the [reconstruction decision](../decisions/001-start-tesota.md).
 The later [selective recovery decision](../decisions/005-recover-kiln-selectively.md)
-and [extraction reference](kiln-extraction.md) record the reconciled policy from
+and [extraction reference](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/docs/references/kiln-extraction.md) record the reconciled policy from
 a pinned review of the frozen Kiln `dev` branch.
 
 ## Repository and fixed source
@@ -19,7 +19,7 @@ development reference; no active branch denotes historical Kiln state.
 The bootstrap source is
 [`4257ee9fce034cfe8e50dce3dbe3afb12f468094`](https://github.com/sequelcore/tesota/tree/4257ee9fce034cfe8e50dce3dbe3afb12f468094).
 It is historical provenance, not a verified functional baseline. The immutable
-[bootstrap inventory](../history/bootstrap-inventory.json) records original blob identities
+[bootstrap inventory](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/docs/history/bootstrap-inventory.json) records original blob identities
 and dispositions. A coexisting Kiln checkout may have advanced beyond this source.
 
 ## Selected reference areas

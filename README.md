@@ -2,7 +2,8 @@
 
 **Tesota is an open-source agent for work that carries its evidence.** Give it
 a task, inspect what it did and what its checks establish, and decide what to
-accept. It is being built as a general-purpose harness. Today it helps you
+accept. It is being rebuilt around a general coding loop
+([decision 013](docs/decisions/013-general-agent-loop-first.md)). Today it helps you
 inspect a repository and attempt a bounded TypeScript change, then shows the
 result, applicable checks and remaining unknowns before you decide whether to
 apply it.
@@ -13,10 +14,6 @@ questions about a committed repository, ask for clarification and propose a
 supported change. After you approve the scope, it works in an independent
 checkout, runs fixed checks and presents the diff for review. Acceptance and
 application are separate steps.
-
-The shell lists sessions, shows a selected result beside its conversation and
-can supervise two bounded operations. The workspace has automated checks;
-ordinary live use of its new layout and parallel flow still needs qualification.
 
 ## Try it
 
@@ -53,8 +50,7 @@ under `src/` and run a fixed no-emit typecheck. A separate source-and-test
 task can change one existing TypeScript source file and one existing regression
 test. It requires the targeted Node test and can also require the fixed
 typecheck when both profiles are eligible and selected before approval. Both
-task shapes require explicit approval and human review. The source-and-test path has accepted ordinary live walkthroughs,
-including one fresh external case; representative usefulness remains unproven.
+task shapes require explicit approval and human review.
 
 Tesota does not currently handle arbitrary repository changes, new or deleted
 files, model-selected shell commands, dependency changes or interrupted-task
@@ -67,13 +63,11 @@ it does not establish that the requested behavior is correct. The
 | Need | Read |
 | --- | --- |
 | Complete user workflow | [Using Tesota](docs/using-tesota.md) |
-| Product purpose and terms | [Identity](docs/identity.md) |
 | Current status and next work | [Roadmap](docs/roadmap.md) |
-| Vertical delivery plan | [Implementation plan](docs/implementation-plan.md) |
-| Implementation and authority boundaries | [Architecture](docs/architecture.md) |
-| Checks and their claims | [Verification](docs/verification.md) |
+| Purpose, design, checks and boundaries | [Architecture](docs/architecture.md) |
+| What earlier experiments established | [Findings](docs/findings.md) |
 | Build, test and contribution guidance | [Development](docs/development.md) |
-| Qualification criteria and retained observations | [Qualification](docs/qualification.md) and [experiments](experiments/README.md) |
+| Consequential decisions | [docs/decisions](docs/decisions/) |
 
 Tesota began as a deliberate reset of Kiln. The
 [reconstruction decision](docs/decisions/001-start-tesota.md) and

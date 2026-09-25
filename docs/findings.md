@@ -1,0 +1,55 @@
+# Findings
+
+What earlier experiments established, in one place. The full protocols,
+transcripts, oracles and machine evidence were removed from the working tree on
+2026-09-24; they remain in Git at
+[`b8d28484`](https://github.com/sequelcore/tesota/tree/b8d28484f9df46291763c0b44665129d3c1bddb0/experiments).
+Each result holds only for the source, toolchain, platform and date it was
+observed on. None of them establishes representative usefulness.
+
+## Coding tasks through the shell
+
+| Date | What was tried | Outcome | Lesson |
+| --- | --- | --- | --- |
+| 2026-09-19 | Three preselected public TypeScript fixes (`supported-task/`) | 0 of 3 reached a proposal. Discovery exited early; tracked symlinks and hardlinked Bun installs were also refused. | Setup and repository-shape restrictions blocked real work before the model did anything. |
+| 2026-09-22 | Practical-use pilot against a comparator agent (`practical-use/2026-09-22-*`) | A read-only answer was useful. The source-and-test case failed in discovery; the comparator's shell also failed. | Discovery failures needed a visible cause. |
+| 2026-09-23 | Repeated and fresh source-and-test fixes on one external repository | Two accepted and applied results. The fresh case failed its first check and was repaired. | The source-and-test flow can finish on a small, well-shaped task. |
+| 2026-09-23 | Three-repository sample | One useful answer (`tgrep`), one applied source-only fix (`sysone-memory`), one `execution_failed` (`utils-title-case`: its check tool was denied at the operation boundary). | Fixed task shapes break on ordinary variation. |
+| 2026-09-23 | Two-session shell workspace walkthrough | Approval binding, an independent answer, an accepted external fix and restart all worked. A stale progress defect was found and fixed. | Parallel sessions work for the exercised case; split view and interrupted restart were not exercised. |
+| 2026-09-23 | Combined Node test + typecheck on the same candidate | The first fresh attempt ended with unconfirmed execution. A later internal run succeeded after three failed attempts and took about 64 minutes. | Repeated dependency snapshots made review, decision and application unusably slow. |
+| 2026-09-23 | Execution repair on a one-file fixture | 149 s from scope prompt to applied result, including operator waits; about 27 s of execution. Host-local checks worked without Docker. | Reusing task-owned dependency input fixed the snapshot cost. A CRLF conversion blocked one attempt before approval. |
+
+## Isolation
+
+- **Docker** (2026-09-13): the pinned Node container passed every control:
+  outside reads and writes, network, credentials and cancellation.
+- **Codex CLI sandbox 0.154.0** (2026-09-13): failed the outside-read and
+  network controls.
+- **Anthropic sandbox runtime (SRT) on Windows** (2026-09-23): a real
+  TypeScript check ran, and a private fixture confined its own files. A
+  separate host tree with broad inherited permissions stayed accessible, and
+  there is no configurable memory, CPU or process limit. Not qualified for
+  repository tasks; see [decision 007](decisions/007-execution-environments.md).
+
+## Verification and review tools
+
+- **Oxlint** (2026-09-11): of 105 rules from Kiln's analyzer, only size and
+  complexity limits fired on Tesota's source. Five correctness rules were
+  adopted as `oxlint-static/v2` (now v3); structural limits were rejected.
+- **Gentle AI review provider** (2026-09-11 to 09-13): the contract,
+  capability negotiation, candidate binding, stale-target rejection and one
+  accepted high-risk review lineage passed. Correction was once blocked by
+  model availability, and recovery after a stopped review was rejected until
+  its scope changed.
+- **LemmaScript/Dafny**: proves the invocation-budget predicate only. It is a
+  standalone check, not part of `bun run check`.
+
+## Model route
+
+- **Codex through Pi**: saved-login probes pass for a normal turn and an
+  observed cancellation. Earlier device-code and browser probes failed before
+  inference; the history is in `experiments/codex/history.md` at the commit
+  above.
+- **Retired fixture exercises**: a single-tool Oxlint verification and a
+  one-file debugger-removal correction both passed with the live model. Their
+  commands were removed.

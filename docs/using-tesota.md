@@ -6,13 +6,9 @@ change. The same conversation shows the proposed scope, asks for approval,
 works in an isolated checkout, presents applicable checks and lets you review
 and apply the result.
 
-This guide describes the current supported workflow. The [roadmap](roadmap.md)
-owns what comes next. Continuous read-only questions and the initial approved
-source-task turn share one bounded Pi conversation within a Tesota session. The later continuous
-source-and-test workflow has a bounded implementation for one existing source
-and test file and two accepted live walkthroughs. Broader external qualification
-remains outstanding. General test edits and interrupted-task resume remain
-unsupported.
+This guide describes the current workflow. The fixed task shapes below are
+being replaced by a general coding loop; the [roadmap](roadmap.md) owns what
+comes next.
 
 ## Prerequisites
 
@@ -167,9 +163,7 @@ and one approved correction. The test must first fail on the original source,
 then pass after the repair without changing that demonstrated regression. Its
 fixed Node test runs in the selected environment; when selected, the selected
 typecheck must also pass on the same final candidate. Neither runs the full
-repository suite. Its two accepted
-ordinary walkthroughs include one fresh external task, but do not establish
-representative usefulness.
+repository suite.
 
 The source-only variant excludes tests; both variants exclude dependency and
 check configuration, file creation, deletion
@@ -239,11 +233,9 @@ Durable facts can be inspected, but
 recovery does not recreate expired approval or execution authority. If Tesota
 cannot confirm that an effect ended, that uncertainty must remain visible.
 
-Contributor-oriented commands such as `task start`, standalone candidate checks,
-offline review and explicit promotion are documented in
-[development](development.md), [task proposals](proposals.md),
-[tasks](tasks.md), [candidate checkouts](candidates.md) and
-[verification](verification.md).
+Lower-level commands such as `task start`, standalone candidate checks,
+offline review and explicit promotion are listed in
+[architecture](architecture.md#lower-level-commands).
 
 ## Current limitations
 
@@ -258,11 +250,5 @@ currently:
 - claim that the live end-to-end workflow is qualified across representative
   external repositories.
 
-See the [roadmap](roadmap.md) for capability priorities and
-[qualification](qualification.md) for the evidence required to advance them.
-
-The narrow request-to-application flow has one successful prospective
-Windows/Docker case with explicit human acceptance. Its retained failures,
-behavioral checks and operator-reported external review are documented in the
-[qualification results](../experiments/supported-task/results.md). This is not
-a claim of representative reliability or live qualification on other platforms.
+See the [roadmap](roadmap.md) for priorities and [findings](findings.md) for
+what has been exercised live.

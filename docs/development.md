@@ -25,18 +25,13 @@ passing checks, live observations and human acceptance are different claims.
 
 The package binary points to `dist/cli.js`. Build before `bun link`; later builds
 refresh that linked executable. Use `bun unlink` to remove it. For the user
-workflow, see [Using Tesota](using-tesota.md). Lower-level commands are described
-by their owners:
+workflow, see [Using Tesota](using-tesota.md). Checks, lower-level commands and
+their owners are in [architecture](architecture.md); authentication is in
+[authentication](authentication.md).
 
-| Work | Reference |
-| --- | --- |
-| Authentication and local credential state | [Authentication](authentication.md) |
-| Read-only discovery and proposals | [Task proposals](proposals.md) |
-| Candidate creation, inspection and cleanup | [Candidate checkouts](candidates.md) |
-| Approved task, review, outcome and promotion | [Approved tasks](tasks.md) |
-| TypeScript, targeted Node, Oxlint, Dafny and Gentle checks | [Verification](verification.md) |
-| Explicit Windows isolation comparison | [Isolation experiment](../experiments/isolation/README.md) |
-| Live model probes | [Codex experiment guide](../experiments/codex/README.md) |
+`bun run live:codex` runs the live Codex probe with the saved login and writes
+one JSON record per run under the ignored `live-runs/codex/` directory.
+`tesota isolation qualify` reruns the Windows isolation comparison.
 
 The shell defaults to trusted host-local repository checks on Windows. This
 route is not sandboxed. The optional protected Docker route requires its pinned
@@ -67,23 +62,21 @@ contract in another guide.
 | Content | Owner |
 | --- | --- |
 | Orientation | [README](../README.md) |
-| Product purpose and vocabulary | [Identity](identity.md) |
 | Supported user workflow | [Using Tesota](using-tesota.md) |
 | Status and priorities | [Roadmap](roadmap.md) |
-| Vertical implementation slices and completion evidence | [Implementation plan](implementation-plan.md) |
-| Implementation and authority boundaries | [Architecture](architecture.md) |
-| Product qualification criteria | [Qualification](qualification.md) |
-| Implemented check contracts | [Verification](verification.md) |
-| Verifier selection criteria | [Verifier strategy](verifier-strategy.md) |
-| Task, proposal, candidate and authentication contracts | [Tasks](tasks.md), [proposals](proposals.md), [candidates](candidates.md), [authentication](authentication.md) |
-| Experiments and dated observations | [Experiments](../experiments/README.md) |
+| Purpose, design, checks and boundaries | [Architecture](architecture.md) |
+| Authentication | [Authentication](authentication.md) |
+| What experiments established | [Findings](findings.md) |
 | Consequential decisions | `docs/decisions/`, linked from the affected guide |
-| Historical upstream reference and bootstrap evidence | `docs/references/` and [project history](history/README.md) |
+| Historical Kiln reference | [Kiln reference](references/kiln.md) |
 | Agent working instructions | [AGENTS.md](../AGENTS.md) |
 
-Mark proposed work as proposed and verify current claims against code or
-retained evidence. Preserve superseded decision rationale and historical machine
-evidence bytes. Keep credentials, conversation exports, scratch notes and
+Record a live observation as a short entry in [findings](findings.md): what
+was tried, the outcome and the lesson. Do not add protocols, transcripts or
+machine evidence to the repository.
+
+Mark proposed work as proposed and verify current claims against code. Mark
+superseded decisions instead of rewriting them. Keep credentials, conversation exports, scratch notes and
 session bookkeeping outside tracked documentation. Do not use Kiln's private
 state namespace for Tesota.
 

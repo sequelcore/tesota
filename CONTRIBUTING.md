@@ -7,7 +7,7 @@ integrity or human acceptance.
 
 ## Before changing code
 
-Read the [project identity](docs/identity.md), [architecture](docs/architecture.md),
+Read the [architecture](docs/architecture.md),
 [roadmap](docs/roadmap.md) and [development guide](docs/development.md). For a
 substantial new capability, open a focused discussion or issue first so its user,
 owner, effect boundary and qualification evidence are explicit.

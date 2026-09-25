@@ -35,7 +35,7 @@ it("compiled login persists across processes, status is sanitized, and logout re
         });
         expect(experiment.status, experiment.stderr).toBe(0);
         expect(experiment.stdout + experiment.stderr).not.toMatch(/SYNTHETIC_ACCESS|SYNTHETIC_REFRESH|LOGIN_FORBIDDEN|NETWORK_FORBIDDEN/);
-        const runs = join(root, "experiments/codex/runs");
+        const runs = join(root, "live-runs/codex");
         const [runFile] = await readdir(runs);
         if (runFile === undefined) throw new Error("Expected one retained run");
         const record = JSON.parse(await readFile(join(runs, runFile), "utf8"));

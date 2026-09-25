@@ -79,7 +79,7 @@ implementation. Reused code must record its exact source commit and path,
 adaptations, attribution and license obligations.
 
 The detailed classification and evidence limits are maintained in the
-[Kiln extraction reference](../references/kiln-extraction.md). The original
+[Kiln extraction reference](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/docs/references/kiln-extraction.md). The original
 [reconstruction decision](001-start-tesota.md) remains valid and is narrowed by
 this policy: clean reconstruction means selective ownership, not loss of
 institutional knowledge.

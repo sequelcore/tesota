@@ -5,7 +5,7 @@ superseded by the first TypeScript source-task slice. Read-only discovery and th
 argument-free conversational entry point remain implemented. The historical
 documentation lifecycle below established scope approval, isolated candidates,
 escaped diff review, separate decisions and promotion without copied lifecycle
-IDs. The current supported contract is owned by [Approved tasks](../tasks.md).
+IDs. The current supported contract is owned by [Approved tasks](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/docs/tasks.md).
 General repository execution remains open.
 
 ## Problem

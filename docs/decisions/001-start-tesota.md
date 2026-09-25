@@ -26,7 +26,7 @@ Preserve Git history and attribution. The bootstrap started from
 `4257ee9fce034cfe8e50dce3dbe3afb12f468094` on the temporary
 `tesota/bootstrap` branch before promotion to `main`. It replaced the application
 tree selectively; it did not create an unrelated history. The
-[inventory](../history/bootstrap-inventory.json) records inherited
+[inventory](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/docs/history/bootstrap-inventory.json) records inherited
 file dispositions. No Kiln implementation package was ported in the bootstrap.
 
 Treat Kiln as a coexisting [reference implementation](../references/kiln.md).

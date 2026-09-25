@@ -1,6 +1,7 @@
 # 011: Admit verification capabilities through bounded evidence-backed increments
 
-Status: proposed on the review branch; adopted by merge into `dev`.
+Status: proposed on the review branch; adopted by merge into `dev`. Narrowed for
+the coding loop by [decision 013](013-general-agent-loop-first.md).
 
 ## Context
 
@@ -27,8 +28,8 @@ Each accepted increment must name its user and outcome, canonical owner,
 read/effect boundary, dependencies, comparison and qualification evidence, and
 removal/fallback contract. Prefer an existing owner. A research decision is not
 runtime adoption, proof of usefulness, a priority change or permission to make
-external calls. [Verifier qualification](../verifier-strategy.md#qualification-standard)
-and [product qualification](../qualification.md) still govern their respective
+external calls. [Verifier qualification](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/docs/verifier-strategy.md#qualification-standard)
+and [product qualification](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/docs/qualification.md) still govern their respective
 claims. An implementation needs its own focused, evidence-backed decision.
 
 ## Conceptual and authority boundaries

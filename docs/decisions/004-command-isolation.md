@@ -97,7 +97,7 @@ and network cleanup. SIGINT is converted to the same owned abort path, which
 returns 130 only after cleanup.
 
 The 2026-09-13 Windows run and reproduction instructions are retained in the
-[isolation experiment](../../experiments/isolation/README.md). Its verdict is
+[isolation experiment](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/experiments/isolation/README.md). Its verdict is
 **internal-decision-ready** for selecting the Docker runner for the next bounded
 increment. It is not a public security certification, an exploit-resistance
 benchmark, a Linux-host qualification or evidence for commands other than the

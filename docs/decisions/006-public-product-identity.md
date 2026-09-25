@@ -24,7 +24,7 @@ documentation and other future work whose results can carry applicable
 evidence. Calling Tesota a general-purpose agent today would make an unsupported
 capability claim.
 
-The [public positioning review](../references/public-positioning.md) compares
+The [public positioning review](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/docs/references/public-positioning.md) compares
 this focus with current first-party descriptions of representative agents. It
 establishes market language and product emphasis, not comparative quality or
 feature absence.

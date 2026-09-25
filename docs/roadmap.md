@@ -1,183 +1,64 @@
 # Roadmap
 
-This page owns product status and priority. Tesota is being built as a
-general-purpose agent harness: people bring a task, and it uses appropriate
-tools while keeping the result, checks and decisions understandable. This is
-the intended experience, not a current capability claim.
-[Identity](identity.md) defines the purpose; [qualification](qualification.md)
-defines evidence for claims; [experiments](../experiments/README.md) retain
-dated results. [Decision 012](decisions/012-general-purpose-harness.md) records
-the new direction. The [implementation plan](implementation-plan.md) names
-vertical slices and their completion evidence.
+This page owns product status and priority.
+[Decision 013](decisions/013-general-agent-loop-first.md) sets the current
+direction: build a usable general coding loop first, then put verification
+around its result.
 
-## Current status
+## Status
 
-Tesota is pre-release. Its terminal shell supports bounded questions over a
-committed repository and two approved TypeScript task shapes in independent
-checkouts. One changes one or two existing non-test `src/` files and runs a
-fixed typecheck in the selected execution environment. The other changes one existing source file and one
-existing regression test and requires a targeted Node test; when the
-TypeScript typecheck is eligible, the operator can require it too before
-approving the work. Selected verifier inputs are bound to that approval, and
-both checks must examine the same final candidate. It shows the
-exact diff and applicable evidence, then requires a local decision before
-guarded application. One bounded semantic correction is implemented.
-Known-settled outcomes return to a new prompt; unconfirmed execution or
-application settlement ends the session.
+Tesota is pre-release. The terminal shell answers questions about a committed
+repository and runs two fixed TypeScript change shapes in an independent
+checkout (see [architecture](architecture.md#current-runtime-flow)). It shows
+the exact diff and bound checks, then asks for a decision before a guarded
+application. Sessions persist locally, up to two operations run at once, and
+checks run either in Docker or as trusted host-local processes.
 
-[Ordinary live walkthroughs](../experiments/practical-use/2026-09-23-results.md)
-include accepted applications, while a
-[three-repository sample](../experiments/practical-use/2026-09-23-cross-repository-results.md)
-retains an execution failure. These establish the exercised cases, not
-representative usefulness. The earlier
-[practical-use pilot](../experiments/practical-use/2026-09-22-results.md)
-retains failed and degraded attempts. A
-[fresh combined-check attempt](../experiments/practical-use/2026-09-23-combined-check-results.md)
-exercised eligibility, selection, approval and a failing regression, but ended
-with unconfirmed execution and no application. A later
-[internal combined-check diagnostic](../experiments/practical-use/2026-09-23-combined-shell-progress-results.md)
-completed red regression, both selected checks, independent review, human
-acceptance and guarded application on Windows/Docker, after three retained
-failed attempts. Its successful run took about 64 minutes because review,
-decision and promotion repeatedly snapshotted dependencies. This does not
-complete slice 1 or qualify representative external-repository usefulness.
-The [execution and evidence repair](implementation-plan.md#execution-and-evidence-repair-before-another-usefulness-claim)
-now records task checks and reuses a task-owned dependency input. Review,
-decision and promotion inspect the last observation without another verifier
-run. A [small live adapter diagnostic](../experiments/practical-use/2026-09-23-evidence-repair-adapter-results.md)
-confirmed one dependency snapshot across two real checks; a timed ordinary
-task with the trusted host-local route has now completed without Docker;
-[the retained diagnostic](../experiments/practical-use/2026-09-23-execution-repair-shell-results.md)
-records approval, a real check, review, acceptance and guarded application.
-The shell offers host-local checks without Docker and retains Docker as a
-selectable protected route. This is one small Windows fixture, not evidence of
-representative usefulness or OS confinement. A checkout line-ending conversion
-also blocked one attempt before approval and remains a usability issue.
-An [SRT Windows follow-up](../experiments/isolation/README.md#repository-and-alias-follow-up)
-ran a real TypeScript check. A private task fixture constrained its own files,
-but a separate host tree with broad inherited permissions remained accessible.
-The read default is documented; the host-wide write boundary remains unproved.
-SRT is not a selected task provider. [Decision 007](decisions/007-execution-environments.md#windows-native-sandbox-candidate-2026-09-24)
-records why it is the first native candidate and what its next qualification
-must establish.
+It has finished real tasks only on small, well-shaped repositories, and one
+combined-check run took 64 minutes. It cannot create or delete files, run
+arbitrary commands, work on uncommitted changes or handle other languages.
+[Findings](findings.md) summarizes what has been exercised.
 
-The shell now lists local sessions, persists their human transcript and result
-inspections, and can reopen a settled Pi context with its consumed budgets.
-Each session owns its prompts, cancellation and model context. Up to two
-operations may run at once; application to the same repository is serialized
-and still rechecks source drift. A wide terminal can show a second conversation
-read-only. An interrupted operation is never resumed as active or authorized;
-unconfirmed effects block new work in that session. A
-[two-session live walkthrough](../experiments/practical-use/2026-09-23-shell-workspace-results.md)
-exercised approval binding, an independent answer, an accepted external issue
-fix and normal restart. It also found a stale progress defect, now fixed in
-source and focused tests. Wide split view, interrupted restart and overlapping
-application remain unqualified live. For a new request,
-repository baseline changes refresh engine context and carry the consumed
-budget forward; a changed clarification baseline still stops that request.
-It has session-only Tesota dark, Tesota light and terminal-color appearances;
-the first two assume matching terminal profiles. User-supplied themes and
-appearance persistence are not implemented.
-General repository changes, uncommitted input, new or deleted files,
-arbitrary commands, browser/computer use, document work and general research
-are outside the current contract. [Using Tesota](using-tesota.md) describes
-current use.
+## Next
 
-## Delivery sequence
+### 1. General coding loop
 
-Each increment must complete a real user task through the ordinary shell,
-state its allowed effects, retain failures and qualify its exact claim before
-scope expands. The workstreams below overlap: verification and review grow
-with coding and non-code tasks. This is product priority, not a directory
-plan or a promise that every named integration will ship.
+- Run a Pi coding agent in an independent checkout with read, write, create,
+  delete and command tools. Commands need operator approval.
+- When the agent finishes, show the final diff, run the selected repository
+  checks on that exact result, and ask to accept or reject. Keep guarded
+  application.
+- Remove the fixed task shapes, proposal admission and per-shape check
+  selection in the same change.
+- **Done when:** Tesota is used for its own day-to-day changes, including
+  new files, on Windows.
 
-### 1. Useful general coding work
+### 2. Everyday usability
 
-Replace the fixed TypeScript task shapes with a flow for a small, preselected
-change in an ordinary repository. Start with the file operations and checks
-needed by that task, then expand to further languages and layouts. The first
-slice must let the user select an eligible, qualified repository check before
-approval rather than tying it to a TypeScript task shape. Preserve the
-check's exact claim and failure outcome.
+Fix what daily use surfaces first. Known gaps: CRLF conversion in candidate
+checkouts, a trusted repository's own check commands, working on uncommitted
+changes, and one non-TypeScript repository.
 
-The user should describe the goal, approve consequential access, see the
-result and checks in plain language, request correction, and decide whether
-to apply it without managing internal IDs or raw hashes. Preserve uncommitted
-user work and detect conflicts. Exercise fresh tasks in more than one
-repository, including a non-TypeScript project, failed checks, refusal,
-cancellation, rejection and source drift. Record setup, elapsed time,
-operator effort, review burden and independently assessed residual defects.
-One accepted application establishes only that case.
+### 3. Verification and review as options
 
-### 2. General task tools and a non-code task
+Let users pick checks and reviewers per repository, starting with the
+existing TypeScript, Node test, Oxlint and Gentle integrations. A missing or
+failed check never reads as a pass.
 
-Add tools in response to selected work, with explicit read and effect
-boundaries. Qualify one complete non-code task early, such as research with
-source inspection or a document workflow, through the same conversation and
-result review. Browser and computer use need their own observed-state,
-permission and settlement contracts. Coding checks and file-application
-assumptions do not automatically transfer to another domain.
+### Later
 
-The shell should explain results, sources, actions, checks and uncertainty in
-words users understand. Technical identities stay in inspectable detail.
-A task may end in an answer or artifact when there is nothing to apply.
-Consequential external actions need their own approval and outcome record.
+Non-code tasks, a native OS sandbox on Windows (see
+[decision 007](decisions/007-execution-environments.md)), other platforms, and
+user-supplied verification methods, chosen by observed need.
 
-An application-hosted task is another needed qualification case once a
-concrete consumer exists. The application keeps its identity, domain data and
-business decisions; Tesota must handle the admitted work, result and evidence
-without inheriting that application's policy. A changed objective or revoked
-permission must be checked before a consequential action. Qualify this through
-a bounded consumer task, not a generic hosting platform built in advance.
+## Rules
 
-### 3. Extensible verification and review
-
-Make verification user-configurable. Tesota may ship native, opt-in methods,
-while users and contributors can add methods for their own work. Qualify an
-early native method and a user-supplied method on real tasks; extend that
-contract across domains as those tasks arrive. Oxlint, LemmaScript/Dafny and
-Gentle AI are candidates with existing bounded integrations or experiments;
-their current contracts do not imply general availability.
-
-A method reports a bounded claim, the result and inputs examined, its
-producer and configuration, outcome and limits. Changed relevant inputs make
-evidence stale. Findings, unavailable tools, incomplete runs and uncertainty
-stay distinct. A reviewer assesses the result and whether evidence addresses
-the user's request; it may request more work or identify an intent gap.
-Neither verifier nor reviewer grants tool authority, accepts for the user or
-applies a result. No single method certifies an entire task.
-
-Implement shared contracts only where multiple real methods need them. Keep
-method-specific meaning in the adapter. Make installation, configuration,
-testing and removal understandable to contributors. The fabric belongs to
-Tesota; external tools and community packages may live in their own repos.
-
-### 4. Broader use and community qualification
-
-Expand platforms, tasks, tools and methods from observed needs. Publish small
-working examples and contribution contracts. Test community methods for
-result integrity, effect boundaries and failures. Measure whether people
-outside the project can install Tesota, finish work and understand what was
-established without author guidance. Retain failed attempts and user effort.
-
-## Rules for every increment
-
-- Keep the user's original request and adopted completion conditions visible;
-  an agent cannot quietly weaken them to make a check pass.
-- Qualify the link between a check and its claim: record relevant conditions,
-  test the expected outcome against an independent basis, and narrow conclusions
-  when a fixture or control does not represent the intended task. See
-  [claim and test validity](qualification.md#claim-and-test-validity).
-- Separate permission to act, check evidence, independent review, human
-  acceptance and application. Bind evidence and decisions to their result.
-- State what remains unknown. Missing checks, malformed reports, timeouts and
-  unconfirmed effects cannot become success.
-- Give a useful default experience. Optional methods add task coverage; they
-  are not universal mandatory gates.
-- Qualify new process or external effects in the actual environment. There is
-  no silent downgrade when required protection is unavailable.
-- Keep one owner per behavior; add abstractions after implemented consumers
-  reveal shared semantics.
-- There are no external consumers to preserve. Remove obsolete internal
-  contracts cleanly; retain legal notices and historical evidence as records,
-  not runtime compatibility layers.
+- Keep the user's request visible; an agent cannot quietly weaken it to make a
+  check pass.
+- Missing checks, timeouts and unconfirmed effects are never reported as
+  success.
+- Keep permission, check evidence, review, acceptance and application
+  separate.
+- Keep one owner per behavior and add abstractions only for real consumers.
+- There are no external consumers. Remove obsolete code instead of keeping
+  compatibility layers.

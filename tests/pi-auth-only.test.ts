@@ -257,14 +257,13 @@ it("compiled auth-only dispatch help is offline and explicit", () => {
 it.skipIf(process.platform !== "win32")("compiled AUTH-ONLY exits with sanitized durable success using offline login", () => {
   const directory = mkdtempSync(join(tmpdir(), "tesota-auth-smoke-"));
   try {
-    mkdirSync(join(directory, "experiments/codex/evidence"), { recursive: true });
     const output = execFileSync("bun", ["--no-env-file", "--preload", resolve("tests/fixtures/auth-only-smoke.mjs"),
       resolve("dist/live-codex.js"), "--auth-only", "--device-code"], {
       cwd: directory, encoding: "utf8", timeout: 5_000, windowsHide: true,
       env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"] },
     });
     expect(output).toContain("ZERO model inference calls");
-    const runs = join(directory, "experiments/codex/runs");
+    const runs = join(directory, "live-runs/codex");
     const [runFile] = readdirSync(runs);
     if (runFile === undefined) throw new Error("Expected one retained run");
     const record = JSON.parse(readFileSync(join(runs, runFile), "utf8"));
@@ -409,14 +408,9 @@ it.each(["timeout", "cancel", "pre_cancel"])("retains device login deadline/canc
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it.skipIf(process.platform !== "win32")("compiled captured mode refuses login and exclusive reservation preserves browser and device evidence", () => {
+it.skipIf(process.platform !== "win32")("compiled captured mode refuses login and exclusive reservation preserves earlier runs", () => {
   const directory = mkdtempSync(join(tmpdir(), "tesota-device-reserve-"));
   try {
-    mkdirSync(join(directory, "experiments/codex/evidence"), { recursive: true });
-    const browserPath = join(directory, "experiments/codex/evidence/browser-auth.json");
-    const devicePath = join(directory, "experiments/codex/evidence/device-auth.json");
-    const historical = readFileSync("experiments/codex/evidence/browser-auth.json");
-    writeFileSync(browserPath, historical);
     const invoke = (captured: boolean) => spawnSync("bun", ["--no-env-file", "--preload",
       resolve("tests/fixtures/auth-only-smoke.mjs"), resolve("dist/live-codex.js"), "--auth-only", "--device-code"], {
       cwd: directory, encoding: "utf8", timeout: 5_000, windowsHide: true,
@@ -425,11 +419,11 @@ it.skipIf(process.platform !== "win32")("compiled captured mode refuses login an
     const captured = invoke(true);
     expect(captured.status).toBe(2);
     expect(captured.stderr).toContain("captured execution is disabled");
-    expect(() => readFileSync(devicePath)).toThrow();
+    expect(() => readdirSync(join(directory, "live-runs/codex"))).toThrow();
     const first = invoke(false);
     expect(first.status).toBe(0);
     expect((first.stdout + first.stderr).includes(deviceNotification.userCode)).toBe(false);
-    const runs = join(directory, "experiments/codex/runs");
+    const runs = join(directory, "live-runs/codex");
     const [runFile] = readdirSync(runs);
     if (runFile === undefined) throw new Error("Expected one retained run");
     const firstPath = join(runs, runFile);
@@ -438,7 +432,6 @@ it.skipIf(process.platform !== "win32")("compiled captured mode refuses login an
     expect(invoke(false).status).toBe(0);
     expect(readdirSync(runs)).toHaveLength(2);
     expect(readFileSync(firstPath).equals(record)).toBe(true);
-    expect(readFileSync(browserPath).equals(historical)).toBe(true);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -492,7 +485,6 @@ it.skipIf(process.platform !== "win32").each([
 ] as const)("compiled full-probe/device-code composition: %s", (scenario, exit, count) => {
   const directory = mkdtempSync(join(tmpdir(), "tesota-full-device-"));
   try {
-    mkdirSync(join(directory, "experiments/codex/evidence"), { recursive: true });
     const result = spawnSync("bun", ["--no-env-file", "--preload", resolve("tests/fixtures/auth-only-smoke.mjs"),
       resolve("dist/live-codex.js"), "--full-probe", "--device-code"], {
       cwd: directory, encoding: "utf8", timeout: 5_000, windowsHide: true,
@@ -500,7 +492,7 @@ it.skipIf(process.platform !== "win32").each([
     });
     expect(result.status).toBe(exit);
     expect(result.stdout).toContain("device-code OAuth/network authentication AND up to two model invocations");
-    const runs = join(directory, "experiments/codex/runs");
+    const runs = join(directory, "live-runs/codex");
     const [runFile] = readdirSync(runs);
     if (runFile === undefined) throw new Error("Expected one retained run");
     const serialized = readFileSync(join(runs, runFile), "utf8");
@@ -531,14 +523,9 @@ it.skipIf(process.platform !== "win32").each([
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-it.skipIf(process.platform !== "win32")("compiled device full-probe checks terminal and reservation before login, preserving prior evidence", () => {
+it.skipIf(process.platform !== "win32")("compiled device full-probe checks terminal and reservation before login", () => {
   const directory = mkdtempSync(join(tmpdir(), "tesota-full-reserve-"));
-  const historical = ["browser-probe.json", "browser-auth.json", "device-auth.json"]
-    .map((name) => ({ name, bytes: readFileSync(join("experiments/codex/evidence", name)) }));
   try {
-    mkdirSync(join(directory, "experiments/codex/evidence"), { recursive: true });
-    for (const file of historical) writeFileSync(join(directory, "experiments/codex/evidence", file.name), file.bytes);
-    const destination = join(directory, "experiments/codex/evidence/device-probe.json");
     const invoke = (captured: boolean) => spawnSync("bun", ["--no-env-file", "--preload",
       resolve("tests/fixtures/auth-only-smoke.mjs"), resolve("dist/live-codex.js"), "--full-probe", "--device-code"], {
       cwd: directory, encoding: "utf8", timeout: 5_000, windowsHide: true,
@@ -548,20 +535,15 @@ it.skipIf(process.platform !== "win32")("compiled device full-probe checks termi
     const captured = invoke(true);
     expect(captured.status).toBe(2);
     expect(captured.stderr).toContain("captured execution is disabled");
-    expect(() => readFileSync(destination)).toThrow();
-    const reserved = Buffer.from("existing reservation\n");
-    writeFileSync(destination, reserved);
+    expect(() => readdirSync(join(directory, "live-runs/codex"))).toThrow();
     // A non-directory runs path prevents exclusive output reservation before login.
-    writeFileSync(join(directory, "experiments/codex/runs"), "blocked");
+    mkdirSync(join(directory, "live-runs"));
+    writeFileSync(join(directory, "live-runs/codex"), "blocked");
     const occupied = invoke(false);
     expect(occupied.status).toBe(1);
     expect(occupied.stderr).toContain("Codex experiment failed");
     for (const result of [captured, occupied]) expect(result.stdout + result.stderr).not.toContain("LOGIN_MUST_NOT_START");
-    expect(readFileSync(destination)).toEqual(reserved);
-    for (const file of historical) {
-      expect(readFileSync(join(directory, "experiments/codex/evidence", file.name))).toEqual(file.bytes);
-      expect(readFileSync(join("experiments/codex/evidence", file.name))).toEqual(file.bytes);
-    }
+    expect(readFileSync(join(directory, "live-runs/codex"), "utf8")).toBe("blocked");
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

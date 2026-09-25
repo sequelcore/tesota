@@ -14,7 +14,7 @@ Docker was required for the ordinary code path and eleven host checks copied
 the same 309 MB dependency installation repeatedly. That is not the intended
 general-purpose harness experience. The correction began as a design decision;
 its current implementation and qualification status are in the
-[implementation plan](../implementation-plan.md#execution-and-evidence-repair-before-another-usefulness-claim).
+[implementation plan](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/docs/implementation-plan.md#execution-and-evidence-repair-before-another-usefulness-claim).
 
 ## Context
 
@@ -34,7 +34,7 @@ could modify files outside the candidate, inspect ambient credentials, start
 descendants or interfere with the evidence producer itself.
 
 Current agent products expose several execution environments rather than one
-universal mechanism. The [public positioning evidence](../references/public-positioning.md#execution-environments-and-isolation)
+universal mechanism. The [public positioning evidence](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/docs/references/public-positioning.md#execution-environments-and-isolation)
 records the primary sources behind this decision. Those products demonstrate
 available mechanisms, not that their boundaries are equivalent or sufficient
 for Tesota.
@@ -185,7 +185,7 @@ consumers and qualified implementations.
   risk class; its process boundary is explicitly not described as a sandbox.
 - The Windows isolation experiment compares concrete mechanisms but grants no
   task authority and does not create a general backend selector.
-- A later [Anthropic Sandbox Runtime Windows follow-up](../../experiments/isolation/README.md#repository-and-alias-follow-up)
+- A later [Anthropic Sandbox Runtime Windows follow-up](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/experiments/isolation/README.md#repository-and-alias-follow-up)
   passed a real TypeScript check and constrained a private fixture, but a
   separate broadly accessible host tree remained reachable. It is not yet a
   qualified protected task provider.
@@ -216,7 +216,7 @@ qualified task needs one. Tesota still owns the admitted effects, provider
 selection, observation and evidence; SRT would enforce only the OS boundary.
 Being independent of a provider does not require a separate sandbox repository.
 
-The [2026-09-23 probes](../../experiments/isolation/README.md#repository-and-alias-follow-up)
+The [2026-09-23 probes](https://github.com/sequelcore/tesota/blob/b8d28484f9df46291763c0b44665129d3c1bddb0/experiments/isolation/README.md#repository-and-alias-follow-up)
 establish a narrower result. SRT 0.0.77 ran a real TypeScript check and denied
 direct and junction access within a private task root. A separate host tree
 with broad inherited permissions remained readable and writable. Unlisted

@@ -28,7 +28,7 @@ if ((args.length === 1 && args[0] === "--help") || (valid && args.length === 3 &
       throw new Error("No saved login");
     }
     const identity = liveSourceIdentity();
-    const directory = "experiments/codex/runs";
+    const directory = "live-runs/codex";
     mkdirSync(directory, { recursive: true });
     const destination = join(directory, `${new Date().toISOString().replaceAll(":", "-")}-${randomUUID()}.json`);
     const file = openSync(destination, "wx", 0o600);
