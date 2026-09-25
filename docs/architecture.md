@@ -47,9 +47,16 @@ request
 Each shell session owns one workspace: an independent clone of the source's
 committed HEAD under `~/.tesota/workspaces/`, without the source's remotes,
 hooks or config. The source's uncommitted, non-ignored changes are captured
-through a temporary index and object directory, so nothing is written to the
-source repository, and added to the workspace as one commit; that commit is
-the base, so later diffs show only the agent's work. Line endings are read as
+through a private index and object directory kept in the workspace, so nothing
+is written to the source repository, and added to the workspace as one commit;
+that commit is the base, so later diffs show only the agent's work.
+
+Before each request the workspace takes the source's newer state the way Git
+rebases: the captured source becomes the new base, and pending work is carried
+onto it with a three-way cherry-pick. If pending work conflicts with the newer
+source, nothing changes and the operator is told which files. The agent is
+told which files changed. The private index keeps Git's stat cache, so a check
+that finds nothing new is cheap. Line endings are read as
 the operator's `core.autocrlf` setting shows them. Symbolic links are checked
 out as plain files holding the link text (`core.symlinks=false`) and
 submodules stay uninitialized; application refuses changes to either. The agent keeps its conversation across
@@ -133,9 +140,8 @@ LemmaScript and Dafny.
   cannot be applied.
 - Only the `host` environment exists, so shell commands are approved but not
   sandboxed.
-- Uncommitted changes are captured when the workspace is created; later edits
-  in the source are not visible to the agent, although conflicting files are
-  protected at application.
+- Newer source edits that conflict with pending work wait until that work is
+  applied or rejected.
 - Closing a session (`Ctrl+W`) removes its record, transcript and workspace;
   a session with unresolved effects keeps its workspace as evidence.
   `tesota prune` removes other unused workspaces.

@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import * as z from "zod";
 import { isGitObjectId, runRepositoryGit as git } from "./repository-git.js";
-import { captureUncommittedChanges, type UncommittedChange } from "./source-snapshot.js";
+import { SourceSnapshot, UnsupportedSourceChange, type SourceChange } from "./source-snapshot.js";
 
 const checkoutRecordSchema = z.strictObject({
   format: z.literal("tesota-workspace-checkout"),
@@ -23,7 +23,7 @@ export interface WorkspaceCheckout {
   readonly baseline: string;
   readonly head: string;
   /** Uncommitted source changes the workspace started with, committed on top of the baseline. */
-  readonly included: readonly { readonly status: UncommittedChange["status"]; readonly path: string }[];
+  readonly included: readonly { readonly status: SourceChange["status"]; readonly path: string }[];
 }
 
 export const DEFAULT_WORKSPACES_ROOT: string = join(homedir(), ".tesota", "workspaces");
@@ -122,24 +122,32 @@ export function isRepositoryPath(path: string): boolean {
     path.split("/").every((part) => part !== "" && part !== "." && part !== ".." && part.toLowerCase() !== ".git");
 }
 
-/** Write the captured changes and commit them, so later diffs show only the agent's work. */
-async function includeUncommitted(checkout: string, changes: readonly UncommittedChange[]): Promise<string> {
+/** Write source changes into a checkout's working tree. */
+export async function writeSourceChanges(checkout: string, changes: readonly SourceChange[]): Promise<void> {
   for (const change of changes) {
-    if (!isRepositoryPath(change.path)) throw new Error("Unsupported uncommitted path");
+    if (!isRepositoryPath(change.path)) throw new Error("Unsupported source path");
     const target = join(checkout, ...change.path.split("/"));
     if (change.content === null) { await rm(target, { force: true }); continue; }
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, change.content, { mode: change.executable ? 0o755 : 0o644 });
   }
-  if (changes.length > 0) {
-    git(checkout, ["add", "--all"]);
-    git(checkout, ["-c", "user.name=Tesota", "-c", "user.email=tesota@localhost", "-c", "commit.gpgsign=false",
-      "commit", "--quiet", "--no-verify", "-m", "Tesota: uncommitted changes from the source repository"]);
+}
+
+const commitIdentity = ["-c", "user.name=Tesota", "-c", "user.email=tesota@localhost", "-c", "commit.gpgsign=false"];
+
+/** Commit everything in the checkout when anything changed, and return HEAD. */
+export function commitAll(checkout: string, message: string): string {
+  git(checkout, ["add", "--all"]);
+  if (git(checkout, ["diff", "--cached", "--name-only", "-z"]).length > 0) {
+    git(checkout, [...commitIdentity, "commit", "--quiet", "--no-verify", "-m", message]);
   }
   const head = git(checkout, ["rev-parse", "--verify", "HEAD^{commit}"]).trim();
   if (!isGitObjectId(head)) throw new Error("Invalid workspace commit");
   return head;
 }
+
+/** Where a workspace keeps its private snapshot of the source. */
+export function sourceSnapshotDirectory(directory: string): string { return join(directory, "source-snapshot"); }
 
 /**
  * Clone the source's committed HEAD without its refs, remotes, config or hooks,
@@ -160,7 +168,6 @@ export async function createWorkspaceCheckout(sourceDirectory: string,
     throw new Error("Workspace storage must be separate from the source repository");
   }
   const root = await prepareRoot(requestedRoot);
-  const uncommitted = await captureUncommittedChanges(source, baseline, join(root, `.snapshot-${randomUUID()}`));
   const directory = join(root, randomUUID());
   await mkdir(directory, { mode: 0o700 });
   const record: CheckoutRecord = { format: "tesota-workspace-checkout", version: 1, source, baseline, state: "preparing" };
@@ -178,12 +185,18 @@ export async function createWorkspaceCheckout(sourceDirectory: string,
     if (cloned.head !== baseline || git(checkout, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length !== 0) {
       throw new Error("Workspace checkout mismatch");
     }
-    const head = await includeUncommitted(cloned.checkout, uncommitted);
+    const snapshot = await SourceSnapshot.open(source, sourceSnapshotDirectory(directory));
+    const tree = snapshot.capture();
+    const included = snapshot.changes(baseline, tree);
+    await writeSourceChanges(cloned.checkout, included);
+    const head = commitAll(cloned.checkout, "Tesota: uncommitted changes from the source repository");
+    await snapshot.record(tree);
     await saveRecord(directory, { ...record, state: "ready" });
     return { directory, checkout: cloned.checkout, source, baseline, head,
-      included: uncommitted.map((change) => ({ status: change.status, path: change.path })) };
-  } catch {
+      included: included.map((change) => ({ status: change.status, path: change.path })) };
+  } catch (error) {
     await saveRecord(directory, { ...record, state: "failed" }).catch(() => {});
+    if (error instanceof UnsupportedSourceChange) throw error;
     throw new Error(`Workspace creation failed; incomplete state retained at ${directory}`);
   }
 }
@@ -191,8 +204,7 @@ export async function createWorkspaceCheckout(sourceDirectory: string,
 /** A directory under the workspaces root, described by its record when it has a readable one. */
 export type WorkspaceEntry =
   | Readonly<{ kind: "workspace"; directory: string; state: "preparing" | "ready" | "failed"; source: string }>
-  | Readonly<{ kind: "unreadable"; directory: string }>
-  | Readonly<{ kind: "scratch"; directory: string }>;
+  | Readonly<{ kind: "unreadable"; directory: string }>;
 
 const workspaceNamePattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
@@ -208,7 +220,6 @@ export async function listWorkspaceCheckouts(root: string = DEFAULT_WORKSPACES_R
     const directory = join(root, name);
     const metadata = await lstat(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) continue;
-    if (name.startsWith(".snapshot-")) { entries.push({ kind: "scratch", directory }); continue; }
     if (!workspaceNamePattern.test(name)) continue;
     try {
       const record = await readRecord(directory);

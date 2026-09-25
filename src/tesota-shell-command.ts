@@ -16,7 +16,8 @@ import { runTesotaShell, type ApplyResult, type ReviewResult, type TesotaShellDe
 import { inspectReview } from "./tesota-shell-inspection.js";
 import { createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
 import type { TesotaShellThemeName } from "./tesota-shell-theme.js";
-import { Workspace, type WorkspaceSnapshot } from "./workspace.js";
+import { UnsupportedSourceChange } from "./source-snapshot.js";
+import { Workspace, type WorkspaceSnapshot, type WorkspaceUpdate } from "./workspace.js";
 import { applyWorkspace, ApplyConflictError, ApplyUncertainError } from "./workspace-apply.js";
 import { runChecks, suggestChecks } from "./workspace-checks.js";
 
@@ -277,12 +278,36 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     await discardSession(id, record);
   };
 
+  /**
+   * Bring the operator's newer repository state into the workspace before a
+   * request, and return what the agent should be told about it.
+   */
+  const updateFromSource = async (id: string): Promise<string | undefined> => {
+    let update: WorkspaceUpdate;
+    try { update = await (await workspaceFor(id)).update(); } catch (error) {
+      surface.writeTo(id, "Could not bring your latest repository changes into the workspace" +
+        `${error instanceof UnsupportedSourceChange ? `: ${error.message}` : ""}. The agent works on the earlier state.`);
+      return undefined;
+    }
+    if (update.status === "current") return undefined;
+    if (update.status === "conflict") {
+      surface.writeTo(id, "Your repository changed in files that also have pending changes in this workspace:\n" +
+        `${update.paths.map((path) => `  ${path}`).join("\n")}\nThe workspace was not updated; apply or reject the pending changes first.`);
+      return undefined;
+    }
+    const files = update.changes.map((change) => `  ${change.status} ${change.path}`).join("\n");
+    surface.writeTo(id, `Brought ${update.changes.length} newer ${update.changes.length === 1 ? "change" : "changes"} ` +
+      `from your repository into the workspace:\n${files}`);
+    return `Note: the user changed these files in their repository since your last turn; the workspace now includes them:\n${files}`;
+  };
+
   const sessionWork = (id: string): SessionWork => ({
     work: (request) => runOperation(id, async (signal): Promise<WorkResult> => {
       try {
         const coding = await codingFor(id, signal);
         const state = stateFor(id);
-        const prompt = state.note === undefined ? request : `${state.note}\n\n${request}`;
+        const notes = [state.note, await updateFromSource(id)].filter((note) => note !== undefined);
+        const prompt = notes.length === 0 ? request : `${notes.join("\n\n")}\n\n${request}`;
         state.note = undefined;
         const result = await coding.run(prompt, signal);
         if (result.status === "unsettled") { blockSession(id); return result; }

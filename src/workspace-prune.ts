@@ -1,13 +1,11 @@
-import { lstat, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { DEFAULT_SESSION_STORE_ROOT, isRepositoryShellOpen, referencedWorkspaces } from "./shell-session-store.js";
 import { Workspace } from "./workspace.js";
 import { DEFAULT_WORKSPACES_ROOT, listWorkspaceCheckouts } from "./workspace-checkout.js";
 
-export type PruneReason = "incomplete" | "unreadable" | "unused" | "scratch";
-export type KeepReason = "in_use" | "pending_changes" | "shell_open" | "recent";
-
-const scratchGraceMs = 10 * 60 * 1000;
+export type PruneReason = "incomplete" | "unreadable" | "unused";
+export type KeepReason = "in_use" | "pending_changes" | "shell_open";
 
 export interface PrunePlan {
   readonly remove: readonly { readonly directory: string; readonly reason: PruneReason }[];
@@ -23,7 +21,7 @@ async function hasPendingChanges(directory: string): Promise<boolean> {
 /**
  * Decide which workspaces can be removed. A workspace is kept while a saved
  * session references it, while its repository has an open shell, or while it
- * holds pending changes; incomplete creations and leftover scratch are removed.
+ * holds pending changes; incomplete creations are removed.
  */
 export async function planWorkspacePrune(workspacesRoot: string = DEFAULT_WORKSPACES_ROOT,
   storeRoot: string = DEFAULT_SESSION_STORE_ROOT): Promise<PrunePlan> {
@@ -31,13 +29,6 @@ export async function planWorkspacePrune(workspacesRoot: string = DEFAULT_WORKSP
   const remove: { directory: string; reason: PruneReason }[] = [];
   const keep: { directory: string; reason: KeepReason }[] = [];
   for (const entry of await listWorkspaceCheckouts(workspacesRoot)) {
-    if (entry.kind === "scratch") {
-      // A workspace being created right now owns a recent scratch directory.
-      const recent = Date.now() - (await lstat(entry.directory)).mtimeMs < scratchGraceMs;
-      if (recent) keep.push({ directory: entry.directory, reason: "recent" });
-      else remove.push({ directory: entry.directory, reason: "scratch" });
-      continue;
-    }
     if (entry.kind === "unreadable") { remove.push({ directory: entry.directory, reason: "unreadable" }); continue; }
     if (isRepositoryShellOpen(entry.source, storeRoot)) { keep.push({ directory: entry.directory, reason: "shell_open" }); continue; }
     if (entry.state !== "ready") { remove.push({ directory: entry.directory, reason: "incomplete" }); continue; }
@@ -54,8 +45,8 @@ export async function removeWorkspaces(plan: PrunePlan): Promise<void> {
 
 const reasonText: Readonly<Record<PruneReason | KeepReason, string>> = {
   incomplete: "creation did not finish", unreadable: "record unreadable", unused: "no session uses it",
-  scratch: "leftover temporary files", in_use: "a saved session uses it", pending_changes: "has unapplied changes",
-  shell_open: "its repository has an open shell", recent: "created in the last ten minutes",
+  in_use: "a saved session uses it", pending_changes: "has unapplied changes",
+  shell_open: "its repository has an open shell",
 };
 
 export function formatPrunePlan(plan: PrunePlan): string {

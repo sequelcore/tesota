@@ -30,10 +30,9 @@ local agent flow is dependable.
 Use Tesota for its own changes on Windows and fix what gets in the way.
 Done on 2026-09-25: workspaces include uncommitted changes, repositories with
 symbolic links and submodules open, approved checks are remembered per
-repository, `tesota prune` removes unused workspaces, and `Ctrl+W` closes a
-session and removes its workspace. Known gap:
-
-- Edits made in the source after a workspace starts are not visible to it.
+repository, `tesota prune` removes unused workspaces, `Ctrl+W` closes a
+session and removes its workspace, and each request first brings in newer
+source edits, carrying pending work onto them.
 
 **Done when:** a normal week of Tesota's own changes goes through Tesota.
 

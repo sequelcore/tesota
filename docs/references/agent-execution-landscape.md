@@ -28,6 +28,22 @@ A source-code study of eleven harnesses (Barbaste et al., submitted
 (Agent Client Protocol) ships in six systems, including harnesses hosting other
 harnesses.
 
+## Separate working copies
+
+When an agent works outside the user's checkout, the surveyed tools start the
+copy from a chosen state and never mirror later edits automatically:
+
+- Codex's app applies the local branch's uncommitted changes when it creates a
+  worktree; later local edits are not synced, and work moves between the
+  worktree and the local checkout through an explicit "Hand off"
+  ([Git worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees)).
+- Claude Code worktrees branch from the default branch or `HEAD`, copy only
+  gitignored files listed in `.worktreeinclude`, and do not sync with the main
+  checkout ([worktrees](https://code.claude.com/docs/en/worktrees)).
+- t3code gives a thread its own Git worktree (`docs/internals/glossary.md`).
+- Docker Sandboxes either mounts the workspace directly, so both sides see the
+  same files, or works on a private clone of a read-only mount (`--clone`).
+
 ## Patterns
 
 1. **Approval and isolation are separate settings.** Codex and Claude Code both

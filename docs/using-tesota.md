@@ -36,9 +36,12 @@ Then ask for what you need:
 ```
 
 The agent reads, searches, edits, creates and deletes files in its own copy of
-your repository. The copy includes your uncommitted changes at the moment the
-session's workspace is created, but not files your `.gitignore` excludes, such
-as `.env` or `node_modules`. Before any shell command runs, Tesota asks:
+your repository. The copy includes your uncommitted changes, but not files your
+`.gitignore` excludes, such as `.env` or `node_modules`. Before each request,
+Tesota brings in anything you changed since, and keeps the agent's pending
+changes on top. If you and the agent changed the same lines, Tesota leaves the
+copy as it was and names the files; apply or reject the pending changes to
+continue with your newer version. Before any shell command runs, Tesota asks:
 
 ```text
 Run `bun install`? [y]es, [a]lways this session, [n]o:
@@ -89,8 +92,6 @@ one run.
 ## Limits
 
 - Exercised live only on Windows.
-- Edits you make in your repository after a session starts are not visible to
-  its agent.
 - Changes to symbolic links and submodules cannot be applied.
 - Shell commands are approved one by one but not sandboxed.
 - Closing a session removes its workspace. `tesota prune` lists other
