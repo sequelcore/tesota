@@ -9,7 +9,7 @@ and priorities; this page and its siblings describe the design as it is.
 | Design | Covers |
 | --- | --- |
 | [Workspace](workspace.md) | The separate copy, keeping it current, and applying reviewed work |
-| [Execution](execution.md) | Where commands run: the host or a sandbox, autonomy and network |
+| [Execution](execution.md) | Where commands run, a sandbox or this computer, when the operator is asked, and network |
 | [Assurance](assurance.md) | Checks, verifiers, review, refutation, correction, the journal and the forecast |
 | [Agents](agents.md) | The working agent, explorers and the model for each role |
 | [Sessions](sessions.md) | The shell, saved sessions, and the planned session service |
@@ -124,7 +124,7 @@ routing and execution permissions live in code and in Tesota's own directory
 
 - Exercised live only on Windows.
 - Changes to symbolic links and submodules cannot be applied.
-- Supervised sessions run approved commands on the host without isolation.
+- Without a sandbox, approved commands run on the host without isolation.
 - At most two sessions work at once; model rate-limit errors are not retried.
 - The complete loop with review and correction has run on throwaway and
   evaluation repositories, not yet in daily use on a real project.

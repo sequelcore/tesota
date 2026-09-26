@@ -4,8 +4,8 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
-import { allowsAutonomy, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
-import { chooseSessionMode, releaseWorkspace, type SessionMode } from "./execution-providers.js";
+import { confinesCommands, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
+import { chooseSessionExecution, releaseWorkspace, type SessionExecution } from "./execution-providers.js";
 import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-session.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent } from "./integrations/model-session.js";
 import type { ModelSession } from "./integrations/model-session-contract.js";
@@ -75,8 +75,9 @@ export interface TesotaShellCommandDependencies {
   readonly configureWorkspace: (callbacks: WorkspaceCallbacks) => void;
 }
 
-function modeLabel(mode: SessionMode): string {
-  return mode.mode === "autonomous" ? `autonomous · ${mode.provider.name} sandbox` : "supervised · commands ask first";
+/** Where commands run, in the operator's words: the host is "this computer". */
+function executionLabel(execution: SessionExecution): string {
+  return execution.commands === "sandbox" ? "sandbox" : "this computer · asks first";
 }
 
 function describePreparation(steps: readonly PreparationStep[]): string | undefined {
@@ -130,11 +131,11 @@ class SessionState {
 
 export function createProcessTesotaShell(cwd: string = process.cwd(),
   theme: TesotaShellThemeName = "tesota-dark",
-  chooseMode: () => Promise<SessionMode> = chooseSessionMode): TesotaShellCommandDependencies {
-  let modeChoice: Promise<SessionMode> | undefined;
-  const sessionMode = (): Promise<SessionMode> => {
-    modeChoice ??= chooseMode();
-    return modeChoice;
+  chooseExecution: () => Promise<SessionExecution> = chooseSessionExecution): TesotaShellCommandDependencies {
+  let executionChoice: Promise<SessionExecution> | undefined;
+  const sessionExecution = (): Promise<SessionExecution> => {
+    executionChoice ??= chooseExecution();
+    return executionChoice;
   };
   const activeOperations = new Map<string, AbortController>();
   const states = new Map<string, SessionState>();
@@ -252,19 +253,19 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const environmentFor = (id: string): Promise<ExecutionEnvironment> => {
     const state = stateFor(id);
     state.environment ??= (async () => {
-      const [workspace, mode] = await Promise.all([workspaceFor(id), sessionMode()]);
-      surface.setMode(modeLabel(mode));
-      if (mode.mode === "supervised") {
+      const [workspace, execution] = await Promise.all([workspaceFor(id), sessionExecution()]);
+      surface.setExecution(executionLabel(execution));
+      if (execution.commands === "host") {
         surface.writeTo(id, "Commands ask before running and run on this computer without isolation. " +
-          "Run tesota setup to see what autonomous sessions need.", "warning");
+          "Run tesota setup to see what sandboxed sessions need.", "warning");
       }
       let environment: ExecutionEnvironment;
       surface.reportFor(id, { phase: "preparing" });
       try {
-        environment = await mode.provider.prepare(workspace.checkout,
+        environment = await execution.provider.prepare(workspace.checkout,
           { onProgress: (activity) => { surface.reportFor(id, { phase: "preparing", activity }); } });
       } catch (error) {
-        throw new Error(`The ${mode.provider.name} environment could not start` +
+        throw new Error(`The ${execution.provider.name} environment could not start` +
           `${error instanceof Error ? `: ${error.message}` : ""}. Run tesota setup to check it.`);
       } finally { surface.clearProgressFor(id, "preparing"); }
       const remembered = store.allowedNetwork();
@@ -370,7 +371,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       state.explorers = explorers;
       return startWorkingAgent({ target }, { cwd: workspace.checkout, environment,
         ...(explorers === undefined ? {} : { explorers }),
-        autonomous: allowsAutonomy(environment.guarantees),
+        sandboxed: confinesCommands(environment.guarantees),
         approveCommand: async (command) => {
           surface.reportFor(id, { phase: "awaiting_command" });
           const answer = await surface.askIn(id, `Run \`${command}\`? [y]es, [a]lways this session, [n]o: `);

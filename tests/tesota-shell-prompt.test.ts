@@ -3,7 +3,7 @@ import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { CodingSession } from "../src/integrations/pi-coding-session.js";
 import { createProcessTesotaShell } from "../src/tesota-shell-command.js";
 import type { ExecutionEnvironment, PreparationStep } from "../src/execution-environment.js";
-import type { SessionMode } from "../src/execution-providers.js";
+import type { SessionExecution } from "../src/execution-providers.js";
 import { hostProvider } from "../src/host-environment.js";
 import type { ShellSessionRecord, ShellSessionStore } from "../src/shell-session-store.js";
 import { Workspace } from "../src/workspace.js";
@@ -44,8 +44,8 @@ it.each([
     vi.spyOn(SessionManager, "create").mockReturnValue({} as SessionManager),
     vi.spyOn(CodingSession, "create").mockResolvedValue(coding),
   ];
-  const mode = { mode: "supervised", provider: { ...hostProvider, name: "test", prepare: async () => environment },
-    missing: [] } satisfies SessionMode;
+  const mode = { commands: "host", provider: { ...hostProvider, name: "test", prepare: async () => environment },
+    missing: [] } satisfies SessionExecution;
   const shell = createProcessTesotaShell("source", "tesota-dark", async () => mode);
   const notices = vi.spyOn(shell.surface, "writeTo");
   try {

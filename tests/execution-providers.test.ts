@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 import { sandboxPath } from "../src/docker-sandboxes-environment.js";
-import { allowsAutonomy, type EnvironmentGuarantees, type ExecutionProvider, type ProviderReadiness,
+import { confinesCommands, type EnvironmentGuarantees, type ExecutionProvider, type ProviderReadiness,
   type SetupAction, type SetupStep } from "../src/execution-environment.js";
-import { chooseSessionMode, formatSetup, runSetup, type SessionMode, type SetupRunner } from "../src/execution-providers.js";
+import { chooseSessionExecution, formatSetup, runSetup, type SessionExecution, type SetupRunner } from "../src/execution-providers.js";
 import { hostProvider } from "../src/host-environment.js";
 
 const confined: EnvironmentGuarantees = { filesystem: "workspace", network: "allowlist", secrets: "none", resources: "bounded" };
@@ -13,29 +13,29 @@ function provider(name: string, readiness: ProviderReadiness | Error, guarantees
     prepare: async () => { throw new Error("unused"); }, release: async () => {} };
 }
 
-it("allows autonomy only where files and network are both confined", () => {
-  expect(allowsAutonomy(confined)).toBe(true);
-  expect(allowsAutonomy(hostProvider.guarantees)).toBe(false);
-  expect(allowsAutonomy({ ...confined, network: "open" })).toBe(false);
-  expect(allowsAutonomy({ ...confined, filesystem: "host" })).toBe(false);
+it("runs commands in a sandbox only where files and network are both confined", () => {
+  expect(confinesCommands(confined)).toBe(true);
+  expect(confinesCommands(hostProvider.guarantees)).toBe(false);
+  expect(confinesCommands({ ...confined, network: "open" })).toBe(false);
+  expect(confinesCommands({ ...confined, filesystem: "host" })).toBe(false);
 });
 
 it("chooses the first ready isolating provider", async () => {
   const ready = provider("ready", { ready: true });
-  const mode = await chooseSessionMode([provider("missing", { ready: false, steps: [] }), ready]);
-  expect(mode).toEqual({ mode: "autonomous", provider: ready });
+  const mode = await chooseSessionExecution([provider("missing", { ready: false, steps: [] }), ready]);
+  expect(mode).toEqual({ commands: "sandbox", provider: ready });
 });
 
-it("falls back to supervised host mode and lists what is missing", async () => {
-  const mode = await chooseSessionMode([
+it("falls back to the host, where commands ask first, and lists what is missing", async () => {
+  const mode = await chooseSessionExecution([
     provider("vm", { ready: false, steps: [{ description: "Turn on the hypervisor", command: "enable it", elevated: true, restart: true }] }),
     provider("broken", new Error("boom")),
     provider("open", { ready: true }, { ...confined, network: "open" }),
   ]);
-  expect(mode.mode).toBe("supervised");
+  expect(mode.commands).toBe("host");
   expect(mode.provider).toBe(hostProvider);
   const text = formatSetup(mode);
-  expect(text).toContain("sessions ask before each command");
+  expect(text).toContain("commands run on this computer and ask before each one");
   expect(text).toContain("vm:\n  - Turn on the hypervisor (administrator PowerShell, then restart)\n      enable it");
   expect(text).toContain("broken:\n  - The provider could not report whether it is ready");
   expect(text).not.toContain("open:\n  -");
@@ -49,11 +49,11 @@ it.each([
   expect(sandboxPath(host)).toBe(inside);
 });
 
-function missing(...steps: SetupStep[]): SessionMode {
-  return { mode: "supervised", provider: hostProvider, missing: [{ provider: "vm", readiness: { ready: false, steps } }] };
+function missing(...steps: SetupStep[]): SessionExecution {
+  return { commands: "host", provider: hostProvider, missing: [{ provider: "vm", readiness: { ready: false, steps } }] };
 }
 
-function setup(modes: SessionMode[], answers: boolean[] | null, codes: (number | null)[] = []):
+function setup(modes: SessionExecution[], answers: boolean[] | null, codes: (number | null)[] = []):
 { runner: SetupRunner; output: () => string; ran: SetupAction[] } {
   let output = "";
   const ran: SetupAction[] = [];
@@ -61,7 +61,7 @@ function setup(modes: SessionMode[], answers: boolean[] | null, codes: (number |
     write: (text) => { output += text; },
     confirm: answers === null ? null : async () => answers.shift() ?? false,
     run: async (action) => { ran.push(action); return codes.shift() ?? 0; },
-    check: async () => modes.shift() ?? { mode: "autonomous", provider: provider("vm", { ready: true }) },
+    check: async () => modes.shift() ?? { commands: "sandbox", provider: provider("vm", { ready: true }) },
   } };
 }
 
@@ -69,12 +69,12 @@ const login: SetupStep = { description: "Sign in", command: "sbx login", action:
 const policy: SetupStep = { description: "Deny by default", command: "sbx policy init deny-all",
   action: { kind: "process", program: "sbx", args: ["policy", "init", "deny-all"] } };
 
-it("runs each confirmed step and checks again until autonomous sessions are ready", async () => {
+it("runs each confirmed step and checks again until the sandbox is ready", async () => {
   const { runner, output, ran } = setup([missing(login), missing(policy)], [true, true]);
   expect(await runSetup(runner)).toBe(0);
   expect(ran).toEqual([login.action, policy.action]);
   expect(output()).toContain("Next: Sign in.\n  sbx login\n");
-  expect(output()).toContain("Autonomous sessions are ready (vm).");
+  expect(output()).toContain("The sandbox is ready (vm): commands run in it without asking.");
 });
 
 it("stops after a step that needs a restart", async () => {

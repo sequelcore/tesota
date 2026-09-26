@@ -46,8 +46,8 @@ export interface TesotaShellTerminal {
   inspectFor(id: string, inspection: ShellInspection): void;
   /** Show the agent's replies and tool calls in a session as they happen. */
   showActivity(id: string, activity: AgentActivity): void;
-  /** Name how sessions run, such as autonomous in a sandbox, in the footer. */
-  setMode(label: string): void;
+  /** Name where commands run, such as the sandbox, in the footer. */
+  setExecution(label: string): void;
   /** The source repository's branch, shown in the footer; undefined when Git cannot say. */
   setBranch(branch: string | undefined): void;
   /** The model the session's agent runs, as `route:model`, shown in the footer while it is selected. */
@@ -258,7 +258,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private showResult = false;
   private split = false;
   private sidebarVisible = true;
-  private mode = "";
+  private execution = "";
   /** The source repository's branch, where results are applied. */
   private branch: string | undefined;
   private frame = 0;
@@ -381,12 +381,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     }
     this.sidebar.setRows(rows);
     this.sidebarScroll.updateLayout(rows.length, this.tui.terminal.rows, () => this.tui.requestRender());
-    const mode = this.mode.startsWith("autonomous") ? "autonomous" :
-      this.mode.startsWith("supervised") ? "supervised" : this.mode;
     const directory = safeTerminalText(basename(this.options.cwd)) +
       (this.branch === undefined ? "" : ` (${safeTerminalText(this.branch)})`);
     const model = this.selected().model;
-    this.footer.setText(mutedText([mode, directory, safeTerminalText(this.selected().title),
+    this.footer.setText(mutedText([this.execution, directory, safeTerminalText(this.selected().title),
       model === undefined ? "" : safeTerminalText(model)].filter(Boolean).join(" · "), this.theme));
   }
 
@@ -622,8 +620,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (this.started && id === this.selectedId) this.compose();
   }
 
-  setMode(label: string): void {
-    this.mode = label;
+  setExecution(label: string): void {
+    this.execution = label;
     this.updateSidebar();
     this.tui.requestRender();
   }

@@ -36,8 +36,11 @@ cost. On Pi's routes their conversations are saved in the workspace's
 `explorers` directory; on Claude Code they are not kept.
 `tesota models explorer off` turns them off again.
 
-Sessions are **autonomous** when Docker Sandboxes is set up, and
-**supervised** otherwise. On Windows 11, autonomous sessions need the Windows
+Commands run in a **sandbox** when Docker Sandboxes is set up, and on **this
+computer** otherwise, where each one asks you first. There is no mode to
+switch: `tesota setup` decides it, and the agent's edits always go to its own
+copy of your repository, never to the repository itself until you apply
+them. On Windows 11, the sandbox needs the Windows
 Hypervisor Platform (an administrator prompt and a restart), Docker Sandboxes,
 a Docker sign-in and a deny-all network policy. Run `tesota setup` to go
 through them: it shows each missing step and its command, runs it when you
@@ -60,7 +63,7 @@ Then ask for what you need:
 ```
 
 The agent reads, searches, edits, creates and deletes files in its own copy of
-your repository. In an autonomous session its shell commands run without
+your repository. In the sandbox its shell commands run without
 asking, inside a sandbox that sees only that copy and reaches only package
 registries. If a command tries to reach another host, Tesota asks you:
 
@@ -74,7 +77,7 @@ copy includes your uncommitted changes, but not files your
 Tesota brings in anything you changed since, and keeps the agent's pending
 changes on top. If you and the agent changed the same lines, Tesota leaves the
 copy as it was and names the files; apply or reject the pending changes to
-continue with your newer version. In a supervised session, Tesota asks before
+continue with your newer version. On this computer, Tesota asks before
 any shell command runs:
 
 ```text
@@ -193,9 +196,9 @@ state, such as `needs you`, `working`, or `idle`; the selected session is
 highlighted, and a state that needs you is in the warning color. It hides automatically on narrow terminals;
 `Alt+B` hides or shows it when there is room. The line below the prompt shows
 the mode, the repository with its current branch, the selected session and the
-model its agent runs, such as `supervised · tesota (dev) · Session 4 ·
-claude-code:opus`; supervised means commands run on this computer and ask
-first. A question above the prompt, such as a command waiting for your
+model its agent runs, such as `this computer · asks first · tesota (dev) ·
+Session 4 · claude-code:opus`, or `sandbox · …` when commands run in the
+sandbox. A question above the prompt, such as a command waiting for your
 approval, is always shown whole, over as many lines as it needs, and so is
 each command the agent runs. Type `/` at the normal request prompt to see a
 command menu above the input; the selected row is highlighted. Use arrow keys to
@@ -221,9 +224,9 @@ one run.
 
 - Exercised live only on Windows.
 - Changes to symbolic links and submodules cannot be applied.
-- Supervised sessions run approved commands on your computer without
+- Without the sandbox, approved commands run on your computer without
   isolation.
-- An autonomous session's sandbox gets the runtimes your repository pins
+- The sandbox gets the runtimes your repository pins
   (for example `packageManager` and `engines` in `package.json`, `.nvmrc`,
   `mise.toml`), then your `.tesota/setup.sh` or the lockfile install. The first
   session with a new set of runtime versions builds them into a cached image,

@@ -404,12 +404,12 @@ it("names the branch and the session's agent model in the footer, as other harne
   terminal.columns = 120;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
-  shell.setMode("supervised: commands ask for approval");
+  shell.setExecution("this computer · asks first");
   shell.setBranch("dev");
   shell.setSessionModel("default", "claude-code:opus");
   shell.start();
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("supervised · tesota (dev) · Session 1 · claude-code:opus");
+  expect(visible(terminal)).toContain("this computer · asks first · tesota (dev) · Session 1 · claude-code:opus");
   shell.stop();
 });
 

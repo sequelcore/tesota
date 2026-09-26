@@ -59,7 +59,7 @@ async function attempt(question: string, explorers: boolean): Promise<Omit<Attem
       checkout, brief, signal);
   }) : undefined;
   const session = await startWorkingAgent({ target: agentTarget, onUsage: count }, { cwd: checkout,
-    environment: await hostProvider.prepare(checkout), autonomous: false, approveCommand: async () => "deny",
+    environment: await hostProvider.prepare(checkout), sandboxed: false, approveCommand: async () => "deny",
     ...(pool === undefined ? {} : { explorers: pool }) }, { conversationId: randomUUID() });
   const started = Date.now();
   try {

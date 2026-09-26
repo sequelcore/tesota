@@ -1,36 +1,41 @@
 import { spawn } from "node:child_process";
 import { dockerSandboxesProvider } from "./docker-sandboxes-environment.js";
-import { allowsAutonomy, type ExecutionProvider, type ProviderReadiness, type SetupAction,
+import { confinesCommands, type ExecutionProvider, type ProviderReadiness, type SetupAction,
   type SetupStep } from "./execution-environment.js";
 import { hostProvider } from "./host-environment.js";
 import { windowsPowerShell } from "./windows-system.js";
 
-/** Providers that can confine commands enough for autonomous sessions, in order of preference. */
+/** Providers that can run commands in a sandbox, in order of preference. */
 const isolatingProviders: readonly ExecutionProvider[] = [dockerSandboxesProvider]
-  .filter((provider) => allowsAutonomy(provider.guarantees));
+  .filter((provider) => confinesCommands(provider.guarantees));
 
 const allProviders: readonly ExecutionProvider[] = [...isolatingProviders, hostProvider];
 
-export type SessionMode =
-  | Readonly<{ mode: "autonomous"; provider: ExecutionProvider }>
-  | Readonly<{ mode: "supervised"; provider: ExecutionProvider; missing: readonly Readonly<{ provider: string;
+/**
+ * Where a session's commands run (decision 025): in a sandbox, where they run
+ * without asking, or on the host, the operator's own computer, where each one
+ * asks first. It follows from what is set up; nothing switches it.
+ */
+export type SessionExecution =
+  | Readonly<{ commands: "sandbox"; provider: ExecutionProvider }>
+  | Readonly<{ commands: "host"; provider: ExecutionProvider; missing: readonly Readonly<{ provider: string;
       readiness: ProviderReadiness }>[] }>;
 
 /**
- * Sessions are autonomous when an isolating provider is ready, and supervised
- * on the host otherwise. There is no silent fallback: supervised mode asks
- * before every command.
+ * Commands run in a sandbox when an isolating provider is ready, and on the
+ * host otherwise. There is no silent fallback: on the host every command asks
+ * first.
  */
-export async function chooseSessionMode(candidates: readonly ExecutionProvider[] = isolatingProviders,
-  fallback: ExecutionProvider = hostProvider): Promise<SessionMode> {
+export async function chooseSessionExecution(candidates: readonly ExecutionProvider[] = isolatingProviders,
+  fallback: ExecutionProvider = hostProvider): Promise<SessionExecution> {
   const missing: { provider: string; readiness: ProviderReadiness }[] = [];
   for (const provider of candidates) {
     const readiness = await provider.readiness().catch((): ProviderReadiness => ({ ready: false,
       steps: [{ description: "The provider could not report whether it is ready" }] }));
-    if (readiness.ready && allowsAutonomy(provider.guarantees)) return { mode: "autonomous", provider };
+    if (readiness.ready && confinesCommands(provider.guarantees)) return { commands: "sandbox", provider };
     missing.push({ provider: provider.name, readiness });
   }
-  return { mode: "supervised", provider: fallback, missing };
+  return { commands: "host", provider: fallback, missing };
 }
 
 /** Release every provider's resources for a workspace checkout that is being deleted. */
@@ -58,30 +63,33 @@ export interface SetupRunner {
   /** Null when there is no one to ask; setup then only lists what is missing. */
   readonly confirm: ((question: string) => Promise<boolean>) | null;
   readonly run: (action: SetupAction) => Promise<number | null>;
-  readonly check?: () => Promise<SessionMode>;
+  readonly check?: () => Promise<SessionExecution>;
 }
 
-function nextStep(mode: SessionMode): SetupStep | undefined {
-  if (mode.mode === "autonomous") return undefined;
-  return mode.missing.flatMap((entry) => entry.readiness.ready ? [] : entry.readiness.steps)[0];
+function nextStep(execution: SessionExecution): SetupStep | undefined {
+  if (execution.commands === "sandbox") return undefined;
+  return execution.missing.flatMap((entry) => entry.readiness.ready ? [] : entry.readiness.steps)[0];
 }
 
 /**
- * Take the operator through what autonomous sessions still need: show the
+ * Take the operator through what the sandbox still needs: show the
  * next step and its command, run it once they confirm, and check again. It
  * stops at a restart, a failure, a step only the operator can do, or a
  * refusal, and never runs a step twice.
  */
 export async function runSetup(runner: SetupRunner): Promise<number> {
-  const check = runner.check ?? (() => chooseSessionMode());
+  const check = runner.check ?? (() => chooseSessionExecution());
   const attempted = new Set<string>();
   for (;;) {
-    const mode = await check();
-    const step = nextStep(mode);
-    if (mode.mode === "autonomous" || step === undefined) { runner.write(formatSetup(mode)); return mode.mode === "autonomous" ? 0 : 1; }
+    const execution = await check();
+    const step = nextStep(execution);
+    if (execution.commands === "sandbox" || step === undefined) {
+      runner.write(formatSetup(execution));
+      return execution.commands === "sandbox" ? 0 : 1;
+    }
     if (step.action === undefined || runner.confirm === null || attempted.has(step.description)) {
       if (attempted.has(step.description)) runner.write(`"${step.description}" is still missing after running it.\n\n`);
-      runner.write(formatSetup(mode));
+      runner.write(formatSetup(execution));
       return 1;
     }
     const elevation = step.elevated === true ? " It opens an administrator prompt." : "";
@@ -95,10 +103,12 @@ export async function runSetup(runner: SetupRunner): Promise<number> {
   }
 }
 
-export function formatSetup(mode: SessionMode): string {
-  if (mode.mode === "autonomous") return `Autonomous sessions are ready (${mode.provider.name}).\n`;
-  const lines = ["Autonomous sessions are not available yet; sessions ask before each command.", ""];
-  for (const entry of mode.missing) {
+export function formatSetup(execution: SessionExecution): string {
+  if (execution.commands === "sandbox") {
+    return `The sandbox is ready (${execution.provider.name}): commands run in it without asking.\n`;
+  }
+  const lines = ["The sandbox is not ready yet: commands run on this computer and ask before each one.", ""];
+  for (const entry of execution.missing) {
     if (entry.readiness.ready) continue;
     lines.push(`${entry.provider}:`);
     for (const step of entry.readiness.steps) {

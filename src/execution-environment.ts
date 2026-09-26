@@ -112,7 +112,7 @@ export interface ExecutionProvider {
   release(workspace: string): Promise<void>;
 }
 
-/** Commands may run without asking only where files and network are both confined. */
-export function allowsAutonomy(guarantees: EnvironmentGuarantees): boolean {
+/** Commands run in a sandbox, without asking, only where files and network are both confined. */
+export function confinesCommands(guarantees: EnvironmentGuarantees): boolean {
   return guarantees.filesystem === "workspace" && guarantees.network === "allowlist";
 }

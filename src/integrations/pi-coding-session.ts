@@ -6,7 +6,7 @@ import { type AgentSession, type AgentSessionEvent, type BashOperations, type Mo
   createWriteToolDefinition, DefaultResourceLoader, defineTool, SessionManager as PiSessionManager, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
-import { allowsAutonomy, type ExecutionEnvironment } from "../execution-environment.js";
+import { confinesCommands, type ExecutionEnvironment } from "../execution-environment.js";
 import type { TokenUsage } from "../token-usage.js";
 import { exploreTool, type ExplorerPool } from "./pi-explore.js";
 import type { AgentActivity, AgentChange, TurnResult } from "./model-session-contract.js";
@@ -23,8 +23,8 @@ export interface CodingSessionOptions {
   readonly sessionManager?: SessionManager;
   /** Where shell commands run. File tools always act on the workspace from the host. */
   readonly environment: ExecutionEnvironment;
-  /** Commands run without approval; only allowed for an environment that confines them. */
-  readonly autonomous: boolean;
+  /** Commands run in a sandbox without approval; only allowed for an environment that confines them. */
+  readonly sandboxed: boolean;
   readonly approveCommand: (command: string, signal: AbortSignal | undefined) => Promise<CommandApproval>;
   /** Asked after a command whose network access the environment refused. */
   readonly decideNetwork?: (destinations: readonly string[]) => Promise<NetworkDecision>;
@@ -147,8 +147,8 @@ export function repositoryInstructions(root: string): string {
   return "";
 }
 
-function commandGuidance(autonomous: boolean): string {
-  return autonomous
+function commandGuidance(sandboxed: boolean): string {
+  return sandboxed
     ? "Shell commands run without asking in an isolated sandbox that sees only this copy of the repository; " +
       "network access is limited to package registries and hosts the user allowed. When a command reaches " +
       "another host, the user is asked whether to allow it and you are told the answer. "
@@ -162,9 +162,9 @@ const explorerGuidance = "The explore tool asks a read-only explorer one questio
   "does not see this conversation, so each question must stand on its own. Treat its answer as a lead to check, " +
   "not as fact, and never use it to change files. ";
 
-function systemPrompt(root: string, autonomous: boolean, explorers: boolean): string {
+function systemPrompt(root: string, sandboxed: boolean, explorers: boolean): string {
   return "You are Tesota, a coding agent working in a private copy of the user's repository. " +
-    "Read, search, edit, create and delete files as the task needs. " + commandGuidance(autonomous) +
+    "Read, search, edit, create and delete files as the task needs. " + commandGuidance(sandboxed) +
     (explorers ? explorerGuidance : "") +
     "Do not commit, push or change Git " +
     "history: when you finish, Tesota shows the user your changes, runs the repository's checks and lets " +
@@ -269,7 +269,7 @@ export interface SessionStartOptions {
 }
 
 /** What decides the working agent's tools, whichever engine runs it. */
-export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "autonomous" | "approveCommand" |
+export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "approveCommand" |
   "decideNetwork" | "explorers">;
 
 /**
@@ -278,16 +278,16 @@ export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environmen
  * approvals, and `explore` when explorers are on. The same for every engine.
  */
 export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt: string; tools: ToolDefinition[] } {
-  if (options.autonomous && !allowsAutonomy(options.environment.guarantees)) {
-    throw new Error("Autonomous sessions require an environment that confines files and network");
+  if (options.sandboxed && !confinesCommands(options.environment.guarantees)) {
+    throw new Error("Sandboxed sessions require an environment that confines files and network");
   }
   const root = realpathSync(options.cwd);
-  return { systemPrompt: systemPrompt(root, options.autonomous, options.explorers !== undefined), tools: [
+  return { systemPrompt: systemPrompt(root, options.sandboxed, options.explorers !== undefined), tools: [
     ...readOnlyFileTools(root),
     defineTool(confine(root, createEditToolDefinition(root), true)),
     defineTool(confine(root, createWriteToolDefinition(root), true)),
     defineTool(createBashToolDefinition(root, { operations: environmentBash(options.environment,
-      options.autonomous ? undefined : options.approveCommand, options.decideNetwork),
+      options.sandboxed ? undefined : options.approveCommand, options.decideNetwork),
       exposeSessionEnvironment: false })),
     ...(options.explorers === undefined ? [] : [exploreTool(options.explorers)]),
   ] };

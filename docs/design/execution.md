@@ -52,19 +52,23 @@ session closes or the workspace is pruned.
 Every check runs with a 15-minute limit, and only the end of its output is
 kept.
 
-## Modes
+## Where commands run
 
-| Mode | Commands | Requires |
-| --- | --- | --- |
-| **Supervised** | Each command asks: yes, always for this session, or no | Nothing |
-| **Autonomous** | Run without asking | `workspace` filesystem and `allowlist` network |
+Decision 025. Tesota has no permission modes to switch. Three things that
+other harnesses fold into their modes are separate here:
 
-A session is autonomous when a provider with those guarantees is ready, and
-supervised otherwise. Supervised mode works on any machine with no setup; an
-approved command runs with the operator's permissions, files, network and
-credentials. `tesota setup` guides autonomous mode on Windows 11: the Windows
-Hypervisor Platform, Docker Sandboxes, a Docker sign-in and a deny-all network
-policy. It shows each missing step and its command, runs it when the operator
+| | Rule |
+| --- | --- |
+| **Where commands run** | In a **sandbox** when a provider with a `workspace` filesystem and an `allowlist` network is ready, and on **this computer** (the host) otherwise. `tesota setup` decides it; nothing switches it during a session |
+| **When the operator is asked** | Follows from where commands run and is not a setting: on this computer every command asks (yes, always for this session, or no); in the sandbox commands run without asking, and a destination the network refused asks |
+| **Where edits land** | Always the session's own copy of the repository; nothing reaches the repository until the operator applies a result after its checks and review |
+
+On this computer an approved command runs with the operator's permissions,
+files, network and credentials; it works on any machine with no setup. The
+footer names where commands run, `sandbox` or `this computer · asks first`,
+and the code's `host` is shown as "this computer". `tesota setup` prepares
+the sandbox on Windows 11: the Windows Hypervisor Platform, Docker
+Sandboxes, a Docker sign-in and a deny-all network policy. It shows each missing step and its command, runs it when the operator
 confirms, and stops at a restart or a failure; without a terminal to ask in,
 it only lists what is missing.
 
@@ -116,8 +120,18 @@ setup inputs skips setup when nothing changed.
   identities, ACLs and firewall rules; Claude Code's sandbox does not run on
   native Windows. A microVM costs about 30 seconds per session, hidden by
   preparing at session open.
-- **Supervised by default:** requiring isolation before first use would add
-  friction to work supervised mode already covers.
+- **This computer when there is no sandbox:** requiring isolation before
+  first use would add friction to work that asking before each command
+  already covers.
+- **No permission modes.** Codex separates the sandbox, what is technically
+  possible, from the approval policy, when a person is asked, and presents
+  combinations as presets; Claude Code's permission modes set only when it
+  asks, and reserve running without asking for isolated containers and VMs.
+  Tesota keeps the one setting that protects the operator, where commands
+  run, and derives when it asks from it, so there is no mode to set wrong.
+  Its private copy is what other harnesses' read-only or plan modes provide:
+  a phase in which nothing can be written to the repository, which in Tesota
+  lasts until the operator applies. A plan is asked for in the request.
 
 ## Planned
 
