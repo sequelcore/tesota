@@ -32,3 +32,4 @@ short statement, and its substance goes into the design document it changes.
 | 018 | 2026-09-25 | Check each finding's origin against the diff, making unsupported claims unknown; numbered diffs; forecast deep reviews | Current. [Assurance](design/assurance.md) |
 | 019 | 2026-09-25 | Let the working agent ask read-only explorers, bounded and visible, while it stays the only writer | Built; off by default after its first evaluation. [Agents](design/agents.md#explorers) |
 | 020 | 2026-09-25 | Choose a model for each role | Current. [Agents](design/agents.md#models-by-role) |
+| 021 | 2026-09-25 | Reach Claude through an Anthropic API key or through the operator's own Claude Code; never handle Claude subscription credentials | Current. [Agents](design/agents.md#model-routes) |

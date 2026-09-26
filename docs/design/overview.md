@@ -46,10 +46,12 @@ request
 Tesota owns the workspace, execution environments, checks, review, correction
 and application. Pi (`@earendil-works/pi-*`) is the agent engine and terminal
 toolkit, used through its public APIs; Tesota does not reimplement the agent
-loop or OAuth. Codex, through Pi's OAuth support, is the only model route
-([authentication](../guide/authentication.md)). Replacing the engine or the
-model route means re-exercising the affected behavior; there is no engine
-registry.
+loop or OAuth. Models are reached through three routes: Codex through Pi's OAuth support,
+Anthropic's API through Pi with an API key, and the operator's Claude
+subscription through Claude Code, run by the Claude Agent SDK
+([agents](agents.md#model-routes), [authentication](../guide/authentication.md)).
+Every role runs through one session interface over the two engines; adding a
+route means re-exercising the roles on it.
 
 Pi was chosen over extracting Kiln's authentication and provider code because
 Pi already supplies the login, token refresh and agent mechanics, and keeping
@@ -112,8 +114,9 @@ routing and execution permissions live in code and in Tesota's own directory
 | `correction.ts`, `assurance-journal.ts` | What goes back to the agent, and the per-workspace assurance journal |
 | `integrations/pi-coding-session.ts` | Pi sessions, confined tools, command approval, cancellation, activity and token counts |
 | `integrations/pi-explorer.ts`, `integrations/pi-explore.ts`, `verification/explorer-answer.ts` | Read-only explorers, the `explore` tool and its proved rules |
-| `model-roles.ts`, `models-command.ts` | The model for each role, and `tesota models` |
-| `integrations/codex-credentials.ts`, `integrations/codex-login.ts`, `auth.ts` | Codex login and its storage |
+| `model-roles.ts`, `models-command.ts` | The route and model for each role, and `tesota models` |
+| `integrations/model-session.ts`, `integrations/claude-code-session.ts` | Starting a role's session on Pi or on Claude Code, and Tesota's tools inside Claude Code |
+| `integrations/tesota-credentials.ts`, `integrations/codex-login.ts`, `auth.ts` | Codex OAuth and Anthropic API key storage, Codex login, and `tesota auth` |
 | `review-evaluation.ts`, `live-review.ts`, `delegation-evaluation.ts`, `live-delegation.ts` | The evaluations with known truth and their live runners |
 
 ## Current limits

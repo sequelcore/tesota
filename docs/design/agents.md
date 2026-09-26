@@ -60,13 +60,43 @@ to help. `bun run live:delegation` repeats the comparison.
 | `refuter` | The refuter |
 | `validator` | The fix validator |
 
-Each role uses the model the operator chose in `~/.tesota/models.json`, and
-GPT-6 Luna, the cheapest on the Codex route, when there is no choice.
-`tesota models` lists each role with its model and catalogue price, and
-`tesota models <role> <model>` sets one from the models the route offers, or
-`default` to clear it. An unreadable file is an error, not a silent fallback.
-A role reads its model when it starts work, and review measurements record
-the models so forecasts compare like with like.
+Each role uses the model the operator chose in `~/.tesota/models.json`,
+written as `route:model`, and `codex:gpt-6-luna`, the cheapest on the Codex
+route, when there is no choice. `tesota models` lists each role with its model
+and price, and `tesota models <role> <route:model>` sets one from the models
+the route offers, or `default` to clear it. An unreadable file is an error,
+not a silent fallback. A role reads its model when it starts work, and review
+measurements record the models so forecasts compare like with like.
+
+## Model routes
+
+A **route** is how Tesota reaches a model and whose account pays for it. Every
+role can use any route. Evidence is in the
+[Claude access landscape](../research/claude-access-landscape.md).
+
+| Route | Engine | Signed in by | Paid through |
+| --- | --- | --- | --- |
+| `codex` | Pi | `tesota auth login`: Pi's Codex OAuth, stored by Tesota | The operator's ChatGPT plan |
+| `anthropic` | Pi | `tesota auth login anthropic`: the operator's Anthropic API key, stored by Tesota, or `ANTHROPIC_API_KEY` | The API key's account |
+| `claude-code` | Claude Code, through the Claude Agent SDK | The operator, in Claude Code itself (`claude`, then `/login`) | The operator's Claude plan limits, or the key Claude Code itself uses |
+
+**Tesota never handles Claude subscription credentials.** On the
+`claude-code` route, the unmodified Claude Code program bundled with the Agent
+SDK signs in through Anthropic's own flow, and Tesota only starts it. The
+credential store accepts nothing but an API key for `anthropic`, so Pi's own
+claude.ai login, which presents itself as Claude Code, cannot be used through
+Tesota.
+
+**Roles work the same on either engine.** A role's session is started through
+one interface with the role's system prompt and tools, and returns the same
+results, activity and token counts. A Claude Code session runs with every
+built-in tool disabled and receives Tesota's own tools, the confined file
+tools, the execution environment's shell with its approvals, and each role's
+submission tool, from an in-process MCP server; a call to anything else is
+refused. It loads none of the operator's Claude Code settings, `CLAUDE.md`,
+hooks, skills or MCP servers, so a review is the same whoever runs it. Only
+the working agent's conversation is saved, by Claude Code, and resumed on the
+next request; read-only roles keep none.
 
 ## Why
 
@@ -90,6 +120,16 @@ the models so forecasts compare like with like.
   reviewer's blind spots, and the operator bears the cost. Public model
   rankings measure other tasks in other harnesses, so a model is compared with
   `bun run live:review` before it is adopted for a role.
+- **Claude through Claude Code, not through its credentials.** Anthropic
+  permits a person's subscription in the unmodified Claude Code, including
+  when another program runs it, and forbids third parties from collecting or
+  relaying subscription tokens. Pi's and Hermes' subscription routes do the
+  latter by presenting themselves as Claude Code; Gentle AI and Zed run Claude
+  Code instead. The API route is permitted without conditions.
+- **Tesota's tools inside Claude Code.** Giving a Claude Code session
+  Tesota's tools rather than its own keeps one set of confinement, execution
+  and approval rules for every engine, and keeps the operator's personal
+  Claude Code setup out of Tesota's reviews.
 
 ## Planned
 
