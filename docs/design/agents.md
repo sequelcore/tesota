@@ -19,6 +19,42 @@ The agent is told not to commit, push or change Git history, and to end each
 turn with what it changed and what the operator should verify. It is the only
 agent that writes.
 
+### Changing the agent's model
+
+Decision 026; evidence in the
+[model switch landscape](../research/model-switch-landscape.md).
+
+- **A session keeps its agent's model.** The first time its agent starts,
+  the session records the model it runs on, from `tesota models agent`;
+  afterwards that choice sets only new sessions, so a restarted session never
+  lands on another engine behind its old transcript.
+- **`/model`** shows the session's model, the role's, and the offered ones.
+  `/model <route:model>` switches it, and `/model default` returns to the
+  role's. The rule is `modelSwitch` in `src/verification/model-switch.ts`,
+  proved by `bun run formal:check`: the same model changes nothing; a model
+  on the **same engine** switches in place and the conversation continues
+  (Pi's `setModel`, which adapts earlier messages to the new model, across
+  the `codex` and `anthropic` routes; Claude Code's model per query, on a
+  resumed conversation); a model on **another engine** starts a new
+  conversation, because neither engine can read the other's.
+- **`/handoff`** starts a new conversation on the same model, for a fresh
+  context. The earlier conversation's transcript is kept until the session
+  closes (`retiredEngineIds`).
+- **A new conversation is never blank.** Whenever the agent starts one in a
+  session with history, for any reason, it receives with the next request a
+  brief copied from Tesota's records (`src/handoff-brief.ts`): the operator's
+  requests for the pending changes verbatim, the pending changes, the findings
+  still open from their last review (read from the assurance journal, and
+  marked when they reviewed an earlier state), and the previous agent's last
+  reply, its end kept past 6,000 characters. The brief is marked as Tesota's
+  and says it may be incomplete; it joins the request as Tesota context, so
+  the request record stays the operator's own. The operator sees it whole
+  before the agent does, and is told at the switch that the conversation does
+  not carry over. That rule is `needsBrief`, proved beside `modelSwitch`.
+- Commands are taken only at the request prompt, so a switch never lands in
+  the middle of a turn. Review roles are unaffected: they read
+  `tesota models` when each review starts.
+
 ## Explorers
 
 With `explore`, the working agent asks a read-only **explorer** one question.

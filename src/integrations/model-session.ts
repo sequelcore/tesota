@@ -77,9 +77,17 @@ export interface WorkingAgentConversation {
   readonly conversationId: string;
 }
 
+/** The working agent's session: a role session that keeps its conversation, on a model that can change. */
+export interface WorkingAgent extends ModelSession {
+  /** Whether the agent continues a conversation it already had, rather than starting one. */
+  readonly resumed: boolean;
+  /** Continue the conversation on another model of the same engine (decision 026). */
+  switchModel(target: ModelTarget): Promise<void>;
+}
+
 /** The working agent on its chosen engine, with the same tools and prompt on each. */
 export async function startWorkingAgent(access: ModelAccess, options: WorkingAgentOptions &
-  Pick<CodingSessionOptions, "onActivity">, conversation: WorkingAgentConversation): Promise<ModelSession> {
+  Pick<CodingSessionOptions, "onActivity">, conversation: WorkingAgentConversation): Promise<WorkingAgent> {
   const { target } = access;
   if (target.engine === "pi") {
     return CodingSession.create({ ...options, modelRuntime: target.modelRuntime, model: target.model, ...usage(access),

@@ -42,6 +42,13 @@ function cost(model: OfferedModel | undefined): string {
   return billing.metered ? `${billing.payer}, ${price} per million tokens` : `${billing.payer}; list price ${price}`;
 }
 
+/** Each route's offered models, one line per route. */
+export function routeListing(offered: readonly OfferedModel[]): string {
+  return (["codex", "anthropic", "claude-code"] as const).map((route) =>
+    `  ${route}: ${offered.filter((model) => model.route === route).map((model) => model.id.slice(route.length + 1)).join(", ")}`)
+    .join("\n");
+}
+
 function listing(offered: readonly OfferedModel[], path: string): string {
   const choices = readModelChoices(path);
   const rows = MODEL_ROLES.map((role) => {
@@ -49,9 +56,7 @@ function listing(offered: readonly OfferedModel[], path: string): string {
       : cost(offered.find((model) => model.id === choices[role]));
     return `  ${role.padEnd(10)}${choices[role].padEnd(30)}${detail}\n  ${"".padEnd(10)}${ROLE_DESCRIPTIONS[role]}`;
   });
-  const routes = (["codex", "anthropic", "claude-code"] as const).map((route) =>
-    `  ${route}: ${offered.filter((model) => model.route === route).map((model) => model.id.slice(route.length + 1)).join(", ")}`);
-  return `Models by role (${path}):\n${rows.join("\n")}\n\nOffered, as route:model:\n${routes.join("\n")}\n` +
+  return `Models by role (${path}):\n${rows.join("\n")}\n\nOffered, as route:model:\n${routeListing(offered)}\n` +
     `Change one with tesota models <role> <route:model>; <role> default restores ${DEFAULT_MODEL}, and explorers off.\n`;
 }
 

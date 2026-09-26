@@ -17,6 +17,9 @@ export interface TesotaShellTerminalOptions {
   readonly theme?: TesotaShellThemeName;
   readonly onNewSession?: () => void;
   readonly onCloseSession?: (sessionId: string) => void;
+  /** `/model`, with its argument when one was given. */
+  readonly onModel?: (sessionId: string, argument: string | undefined) => void;
+  readonly onHandoff?: (sessionId: string) => void;
   readonly onQuit?: () => void;
   readonly onEntry?: (sessionId: string, entry: TranscriptEntry) => void;
   readonly onInspection?: (sessionId: string, inspection: ShellInspection) => void;
@@ -103,6 +106,8 @@ const shellCommands = [
   { name: "next", description: "Switch to the next session" },
   { name: "previous", description: "Switch to the previous session" },
   { name: "close", description: "Close this session" },
+  { name: "model", description: "Show or switch the agent's model" },
+  { name: "handoff", description: "Start the agent's conversation afresh" },
   { name: "result", description: "Show or hide the review" },
   { name: "sidebar", description: "Show or hide sessions" },
   { name: "details", description: "Expand or collapse a long notice" },
@@ -771,18 +776,14 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         this.selectSession(sessionBeside([...this.sessions.keys()], this.selectedId, command === "next" ? 1 : -1));
         break;
       case "close": this.options.onCloseSession?.(session.id); break;
+      case "model": this.changeModel(session, args); break;
+      case "handoff": this.options.onHandoff?.(session.id); break;
       case "result": this.showResult = !this.showResult; this.compose(); break;
       case "sidebar": this.sidebarVisible = !this.sidebarVisible; this.compose(); break;
-      case "details": {
-        const number = args.length === 0 ? 1 : Number(args[0]);
-        if (!Number.isSafeInteger(number) || number < 1 || args.length > 1 ||
-          !session.transcript.toggleNotice(number - 1)) {
-          this.writeTo(session.id, "No long notice at that number. Use /details or /details 2.", "warning");
-        } else this.tui.requestRender();
-        break;
-      }
+      case "details": this.toggleDetails(session, args); break;
       case "help":
-        this.writeTo(session.id, "Commands: /new /next /previous /close /result /sidebar /details [number] /help /quit\n" +
+        this.writeTo(session.id, "Commands: /new /next /previous /close /model [route:model] /handoff /result /sidebar " +
+          "/details [number] /help /quit\n" +
           "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
           "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by number · Ctrl+W close\n" +
           "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split");
@@ -790,6 +791,18 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       case "quit": this.options.onQuit?.(); break;
       default: this.writeTo(session.id, "Unknown command. Type / for commands or /help for shortcuts.", "warning");
     }
+  }
+
+  private changeModel(session: SessionView, args: readonly string[]): void {
+    if (args.length > 1) this.writeTo(session.id, "Use /model or /model <route:model>.", "warning");
+    else this.options.onModel?.(session.id, args[0]);
+  }
+
+  private toggleDetails(session: SessionView, args: readonly string[]): void {
+    const number = args.length === 0 ? 1 : Number(args[0]);
+    if (!Number.isSafeInteger(number) || number < 1 || args.length > 1 || !session.transcript.toggleNotice(number - 1)) {
+      this.writeTo(session.id, "No long notice at that number. Use /details or /details 2.", "warning");
+    } else this.tui.requestRender();
   }
 
   private cancelPrompt(session: SessionView): void {

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import * as z from "zod";
 import { isNetworkDestination } from "./execution-environment.js";
+import { parseModelChoice } from "./model-roles.js";
 import { MEASUREMENTS_KEPT, type ReviewMeasurement, withMeasurement } from "./review-forecast.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
 
@@ -22,15 +23,18 @@ const entrySchema: z.ZodType<TranscriptEntry> = z.discriminatedUnion("kind", [
 const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: string; diff?: string | undefined }> =
   z.strictObject({ title: z.string().max(100), summary: z.string().max(10_000),
     detail: z.string().max(2_000_000), diff: z.string().max(2_000_000).optional() });
+const agentModelSchema = z.string().refine((value) => parseModelChoice(value) !== undefined, "not a route:model choice");
+// `agent` and `retiredEngineIds` arrived after version 5 and are optional, so saved sessions survive (decision 026).
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: TranscriptEntry[];
   inspections: { title: string; summary: string; detail: string; diff?: string | undefined }[];
   workspace: string | null;
-  interrupted: boolean; blocked: boolean }> =
+  interrupted: boolean; blocked: boolean; agent?: string | undefined; retiredEngineIds?: string[] | undefined }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
       workspace: z.string().min(1).nullable(),
-      interrupted: z.boolean(), blocked: z.boolean() });
+      interrupted: z.boolean(), blocked: z.boolean(),
+      agent: agentModelSchema.optional(), retiredEngineIds: z.array(z.uuid()).max(1_000).optional() });
 const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.iso.datetime(),
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
   tokens: z.number().nonnegative(), models: z.strictObject({ reviewer: z.string().min(1).max(100),
@@ -66,7 +70,17 @@ export interface ShellSessionStore {
   recordReviewMeasurement(measurement: ReviewMeasurement): void;
   markActive(id: string, active: boolean): void;
   block(id: string): void;
+  /**
+   * Give the session's agent a new conversation id, keeping the previous one
+   * in `retiredEngineIds` so its transcript is removed with the session.
+   */
   rotateEngine(id: string): string;
+  /**
+   * The model this session's agent runs on, as `route:model`: recorded when
+   * the agent first starts and when the operator switches it (decision 026).
+   * Absent until then, when new agents use the operator's choice for the role.
+   */
+  setAgentModel(id: string, choice: string): void;
   close(): void;
 }
 
@@ -226,9 +240,24 @@ export function openShellSessionStore(sourceDirectory: string,
       rotateEngine: (id) => {
         const session = find(id);
         const previous = session.engineId;
+        const retired = session.retiredEngineIds;
         session.engineId = randomUUID();
-        try { save(); } catch (error) { session.engineId = previous; throw error; }
+        session.retiredEngineIds = [...retired ?? [], previous];
+        try { save(); } catch (error) {
+          session.engineId = previous;
+          if (retired === undefined) delete session.retiredEngineIds; else session.retiredEngineIds = retired;
+          throw error;
+        }
         return session.engineId;
+      },
+      setAgentModel: (id, choice) => {
+        const session = find(id);
+        const previous = session.agent;
+        session.agent = agentModelSchema.parse(choice);
+        try { save(); } catch (error) {
+          if (previous === undefined) delete session.agent; else session.agent = previous;
+          throw error;
+        }
       },
       close: () => {
         if (closed) return;

@@ -42,7 +42,8 @@ project. They are listed here as they are chosen.
   [design](design/agents.md#web-access)): built 2026-09-26, so Tesota can
   research what the features after it need.
 - **Switching the agent's model in a session, and handing off** to a fresh
-  conversation (decision 026, planned).
+  conversation (decision 026,
+  [design](design/agents.md#changing-the-agents-model)): built 2026-09-26.
 
 ### 2. Measurement on public benchmarks
 

@@ -1,12 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ModelRuntime, type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
+import { ModelRuntime, SessionManager, type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { ClaudeCodeSession } from "../src/integrations/claude-code-session.js";
 import { type AgentActivity, type ModelSession, type TurnResult, runWithTimeLimit } from "../src/integrations/model-session-contract.js";
+import type { ModelTarget } from "../src/integrations/model-session.js";
 import { CodingSession, readOnlyFileTools } from "../src/integrations/pi-coding-session.js";
 import { NO_TOKENS, type TokenUsage, addTokens } from "../src/token-usage.js";
 
@@ -25,13 +27,14 @@ type ToolCall = Readonly<{ name: string; args: Parameters<typeof fauxToolCall>[1
 type ModelStep = Readonly<{ tools: readonly ToolCall[] }> | Readonly<{ text: string }> | Readonly<{ fail: string }> | "hang";
 
 // The Claude Agent SDK double: plays `sdk.steps` against the options a session passes, one model call per step.
-const sdk = vi.hoisted(() => ({ steps: [] as unknown[], calls: 0 }));
+const sdk = vi.hoisted(() => ({ steps: [] as unknown[], calls: 0, conversations: new Set<string>(),
+  last: undefined as { model?: string; resume?: string } | undefined }));
 vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
   const { writeFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   type Handler = { name: string; handler: (args: unknown) => Promise<unknown> };
   type Hook = (input: unknown, id: undefined, options: { signal: AbortSignal }) => Promise<{ continue?: boolean }>;
-  type Options = { cwd: string; tools?: string[]; mcpServers: { tesota: { tools: Handler[] } }; abortController: AbortController;
+  type Options = { cwd: string; model?: string; resume?: string; sessionId?: string; tools?: string[]; mcpServers: { tesota: { tools: Handler[] } }; abortController: AbortController;
     canUseTool: (name: string, input: unknown, options: { signal: AbortSignal }) => Promise<{ behavior: string }>;
     hooks?: { PostToolBatch?: { hooks: Hook[] }[] } };
   const usage = { inputTokens: 40, outputTokens: 10, cacheReadInputTokens: 300, cacheCreationInputTokens: 60 };
@@ -39,8 +42,16 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
     modelUsage: { "claude-test": { inputTokens: usage.inputTokens * calls, outputTokens: usage.outputTokens * calls,
       cacheReadInputTokens: usage.cacheReadInputTokens * calls, cacheCreationInputTokens: usage.cacheCreationInputTokens * calls } },
     ...fields });
+  // Which model a query asked for, whether it resumed a conversation, and which conversations Claude Code now holds.
+  function remember(options: Options): void {
+    sdk.last = { ...(options.model === undefined ? {} : { model: options.model }),
+      ...(options.resume === undefined ? {} : { resume: options.resume }) };
+    const conversation = options.resume ?? options.sessionId;
+    if (conversation !== undefined) sdk.conversations.add(conversation);
+  }
   async function* play(options: Options): AsyncGenerator<Record<string, unknown>> {
     const signal = options.abortController.signal;
+    remember(options);
     const hooks = options.hooks?.PostToolBatch?.flatMap((matcher) => matcher.hooks) ?? [];
     let calls = 0;
     for (const step of sdk.steps.splice(0) as ModelStep[]) {
@@ -81,7 +92,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
   return {
     tool: (name: string, _description: string, _shape: unknown, handler: (args: unknown) => Promise<unknown>) => ({ name, handler }),
     createSdkMcpServer: (server: unknown) => server,
-    getSessionInfo: async () => undefined,
+    getSessionInfo: async (id: string) => sdk.conversations.has(id) ? { sessionId: id } : undefined,
     query: ({ options }: { options: Options }) => play(options),
   };
 });
@@ -96,12 +107,21 @@ interface EngineHarness {
   /** What the model does next, one step per model call. */
   script(steps: readonly ModelStep[]): void;
   modelCalls(): number;
-  start(root: string, tools: readonly ToolDefinition[], observed: Observed): Promise<ModelSession>;
+  start(root: string, tools: readonly ToolDefinition[], observed: Observed, conversation?: Conversation): Promise<WorkingSession>;
+  /** Another model on the same engine. */
+  other(): ModelTarget;
+  /** The model the last model call used, and whether it saw the conversation's earlier request. */
+  lastCall(): Readonly<{ model: string; continued: boolean }> | undefined;
 }
 
+/** A conversation kept across sessions: Pi's session manager, or Claude Code's conversation id. */
+type Conversation = Readonly<{ piManager: SessionManager; id: string }>;
+type WorkingSession = ModelSession & Readonly<{ resumed: boolean; switchModel(target: ModelTarget): Promise<void> }>;
+
 function piHarness(): EngineHarness {
-  const faux = fauxProvider({ models: [{ id: "scripted" }] });
+  const faux = fauxProvider({ models: [{ id: "scripted" }, { id: "other" }] });
   let runtime: ModelRuntime | undefined;
+  let last: { model: string; continued: boolean } | undefined;
   const response = (step: ModelStep): FauxResponseStep => {
     if (step === "hang") {
       return (_context, options) => new Promise((settle) => {
@@ -114,15 +134,31 @@ function piHarness(): EngineHarness {
   };
   return {
     engine: "Pi",
-    script(steps) { faux.setResponses(steps.map(response)); },
+    script(steps) {
+      faux.setResponses(steps.map((step): FauxResponseStep => {
+        const base = response(step);
+        return (context, options, state, model) => {
+          last = { model: model.id, continued: context.messages.some((message) => message.role === "user" &&
+            JSON.stringify(message.content).includes("earlier request")) };
+          return typeof base === "function" ? base(context, options, state, model) : base;
+        };
+      }));
+    },
     modelCalls: () => faux.state.callCount,
-    async start(root, tools, observed) {
+    other: () => {
+      const model = runtime?.getModel(faux.provider.id, "other");
+      if (runtime === undefined || model === undefined) throw new Error("The other model is missing");
+      return { engine: "pi", modelRuntime: runtime, model };
+    },
+    lastCall: () => last,
+    async start(root, tools, observed, conversation) {
       runtime ??= await ModelRuntime.create({ authPath: join(root, "auth.json"), modelsPath: null, refreshOnCreate: false,
         allowModelNetwork: false });
       runtime.registerNativeProvider(faux.provider);
       const model = runtime.getModel(faux.provider.id, "scripted");
       if (model === undefined) throw new Error("The scripted model is missing");
       return CodingSession.start({ cwd: root, modelRuntime: runtime, model, systemPrompt: "You test.", tools,
+        ...(conversation === undefined ? {} : { sessionManager: conversation.piManager }),
         onActivity: (entry) => { observed.activity.push(entry); },
         onUsage: (usage) => { observed.usage = addTokens(observed.usage, usage); } });
     },
@@ -135,7 +171,11 @@ function claudeCodeHarness(): EngineHarness {
     engine: "Claude Code",
     script(steps) { sdk.steps = [...steps]; },
     modelCalls: () => sdk.calls,
-    start: (root, tools, observed) => ClaudeCodeSession.start({ cwd: root, model: "test", systemPrompt: "You test.", tools,
+    other: () => ({ engine: "claude-code", model: "other" }),
+    lastCall: () => sdk.last === undefined ? undefined
+      : { model: sdk.last.model ?? "", continued: sdk.last.resume !== undefined },
+    start: (root, tools, observed, conversation) => ClaudeCodeSession.start({ cwd: root, model: "test", systemPrompt: "You test.", tools,
+      ...(conversation === undefined ? {} : { conversationId: conversation.id }),
       onActivity: (entry) => { observed.activity.push(entry); },
       onUsage: (usage) => { observed.usage = addTokens(observed.usage, usage); } }),
   };
@@ -217,6 +257,23 @@ describe.each([{ harness: piHarness }, { harness: claudeCodeHarness }])("the mod
     expect(await cancelled.session.run("Go.", stop.signal)).toEqual({ status: "cancelled" });
     const limited = await open(readOnlyFileTools, ["hang"]);
     expect(await runWithTimeLimit(limited.session, "Go.", running(), 20)).toEqual({ status: "timed_out" });
+  });
+
+  it(`continues its conversation on another model of the same engine, and resumes a kept one (${harness().engine})`, async () => {
+    const engine = harness();
+    const root = checkout();
+    const observed: Observed = { activity: [], usage: NO_TOKENS };
+    const conversation: Conversation = { piManager: SessionManager.inMemory(root), id: randomUUID() };
+    const session = await engine.start(root, readOnlyFileTools(root), observed, conversation);
+    expect(session.resumed).toBe(false);
+    engine.script([{ text: "first" }]);
+    expect(await session.run("The earlier request.", running())).toEqual({ status: "completed", reply: "first" });
+    await session.switchModel(engine.other());
+    engine.script([{ text: "second" }]);
+    expect(await session.run("The next request.", running())).toEqual({ status: "completed", reply: "second" });
+    expect(engine.lastCall()).toEqual({ model: "other", continued: true });
+    session.dispose();
+    expect((await engine.start(root, readOnlyFileTools(root), observed, conversation)).resumed).toBe(true);
   });
 
   it(`reports tokens with cached input inside input (${harness().engine})`, async () => {

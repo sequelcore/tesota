@@ -78,6 +78,29 @@ it("persists session workspaces, the repository's approved checks and engine ide
   reopened.close();
 });
 
+it("keeps a session's agent model and the conversations it left, and reads a session saved before either", () => {
+  const { root, source } = fixture();
+  const store = openShellSessionStore(source, root);
+  const session = store.create();
+  expect(session.agent).toBeUndefined();
+  store.setAgentModel(session.id, "claude-code:opus");
+  const first = session.engineId;
+  const second = store.rotateEngine(session.id);
+  store.rotateEngine(session.id);
+  expect(() => { store.setAgentModel(session.id, "not a model"); }).toThrow();
+  store.close();
+  const reopened = openShellSessionStore(source, root);
+  expect(reopened.list()[0]).toMatchObject({ agent: "claude-code:opus", retiredEngineIds: [first, second] });
+  reopened.close();
+  const path = join(root, readdirSync(root).find((name) => name.endsWith(".json")) ?? "");
+  const saved = JSON.parse(readFileSync(path, "utf8")) as { sessions: Record<string, unknown>[] };
+  for (const entry of saved.sessions) { delete entry["agent"]; delete entry["retiredEngineIds"]; }
+  writeFileSync(path, JSON.stringify(saved));
+  const older = openShellSessionStore(source, root);
+  expect(older.list()[0]?.agent).toBeUndefined();
+  older.close();
+});
+
 it("persists network destinations allowed for the repository and refuses anything else", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);

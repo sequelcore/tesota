@@ -133,6 +133,17 @@ the input shows what the session is doing or the question it is waiting on.
 A question that needs no changes ends with an answer. The conversation
 continues, so follow-up requests keep their context.
 
+A session keeps its agent's model, shown at the bottom right. `/model` lists
+the models, and `/model <route:model>` switches this session's agent, for
+example `/model codex:gpt-6-sol` or `/model claude-code:opus`. On the same
+engine (the `codex` and `anthropic` routes share Pi; `claude-code` is its own)
+the conversation continues. On another engine, and with `/handoff`, which
+keeps the model, the agent starts a **new conversation**: it will not have
+the earlier one, and Tesota says so. With your next request Tesota sends it a
+brief of the session, which the conversation shows first: your requests for
+the pending changes, the changes, open review findings and the agent's last
+reply. `tesota models agent` sets the model for new sessions.
+
 ## Review and apply
 
 When a request leaves changes, Tesota runs your checks on exactly that

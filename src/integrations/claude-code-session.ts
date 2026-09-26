@@ -3,6 +3,7 @@ import { createSdkMcpServer, getSessionInfo, query, tool, type CanUseTool, type 
   type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import * as z from "zod";
+import type { ModelTarget } from "./model-session.js";
 import type { AgentActivity, TurnResult } from "./model-session-contract.js";
 import { editChange, resultText, textOf, toolSubject } from "./pi-coding-session.js";
 import { NO_TOKENS, type TokenUsage, addTokens } from "../token-usage.js";
@@ -109,6 +110,9 @@ const toolNote = "\n\nYour tools are Tesota's, named with the prefix `mcp__tesot
 export class ClaudeCodeSession {
   readonly #options: ClaudeCodeSessionOptions;
   readonly #root: string;
+  #model: string;
+  /** Whether the session continues a conversation Claude Code already held. */
+  readonly resumed: boolean;
   #usable = true;
   #message = 0;
   #calls = 0;
@@ -119,7 +123,9 @@ export class ClaudeCodeSession {
   private constructor(options: ClaudeCodeSessionOptions, root: string, conversationStarted: boolean) {
     this.#options = options;
     this.#root = root;
+    this.#model = options.model;
     this.#conversationStarted = conversationStarted;
+    this.resumed = conversationStarted;
   }
 
   /** A working agent's conversation resumes if Claude Code already holds it for this workspace. */
@@ -131,6 +137,16 @@ export class ClaudeCodeSession {
   }
 
   get usable(): boolean { return this.#usable; }
+
+  /**
+   * Continue this conversation on another Claude Code model (decision 026):
+   * the next request resumes it with that model, as Claude Code's own
+   * `/model` does.
+   */
+  async switchModel(target: ModelTarget): Promise<void> {
+    if (target.engine !== "claude-code") throw new Error("That model runs on another engine; its conversation cannot continue here");
+    this.#model = target.model;
+  }
 
   #emit(activity: AgentActivity): void { this.#options.onActivity?.(activity); }
 
@@ -174,7 +190,7 @@ export class ClaudeCodeSession {
     let result: SDKResultMessage | undefined;
     try {
       for await (const message of query({ prompt: request, options: {
-        cwd: this.#root, model: this.#options.model, systemPrompt: this.#options.systemPrompt + toolNote,
+        cwd: this.#root, model: this.#model, systemPrompt: this.#options.systemPrompt + toolNote,
         tools: [], mcpServers: { [server]: createSdkMcpServer({ name: server, version: "1.0.0", tools }) },
         // Every call goes through one gate: Tesota's tools are allowed there, and nothing else is.
         canUseTool: onlyTesotaTools, settingSources: [], strictMcpConfig: true, skills: [],

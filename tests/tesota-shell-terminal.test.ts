@@ -106,6 +106,25 @@ it("opens shell commands on slash and keeps the prompt active after running one"
   shell.stop();
 });
 
+it("passes /model with its argument, and /handoff, to the shell", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onModel = vi.fn();
+  const onHandoff = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onModel, onHandoff });
+  shell.start();
+  shell.ask("> ").catch(() => undefined);
+  terminal.send("/model claude-code:opus");
+  terminal.send("\r");
+  terminal.send("/model");
+  terminal.send("\r");
+  terminal.send("/handoff");
+  terminal.send("\r");
+  expect(onModel.mock.calls).toEqual([["default", "claude-code:opus"], ["default", undefined]]);
+  expect(onHandoff).toHaveBeenCalledWith("default");
+  shell.stop();
+});
+
 it("filters slash commands before dispatching a typed command", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });

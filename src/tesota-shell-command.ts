@@ -7,9 +7,12 @@ import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { confinesCommands, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
 import { chooseSessionExecution, releaseWorkspace, type SessionExecution } from "./execution-providers.js";
 import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-session.js";
-import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent } from "./integrations/model-session.js";
-import type { ModelSession } from "./integrations/model-session-contract.js";
-import { EXPLORERS_OFF, type ModelRole, readModelChoices } from "./model-roles.js";
+import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
+  type WorkingAgent } from "./integrations/model-session.js";
+import { EXPLORERS_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
+import { offeredModels, routeListing } from "./models-command.js";
+import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
+import { modelSwitch, needsBrief } from "./verification/model-switch.js";
 import { currentBranch } from "./repository-git.js";
 import { askExplorer, askPageReader } from "./integrations/pi-explorer.js";
 import type { WebAccess } from "./integrations/web-tools.js";
@@ -40,7 +43,7 @@ import { countsAsMeasurement } from "./verification/review-estimate.js";
 import { type TokenUsage, totalTokens } from "./token-usage.js";
 import { validateFixes, validationReport } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
-import { appendAssurance, decisionEntry, reviewEntry, type AssuranceEntry } from "./assurance-journal.js";
+import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry, type AssuranceEntry } from "./assurance-journal.js";
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
 
@@ -76,6 +79,15 @@ export interface TesotaShellCommandDependencies {
   readonly initialSessionId?: string;
   readonly blockedSessionIds?: readonly string[];
   readonly configureWorkspace: (callbacks: WorkspaceCallbacks) => void;
+  /** The agent's model in a session: `/model` and `/handoff` (decision 026). */
+  readonly agentModel?: AgentModelCommands;
+}
+
+export interface AgentModelCommands {
+  /** Show the agent's model and the offered ones, or switch to `route:model`, or `default`. */
+  change(id: string, argument: string | undefined): Promise<void>;
+  /** Start the agent's conversation afresh on the same model. */
+  handOff(id: string): Promise<void>;
 }
 
 /** Where commands run, in the operator's words: the host is "this computer". */
@@ -124,7 +136,7 @@ function isAbort(error: unknown): boolean {
 class SessionState {
   workspace: Promise<Workspace> | undefined;
   environment: Promise<ExecutionEnvironment> | undefined;
-  coding: Promise<ModelSession> | undefined;
+  coding: Promise<WorkingAgent> | undefined;
   /** The agent's read-only explorers (decision 019); absent when explorers are off. */
   explorers: ExplorerPool | undefined;
   /** Sites the operator allowed or refused for this session's page reading (decision 024). */
@@ -201,8 +213,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       store.markActive(sessionId, false);
     }
   };
+  /** The session's agent model: the one its conversation runs on, or for a new agent the operator's choice for the role. */
+  const agentChoice = (id: string): string => store.list().find((session) => session.id === id)?.agent ?? readModelChoices().agent;
   const showAgentModel = (id: string): void => {
-    try { surface.setSessionModel(id, readModelChoices().agent); } catch { /* the agent reports an unreadable choice when it opens */ }
+    try { surface.setSessionModel(id, agentChoice(id)); } catch { /* the agent reports an unreadable choice when it opens */ }
   };
   const surface = createTesotaShellTerminal({ cwd, tui, interrupt, theme,
     initialSession: initial, onEntry: (id, entry) => { store.append(id, entry); },
@@ -215,6 +229,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       workspaceCallbacks?.newSession(session.id);
     },
     onCloseSession: (id) => { void closeSession(id); },
+    onModel: (id, argument) => { void agentModel.change(id, argument); },
+    onHandoff: (id) => { void agentModel.handOff(id); },
     onSessionChange: (id) => { workspaceCallbacks?.selectSession(id); },
     onQuit: () => { workspaceCallbacks?.quit(); } });
   for (const session of savedSessions.slice(1)) surface.addSession(session.id, session.title,
@@ -384,13 +400,37 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         readModelChoices().explorer === EXPLORERS_OFF ? "agent" : "explorer") }, page, question, signal),
     };
   };
-  const codingFor = (id: string, signal: AbortSignal): Promise<ModelSession> => {
+  /** What this session has recorded, for a brief to an agent that starts a new conversation (decision 026). */
+  const sessionHistory = async (id: string, workspace: Workspace): Promise<SessionHistory> => {
+    const snapshot = workspace.snapshot();
+    let review: SessionHistory["review"];
+    try {
+      const open = await lastOpenReview(workspace.directory);
+      if (open !== undefined) review = { current: open.tree === snapshot.tree, findings: openFindings(open.reviews) };
+    } catch {
+      surface.writeTo(id, "Tesota could not read the last review from the workspace's journal; the brief leaves its findings out.", "warning");
+    }
+    const lastReply = saved(id)?.entries.findLast((entry) => entry.kind === "agent")?.text;
+    return { requests: await workspace.requests(), changes: snapshot.changes, review, lastReply };
+  };
+  /** An agent that starts a new conversation in a session with history gets the brief with the next request, shown whole. */
+  const briefNewConversation = async (id: string, agent: WorkingAgent, workspace: Workspace): Promise<void> => {
+    if (agent.resumed) return;
+    const history = await sessionHistory(id, workspace);
+    const brief = handoffBrief(history);
+    if (!needsBrief(agent.resumed, hasHistory(history)) || brief === undefined) return;
+    const state = stateFor(id);
+    state.note = [brief, state.note].filter((note) => note !== undefined).join("\n\n");
+    surface.writeTo(id, `The agent starts a new conversation and does not have the earlier one. Tesota sends it this brief with your request:\n${brief}`);
+  };
+  const codingFor = (id: string, signal: AbortSignal): Promise<WorkingAgent> => {
     const state = stateFor(id);
     state.coding ??= (async () => {
       const workspace = await workspaceFor(id);
       const environment = await environmentFor(id);
-      // The footer names the model this session's agent actually opened with.
-      const choice = readModelChoices().agent;
+      // A session keeps the model its conversation runs on; the footer names it.
+      const choice = agentChoice(id);
+      if (saved(id)?.agent === undefined) store.setAgentModel(id, choice);
       surface.setSessionModel(id, choice);
       const target = await openModelTarget(choice, signal);
       const engineId = saved(id)?.engineId ?? store.rotateEngine(id);
@@ -409,7 +449,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           workspace.checkout, brief, explorerSignal);
         });
       state.explorers = explorers;
-      return startWorkingAgent({ target }, { cwd: workspace.checkout, environment, web,
+      const agent = await startWorkingAgent({ target }, { cwd: workspace.checkout, environment, web,
         ...(explorers === undefined ? {} : { explorers }),
         sandboxed: confinesCommands(environment.guarantees),
         approveCommand: async (command) => {
@@ -428,9 +468,82 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           return decision;
         },
         onActivity: (activity) => { surface.showActivity(id, activity); } }, { sessionManager, conversationId: engineId });
+      await briefNewConversation(id, agent, workspace);
+      return agent;
     })();
     state.coding.catch(() => { state.coding = undefined; });
     return state.coding;
+  };
+
+  /** The session's agent when it is running; never starts one. */
+  const liveAgent = async (id: string): Promise<WorkingAgent | undefined> =>
+    states.get(id)?.coding?.catch(() => undefined);
+  /** End the agent's conversation; its next request starts a new one on `choice`, which gets the brief. */
+  const newConversation = async (id: string, choice: string): Promise<void> => {
+    const state = stateFor(id);
+    const live = state.coding;
+    state.coding = undefined;
+    state.explorers = undefined;
+    await live?.then((coding) => { coding.dispose(); }, () => undefined);
+    store.rotateEngine(id);
+    store.setAgentModel(id, choice);
+    surface.setSessionModel(id, choice);
+  };
+  const newConversationNote = "It starts a new conversation with your next request and will not have this conversation. " +
+    "Tesota sends it a brief of this session: your requests for the pending changes, the changes, open findings " +
+    "and the agent's last reply.";
+  const agentModel: AgentModelCommands = {
+    change: async (id, argument) => {
+      let current: string;
+      let role: string;
+      try { current = agentChoice(id); role = readModelChoices().agent; } catch (error) {
+        surface.writeTo(id, `${error instanceof Error ? error.message : "The model choices could not be read"}.`, "warning");
+        return;
+      }
+      const offered = offeredModels();
+      if (argument === undefined) {
+        surface.writeTo(id, `The agent uses ${current} in this session; new sessions use ${role} (tesota models agent).\n` +
+          "/model <route:model> switches it: on the same engine its conversation continues, on another it starts a new one. " +
+          `/model default returns to ${role}. Offered:\n${routeListing(offered)}`);
+        return;
+      }
+      const choice = argument === "default" ? role : argument;
+      const from = parseModelChoice(current);
+      const to = parseModelChoice(choice);
+      if (from === undefined || to === undefined || !offered.some((model) => model.id === choice)) {
+        surface.writeTo(id, `${choice} is not offered. /model lists the models.`, "warning");
+        return;
+      }
+      switch (modelSwitch(choice === current, ROUTE_ENGINE[from.route] === ROUTE_ENGINE[to.route])) {
+        case "unchanged": surface.writeTo(id, `The agent already uses ${current}.`); return;
+        case "in_place": {
+          try {
+            const target = await openModelTarget(choice);
+            await (await liveAgent(id))?.switchModel(target);
+          } catch (error) {
+            surface.writeTo(id, `The agent could not switch to ${choice}: ${error instanceof Error ? error.message : "unknown error"}. ` +
+              `It still uses ${current}.`, "warning");
+            return;
+          }
+          store.setAgentModel(id, choice);
+          surface.setSessionModel(id, choice);
+          surface.writeTo(id, `The agent now uses ${choice}; its conversation continues.`);
+          return;
+        }
+        case "new_conversation":
+          await newConversation(id, choice);
+          surface.writeTo(id, `The agent now uses ${choice}, which runs on another engine. ${newConversationNote}`);
+      }
+    },
+    handOff: async (id) => {
+      let current: string;
+      try { current = agentChoice(id); } catch (error) {
+        surface.writeTo(id, `${error instanceof Error ? error.message : "The model choices could not be read"}.`, "warning");
+        return;
+      }
+      await newConversation(id, current);
+      surface.writeTo(id, `The agent stays on ${current}. ${newConversationNote}`);
+    },
   };
   const blockSession = (id: string): void => { store.block(id); surface.blockSession(id); };
   /** Evidence that could not be recorded is reported, never dropped silently. */
@@ -470,8 +583,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     await state?.environment?.then((environment) => environment.dispose(), () => undefined);
     if (record.workspace !== null) {
       await releaseWorkspace(join(record.workspace, "repo"));
-      const transcript = SessionManager.findById(join(record.workspace, "repo"), record.engineId, piSessionsDirectory);
-      if (transcript !== undefined) await rm(transcript, { force: true });
+      // The conversation and those it left behind at a handoff (decision 026).
+      for (const engineId of [record.engineId, ...record.retiredEngineIds ?? []]) {
+        const transcript = SessionManager.findById(join(record.workspace, "repo"), engineId, piSessionsDirectory);
+        if (transcript !== undefined) await rm(transcript, { force: true });
+      }
       if (!record.blocked) await rm(record.workspace, { recursive: true, force: true, maxRetries: 3 });
     }
     store.remove(id);
@@ -638,6 +754,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     initialSessionId: initial.id,
     blockedSessionIds: savedSessions.filter((session) => session.blocked).map((session) => session.id),
     configureWorkspace: (callbacks) => { workspaceCallbacks = callbacks; },
+    agentModel,
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },
     dispose: () => {
       for (const state of states.values()) {

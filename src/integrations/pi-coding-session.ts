@@ -10,6 +10,7 @@ import { confinesCommands, type ExecutionEnvironment } from "../execution-enviro
 import type { TokenUsage } from "../token-usage.js";
 import { exploreTool, type ExplorerPool } from "./pi-explore.js";
 import { type WebAccess, webReadTool, webSearchTool } from "./web-tools.js";
+import type { ModelTarget } from "./model-session.js";
 import type { AgentActivity, AgentChange, TurnResult } from "./model-session-contract.js";
 
 export type CommandApproval = "once" | "always" | "deny";
@@ -308,10 +309,13 @@ export class CodingSession {
   readonly #session: AgentSession;
   readonly #unsubscribe: () => void;
   #usable = true;
+  /** Whether the session continues a conversation its session manager already held. */
+  readonly resumed: boolean;
 
   private constructor(session: AgentSession, onActivity: ((activity: AgentActivity) => void) | undefined,
     onUsage: ((usage: TokenUsage) => void) | undefined) {
     this.#session = session;
+    this.resumed = session.messages.length > 0;
     let message = session.messages.filter((entry) => entry.role === "assistant").length;
     this.#unsubscribe = session.subscribe((event) => {
       if (event.type === "message_start" && event.message.role === "assistant") message += 1;
@@ -346,6 +350,16 @@ export class CodingSession {
   }
 
   get usable(): boolean { return this.#usable; }
+
+  /**
+   * Continue this conversation on another of Pi's models (decision 026). Pi
+   * records the change in the transcript and adapts earlier messages to the
+   * new model, whichever provider served them.
+   */
+  async switchModel(target: ModelTarget): Promise<void> {
+    if (target.engine !== "pi") throw new Error("That model runs on another engine; its conversation cannot continue here");
+    await this.#session.setModel(target.model);
+  }
 
   /** Run one user request to completion, cancellation or a confirmed failure. */
   async run(request: string, signal: AbortSignal): Promise<TurnResult> {

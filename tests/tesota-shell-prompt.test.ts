@@ -26,7 +26,7 @@ it.each([
     entries: [], inspections: [], interrupted: false, blocked: false };
   const store = { list: () => [record], append: () => {},
     setWorkspace: (_id: string, directory: string) => { record.workspace = directory; },
-    allowedNetwork: () => [], markActive: () => {}, close: () => {} } as unknown as ShellSessionStore;
+    setAgentModel: () => {}, allowedNetwork: () => [], markActive: () => {}, close: () => {} } as unknown as ShellSessionStore;
   mocks.openStore.mockReturnValue(store);
   const preparation = [{ description: "Install dependencies", outcome,
     output: outcome === "failed" ? "install failed" : "" }] as PreparationStep[];
@@ -34,9 +34,9 @@ it.each([
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
   const recordRequest = vi.fn(async () => {});
   const workspace = { directory: "workspace", checkout: "workspace/repo", included: [],
-    update: () => ({ status: "current" }), snapshot: () => ({ changes: [] }), recordRequest } as unknown as Workspace;
+    update: () => ({ status: "current" }), snapshot: () => ({ tree: "t", changes: [] }), requests: async () => [], recordRequest } as unknown as Workspace;
   const run = vi.fn(async () => ({ status: "completed" as const, reply: "ok" }));
-  const coding = { run, dispose: vi.fn() } as unknown as CodingSession;
+  const coding = { run, dispose: vi.fn(), resumed: false } as unknown as CodingSession;
   const spies = [
     vi.spyOn(Workspace, "create").mockResolvedValue(workspace),
     vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}) } as unknown as ModelRuntime),

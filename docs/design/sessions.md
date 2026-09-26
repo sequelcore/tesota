@@ -21,8 +21,8 @@ Each repository has one saved store under `~/.tesota/shell-sessions/`, and a
 lock file keeps a second shell from opening the same repository at once; a
 lock left by a process that is no longer running is replaced. The store holds,
 per session, the transcript, the review inspections, the workspace location,
-the agent's conversation id, and whether the session was interrupted or
-blocked; and, per repository, the approved check commands, the network
+the agent's model and conversation id, the ids of conversations it left at a
+handoff, and whether the session was interrupted or blocked; and, per repository, the approved check commands, the network
 destinations allowed for every session, and the measured costs of recent
 reviews. After a restart, sessions and their workspaces and conversations are
 restored; a session interrupted mid-request is marked so. Command approvals

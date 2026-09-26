@@ -31,6 +31,10 @@ export const ROUTE_BILLING: Readonly<Record<ModelRoute, Readonly<{ payer: string
   "claude-code": { payer: "your Claude Code sign-in", metered: false },
 };
 
+/** The engine that runs a route's models: Pi, or Claude Code through the Claude Agent SDK. */
+export type ModelEngine = "pi" | "claude-code";
+export const ROUTE_ENGINE: Readonly<Record<ModelRoute, ModelEngine>> = { codex: "pi", anthropic: "pi", "claude-code": "claude-code" };
+
 /** A role's model as `route:model`. */
 export interface ModelChoice {
   readonly route: ModelRoute;
