@@ -78,6 +78,13 @@ it("turns the agent's streamed text and tool calls into activity a surface can s
   ]);
 });
 
+it("names a helper call by its question", () => {
+  const start = { type: "tool_execution_start", toolCallId: "h1", toolName: "explore",
+    args: { question: "Where is a finding's origin decided?" } } as unknown as AgentSessionEvent;
+  expect(activityOf(start, 1)).toEqual({ type: "tool_started", call: "h1", tool: "explore",
+    subject: "Where is a finding's origin decided?" });
+});
+
 it("counts the tokens of each finished model response, and nothing else", () => {
   const usage = { input: 900, output: 100, cacheRead: 4_000, cacheWrite: 0, totalTokens: 5_000 };
   const events = [

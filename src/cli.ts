@@ -7,7 +7,7 @@ Usage: tesota [--help | -h | help]
        tesota [--theme <tesota-dark|tesota-light|terminal>]
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout>
-       tesota models [<role> <model|default>]
+       tesota models [<role> <model|default|off>]
        tesota prune [--force]
        tesota setup
 

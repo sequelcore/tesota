@@ -25,6 +25,14 @@ the working agent, helpers, reviewer, refuter and fix validator with their
 models and catalogue prices; `tesota models reviewer gpt-6-astra`, for
 example, changes one, and `default` restores Luna.
 
+Helpers are off by default. `tesota models helper gpt-6-luna` lets the agent
+of sessions opened afterwards ask read-only helpers questions about the
+repository with its `explore` tool: each helper reads and searches but cannot
+change files or run commands, at most three run at once and eight per
+request, and each shows in the conversation with what it read and what it
+cost. Their conversations are saved in the workspace's `helpers` directory.
+`tesota models helper off` turns them off again.
+
 Sessions are **autonomous** when Docker Sandboxes is set up, and
 **supervised** otherwise. On Windows 11, autonomous sessions need the Windows
 Hypervisor Platform (an administrator prompt and a restart), Docker Sandboxes,

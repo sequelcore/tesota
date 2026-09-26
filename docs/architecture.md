@@ -111,6 +111,8 @@ at once; applications are serialized.
 | `windows-system.ts` | Windows' own programs located in the system directory, never found through PATH |
 | `integrations/codex-credentials.ts`, `auth.ts` | Codex login storage |
 | `model-roles.ts`, `models-command.ts` | Which model each role uses, and `tesota models` |
+| `integrations/pi-helper.ts`, `integrations/pi-explore.ts` | Read-only helpers and the agent's `explore` tool, with their limits |
+| `verification/helper-answer.ts` | The proved rules for when a helper's reply is an answer and when another helper may start |
 | `verification/` | Standalone Oxlint profile and the formal invocation-budget predicate |
 | `live-codex.ts`, `integrations/pi-live*.ts` | Live Codex probe and model route |
 

@@ -9,7 +9,9 @@ import { allowsAutonomy, type ExecutionEnvironment, type PreparationStep } from 
 import { chooseSessionMode, releaseWorkspace, type SessionMode } from "./execution-providers.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { CodingSession, type CommandApproval, type ModelAccess, type NetworkDecision } from "./integrations/pi-coding-session.js";
-import { type ModelRole, readModelChoices } from "./model-roles.js";
+import { HELPERS_OFF, type ModelRole, readModelChoices } from "./model-roles.js";
+import { askHelper } from "./integrations/pi-helper.js";
+import { HelperPool } from "./integrations/pi-explore.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
 import { runTesotaShell, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
@@ -119,6 +121,8 @@ class SessionState {
   workspace: Promise<Workspace> | undefined;
   environment: Promise<ExecutionEnvironment> | undefined;
   coding: Promise<CodingSession> | undefined;
+  /** The agent's read-only helpers (decision 019); absent when helpers are off. */
+  helpers: HelperPool | undefined;
   reviewed: WorkspaceSnapshot | undefined;
   /** Context the agent needs with the next request, such as a rejected change. */
   note: string | undefined;
@@ -354,7 +358,19 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const sessionManager = existing === undefined
         ? SessionManager.create(workspace.checkout, piSessionsDirectory, { id: engineId })
         : SessionManager.open(existing, piSessionsDirectory, workspace.checkout);
+      // Whether helpers are on is decided when the agent starts; which model they use, when each one starts.
+      const helpers = readModelChoices().helper === HELPERS_OFF ? undefined
+        : new HelperPool(async (brief, helperSignal, onLine, onUsage) => {
+          const access = await openModel(helperSignal, "helper");
+          return askHelper({ modelRuntime: access.runtime, model: access.model, onUsage,
+            // Saved beside the checkout, where the agent's tools cannot reach, for the operator to read.
+            sessionManager: SessionManager.create(workspace.checkout, join(workspace.directory, "helpers")),
+            onActivity: (activity) => { if (activity.type === "tool_started") onLine(`${activity.tool} ${activity.subject}`.trim()); } },
+          workspace.checkout, brief, helperSignal);
+        });
+      state.helpers = helpers;
       return CodingSession.create({ cwd: workspace.checkout, modelRuntime: runtime, model, sessionManager, environment,
+        ...(helpers === undefined ? {} : { helpers }),
         autonomous: allowsAutonomy(environment.guarantees),
         approveCommand: async (command) => {
           surface.reportFor(id, { phase: "awaiting_command" });
@@ -485,6 +501,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         const prompt = notes.length === 0 ? request
           : `Tesota context (not written by the user):\n${notes.join("\n\n")}\n\nUser request:\n${request}`;
         state.note = undefined;
+        state.helpers?.startTurn();
         const result = await coding.run(prompt, signal);
         if (result.status === "unsettled") { blockSession(id); return result; }
         if (result.status !== "completed") return result;

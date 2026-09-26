@@ -14,3 +14,17 @@ lemma isHelperAnswer_ensures(timedOut: bool, status: HelperTurnStatus, answerLen
   ensures (isHelperAnswer(timedOut, status, answerLength) == ((!(timedOut) && status.completed?) && (answerLength > 0)))
 {
 }
+
+function canStartHelper(started: int, limit: int): bool
+{
+  if ((started < 0) || (limit <= 0)) then
+    false
+  else
+    (started < limit)
+}
+
+lemma canStartHelper_ensures(started: int, limit: int)
+  ensures (((started < 0) || (limit <= 0)) ==> (canStartHelper(started, limit) == false))
+  ensures ((started >= 0) ==> (limit > 0) ==> (canStartHelper(started, limit) == (started < limit)))
+{
+}

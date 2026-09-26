@@ -23,6 +23,13 @@ export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
 
 /** The model every role uses until the operator chooses another. */
 export const DEFAULT_MODEL: string = LIVE_CODEX_MODEL_ID;
+/**
+ * Helpers are off until the operator chooses a model for them: decision 019
+ * turns them on by default only after its evaluation shows they help.
+ */
+export const HELPERS_OFF = "off";
+const defaults: Readonly<Record<ModelRole, string>> = { agent: DEFAULT_MODEL, helper: HELPERS_OFF,
+  reviewer: DEFAULT_MODEL, refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL };
 export const DEFAULT_MODELS_FILE: string = join(homedir(), ".tesota", "models.json");
 
 export type ModelChoices = Readonly<Record<ModelRole, string>>;
@@ -46,19 +53,19 @@ function stored(path: string): StoredChoices {
 /** Each role's model: the operator's choice, or the default. */
 export function readModelChoices(path: string = DEFAULT_MODELS_FILE): ModelChoices {
   const choices = stored(path);
-  return Object.fromEntries(MODEL_ROLES.map((role) => [role, choices[role] ?? DEFAULT_MODEL])) as Record<ModelRole, string>;
+  return Object.fromEntries(MODEL_ROLES.map((role) => [role, choices[role] ?? defaults[role]])) as Record<ModelRole, string>;
 }
 
 /**
- * Choose a role's model from the models the provider offers, or `default` to
- * clear the choice. The file is replaced whole, so a failed write leaves the
- * previous choices.
+ * Choose a role's model from the models the provider offers, `default` to
+ * clear the choice, or `off` for helpers. The file is replaced whole, so a
+ * failed write leaves the previous choices.
  */
 export function chooseModel(role: ModelRole, model: string, available: readonly string[],
   path: string = DEFAULT_MODELS_FILE): ModelChoices {
   const choices: Record<string, string | undefined> = { ...stored(path) };
   if (model === "default") delete choices[role];
-  else if (available.includes(model)) choices[role] = model;
+  else if (available.includes(model) || role === "helper" && model === HELPERS_OFF) choices[role] = model;
   else throw new Error(`${model} is not offered; choose one of ${available.join(", ")}`);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${randomUUID()}.tmp`;

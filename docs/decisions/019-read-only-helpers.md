@@ -59,14 +59,16 @@ The working agent stays the only writer in the workspace.
 
 ### 3. Helpers are visible and counted
 
-- Each call shows in the conversation as one tool line with its brief; while
-  it runs, the helper's own reads and searches stream as that line's output,
-  and it ends with the helper's time and tokens.
-- Each helper's full conversation is saved beside the workspace checkout,
-  where the agent's tools cannot reach it, so the operator can read what it
-  looked at.
-- Helper tokens count toward the turn, and the step's measurements include
-  them.
+- Each call shows in the conversation as one tool line with its question;
+  while it runs, the helper's own reads and searches stream as that line's
+  output, and its answer to the agent states the helper's time and tokens.
+- Each helper's full conversation is saved in the workspace's `helpers`
+  directory, beside the checkout where the agent's tools cannot reach it, so
+  the operator can read what it looked at.
+- Helpers use the model chosen for the helper role
+  ([decision 020](020-models-by-role.md)); the role is `off` until the
+  operator chooses a model, which is the switch that turns helpers on for
+  sessions started afterwards.
 
 ### 4. The agent is told when to use it
 
@@ -89,10 +91,12 @@ when the operator turns it on.
 ## Delivery
 
 1. The helper: its prompt, read-only session, time limit, summary limit and
-   usage count, tested without a model.
+   usage count, tested without a model. `isHelperAnswer` and
+   `canStartHelper` in `src/verification/helper-answer.ts` are proved by
+   `bun run formal:check`.
 2. The `explore` tool on the working agent, with the concurrency and per-turn
    limits, cancellation, streamed activity and saved transcripts.
-3. The agent's instructions, and the switch that turns helpers on.
+3. The agent's instructions, and the helper role as the switch.
 4. `bun run live:delegation`, the evaluation, and the default decided from
    its results.
 

@@ -26,6 +26,7 @@
     "live:codex": "bun --no-env-file dist/live-codex.js --full-probe --stored",
     "live:codex:device-code": "bun --no-env-file dist/live-codex.js --full-probe --device-code",
     "live:review": "bun --no-env-file dist/live-review.js",
+    "live:delegation": "bun --no-env-file dist/live-delegation.js",
     "auth:codex": "bun --no-env-file dist/cli.js auth login"
   },
   "devDependencies": {

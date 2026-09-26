@@ -10,3 +10,11 @@ export function isHelperAnswer(timedOut: boolean, status: HelperTurnStatus, answ
   if (timedOut || status !== "completed") return false;
   return answerLength > 0;
 }
+
+/** Decision 019's per-turn allowance: another helper may start only while fewer than the limit have started. */
+//@ ensures started < 0 || limit <= 0 ==> \result === false
+//@ ensures started >= 0 && limit > 0 ==> \result === (started < limit)
+export function canStartHelper(started: number, limit: number): boolean {
+  if (started < 0 || limit <= 0) return false;
+  return started < limit;
+}
