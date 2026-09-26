@@ -1,9 +1,10 @@
 # Tesota
 
 **Tesota is an open-source agent for work that carries its evidence.** Ask for
-a change in your repository. A coding agent makes it in a separate copy, Tesota
-runs your checks on exactly that result, and you read the diff and decide
-whether to apply it. Nothing reaches your files until you do.
+a change in your repository. A coding agent makes it in a separate copy,
+Tesota runs your checks and its own verifiers on exactly that result, an
+independent reviewer reads it against what you asked, and you decide whether
+to apply it. Nothing reaches your files until you do.
 
 ## Try it
 
@@ -24,31 +25,31 @@ cd my-project
 tesota
 ```
 
-The agent can read, edit, create and delete files in its copy. Every shell
-command asks for your approval first and then runs with your permissions; it is
-not sandboxed. See [Using Tesota](docs/using-tesota.md) for the workflow and
-limits. Run `bun unlink` in this checkout to remove the command.
+The agent can read, edit, create and delete files in its copy. With Docker
+Sandboxes set up (`tesota setup`), its commands run on their own inside a
+sandbox that sees only that copy and reaches only package registries;
+otherwise every command asks for your approval first and then runs with your
+permissions. See [Using Tesota](docs/guide/using-tesota.md) for the workflow
+and limits. Run `bun unlink` in this checkout to remove the command.
 
 Tesota is pre-release and has been exercised live only on Windows. A passing
-check shows only that the command succeeded on the reviewed content, not that
-the change does what you asked. The [roadmap](docs/roadmap.md) owns status and
-priorities.
+check shows only that the command succeeded on the reviewed content, and a
+clean review is advice; neither shows that the change does what you asked. The
+[roadmap](docs/roadmap.md) owns status and priorities.
 
 ## Documentation
 
 | Need | Read |
 | --- | --- |
-| Complete user workflow | [Using Tesota](docs/using-tesota.md) |
+| The user workflow | [Using Tesota](docs/guide/using-tesota.md), [authentication](docs/guide/authentication.md) |
+| How it works and why | [Design](docs/design/overview.md) |
+| Decisions, in order | [Decisions](docs/decisions.md) |
 | Current status and next work | [Roadmap](docs/roadmap.md) |
-| Purpose, design, checks and boundaries | [Architecture](docs/architecture.md) |
-| What earlier experiments established | [Findings](docs/findings.md) |
-| Build, test and contribution guidance | [Development](docs/development.md) |
-| Consequential decisions | [docs/decisions](docs/decisions/) |
+| What experiments established | [Findings](docs/findings.md) |
+| Build, test and contribution practice | [Development](docs/development.md) |
 
-Tesota began as a deliberate reset of Kiln. The
-[reconstruction decision](docs/decisions/001-start-tesota.md) and
-[Kiln reference](docs/references/kiln.md) preserve that history without making
-its code or roadmap part of the current product.
+Tesota began as a deliberate reset of Kiln; the [Kiln reference](docs/research/kiln.md)
+preserves that history without making its code or roadmap part of the product.
 
 Tesota is licensed under [Apache-2.0](LICENSE). Preserve [NOTICE](NOTICE) and
 retained third-party notices. See [CONTRIBUTING.md](CONTRIBUTING.md) and

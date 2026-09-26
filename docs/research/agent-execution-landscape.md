@@ -6,7 +6,7 @@ credentials, run unattended, and support remote clients. Researched on
 2026-09-25, from vendor documentation, the source of projects
 cloned under `Sequel/cloned` (Codex at `32329b28`, 2026-07-24), and one
 source-code study. It informs
-[decision 014](../decisions/014-execution-and-autonomy.md). Product behavior
+[decision 014](../decisions.md). Product behavior
 changes quickly; recheck a claim before relying on it.
 
 ## What each system does
@@ -161,5 +161,5 @@ verify it on the real repositories and host.
 Not verified: Codex's hosted sandbox documentation (moved; the source was used
 instead), Cursor's and Devin's cloud agents, and Copilot's local Windows
 sandbox. `sbx` behavior with a running sandbox was verified later; see
-[decision 014](../decisions/014-execution-and-autonomy.md) and
+[decision 014](../decisions.md) and
 [findings](../findings.md).

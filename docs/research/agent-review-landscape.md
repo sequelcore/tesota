@@ -4,8 +4,8 @@ How current systems make model-written code review precise enough to act on:
 which findings count, how false positives are removed, how deep a review
 goes, and what evidence settles a finding. Researched on 2026-09-25 from the
 source of cloned projects, vendor documentation and two studies. It informs
-[decision 016](../decisions/016-review-precision.md) and
-[decision 018](../decisions/018-verified-origin-and-review-forecast.md). Product
+[decision 016](../decisions.md) and
+[decision 018](../decisions.md). Product
 behavior changes quickly; recheck a claim before relying on it.
 
 ## What each system does

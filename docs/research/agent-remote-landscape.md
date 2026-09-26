@@ -4,8 +4,8 @@ How current agents keep sessions running apart from the terminal that started
 them, and how people reach those sessions from another device. Researched on
 2026-09-25 from the source and documentation of cloned projects, vendor
 documentation, and local probes on Windows 11. It informs
-[decision 017](../decisions/017-session-service-and-remote-access.md) and
-refines the direction of [decision 014](../decisions/014-execution-and-autonomy.md).
+[decision 017](../decisions.md) and
+refines the direction of [decision 014](../decisions.md).
 Product behavior changes quickly; recheck a claim before relying on it.
 
 ## What each system does

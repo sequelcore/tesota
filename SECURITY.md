@@ -3,7 +3,7 @@
 Tesota is pre-release software. It has no supported stable release and should
 not be treated as a security boundary for untrusted workloads. Current platform,
 isolation and live-integration limits are documented in the
-[roadmap](docs/roadmap.md) and [architecture](docs/architecture.md).
+[roadmap](docs/roadmap.md) and the [design](docs/design/overview.md).
 
 ## Reporting a vulnerability
 
@@ -24,7 +24,9 @@ Please include:
 - any known workaround.
 
 High-priority reports include file-tool writes outside the workspace, shell
-commands that run without approval, credential or prompt disclosure,
+commands that run without approval in a supervised session, sandboxed
+commands that reach the host or an unallowed destination, credential or
+prompt disclosure,
 unconfirmed processes represented as settled, check results attached to the
 wrong content, and application of anything other than the reviewed changes.
 

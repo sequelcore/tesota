@@ -20,19 +20,24 @@ shown by Tesota, using the intended account. It performs no model inference.
 An existing saved login is retained; use logout before deliberately changing
 accounts. A TTY check cannot detect terminal recording.
 
+Login stops after three minutes, and cancelling it stops it at once; a code
+that arrives after that is never shown. Login fails if anything tries to call
+a model during it, even if that attempt is caught.
+
 Status is offline and prints only whether a saved login exists. It does not
 refresh tokens, identify the account or establish model access. Logout removes
 Tesota's local credential only; it does not revoke the provider session or stop
 an already running request. It does not affect other applications' logins.
 
-After login, `bun run live:codex` reuses stored credentials without a terminal
-or another browser interaction. Missing credentials fail with login guidance.
-Refresh failure does not fall back to another account, API key or login method.
-Resolve the failure before explicitly logging out and logging in again.
+After login, sessions and evaluations reuse the stored credential without a
+terminal or another browser interaction. Missing credentials fail with login
+guidance. Refresh failure does not fall back to another account, API key or
+login method. Resolve the failure before explicitly logging out and logging
+in again.
 
 ## Storage and concurrency
 
-[CodexCredentials](../src/integrations/codex-credentials.ts) implements Pi's
+[CodexCredentials](../../src/integrations/codex-credentials.ts) implements Pi's
 public `CredentialStore` contract for `openai-codex` only. Pi owns authorization,
 polling, token exchange and refresh; Tesota owns storage and presentation.
 
@@ -44,7 +49,7 @@ locking its ACL; it never takes ownership of a pre-existing directory.
 On Unix, the directory must belong to the current user with mode 0700, and files
 use mode 0600. Applications running as the same user can access this storage.
 Credential contents, raw provider failures and temporary codes are excluded from
-routine output and experiment evidence.
+routine output and recorded evidence.
 
 Mutation uses an exclusive lock file shared across processes. Pi performs refresh
 inside that lock and rechecks the current credential, preventing simultaneous
@@ -55,10 +60,10 @@ completed. This is not a power-loss or distributed-filesystem guarantee.
 
 Lock acquisition waits at most ten seconds and respects cancellation. A killed
 process can leave `codex.lock`. Tesota does not steal an apparently stale lock.
-Before removing it, establish that no Tesota authentication or experiment process
-is active. A provider-side refresh followed by a failed local save can require
+Before removing it, establish that no Tesota process is active. A provider-side refresh followed by a failed local save can require
 login again; local locking cannot roll back a remote token rotation.
 
-Corrupt, oversized, foreign-provider or inaccessible records fail closed.
-The live experiment retains its own deadlines and invocation limits; saved login
-does not grant verification authority, model entitlement or human acceptance.
+Corrupt, oversized, foreign-provider or inaccessible records fail closed. A
+saved login does not grant verification authority, model entitlement or human
+acceptance. [Login](../../src/integrations/codex-login.ts) owns the device-code
+flow; [storage](../../src/integrations/codex-credentials.ts) owns the file.

@@ -54,7 +54,7 @@ observed on. None of them establishes representative usefulness.
   TypeScript check ran, and a private fixture confined its own files. A
   separate host tree with broad inherited permissions stayed accessible, and
   there is no configurable memory, CPU or process limit. Not qualified for
-  repository tasks; see [decision 007](decisions/007-execution-environments.md).
+  repository tasks; see [decision 007](decisions.md).
 
 ## Verification and review tools
 

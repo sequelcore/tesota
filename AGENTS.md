@@ -1,15 +1,15 @@
 # Tesota
 
 Pre-release terminal coding agent: a Pi agent works in a separate workspace per
-session, shell commands need approval, and approved checks run on the exact
-changes before the operator applies or rejects them (decision 013).
+session, its commands run in a sandbox or with the operator's approval, and
+each result is verified and reviewed before the operator applies or rejects it.
 Keep changes scoped to the active roadmap item.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;
   it is not a verified functional baseline.
 - Read README.md for supported tooling and commands.
-- Read docs/architecture.md for purpose and ownership and docs/roadmap.md for
-  current scope.
+- Read docs/design/overview.md for purpose, design and ownership, and
+  docs/roadmap.md for current scope.
 - Follow docs/development.md for documentation placement and verification.
 - Run `bun run check` for source, tests, compiled CLI behavior, and lint.
 - Preserve LICENSE, NOTICE, and retained third-party notices.

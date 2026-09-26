@@ -2,12 +2,12 @@
 
 Tesota is a pre-release coding agent for the terminal. You describe what you
 want; it works in a separate copy of your repository; you review the changes
-and check results, then apply or reject them. [Architecture](architecture.md)
+and check results, then apply or reject them. The [design](../design/overview.md)
 explains the boundaries in detail.
 
 ## Set up
 
-Install the Bun and Node versions pinned in [package.json](../package.json),
+Install the Bun and Node versions pinned in [package.json](../../package.json),
 then build and link this checkout:
 
 ```console
