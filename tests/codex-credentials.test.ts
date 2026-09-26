@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -27,20 +27,6 @@ it("compiled login persists across processes, status is sanitized, and logout re
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain(expected);
       expect(result.stdout + result.stderr).not.toMatch(/SYNTHETIC_ACCESS|SYNTHETIC_REFRESH|NETWORK_FORBIDDEN/);
-      if (action === "login" && expected === "login saved" && process.platform === "win32") {
-        const experiment = spawnSync("bun", ["--no-env-file", "--preload",
-          resolve("tests/fixtures/persistent-auth-smoke.mjs"), resolve("dist/live-codex.js"), "--full-probe", "--stored"], {
-          cwd: root, encoding: "utf8", timeout: 8_000, windowsHide: true,
-          env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"], TESOTA_TEST_AUTH_DIRECTORY: join(root, "auth") },
-        });
-        expect(experiment.status, experiment.stderr).toBe(0);
-        expect(experiment.stdout + experiment.stderr).not.toMatch(/SYNTHETIC_ACCESS|SYNTHETIC_REFRESH|LOGIN_FORBIDDEN|NETWORK_FORBIDDEN/);
-        const runs = join(root, "live-runs/codex");
-        const [runFile] = await readdir(runs);
-        if (runFile === undefined) throw new Error("Expected one retained run");
-        const record = JSON.parse(await readFile(join(runs, runFile), "utf8"));
-        expect(record).toMatchObject({ version: 9, authenticationMethod: "stored", disposition: "passed", modelInvocationCount: 2 });
-      }
     }
   } finally { await rm(root, { recursive: true, force: true }); }
 }, 30_000);

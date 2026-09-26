@@ -24,7 +24,7 @@ const guarantees: EnvironmentGuarantees = Object.freeze({
 });
 
 /** Package registries every sandbox may reach; anything else is refused by the proxy. */
-export const DEFAULT_ALLOWED_HOSTS: readonly string[] = Object.freeze([
+const DEFAULT_ALLOWED_HOSTS: readonly string[] = Object.freeze([
   "registry.npmjs.org", "registry.yarnpkg.com",
   "pypi.org", "files.pythonhosted.org",
   "crates.io", "index.crates.io", "static.crates.io",

@@ -1,4 +1,4 @@
-export const TESOTA_SHELL_THEME_NAMES = ["tesota-dark", "tesota-light", "terminal"] as const;
+const TESOTA_SHELL_THEME_NAMES = ["tesota-dark", "tesota-light", "terminal"] as const;
 
 export type TesotaShellThemeName = typeof TESOTA_SHELL_THEME_NAMES[number];
 
@@ -55,7 +55,7 @@ export function backgroundText(text: string, color: string | null): string {
 }
 
 export function bold(text: string): string { return `\x1b[1m${text}\x1b[22m`; }
-export function dim(text: string): string { return `\x1b[2m${text}\x1b[22m`; }
+function dim(text: string): string { return `\x1b[2m${text}\x1b[22m`; }
 
 /** The theme's muted color, or the terminal's dim style when the theme leaves colors to the terminal. */
 export function mutedText(text: string, theme: TesotaShellTheme): string {

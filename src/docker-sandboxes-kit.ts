@@ -20,7 +20,7 @@ import { MISE_RELEASE, type ToolchainPlan } from "./toolchain.js";
 export const KIT_RUNTIMES = ["node", "bun", "python"] as const;
 export type KitRuntime = typeof KIT_RUNTIMES[number];
 
-export const DEFAULT_KITS_ROOT: string = join(homedir(), ".tesota", "kits");
+const DEFAULT_KITS_ROOT: string = join(homedir(), ".tesota", "kits");
 
 /** The create-time argument naming the in-sandbox path of the workspace's node_modules. */
 export const DEPENDENCIES_ARGUMENT = "dependenciesPath";

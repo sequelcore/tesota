@@ -25,7 +25,7 @@ export function safeTerminalText(text: string): string {
   return safe;
 }
 
-export function markdownTheme(theme: TesotaShellTheme): MarkdownTheme {
+function markdownTheme(theme: TesotaShellTheme): MarkdownTheme {
   const accent = (text: string): string => colorText(text, theme.accent);
   const muted = (text: string): string => mutedText(text, theme);
   return {

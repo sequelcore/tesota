@@ -1,7 +1,7 @@
 import { createModels } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
-import { deviceCodeAuth, deviceCodeTerminalRenderer, runLiveCodex } from "./integrations/pi-live.js";
+import { deviceCodeAuth, deviceCodeTerminalRenderer, loginToCodex } from "./integrations/codex-login.js";
 
 export async function runAuthCommand(action: string): Promise<number> {
   if (!["login", "status", "logout"].includes(action)) {
@@ -29,8 +29,8 @@ export async function runAuthCommand(action: string): Promise<number> {
     const cancel = new AbortController();
     const watchdog = setTimeout(() => process.exit(1), 185_000);
     try {
-      const result = await runLiveCodex("auth_only", deviceCodeAuth(deviceCodeTerminalRenderer(), cancel.signal), credentials);
-      if (result.disposition !== "succeeded") throw new Error("Login did not complete");
+      const result = await loginToCodex(deviceCodeAuth(deviceCodeTerminalRenderer(), cancel.signal), credentials);
+      if (result !== "succeeded") throw new Error("Login did not complete");
       console.log("Codex: login saved for future Tesota runs.");
       return 0;
     } finally { cancel.abort(); clearTimeout(watchdog); }

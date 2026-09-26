@@ -17,7 +17,7 @@ Keep changes scoped to the active roadmap item.
 - Give new or changed pure decision and calculation functions whose rule can be
   stated precisely, such as permission and budget checks, LemmaScript `//@`
   specifications taken from the requirement, and prove them with `lsc check
-  --backend=dafny` (see `src/verification/invocation-admission.ts`).
+  --backend=dafny` (see `src/verification/finding-origin-rule.ts`).
 - Keep credentials, operator state, provider routing, and execution permissions
   out of instruction Markdown. Technical integration contracts belong in docs;
   effective restrictions belong in code and configuration.

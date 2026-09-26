@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import * as z from "zod";
-import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
 
 /**
  * Which model each of Tesota's roles uses (decision 020). The operator
@@ -21,8 +20,8 @@ export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
   validator: "the fix validator in correction rounds",
 };
 
-/** The model every role uses until the operator chooses another. */
-export const DEFAULT_MODEL: string = LIVE_CODEX_MODEL_ID;
+/** The model every role uses until the operator chooses another: the cheapest on the Codex route. */
+export const DEFAULT_MODEL: string = "gpt-6-luna";
 /**
  * Explorers are off until the operator chooses a model for them: decision 019
  * turns them on by default only after its evaluation shows they help.

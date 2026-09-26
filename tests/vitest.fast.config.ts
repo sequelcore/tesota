@@ -8,7 +8,7 @@ import { defineConfig, type ViteUserConfig } from "vitest/config";
 const configuration: ViteUserConfig = defineConfig({
   test: {
     include: [
-      "tests/invocation-admission.test.ts",
+      "tests/codex-login.test.ts",
       "tests/tesota-shell-command.test.ts",
       "tests/tesota-shell-terminal.test.ts",
       "tests/tesota-shell.test.ts",

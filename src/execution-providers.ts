@@ -6,10 +6,10 @@ import { hostProvider } from "./host-environment.js";
 import { windowsPowerShell } from "./windows-system.js";
 
 /** Providers that can confine commands enough for autonomous sessions, in order of preference. */
-export const isolatingProviders: readonly ExecutionProvider[] = [dockerSandboxesProvider]
+const isolatingProviders: readonly ExecutionProvider[] = [dockerSandboxesProvider]
   .filter((provider) => allowsAutonomy(provider.guarantees));
 
-export const allProviders: readonly ExecutionProvider[] = [...isolatingProviders, hostProvider];
+const allProviders: readonly ExecutionProvider[] = [...isolatingProviders, hostProvider];
 
 export type SessionMode =
   | Readonly<{ mode: "autonomous"; provider: ExecutionProvider }>
