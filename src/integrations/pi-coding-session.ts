@@ -8,10 +8,11 @@ import { type AgentSession, type AgentSessionEvent, type BashOperations, type Mo
 import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
 import { confinesCommands, type ExecutionEnvironment } from "../execution-environment.js";
 import type { TokenUsage } from "../token-usage.js";
+import { ADVISOR_GUIDANCE, type Advisor, advisorTool } from "./advisor.js";
 import { exploreTool, type ExplorerPool } from "./pi-explore.js";
 import { type WebAccess, webReadTool, webSearchTool } from "./web-tools.js";
 import type { ModelTarget } from "./model-session.js";
-import type { AgentActivity, AgentChange, TurnResult } from "./model-session-contract.js";
+import type { AgentActivity, AgentChange, ConversationEntry, TurnResult } from "./model-session-contract.js";
 
 export type CommandApproval = "once" | "always" | "deny";
 /** How the operator answered a refused network destination: for this session, for the repository, or not at all. */
@@ -35,6 +36,8 @@ export interface CodingSessionOptions {
   readonly explorers?: ExplorerPool;
   /** Web search and page reading (decision 024); absent when the session has none. */
   readonly web?: WebAccess;
+  /** The advisor the agent may consult (decision 027); absent when it is off. */
+  readonly advisor?: Advisor;
   /** Called with the tokens of each finished model response, as the provider reported them. */
   readonly onUsage?: (usage: TokenUsage) => void;
 }
@@ -171,10 +174,12 @@ const explorerGuidance = "The explore tool asks a read-only explorer one questio
   "does not see this conversation, so each question must stand on its own. Treat its answer as a lead to check, " +
   "not as fact, and never use it to change files. ";
 
-function systemPrompt(root: string, sandboxed: boolean, explorers: boolean, web: boolean): string {
+interface Helpers { readonly explorers: boolean; readonly web: boolean; readonly advisor: boolean }
+
+function systemPrompt(root: string, sandboxed: boolean, helpers: Helpers): string {
   return "You are Tesota, a coding agent working in a private copy of the user's repository. " +
     "Read, search, edit, create and delete files as the task needs. " + commandGuidance(sandboxed) +
-    (explorers ? explorerGuidance : "") + (web ? webGuidance : "") +
+    (helpers.explorers ? explorerGuidance : "") + (helpers.web ? webGuidance : "") + (helpers.advisor ? ADVISOR_GUIDANCE : "") +
     "Do not commit, push or change Git " +
     "history: when you finish, Tesota shows the user your changes, runs the repository's checks and lets " +
     "the user apply or reject them. End each turn with a short summary of what you changed and anything " +
@@ -188,10 +193,26 @@ function replyText(session: AgentSession): string {
   return assistant.content.flatMap((part) => part.type === "text" ? [part.text] : []).join("\n").trim();
 }
 
+/** One Pi message as conversation entries; messages Pi keeps for itself, such as thinking, give none. */
+function piEntries(message: AgentSession["messages"][number]): ConversationEntry[] {
+  switch (message.role) {
+    case "user":
+      return [{ role: "user", text: typeof message.content === "string" ? message.content : textOf(message.content) }];
+    case "assistant":
+      return message.content.flatMap((part): ConversationEntry[] => part.type === "text" ? [{ role: "assistant", text: part.text }]
+        : part.type === "toolCall" ? [{ role: "tool_call", text: `${part.name} ${JSON.stringify(part.arguments)}` }] : []);
+    case "toolResult":
+      return [{ role: "tool_result", text: textOf(message.content) }];
+    default:
+      return [];
+  }
+}
+
 /** The argument that identifies what a tool call acts on: its command, pattern or path. */
 export function toolSubject(name: string, args: unknown): string {
   if (typeof args !== "object" || args === null) return "";
-  const key = name === "bash" ? "command" : name === "grep" || name === "find" ? "pattern" : name === "explore" ? "question"
+  const key = name === "bash" ? "command" : name === "grep" || name === "find" ? "pattern"
+    : name === "explore" || name === "advisor" ? "question"
     : name === "web_search" ? "query" : name === "web_read" || name === "web_fetch" ? "url" : "path";
   const value: unknown = Reflect.get(args, key);
   return typeof value === "string" ? value : "";
@@ -280,7 +301,7 @@ export interface SessionStartOptions {
 
 /** What decides the working agent's tools, whichever engine runs it. */
 export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "approveCommand" |
-  "decideNetwork" | "explorers" | "web">;
+  "decideNetwork" | "explorers" | "web" | "advisor">;
 
 /**
  * The working agent's system prompt and tools: every file tool confined to the
@@ -292,7 +313,8 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
     throw new Error("Sandboxed sessions require an environment that confines files and network");
   }
   const root = realpathSync(options.cwd);
-  return { systemPrompt: systemPrompt(root, options.sandboxed, options.explorers !== undefined, options.web !== undefined), tools: [
+  const helpers = { explorers: options.explorers !== undefined, web: options.web !== undefined, advisor: options.advisor !== undefined };
+  return { systemPrompt: systemPrompt(root, options.sandboxed, helpers), tools: [
     ...readOnlyFileTools(root),
     defineTool(confine(root, createEditToolDefinition(root), true)),
     defineTool(confine(root, createWriteToolDefinition(root), true)),
@@ -301,6 +323,7 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
       exposeSessionEnvironment: false })),
     ...(options.explorers === undefined ? [] : [exploreTool(options.explorers)]),
     ...(options.web === undefined ? [] : [webSearchTool(options.web), webReadTool(options.web)]),
+    ...(options.advisor === undefined ? [] : [advisorTool(options.advisor)]),
   ] };
 }
 
@@ -359,6 +382,11 @@ export class CodingSession {
   async switchModel(target: ModelTarget): Promise<void> {
     if (target.engine !== "pi") throw new Error("That model runs on another engine; its conversation cannot continue here");
     await this.#session.setModel(target.model);
+  }
+
+  /** The conversation Pi holds, including the turn in progress; thinking is left out. */
+  async conversation(): Promise<readonly ConversationEntry[]> {
+    return this.#session.messages.flatMap(piEntries);
   }
 
   /** Run one user request to completion, cancellation or a confirmed failure. */

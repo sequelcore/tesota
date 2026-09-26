@@ -50,12 +50,13 @@ export function parseModelChoice(value: string): ModelChoice | undefined {
   if (!(MODEL_ROUTES as readonly string[]).includes(route) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(model)) return undefined;
   return { route: route as ModelRoute, model };
 }
-export const MODEL_ROLES = ["agent", "explorer", "reviewer", "refuter", "validator"] as const;
+export const MODEL_ROLES = ["agent", "explorer", "advisor", "reviewer", "refuter", "validator"] as const;
 export type ModelRole = typeof MODEL_ROLES[number];
 
 export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
   agent: "the working agent, which changes the workspace",
   explorer: "read-only explorers the agent starts",
+  advisor: "a stronger model the agent consults at hard decisions",
   reviewer: "reviewers, focused lenses and ClaimCheck",
   refuter: "the refuter that tests every finding",
   validator: "the fix validator in correction rounds",
@@ -64,18 +65,20 @@ export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
 /** The model every role uses until the operator chooses another: the cheapest on the Codex route. */
 export const DEFAULT_MODEL: string = "codex:gpt-6-luna";
 /**
- * Explorers are off until the operator chooses a model for them: decision 019
- * turns them on by default only after its evaluation shows they help.
+ * The helpers the agent may call, explorers (decision 019) and the advisor
+ * (decision 027), are off until the operator chooses a model for them; each
+ * is turned on by default only after an evaluation shows it helps.
  */
-export const EXPLORERS_OFF = "off";
-const defaults: Readonly<Record<ModelRole, string>> = { agent: DEFAULT_MODEL, explorer: EXPLORERS_OFF,
+export const ROLE_OFF = "off";
+export const OPTIONAL_ROLES: readonly ModelRole[] = ["explorer", "advisor"];
+const defaults: Readonly<Record<ModelRole, string>> = { agent: DEFAULT_MODEL, explorer: ROLE_OFF, advisor: ROLE_OFF,
   reviewer: DEFAULT_MODEL, refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL };
 export const DEFAULT_MODELS_FILE: string = join(homedir(), ".tesota", "models.json");
 
 export type ModelChoices = Readonly<Record<ModelRole, string>>;
 
-const modelId = z.string().max(120).refine((value) => value === EXPLORERS_OFF || parseModelChoice(value) !== undefined);
-const choicesSchema = z.strictObject({ agent: modelId.optional(), explorer: modelId.optional(),
+const modelId = z.string().max(120).refine((value) => value === ROLE_OFF || parseModelChoice(value) !== undefined);
+const choicesSchema = z.strictObject({ agent: modelId.optional(), explorer: modelId.optional(), advisor: modelId.optional(),
   reviewer: modelId.optional(), refuter: modelId.optional(), validator: modelId.optional() });
 type StoredChoices = z.infer<typeof choicesSchema>;
 
@@ -98,14 +101,14 @@ export function readModelChoices(path: string = DEFAULT_MODELS_FILE): ModelChoic
 
 /**
  * Choose a role's model, as `route:model`, from the models the routes offer,
- * `default` to clear the choice, or `off` for explorers. The file is replaced
+ * `default` to clear the choice, or `off` for explorers and the advisor. The file is replaced
  * whole, so a failed write leaves the previous choices.
  */
 export function chooseModel(role: ModelRole, model: string, available: readonly string[],
   path: string = DEFAULT_MODELS_FILE): ModelChoices {
   const choices: Record<string, string | undefined> = { ...stored(path) };
   if (model === "default") delete choices[role];
-  else if (available.includes(model) || role === "explorer" && model === EXPLORERS_OFF) choices[role] = model;
+  else if (available.includes(model) || OPTIONAL_ROLES.includes(role) && model === ROLE_OFF) choices[role] = model;
   else throw new Error(`${model} is not offered; choose one of ${available.join(", ")}`);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${randomUUID()}.tmp`;

@@ -11,7 +11,7 @@ and priorities; this page and its siblings describe the design as it is.
 | [Workspace](workspace.md) | The separate copy, keeping it current, and applying reviewed work |
 | [Execution](execution.md) | Where commands run, a sandbox or this computer, when the operator is asked, and network |
 | [Assurance](assurance.md) | Checks, verifiers, review, refutation, correction, the journal and the forecast |
-| [Agents](agents.md) | The working agent, explorers and the model for each role |
+| [Agents](agents.md) | The working agent, explorers, the advisor and the model for each role |
 | [Sessions](sessions.md) | The shell, saved sessions, and the planned session service |
 
 ## Principles
@@ -114,7 +114,8 @@ routing and execution permissions live in code and in Tesota's own directory
 | `review-depth.ts`, `review-forecast.ts`, `verification/review-estimate.ts` | Review depth, measured costs and the forecast, and its proved rules |
 | `correction.ts`, `assurance-journal.ts` | What goes back to the agent, and the per-workspace assurance journal |
 | `integrations/pi-coding-session.ts` | Pi sessions, confined tools, command approval, cancellation, activity and token counts |
-| `integrations/pi-explorer.ts`, `integrations/pi-explore.ts`, `verification/explorer-answer.ts` | Read-only explorers, the `explore` tool and its proved rules |
+| `integrations/pi-explorer.ts`, `integrations/pi-explore.ts`, `verification/helper-answer.ts` | Read-only explorers, the `explore` tool, the page reader, and the proved rules for helpers' answers and allowances |
+| `integrations/advisor.ts`, `integrations/advisor-session.ts` | The advisor: the `advisor` tool, its allowance, the conversation it reads, and its session |
 | `model-roles.ts`, `models-command.ts` | The route and model for each role, and `tesota models` |
 | `integrations/model-session.ts`, `integrations/claude-code-session.ts` | Starting a role's session on Pi or on Claude Code, and Tesota's tools inside Claude Code |
 | `integrations/tesota-credentials.ts`, `integrations/codex-login.ts`, `auth.ts` | Codex OAuth and Anthropic API key storage, Codex login, and `tesota auth` |

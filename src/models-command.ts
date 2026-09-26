@@ -1,7 +1,7 @@
 import { createModels } from "@earendil-works/pi-ai";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { chooseModel, DEFAULT_MODEL, DEFAULT_MODELS_FILE, EXPLORERS_OFF, isModelRole, MODEL_ROLES, type ModelRoute,
+import { chooseModel, ROLE_OFF, DEFAULT_MODEL, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES, type ModelRoute,
   readModelChoices, ROLE_DESCRIPTIONS, ROUTE_BILLING } from "./model-roles.js";
 
 /**
@@ -49,15 +49,19 @@ export function routeListing(offered: readonly OfferedModel[]): string {
     .join("\n");
 }
 
+const offText: Partial<Record<string, string>> = { explorer: "no explorers; choose a model to turn them on",
+  advisor: "no advisor; choose a model to turn it on" };
+
 function listing(offered: readonly OfferedModel[], path: string): string {
   const choices = readModelChoices(path);
   const rows = MODEL_ROLES.map((role) => {
-    const detail = choices[role] === EXPLORERS_OFF ? "no explorers; choose a model to turn them on"
+    const detail = choices[role] === ROLE_OFF ? offText[role] ?? "off"
       : cost(offered.find((model) => model.id === choices[role]));
     return `  ${role.padEnd(10)}${choices[role].padEnd(30)}${detail}\n  ${"".padEnd(10)}${ROLE_DESCRIPTIONS[role]}`;
   });
   return `Models by role (${path}):\n${rows.join("\n")}\n\nOffered, as route:model:\n${routeListing(offered)}\n` +
-    `Change one with tesota models <role> <route:model>; <role> default restores ${DEFAULT_MODEL}, and explorers off.\n`;
+    `Change one with tesota models <role> <route:model>; <role> default restores ${DEFAULT_MODEL}, ` +
+    "and turns explorers and the advisor off.\n";
 }
 
 /**
@@ -74,7 +78,8 @@ export function runModelsCommand(args: readonly string[], write: (text: string) 
   }
   try {
     const choices = chooseModel(role, model, offered.map((entry) => entry.id), path);
-    write(choices[role] === EXPLORERS_OFF ? "Explorers are off.\n" : `The ${role} now uses ${choices[role]}.\n`);
+    write(choices[role] === ROLE_OFF ? (role === "explorer" ? "Explorers are off.\n" : `The ${role} is off.\n`)
+      : `The ${role} now uses ${choices[role]}.\n`);
     return 0;
   } catch (error) {
     write(`${error instanceof Error ? error.message : "The choice could not be saved"}.\n`);

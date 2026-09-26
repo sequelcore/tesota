@@ -1,6 +1,6 @@
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
-import { canStartExplorer } from "../verification/explorer-answer.js";
+import { canStartHelper } from "../verification/helper-answer.js";
 import type { ExplorerResult } from "./pi-explorer.js";
 import { runCost, type TokenUsage, totalTokens } from "../token-usage.js";
 
@@ -43,7 +43,7 @@ export class ExplorerPool {
 
   async run(brief: string, signal: AbortSignal, onLine: (line: string) => void): Promise<ExplorerRun> {
     const refused = (reason: string): ExplorerRun => ({ result: { status: "unfinished", reason }, durationMs: 0, tokens: 0 });
-    if (!canStartExplorer(this.#started, this.#perTurn)) {
+    if (!canStartHelper(this.#started, this.#perTurn)) {
       return refused(`this turn already asked ${this.#perTurn} explorers; continue with what you have`);
     }
     this.#started += 1;

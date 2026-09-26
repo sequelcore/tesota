@@ -1,6 +1,6 @@
 # Choosing models
 
-Tesota runs a model in each of five roles, and you choose each one. This page
+Tesota runs a model in each of six roles, and you choose each one. This page
 shows the setups that fit the accounts you have, the principles behind them,
 and how to check a choice. Signing in to each route is in
 [authentication](authentication.md).
@@ -11,6 +11,7 @@ and how to check a choice. Signing in to each route is in
 | --- | --- | --- |
 | `agent` | Changes the workspace for your requests | Most: every request, every correction round |
 | `explorer` | Answers the agent's questions about the repository, read-only | Off by default |
+| `advisor` | Reads the agent's conversation and advises it at hard decisions; no tools | Off by default; at most three short consults a request |
 | `reviewer` | Reviews each result, with focused lenses on deep reviews and ClaimCheck on proved contracts | One to four sessions per result |
 | `refuter` | Tries to disprove every finding before it counts | One session per review |
 | `validator` | Checks whether a correction resolved what was sent back | One session per correction round |
@@ -80,6 +81,13 @@ to sessions opened afterwards.
   not.
 - **Keep explorers off** unless long sessions on a large repository show the
   agent losing track; on shorter questions they only added cost.
+- **An advisor pays off when it is stronger than the agent.** Anthropic
+  measured a cheaper agent with an Opus advisor coming close to the stronger
+  model at lower cost, and the benefit shrinking as the agent approaches the
+  advisor. With Opus 5.5 as agent, try GPT-6 Astra or Claude Fable as advisor,
+  a different lab as Amp pairs them; with a cheap agent, Opus 5.5. Stronger
+  agents consult less on their own, so ask for it in a request ("consult the
+  advisor before you edit") when you want a second opinion.
 
 Tesota's evaluation cases are small, and every reviewer model found all of
 their planted defects; outside benchmarks favor GPT-6 Astra on harder,

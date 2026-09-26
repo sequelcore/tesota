@@ -8,7 +8,7 @@ import { hostProvider } from "./host-environment.js";
 import { openModelTarget, startWorkingAgent } from "./integrations/model-session.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
 import { askExplorer } from "./integrations/pi-explorer.js";
-import { DEFAULT_MODEL, EXPLORERS_OFF, readModelChoices } from "./model-roles.js";
+import { DEFAULT_MODEL, ROLE_OFF, readModelChoices } from "./model-roles.js";
 import { type TokenUsage, totalTokens } from "./token-usage.js";
 
 /**
@@ -25,7 +25,7 @@ const runs = Number(option("runs") ?? "2");
 if (!Number.isInteger(runs) || runs < 1) throw new Error("Use --runs=N with N at least 1.");
 const chosen = readModelChoices();
 const agentId = option("model-agent") ?? chosen.agent;
-const explorerId = option("model-explorer") ?? (chosen.explorer === EXPLORERS_OFF ? DEFAULT_MODEL : chosen.explorer);
+const explorerId = option("model-explorer") ?? (chosen.explorer === ROLE_OFF ? DEFAULT_MODEL : chosen.explorer);
 
 const agentTarget = await openModelTarget(agentId);
 const explorerTarget = await openModelTarget(explorerId);

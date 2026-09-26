@@ -16,6 +16,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
     ({ name, description, shape, handler }),
   createSdkMcpServer: (options: unknown) => options,
   getSessionInfo: async () => sdk.session,
+  getSessionMessages: async () => [],
   query: ({ options }: { options: Record<string, unknown> }) => {
     sdk.options.push(options);
     return (sdk.script as (options: Record<string, unknown>) => AsyncGenerator<unknown>)(options);

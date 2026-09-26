@@ -48,7 +48,8 @@ function markdownTheme(theme: TesotaShellTheme): MarkdownTheme {
 }
 
 const toolNames: Readonly<Record<string, string>> = { bash: "Run", read: "Read", edit: "Edit", write: "Write",
-  grep: "Search", find: "Find", ls: "List", web_search: "Web search", web_read: "Read page", web_fetch: "Fetch page" };
+  grep: "Search", find: "Find", ls: "List", web_search: "Web search", web_read: "Read page", web_fetch: "Fetch page",
+  advisor: "Advisor" };
 /** Output lines kept under a command, as Claude Code and Codex show a command's tail. */
 const outputTail = 4;
 

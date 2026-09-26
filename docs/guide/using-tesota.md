@@ -20,8 +20,9 @@ tesota auth login
 Login stores a Codex credential under `~/.tesota/auth`; see
 [authentication](authentication.md). `bun unlink` removes the command.
 
-Every role uses `codex:gpt-6-luna` until you choose otherwise. `tesota models`
-lists the working agent, explorers, reviewer, refuter and fix validator with
+Every role uses `codex:gpt-6-luna` until you choose otherwise, except explorers
+and the advisor, which are off. `tesota models` lists the working agent,
+explorers, advisor, reviewer, refuter and fix validator with
 their models, who pays for each and the model's list price, and
 `tesota models <role> <route:model>` changes one. [Choosing
 models](choosing-models.md) has setups for the accounts you have and why they
@@ -35,6 +36,13 @@ request, and each shows in the conversation with what it read and what it
 cost. On Pi's routes their conversations are saved in the workspace's
 `explorers` directory; on Claude Code they are not kept.
 `tesota models explorer off` turns them off again.
+
+An **advisor** is off by default too. `tesota models advisor claude-code:opus`
+gives the agent of sessions opened afterwards an `advisor` tool: a stronger
+model that reads the agent's conversation, has no tools, and answers with a
+plan, a correction or a reason to stop, at most three times a request. The
+agent decides when to consult it; you can ask for it in a request. Each
+consult shows in the conversation with the agent's question.
 
 The agent and explorers can **search the web and read pages** when you give
 Tesota a search provider. Run [SearXNG](https://docs.searxng.org/) on this

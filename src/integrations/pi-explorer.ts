@@ -7,7 +7,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 import { type WebAccess, WEB_PAGE_TEXT_LIMIT, webFetchTool, webSearchTool } from "./web-tools.js";
 import type { WebPage } from "../web-fetch.js";
-import { isExplorerAnswer } from "../verification/explorer-answer.js";
+import { isHelperAnswer } from "../verification/helper-answer.js";
 
 /**
  * An explorer (decision 019): a fresh, read-only Pi session that answers one
@@ -49,16 +49,21 @@ export function explorerPrompt(root: string): string {
     `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
 }
 
-/** The explorer's answer as the agent reads it, or why there is none; an empty reply is never an answer. */
-export function explorerResult(turn: LimitedTurnResult, limit: number = EXPLORER_ANSWER_LIMIT): ExplorerResult {
-  if (turn.status === "timed_out") return { status: "unfinished", reason: "the explorer ran past its time limit" };
-  if (turn.status === "cancelled") return { status: "unfinished", reason: "the explorer was stopped" };
-  if (turn.status === "unsettled") return { status: "unfinished", reason: "the explorer could not be stopped cleanly" };
+/**
+ * A helper's answer as the agent reads it, or why there is none; an empty
+ * reply is never an answer. `helper` names it: the explorer, the page reader
+ * or the advisor.
+ */
+export function helperResult(turn: LimitedTurnResult, limit: number = EXPLORER_ANSWER_LIMIT,
+  helper = "the explorer"): ExplorerResult {
+  if (turn.status === "timed_out") return { status: "unfinished", reason: `${helper} ran past its time limit` };
+  if (turn.status === "cancelled") return { status: "unfinished", reason: `${helper} was stopped` };
+  if (turn.status === "unsettled") return { status: "unfinished", reason: `${helper} could not be stopped cleanly` };
   if (turn.status === "failed") return { status: "unfinished", reason: `the model request failed: ${turn.reason}` };
   const answer = turn.reply.trim();
-  if (!isExplorerAnswer(turn.status, answer.length)) return { status: "unfinished", reason: "the explorer gave no answer" };
+  if (!isHelperAnswer(turn.status, answer.length)) return { status: "unfinished", reason: `${helper} gave no answer` };
   return { status: "answered", answer: answer.length <= limit ? answer
-    : `${answer.slice(0, limit)}\n[The explorer's answer is cut at ${limit} characters.]` };
+    : `${answer.slice(0, limit)}\n[The answer is cut at ${limit} characters.]` };
 }
 
 /** Ask one explorer one question; it stops at its time limit or when `signal` aborts. */
@@ -69,7 +74,7 @@ export async function askExplorer(options: ExplorerOptions, checkout: string, br
     ...(options.sessionManager === undefined ? {} : { sessionManager: options.sessionManager }),
     ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
   try {
-    return explorerResult(await runWithTimeLimit(session, brief, signal, options.timeLimitMs ?? EXPLORER_TIME_LIMIT_MS));
+    return helperResult(await runWithTimeLimit(session, brief, signal, options.timeLimitMs ?? EXPLORER_TIME_LIMIT_MS));
   } finally { session.dispose(); }
 }
 
@@ -93,7 +98,7 @@ export async function askPageReader(options: ModelAccess & { readonly timeLimitM
     ? `${page.text.slice(0, WEB_PAGE_TEXT_LIMIT)}\n[The page is cut at ${WEB_PAGE_TEXT_LIMIT} characters.]` : page.text;
   const session = await startModelSession(options, { cwd: tmpdir(), systemPrompt: pageReaderPrompt(), tools: [] });
   try {
-    return explorerResult(await runWithTimeLimit(session, `Question: ${question}\n\nPage ${page.finalUrl}:\n<page>\n${text}\n</page>`,
-      signal, options.timeLimitMs ?? EXPLORER_TIME_LIMIT_MS));
+    return helperResult(await runWithTimeLimit(session, `Question: ${question}\n\nPage ${page.finalUrl}:\n<page>\n${text}\n</page>`,
+      signal, options.timeLimitMs ?? EXPLORER_TIME_LIMIT_MS), EXPLORER_ANSWER_LIMIT, "the page reader");
   } finally { session.dispose(); }
 }

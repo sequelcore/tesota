@@ -17,7 +17,9 @@ import { Workspace } from "../src/workspace.js";
  * that receives Tesota's brief with the next request, never silently.
  */
 
-const mocks = vi.hoisted(() => ({ openStore: vi.fn(), startWorkingAgent: vi.fn(), openModelTarget: vi.fn() }));
+const mocks = vi.hoisted(() => ({ openStore: vi.fn(), startWorkingAgent: vi.fn(), openModelTarget: vi.fn(),
+  choices: {} as Record<string, string>, consultAdvisor: vi.fn() }));
+vi.mock("../src/integrations/advisor-session.js", () => ({ consultAdvisor: mocks.consultAdvisor }));
 vi.mock("../src/shell-session-store.js", () => ({ openShellSessionStore: mocks.openStore }));
 vi.mock("../src/integrations/model-session.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../src/integrations/model-session.js")>(),
@@ -27,7 +29,8 @@ vi.mock("../src/model-roles.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/model-roles.js")>();
   const { join } = await import("node:path");
   const { tmpdir } = await import("node:os");
-  return { ...actual, readModelChoices: () => actual.readModelChoices(join(tmpdir(), "tesota-test-no-model-choices.json")) };
+  return { ...actual, readModelChoices: () => ({ ...actual.readModelChoices(join(tmpdir(), "tesota-test-no-model-choices.json")),
+    ...mocks.choices }) };
 });
 
 let directory: string;
@@ -59,7 +62,7 @@ beforeEach(() => {
     ? { engine: "claude-code", model: choice.slice("claude-code:".length) } : { engine: "pi", model: { id: choice } });
   mocks.startWorkingAgent.mockImplementation(async () => {
     const entry = { run: vi.fn(async () => ({ status: "completed" as const, reply: "ok" })), switchModel: vi.fn(async () => {}),
-      dispose: vi.fn() };
+      dispose: vi.fn(), conversation: vi.fn(async () => [{ role: "user", text: "Add a retry limit." }]) };
     agents.push({ ...entry, agent: { usable: true, resumed: false, ...entry } as unknown as WorkingAgent });
     return agents.at(-1)?.agent;
   });
@@ -69,6 +72,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const key of Object.keys(mocks.choices)) delete mocks.choices[key];
   for (const spy of spies.splice(0)) spy.mockRestore();
   vi.clearAllMocks();
   rmSync(directory, { recursive: true, force: true });
@@ -131,6 +135,27 @@ it("hands off on the same model with /handoff", async () => {
   expect(record.engineId).not.toBe("11111111-1111-4111-8111-111111111111");
   expect(said()).toContain("will not have this conversation");
   created.dispose?.();
+});
+
+it("gives the agent an advisor only when the role is on, reading the agent's conversation on the advisor's model", async () => {
+  const off = shell();
+  await off.created.session("session").work("Add a retry limit.");
+  expect(mocks.startWorkingAgent.mock.calls[0]?.[1]).not.toHaveProperty("advisor");
+  off.created.dispose?.();
+  mocks.choices["advisor"] = "claude-code:opus";
+  record.agent = undefined;
+  const on = shell();
+  await on.created.session("session").work("Add a retry limit.");
+  const options = mocks.startWorkingAgent.mock.calls[1]?.[1] as
+    { advisor?: { consult(q: string | undefined, s: AbortSignal): Promise<unknown> } } | undefined;
+  const advisor = options?.advisor;
+  expect(advisor).toBeDefined();
+  mocks.consultAdvisor.mockResolvedValue({ status: "answered", answer: "Check the caller." });
+  expect(await advisor?.consult("Where should the counter live?", new AbortController().signal))
+    .toMatchObject({ result: { status: "answered", answer: "Check the caller." } });
+  expect(mocks.consultAdvisor).toHaveBeenCalledWith(expect.objectContaining({ target: { engine: "claude-code", model: "opus" } }),
+    [{ role: "user", text: "Add a retry limit." }], "Where should the counter live?", expect.any(AbortSignal));
+  on.created.dispose?.();
 });
 
 it("refuses a model no route offers and changes nothing", async () => {

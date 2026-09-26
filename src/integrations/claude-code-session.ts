@@ -1,10 +1,10 @@
 import { realpathSync } from "node:fs";
-import { createSdkMcpServer, getSessionInfo, query, tool, type CanUseTool, type HookCallback, type SDKMessage,
+import { createSdkMcpServer, getSessionInfo, getSessionMessages, query, tool, type CanUseTool, type HookCallback, type SDKMessage,
   type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import * as z from "zod";
 import type { ModelTarget } from "./model-session.js";
-import type { AgentActivity, TurnResult } from "./model-session-contract.js";
+import type { AgentActivity, ConversationEntry, TurnResult } from "./model-session-contract.js";
 import { editChange, resultText, textOf, toolSubject } from "./pi-coding-session.js";
 import { NO_TOKENS, type TokenUsage, addTokens } from "../token-usage.js";
 
@@ -56,6 +56,32 @@ export function claudeCodeTurn(result: SDKResultMessage | undefined, cancelled: 
   if (result.subtype === "success" && !result.is_error) return { status: "completed", reply: result.result.trim() };
   const reason = result.subtype === "success" ? result.result : result.errors.join("; ");
   return { status: "failed", reason: reason.trim() || result.subtype };
+}
+
+function blockText(block: unknown): string {
+  if (typeof block === "string") return block;
+  return Array.isArray(block) ? textOf(block) : "";
+}
+
+/**
+ * One message of a Claude Code conversation as conversation entries: text,
+ * tool calls with their arguments and tool results. Tesota's tools lose their
+ * `mcp__tesota__` prefix, so a call reads as it does on Pi; thinking is left out.
+ */
+export function claudeCodeEntries(role: "user" | "assistant", content: unknown): ConversationEntry[] {
+  if (typeof content === "string") return content.trim() === "" ? [] : [{ role, text: content }];
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((block: unknown): ConversationEntry[] => {
+    if (typeof block !== "object" || block === null) return [];
+    const type: unknown = Reflect.get(block, "type");
+    if (type === "text") return [{ role, text: String(Reflect.get(block, "text")) }];
+    if (type === "tool_use") {
+      const name = String(Reflect.get(block, "name")).replace(prefix, "");
+      return [{ role: "tool_call", text: `${name} ${JSON.stringify(Reflect.get(block, "input"))}` }];
+    }
+    if (type === "tool_result") return [{ role: "tool_result", text: blockText(Reflect.get(block, "content")) }];
+    return [];
+  });
 }
 
 /** Allows Tesota's tools and refuses anything else Claude Code tries to call. */
@@ -119,8 +145,12 @@ export class ClaudeCodeSession {
   #conversationStarted = false;
   #terminating = 0;
   #signal: AbortSignal = new AbortController().signal;
+  /** The conversation: what Claude Code saved before this session started, then every message since. */
+  readonly #entries: ConversationEntry[];
 
-  private constructor(options: ClaudeCodeSessionOptions, root: string, conversationStarted: boolean) {
+  private constructor(options: ClaudeCodeSessionOptions, root: string, conversationStarted: boolean,
+    earlier: readonly ConversationEntry[]) {
+    this.#entries = [...earlier];
     this.#options = options;
     this.#root = root;
     this.#model = options.model;
@@ -133,7 +163,12 @@ export class ClaudeCodeSession {
     const root = realpathSync(options.cwd);
     const existing = options.conversationId === undefined ? false
       : await getSessionInfo(options.conversationId, { dir: root }) !== undefined;
-    return new ClaudeCodeSession(options, root, existing);
+    const earlier = !existing || options.conversationId === undefined ? []
+      : (await getSessionMessages(options.conversationId, { dir: root }))
+        .filter((message) => message.parent_tool_use_id === null && message.type !== "system")
+        .flatMap((message) => claudeCodeEntries(message.type === "assistant" ? "assistant" : "user",
+          typeof message.message === "object" && message.message !== null ? Reflect.get(message.message, "content") : undefined));
+    return new ClaudeCodeSession(options, root, existing, earlier);
   }
 
   get usable(): boolean { return this.#usable; }
@@ -150,8 +185,16 @@ export class ClaudeCodeSession {
 
   #emit(activity: AgentActivity): void { this.#options.onActivity?.(activity); }
 
+  /** The conversation so far, including the turn in progress. */
+  async conversation(): Promise<readonly ConversationEntry[]> { return [...this.#entries]; }
+
   #observe(message: SDKMessage): void {
+    // Tool results come back as user messages; the request itself was recorded when it was sent.
+    if (message.type === "user" && message.parent_tool_use_id === null && Array.isArray(message.message.content)) {
+      this.#entries.push(...claudeCodeEntries("user", message.message.content).filter((entry) => entry.role === "tool_result"));
+    }
     if (message.type !== "assistant" || message.parent_tool_use_id !== null) return;
+    this.#entries.push(...claudeCodeEntries("assistant", message.message.content));
     const text = textOf(message.message.content).trim();
     if (text.length === 0) return;
     this.#message += 1;
@@ -184,6 +227,7 @@ export class ClaudeCodeSession {
     signal.addEventListener("abort", stop, { once: true });
     this.#signal = abort.signal;
     this.#terminating = 0;
+    this.#entries.push({ role: "user", text: request });
     const tools = this.#options.tools.map((definition) => sdkTool(definition, { signal: () => this.#signal,
       emit: (activity) => { this.#emit(activity); }, next: () => `claude-${++this.#calls}`,
       terminate: () => { this.#terminating += 1; } }));

@@ -30,18 +30,21 @@ it("reads route:model and nothing else", () => {
   }
 });
 
-it("gives every role the default until the operator chooses, with explorers off", () => {
-  expect(readModelChoices(file())).toEqual({ agent: DEFAULT_MODEL, explorer: "off", reviewer: DEFAULT_MODEL,
+it("gives every role the default until the operator chooses, with explorers and the advisor off", () => {
+  expect(readModelChoices(file())).toEqual({ agent: DEFAULT_MODEL, explorer: "off", advisor: "off", reviewer: DEFAULT_MODEL,
     refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL });
   expect(DEFAULT_MODEL).toBe("codex:gpt-6-luna");
 });
 
-it("turns explorers on with a model and off again, and accepts off for no other role", () => {
+it("turns explorers and the advisor on with a model and off again, and accepts off for no other role", () => {
   const path = file();
   expect(chooseModel("explorer", "codex:gpt-6-luna", ids, path).explorer).toBe("codex:gpt-6-luna");
   expect(chooseModel("explorer", "off", ids, path).explorer).toBe("off");
   expect(() => chooseModel("reviewer", "off", ids, path)).toThrow("off is not offered");
+  expect(() => chooseModel("agent", "off", ids, path)).toThrow("off is not offered");
   expect(chooseModel("explorer", "default", ids, path).explorer).toBe("off");
+  expect(chooseModel("advisor", "claude-code:opus", ids, path).advisor).toBe("claude-code:opus");
+  expect(chooseModel("advisor", "off", ids, path).advisor).toBe("off");
 });
 
 it("keeps each role's route and model, refuses what no route offers, and clears it with default", () => {
@@ -79,6 +82,10 @@ it("lists each role with who pays for it and the model's list price, and sets on
   expect(output).toContain("  agent     codex:gpt-6-luna              your ChatGPT plan's limits; list price $0.1 in and $0.5 out");
   expect(output).toContain("  validator claude-code:claude-opus-5-5   your Claude Code sign-in; list price $4 in and $20 out");
   expect(output).toContain("  claude-code: opus");
+  expect(output).toContain("  advisor   off                           no advisor; choose a model to turn it on");
+  output = "";
+  expect(runModelsCommand(["advisor", "off"], write, offered, path)).toBe(0);
+  expect(output).toBe("The advisor is off.\n");
   expect(runModelsCommand(["judge", "codex:gpt-6-sol"], write, offered, path)).toBe(2);
   expect(runModelsCommand(["agent", "codex:gpt-9"], write, offered, path)).toBe(1);
 });

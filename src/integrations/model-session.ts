@@ -4,7 +4,7 @@ import { parseModelChoice } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ClaudeCodeSession } from "./claude-code-session.js";
 import { TesotaCredentials } from "./tesota-credentials.js";
-import type { AgentActivity, ModelSession } from "./model-session-contract.js";
+import type { AgentActivity, ConversationEntry, ModelSession } from "./model-session-contract.js";
 import { type CodingSessionOptions, CodingSession, type WorkingAgentOptions, workingAgentSetup } from "./pi-coding-session.js";
 
 /**
@@ -83,6 +83,8 @@ export interface WorkingAgent extends ModelSession {
   readonly resumed: boolean;
   /** Continue the conversation on another model of the same engine (decision 026). */
   switchModel(target: ModelTarget): Promise<void>;
+  /** The conversation so far, including the turn in progress, as the engine holds it (decision 027). */
+  conversation(): Promise<readonly ConversationEntry[]>;
 }
 
 /** The working agent on its chosen engine, with the same tools and prompt on each. */

@@ -75,7 +75,7 @@ Explorers are bounded: at most three run at once and eight per request, each
 has a five-minute limit and stops with its turn on `Ctrl+C`, and its answer is
 cut at a fixed length. An unfinished or empty reply is never presented as an
 answer, and the per-request allowance is a proved rule
-(`src/verification/explorer-answer.ts`). Each call shows in the conversation
+(`src/verification/helper-answer.ts`). Each call shows in the conversation
 with the explorer's reads as they happen and its time and tokens with its
 answer. On Pi's routes each explorer's conversation is saved in the
 workspace's `explorers` directory, where the agent cannot reach it; Claude
@@ -87,12 +87,48 @@ explorers used 2.4 times the tokens and 2.7 times the time. That set does not
 measure long sessions whose context fills, which is where explorers are meant
 to help. `bun run live:delegation` repeats the comparison.
 
+## The advisor
+
+Decision 027; evidence in the [advisor landscape](../research/advisor-landscape.md).
+The advisor is a stronger model the working agent consults at hard decisions,
+off until the operator chooses a model for it (`tesota models advisor
+<route:model>`), like explorers.
+
+- **What it sees and can do.** As in Anthropic's advisor tool, it reads the
+  agent's conversation, the operator's requests, every tool call and result
+  and the agent's replies, and has **no tools**, so it changes nothing and
+  nothing it reads can make it act. Each engine gives Tesota the conversation
+  in one shape (`conversation()` in the engine contract): Pi from the
+  messages it holds, Claude Code from the messages Tesota observes as they
+  stream and, for a resumed conversation, those the SDK saved. Tesota renders
+  it for the advisor (`src/integrations/advisor.ts`), cutting long tool
+  results and, past 200,000 characters, keeping the first request and the
+  newest entries with the omission stated. Any route can advise any other, so
+  the advisor can come from another lab than the agent, as Amp pairs its
+  Oracle.
+- **When.** The agent calls `advisor`, optionally with a focused question.
+  Its system prompt carries Anthropic's suggested timing for coding: after
+  orienting and before substantive work, when the task seems complete, when
+  stuck or changing approach; and how to weigh advice: follow it unless a step
+  fails or the code contradicts it, and consult again rather than silently
+  switch. Anthropic's harder "consult before the first write" rule is not
+  used; Anthropic found it flat on mixed work.
+- **Limits.** At most three consults a request (`canStartHelper` in
+  `src/verification/helper-answer.ts`, the rule explorers use), one at a
+  time, five minutes each, and the advisor is asked for under 150 words. An
+  unfinished or empty reply is never passed as guidance (`isHelperAnswer`).
+  Each consult shows in the conversation with its question, and its time and
+  tokens come back with the guidance.
+- **Advice is advice.** It never enters review evidence: the checks,
+  reviewers and refuter judge the frozen candidate as before.
+
 ## Models by role
 
 | Role | Sessions |
 | --- | --- |
 | `agent` | The working agent |
 | `explorer` | Explorers; `off` until a model is chosen, which turns them on for sessions opened afterwards |
+| `advisor` | The advisor; `off` until a model is chosen, likewise |
 | `reviewer` | The reviewer, its lenses and ClaimCheck |
 | `refuter` | The refuter |
 | `validator` | The fix validator |
@@ -266,8 +302,3 @@ met them.
   Tesota's tools rather than its own keeps one set of confinement, execution
   and approval rules for every engine, and keeps the operator's personal
   Claude Code setup out of Tesota's reviews.
-
-## Planned
-
-- An advisor, a stronger model the agent consults at hard decisions, once
-  real use shows the agent stalling on decisions.

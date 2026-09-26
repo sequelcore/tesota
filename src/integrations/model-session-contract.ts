@@ -23,6 +23,13 @@ export interface AgentChange {
   readonly lines: readonly string[];
 }
 
+/**
+ * One entry of a working agent's conversation, the same on every engine, for
+ * a helper that reads it (decision 027): a request, a reply, a tool call with
+ * its arguments, or the result a tool returned to the model.
+ */
+export type ConversationEntry = Readonly<{ role: "user" | "assistant" | "tool_call" | "tool_result"; text: string }>;
+
 /** How one request to a session ended. */
 export type TurnResult =
   | Readonly<{ status: "completed"; reply: string }>

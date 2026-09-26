@@ -9,7 +9,7 @@ import { chooseSessionExecution, releaseWorkspace, type SessionExecution } from 
 import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-session.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
-import { EXPLORERS_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
+import { ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
 import { offeredModels, routeListing } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
@@ -19,6 +19,8 @@ import type { WebAccess } from "./integrations/web-tools.js";
 import { fetchPage, pinnedGet, resolveHost } from "./web-fetch.js";
 import { readWebSearch, type WebSearch } from "./web-search.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
+import { Advisor } from "./integrations/advisor.js";
+import { consultAdvisor } from "./integrations/advisor-session.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
 import { runTesotaShell, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
@@ -139,6 +141,8 @@ class SessionState {
   coding: Promise<WorkingAgent> | undefined;
   /** The agent's read-only explorers (decision 019); absent when explorers are off. */
   explorers: ExplorerPool | undefined;
+  /** The advisor the agent consults (decision 027); absent when it is off. */
+  advisor: Advisor | undefined;
   /** Sites the operator allowed or refused for this session's page reading (decision 024). */
   readonly webAllowed: Set<string> = new Set();
   readonly webDenied: Set<string> = new Set();
@@ -397,7 +401,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       search,
       fetch: (url, signal) => fetchPage(url, { permit, resolve: resolveHost, get: pinnedGet }, signal),
       read: async (page, question, signal, onUsage) => askPageReader({ target: await openModel(signal,
-        readModelChoices().explorer === EXPLORERS_OFF ? "agent" : "explorer"), onUsage }, page, question, signal),
+        readModelChoices().explorer === ROLE_OFF ? "agent" : "explorer"), onUsage }, page, question, signal),
     };
   };
   /** What this session has recorded, for a brief to an agent that starts a new conversation (decision 026). */
@@ -440,7 +444,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         : SessionManager.open(existing, piSessionsDirectory, workspace.checkout);
       const web = webFor(id);
       // Whether explorers are on is decided when the agent starts; which model they use, when each one starts.
-      const explorers = readModelChoices().explorer === EXPLORERS_OFF ? undefined
+      const explorers = readModelChoices().explorer === ROLE_OFF ? undefined
         : new ExplorerPool(async (brief, explorerSignal, onLine, onUsage) => {
           return askExplorer({ target: await openModel(explorerSignal, "explorer"), onUsage, web,
             // Saved beside the checkout, where the agent's tools cannot reach, for the operator to read.
@@ -449,8 +453,17 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           workspace.checkout, brief, explorerSignal);
         });
       state.explorers = explorers;
+      // The advisor reads the agent's conversation as it stands when consulted; which model it uses is read then.
+      let consulted: WorkingAgent | undefined;
+      const advisor = readModelChoices().advisor === ROLE_OFF ? undefined
+        : new Advisor(async (question, advisorSignal, onUsage) => {
+          if (consulted === undefined) throw new Error("the agent is not ready");
+          return consultAdvisor({ target: await openModel(advisorSignal, "advisor"), onUsage },
+            await consulted.conversation(), question, advisorSignal);
+        });
+      state.advisor = advisor;
       const agent = await startWorkingAgent({ target }, { cwd: workspace.checkout, environment, web,
-        ...(explorers === undefined ? {} : { explorers }),
+        ...(explorers === undefined ? {} : { explorers }), ...(advisor === undefined ? {} : { advisor }),
         sandboxed: confinesCommands(environment.guarantees),
         approveCommand: async (command) => {
           surface.reportFor(id, { phase: "awaiting_command" });
@@ -468,6 +481,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           return decision;
         },
         onActivity: (activity) => { surface.showActivity(id, activity); } }, { sessionManager, conversationId: engineId });
+      consulted = agent;
       await briefNewConversation(id, agent, workspace);
       return agent;
     })();
@@ -484,6 +498,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const live = state.coding;
     state.coding = undefined;
     state.explorers = undefined;
+    state.advisor = undefined;
     await live?.then((coding) => { coding.dispose(); }, () => undefined);
     store.rotateEngine(id);
     store.setAgentModel(id, choice);
@@ -660,6 +675,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           : `Tesota context (not written by the user):\n${notes.join("\n\n")}\n\nUser request:\n${request}`;
         state.note = undefined;
         state.explorers?.startTurn();
+        state.advisor?.startTurn();
         const result = await coding.run(prompt, signal);
         if (result.status === "unsettled") { blockSession(id); return result; }
         if (result.status !== "completed") return result;

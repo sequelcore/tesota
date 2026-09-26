@@ -7,7 +7,8 @@ import { ModelRuntime, SessionManager, type ToolDefinition, defineTool } from "@
 import { Type } from "@earendil-works/pi-ai";
 import { type FauxResponseStep, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { ClaudeCodeSession } from "../src/integrations/claude-code-session.js";
-import { type AgentActivity, type ModelSession, type TurnResult, runWithTimeLimit } from "../src/integrations/model-session-contract.js";
+import { type AgentActivity, type ConversationEntry, type ModelSession, type TurnResult,
+  runWithTimeLimit } from "../src/integrations/model-session-contract.js";
 import type { ModelTarget } from "../src/integrations/model-session.js";
 import { CodingSession, readOnlyFileTools } from "../src/integrations/pi-coding-session.js";
 import { NO_TOKENS, type TokenUsage, addTokens } from "../src/token-usage.js";
@@ -49,6 +50,22 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
     const conversation = options.resume ?? options.sessionId;
     if (conversation !== undefined) sdk.conversations.add(conversation);
   }
+  // One tool call as Claude Code runs it: Tesota's tools through the in-process server, its own only if offered and allowed.
+  async function runCall(options: Options, call: ToolCall, id: string) {
+    const signal = options.abortController.signal;
+    const tool = options.mcpServers.tesota.tools.find((entry) => entry.name === call.name);
+    // A tool Tesota did not give is one of Claude Code's own, which the session must refuse.
+    const name = tool === undefined ? call.name.charAt(0).toUpperCase() + call.name.slice(1) : `mcp__tesota__${call.name}`;
+    // Claude Code offers its own tools unless `tools` leaves them out, and runs a call only when `canUseTool` allows it.
+    const offered = tool !== undefined || options.tools === undefined || options.tools.includes(name);
+    const permission = offered ? await options.canUseTool(name, call.args, { signal }) : { behavior: "deny" };
+    if (permission.behavior === "allow") {
+      if (tool !== undefined) await tool.handler(call.args);
+      else if (name === "Write") writeFileSync(join(options.cwd, String(call.args["path"])), String(call.args["content"]));
+    }
+    return { tool_name: name, tool_input: call.args, tool_use_id: id,
+      output: permission.behavior === "allow" && tool !== undefined ? "ran" : "refused" };
+  }
   async function* play(options: Options): AsyncGenerator<Record<string, unknown>> {
     const signal = options.abortController.signal;
     remember(options);
@@ -68,19 +85,11 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
         return;
       }
       const batch = [];
-      for (const call of step.tools) {
-        const tool = options.mcpServers.tesota.tools.find((entry) => entry.name === call.name);
-        // A tool Tesota did not give is one of Claude Code's own, which the session must refuse.
-        const name = tool === undefined ? call.name.charAt(0).toUpperCase() + call.name.slice(1) : `mcp__tesota__${call.name}`;
-        // Claude Code offers its own tools unless `tools` leaves them out, and runs a call only when `canUseTool` allows it.
-        const offered = tool !== undefined || options.tools === undefined || options.tools.includes(name);
-        const permission = offered ? await options.canUseTool(name, call.args, { signal }) : { behavior: "deny" };
-        if (permission.behavior === "allow") {
-          if (tool !== undefined) await tool.handler(call.args);
-          else if (name === "Write") writeFileSync(join(options.cwd, String(call.args["path"])), String(call.args["content"]));
-        }
-        batch.push({ tool_name: name, tool_input: call.args, tool_use_id: `use-${sdk.calls}-${batch.length}` });
-      }
+      for (const call of step.tools) batch.push(await runCall(options, call, `use-${sdk.calls}-${batch.length}`));
+      yield { type: "assistant", parent_tool_use_id: null, message: { content: batch.map((entry) =>
+        ({ type: "tool_use", id: entry.tool_use_id, name: entry.tool_name, input: entry.tool_input })) } };
+      yield { type: "user", parent_tool_use_id: null, message: { role: "user", content: batch.map((entry) =>
+        ({ type: "tool_result", tool_use_id: entry.tool_use_id, content: [{ type: "text", text: entry.output }] })) } };
       let stop = false;
       for (const hook of hooks) {
         if ((await hook({ hook_event_name: "PostToolBatch", tool_calls: batch }, undefined, { signal })).continue === false) stop = true;
@@ -93,6 +102,11 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
     tool: (name: string, _description: string, _shape: unknown, handler: (args: unknown) => Promise<unknown>) => ({ name, handler }),
     createSdkMcpServer: (server: unknown) => server,
     getSessionInfo: async (id: string) => sdk.conversations.has(id) ? { sessionId: id } : undefined,
+    // A kept conversation, as Claude Code saved it: the raw messages of its earlier turns.
+    getSessionMessages: async (id: string) => sdk.conversations.has(id) ? [
+      { type: "user", parent_tool_use_id: null, message: { role: "user", content: "The earlier request." } },
+      { type: "assistant", parent_tool_use_id: null, message: { role: "assistant", content: [{ type: "text", text: "first" }] } },
+    ] : [],
     query: ({ options }: { options: Options }) => play(options),
   };
 });
@@ -116,7 +130,8 @@ interface EngineHarness {
 
 /** A conversation kept across sessions: Pi's session manager, or Claude Code's conversation id. */
 type Conversation = Readonly<{ piManager: SessionManager; id: string }>;
-type WorkingSession = ModelSession & Readonly<{ resumed: boolean; switchModel(target: ModelTarget): Promise<void> }>;
+type WorkingSession = ModelSession & Readonly<{ resumed: boolean; switchModel(target: ModelTarget): Promise<void>;
+  conversation(): Promise<readonly ConversationEntry[]> }>;
 
 function piHarness(): EngineHarness {
   const faux = fauxProvider({ models: [{ id: "scripted" }, { id: "other" }] });
@@ -274,6 +289,27 @@ describe.each([{ harness: piHarness }, { harness: claudeCodeHarness }])("the mod
     expect(engine.lastCall()).toEqual({ model: "other", continued: true });
     session.dispose();
     expect((await engine.start(root, readOnlyFileTools(root), observed, conversation)).resumed).toBe(true);
+  });
+
+  it(`gives its conversation, requests, tool calls, results and replies, including a kept one's (${harness().engine})`, async () => {
+    const engine = harness();
+    const root = checkout();
+    const observed: Observed = { activity: [], usage: NO_TOKENS };
+    const conversation: Conversation = { piManager: SessionManager.inMemory(root), id: randomUUID() };
+    const session = await engine.start(root, readOnlyFileTools(root), observed, conversation);
+    engine.script([{ text: "first" }]);
+    await session.run("The earlier request.", running());
+    engine.script([{ tools: [{ name: "read", args: { path: "a.ts" } }] }, { text: "a is 1." }]);
+    await session.run("What is a?", running());
+    const entries = await session.conversation();
+    expect(entries.filter((entry) => entry.role === "user").map((entry) => entry.text)).toEqual(["The earlier request.", "What is a?"]);
+    expect(entries).toContainEqual({ role: "tool_call", text: expect.stringMatching(/read.*a\.ts/u) });
+    expect(entries.some((entry) => entry.role === "tool_result")).toBe(true);
+    expect(entries.at(-1)).toEqual({ role: "assistant", text: "a is 1." });
+    session.dispose();
+    const resumed = await engine.start(root, readOnlyFileTools(root), observed, conversation);
+    expect((await resumed.conversation()).slice(0, 2)).toEqual([{ role: "user", text: "The earlier request." },
+      { role: "assistant", text: "first" }]);
   });
 
   it(`reports tokens with cached input inside input (${harness().engine})`, async () => {

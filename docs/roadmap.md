@@ -14,8 +14,8 @@ LemmaScript on the exact tree, reviewed by read-only reviewers whose findings
 face a refuter and an origin check, and corrected by the agent at most twice
 before the operator applies, rejects or keeps working. Each role can use its
 own model, through the operator's ChatGPT plan, an Anthropic API key or the
-operator's own Claude Code, and the agent can ask read-only explorers, off by
-default.
+operator's own Claude Code, and the agent can ask read-only explorers and
+consult an advisor, both off by default.
 
 The complete loop has run on throwaway and evaluation repositories; daily use
 on a real project has not started.
@@ -44,6 +44,8 @@ project. They are listed here as they are chosen.
 - **Switching the agent's model in a session, and handing off** to a fresh
   conversation (decision 026,
   [design](design/agents.md#changing-the-agents-model)): built 2026-09-26.
+- **An advisor** the agent consults at hard decisions (decision 027,
+  [design](design/agents.md#the-advisor)): built 2026-09-26, off by default.
 
 ### 2. Measurement on public benchmarks
 
