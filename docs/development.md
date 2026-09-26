@@ -100,7 +100,7 @@ evidence matters, then mechanism, and never claims more than was exercised.
 | Content | Owner |
 | --- | --- |
 | Orientation | [README](../README.md) |
-| The user workflow | [Using Tesota](guide/using-tesota.md), [authentication](guide/authentication.md) |
+| The user workflow | [Using Tesota](guide/using-tesota.md), [authentication](guide/authentication.md), [choosing models](guide/choosing-models.md) |
 | Current design and its rationale | [Design](design/overview.md) |
 | Consequential decisions, in order | [Decisions](decisions.md) |
 | Status and priorities | [Roadmap](roadmap.md) |

@@ -41,7 +41,7 @@ clean review is advice; neither shows that the change does what you asked. The
 
 | Need | Read |
 | --- | --- |
-| The user workflow | [Using Tesota](docs/guide/using-tesota.md), [authentication](docs/guide/authentication.md) |
+| The user workflow | [Using Tesota](docs/guide/using-tesota.md), [authentication](docs/guide/authentication.md), [choosing models](docs/guide/choosing-models.md) |
 | How it works and why | [Design](docs/design/overview.md) |
 | Decisions, in order | [Decisions](docs/decisions.md) |
 | Current status and next work | [Roadmap](docs/roadmap.md) |
