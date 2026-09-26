@@ -6,10 +6,23 @@ Running `tesota` in a repository starts **Tesota Shell**, a terminal
 conversation built on pi-tui components rather than Pi's own chat components,
 so Tesota's themes apply to everything on screen. A shell holds any number of
 **sessions**, each with its own workspace, execution environment and working
-agent; at most two work at once, and the rest wait. Tesota's sidebar shows
-each session's state, such as `needs you`, `working` or `idle`, and the
-operator moves between sessions, closes them, and opens results beside the
-conversation ([using Tesota](../guide/using-tesota.md) lists the keys).
+agent; at most two work at once, and the rest wait. Tesota's sidebar puts the
+repository and branch above a newest-created-first session list. Selection and
+background activity never reorder it. Each row distinguishes preparation,
+work, command approval, checks, review, decision, application, unread work,
+ended sessions and unresolved effects; only executing phases move. On a wide
+terminal the sidebar is inline, while an explicit open on a narrow terminal is
+a non-capturing pi-tui overlay, so the editor keeps focus and `Esc` keeps its
+stop-work meaning. The selected session heads the conversation; repository
+identity joins that heading when the sidebar is absent. Execution location and
+the selected model stay beside the prompt ([using Tesota](../guide/using-tesota.md)
+lists the keys).
+
+The sidebar's responsive mode, state precedence, moving states and
+newest-first index are pure rules in `verification/sidebar-rule.ts`, with
+LemmaScript specifications proved by Dafny. Rendering belongs to
+`tesota-shell-sidebar.ts`; terminal composition and input remain in
+`tesota-shell-terminal.ts`.
 
 The loop itself, request, checks, review, correction and decision, is
 independent of the terminal (`tesota-shell.ts`); the terminal only renders it

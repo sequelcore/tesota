@@ -276,7 +276,7 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   await expect(answer).resolves.toBe("Explain the shell");
   tui.renderNow(true);
   const screen = visible(terminal);
-  expect(screen).toContain("tesota · Session 1");
+  expect(screen).toContain("tesota / Session 1");
   expect(screen).toContain("The repository is bounded.");
   expect(screen).toContain("Explain the shell");
   expect(screen).toContain("Ready");
@@ -312,7 +312,7 @@ it("keeps environment preparation visible at the first prompt until it finishes"
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Creating the sandbox");
   expect(visible(terminal)).toContain("1 Session 1");
-  expect(visible(terminal)).toContain("preparing");
+  expect(visible(terminal)).toContain("Preparing");
   shell.reportFor("default", { phase: "working" });
   shell.clearProgressFor("default", "preparing");
   terminal.writes.length = 0;
@@ -455,7 +455,7 @@ it("shows a command the agent runs whole in the conversation", () => {
   shell.stop();
 });
 
-it("names the branch and the session's agent model in the footer, as other harnesses do", () => {
+it("places workspace identity in the sidebar and execution context beside the prompt", () => {
   const terminal = new TestTerminal();
   terminal.columns = 120;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -465,7 +465,15 @@ it("names the branch and the session's agent model in the footer, as other harne
   shell.setSessionModel("default", "claude-code:opus");
   shell.start();
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("this computer · asks first · tesota (dev) · Session 1 · claude-code:opus");
+  const screen = visible(terminal);
+  expect(screen).toContain("tesota · dev");
+  expect(screen).toContain("Session 1");
+  expect(screen).toContain("this computer · asks first · claude-code:opus");
+  expect(screen).not.toContain("this computer · asks first · tesota");
+  terminal.writes.length = 0;
+  terminal.send("\x1bb");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("tesota · dev / Session 1");
   shell.stop();
 });
 
@@ -516,7 +524,7 @@ it("keeps input and decisions attached to the selected session", async () => {
   shell.writeTo("default", "Review is waiting in the first session.");
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Session 1");
-  expect(visible(terminal)).toContain("idle");
+  expect(visible(terminal)).toContain("Idle");
   terminal.send("\x1bj");
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Review is waiting in the first session.");
@@ -536,27 +544,27 @@ it("moves back as well as forward between sessions, and jumps to the number the 
   shell.addSession("third", "Session 3");
   shell.start();
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("1 Session 1");
-  expect(visible(terminal)).toContain("3 Session 3");
-  terminal.send("\x1bk"); // Alt+K: the previous session, wrapping from the first to the last.
+  expect(visible(terminal)).toContain("1 Session 3");
+  expect(visible(terminal)).toContain("3 Session 1");
+  terminal.send("\x1bk"); // Alt+K follows the newest-first visual order.
   terminal.send("\x1b2"); // Alt+2
   terminal.send("\x1b9"); // No ninth session: nothing changes.
   terminal.send("\x1bj");
   terminal.send("\x1b1");
-  expect(selected).toEqual(["third", "second", "third", "default"]);
-  shell.askIn("default", "> ").catch(() => undefined);
+  expect(selected).toEqual(["second", "second", "default", "third"]);
+  shell.askIn("third", "> ").catch(() => undefined);
   terminal.send("/help");
   terminal.send("\r");
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Alt+K previous");
-  expect(visible(terminal)).toContain("Alt+1…9 by number");
+  expect(visible(terminal)).toContain("Alt+1…9 by position");
   terminal.send("/previous");
   terminal.send("\r");
-  expect(selected.at(-1)).toBe("third");
+  expect(selected.at(-1)).toBe("default");
   shell.stop();
 });
 
-it("shows session needs in a rail that can be hidden and collapses on narrow terminals", () => {
+it("shows precise session needs inline and opens the rail as an overlay on narrow terminals", () => {
   const terminal = new TestTerminal();
   terminal.columns = 110;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -566,29 +574,49 @@ it("shows session needs in a rail that can be hidden and collapses on narrow ter
   shell.reportFor("other", { phase: "working" });
   shell.askIn("default", "Approve? [y/N] ").catch(() => undefined);
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("1 Session 1");
-  expect(visible(terminal)).toContain("needs you");
-  expect(visible(terminal)).toContain("2 Session 2");
-  expect(visible(terminal)).toContain("working");
+  expect(visible(terminal)).toContain("2 Session 1");
+  expect(visible(terminal)).toContain("Needs you");
+  expect(visible(terminal)).toContain("1 Session 2");
+  expect(visible(terminal)).toContain("Working");
   // The selected session is highlighted as a selected command is; a state that needs the operator is in the warning color.
   const raw = terminal.writes.join("");
   const selection = "\x1b[48;2;75;61;83m";
-  expect(screenLine(raw, "1 Session 1")).toContain(selection);
-  expect(screenLine(raw, "2 Session 2")).not.toContain(selection);
-  expect(raw).toContain("\x1b[38;2;213;179;106mneeds you");
+  expect(screenLine(raw, "2 Session 1")).toContain(selection);
+  expect(screenLine(raw, "1 Session 2")).not.toContain(selection);
+  expect(raw).toContain("\x1b[38;2;213;179;106m! Needs you");
   expect(raw).not.toContain("●");
 
   terminal.writes.length = 0;
   terminal.send("\x1bb"); // Alt+B hides the rail without changing the selected session.
   tui.renderNow(true);
-  expect(visible(terminal)).not.toContain("2 Session 2");
-  expect(visible(terminal)).toContain("tesota · Session 1");
+  expect(visible(terminal)).not.toContain("1 Session 2");
+  expect(visible(terminal)).toContain("tesota / Session 1");
 
   terminal.send("\x1bb");
   terminal.resizeTo(70, 24);
   terminal.writes.length = 0;
   tui.renderNow(true);
-  expect(visible(terminal)).not.toContain("2 Session 2");
+  expect(visible(terminal)).toContain("1 Session 2");
+  terminal.send("\x1bb");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).not.toContain("1 Session 2");
+  shell.stop();
+});
+
+it("keeps Escape's stop behavior while the narrow sidebar overlay is open", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 70;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const interrupt = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, interrupt });
+  shell.start();
+  shell.report({ phase: "working" });
+  terminal.send("\x1bb");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("1 Session 1");
+  terminal.send("\x1b");
+  expect(interrupt).toHaveBeenCalledOnce();
   shell.stop();
 });
 
@@ -601,10 +629,7 @@ it("keeps the selected session visible when the sidebar has more rows than the t
   for (let index = 2; index <= 9; index++) shell.addSession(`session-${index}`, `Session ${index}`);
   shell.start();
   tui.renderNow(true);
-  shell.selectSession("session-9");
-  terminal.writes.length = 0;
-  tui.renderNow(true);
-  expect(visible(terminal)).toContain("9 Session 9");
+  expect(visible(terminal)).toContain("9 Session 1");
   shell.stop();
 });
 
@@ -621,7 +646,7 @@ it("offers a view-only comparison while one session keeps input focus", async ()
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Research · view only");
   expect(visible(terminal)).toContain("The other session found a source.");
-  expect(visible(terminal)).toContain("1 Session 1");
+  expect(visible(terminal)).toContain("2 Session 1");
   terminal.send("reply");
   terminal.send("\r");
   await expect(pending).resolves.toBe("reply");

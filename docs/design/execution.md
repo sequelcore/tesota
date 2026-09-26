@@ -65,8 +65,9 @@ other harnesses fold into their modes are separate here:
 
 On this computer an approved command runs with the operator's permissions,
 files, network and credentials; it works on any machine with no setup. The
-footer names where commands run, `sandbox` or `this computer · asks first`,
-and the code's `host` is shown as "this computer". `tesota setup` prepares
+line beside the prompt names where commands run, `sandbox` or `this computer
+· asks first`, followed by the selected agent model; the code's `host` is
+shown as "this computer". `tesota setup` prepares
 the sandbox on Windows 11: the Windows Hypervisor Platform, Docker
 Sandboxes, a Docker sign-in and a deny-all network policy. It shows each missing step and its command, runs it when the operator
 confirms, and stops at a restart or a failure; without a terminal to ask in,

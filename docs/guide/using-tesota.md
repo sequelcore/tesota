@@ -243,22 +243,34 @@ not show the change does what you asked; read the diff.
 
 ## Sessions and appearance
 
-The left sidebar names the repository and numbers each session with its
-state, such as `needs you`, `working`, or `idle`; the selected session is
-highlighted, and a state that needs you is in the warning color. It hides automatically on narrow terminals;
-`Alt+B` hides or shows it when there is room. The line below the prompt shows
-the mode, the repository with its current branch, the selected session and the
-model its agent runs, such as `this computer · asks first · tesota (dev) ·
-Session 4 · claude-code:opus`, or `sandbox · …` when commands run in the
-sandbox. A question above the prompt, such as a command waiting for your
-approval, is always shown whole, over as many lines as it needs, and so is
-each command the agent runs. Type `/` at the normal request prompt to see a
-command menu above the input; the selected row is highlighted. Use arrow keys to
-choose and Enter to run a command, or `/help` for commands and keyboard shortcuts. These commands stay
-in the shell and do not become agent requests. `Ctrl+N` starts a new session;
-`Alt+J` selects the next and `Alt+K` the previous, and `Alt+1` to `Alt+9` the
-session with that number. `Ctrl+Tab` also selects the next where the terminal
-passes it on; Windows Terminal keeps it for its own tabs. `Ctrl+W` closes the selected session and removes
+The left sidebar puts the repository and branch above its sessions. New
+sessions appear first and activity never moves an existing row. Each row
+keeps its precise state—such as `Running checks`, `Needs approval`,
+`Reviewing`, `Needs decision`, `Unresolved`, `Unread` or `Idle`—rather than
+folding every phase into working. Executing phases have a spinner; waiting and
+terminal states stay still. The selected session is highlighted, operator
+attention is in the warning color, and unresolved effects are in the error
+color.
+
+The sidebar appears beside the conversation when there is room and hides
+automatically on a narrow terminal. `Alt+B` hides it, or opens it over the
+right side at a narrow size without taking focus from the input. `Esc` still
+stops work; it does not close the sidebar. The heading over the conversation
+names the selected session and, while the sidebar is hidden, also names the
+repository and branch. The line below the prompt contains only execution
+context and the selected session's model, such as `this computer · asks first
+· claude-code:opus`, or `sandbox · …` when commands run in the sandbox.
+
+A question above the prompt, such as a command waiting for your approval, is
+always shown whole, over as many lines as it needs, and so is each command the
+agent runs. Type `/` at the normal request prompt to see a command menu above
+the input; the selected row is highlighted. Use arrow keys to choose and Enter
+to run a command, or `/help` for commands and keyboard shortcuts. These
+commands stay in the shell and do not become agent requests. `Ctrl+N` starts a
+new session; `Alt+J` selects the next and `Alt+K` the previous in the visible
+newest-first order, and `Alt+1` to `Alt+9` select those visible positions.
+`Ctrl+Tab` also selects the next where the terminal passes it on; Windows
+Terminal keeps it for its own tabs. `Ctrl+W` closes the selected session and removes
 its workspace and conversation. If the session has unapplied changes, the
 first `Ctrl+W` warns and a second one within five seconds confirms. Stop
 running work with `Ctrl+C` first. Closing the last session opens a new one. At wide sizes, `Alt+S` shows a second session

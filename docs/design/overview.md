@@ -97,7 +97,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `cli.ts` | Commands and shell startup |
 | `tesota-shell.ts` | Surface-independent loop: request, checks, review, correction, decision |
 | `tesota-shell-command.ts` | Per-session composition of workspace, environment, agent, review and application |
-| `tesota-shell-terminal.ts`, `tesota-shell-theme.ts`, `tesota-shell-inspection.ts`, `shell-progress.ts` | Terminal layout, session sidebar, themes, result panel and status |
+| `tesota-shell-terminal.ts`, `tesota-shell-sidebar.ts`, `tesota-shell-theme.ts`, `tesota-shell-inspection.ts`, `shell-progress.ts`, `verification/sidebar-rule.ts` | Terminal composition and input, session navigation and its proved state and responsive rules, themes, result panel and status |
 | `tesota-shell-diff.ts` | The result panel's diff view, from git's unified diff |
 | `tesota-shell-transcript.ts` | How a conversation looks, built on pi-tui components |
 | `shell-session-store.ts` | Saved sessions, approved checks, allowed network destinations and measured review costs per repository |

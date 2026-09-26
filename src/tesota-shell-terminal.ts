@@ -3,12 +3,15 @@ import { initTheme } from "@earendil-works/pi-coding-agent";
 import { Editor, HStack, ScrollView, Text, VStack, matchesKey, truncateToWidth, wrapTextWithAnsi,
   type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
-import { tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
+import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
 import { bold, colorText, mutedText, selectedRow, tesotaShellTheme, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
 import { DiffView } from "./tesota-shell-diff.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
+import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, type SidebarSession } from "./tesota-shell-sidebar.js";
+import { animatedSidebarState, newestFirstSourceIndex, sidebarPresentation, sidebarSessionState,
+  type SidebarPreference, type SidebarPresentation, type SidebarSessionState } from "./verification/sidebar-rule.js";
 
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
@@ -52,11 +55,11 @@ export interface TesotaShellTerminal {
   inspectFor(id: string, inspection: ShellInspection): void;
   /** Show the agent's replies and tool calls in a session as they happen. */
   showActivity(id: string, activity: AgentActivity): void;
-  /** Name where commands run, such as the sandbox, in the footer. */
+  /** Name where commands run, such as the sandbox, beside the prompt. */
   setExecution(label: string): void;
-  /** The source repository's branch, shown in the footer; undefined when Git cannot say. */
+  /** The source repository's branch, shown with repository identity; undefined when Git cannot say. */
   setBranch(branch: string | undefined): void;
-  /** The model the session's agent runs, as `route:model`, shown in the footer while it is selected. */
+  /** The model the session's agent runs, as `route:model`, shown beside the prompt while it is selected. */
   setSessionModel(id: string, model: string): void;
   blockSession(id: string): void;
   endSession(id: string): void;
@@ -97,13 +100,11 @@ interface SessionView {
   model?: string;
 }
 
-const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const spinnerMs = 120;
 /** Below this width the result panel replaces the conversation instead of sitting beside it. */
 const resultBesideWidth = 120;
 const comparisonWidth = 160;
 const sidebarWidth = 25;
-const sidebarMinWidth = 88;
 const shellCommands = [
   { name: "new", description: "Start a session" },
   { name: "next", description: "Switch to the next session" },
@@ -187,24 +188,24 @@ class Line implements Component {
   }
 }
 
-/** One repository's sessions, with each session's current need visible at a glance. */
-/** One line of the session rail; the selected session's lines are highlighted across the rail's width. */
-interface RailRow {
-  readonly text: string;
-  readonly selected?: boolean;
-}
-
-class SessionRail implements Component {
+/** The selected content's identity; workspace identity joins it only while the sidebar is absent. */
+class SessionHeading implements Component {
   readonly #theme: TesotaShellTheme;
-  #rows: readonly RailRow[] = [];
-  constructor(theme: TesotaShellTheme) { this.#theme = theme; }
-  setRows(rows: readonly RailRow[]): void { this.#rows = rows; }
+  readonly #value: () => { readonly repository: string; readonly branch: string | undefined;
+    readonly title: string; readonly sidebar: SidebarPresentation };
+  constructor(theme: TesotaShellTheme, value: () => { readonly repository: string; readonly branch: string | undefined;
+    readonly title: string; readonly sidebar: SidebarPresentation }) {
+    this.#theme = theme;
+    this.#value = value;
+  }
   invalidate(): void {}
   render(width: number): string[] {
-    return this.#rows.map((row) => {
-      const line = truncateToWidth(` ${row.text}`, width);
-      return row.selected === true ? selectedRow(line, width, this.#theme) : line;
-    });
+    const value = this.#value();
+    const title = bold(safeTerminalText(value.title));
+    if (value.sidebar !== "hidden") return [truncateToWidth(` ${title}`, width)];
+    const branch = value.branch === undefined ? "" : ` · ${safeTerminalText(value.branch)}`;
+    const repository = colorText(`${safeTerminalText(value.repository)}${branch}`, this.#theme.accent);
+    return [truncateToWidth(` ${repository} / ${title}`, width)];
   }
 }
 
@@ -232,8 +233,7 @@ function editorTheme(theme: TesotaShellTheme): EditorTheme {
 }
 
 function busy(progress: TesotaShellProgress | undefined): boolean {
-  return progress?.phase === "working" || progress?.phase === "checking" || progress?.phase === "preparing" ||
-    progress?.phase === "reviewing";
+  return progress !== undefined && animatedSidebarState(progress.phase);
 }
 
 /** The result panel: the record as text, then the candidate's diff as a diff view. */
@@ -259,13 +259,15 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private comparisonId: string | undefined;
   private showResult = false;
   private split = false;
-  private sidebarVisible = true;
+  private sidebarPreference: SidebarPreference = "auto";
   private execution = "";
   /** The source repository's branch, where results are applied. */
   private branch: string | undefined;
   private frame = 0;
+  private readonly sidebarHeader: SessionSidebarHeader;
   private readonly sidebar: SessionRail;
   private readonly sidebarScroll: ScrollView;
+  private readonly sessionHeading: SessionHeading;
   private readonly secondaryTitle = new Line();
   private readonly status = new Line();
   private readonly footer = new Line();
@@ -285,9 +287,14 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.now = options.now ?? Date.now;
     this.interrupt = () => { (options.interrupt ?? ignoreInterrupt)(this.selectedId); };
     this.theme = tesotaShellTheme(options.theme);
+    this.sidebarHeader = new SessionSidebarHeader(this.theme);
     this.sidebar = new SessionRail(this.theme);
     this.result = new ResultPanel(this.theme);
     this.sidebarScroll = new ScrollView(this.sidebar, { scrollbar: "auto" });
+    this.sessionHeading = new SessionHeading(this.theme, () => ({
+      repository: basename(this.options.cwd), branch: this.branch, title: this.selected().title,
+      sidebar: sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns),
+    }));
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
     initTheme(this.theme.name === "tesota-light" ? "light" : "dark");
     this.commandMenu = new CommandMenu(this.theme);
@@ -299,6 +306,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.selectedId = options.initialSession?.id ?? "default";
     this.addSession(this.selectedId, options.initialSession?.title ?? "Session 1",
       options.initialSession?.entries ?? [], options.initialSession?.inspections ?? []);
+    this.tui.showOverlay(
+      new SessionSidebarOverlay(this.sidebarHeader, this.sidebar, () => this.tui.terminal.rows),
+      { width: sidebarWidth, maxHeight: "100%", anchor: "top-right", nonCapturing: true,
+        visible: (width) => sidebarPresentation(this.sidebarPreference, width) === "overlay" },
+    );
     this.compose();
   }
 
@@ -325,6 +337,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private compose(): void {
     const selected = this.selected();
     this.updateSidebar();
+    this.updateFooter();
     this.updateResult(selected);
     this.updateStatus();
     const secondary = this.comparisonId === undefined ?
@@ -345,53 +358,50 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         visible: () => this.showResult },
     ], { gap: 2 });
     const content = new VStack([
+      { component: this.sessionHeading, basis: "auto", shrink: 0 },
       { component: reading, basis: 0, grow: 1, minSize: 1 },
       { component: new VStack([this.status, this.commandMenu, this.modelPicker, this.editor, this.footer]),
         basis: "auto", shrink: 1, minSize: 3 },
     ], { gap: 1 });
+    const sidebar = new VStack([
+      { component: this.sidebarHeader, basis: "auto", shrink: 0 },
+      { component: this.sidebarScroll, basis: 0, grow: 1, minSize: 1 },
+    ], { gap: 1 });
     this.tui.setLayoutRoot(new HStack([
-      { component: this.sidebarScroll, basis: sidebarWidth, shrink: 0,
-        visible: (viewport) => this.sidebarVisible && viewport.width >= sidebarMinWidth },
+      { component: sidebar, basis: sidebarWidth, shrink: 0,
+        visible: (viewport) => sidebarPresentation(this.sidebarPreference, viewport.width) === "inline" },
       { component: content, basis: 0, grow: 1, minSize: 30 },
     ], { gap: 1 }));
     this.tui.requestRender();
   }
 
-  private attention(session: SessionView): string {
-    if (session.blocked) return "unresolved";
-    if (session.ended) return "ended";
-    if (session.pending !== undefined && session.prompt !== "> ") return "needs you";
-    if (session.progress?.value.phase === "preparing") return "preparing";
-    if (busy(session.progress?.value)) return "working";
-    return session.unread ? "new" : "";
+  private sessionState(session: SessionView): SidebarSessionState {
+    return sidebarSessionState(session.blocked, session.ended,
+      session.pending !== undefined && session.prompt !== "> ",
+      session.progress?.value.phase ?? "none", session.unread);
   }
 
-  /** A session's state in the rail: a need of the operator's in the warning color, work in the accent. */
-  private attentionText(attention: string): string {
-    if (attention === "needs you" || attention === "unresolved") return colorText(attention, this.theme.warning);
-    if (attention === "working" || attention === "preparing") return colorText(attention, this.theme.accent);
-    return mutedText(attention || "idle", this.theme);
+  /** Sessions in their visual and shortcut order: newest-created first, stable while activity changes. */
+  private sessionOrder(): readonly SessionView[] {
+    const inserted = [...this.sessions.values()];
+    return inserted.map((_, visual) => inserted[newestFirstSourceIndex(inserted.length, visual)] as SessionView);
   }
 
   private updateSidebar(): void {
-    const rows: RailRow[] = [{ text: bold(colorText(safeTerminalText(basename(this.options.cwd)), this.theme.accent)) },
-      { text: "" }];
-    for (const [index, session] of [...this.sessions.values()].entries()) {
-      const attention = this.attention(session);
-      const selected = session.id === this.selectedId;
-      const title = safeTerminalText(session.title);
-      // Numbered as Alt+1 to Alt+9 select them; later sessions are reached with Alt+J and Alt+K.
-      const number = index < numberedSessionKeys.length ? String(index + 1).padStart(2) : "  ";
-      rows.push({ selected, text: `${mutedText(number, this.theme)} ${selected ? bold(title) : mutedText(title, this.theme)}` });
-      rows.push({ selected, text: `   ${this.attentionText(attention)}` });
-    }
-    this.sidebar.setRows(rows);
-    this.sidebarScroll.updateLayout(rows.length, this.tui.terminal.rows, () => this.tui.requestRender());
-    const directory = safeTerminalText(basename(this.options.cwd)) +
-      (this.branch === undefined ? "" : ` (${safeTerminalText(this.branch)})`);
+    this.sidebarHeader.setContext(basename(this.options.cwd), this.branch);
+    const sessions: SidebarSession[] = this.sessionOrder().map((session) => ({
+      id: session.id, title: session.title, state: this.sessionState(session), selected: session.id === this.selectedId,
+    }));
+    this.sidebar.setSessions(sessions);
+    this.sidebar.setFrame(SHELL_SPINNER_FRAMES[this.frame] ?? "");
+    this.sidebarScroll.updateLayout(this.sidebar.lineCount, Math.max(0, this.tui.terminal.rows - 2),
+      () => this.tui.requestRender());
+  }
+
+  private updateFooter(): void {
     const model = this.selected().model;
-    this.footer.setText(mutedText([this.execution, directory, safeTerminalText(this.selected().title),
-      model === undefined ? "" : safeTerminalText(model)].filter(Boolean).join(" · "), this.theme));
+    this.footer.setText(mutedText([this.execution, model === undefined ? "" : safeTerminalText(model)]
+      .filter(Boolean).join(" · "), this.theme));
   }
 
   private updateResult(session: SessionView): void {
@@ -436,13 +446,18 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.editor.setText(session.draft);
     this.editor.disableSubmit = session.pending === undefined;
     this.compose();
-    const row = 2 + [...this.sessions.keys()].indexOf(id) * 2;
+    this.revealSelectedSession();
+    if (session.pending !== undefined) this.tui.setFocus(this.editor);
+    this.options.onSessionChange?.(id);
+  }
+
+  private revealSelectedSession(): void {
+    const row = this.sidebar.rowFor(this.selectedId);
+    if (row === undefined) return;
     const top = this.sidebarScroll.scrollTop;
     const height = this.sidebarScroll.viewportHeight;
     if (row < top) this.sidebarScroll.scrollTo(row);
     else if (height > 0 && row + 1 >= top + height) this.sidebarScroll.scrollTo(row - height + 2);
-    if (session.pending !== undefined) this.tui.setFocus(this.editor);
-    this.options.onSessionChange?.(id);
   }
 
   start(): void {
@@ -451,12 +466,17 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.removeInputListener = this.tui.addInputListener((data) => this.handleKey(data));
     this.tui.terminal.setTitle("Tesota");
     this.compose();
+    // Restored sessions are added before start; newest-first order can put the initial selection below the viewport.
+    this.revealSelectedSession();
     this.tui.start();
     let ticks = 0;
     this.timer = setInterval(() => {
       ticks += 1;
-      const animate = busy(this.selected().progress?.value);
-      if (animate) this.frame = (this.frame + 1) % spinnerFrames.length;
+      const animate = [...this.sessions.values()].some((session) => animatedSidebarState(this.sessionState(session)));
+      if (animate) {
+        this.frame = (this.frame + 1) % SHELL_SPINNER_FRAMES.length;
+        this.sidebar.setFrame(SHELL_SPINNER_FRAMES[this.frame] ?? "");
+      }
       if (animate || ticks % Math.round(1_000 / spinnerMs) === 0) this.refreshElapsed();
     }, spinnerMs);
     this.timer.unref();
@@ -472,7 +492,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (matchesKey(data, "ctrl+w")) { this.options.onCloseSession?.(this.selectedId); return { consume: true }; }
     if (this.handleSessionKey(data)) return { consume: true };
     if (matchesKey(data, "alt+r")) { this.showResult = !this.showResult; this.compose(); return { consume: true }; }
-    if (matchesKey(data, "alt+b")) { this.sidebarVisible = !this.sidebarVisible; this.compose(); return { consume: true }; }
+    if (matchesKey(data, "alt+b")) { this.toggleSidebar(); return { consume: true }; }
     if (matchesKey(data, "alt+d")) { this.toggleLatestNotice(); return { consume: true }; }
     if (matchesKey(data, "alt+,") || matchesKey(data, "alt+.")) {
       this.moveInspection(matchesKey(data, "alt+,") ? -1 : 1);
@@ -480,6 +500,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     }
     if (matchesKey(data, "alt+s")) { this.split = !this.split; this.compose(); return { consume: true }; }
     return undefined;
+  }
+
+  private toggleSidebar(): void {
+    const presentation = sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns);
+    this.sidebarPreference = presentation === "hidden" ? "open" : "hidden";
+    this.compose();
   }
 
   /**
@@ -518,7 +544,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   /** Next, previous or numbered session; true when `data` was one of those keys, even with no session at that number. */
   private handleSessionKey(data: string): boolean {
-    const ids = [...this.sessions.keys()];
+    const ids = this.sessionOrder().map((session) => session.id);
     if (matchesKey(data, "ctrl+tab") || matchesKey(data, "alt+j") || matchesKey(data, "alt+k")) {
       this.selectSession(sessionBeside(ids, this.selectedId, matchesKey(data, "alt+k") ? -1 : 1));
       return true;
@@ -645,7 +671,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   setExecution(label: string): void {
     this.execution = label;
-    this.updateSidebar();
+    this.updateFooter();
     this.tui.requestRender();
   }
 
@@ -659,7 +685,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (id === this.selectedId) {
       // Beside the conversation there is room to show the diff at once; narrower, it waits for Alt+R.
       const available = this.tui.terminal.columns -
-        (this.sidebarVisible && this.tui.terminal.columns >= sidebarMinWidth ? sidebarWidth + 1 : 0);
+        (sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns) === "inline" ? sidebarWidth + 1 : 0);
       if (available >= resultBesideWidth) this.showResult = true;
       this.compose();
     }
@@ -675,7 +701,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const session = this.sessions.get(id);
     if (session === undefined) return;
     if (this.sessions.size === 1) throw new Error("The last Tesota session cannot be removed");
-    if (id === this.selectedId) this.selectSession(sessionBeside([...this.sessions.keys()], id, 1));
+    if (id === this.selectedId) this.selectSession(sessionBeside(this.sessionOrder().map((item) => item.id), id, 1));
     const pending = session.pending;
     session.pending = undefined;
     this.sessions.delete(id);
@@ -753,7 +779,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       whole = true;
     } else if (progress !== undefined) {
       const elapsed = Math.max(0, Math.floor((this.now() - progress.startedAt) / 1_000));
-      const spinner = busy(progress.value) ? `${colorText(spinnerFrames[this.frame] ?? "", this.theme.accent)} ` : "";
+      const spinner = busy(progress.value) ?
+        `${colorText(SHELL_SPINNER_FRAMES[this.frame] ?? "", this.theme.accent)} ` : "";
       const label = safeTerminalText(tesotaShellProgressLabel(progress.value));
       text = `${spinner}${colorText(label, this.theme.accent)} ${mutedText(`· ${elapsed}s`, this.theme)}`;
     } else text = mutedText("Ready", this.theme);
@@ -791,19 +818,20 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     switch (command) {
       case "new": this.options.onNewSession?.(); break;
       case "next": case "previous":
-        this.selectSession(sessionBeside([...this.sessions.keys()], this.selectedId, command === "next" ? 1 : -1));
+        this.selectSession(sessionBeside(this.sessionOrder().map((item) => item.id), this.selectedId,
+          command === "next" ? 1 : -1));
         break;
       case "close": this.options.onCloseSession?.(session.id); break;
       case "model": this.changeModel(session, args); break;
       case "handoff": this.options.onHandoff?.(session.id); break;
       case "result": this.showResult = !this.showResult; this.compose(); break;
-      case "sidebar": this.sidebarVisible = !this.sidebarVisible; this.compose(); break;
+      case "sidebar": this.toggleSidebar(); break;
       case "details": this.toggleDetails(session, args); break;
       case "help":
         this.writeTo(session.id, "Commands: /new /next /previous /close /model [route:model] /handoff /result /sidebar " +
           "/details [number] /help /quit\n" +
           "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
-          "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by number · Ctrl+W close\n" +
+          "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +
           "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split");
         break;
       case "quit": this.options.onQuit?.(); break;

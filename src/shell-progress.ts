@@ -1,3 +1,5 @@
+export const SHELL_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
+
 export type TesotaShellProgress =
   | Readonly<{ phase: "preparing"; activity?: string }>
   | Readonly<{ phase: "working"; activity?: string }>
