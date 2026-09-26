@@ -35,20 +35,33 @@ export const ROUTE_BILLING: Readonly<Record<ModelRoute, Readonly<{ payer: string
 export type ModelEngine = "pi" | "claude-code";
 export const ROUTE_ENGINE: Readonly<Record<ModelRoute, ModelEngine>> = { codex: "pi", anthropic: "pi", "claude-code": "claude-code" };
 
-/** A role's model as `route:model`. */
+/**
+ * How much a model reasons (decision 029): the effort levels both engines
+ * share. Pi calls it the thinking level, Claude Code the effort.
+ */
+export const REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+export type ReasoningLevel = typeof REASONING_LEVELS[number];
+
+export function isReasoningLevel(value: string): value is ReasoningLevel {
+  return (REASONING_LEVELS as readonly string[]).includes(value);
+}
+
+/** A role's model as `route:model`, with an optional `@level`; without one, the engine's default applies. */
 export interface ModelChoice {
   readonly route: ModelRoute;
   readonly model: string;
+  readonly reasoning?: ReasoningLevel;
 }
 
-/** Read `route:model`; undefined for anything else, including `off`. */
+/** Read `route:model` or `route:model@level`; undefined for anything else, including `off`. */
 export function parseModelChoice(value: string): ModelChoice | undefined {
   const separator = value.indexOf(":");
   if (separator <= 0) return undefined;
   const route = value.slice(0, separator);
-  const model = value.slice(separator + 1);
+  const [model = "", level, ...rest] = value.slice(separator + 1).split("@");
   if (!(MODEL_ROUTES as readonly string[]).includes(route) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(model)) return undefined;
-  return { route: route as ModelRoute, model };
+  if (rest.length > 0 || level !== undefined && !isReasoningLevel(level)) return undefined;
+  return { route: route as ModelRoute, model, ...(level === undefined ? {} : { reasoning: level as ReasoningLevel }) };
 }
 export const MODEL_ROLES = ["agent", "explorer", "advisor", "reviewer", "refuter", "validator"] as const;
 export type ModelRole = typeof MODEL_ROLES[number];
@@ -109,7 +122,7 @@ export function chooseModel(role: ModelRole, model: string, available: readonly 
   const choices: Record<string, string | undefined> = { ...stored(path) };
   if (model === "default") delete choices[role];
   else if (available.includes(model) || OPTIONAL_ROLES.includes(role) && model === ROLE_OFF) choices[role] = model;
-  else throw new Error(`${model} is not offered; choose one of ${available.join(", ")}`);
+  else throw new Error(`${model} is not offered; tesota models lists the models and the reasoning levels each supports`);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${randomUUID()}.tmp`;
   try {

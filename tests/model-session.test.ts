@@ -20,6 +20,12 @@ it("sends each route to its engine and model", async () => {
   expect(codex.engine === "pi" && [codex.model.provider, codex.model.id]).toEqual(["openai-codex", "gpt-6-luna"]);
   const anthropic = await openModelTarget("anthropic:claude-opus-5-5", undefined, store);
   expect(anthropic.engine === "pi" && [anthropic.model.provider, anthropic.model.id]).toEqual(["anthropic", "claude-opus-5-5"]);
+  // A reasoning level travels with the target to either engine; without one, none is set and the engine's default applies.
+  expect(await openModelTarget("claude-code:opus@xhigh", undefined, store))
+    .toEqual({ engine: "claude-code", model: "opus", reasoning: "xhigh" });
+  const astra = await openModelTarget("codex:gpt-6-astra@high", undefined, store);
+  expect(astra.engine === "pi" && [astra.model.id, astra.reasoning]).toEqual(["gpt-6-astra", "high"]);
+  expect(codex.reasoning).toBeUndefined();
 });
 
 it("refuses a choice that is not route:model, or a model the route does not have", async () => {

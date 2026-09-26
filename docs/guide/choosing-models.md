@@ -16,7 +16,11 @@ and how to check a choice. Signing in to each route is in
 | `refuter` | Tries to disprove every finding before it counts | One session per review |
 | `validator` | Checks whether a correction resolved what was sent back | One session per correction round |
 
-A choice is written `route:model`. The route decides who pays:
+A choice is written `route:model`, optionally with a reasoning level:
+`codex:gpt-6-astra@high`. Levels are `low`, `medium`, `high`, `xhigh` and
+`max`, where the model accepts them; without one, Pi's models reason at
+medium and Claude Code's at their default. Higher levels spend more of your
+plan's limits. The route decides who pays:
 
 | Route | Paid through |
 | --- | --- |
@@ -76,6 +80,11 @@ to sessions opened afterwards.
   their own output when they judge it. Tesota's reviewer only reports
   findings and the refuter tests them, so a reviewer from another family
   cannot rewrite the agent's work.
+- **Raise a reasoning level only where it shows.** OpenAI recommends high
+  effort for agentic coding and extra-high for code review; Anthropic asks
+  for a sweep on your own work. On Tesota's review cases Astra found the same
+  defects at high as at medium, so the defaults stand until harder cases or
+  real sessions show a gain.
 - **Keep judges off their author's model.** `tesota models` warns when a
   role judges output from its own model, and notes when it is from the same
   lab. With two labs some pair shares one; prefer the refuter in the

@@ -144,6 +144,24 @@ measurements record the models so forecasts compare like with like. What the
 labs, benchmarks and practitioners say about choosing them is in the
 [models by role landscape](../research/model-roles-landscape.md).
 
+### Reasoning levels
+
+Decision 029; evidence in the
+[reasoning levels landscape](../research/reasoning-levels-landscape.md). A
+choice may end in a reasoning level, `route:model@level` with `low`,
+`medium`, `high`, `xhigh` or `max`, the levels both engines share: Pi's
+thinking level and Claude Code's effort. `tesota models` and `/model` accept
+only a level the model takes on its route, from Pi's catalogue; through
+Claude Code, only models Pi maps to effort levels take one, and an alias
+takes its family's newest model's levels. Pi would otherwise lower an
+unsupported level silently. Without a level, Pi's models reason at medium, as
+they always have in Tesota, and Claude Code's at their model's default, which
+for Opus 5.5 is medium. A `/model` switch on the same engine applies the new
+level with the new model. The level is part of the choice, so review
+measurements record it and forecasts compare like with like. Pi reports
+reasoning tokens as output; the engines' own defaults are unchanged, since no
+measurement yet shows a better level for any role.
+
 ### Judges and their authors
 
 Decision 028. Several roles judge another's output: the reviewer, the

@@ -1,6 +1,6 @@
 import { ModelRuntime, type SessionManager, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { parseModelChoice } from "../model-roles.js";
+import { parseModelChoice, type ReasoningLevel } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ClaudeCodeSession } from "./claude-code-session.js";
 import { TesotaCredentials } from "./tesota-credentials.js";
@@ -14,10 +14,18 @@ import { type CodingSessionOptions, CodingSession, type WorkingAgentOptions, wor
  * either.
  */
 
-/** Which engine runs a role, and the model it uses. */
+/**
+ * Which engine runs a role, the model it uses, and how much it reasons
+ * (decision 029); without a level, Pi reasons at medium and Claude Code at
+ * its model's default.
+ */
 export type ModelTarget =
-  | Readonly<{ engine: "pi"; modelRuntime: ModelRuntime; model: Model<Api> }>
-  | Readonly<{ engine: "claude-code"; model: string }>;
+  | Readonly<{ engine: "pi"; modelRuntime: ModelRuntime; model: Model<Api>; reasoning?: ReasoningLevel }>
+  | Readonly<{ engine: "claude-code"; model: string; reasoning?: ReasoningLevel }>;
+
+function reasoningOf(target: ModelTarget): { reasoning?: ReasoningLevel } {
+  return target.reasoning === undefined ? {} : { reasoning: target.reasoning };
+}
 
 /** Pi's provider for each route it serves. */
 const piProviders = { codex: "openai-codex", anthropic: "anthropic" } as const;
@@ -31,12 +39,13 @@ export async function openModelTarget(choice: string, signal?: AbortSignal,
   credentials: TesotaCredentials = new TesotaCredentials()): Promise<ModelTarget> {
   const parsed = parseModelChoice(choice);
   if (parsed === undefined) throw new Error(`${choice} is not a route:model choice. Check tesota models.`);
-  if (parsed.route === "claude-code") return { engine: "claude-code", model: parsed.model };
+  const reasoning = parsed.reasoning === undefined ? {} : { reasoning: parsed.reasoning };
+  if (parsed.route === "claude-code") return { engine: "claude-code", model: parsed.model, ...reasoning };
   const modelRuntime = await ModelRuntime.create({ credentials, refreshOnCreate: false, allowModelNetwork: false,
     ...(signal === undefined ? {} : { signal }) });
   const model = modelRuntime.getModel(piProviders[parsed.route], parsed.model);
   if (model === undefined) throw new Error(`${choice} is unavailable. Check tesota models and tesota auth status.`);
-  return { engine: "pi", modelRuntime, model };
+  return { engine: "pi", modelRuntime, model, ...reasoning };
 }
 
 /** The model a role uses, and where its token usage is counted. */
@@ -63,10 +72,11 @@ function usage(access: ModelAccess): { onUsage?: (usage: TokenUsage) => void } {
 export async function startModelSession(access: ModelAccess, options: RoleSessionOptions): Promise<ModelSession> {
   const { target } = access;
   if (target.engine === "pi") {
-    return CodingSession.start({ ...options, modelRuntime: target.modelRuntime, model: target.model, ...usage(access) });
+    return CodingSession.start({ ...options, modelRuntime: target.modelRuntime, model: target.model, ...reasoningOf(target),
+      ...usage(access) });
   }
   const { sessionManager: _unused, ...claude } = options;
-  return ClaudeCodeSession.start({ ...claude, model: target.model, ...usage(access) });
+  return ClaudeCodeSession.start({ ...claude, model: target.model, ...reasoningOf(target), ...usage(access) });
 }
 
 /** How the working agent's conversation is kept on each engine. */
@@ -92,9 +102,11 @@ export async function startWorkingAgent(access: ModelAccess, options: WorkingAge
   Pick<CodingSessionOptions, "onActivity">, conversation: WorkingAgentConversation): Promise<WorkingAgent> {
   const { target } = access;
   if (target.engine === "pi") {
-    return CodingSession.create({ ...options, modelRuntime: target.modelRuntime, model: target.model, ...usage(access),
+    return CodingSession.create({ ...options, modelRuntime: target.modelRuntime, model: target.model, ...reasoningOf(target),
+      ...usage(access),
       ...(conversation.sessionManager === undefined ? {} : { sessionManager: conversation.sessionManager }) });
   }
-  return ClaudeCodeSession.start({ cwd: options.cwd, model: target.model, ...workingAgentSetup(options), ...usage(access),
+  return ClaudeCodeSession.start({ cwd: options.cwd, model: target.model, ...reasoningOf(target), ...workingAgentSetup(options),
+    ...usage(access),
     ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }), conversationId: conversation.conversationId });
 }

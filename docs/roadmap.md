@@ -46,6 +46,8 @@ project. They are listed here as they are chosen.
   [design](design/agents.md#changing-the-agents-model)): built 2026-09-26.
 - **An advisor** the agent consults at hard decisions (decision 027,
   [design](design/agents.md#the-advisor)): built 2026-09-26, off by default.
+- **Reasoning levels per role** (decision 029,
+  [design](design/agents.md#reasoning-levels)): built 2026-09-26.
 
 ### 2. Measurement on public benchmarks
 

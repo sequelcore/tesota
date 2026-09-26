@@ -6,6 +6,7 @@ import * as z from "zod";
 import type { ModelTarget } from "./model-session.js";
 import type { AgentActivity, ConversationEntry, TurnResult } from "./model-session-contract.js";
 import { editChange, resultText, textOf, toolSubject } from "./pi-coding-session.js";
+import type { ReasoningLevel } from "../model-roles.js";
 import { NO_TOKENS, type TokenUsage, addTokens } from "../token-usage.js";
 
 /**
@@ -27,6 +28,8 @@ export interface ClaudeCodeSessionOptions {
   readonly cwd: string;
   /** A Claude Code model alias, such as `opus`, or a full model id. */
   readonly model: string;
+  /** Claude Code's effort (decision 029); the model's default when absent. */
+  readonly reasoning?: ReasoningLevel;
   readonly systemPrompt: string;
   readonly tools: readonly ToolDefinition[];
   readonly onActivity?: (activity: AgentActivity) => void;
@@ -137,6 +140,7 @@ export class ClaudeCodeSession {
   readonly #options: ClaudeCodeSessionOptions;
   readonly #root: string;
   #model: string;
+  #effort: ReasoningLevel | undefined;
   /** Whether the session continues a conversation Claude Code already held. */
   readonly resumed: boolean;
   #usable = true;
@@ -154,6 +158,7 @@ export class ClaudeCodeSession {
     this.#options = options;
     this.#root = root;
     this.#model = options.model;
+    this.#effort = options.reasoning;
     this.#conversationStarted = conversationStarted;
     this.resumed = conversationStarted;
   }
@@ -181,6 +186,7 @@ export class ClaudeCodeSession {
   async switchModel(target: ModelTarget): Promise<void> {
     if (target.engine !== "claude-code") throw new Error("That model runs on another engine; its conversation cannot continue here");
     this.#model = target.model;
+    this.#effort = target.reasoning;
   }
 
   #emit(activity: AgentActivity): void { this.#options.onActivity?.(activity); }
@@ -234,7 +240,7 @@ export class ClaudeCodeSession {
     let result: SDKResultMessage | undefined;
     try {
       for await (const message of query({ prompt: request, options: {
-        cwd: this.#root, model: this.#model, systemPrompt: this.#options.systemPrompt + toolNote,
+        cwd: this.#root, model: this.#model, ...(this.#effort === undefined ? {} : { effort: this.#effort }), systemPrompt: this.#options.systemPrompt + toolNote,
         tools: [], mcpServers: { [server]: createSdkMcpServer({ name: server, version: "1.0.0", tools }) },
         // Every call goes through one gate: Tesota's tools are allowed there, and nothing else is.
         canUseTool: onlyTesotaTools, settingSources: [], strictMcpConfig: true, skills: [],

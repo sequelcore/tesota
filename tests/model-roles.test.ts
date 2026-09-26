@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
-import { runModelsCommand, type OfferedModel } from "../src/models-command.js";
+import { offeredChoices, offeredModels, runModelsCommand, type OfferedModel } from "../src/models-command.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -12,22 +12,40 @@ function file(): string {
   roots.push(root);
   return join(root, "models.json");
 }
+const all = ["low", "medium", "high", "xhigh", "max"] as const;
 const offered: OfferedModel[] = [
-  { id: "codex:gpt-6-luna", route: "codex", name: "Luna", listPrice: { input: 0.1, output: 0.5 } },
-  { id: "codex:gpt-6-sol", route: "codex", name: "Sol", listPrice: { input: 2, output: 10 } },
-  { id: "anthropic:claude-opus-5-5", route: "anthropic", name: "Opus 5.5", listPrice: { input: 4, output: 20 } },
-  { id: "claude-code:opus", route: "claude-code", name: "Claude Code's opus" },
-  { id: "claude-code:claude-opus-5-5", route: "claude-code", name: "Opus 5.5", listPrice: { input: 4, output: 20 } },
+  { id: "codex:gpt-6-luna", route: "codex", name: "Luna", listPrice: { input: 0.1, output: 0.5 }, reasoning: all },
+  { id: "codex:gpt-6-sol", route: "codex", name: "Sol", listPrice: { input: 2, output: 10 }, reasoning: all },
+  { id: "anthropic:claude-opus-5-5", route: "anthropic", name: "Opus 5.5", listPrice: { input: 4, output: 20 }, reasoning: all },
+  { id: "claude-code:opus", route: "claude-code", name: "Claude Code's opus", reasoning: all },
+  { id: "claude-code:claude-opus-5-5", route: "claude-code", name: "Opus 5.5", listPrice: { input: 4, output: 20 }, reasoning: all },
+  { id: "claude-code:haiku", route: "claude-code", name: "Claude Code's haiku", reasoning: [] },
 ];
-const ids = offered.map((model) => model.id);
+const ids = offeredChoices(offered);
 
 it("reads route:model and nothing else", () => {
   expect(parseModelChoice("codex:gpt-6-luna")).toEqual({ route: "codex", model: "gpt-6-luna" });
   expect(parseModelChoice("claude-code:opus")).toEqual({ route: "claude-code", model: "opus" });
   expect(parseModelChoice("anthropic:claude-opus-5-5")).toEqual({ route: "anthropic", model: "claude-opus-5-5" });
-  for (const value of ["gpt-6-luna", "off", "openai:gpt-6", "codex:", ":opus", "codex:bad model", "codex:a/b"]) {
+  for (const value of ["gpt-6-luna", "off", "openai:gpt-6", "codex:", ":opus", "codex:bad model", "codex:a/b",
+    "codex:gpt-6-astra@turbo", "codex:gpt-6-astra@", "codex:@high"]) {
     expect(parseModelChoice(value)).toBeUndefined();
   }
+});
+
+it("reads a reasoning level after the model, and offers only the levels each model supports", () => {
+  expect(parseModelChoice("codex:gpt-6-astra@xhigh")).toEqual({ route: "codex", model: "gpt-6-astra", reasoning: "xhigh" });
+  expect(parseModelChoice("claude-code:opus@max")).toEqual({ route: "claude-code", model: "opus", reasoning: "max" });
+  expect(ids).toContain("codex:gpt-6-sol@high");
+  expect(ids).not.toContain("claude-code:haiku@high");
+  const path = file();
+  expect(chooseModel("reviewer", "codex:gpt-6-sol@xhigh", ids, path).reviewer).toBe("codex:gpt-6-sol@xhigh");
+  expect(() => chooseModel("agent", "claude-code:haiku@high", ids, path)).toThrow("claude-code:haiku@high is not offered");
+  // The real catalogues: Astra has no level below minimal that Tesota offers, and Haiku through Claude Code has no effort.
+  const real = offeredModels();
+  expect(real.find((model) => model.id === "codex:gpt-6-astra")?.reasoning).toEqual(["low", "medium", "high", "xhigh", "max"]);
+  expect(real.find((model) => model.id === "claude-code:opus")?.reasoning).toEqual(["low", "medium", "high", "xhigh", "max"]);
+  expect(real.find((model) => model.id === "claude-code:haiku")?.reasoning).toEqual([]);
 });
 
 it("gives every role the default until the operator chooses, with explorers and the advisor off", () => {

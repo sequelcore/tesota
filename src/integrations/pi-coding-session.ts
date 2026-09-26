@@ -7,6 +7,7 @@ import { type AgentSession, type AgentSessionEvent, type BashOperations, type Mo
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
 import { confinesCommands, type ExecutionEnvironment } from "../execution-environment.js";
+import type { ReasoningLevel } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ADVISOR_GUIDANCE, type Advisor, advisorTool } from "./advisor.js";
 import { exploreTool, type ExplorerPool } from "./pi-explore.js";
@@ -23,6 +24,8 @@ export interface CodingSessionOptions {
   readonly cwd: string;
   readonly modelRuntime: ModelRuntime;
   readonly model: Model<Api>;
+  /** How much the model reasons (decision 029); medium when absent. */
+  readonly reasoning?: ReasoningLevel;
   readonly sessionManager?: SessionManager;
   /** Where shell commands run. File tools always act on the workspace from the host. */
   readonly environment: ExecutionEnvironment;
@@ -43,6 +46,8 @@ export interface CodingSessionOptions {
 }
 
 const settlementMs = 10_000;
+/** Pi's reasoning level when a choice names none: the level Tesota has always used, and OpenAI's default for GPT-6 Sol and Luna. */
+const DEFAULT_REASONING: ReasoningLevel = "medium";
 const instructionFiles = ["AGENTS.md", "CLAUDE.md"];
 const instructionLimit = 32 * 1024;
 
@@ -291,6 +296,8 @@ export interface SessionStartOptions {
   readonly cwd: string;
   readonly modelRuntime: ModelRuntime;
   readonly model: Model<Api>;
+  /** How much the model reasons (decision 029); medium when absent. */
+  readonly reasoning?: ReasoningLevel;
   readonly sessionManager?: SessionManager;
   readonly systemPrompt: string;
   readonly tools: readonly ToolDefinition[];
@@ -367,7 +374,7 @@ export class CodingSession {
       systemPrompt: options.systemPrompt });
     await resourceLoader.reload();
     const { session } = await createAgentSession({ cwd: root, modelRuntime: options.modelRuntime, model: options.model,
-      thinkingLevel: "medium", sessionManager: options.sessionManager ?? PiSessionManager.inMemory(root),
+      thinkingLevel: options.reasoning ?? DEFAULT_REASONING, sessionManager: options.sessionManager ?? PiSessionManager.inMemory(root),
       settingsManager, resourceLoader, tools: options.tools.map((tool) => tool.name), customTools: [...options.tools] });
     return new CodingSession(session, options.onActivity, options.onUsage);
   }
@@ -382,6 +389,7 @@ export class CodingSession {
   async switchModel(target: ModelTarget): Promise<void> {
     if (target.engine !== "pi") throw new Error("That model runs on another engine; its conversation cannot continue here");
     await this.#session.setModel(target.model);
+    this.#session.setThinkingLevel(target.reasoning ?? DEFAULT_REASONING);
   }
 
   /** The conversation Pi holds, including the turn in progress; thinking is left out. */

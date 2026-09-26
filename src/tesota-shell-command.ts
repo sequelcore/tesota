@@ -10,7 +10,7 @@ import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
 import { ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
-import { offeredModels, routeListing } from "./models-command.js";
+import { offeredChoices, offeredModels, routeListing } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
@@ -529,13 +529,14 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       if (argument === undefined) {
         surface.writeTo(id, `The agent uses ${current} in this session; new sessions use ${role} (tesota models agent).\n` +
           "/model <route:model> switches it: on the same engine its conversation continues, on another it starts a new one. " +
-          `/model default returns to ${role}. Offered:\n${routeListing(offered)}`);
+          `/model default returns to ${role}. Add @low, @medium, @high, @xhigh or @max for a reasoning level the model ` +
+          `accepts. Offered:\n${routeListing(offered)}`);
         return;
       }
       const choice = argument === "default" ? role : argument;
       const from = parseModelChoice(current);
       const to = parseModelChoice(choice);
-      if (from === undefined || to === undefined || !offered.some((model) => model.id === choice)) {
+      if (from === undefined || to === undefined || !offeredChoices(offered).includes(choice)) {
         surface.writeTo(id, `${choice} is not offered. /model lists the models.`, "warning");
         return;
       }

@@ -171,5 +171,10 @@ it("refuses a model no route offers and changes nothing", async () => {
   expect(record.agent).toBeUndefined();
   await created.agentModel?.change("session", "codex:gpt-6-luna");
   expect(notices).toHaveBeenLastCalledWith("session", expect.stringContaining("already uses codex:gpt-6-luna"));
+  // A reasoning level the model accepts is a switch on the same engine; one it does not is refused.
+  await created.agentModel?.change("session", "codex:gpt-6-luna@high");
+  expect(record.agent).toBe("codex:gpt-6-luna@high");
+  await created.agentModel?.change("session", "claude-code:haiku@high");
+  expect(notices).toHaveBeenLastCalledWith("session", expect.stringContaining("is not offered"), "warning");
   created.dispose?.();
 });

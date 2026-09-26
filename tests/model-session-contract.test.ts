@@ -29,13 +29,13 @@ type ModelStep = Readonly<{ tools: readonly ToolCall[] }> | Readonly<{ text: str
 
 // The Claude Agent SDK double: plays `sdk.steps` against the options a session passes, one model call per step.
 const sdk = vi.hoisted(() => ({ steps: [] as unknown[], calls: 0, conversations: new Set<string>(),
-  last: undefined as { model?: string; resume?: string } | undefined }));
+  last: undefined as { model?: string; resume?: string; effort?: string } | undefined }));
 vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
   const { writeFileSync } = await import("node:fs");
   const { join } = await import("node:path");
   type Handler = { name: string; handler: (args: unknown) => Promise<unknown> };
   type Hook = (input: unknown, id: undefined, options: { signal: AbortSignal }) => Promise<{ continue?: boolean }>;
-  type Options = { cwd: string; model?: string; resume?: string; sessionId?: string; tools?: string[]; mcpServers: { tesota: { tools: Handler[] } }; abortController: AbortController;
+  type Options = { cwd: string; model?: string; resume?: string; sessionId?: string; effort?: string; tools?: string[]; mcpServers: { tesota: { tools: Handler[] } }; abortController: AbortController;
     canUseTool: (name: string, input: unknown, options: { signal: AbortSignal }) => Promise<{ behavior: string }>;
     hooks?: { PostToolBatch?: { hooks: Hook[] }[] } };
   const usage = { inputTokens: 40, outputTokens: 10, cacheReadInputTokens: 300, cacheCreationInputTokens: 60 };
@@ -46,7 +46,8 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
   // Which model a query asked for, whether it resumed a conversation, and which conversations Claude Code now holds.
   function remember(options: Options): void {
     sdk.last = { ...(options.model === undefined ? {} : { model: options.model }),
-      ...(options.resume === undefined ? {} : { resume: options.resume }) };
+      ...(options.resume === undefined ? {} : { resume: options.resume }),
+      ...(options.effort === undefined ? {} : { effort: options.effort }) };
     const conversation = options.resume ?? options.sessionId;
     if (conversation !== undefined) sdk.conversations.add(conversation);
   }
@@ -124,8 +125,8 @@ interface EngineHarness {
   start(root: string, tools: readonly ToolDefinition[], observed: Observed, conversation?: Conversation): Promise<WorkingSession>;
   /** Another model on the same engine. */
   other(): ModelTarget;
-  /** The model the last model call used, and whether it saw the conversation's earlier request. */
-  lastCall(): Readonly<{ model: string; continued: boolean }> | undefined;
+  /** The model and reasoning level the last model call used, and whether it saw the conversation's earlier request. */
+  lastCall(): Readonly<{ model: string; continued: boolean; reasoning: string | undefined }> | undefined;
 }
 
 /** A conversation kept across sessions: Pi's session manager, or Claude Code's conversation id. */
@@ -134,9 +135,9 @@ type WorkingSession = ModelSession & Readonly<{ resumed: boolean; switchModel(ta
   conversation(): Promise<readonly ConversationEntry[]> }>;
 
 function piHarness(): EngineHarness {
-  const faux = fauxProvider({ models: [{ id: "scripted" }, { id: "other" }] });
+  const faux = fauxProvider({ models: [{ id: "scripted", reasoning: true }, { id: "other", reasoning: true }] });
   let runtime: ModelRuntime | undefined;
-  let last: { model: string; continued: boolean } | undefined;
+  let last: { model: string; continued: boolean; reasoning: string | undefined } | undefined;
   const response = (step: ModelStep): FauxResponseStep => {
     if (step === "hang") {
       return (_context, options) => new Promise((settle) => {
@@ -154,7 +155,7 @@ function piHarness(): EngineHarness {
         const base = response(step);
         return (context, options, state, model) => {
           last = { model: model.id, continued: context.messages.some((message) => message.role === "user" &&
-            JSON.stringify(message.content).includes("earlier request")) };
+            JSON.stringify(message.content).includes("earlier request")), reasoning: options?.reasoning };
           return typeof base === "function" ? base(context, options, state, model) : base;
         };
       }));
@@ -163,7 +164,7 @@ function piHarness(): EngineHarness {
     other: () => {
       const model = runtime?.getModel(faux.provider.id, "other");
       if (runtime === undefined || model === undefined) throw new Error("The other model is missing");
-      return { engine: "pi", modelRuntime: runtime, model };
+      return { engine: "pi", modelRuntime: runtime, model, reasoning: "high" };
     },
     lastCall: () => last,
     async start(root, tools, observed, conversation) {
@@ -186,9 +187,9 @@ function claudeCodeHarness(): EngineHarness {
     engine: "Claude Code",
     script(steps) { sdk.steps = [...steps]; },
     modelCalls: () => sdk.calls,
-    other: () => ({ engine: "claude-code", model: "other" }),
+    other: () => ({ engine: "claude-code", model: "other", reasoning: "high" }),
     lastCall: () => sdk.last === undefined ? undefined
-      : { model: sdk.last.model ?? "", continued: sdk.last.resume !== undefined },
+      : { model: sdk.last.model ?? "", continued: sdk.last.resume !== undefined, reasoning: sdk.last.effort },
     start: (root, tools, observed, conversation) => ClaudeCodeSession.start({ cwd: root, model: "test", systemPrompt: "You test.", tools,
       ...(conversation === undefined ? {} : { conversationId: conversation.id }),
       onActivity: (entry) => { observed.activity.push(entry); },
@@ -286,7 +287,8 @@ describe.each([{ harness: piHarness }, { harness: claudeCodeHarness }])("the mod
     await session.switchModel(engine.other());
     engine.script([{ text: "second" }]);
     expect(await session.run("The next request.", running())).toEqual({ status: "completed", reply: "second" });
-    expect(engine.lastCall()).toEqual({ model: "other", continued: true });
+    // The switch carries the target's reasoning level; before it, Pi reasoned at Tesota's default and Claude Code at its own.
+    expect(engine.lastCall()).toEqual({ model: "other", continued: true, reasoning: "high" });
     session.dispose();
     expect((await engine.start(root, readOnlyFileTools(root), observed, conversation)).resumed).toBe(true);
   });
