@@ -71,6 +71,14 @@ it("groups findings at the same place for the refuter, and never across files", 
   expect(message).toContain("- 1, 2 at a.js:2");
 });
 
+it("never merges an introduced finding into one whose origin differs", () => {
+  const unclear: ReviewReport = { reviewer: "Tesota reviewer", tree, status: "completed", summary: "",
+    findings: [{ ...finding("Weakened test"), origin: "unknown" }, finding("Weakened test, again")] };
+  const [report] = applyRefutation([unclear], [{ id: 1, verdict: "confirmed", evidence: "" },
+    { id: 2, verdict: "confirmed", evidence: "", duplicateOf: 1 }]);
+  expect(report?.status === "completed" && report.findings.map((entry) => entry.duplicateOf)).toEqual([undefined, undefined]);
+});
+
 it("does not merge findings in different files even when the refuter says so", () => {
   const split: ReviewReport[] = [{ reviewer: "Tesota reviewer", tree, status: "completed", summary: "", findings: [
     finding("A"), { ...finding("B"), path: "src/other.ts" }] }];

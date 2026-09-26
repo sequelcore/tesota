@@ -128,11 +128,12 @@ export function applyRefutation(reports: readonly ReviewReport[], verdicts: read
     return { ...report, findings: report.findings.map((finding) => {
       id += 1;
       const verdict = verdicts?.find((entry) => entry.id === id);
-      // Only a strictly earlier finding in the same file can be the original: duplicates cannot form a cycle, and a
-      // mistaken verdict cannot merge problems in different files.
+      // Only a strictly earlier finding in the same file and of the same origin can be the original: duplicates
+      // cannot form a cycle, a mistaken verdict cannot merge problems in different files, and a defect the change
+      // introduced is never hidden behind one whose cause is unknown or that was already there.
       const candidate = verdict?.duplicateOf !== undefined && verdict.duplicateOf < id ? numbered[verdict.duplicateOf - 1] : undefined;
-      const original = candidate !== undefined && candidate.finding.path !== undefined && candidate.finding.path === finding.path
-        ? candidate : undefined;
+      const original = candidate !== undefined && candidate.finding.path !== undefined && candidate.finding.path === finding.path &&
+        candidate.finding.origin === finding.origin ? candidate : undefined;
       return { ...finding, standing: standingOf(verdict?.verdict),
         ...(verdict === undefined ? {} : { refutation: verdict.evidence }),
         ...(original === undefined ? {} : { duplicateOf: `${original.reviewer}: ${original.finding.statement}` }) };
