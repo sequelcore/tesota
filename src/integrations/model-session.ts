@@ -4,8 +4,8 @@ import { parseModelChoice } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ClaudeCodeSession } from "./claude-code-session.js";
 import { TesotaCredentials } from "./tesota-credentials.js";
-import { type AgentActivity, type CodingSessionOptions, type CodingTurnResult, CodingSession,
-  type WorkingAgentOptions, workingAgentSetup } from "./pi-coding-session.js";
+import type { AgentActivity, ModelSession } from "./model-session-contract.js";
+import { type CodingSessionOptions, CodingSession, type WorkingAgentOptions, workingAgentSetup } from "./pi-coding-session.js";
 
 /**
  * One interface over the engines a role can run on (decision 021): Pi, for
@@ -44,35 +44,6 @@ export interface ModelAccess {
   readonly target: ModelTarget;
   /** Called with the tokens each model call used, by kind, as the provider reported them. */
   readonly onUsage?: (usage: TokenUsage) => void;
-}
-
-export interface ModelSession {
-  readonly usable: boolean;
-  /** Run one request to completion, cancellation or a confirmed failure. */
-  run(request: string, signal: AbortSignal): Promise<CodingTurnResult>;
-  dispose(): void;
-}
-
-/**
- * A review role's request (reviewer, refuter, fix validator, ClaimCheck) stops
- * after this long, answered or not, so a stalled model stream cannot hold a
- * review indefinitely. Measured role requests take seconds to two minutes.
- */
-export const ROLE_TIME_LIMIT_MS: number = 10 * 60_000;
-
-/** One request under a time limit, and whether the limit, rather than the caller, stopped it. */
-export async function runWithin(session: ModelSession, request: string, signal: AbortSignal,
-  limitMs: number): Promise<{ turn: CodingTurnResult; timedOut: boolean }> {
-  const limit = AbortSignal.timeout(limitMs);
-  const turn = await session.run(request, AbortSignal.any([signal, limit]));
-  return { turn, timedOut: limit.aborted && !signal.aborted };
-}
-
-/** A review role's request under its time limit; one the limit stopped fails rather than reading as cancelled. */
-export async function runRole(session: ModelSession, request: string, signal: AbortSignal,
-  limitMs: number = ROLE_TIME_LIMIT_MS): Promise<CodingTurnResult> {
-  const { turn, timedOut } = await runWithin(session, request, signal, limitMs);
-  return timedOut ? { status: "failed", reason: "no answer within the time limit" } : turn;
 }
 
 export interface RoleSessionOptions {

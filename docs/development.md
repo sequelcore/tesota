@@ -30,6 +30,14 @@ exceptions. The Git workspace suites run in a separate Vitest process so a
 timed-out filesystem operation cannot contaminate later suites. The opt-in
 `TESOTA_LIVE_SANDBOX=1` suite exercises Docker Sandboxes' boundary live.
 
+A change to an engine adapter or to the model-session contract passes
+`tests/model-session-contract.test.ts`, which holds every engine to the same
+clauses, and then the opt-in live suite, `TESOTA_LIVE_MODELS=1` with
+`TESOTA_LIVE_MODEL_CHOICES` naming the `route:model` choices (default
+`claude-code:haiku,codex:gpt-6-luna`); it uses the operator's sign-ins and a
+little model usage. A new engine joins the shared suite with a harness before
+any role uses it.
+
 ## Evaluations
 
 Live evaluations use the saved login and write one JSON record under the

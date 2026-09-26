@@ -1,7 +1,8 @@
 import { realpathSync } from "node:fs";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
-import { type ModelAccess, runWithin, startModelSession } from "./model-session.js";
-import { type AgentActivity, type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
+import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type AgentActivity, type LimitedTurnResult, runWithTimeLimit } from "./model-session-contract.js";
+import { readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 import { isExplorerAnswer } from "../verification/explorer-answer.js";
 
 /**
@@ -38,13 +39,13 @@ export function explorerPrompt(root: string): string {
 }
 
 /** The explorer's answer as the agent reads it, or why there is none; an empty reply is never an answer. */
-export function explorerResult(turn: CodingTurnResult, timedOut: boolean, limit: number = EXPLORER_ANSWER_LIMIT): ExplorerResult {
-  if (timedOut) return { status: "unfinished", reason: "the explorer ran past its time limit" };
+export function explorerResult(turn: LimitedTurnResult, limit: number = EXPLORER_ANSWER_LIMIT): ExplorerResult {
+  if (turn.status === "timed_out") return { status: "unfinished", reason: "the explorer ran past its time limit" };
   if (turn.status === "cancelled") return { status: "unfinished", reason: "the explorer was stopped" };
   if (turn.status === "unsettled") return { status: "unfinished", reason: "the explorer could not be stopped cleanly" };
   if (turn.status === "failed") return { status: "unfinished", reason: `the model request failed: ${turn.reason}` };
   const answer = turn.reply.trim();
-  if (!isExplorerAnswer(timedOut, turn.status, answer.length)) return { status: "unfinished", reason: "the explorer gave no answer" };
+  if (!isExplorerAnswer(turn.status, answer.length)) return { status: "unfinished", reason: "the explorer gave no answer" };
   return { status: "answered", answer: answer.length <= limit ? answer
     : `${answer.slice(0, limit)}\n[The explorer's answer is cut at ${limit} characters.]` };
 }
@@ -57,7 +58,6 @@ export async function askExplorer(options: ExplorerOptions, checkout: string, br
     ...(options.sessionManager === undefined ? {} : { sessionManager: options.sessionManager }),
     ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
   try {
-    const { turn, timedOut } = await runWithin(session, brief, signal, options.timeLimitMs ?? EXPLORER_TIME_LIMIT_MS);
-    return explorerResult(turn, timedOut);
+    return explorerResult(await runWithTimeLimit(session, brief, signal, options.timeLimitMs ?? EXPLORER_TIME_LIMIT_MS));
   } finally { session.dispose(); }
 }

@@ -2,8 +2,9 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { Type } from "@earendil-works/pi-ai";
 import { numberedDiff } from "../diff-lines.js";
 import type { Finding, ReviewInput, ReviewReport } from "../review.js";
-import { type ModelAccess, runRole, startModelSession } from "./model-session.js";
-import { type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
+import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type LimitedTurnResult, REVIEW_TIME_LIMIT_MS, runWithTimeLimit } from "./model-session-contract.js";
+import { readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 
 /**
  * The fix validator (decision 016): after a correction round, a read-only
@@ -65,9 +66,10 @@ export function validationMessage(input: ReviewInput, sentBack: readonly Finding
  * undetermined or unanswered ones become unsettled, resolved ones are only
  * counted. A validator that did not finish leaves every finding unsettled.
  */
-export function validationReport(tree: string, sentBack: readonly Finding[], turn: CodingTurnResult,
+export function validationReport(tree: string, sentBack: readonly Finding[], turn: LimitedTurnResult,
   verdicts: readonly FixVerdict[] | undefined): ReviewReport {
-  const finished = turn.status !== "cancelled" && turn.status !== "unsettled" ? verdicts : undefined;
+  const finished = turn.status !== "cancelled" && turn.status !== "unsettled" && turn.status !== "timed_out"
+    ? verdicts : undefined;
   let resolved = 0;
   const findings = sentBack.flatMap((finding, index): Finding[] => {
     const verdict = finished?.find((entry) => entry.id === index + 1);
@@ -87,6 +89,6 @@ export async function validateFixes(options: FixValidatorOptions, input: ReviewI
   const session = await startModelSession(options, { cwd: input.checkout, systemPrompt: validatorPrompt(input.checkout),
     tools: [...readOnlyFileTools(input.checkout), recordResolutions((verdicts) => { recorded ??= verdicts; })] });
   try {
-    return validationReport(input.snapshot.tree, sentBack, await runRole(session, validationMessage(input, sentBack), signal), recorded);
+    return validationReport(input.snapshot.tree, sentBack, await runWithTimeLimit(session, validationMessage(input, sentBack), signal, REVIEW_TIME_LIMIT_MS), recorded);
   } finally { session.dispose(); }
 }

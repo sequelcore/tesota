@@ -33,3 +33,4 @@ short statement, and its substance goes into the design document it changes.
 | 019 | 2026-09-25 | Let the working agent ask read-only explorers, bounded and visible, while it stays the only writer | Built; off by default after its first evaluation. [Agents](design/agents.md#explorers) |
 | 020 | 2026-09-25 | Choose a model for each role | Current. [Agents](design/agents.md#models-by-role) |
 | 021 | 2026-09-25 | Reach Claude through an Anthropic API key or through the operator's own Claude Code; never handle Claude subscription credentials | Current. [Agents](design/agents.md#model-routes) |
+| 022 | 2026-09-26 | Hold every engine to one model-session contract, checked by a shared suite and a live one: exact tools, turn end after a submission, outcomes including a proved time-out, OpenTelemetry-shaped tokens; billing belongs to the route | Current. [Agents](design/agents.md#the-engine-contract) |

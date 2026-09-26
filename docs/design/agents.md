@@ -63,8 +63,9 @@ to help. `bun run live:delegation` repeats the comparison.
 
 Each role uses the model the operator chose in `~/.tesota/models.json`,
 written as `route:model`, and `codex:gpt-6-luna`, the cheapest on the Codex
-route, when there is no choice. `tesota models` lists each role with its model
-and price, and `tesota models <role> <route:model>` sets one from the models
+route, when there is no choice. `tesota models` lists each role with its
+model, who pays for it and the model's list price, and
+`tesota models <role> <route:model>` sets one from the models
 the route offers, or `default` to clear it. An unreadable file is an error,
 not a silent fallback. A role reads its model when it starts work, and review
 measurements record the models so forecasts compare like with like.
@@ -77,9 +78,13 @@ role can use any route. Evidence is in the
 
 | Route | Engine | Signed in by | Paid through |
 | --- | --- | --- | --- |
-| `codex` | Pi | `tesota auth login`: Pi's Codex OAuth, stored by Tesota | The operator's ChatGPT plan |
-| `anthropic` | Pi | `tesota auth login anthropic`: the operator's Anthropic API key, stored by Tesota, or `ANTHROPIC_API_KEY` | The API key's account |
-| `claude-code` | Claude Code, through the Claude Agent SDK | The operator, in Claude Code itself (`claude`, then `/login`) | The operator's Claude plan limits, or the key Claude Code itself uses |
+| `codex` | Pi | `tesota auth login`: Pi's Codex OAuth, stored by Tesota | The operator's ChatGPT plan, against its limits |
+| `anthropic` | Pi | `tesota auth login anthropic`: the operator's Anthropic API key, stored by Tesota, or `ANTHROPIC_API_KEY` | The API key, per token |
+| `claude-code` | Claude Code, through the Claude Agent SDK | The operator, in Claude Code itself (`claude`, then `/login`) | Whatever Claude Code is signed in with, usually a Claude plan |
+
+Who pays is the route's (`ROUTE_BILLING`); a model's list price is the
+catalogue's. A list price is what an API key is billed, and on a plan only a
+way to compare models, so `tesota models` shows both separately.
 
 **Tesota never handles Claude subscription credentials.** On the
 `claude-code` route, the unmodified Claude Code program bundled with the Agent
@@ -88,24 +93,49 @@ credential store accepts nothing but an API key for `anthropic`, so Pi's own
 claude.ai login, which presents itself as Claude Code, cannot be used through
 Tesota.
 
-**Roles work the same on either engine.** A role's session is started through
-one interface with the role's system prompt and tools, and returns the same
-results, activity and token counts. A Claude Code session runs with every
-built-in tool disabled and receives Tesota's own tools, the confined file
-tools, the execution environment's shell with its approvals, and each role's
-submission tool, from an in-process MCP server; a call to anything else is
-refused. It loads none of the operator's Claude Code settings, `CLAUDE.md`,
-hooks, skills or MCP servers, so a review is the same whoever runs it, and
-runs with Claude Code's nonessential traffic off, which also removes a
-background model call. As on Pi, a turn ends when every tool in a batch asks
-to end it, so no model call follows a role's submission. Only
-the working agent's conversation is saved, by Claude Code, and resumed on the
-next request; read-only roles keep none.
+### The engine contract
 
-Both engines report tokens by kind: fresh input, output, and input read from
-or written to the provider's prompt cache. The kinds are priced differently,
-and a cache read costs a fraction of fresh input; forecasts and summaries
-compare totals, and `live:review` records the kinds.
+**Every engine holds a role to one contract** (decision 022), owned by
+`src/integrations/model-session-contract.ts`. Each clause is checked against
+both engines by `tests/model-session-contract.test.ts`, Pi on its scripted
+faux model and Claude Code through a double of its SDK, and against the real
+engines by the opt-in live suite.
+
+| Clause | Pi | Claude Code |
+| --- | --- | --- |
+| A session has exactly the tools it was given | Its tool list | Built-in tools disabled, Tesota's tools from an in-process MCP server, and anything else refused |
+| A batch in which every tool asks to end the turn ends it, with no further model call | `terminate` on a tool result | A `PostToolBatch` hook answering `continue: false` |
+| A request ends `completed`, `failed` with the engine's own message, `cancelled`, or `unsettled` when the engine cannot be stopped | Pi's session events | The SDK's result message |
+| Tool activity and replies are reported as they happen | Pi's events | Tesota's tool wrappers and the SDK's messages |
+| Tokens are reported as OpenTelemetry's GenAI conventions count them: `input` includes cached input, with cache reads and cache creation as parts of it | Pi's usage, cache added back into input | Claude Code's per-model usage, likewise |
+
+The failure message stays the engine's own, such as Pi's "You have hit your
+ChatGPT usage limit": Pi classifies failures only by matching text, so a
+Tesota-wide failure kind would copy those patterns, and nothing yet acts on
+one.
+
+A Claude Code session also loads none of the operator's Claude Code settings,
+`CLAUDE.md`, hooks, skills or MCP servers, so a review is the same whoever
+runs it, and runs with Claude Code's nonessential traffic off, which also
+removes a background model call. Only the working agent's conversation is
+saved, by Claude Code, and resumed on the next request; read-only roles keep
+none.
+
+**Time limits sit above each engine's own guards.** A review role's request
+stops after ten minutes and an explorer's after five; a request the limit
+stopped ends `timed_out`, never `failed` or `cancelled`, and a completed,
+failed or unsettled request keeps its outcome. That rule is
+`limitedTurnStatus` in `src/verification/turn-time-limit.ts`, proved by
+`bun run formal:check`. Within the limit each engine guards its connections
+and retries: Pi gives up on a connection that does not open in 15 seconds or
+a stream quiet for five minutes and retries three times; Claude Code waits up
+to 180 seconds for the first byte and five minutes for a quiet stream, and
+retries ten times. Retried stalls can therefore last far longer than one
+timer, which is what the limit bounds. The working agent has no limit: the
+operator is present, and `Ctrl+C` stops it.
+
+Forecasts and summaries compare token totals, and `live:review` records the
+kinds, since a cache read costs a fraction of fresh input.
 
 On `live:review`, Claude Sonnet through `claude-code` reviews as well as
 Luna, in about 40 s of review against Luna's 64 to 72 s, and about 1.4 times

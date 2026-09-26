@@ -11,7 +11,7 @@ it("runs at most the concurrency limit at once and lets the rest wait", async ()
     running += 1;
     peak = Math.max(peak, running);
     onLine(`read ${brief}`);
-    onUsage({ input: 200, output: 100, cacheRead: 1_000, cacheWrite: 200 });
+    onUsage({ input: 1_400, output: 100, cacheRead: 1_000, cacheCreation: 200 });
     await new Promise<void>((settle) => { releases.push(settle); });
     running -= 1;
     return answer(brief);

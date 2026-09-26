@@ -75,7 +75,8 @@ structured findings once. A reviewer that does not finish reports an
 incomplete review, which is never shown as clean. Every request to a
 reviewer, lens, ClaimCheck, the refuter or the fix validator stops after ten
 minutes, answered or not, and counts as unfinished, so a stalled model stream
-cannot hold a review; measured requests take seconds to two minutes. A deep review adds focused
+cannot hold a review; measured requests take seconds to two minutes (see
+[the engine contract](agents.md#the-engine-contract)). A deep review adds focused
 **lenses**, each reporting only within its focus: correctness and
 regressions, security and authority, and the repository's own `AGENTS.md` or
 `CLAUDE.md` rules when it has them. When LemmaScript proved contracts in the

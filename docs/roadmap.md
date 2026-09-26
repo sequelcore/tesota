@@ -29,6 +29,7 @@ on a real project has not started.
 | Request record, flags, verifiers with claims, reviewer and lenses, ClaimCheck, refuter, origin check, correction loop with fix validation, assurance journal, forecast, `live:review` | 2026-09-25 | [Assurance](design/assurance.md) |
 | Explorers, models by role, `tesota models`, `live:delegation` | 2026-09-25 | [Agents](design/agents.md) |
 | Claude through an Anthropic API key or the operator's Claude Code | 2026-09-25 | [Agents](design/agents.md#model-routes) |
+| One model-session contract for every engine, with shared and live suites, time limits and token kinds | 2026-09-26 | [Agents](design/agents.md#the-engine-contract) |
 
 ## Next
 

@@ -92,5 +92,5 @@ it("counts the tokens of each finished model response by kind, and nothing else"
     { type: "message_end", message: { role: "assistant", content: [], usage } },
     { type: "message_end", message: { role: "user", content: "hi" } },
   ] as unknown as AgentSessionEvent[];
-  expect(events.map(responseUsage)).toEqual([undefined, { input: 900, output: 100, cacheRead: 4_000, cacheWrite: 7 }, undefined]);
+  expect(events.map(responseUsage)).toEqual([undefined, { input: 4_907, output: 100, cacheRead: 4_000, cacheCreation: 7 }, undefined]);
 });

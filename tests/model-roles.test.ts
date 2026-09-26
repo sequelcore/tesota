@@ -13,10 +13,11 @@ function file(): string {
   return join(root, "models.json");
 }
 const offered: OfferedModel[] = [
-  { id: "codex:gpt-6-luna", route: "codex", name: "Luna", price: { input: 0.1, output: 0.5 } },
-  { id: "codex:gpt-6-sol", route: "codex", name: "Sol", price: { input: 2, output: 10 } },
-  { id: "anthropic:claude-opus-5-5", route: "anthropic", name: "Opus 5.5", price: { input: 4, output: 20 } },
+  { id: "codex:gpt-6-luna", route: "codex", name: "Luna", listPrice: { input: 0.1, output: 0.5 } },
+  { id: "codex:gpt-6-sol", route: "codex", name: "Sol", listPrice: { input: 2, output: 10 } },
+  { id: "anthropic:claude-opus-5-5", route: "anthropic", name: "Opus 5.5", listPrice: { input: 4, output: 20 } },
   { id: "claude-code:opus", route: "claude-code", name: "Claude Code's opus" },
+  { id: "claude-code:claude-opus-5-5", route: "claude-code", name: "Opus 5.5", listPrice: { input: 4, output: 20 } },
 ];
 const ids = offered.map((model) => model.id);
 
@@ -62,7 +63,7 @@ it("refuses a file it cannot read as model choices instead of guessing", () => {
   expect(() => readModelChoices(path)).toThrow("not a valid model choice file");
 });
 
-it("lists each role with its cost, the Claude plan for Claude Code, and sets one from the command line", () => {
+it("lists each role with who pays for it and the model's list price, and sets one from the command line", () => {
   const path = file();
   let output = "";
   const write = (text: string): void => { output += text; };
@@ -70,10 +71,13 @@ it("lists each role with its cost, the Claude plan for Claude Code, and sets one
   expect(output).toBe("The reviewer now uses claude-code:opus.\n");
   output = "";
   expect(runModelsCommand(["refuter", "anthropic:claude-opus-5-5"], write, offered, path)).toBe(0);
+  expect(runModelsCommand(["validator", "claude-code:claude-opus-5-5"], write, offered, path)).toBe(0);
   output = "";
   expect(runModelsCommand([], write, offered, path)).toBe(0);
-  expect(output).toContain("  reviewer  claude-code:opus              your Claude plan's limits");
-  expect(output).toContain("  refuter   anthropic:claude-opus-5-5     $4 in, $20 out per million tokens");
+  expect(output).toContain("  reviewer  claude-code:opus              your Claude Code sign-in");
+  expect(output).toContain("  refuter   anthropic:claude-opus-5-5     your Anthropic API key, $4 in and $20 out per million tokens");
+  expect(output).toContain("  agent     codex:gpt-6-luna              your ChatGPT plan's limits; list price $0.1 in and $0.5 out");
+  expect(output).toContain("  validator claude-code:claude-opus-5-5   your Claude Code sign-in; list price $4 in and $20 out");
   expect(output).toContain("  claude-code: opus");
   expect(runModelsCommand(["judge", "codex:gpt-6-sol"], write, offered, path)).toBe(2);
   expect(runModelsCommand(["agent", "codex:gpt-9"], write, offered, path)).toBe(1);

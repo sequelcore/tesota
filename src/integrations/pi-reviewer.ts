@@ -3,8 +3,9 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { numberedDiff } from "../diff-lines.js";
 import type { Finding, ReviewInput, ReviewReport, Reviewer } from "../review.js";
-import { type ModelAccess, runRole, startModelSession } from "./model-session.js";
-import { type AgentActivity, type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
+import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type AgentActivity, type LimitedTurnResult, REVIEW_TIME_LIMIT_MS, runWithTimeLimit } from "./model-session-contract.js";
+import { readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 
 const REVIEWER = "Tesota reviewer";
 const diffLimit = 150_000;
@@ -126,11 +127,12 @@ export function reviewMessage(input: ReviewInput): string {
 }
 
 /** A review counts only when the reviewer submitted it and was not stopped. */
-export function reviewReport(tree: string, turn: CodingTurnResult,
+export function reviewReport(tree: string, turn: LimitedTurnResult,
   submitted: { readonly summary: string; readonly findings: readonly Finding[] } | undefined): ReviewReport {
   const incomplete = (reason: string): ReviewReport => ({ reviewer: REVIEWER, tree, status: "incomplete", reason });
   if (turn.status === "cancelled") return incomplete("the review was stopped");
   if (turn.status === "unsettled") return incomplete("the reviewer did not stop cleanly");
+  if (turn.status === "timed_out") return incomplete("the reviewer ran past its time limit");
   if (submitted !== undefined) return { reviewer: REVIEWER, tree, status: "completed", ...submitted };
   if (turn.status === "failed") return incomplete(`the model request failed: ${turn.reason}`);
   return incomplete("the reviewer finished without submitting its findings");
@@ -171,9 +173,9 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
         })],
         ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
       try {
-        let turn = await runRole(session, reviewMessage(input), signal);
+        let turn = await runWithTimeLimit(session, reviewMessage(input), signal, REVIEW_TIME_LIMIT_MS);
         // A model sometimes answers in prose; one reminder, without new investigation, before the review counts as unfinished.
-        if (turn.status === "completed" && submitted === undefined) turn = await runRole(session, submissionReminder, signal);
+        if (turn.status === "completed" && submitted === undefined) turn = await runWithTimeLimit(session, submissionReminder, signal, REVIEW_TIME_LIMIT_MS);
         return { ...reviewReport(input.snapshot.tree, turn, submitted), reviewer: name };
       } finally { session.dispose(); }
     },

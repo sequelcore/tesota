@@ -48,6 +48,8 @@ it("counts a review only when it was submitted and not stopped", () => {
     status: "incomplete", reason: "the reviewer finished without submitting its findings" });
   expect(reviewReport(tree, { status: "cancelled" }, submitted)).toMatchObject({ status: "incomplete", reason: "the review was stopped" });
   expect(reviewReport(tree, { status: "unsettled" }, submitted)).toMatchObject({ status: "incomplete" });
+  expect(reviewReport(tree, { status: "timed_out" }, undefined))
+    .toMatchObject({ status: "incomplete", reason: "the reviewer ran past its time limit" });
   expect(reviewReport(tree, { status: "failed", reason: "rate limited" }, undefined))
     .toMatchObject({ status: "incomplete", reason: "the model request failed: rate limited" });
 });

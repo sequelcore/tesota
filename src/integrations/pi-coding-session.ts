@@ -9,33 +9,11 @@ import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
 import { allowsAutonomy, type ExecutionEnvironment } from "../execution-environment.js";
 import type { TokenUsage } from "../token-usage.js";
 import { exploreTool, type ExplorerPool } from "./pi-explore.js";
+import type { AgentActivity, AgentChange, TurnResult } from "./model-session-contract.js";
 
 export type CommandApproval = "once" | "always" | "deny";
 /** How the operator answered a refused network destination: for this session, for the repository, or not at all. */
 export type NetworkDecision = "session" | "repository" | "deny";
-
-/**
- * What the agent is doing, as it happens, for a surface to show. `reply`
- * carries the full text of one assistant message so far; `message` numbers
- * the messages of a session in order.
- */
-export type AgentActivity =
-  | Readonly<{ type: "reply"; message: number; text: string; final: boolean }>
-  | Readonly<{ type: "tool_started"; call: string; tool: string; subject: string }>
-  | Readonly<{ type: "tool_output"; call: string; output: string }>
-  | Readonly<{ type: "tool_finished"; call: string; failed: boolean; output: string; change?: AgentChange }>;
-
-export interface AgentChange {
-  readonly added: number;
-  readonly removed: number;
-  readonly lines: readonly string[];
-}
-
-export type CodingTurnResult =
-  | Readonly<{ status: "completed"; reply: string }>
-  | Readonly<{ status: "failed"; reason: string }>
-  | Readonly<{ status: "cancelled" }>
-  | Readonly<{ status: "unsettled" }>;
 
 export interface CodingSessionOptions {
   /** The workspace checkout; every file tool is confined to it. */
@@ -257,11 +235,15 @@ export function activityOf(event: AgentSessionEvent, message: number): AgentActi
   }
 }
 
-/** The tokens a finished model response used, by kind, as its provider reported them; undefined for any other event. */
+/**
+ * The tokens a finished model response used, as its provider reported them;
+ * undefined for any other event. Pi counts fresh input apart from the cache,
+ * so the cache's parts are added back into `input`.
+ */
 export function responseUsage(event: AgentSessionEvent): TokenUsage | undefined {
   if (event.type !== "message_end" || event.message.role !== "assistant") return undefined;
   const { input, output, cacheRead, cacheWrite } = event.message.usage;
-  return { input, output, cacheRead, cacheWrite };
+  return { input: input + cacheRead + cacheWrite, output, cacheRead, cacheCreation: cacheWrite };
 }
 
 /** The file tools that only read, each confined to the workspace. */
@@ -356,7 +338,7 @@ export class CodingSession {
   get usable(): boolean { return this.#usable; }
 
   /** Run one user request to completion, cancellation or a confirmed failure. */
-  async run(request: string, signal: AbortSignal): Promise<CodingTurnResult> {
+  async run(request: string, signal: AbortSignal): Promise<TurnResult> {
     if (!this.#usable) throw new Error("Coding session unavailable");
     if (signal.aborted) return { status: "cancelled" };
     let failed: string | undefined;

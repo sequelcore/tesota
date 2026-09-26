@@ -1,8 +1,8 @@
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import type { Finding, ReviewInput, ReviewReport, Reviewer } from "../review.js";
-import { type ModelAccess, type ModelSession, runRole, startModelSession } from "./model-session.js";
-import type { CodingTurnResult } from "./pi-coding-session.js";
+import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type LimitedTurnResult, type ModelSession, REVIEW_TIME_LIMIT_MS, runWithTimeLimit } from "./model-session-contract.js";
 
 /**
  * ClaimCheck's round-trip method (metareflection/claimcheck, MIT), adapted to
@@ -129,7 +129,10 @@ function finding(item: Contract, comparison: Comparison): Finding | undefined {
 
 /** Findings from the comparisons; a contract left without a comparison makes the review unfinished. */
 export function claimcheckReport(tree: string, items: readonly Contract[],
-  comparisons: readonly Comparison[] | undefined, turn: CodingTurnResult): ReviewReport {
+  comparisons: readonly Comparison[] | undefined, turn: LimitedTurnResult): ReviewReport {
+  if (turn.status === "timed_out") {
+    return { reviewer: REVIEWER, tree, status: "incomplete", reason: "the comparison ran past its time limit" };
+  }
   if (turn.status === "cancelled" || turn.status === "unsettled" || comparisons === undefined) {
     return { reviewer: REVIEWER, tree, status: "incomplete",
       reason: turn.status === "failed" ? `the model request failed: ${turn.reason}` : "the comparison was not recorded" };
@@ -167,12 +170,13 @@ export function createClaimCheckReviewer(options: ClaimCheckOptions): Reviewer {
         systemPrompt: "You compare formal specifications with natural-language requirements. Answer only through the tool you are given." });
       let informalizations: readonly Informalization[] | undefined;
       const first = await session(recordTool("record_informalizations", informalizationSchema, (value) => { informalizations = value.informalizations; }));
-      let turn: CodingTurnResult;
-      try { turn = await runRole(first, informalizePrompt(items), signal); } finally { first.dispose(); }
+      let turn: LimitedTurnResult;
+      try { turn = await runWithTimeLimit(first, informalizePrompt(items), signal, REVIEW_TIME_LIMIT_MS); } finally { first.dispose(); }
       if (informalizations === undefined) return claimcheckReport(tree, items, undefined, turn);
       let comparisons: readonly Comparison[] | undefined;
       const second = await session(recordTool("record_comparisons", comparisonSchema, (value) => { comparisons = value.comparisons; }));
-      try { turn = await runRole(second, comparePrompt(input.requests, items, informalizations), signal); } finally { second.dispose(); }
+      try { turn = await runWithTimeLimit(second, comparePrompt(input.requests, items, informalizations), signal,
+        REVIEW_TIME_LIMIT_MS); } finally { second.dispose(); }
       return claimcheckReport(tree, items, comparisons, turn);
     },
   };

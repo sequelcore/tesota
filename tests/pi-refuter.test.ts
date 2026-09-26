@@ -28,6 +28,7 @@ it("gives each finding the refuter's verdict in order across reports, and leaves
 it("never confirms or clears a finding when the refuter did not finish", () => {
   expect(verdictsFrom({ status: "cancelled" }, [{ id: 1, verdict: "refuted", evidence: "" }])).toBeUndefined();
   expect(verdictsFrom({ status: "unsettled" }, [{ id: 1, verdict: "confirmed", evidence: "" }])).toBeUndefined();
+  expect(verdictsFrom({ status: "timed_out" }, [{ id: 1, verdict: "confirmed", evidence: "" }])).toBeUndefined();
   expect(verdictsFrom({ status: "completed", reply: "" }, undefined)).toBeUndefined();
   const tested = applyRefutation(reports, undefined);
   expect(tested.flatMap((report) => report.status === "completed" ? report.findings.map((entry) => entry.standing) : []))

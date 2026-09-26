@@ -2,18 +2,19 @@ import { createModels } from "@earendil-works/pi-ai";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { chooseModel, DEFAULT_MODEL, DEFAULT_MODELS_FILE, EXPLORERS_OFF, isModelRole, MODEL_ROLES, type ModelRoute,
-  readModelChoices, ROLE_DESCRIPTIONS } from "./model-roles.js";
+  readModelChoices, ROLE_DESCRIPTIONS, ROUTE_BILLING } from "./model-roles.js";
 
 /**
- * A model a route offers, as `route:model`. Pi's routes carry the catalogue's
- * price in dollars per million tokens; the `claude-code` route draws on the
- * operator's Claude plan, which has limits rather than a per-token price.
+ * A model a route offers, as `route:model`, with the catalogue's list price
+ * in dollars per million tokens when the catalogue has one. Who pays is the
+ * route's (`ROUTE_BILLING`): a list price is what an API key is billed, and
+ * on a plan only a way to compare models.
  */
 export interface OfferedModel {
   readonly id: string;
   readonly route: ModelRoute;
   readonly name: string;
-  readonly price?: { readonly input: number; readonly output: number };
+  readonly listPrice?: { readonly input: number; readonly output: number };
 }
 
 /** Claude Code's own aliases, which follow the newest model of each family. */
@@ -25,17 +26,20 @@ export function offeredModels(): OfferedModel[] {
   models.setProvider(openaiCodexProvider());
   models.setProvider(anthropicProvider());
   const priced = (route: ModelRoute, provider: string): OfferedModel[] => models.getModels(provider).map((model) =>
-    ({ id: `${route}:${model.id}`, route, name: model.name, price: { input: model.cost.input, output: model.cost.output } }));
+    ({ id: `${route}:${model.id}`, route, name: model.name, listPrice: { input: model.cost.input, output: model.cost.output } }));
   const anthropic = priced("anthropic", "anthropic");
   return [...priced("codex", "openai-codex"), ...anthropic,
     ...claudeCodeAliases.map((alias): OfferedModel => ({ id: `claude-code:${alias}`, route: "claude-code", name: `Claude Code's ${alias}` })),
-    ...anthropic.map((model): OfferedModel => ({ id: `claude-code:${model.id.slice("anthropic:".length)}`, route: "claude-code", name: model.name }))];
+    ...anthropic.map((model): OfferedModel => ({ ...model, id: `claude-code:${model.id.slice("anthropic:".length)}`, route: "claude-code" }))];
 }
 
+/** Who pays for a model, and its list price: what an API key is billed, or on a plan a way to compare models. */
 function cost(model: OfferedModel | undefined): string {
   if (model === undefined) return "not offered";
-  if (model.price === undefined) return "your Claude plan's limits";
-  return `$${model.price.input} in, $${model.price.output} out per million tokens`;
+  const billing = ROUTE_BILLING[model.route];
+  if (model.listPrice === undefined) return billing.payer;
+  const price = `$${model.listPrice.input} in and $${model.listPrice.output} out`;
+  return billing.metered ? `${billing.payer}, ${price} per million tokens` : `${billing.payer}; list price ${price}`;
 }
 
 function listing(offered: readonly OfferedModel[], path: string): string {
@@ -52,9 +56,8 @@ function listing(offered: readonly OfferedModel[], path: string): string {
 }
 
 /**
- * `tesota models` lists each role's model; `tesota models <role> <route:model>`
- * chooses one. Prices are the catalogue's; a subscription counts usage
- * against its limits instead of billing it.
+ * `tesota models` lists each role's model, who pays for it and its list
+ * price; `tesota models <role> <route:model>` chooses one.
  */
 export function runModelsCommand(args: readonly string[], write: (text: string) => void,
   offered: readonly OfferedModel[] = offeredModels(), path: string = DEFAULT_MODELS_FILE): number {

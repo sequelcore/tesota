@@ -19,6 +19,18 @@ import * as z from "zod";
 export const MODEL_ROUTES = ["codex", "anthropic", "claude-code"] as const;
 export type ModelRoute = typeof MODEL_ROUTES[number];
 
+/**
+ * Who pays for a route's model calls, and whether they are billed per token.
+ * A plan counts them against its limits instead; Claude Code is paid through
+ * whatever it is signed in with, usually a Claude plan, which Tesota does not
+ * see.
+ */
+export const ROUTE_BILLING: Readonly<Record<ModelRoute, Readonly<{ payer: string; metered: boolean }>>> = {
+  codex: { payer: "your ChatGPT plan's limits", metered: false },
+  anthropic: { payer: "your Anthropic API key", metered: true },
+  "claude-code": { payer: "your Claude Code sign-in", metered: false },
+};
+
 /** A role's model as `route:model`. */
 export interface ModelChoice {
   readonly route: ModelRoute;

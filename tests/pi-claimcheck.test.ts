@@ -53,4 +53,6 @@ it("reports contracts that miss the request, and is unfinished when a contract w
   expect(claimcheckReport(tree, items, [{ name: "canAccess", verdict: "justified", disposition: "fixable", explanation: "" }], done))
     .toMatchObject({ status: "incomplete", reason: "no comparison for double" });
   expect(claimcheckReport(tree, items, undefined, { status: "cancelled" })).toMatchObject({ status: "incomplete" });
+  expect(claimcheckReport(tree, items, [{ name: "canAccess", verdict: "justified", disposition: "fixable", explanation: "" }],
+    { status: "timed_out" })).toMatchObject({ status: "incomplete", reason: "the comparison ran past its time limit" });
 });

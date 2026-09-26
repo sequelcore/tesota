@@ -25,7 +25,7 @@ it("keeps unresolved findings confirmed, unsettles the unknown, and only counts 
 });
 
 it("resolves nothing when the validator does not finish", () => {
-  for (const turn of [{ status: "cancelled" as const }, { status: "unsettled" as const }]) {
+  for (const turn of [{ status: "cancelled" as const }, { status: "unsettled" as const }, { status: "timed_out" as const }]) {
     const report = validationReport(tree, sentBack, turn, [{ id: 1, verdict: "resolved", evidence: "" }]);
     expect(report.status === "completed" && report.findings.map((entry) => entry.standing)).toEqual(["unsettled", "unsettled", "unsettled"]);
   }

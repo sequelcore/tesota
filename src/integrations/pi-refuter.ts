@@ -1,8 +1,9 @@
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import type { Finding, FindingStanding, ReviewInput, ReviewReport } from "../review.js";
-import { type ModelAccess, runRole, startModelSession } from "./model-session.js";
-import { type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
+import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type LimitedTurnResult, REVIEW_TIME_LIMIT_MS, runWithTimeLimit } from "./model-session-contract.js";
+import { readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 import { reviewMessage } from "./pi-reviewer.js";
 
 /**
@@ -142,8 +143,8 @@ export function applyRefutation(reports: readonly ReviewReport[], verdicts: read
 }
 
 /** The refuter's verdicts, or undefined when it did not record them. */
-export function verdictsFrom(turn: CodingTurnResult, recorded: readonly Refutation[] | undefined): readonly Refutation[] | undefined {
-  return turn.status === "cancelled" || turn.status === "unsettled" ? undefined : recorded;
+export function verdictsFrom(turn: LimitedTurnResult, recorded: readonly Refutation[] | undefined): readonly Refutation[] | undefined {
+  return turn.status === "cancelled" || turn.status === "unsettled" || turn.status === "timed_out" ? undefined : recorded;
 }
 
 export type RefuterOptions = ModelAccess;
@@ -157,7 +158,7 @@ export async function refuteFindings(options: RefuterOptions, input: ReviewInput
   const session = await startModelSession(options, { cwd: input.checkout, systemPrompt: refuterPrompt(input.checkout),
     tools: [...readOnlyFileTools(input.checkout), recordVerdicts((verdicts) => { recorded ??= verdicts; })] });
   try {
-    const turn = await runRole(session, refutationMessage(input, findings), signal);
+    const turn = await runWithTimeLimit(session, refutationMessage(input, findings), signal, REVIEW_TIME_LIMIT_MS);
     return applyRefutation(reports, verdictsFrom(turn, recorded));
   } finally { session.dispose(); }
 }

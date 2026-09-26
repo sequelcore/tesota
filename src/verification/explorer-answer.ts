@@ -1,13 +1,15 @@
-export type ExplorerTurnStatus = "completed" | "failed" | "cancelled" | "unsettled";
+export type ExplorerTurnStatus = "completed" | "failed" | "cancelled" | "unsettled" | "timed_out";
 
 /**
  * Decision 019's rule for an explorer's reply: the agent receives it as an
  * answer only when the explorer finished within its time limit and said
- * something. An unfinished or empty reply is never presented as an answer.
+ * something. An unfinished or empty reply is never presented as an answer;
+ * a request that ran past its limit ends `timed_out`, never `completed`
+ * (`limitedTurnStatus`).
  */
-//@ ensures \result === (!timedOut && status === "completed" && answerLength > 0)
-export function isExplorerAnswer(timedOut: boolean, status: ExplorerTurnStatus, answerLength: number): boolean {
-  if (timedOut || status !== "completed") return false;
+//@ ensures \result === (status === "completed" && answerLength > 0)
+export function isExplorerAnswer(status: ExplorerTurnStatus, answerLength: number): boolean {
+  if (status !== "completed") return false;
   return answerLength > 0;
 }
 

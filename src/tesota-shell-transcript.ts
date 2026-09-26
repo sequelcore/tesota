@@ -1,7 +1,7 @@
 import { highlightCode } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Markdown, Spacer, Text, truncateToWidth, type Component,
   type MarkdownTheme } from "@earendil-works/pi-tui";
-import type { AgentActivity, AgentChange } from "./integrations/pi-coding-session.js";
+import type { AgentActivity, AgentChange } from "./integrations/model-session-contract.js";
 import { backgroundText, bold, colorText, mutedText, type TesotaShellTheme } from "./tesota-shell-theme.js";
 
 export type NoticeTone = "info" | "warning" | "success";

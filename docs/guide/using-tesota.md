@@ -22,7 +22,9 @@ Login stores a Codex credential under `~/.tesota/auth`; see
 
 Every role uses `codex:gpt-6-luna` until you choose otherwise. `tesota models`
 lists the working agent, explorers, reviewer, refuter and fix validator with
-their models and costs, and every model each route offers. A choice is
+their models, who pays for each (your ChatGPT plan, your Anthropic API key or
+your Claude Code sign-in) and the model's list price, and every model each
+route offers. A choice is
 `route:model`: `tesota models reviewer claude-code:opus` reviews with Claude
 Opus on your Claude plan, `tesota models refuter anthropic:claude-opus-5-5`
 uses your Anthropic API key, and `default` restores Luna. See

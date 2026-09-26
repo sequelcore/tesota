@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { Editor, HStack, ScrollView, Text, VStack, matchesKey, truncateToWidth, visibleWidth,
   type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
-import type { AgentActivity } from "./integrations/pi-coding-session.js";
+import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
 import { backgroundText, bold, colorText, mutedText, tesotaShellTheme, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";

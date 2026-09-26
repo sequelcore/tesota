@@ -3,7 +3,8 @@ import { createSdkMcpServer, getSessionInfo, query, tool, type CanUseTool, type 
   type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import * as z from "zod";
-import { type AgentActivity, type CodingTurnResult, editChange, resultText, textOf, toolSubject } from "./pi-coding-session.js";
+import type { AgentActivity, TurnResult } from "./model-session-contract.js";
+import { editChange, resultText, textOf, toolSubject } from "./pi-coding-session.js";
 import { NO_TOKENS, type TokenUsage, addTokens } from "../token-usage.js";
 
 /**
@@ -36,14 +37,19 @@ export interface ClaudeCodeSessionOptions {
   readonly conversationId?: string;
 }
 
-/** The tokens a run used, by kind, over all the models it called, as Claude Code reported them. */
+/**
+ * The tokens a run used over all the models it called, as Claude Code
+ * reported them. Claude Code counts fresh input apart from the cache, so the
+ * cache's parts are added back into `input`.
+ */
 export function resultUsage(result: SDKResultMessage): TokenUsage {
-  return Object.values(result.modelUsage).reduce((total, usage) => addTokens(total, { input: usage.inputTokens,
-    output: usage.outputTokens, cacheRead: usage.cacheReadInputTokens, cacheWrite: usage.cacheCreationInputTokens }), NO_TOKENS);
+  return Object.values(result.modelUsage).reduce((total, usage) => addTokens(total, {
+    input: usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens, output: usage.outputTokens,
+    cacheRead: usage.cacheReadInputTokens, cacheCreation: usage.cacheCreationInputTokens }), NO_TOKENS);
 }
 
 /** How a run ended, from its result message; a run that stopped without one did not finish. */
-export function claudeCodeTurn(result: SDKResultMessage | undefined, cancelled: boolean): CodingTurnResult {
+export function claudeCodeTurn(result: SDKResultMessage | undefined, cancelled: boolean): TurnResult {
   if (cancelled) return { status: "cancelled" };
   if (result === undefined) return { status: "failed", reason: "Claude Code stopped without a result" };
   if (result.subtype === "success" && !result.is_error) return { status: "completed", reply: result.result.trim() };
@@ -154,7 +160,7 @@ export class ClaudeCodeSession {
   }
 
   /** Run one request to completion, cancellation or a confirmed failure. */
-  async run(request: string, signal: AbortSignal): Promise<CodingTurnResult> {
+  async run(request: string, signal: AbortSignal): Promise<TurnResult> {
     if (!this.#usable) throw new Error("Coding session unavailable");
     if (signal.aborted) return { status: "cancelled" };
     const abort = new AbortController();
