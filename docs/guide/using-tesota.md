@@ -85,8 +85,8 @@ Run `bun install`? [y]es, [a]lways this session, [n]o:
 ```
 
 Approved commands run with your permissions, files, network and credentials.
-They are not sandboxed. `Ctrl+C` stops the current request; changes made so
-far stay in the workspace.
+They are not sandboxed. `Esc` or `Ctrl+C` stops the current request; changes
+made so far stay in the workspace.
 
 The conversation shows your messages on a tinted background, the agent's
 replies as formatted text while it writes them, and each file it reads or
@@ -203,8 +203,11 @@ its workspace and conversation. If the session has unapplied changes, the
 first `Ctrl+W` warns and a second one within five seconds confirms. Stop
 running work with `Ctrl+C` first. Closing the last session opens a new one. At wide sizes, `Alt+S` shows a second session
 read-only. `Alt+,` and `Alt+.` browse earlier results.
-`Ctrl+Q` closes the shell. Sessions, their workspaces and their conversations
-are restored after a restart.
+As in Claude Code and Pi, `Ctrl+C` at an idle prompt clears what you typed,
+and pressed again within five seconds closes the shell; `Ctrl+D` on an empty
+prompt does the same, as does `/quit`. The session is never closed this way.
+Sessions, their workspaces and their conversations are restored after a
+restart.
 
 `tesota --theme tesota-light` or `--theme terminal` changes the appearance for
 one run.

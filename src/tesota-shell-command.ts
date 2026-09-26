@@ -17,7 +17,7 @@ import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore 
 import { runTesotaShell, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
   type WorkResult } from "./tesota-shell.js";
 import { inspectReview } from "./tesota-shell-inspection.js";
-import { createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
+import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
 import type { TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { UnsupportedSourceChange } from "./source-snapshot.js";
 import { Workspace, type WorkspaceSnapshot, type WorkspaceUpdate } from "./workspace.js";
@@ -87,8 +87,6 @@ function describePreparation(steps: readonly PreparationStep[]): string | undefi
     `${done.length > 0 ? `\nCompleted:\n${done}` : ""}\n${failed.output.trim()}`;
 }
 
-/** A second Ctrl+W within this time confirms closing a session that holds work. */
-const closeConfirmationMs = 5_000;
 
 function closeWarning(record: ShellSessionRecord, pending: number): string {
   if (record.blocked) {
@@ -404,7 +402,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const awaitingConfirmation = (id: string, record: ShellSessionRecord, pending: number): boolean => {
     if (pending === 0 && !record.blocked) return false;
     const warnedAt = closeWarnings.get(id);
-    if (warnedAt !== undefined && Date.now() - warnedAt <= closeConfirmationMs) {
+    if (warnedAt !== undefined && Date.now() - warnedAt <= CONFIRMATION_WINDOW_MS) {
       closeWarnings.delete(id);
       return false;
     }

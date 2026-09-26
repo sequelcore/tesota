@@ -101,6 +101,9 @@ const shellCommands = [
   { name: "quit", description: "Close Tesota" },
 ] as const;
 
+/** A second press within this time confirms a key that asks first: quitting, and closing a session that holds work. */
+export const CONFIRMATION_WINDOW_MS = 5_000;
+
 /** `Alt+1` to `Alt+9` select the session the rail numbers 1 to 9. */
 const numberedSessionKeys = ["alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9"] as const;
 
@@ -251,6 +254,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private timer: ReturnType<typeof setInterval> | undefined;
   private removeInputListener: (() => void) | undefined;
   private started = false;
+  /** The quit key pressed once, and when; a second press of it within the confirmation window quits. */
+  private quitArmed: Readonly<{ key: "Ctrl+C" | "Ctrl+D"; at: number }> | undefined;
 
   constructor(options: TesotaShellTerminalOptions) {
     this.tui = options.tui;
@@ -429,17 +434,13 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   private handleKey(data: string): { consume: true } | undefined {
-    if (matchesKey(data, "ctrl+c")) {
-      const session = this.selected();
-      if (session.pending === undefined) this.interrupt();
-      else this.cancelPrompt(session);
-      return { consume: true };
-    }
+    if (matchesKey(data, "ctrl+c")) { this.stopOrQuit("Ctrl+C"); return { consume: true }; }
     const menuInput = this.handleCommandMenuKey(data);
     if (menuInput !== undefined) return menuInput;
+    if (matchesKey(data, "escape") && this.stopWork()) return { consume: true };
+    if (matchesKey(data, "ctrl+d") && this.editor.getText().length === 0 && this.stopOrQuit("Ctrl+D")) return { consume: true };
     if (matchesKey(data, "ctrl+n")) { this.options.onNewSession?.(); return { consume: true }; }
     if (matchesKey(data, "ctrl+w")) { this.options.onCloseSession?.(this.selectedId); return { consume: true }; }
-    if (matchesKey(data, "ctrl+q")) { this.options.onQuit?.(); return { consume: true }; }
     if (this.handleSessionKey(data)) return { consume: true };
     if (matchesKey(data, "alt+r")) { this.showResult = !this.showResult; this.compose(); return { consume: true }; }
     if (matchesKey(data, "alt+b")) { this.sidebarVisible = !this.sidebarVisible; this.compose(); return { consume: true }; }
@@ -450,6 +451,40 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     }
     if (matchesKey(data, "alt+s")) { this.split = !this.split; this.compose(); return { consume: true }; }
     return undefined;
+  }
+
+  /**
+   * `Esc` and `Ctrl+C` stop the selected session's work: they cancel the
+   * question it is waiting on, or interrupt what is running. False when it is
+   * idle at its request prompt, or has ended, so there is nothing to stop.
+   */
+  private stopWork(): boolean {
+    const session = this.selected();
+    if (session.ended || session.blocked || session.pending !== undefined && session.prompt === "> ") return false;
+    if (session.pending === undefined) this.interrupt();
+    else this.cancelPrompt(session);
+    return true;
+  }
+
+  /**
+   * As in Claude Code, Pi and Gemini CLI: `Ctrl+C` stops work first; with
+   * nothing to stop it clears the input, and `Ctrl+D` works on an empty one.
+   * Either then quits when pressed again within the confirmation window. The
+   * session itself never ends this way. False when there was nothing to do.
+   */
+  private stopOrQuit(key: "Ctrl+C" | "Ctrl+D"): boolean {
+    if (key === "Ctrl+C" && this.stopWork()) return true;
+    if (key === "Ctrl+D" && this.selected().pending !== undefined && this.selected().prompt !== "> ") return false;
+    this.editor.setText("");
+    const now = this.now();
+    if (this.quitArmed?.key === key && now - this.quitArmed.at <= CONFIRMATION_WINDOW_MS) {
+      this.quitArmed = undefined;
+      this.options.onQuit?.();
+      return true;
+    }
+    this.quitArmed = { key, at: now };
+    this.refreshElapsed();
+    return true;
   }
 
   /** Next, previous or numbered session; true when `data` was one of those keys, even with no session at that number. */
@@ -647,7 +682,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const session = this.selected();
     const progress = session.progress;
     let text: string;
-    if (session.blocked) text = colorText("Unresolved effects. Inspect the workspace before new work.", this.theme.warning);
+    const quit = this.quitArmed;
+    if (quit !== undefined && this.now() - quit.at <= CONFIRMATION_WINDOW_MS) {
+      const working = [...this.sessions.values()].some((entry) => busy(entry.progress?.value));
+      text = working ? colorText(`Press ${quit.key} again to quit. Running work stops; its changes stay in the workspace.`,
+        this.theme.warning) : mutedText(`Press ${quit.key} again to quit. Sessions are restored next time.`, this.theme);
+    } else if (session.blocked) text = colorText("Unresolved effects. Inspect the workspace before new work.", this.theme.warning);
     else if (session.ended) text = mutedText("Session ended. Ctrl+N starts a new one; Ctrl+W closes this one.", this.theme);
     else if (session.pending !== undefined && session.prompt !== "> ") {
       text = bold(colorText(safeTerminalText(session.prompt.trim()), this.theme.warning));
@@ -706,8 +746,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       }
       case "help":
         this.writeTo(session.id, "Commands: /new /next /previous /close /result /sidebar /details [number] /help /quit\n" +
-          "Keys: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 session · Ctrl+W close · Alt+R result · " +
-          "Alt+B sidebar · Alt+D details · Alt+S split · Ctrl+Q quit");
+          "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
+          "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by number · Ctrl+W close\n" +
+          "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split");
         break;
       case "quit": this.options.onQuit?.(); break;
       default: this.writeTo(session.id, "Unknown command. Type / for commands or /help for shortcuts.", "warning");

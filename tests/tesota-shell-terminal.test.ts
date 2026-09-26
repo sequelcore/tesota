@@ -311,6 +311,64 @@ it("routes Ctrl+C to the active prompt or active operation and restores the term
   expect(terminal.started).toBe(false);
 });
 
+// As in Claude Code, Pi and Gemini CLI: Ctrl+C stops work or clears the input, and quits only when pressed again.
+it("clears the idle prompt with Ctrl+C and quits on a second press, never ending the session", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  let now = 0;
+  const onQuit = vi.fn();
+  const interrupt = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onQuit, interrupt, now: () => now });
+  shell.start();
+  let settled = false;
+  shell.askIn("default", "> ").then(() => { settled = true; }, () => { settled = true; });
+  terminal.send("draft");
+  terminal.send("\x03");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Press Ctrl+C again to quit");
+  terminal.writes.length = 0;
+  terminal.send("x");
+  tui.renderNow(true);
+  expect(visible(terminal)).not.toContain("draft");
+  terminal.send("\x7f");
+  now += 10_000; // Past the window, a press only arms the quit again.
+  terminal.send("\x03");
+  expect(onQuit).not.toHaveBeenCalled();
+  terminal.send("\x03");
+  expect(onQuit).toHaveBeenCalledOnce();
+  await Promise.resolve();
+  expect(settled).toBe(false); // The request prompt is still waiting: the session did not end.
+  expect(interrupt).not.toHaveBeenCalled();
+  shell.stop();
+});
+
+it("quits with Ctrl+D pressed twice on an empty prompt, stops work with Esc, and no longer quits with Ctrl+Q", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onQuit = vi.fn();
+  const interrupt = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onQuit, interrupt, now: () => 0 });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("\x1b"); // Esc while the agent works stops it, as Ctrl+C does.
+  expect(interrupt).toHaveBeenCalledOnce();
+  terminal.send("\x11"); // Ctrl+Q
+  shell.askIn("default", "> ").catch(() => undefined);
+  terminal.send("\x1b"); // Esc at the idle prompt neither stops nor quits anything.
+  expect(interrupt).toHaveBeenCalledOnce();
+  terminal.send("ab");
+  terminal.send("\x04"); // With text, Ctrl+D edits instead of quitting.
+  expect(onQuit).not.toHaveBeenCalled();
+  terminal.send("\x7f");
+  terminal.send("\x7f");
+  terminal.send("\x04");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Press Ctrl+D again to quit");
+  terminal.send("\x04");
+  expect(onQuit).toHaveBeenCalledOnce();
+  shell.stop();
+});
+
 it("reflows the persistent layout after terminal resize", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -391,7 +449,7 @@ it("moves back as well as forward between sessions, and jumps to the number the 
   terminal.send("\r");
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Alt+K previous");
-  expect(visible(terminal)).toContain("Alt+1…9 session");
+  expect(visible(terminal)).toContain("Alt+1…9 by number");
   terminal.send("/previous");
   terminal.send("\r");
   expect(selected.at(-1)).toBe("third");
