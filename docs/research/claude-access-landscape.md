@@ -89,8 +89,7 @@ harness must not use.
 
 Claude Code can also run in Anthropic's cloud: a **cloud session** clones a
 GitHub repository, or uploads a local one, and runs Claude Code on
-Anthropic's infrastructure against the subscription's limits. Pro accounts
-were offered time-limited cloud-session credit in September 2026. Read from
+Anthropic's infrastructure against the subscription's limits. Read from
 [Use Claude Code in the cloud](https://code.claude.com/docs/en/claude-code-on-the-web),
 [routines](https://code.claude.com/docs/en/routines) and
 [ultrareview](https://code.claude.com/docs/en/ultrareview) on 2026-09-26, to
