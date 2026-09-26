@@ -144,6 +144,59 @@ Luna, in about 40 s of review against Luna's 64 to 72 s, and about 1.4 times
 Luna's tokens, most of them cache reads. The `anthropic` route has not been
 exercised live.
 
+## Web access
+
+Decision 024; evidence in the
+[web access landscape](../research/web-access-landscape.md). The agent and
+explorers can search the web and read pages; reviewers, the refuter and the
+fix validator stay offline, because a page could steer the step that decides
+what reaches the operator, a finding based on a page cannot be checked
+against the code, and a review must give the same verdict on the same
+candidate later.
+
+- **Tools** (`src/integrations/web-tools.ts`). `web_search` returns titles,
+  addresses and snippets. The agent reads a page with `web_read`, giving an
+  address and a question: Tesota fetches the page, and a fresh session with
+  no tools, on the explorers' model when they are on and the agent's
+  otherwise, receives its text and answers with quotes; the agent receives
+  that answer, never the page. An explorer has `web_fetch`, which returns the
+  page's text to itself, since an explorer cannot write or run commands. Page
+  text therefore reaches only sessions that cannot act. The tools are
+  Tesota's own, so every engine has the same ones (decision 022).
+- **Search** (`src/web-search.ts`) sits behind one seam, first implemented
+  for a SearXNG instance the operator runs, named in `~/.tesota/web.json`;
+  without it, or with an unreadable file, search reports
+  `provider_not_configured`. Another provider is another implementation
+  behind the same tool.
+- **Authority.** A page is read only from a host the operator allowed: for
+  the session, for the repository in the same list the sandbox's network uses
+  (`host:443`), or when asked, with the same question and answers as a
+  refused sandbox destination; a refusal is remembered for the session. The
+  operator is asked **before** the host is looked up, because the lookup
+  itself would reveal the name. The order (a readable URL, then permission,
+  then a public address) is `webAdmission` in
+  `src/verification/web-admission.ts`, proved by `bun run formal:check`.
+- **Fetching** (`src/web-fetch.ts`) runs on the operator's machine, outside
+  any sandbox, so it refuses what could reach the operator's own network:
+  only `https` on the standard port (plain `http` is upgraded), no
+  credentials in the URL, and every resolved address public by IANA's
+  special-purpose ranges, IPv4 inside IPv6 included (`src/web-address.ts`).
+  The connection goes to the address that was checked, while TLS still
+  verifies the certificate for the host, so a public name cannot point
+  inside. Each redirect is a new destination with the same checks, at most
+  five. GET only, no cookies, 2 MB, 30 seconds, and only text: HTML converted
+  to text, plain text, Markdown and JSON.
+- **Failures are typed** and never read as an empty success: `url_refused`,
+  `destination_denied`, `address_refused`, `too_many_redirects`, `too_large`,
+  `unsupported_type`, `timeout`, `empty_page` and `fetch_failed` for pages,
+  `provider_not_configured` and `provider_failed` for search.
+- **Visible.** Each search and read shows in the conversation with its query
+  or address. The reader's tokens are not yet counted in the session.
+
+Pages that block automated requests, such as npm's, and pages that build
+their text with JavaScript give little or nothing; both engines' live runs
+met them.
+
 ## Why
 
 - **One writer.** Parallel writers fail in every report reviewed: each agent
@@ -181,46 +234,3 @@ exercised live.
 
 - An advisor, a stronger model the agent consults at hard decisions, once
   real use shows the agent stalling on decisions.
-
-### Web access
-
-Decision 024; evidence in the
-[web access landscape](../research/web-access-landscape.md). The agent and
-explorers can search the web and read pages; reviewers, the refuter and the
-fix validator stay offline, because a page could steer the step that decides
-what reaches the operator, a finding based on a page cannot be checked
-against the code, and a review must give the same verdict on the same
-candidate later.
-
-- **Tools.** `web_search` returns titles, URLs and snippets for a query. The
-  agent reads a page with `web_read`, giving a URL and a question: Tesota
-  fetches the page and a fresh read-only explorer session, with no tools,
-  receives its text and answers the question with quotes and the URL, which
-  the agent treats as a lead. An explorer has `web_fetch` instead, returning
-  the page's text to itself, since an explorer cannot write or run commands.
-  Page text therefore reaches only sessions that cannot act. The tools are
-  Tesota's own, so every engine has the same ones (decision 022).
-- **Search provider.** One seam behind `web_search`, first implemented for a
-  SearXNG instance the operator runs, reached at the URL in
-  `~/.tesota/web.json`; without it the tool reports `provider_not_configured`.
-  SearXNG must allow its JSON format. Another provider is another
-  implementation behind the same tool.
-- **Authority.** A page's host is fetched only when the operator allowed it:
-  for the session, or for the repository in the same list the sandbox's
-  network uses (`host:443`), or when asked in the moment, with the same
-  question and answers as a refused sandbox destination. Nothing is allowed by
-  default. The decision is a proved rule.
-- **Fetching** runs on the operator's machine, outside any sandbox, so it
-  refuses what could reach the operator's own network: only `https` (plain
-  `http` is upgraded), no credentials in the URL, and no loopback, private,
-  link-local or otherwise non-public address, checked on the resolved address
-  that is then connected to, so a public name cannot point inside. Each
-  redirect is a new destination with the same checks, at most five. GET
-  only, no cookies, a response limit of 2 MB and 30 seconds, and only text
-  types: HTML converted to text, plain text, Markdown and JSON.
-- **Failures are typed** and never read as an empty success:
-  `provider_not_configured`, `destination_denied`, `address_refused`,
-  `too_many_redirects`, `too_large`, `unsupported_type`, `timeout`,
-  `empty_page`, `provider_failed`.
-- **Visible.** Each search and read shows in the conversation with its query
-  or URL, and a read's explorer with its time and tokens, like any explorer.

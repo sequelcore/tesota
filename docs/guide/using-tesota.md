@@ -36,6 +36,37 @@ cost. On Pi's routes their conversations are saved in the workspace's
 `explorers` directory; on Claude Code they are not kept.
 `tesota models explorer off` turns them off again.
 
+The agent and explorers can **search the web and read pages** when you give
+Tesota a search provider. Run [SearXNG](https://docs.searxng.org/) on this
+computer, with its JSON format allowed in its `settings.yml`:
+
+```yaml
+use_default_settings: true
+server:
+  secret_key: "<a long random value>"
+  limiter: false
+search:
+  formats: [html, json]
+```
+
+```text
+docker run -d --name tesota-searxng --restart unless-stopped -p 127.0.0.1:8888:8080 -v <folder with settings.yml>:/etc/searxng searxng/searxng
+```
+
+and name it in `~/.tesota/web.json`: `{ "searxng": "http://127.0.0.1:8888" }`.
+Before a page is read from a site you have not allowed, Tesota asks, as for
+the sandbox's network:
+
+```text
+Read pages from docs.example.com? [y]es this session, [a]lways for this repository, [n]o:
+```
+
+Only `https` pages at public addresses are read, never a site on your own
+network. The agent never sees a page itself: a separate reader with no tools
+reads it and answers the agent's question, so a page cannot make the agent
+act. Reviews never use the web. Sites that block automated requests, such as
+npm's, and pages built with JavaScript give little text.
+
 Commands run in a **sandbox** when Docker Sandboxes is set up, and on **this
 computer** otherwise, where each one asks you first. There is no mode to
 switch: `tesota setup` decides it, and the agent's edits always go to its own

@@ -11,7 +11,10 @@ import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent 
 import type { ModelSession } from "./integrations/model-session-contract.js";
 import { EXPLORERS_OFF, type ModelRole, readModelChoices } from "./model-roles.js";
 import { currentBranch } from "./repository-git.js";
-import { askExplorer } from "./integrations/pi-explorer.js";
+import { askExplorer, askPageReader } from "./integrations/pi-explorer.js";
+import type { WebAccess } from "./integrations/web-tools.js";
+import { fetchPage, pinnedGet, resolveHost } from "./web-fetch.js";
+import { readWebSearch, type WebSearch } from "./web-search.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
@@ -124,6 +127,9 @@ class SessionState {
   coding: Promise<ModelSession> | undefined;
   /** The agent's read-only explorers (decision 019); absent when explorers are off. */
   explorers: ExplorerPool | undefined;
+  /** Sites the operator allowed or refused for this session's page reading (decision 024). */
+  readonly webAllowed: Set<string> = new Set();
+  readonly webDenied: Set<string> = new Set();
   reviewed: WorkspaceSnapshot | undefined;
   /** Context the agent needs with the next request, such as a rejected change. */
   note: string | undefined;
@@ -345,6 +351,39 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       return applyRefutation(reports, undefined);
     }
   };
+  /**
+   * A session's web access (decision 024): each site is allowed for the
+   * session or the repository, in the list the sandbox's network uses, or
+   * refused, with the same question; the page reader runs on the explorers'
+   * model when they are on, and the agent's otherwise.
+   */
+  const webFor = (id: string): WebAccess => {
+    const state = stateFor(id);
+    const permit = async (host: string): Promise<"allowed" | "denied"> => {
+      const destination = `${host}:443`;
+      if (state.webAllowed.has(host) || store.allowedNetwork().includes(destination)) return "allowed";
+      if (state.webDenied.has(host)) return "denied";
+      surface.reportFor(id, { phase: "awaiting_command" });
+      const answer = await surface.askIn(id, `Read pages from ${host}? [y]es this session, [a]lways for this repository, [n]o: `);
+      surface.reportFor(id, { phase: "working" });
+      const decision = parseNetworkDecision(answer);
+      if (decision === "deny") { state.webDenied.add(host); return "denied"; }
+      if (decision === "repository") store.allowNetwork([destination]);
+      state.webAllowed.add(host);
+      return "allowed";
+    };
+    let search: WebSearch;
+    try { search = readWebSearch(); } catch (error) {
+      const detail = error instanceof Error ? error.message : "~/.tesota/web.json cannot be read";
+      search = { search: async () => ({ status: "failed", error: "provider_not_configured", detail }) };
+    }
+    return {
+      search,
+      fetch: (url, signal) => fetchPage(url, { permit, resolve: resolveHost, get: pinnedGet }, signal),
+      read: async (page, question, signal) => askPageReader({ target: await openModel(signal,
+        readModelChoices().explorer === EXPLORERS_OFF ? "agent" : "explorer") }, page, question, signal),
+    };
+  };
   const codingFor = (id: string, signal: AbortSignal): Promise<ModelSession> => {
     const state = stateFor(id);
     state.coding ??= (async () => {
@@ -359,17 +398,18 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const sessionManager = existing === undefined
         ? SessionManager.create(workspace.checkout, piSessionsDirectory, { id: engineId })
         : SessionManager.open(existing, piSessionsDirectory, workspace.checkout);
+      const web = webFor(id);
       // Whether explorers are on is decided when the agent starts; which model they use, when each one starts.
       const explorers = readModelChoices().explorer === EXPLORERS_OFF ? undefined
         : new ExplorerPool(async (brief, explorerSignal, onLine, onUsage) => {
-          return askExplorer({ target: await openModel(explorerSignal, "explorer"), onUsage,
+          return askExplorer({ target: await openModel(explorerSignal, "explorer"), onUsage, web,
             // Saved beside the checkout, where the agent's tools cannot reach, for the operator to read.
             sessionManager: SessionManager.create(workspace.checkout, join(workspace.directory, "explorers")),
             onActivity: (activity) => { if (activity.type === "tool_started") onLine(`${activity.tool} ${activity.subject}`.trim()); } },
           workspace.checkout, brief, explorerSignal);
         });
       state.explorers = explorers;
-      return startWorkingAgent({ target }, { cwd: workspace.checkout, environment,
+      return startWorkingAgent({ target }, { cwd: workspace.checkout, environment, web,
         ...(explorers === undefined ? {} : { explorers }),
         sandboxed: confinesCommands(environment.guarantees),
         approveCommand: async (command) => {

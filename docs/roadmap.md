@@ -39,9 +39,10 @@ The operator is adding further Tesota features before using it on a real
 project. They are listed here as they are chosen.
 
 - **Web access** for the agent and explorers (decision 024,
-  [design](design/agents.md#web-access)), built by Tesota itself on its own
-  repository as its first real change, then reviewed from outside it
-  before it is applied.
+  [design](design/agents.md#web-access)): built 2026-09-26, so Tesota can
+  research what the features after it need.
+- **Switching the agent's model in a session, and handing off** to a fresh
+  conversation (decision 026, planned).
 
 ### 2. Measurement on public benchmarks
 
