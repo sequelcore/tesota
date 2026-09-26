@@ -1,9 +1,11 @@
 # Agent delegation landscape (September 2026)
 
 How current agents let a working agent hand parts of its task to sub-agents,
-what studies say about when that helps, and what it implies for a harness
-that owns authority, evidence and acceptance. Researched on 2026-09-25 from
-the source of cloned projects, vendor documentation and three studies. It
+what studies and practitioners say about when that helps, what users ask for,
+and what it implies for a harness that owns authority, evidence and
+acceptance. Researched on 2026-09-25 from the source of cloned projects,
+vendor documentation, three studies, practitioner writing and the issue
+trackers of Claude Code, Codex, opencode and Pi. It
 informs a future Tesota decision; no decision is recorded yet. Product
 behavior changes quickly; recheck a claim before relying on it.
 
@@ -53,6 +55,82 @@ behavior changes quickly; recheck a claim before relying on it.
   is already strong. A predictive model chose the best architecture for 87% of
   held-out configurations.
 
+## What practitioners say
+
+**For:**
+
+- Simon Willison ([Subagents, Agentic Engineering Patterns](https://simonwillison.net/guides/agentic-engineering-patterns/subagents/)):
+  the main value is "preserving that valuable root context and managing
+  token-heavy operations", with parallel sub-agents on faster and cheaper
+  models. He warns against going "overboard" with dozens of specialists: the
+  root agent "is perfectly capable of debugging or reviewing its own output
+  provided it has the tokens to spare".
+- "Six months of writing code exclusively with agents" ([exe.dev](https://blog.exe.dev/engineering-with-ai),
+  [discussion](https://news.ycombinator.com/item?id=49465119), 2026): "Having
+  other agents review the code worked surprisingly well. They occasionally
+  caught real bugs." Parallel agents came from filling waiting time.
+- Commenters on Pi's announcement ([discussion](https://news.ycombinator.com/item?id=46844822))
+  value sub-agents for moving work to smaller models and for a separate,
+  cheaper context.
+
+**Against:**
+
+- Mario Zechner, Pi's author ([2025-11-30](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/)),
+  left sub-agents out of Pi: "You have zero visibility into what that
+  sub-agent does. It's a black box within a black box. Context transfer
+  between agents is also poor." "Using a sub-agent mid-session for context
+  gathering is a sign you didn't plan ahead. If you need to gather context,
+  do that first in its own session." "Spawning multiple sub-agents to
+  implement various features in parallel is an anti-pattern in my book."
+  Pi users added it back as extensions (`pi-subagents`, `pi-tmux`).
+- In the same exe.dev discussion, people running several agents at once
+  report exhaustion and "review fatigue" from "a tsunami of pretty good code".
+
+## What users ask for
+
+Issues whose titles mention sub-agents, read 2026-09-25; they show demand and
+defects, not how common each is.
+
+| Need | Examples |
+| --- | --- |
+| Choose a cheaper model or effort per sub-agent | Claude Code [#43083](https://github.com/anthropics/claude-code/issues/43083), [#38698](https://github.com/anthropics/claude-code/issues/38698), [#43869](https://github.com/anthropics/claude-code/issues/43869); Codex [#14039](https://github.com/openai/codex/issues/14039), [#31814](https://github.com/openai/codex/issues/31814), [#40858](https://github.com/openai/codex/issues/40858); opencode [#6651](https://github.com/anomalyco/opencode/issues/6651); Pi [#8970](https://github.com/earendil-works/pi/issues/8970) |
+| Know and bound the cost | Codex [#9748](https://github.com/openai/codex/issues/9748): about six concurrent sub-agents drained a Pro plan's five-hour quota; opencode [#11027](https://github.com/anomalyco/opencode/issues/11027) and [#45417](https://github.com/anomalyco/opencode/issues/45417): session cost excludes sub-agents |
+| Permissions that behave like the parent's | Claude Code [#18950](https://github.com/anthropics/claude-code/issues/18950): user-level allow rules not inherited; opencode [#13715](https://github.com/anomalyco/opencode/issues/13715): permission asks from nested sub-agents hang |
+| Tools and access scoped per sub-agent | Claude Code [#6915](https://github.com/anthropics/claude-code/issues/6915), [#6587](https://github.com/anthropics/claude-code/issues/6587), [#12633](https://github.com/anthropics/claude-code/issues/12633) |
+| A working directory or worktree per sub-agent | Claude Code [#12748](https://github.com/anthropics/claude-code/issues/12748) |
+| Limits on depth and parallelism | opencode [#18100](https://github.com/anomalyco/opencode/issues/18100) (unbounded recursion), [#27110](https://github.com/anomalyco/opencode/issues/27110); Pi [#8195](https://github.com/earendil-works/pi/issues/8195) |
+| Reliability | opencode [#11865](https://github.com/anomalyco/opencode/issues/11865): sub-agents stuck without timeout; [#37852](https://github.com/anomalyco/opencode/issues/37852): an aborted stream recorded as a clean stop |
+| Visibility and control | Codex [#32283](https://github.com/openai/codex/issues/32283): the panel stopped showing each agent's model; opencode [#27511](https://github.com/anomalyco/opencode/issues/27511): suspend and resume; Codex [#16996](https://github.com/openai/codex/issues/16996): repository instructions and session policy disagree on whether delegation is allowed |
+
+## Synthesis
+
+Where the two sides agree:
+
+- **Delegation is for context, not for more hands.** Supporters value a
+  fresh context for token-heavy reading; critics object to parallel writing.
+  Neither defends several agents editing one change.
+- **Review by another agent works.** Cognition, the exe.dev report and
+  Tesota's own evaluation agree; it is the one multi-agent pattern with
+  measured value in coding.
+- **Invisible work is the core complaint.** Zechner's "black box" and the
+  requests for panels, costs and models describe the same gap.
+
+Where they disagree, and why:
+
+- **Built in, or left to separate sessions.** Claude Code, Codex and opencode
+  build it in; Pi leaves it to extensions and to running separate sessions,
+  and argues that context gathering belongs before the task, not inside it.
+  The disagreement is about when context is gathered, not about whether a
+  fresh context helps.
+- **Specialist sub-agents.** Vendors ship named roles; Willison and Zechner
+  both say the main agent can usually do the work itself if it has the
+  context to spare.
+
+What users actually need, beyond having the feature: a bounded cost they can
+see, permissions that match the parent's and never hang, per-helper tools and
+models, limits on depth and fan-out, timeouts, and a visible record of what
+each helper did. Most open issues are about these, not about capability.
+
 ## Patterns
 
 1. **Delegation buys a fresh context, not more intelligence.** Every system
@@ -95,6 +173,14 @@ Inferences for a future decision, not measured results:
 - Whether delegation improves Tesota's results on repository tasks is not
   known; it needs an evaluation against the single agent before adoption, as
   decision 016's rule requires.
+- Pi's position suggests a Tesota-shaped alternative worth comparing:
+  context gathering as a visible step of its own, a separate read-only
+  session the operator can inspect, rather than an invisible call inside the
+  agent's turn.
+- The users' list is a checklist for any version: cost counted and shown per
+  helper, permissions no wider than the agent's and questions that reach the
+  operator, per-helper model choice, depth 1, a fan-out limit, timeouts, and a
+  transcript the operator can open.
 
 ## Coverage and limits
 
@@ -103,4 +189,6 @@ are older than Codex and Gentle AI (2026-09-25); their current behavior may
 differ. Kiln's own source was not inspected, only its evaluation document.
 Cursor, Gemini CLI and Qwen Code sub-agents were not examined. The studies
 measure research, planning and benchmark tasks, not coding in a harness like
-Tesota's.
+Tesota's. Community evidence is opinion and issue reports, not measurement;
+Reddit threads were not reachable as primary sources, and forum summaries
+found by search were not used as evidence.
