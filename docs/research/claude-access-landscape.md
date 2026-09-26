@@ -85,6 +85,41 @@ at $2 and $10, Claude Fable 5.1 at $10 and $50 and Claude Haiku 4.5 at $1 and
 $5. The same provider also offers the claude.ai OAuth flow above, which a
 harness must not use.
 
+## Cloud sessions (added 2026-09-26)
+
+Claude Code can also run in Anthropic's cloud: a **cloud session** clones a
+GitHub repository, or uploads a local one, and runs Claude Code on
+Anthropic's infrastructure against the subscription's limits. Pro accounts
+were offered time-limited cloud-session credit in September 2026. Read from
+[Use Claude Code in the cloud](https://code.claude.com/docs/en/claude-code-on-the-web),
+[routines](https://code.claude.com/docs/en/routines) and
+[ultrareview](https://code.claude.com/docs/en/ultrareview) on 2026-09-26, to
+see whether Tesota could run a role or a task there:
+
+- **A program can start one, but not read its result.** `claude --cloud
+  "<task>"` creates a session; `claude -p "<message>" --cloud <id>` queues a
+  follow-up and exits without waiting for a reply, printing only the session
+  ID and link; a routine's API trigger, an experimental beta, likewise
+  returns a session ID and link. A session comes back to a terminal only
+  through `--teleport`, which is interactive. The Agent SDK's types mention a
+  client relaying a cloud session, but no documented interface exposes it.
+  Only ultrareview has a blocking command, `claude ultrareview`, which prints
+  its own findings.
+- **Its tools and settings are the cloud environment's.** A cloud session
+  uses Claude Code's own tools, the repository's instructions and a
+  permission mode chosen in its interface; a harness cannot give it only
+  its own tools or apply its own approvals.
+- **The code leaves the machine.** A local repository is uploaded with its
+  full history and uncommitted changes to tracked files; on macOS, Linux and
+  WSL, files named like credentials are left out.
+
+A cloud session therefore cannot keep Tesota's engine contract (decision
+022) and is not an engine. A harness could at most hand a whole task to one,
+fetch the branch it pushes to GitHub, and verify and review the result
+itself; nothing documented signals when the session has finished, and it
+suits only code that may leave the machine. Not adopted: no current need,
+and Tesota's first real repository must stay local.
+
 ## Patterns
 
 1. **A harness never holds subscription credentials.** Everything consistent
