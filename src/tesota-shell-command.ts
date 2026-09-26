@@ -10,6 +10,7 @@ import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent } from "./integrations/model-session.js";
 import type { ModelSession } from "./integrations/model-session-contract.js";
 import { EXPLORERS_OFF, type ModelRole, readModelChoices } from "./model-roles.js";
+import { currentBranch } from "./repository-git.js";
 import { askExplorer } from "./integrations/pi-explorer.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
@@ -193,12 +194,16 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       store.markActive(sessionId, false);
     }
   };
+  const showAgentModel = (id: string): void => {
+    try { surface.setSessionModel(id, readModelChoices().agent); } catch { /* the agent reports an unreadable choice when it opens */ }
+  };
   const surface = createTesotaShellTerminal({ cwd, tui, interrupt, theme,
     initialSession: initial, onEntry: (id, entry) => { store.append(id, entry); },
     onInspection: (id, inspection) => { store.inspect(id, inspection); },
     onNewSession: () => {
       const session = store.create();
       surface.addSession(session.id, session.title);
+      showAgentModel(session.id);
       surface.selectSession(session.id);
       workspaceCallbacks?.newSession(session.id);
     },
@@ -207,6 +212,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onQuit: () => { workspaceCallbacks?.quit(); } });
   for (const session of savedSessions.slice(1)) surface.addSession(session.id, session.title,
     session.entries, session.inspections);
+  for (const session of savedSessions) showAgentModel(session.id);
+  surface.setBranch(currentBranch(cwd));
   for (const session of savedSessions) {
     if (session.interrupted) {
       surface.writeTo(session.id, "The previous shell stopped during work. Pending changes stay in the workspace.");
@@ -342,7 +349,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     state.coding ??= (async () => {
       const workspace = await workspaceFor(id);
       const environment = await environmentFor(id);
-      const target = await openModel(signal, "agent");
+      // The footer names the model this session's agent actually opened with.
+      const choice = readModelChoices().agent;
+      surface.setSessionModel(id, choice);
+      const target = await openModelTarget(choice, signal);
       const engineId = saved(id)?.engineId ?? store.rotateEngine(id);
       const existing = SessionManager.findById(workspace.checkout, engineId, piSessionsDirectory);
       const sessionManager = existing === undefined
@@ -442,6 +452,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     if (store.list().length === 1) {
       const replacement = store.create();
       surface.addSession(replacement.id, replacement.title);
+      showAgentModel(replacement.id);
       workspaceCallbacks?.newSession(replacement.id);
     }
     workspaceCallbacks?.closed(id);
@@ -480,6 +491,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       });
     },
     work: (request, origin = "operator") => runOperation(id, async (signal): Promise<WorkResult> => {
+      surface.setBranch(currentBranch(cwd));
       try {
         const coding = await codingFor(id, signal);
         const state = stateFor(id);

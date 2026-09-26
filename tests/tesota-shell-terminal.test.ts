@@ -369,6 +369,50 @@ it("quits with Ctrl+D pressed twice on an empty prompt, stops work with Esc, and
   shell.stop();
 });
 
+// A command the operator approves must be readable whole: a hidden tail could be the dangerous part.
+const longCommand = "git status --short; git log --oneline -5; find src tests -type f | sort; cat package.json; " +
+  "ls docs docs/guide docs/design; rm -rf node_modules/.cache --verbose-final-marker";
+
+it("shows an approval question whole, however long, with its answers", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 70;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  shell.askIn("default", `Run \`${longCommand}\`? [y]es, [a]lways this session, [n]o: `).catch(() => undefined);
+  tui.renderNow(true);
+  const screen = visible(terminal);
+  expect(screen).toContain("--verbose-final-marker`?");
+  expect(screen).toContain("[n]o");
+  shell.stop();
+});
+
+it("shows a command the agent runs whole in the conversation", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 70;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  shell.showActivity("default", { type: "tool_started", call: "c1", tool: "bash", subject: longCommand });
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("--verbose-final-marker");
+  shell.stop();
+});
+
+it("names the branch and the session's agent model in the footer, as other harnesses do", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 120;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.setMode("supervised: commands ask for approval");
+  shell.setBranch("dev");
+  shell.setSessionModel("default", "claude-code:opus");
+  shell.start();
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("supervised · tesota (dev) · Session 1 · claude-code:opus");
+  shell.stop();
+});
+
 it("reflows the persistent layout after terminal resize", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });

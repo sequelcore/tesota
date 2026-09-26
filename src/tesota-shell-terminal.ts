@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { Editor, HStack, ScrollView, Text, VStack, matchesKey, truncateToWidth, visibleWidth,
+import { Editor, HStack, ScrollView, Text, VStack, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi,
   type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
@@ -48,6 +48,10 @@ export interface TesotaShellTerminal {
   showActivity(id: string, activity: AgentActivity): void;
   /** Name how sessions run, such as autonomous in a sandbox, in the footer. */
   setMode(label: string): void;
+  /** The source repository's branch, shown in the footer; undefined when Git cannot say. */
+  setBranch(branch: string | undefined): void;
+  /** The model the session's agent runs, as `route:model`, shown in the footer while it is selected. */
+  setSessionModel(id: string, model: string): void;
   blockSession(id: string): void;
   endSession(id: string): void;
   /** Remove a session from the workspace; its pending prompt fails with a closed error. */
@@ -83,6 +87,8 @@ interface SessionView {
   unread: boolean;
   blocked: boolean;
   ended: boolean;
+  /** The model the session's agent runs, once known. */
+  model?: string;
 }
 
 const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -164,12 +170,19 @@ class CommandMenu implements Component {
 
 function ignoreInterrupt(): void {}
 
-/** A single row that is cut to the width instead of wrapping, so chrome never pushes the conversation. */
+/**
+ * A row cut to the width, so chrome never pushes the conversation; or, when
+ * `whole`, wrapped over as many rows as it needs, for text the operator must
+ * read in full, such as a command waiting for approval.
+ */
 class Line implements Component {
   #text = "";
-  setText(text: string): void { this.#text = text; }
+  #whole = false;
+  setText(text: string, whole = false): void { this.#text = text; this.#whole = whole; }
   invalidate(): void {}
-  render(width: number): string[] { return [truncateToWidth(` ${this.#text}`, width)]; }
+  render(width: number): string[] {
+    return this.#whole ? wrapTextWithAnsi(` ${this.#text}`, width) : [truncateToWidth(` ${this.#text}`, width)];
+  }
 }
 
 /** One repository's sessions, with each session's current need visible at a glance. */
@@ -246,6 +259,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private split = false;
   private sidebarVisible = true;
   private mode = "";
+  /** The source repository's branch, where results are applied. */
+  private branch: string | undefined;
   private frame = 0;
   private readonly sidebar: SessionRail;
   private readonly sidebarScroll: ScrollView;
@@ -368,8 +383,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.sidebarScroll.updateLayout(rows.length, this.tui.terminal.rows, () => this.tui.requestRender());
     const mode = this.mode.startsWith("autonomous") ? "autonomous" :
       this.mode.startsWith("supervised") ? "supervised" : this.mode;
-    this.footer.setText(mutedText([mode, safeTerminalText(basename(this.options.cwd)),
-      safeTerminalText(this.selected().title)].filter(Boolean).join(" · "), this.theme));
+    const directory = safeTerminalText(basename(this.options.cwd)) +
+      (this.branch === undefined ? "" : ` (${safeTerminalText(this.branch)})`);
+    const model = this.selected().model;
+    this.footer.setText(mutedText([mode, directory, safeTerminalText(this.selected().title),
+      model === undefined ? "" : safeTerminalText(model)].filter(Boolean).join(" · "), this.theme));
   }
 
   private updateResult(session: SessionView): void {
@@ -592,6 +610,18 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.refreshElapsed();
   }
 
+  setBranch(branch: string | undefined): void {
+    this.branch = branch;
+    if (this.started) this.compose();
+  }
+
+  setSessionModel(id: string, model: string): void {
+    const session = this.sessions.get(id);
+    if (session === undefined) return;
+    session.model = model;
+    if (this.started && id === this.selectedId) this.compose();
+  }
+
   setMode(label: string): void {
     this.mode = label;
     this.updateSidebar();
@@ -689,6 +719,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const session = this.selected();
     const progress = session.progress;
     let text: string;
+    let whole = false;
     const quit = this.quitArmed;
     if (quit !== undefined && this.now() - quit.at <= CONFIRMATION_WINDOW_MS) {
       const working = [...this.sessions.values()].some((entry) => busy(entry.progress?.value));
@@ -698,13 +729,14 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     else if (session.ended) text = mutedText("Session ended. Ctrl+N starts a new one; Ctrl+W closes this one.", this.theme);
     else if (session.pending !== undefined && session.prompt !== "> ") {
       text = bold(colorText(safeTerminalText(session.prompt.trim()), this.theme.warning));
+      whole = true;
     } else if (progress !== undefined) {
       const elapsed = Math.max(0, Math.floor((this.now() - progress.startedAt) / 1_000));
       const spinner = busy(progress.value) ? `${colorText(spinnerFrames[this.frame] ?? "", this.theme.accent)} ` : "";
       const label = safeTerminalText(tesotaShellProgressLabel(progress.value));
       text = `${spinner}${colorText(label, this.theme.accent)} ${mutedText(`· ${elapsed}s`, this.theme)}`;
     } else text = mutedText("Ready", this.theme);
-    this.status.setText(text);
+    this.status.setText(text, whole);
     this.tui.terminal.setProgress(!session.blocked && busy(progress?.value));
   }
 

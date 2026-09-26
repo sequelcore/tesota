@@ -1,5 +1,5 @@
 import { highlightCode } from "@earendil-works/pi-coding-agent";
-import { Box, Container, Markdown, Spacer, Text, truncateToWidth, type Component,
+import { Box, Container, Markdown, Spacer, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component,
   type MarkdownTheme } from "@earendil-works/pi-tui";
 import type { AgentActivity, AgentChange } from "./integrations/model-session-contract.js";
 import { backgroundText, bold, colorText, mutedText, type TesotaShellTheme } from "./tesota-shell-theme.js";
@@ -83,10 +83,14 @@ class ToolBlock implements Component {
       this.#state === "stopped" ? this.theme.warning : this.theme.accent;
     const name = toolNames[this.tool] ?? this.tool;
     const counts = this.#change === undefined ? "" : ` (+${this.#change.added} −${this.#change.removed})`;
-    const head = ` ${colorText("•", color)} ${bold(name)} ${mutedText(safeTerminalText(this.subject), this.theme)}` +
-      colorText(counts, this.theme.success) +
-      (this.#state === "stopped" ? mutedText(" (stopped)", this.theme) : "");
-    const lines = [truncateToWidth(head, width)];
+    const lead = ` ${colorText("•", color)} ${bold(name)} `;
+    const tail = colorText(counts, this.theme.success) + (this.#state === "stopped" ? mutedText(" (stopped)", this.theme) : "");
+    const subject = mutedText(safeTerminalText(this.subject), this.theme);
+    // A command is shown whole, its continuation under its first word; any other subject, a path, fits one row.
+    const indent = visibleWidth(lead);
+    const lines = this.tool === "bash" && width > indent + 10
+      ? wrapTextWithAnsi(subject + tail, width - indent).map((row, index) => `${index === 0 ? lead : " ".repeat(indent)}${row}`)
+      : [truncateToWidth(lead + subject + tail, width)];
     if (this.#change !== undefined) {
       for (const line of this.#change.lines) {
         const color = line.startsWith("+") ? this.theme.success : line.startsWith("-") ? this.theme.error : this.theme.accent;

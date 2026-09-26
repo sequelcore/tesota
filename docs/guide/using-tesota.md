@@ -192,7 +192,12 @@ The left sidebar names the repository and numbers each session with its
 state, such as `needs you`, `working`, or `idle`; the selected session is
 highlighted, and a state that needs you is in the warning color. It hides automatically on narrow terminals;
 `Alt+B` hides or shows it when there is room. The line below the prompt shows
-the mode, repository and selected session. Type `/` at the normal request prompt to see a
+the mode, the repository with its current branch, the selected session and the
+model its agent runs, such as `supervised · tesota (dev) · Session 4 ·
+claude-code:opus`; supervised means commands run on this computer and ask
+first. A question above the prompt, such as a command waiting for your
+approval, is always shown whole, over as many lines as it needs, and so is
+each command the agent runs. Type `/` at the normal request prompt to see a
 command menu above the input; the selected row is highlighted. Use arrow keys to
 choose and Enter to run a command, or `/help` for commands and keyboard shortcuts. These commands stay
 in the shell and do not become agent requests. `Ctrl+N` starts a new session;

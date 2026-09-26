@@ -72,6 +72,14 @@ export function runRepositoryGit(cwd: string, args: readonly string[], extra: Re
   return result.stdout;
 }
 
+/** The branch checked out in `cwd`, or its short commit when detached; undefined when Git cannot say. */
+export function currentBranch(cwd: string): string | undefined {
+  try {
+    const branch = runRepositoryGit(cwd, ["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+    return branch === "HEAD" ? runRepositoryGit(cwd, ["rev-parse", "--short", "HEAD"]).trim() : branch;
+  } catch { return undefined; }
+}
+
 /** Preserve exact blob bytes for callers that perform their own bounded decoding. */
 export function runRepositoryGitBytes(cwd: string, args: readonly string[], extra: RepositoryGitEnvironment = {}): Buffer {
   const source = resolve(cwd);
