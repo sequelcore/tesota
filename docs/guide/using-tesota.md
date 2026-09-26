@@ -188,14 +188,16 @@ not show the change does what you asked; read the diff.
 
 ## Sessions and appearance
 
-The left sidebar names the repository and shows each session's state, such as
-`needs you`, `working`, or `idle`. It hides automatically on narrow terminals;
+The left sidebar names the repository and numbers each session with its
+state, such as `needs you`, `working`, or `idle`. It hides automatically on narrow terminals;
 `Alt+B` hides or shows it when there is room. The line below the prompt shows
 the mode, repository and selected session. Type `/` at the normal request prompt to see a
 command menu above the input; the selected row is highlighted. Use arrow keys to
 choose and Enter to run a command, or `/help` for commands and keyboard shortcuts. These commands stay
 in the shell and do not become agent requests. `Ctrl+N` starts a new session;
-`Alt+J` (or `Ctrl+Tab`) selects the next. `Ctrl+W` closes the selected session and removes
+`Alt+J` selects the next and `Alt+K` the previous, and `Alt+1` to `Alt+9` the
+session with that number. `Ctrl+Tab` also selects the next where the terminal
+passes it on; Windows Terminal keeps it for its own tabs. `Ctrl+W` closes the selected session and removes
 its workspace and conversation. If the session has unapplied changes, the
 first `Ctrl+W` warns and a second one within five seconds confirms. Stop
 running work with `Ctrl+C` first. Closing the last session opens a new one. At wide sizes, `Alt+S` shows a second session

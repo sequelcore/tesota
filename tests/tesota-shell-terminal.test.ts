@@ -363,6 +363,36 @@ it("keeps input and decisions attached to the selected session", async () => {
   shell.stop();
 });
 
+it("moves back as well as forward between sessions, and jumps to the number the rail shows", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 110;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const selected: string[] = [];
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onSessionChange: (id) => { selected.push(id); } });
+  shell.addSession("second", "Session 2");
+  shell.addSession("third", "Session 3");
+  shell.start();
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("1 ● Session 1");
+  expect(visible(terminal)).toContain("3 ● Session 3");
+  terminal.send("\x1bk"); // Alt+K: the previous session, wrapping from the first to the last.
+  terminal.send("\x1b2"); // Alt+2
+  terminal.send("\x1b9"); // No ninth session: nothing changes.
+  terminal.send("\x1bj");
+  terminal.send("\x1b1");
+  expect(selected).toEqual(["third", "second", "third", "default"]);
+  shell.askIn("default", "> ").catch(() => undefined);
+  terminal.send("/help");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Alt+K previous");
+  expect(visible(terminal)).toContain("Alt+1…9 session");
+  terminal.send("/previous");
+  terminal.send("\r");
+  expect(selected.at(-1)).toBe("third");
+  shell.stop();
+});
+
 it("shows session needs in a rail that can be hidden and collapses on narrow terminals", () => {
   const terminal = new TestTerminal();
   terminal.columns = 110;

@@ -92,6 +92,7 @@ const sidebarMinWidth = 88;
 const shellCommands = [
   { name: "new", description: "Start a session" },
   { name: "next", description: "Switch to the next session" },
+  { name: "previous", description: "Switch to the previous session" },
   { name: "close", description: "Close this session" },
   { name: "result", description: "Show or hide the review" },
   { name: "sidebar", description: "Show or hide sessions" },
@@ -99,6 +100,14 @@ const shellCommands = [
   { name: "help", description: "Show commands and shortcuts" },
   { name: "quit", description: "Close Tesota" },
 ] as const;
+
+/** `Alt+1` to `Alt+9` select the session the rail numbers 1 to 9. */
+const numberedSessionKeys = ["alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9"] as const;
+
+/** The session `step` places from `current` in the rail's order, wrapping around at either end. */
+export function sessionBeside(ids: readonly string[], current: string, step: 1 | -1): string {
+  return ids[(ids.indexOf(current) + step + ids.length) % ids.length] ?? current;
+}
 
 /** A compact command picker above the prompt, with a full-width selected row. */
 class CommandMenu implements Component {
@@ -311,14 +320,16 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   private updateSidebar(): void {
     const rows = [bold(colorText(safeTerminalText(basename(this.options.cwd)), this.theme.accent)), ""];
-    for (const session of this.sessions.values()) {
+    for (const [index, session] of [...this.sessions.values()].entries()) {
       const attention = this.attention(session);
       const selected = session.id === this.selectedId;
       const color = attention === "needs you" || attention === "unresolved" ? this.theme.warning :
         attention === "working" || attention === "preparing" || selected ? this.theme.accent : this.theme.muted;
       const dot = colorText("●", color);
       const title = safeTerminalText(session.title);
-      rows.push(`  ${dot} ` +
+      // Numbered as Alt+1 to Alt+9 select them; later sessions are reached with Alt+J and Alt+K.
+      const number = index < numberedSessionKeys.length ? String(index + 1).padStart(2) : "  ";
+      rows.push(`${mutedText(number, this.theme)} ${dot} ` +
         `${selected ? bold(title) : mutedText(title, this.theme)}`);
       rows.push(mutedText(`    ${attention || "idle"}`, this.theme));
     }
@@ -408,11 +419,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (matchesKey(data, "ctrl+n")) { this.options.onNewSession?.(); return { consume: true }; }
     if (matchesKey(data, "ctrl+w")) { this.options.onCloseSession?.(this.selectedId); return { consume: true }; }
     if (matchesKey(data, "ctrl+q")) { this.options.onQuit?.(); return { consume: true }; }
-    if (matchesKey(data, "ctrl+tab") || matchesKey(data, "alt+j")) {
-      const ids = [...this.sessions.keys()];
-      this.selectSession(ids[(ids.indexOf(this.selectedId) + 1) % ids.length] ?? this.selectedId);
-      return { consume: true };
-    }
+    if (this.handleSessionKey(data)) return { consume: true };
     if (matchesKey(data, "alt+r")) { this.showResult = !this.showResult; this.compose(); return { consume: true }; }
     if (matchesKey(data, "alt+b")) { this.sidebarVisible = !this.sidebarVisible; this.compose(); return { consume: true }; }
     if (matchesKey(data, "alt+d")) { this.toggleLatestNotice(); return { consume: true }; }
@@ -422,6 +429,20 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     }
     if (matchesKey(data, "alt+s")) { this.split = !this.split; this.compose(); return { consume: true }; }
     return undefined;
+  }
+
+  /** Next, previous or numbered session; true when `data` was one of those keys, even with no session at that number. */
+  private handleSessionKey(data: string): boolean {
+    const ids = [...this.sessions.keys()];
+    if (matchesKey(data, "ctrl+tab") || matchesKey(data, "alt+j") || matchesKey(data, "alt+k")) {
+      this.selectSession(sessionBeside(ids, this.selectedId, matchesKey(data, "alt+k") ? -1 : 1));
+      return true;
+    }
+    const number = numberedSessionKeys.findIndex((key) => matchesKey(data, key));
+    if (number < 0) return false;
+    const id = ids[number];
+    if (id !== undefined) this.selectSession(id);
+    return true;
   }
 
   private handleCommandMenuKey(data: string): { consume: true } | undefined {
@@ -540,10 +561,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const session = this.sessions.get(id);
     if (session === undefined) return;
     if (this.sessions.size === 1) throw new Error("The last Tesota session cannot be removed");
-    if (id === this.selectedId) {
-      const ids = [...this.sessions.keys()];
-      this.selectSession(ids[(ids.indexOf(id) + 1) % ids.length] ?? id);
-    }
+    if (id === this.selectedId) this.selectSession(sessionBeside([...this.sessions.keys()], id, 1));
     const pending = session.pending;
     session.pending = undefined;
     this.sessions.delete(id);
@@ -651,11 +669,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const [command, ...args] = input.slice(1).split(/\s+/u);
     switch (command) {
       case "new": this.options.onNewSession?.(); break;
-      case "next": {
-        const ids = [...this.sessions.keys()];
-        this.selectSession(ids[(ids.indexOf(this.selectedId) + 1) % ids.length] ?? this.selectedId);
+      case "next": case "previous":
+        this.selectSession(sessionBeside([...this.sessions.keys()], this.selectedId, command === "next" ? 1 : -1));
         break;
-      }
       case "close": this.options.onCloseSession?.(session.id); break;
       case "result": this.showResult = !this.showResult; this.compose(); break;
       case "sidebar": this.sidebarVisible = !this.sidebarVisible; this.compose(); break;
@@ -668,8 +684,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         break;
       }
       case "help":
-        this.writeTo(session.id, "Commands: /new /next /close /result /sidebar /details [number] /help /quit\n" +
-          "Keys: Ctrl+N new · Alt+J next · Ctrl+W close · Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split · Ctrl+Q quit");
+        this.writeTo(session.id, "Commands: /new /next /previous /close /result /sidebar /details [number] /help /quit\n" +
+          "Keys: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 session · Ctrl+W close · Alt+R result · " +
+          "Alt+B sidebar · Alt+D details · Alt+S split · Ctrl+Q quit");
         break;
       case "quit": this.options.onQuit?.(); break;
       default: this.writeTo(session.id, "Unknown command. Type / for commands or /help for shortcuts.", "warning");
