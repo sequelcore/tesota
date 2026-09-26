@@ -1,13 +1,14 @@
 import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { Editor, HStack, ScrollView, Text, VStack, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi,
+import { Editor, HStack, ScrollView, Text, VStack, matchesKey, truncateToWidth, wrapTextWithAnsi,
   type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
-import { backgroundText, bold, colorText, mutedText, tesotaShellTheme, type TesotaShellTheme,
+import { bold, colorText, mutedText, selectedRow, tesotaShellTheme, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
 import { DiffView } from "./tesota-shell-diff.js";
+import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
 
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
@@ -19,6 +20,8 @@ export interface TesotaShellTerminalOptions {
   readonly onCloseSession?: (sessionId: string) => void;
   /** `/model`, with its argument when one was given. */
   readonly onModel?: (sessionId: string, argument: string | undefined) => void;
+  /** The models the `/model` picker offers a session's agent; without it, `/model` alone asks the shell to list them. */
+  readonly modelPicker?: (sessionId: string) => ModelPickerData | undefined;
   readonly onHandoff?: (sessionId: string) => void;
   readonly onQuit?: () => void;
   readonly onEntry?: (sessionId: string, entry: TranscriptEntry) => void;
@@ -124,12 +127,6 @@ const numberedSessionKeys = ["alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6
 /** The session `step` places from `current` in the rail's order, wrapping around at either end. */
 export function sessionBeside(ids: readonly string[], current: string, step: 1 | -1): string {
   return ids[(ids.indexOf(current) + step + ids.length) % ids.length] ?? current;
-}
-
-/** A selected row, filled to the width: the theme's selection background, or reverse video when colors are the terminal's. */
-function selectedRow(line: string, width: number, theme: TesotaShellTheme): string {
-  const padded = line + " ".repeat(Math.max(0, width - visibleWidth(line)));
-  return theme.selectionBackground === null ? `\x1b[7m${padded}\x1b[27m` : backgroundText(padded, theme.selectionBackground);
 }
 
 /** A compact command picker above the prompt, with a full-width selected row. */
@@ -274,6 +271,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly footer = new Line();
   private readonly result: ResultPanel;
   private readonly commandMenu: CommandMenu;
+  private readonly modelPicker: ModelPicker;
   private readonly editor: Editor;
   private timer: ReturnType<typeof setInterval> | undefined;
   private removeInputListener: (() => void) | undefined;
@@ -293,6 +291,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
     initTheme(this.theme.name === "tesota-light" ? "light" : "dark");
     this.commandMenu = new CommandMenu(this.theme);
+    this.modelPicker = new ModelPicker(this.theme);
     this.editor = new PromptEditor(this.tui, this.theme);
     this.editor.disableSubmit = true;
     this.editor.onChange = (value) => { this.updateCommandMenu(value); };
@@ -317,7 +316,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   private updateCommandMenu(value: string): void {
     const session = this.selected();
-    this.commandMenu.update(value, session.pending !== undefined && session.prompt === "> ");
+    const atPrompt = session.pending !== undefined && session.prompt === "> ";
+    this.commandMenu.update(value, atPrompt);
+    this.modelPicker.update(value, atPrompt, () => this.options.modelPicker?.(this.selectedId));
     this.tui.requestRender();
   }
 
@@ -345,7 +346,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     ], { gap: 2 });
     const content = new VStack([
       { component: reading, basis: 0, grow: 1, minSize: 1 },
-      { component: new VStack([this.status, this.commandMenu, this.editor, this.footer]),
+      { component: new VStack([this.status, this.commandMenu, this.modelPicker, this.editor, this.footer]),
         basis: "auto", shrink: 1, minSize: 3 },
     ], { gap: 1 });
     this.tui.setLayoutRoot(new HStack([
@@ -529,7 +530,24 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     return true;
   }
 
+  private handleModelPickerKey(data: string): { consume: true } | undefined {
+    if (!this.modelPicker.visible) return undefined;
+    if (matchesKey(data, "up") || matchesKey(data, "down")) this.modelPicker.move(matchesKey(data, "up") ? -1 : 1);
+    else if (matchesKey(data, "left") || matchesKey(data, "right")) this.modelPicker.shiftLevel(matchesKey(data, "left") ? -1 : 1);
+    else if (matchesKey(data, "escape")) this.modelPicker.dismiss();
+    else if (matchesKey(data, "enter") || matchesKey(data, "tab")) {
+      const choice = this.modelPicker.choice;
+      if (choice === undefined) return undefined;
+      if (matchesKey(data, "enter")) this.submit(`/model ${choice}`);
+      else { this.editor.setText(`/model ${choice}`); this.updateCommandMenu(`/model ${choice}`); }
+    } else return undefined;
+    this.tui.requestRender();
+    return { consume: true };
+  }
+
   private handleCommandMenuKey(data: string): { consume: true } | undefined {
+    const picker = this.handleModelPickerKey(data);
+    if (picker !== undefined) return picker;
     if (this.commandMenu.visible) {
       if (matchesKey(data, "up") || matchesKey(data, "down")) {
         this.commandMenu.move(matchesKey(data, "up") ? -1 : 1);
@@ -795,7 +813,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   private changeModel(session: SessionView, args: readonly string[]): void {
     if (args.length > 1) this.writeTo(session.id, "Use /model or /model <route:model>.", "warning");
-    else this.options.onModel?.(session.id, args[0]);
+    else if (args.length === 0 && this.options.modelPicker !== undefined && session.pending !== undefined) {
+      // `/model` alone opens the picker, filtered by what is typed after it.
+      this.editor.setText("/model ");
+      this.updateCommandMenu("/model ");
+    } else this.options.onModel?.(session.id, args[0]);
   }
 
   private toggleDetails(session: SessionView, args: readonly string[]): void {

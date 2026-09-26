@@ -113,6 +113,11 @@ it("lists each role with who pays for it and the model's list price, and sets on
   expect(runModelsCommand(["advisor", "claude-code:opus"], write, offered, path)).toBe(0);
   expect(output).toContain("The advisor now uses claude-code:opus.\n");
   expect(output).toContain("the reviewer judges work the advisor's guidance shaped, and both use claude-code:opus");
+  // A choice with a reasoning level is priced as its model.
+  expect(runModelsCommand(["validator", "codex:gpt-6-sol@high"], write, offered, path)).toBe(0);
+  output = "";
+  expect(runModelsCommand([], write, offered, path)).toBe(0);
+  expect(output).toContain("  validator codex:gpt-6-sol@high          your ChatGPT plan's limits; list price $2 in and $10 out");
   expect(runModelsCommand(["judge", "codex:gpt-6-sol"], write, offered, path)).toBe(2);
   expect(runModelsCommand(["agent", "codex:gpt-9"], write, offered, path)).toBe(1);
 });

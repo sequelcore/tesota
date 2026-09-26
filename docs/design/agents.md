@@ -28,9 +28,12 @@ Decision 026; evidence in the
   the session records the model it runs on, from `tesota models agent`;
   afterwards that choice sets only new sessions, so a restarted session never
   lands on another engine behind its old transcript.
-- **`/model`** shows the session's model, the role's, and the offered ones.
-  `/model <route:model>` switches it, and `/model default` returns to the
-  role's. The rule is `modelSwitch` in `src/verification/model-switch.ts`,
+- **`/model`** opens a picker, as in Claude Code and Codex
+  (`src/tesota-shell-model-picker.ts`): every offered model with who pays for
+  it, the session's marked; typing filters it, left and right choose a
+  reasoning level the highlighted model accepts, as Claude Code's effort
+  slider does, and Enter switches. `/model <route:model>` still switches
+  directly, and `/model default` returns to the role's. The rule is `modelSwitch` in `src/verification/model-switch.ts`,
   proved by `bun run formal:check`: the same model changes nothing; a model
   on the **same engine** switches in place and the conversation continues
   (Pi's `setModel`, which adapts earlier messages to the new model, across

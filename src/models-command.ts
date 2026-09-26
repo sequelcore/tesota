@@ -79,7 +79,7 @@ export function offeredModels(): OfferedModel[] {
 }
 
 /** Who pays for a model, and its list price: what an API key is billed, or on a plan a way to compare models. */
-function cost(model: OfferedModel | undefined): string {
+export function modelCost(model: OfferedModel | undefined): string {
   if (model === undefined) return "not offered";
   const billing = ROUTE_BILLING[model.route];
   if (model.listPrice === undefined) return billing.payer;
@@ -101,7 +101,7 @@ function listing(offered: readonly OfferedModel[], path: string): string {
   const choices = readModelChoices(path);
   const rows = MODEL_ROLES.map((role) => {
     const detail = choices[role] === ROLE_OFF ? offText[role] ?? "off"
-      : cost(offered.find((model) => model.id === choices[role]));
+      : modelCost(offered.find((model) => model.id === choices[role]?.split("@")[0]));
     return `  ${role.padEnd(10)}${choices[role].padEnd(30)}${detail}\n  ${"".padEnd(10)}${ROLE_DESCRIPTIONS[role]}`;
   });
   const warnings = describeJudgeWarnings(judgeWarnings(choices));

@@ -141,9 +141,11 @@ the input shows what the session is doing or the question it is waiting on.
 A question that needs no changes ends with an answer. The conversation
 continues, so follow-up requests keep their context.
 
-A session keeps its agent's model, shown at the bottom right. `/model` lists
-the models, and `/model <route:model>` switches this session's agent, for
-example `/model codex:gpt-6-sol` or `/model claude-code:opus`. On the same
+A session keeps its agent's model, shown at the bottom right. `/model` opens
+a list of the models: type to filter it, use ↑↓ to choose, ← → for a
+reasoning level, and Enter to switch this session's agent. You can also type
+the choice, for example `/model codex:gpt-6-sol@high` or
+`/model claude-code:opus`. On the same
 engine (the `codex` and `anthropic` routes share Pi; `claude-code` is its own)
 the conversation continues. On another engine, and with `/handoff`, which
 keeps the model, the agent starts a **new conversation**: it will not have

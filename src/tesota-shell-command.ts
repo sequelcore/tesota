@@ -10,7 +10,7 @@ import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
 import { ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
-import { offeredChoices, offeredModels, routeListing } from "./models-command.js";
+import { modelCost, offeredChoices, offeredModels, type OfferedModel, routeListing } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
@@ -220,6 +220,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   };
   /** The session's agent model: the one its conversation runs on, or for a new agent the operator's choice for the role. */
   const agentChoice = (id: string): string => store.list().find((session) => session.id === id)?.agent ?? readModelChoices().agent;
+  let offeredCache: readonly OfferedModel[] | undefined;
+  /** The routes' models, read once: the catalogues ship with Tesota and do not change while it runs. */
+  const offered = (): readonly OfferedModel[] => { offeredCache ??= offeredModels(); return offeredCache; };
   const showAgentModel = (id: string): void => {
     try { surface.setSessionModel(id, agentChoice(id)); } catch { /* the agent reports an unreadable choice when it opens */ }
   };
@@ -236,6 +239,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onCloseSession: (id) => { void closeSession(id); },
     onModel: (id, argument) => { void agentModel.change(id, argument); },
     onHandoff: (id) => { void agentModel.handOff(id); },
+    modelPicker: (id) => {
+      try {
+        return { current: agentChoice(id), entries: offered().map((model) => ({ id: model.id, detail: modelCost(model),
+          reasoning: model.reasoning })) };
+      } catch { return undefined; }
+    },
     onSessionChange: (id) => { workspaceCallbacks?.selectSession(id); },
     onQuit: () => { workspaceCallbacks?.quit(); } });
   for (const session of savedSessions.slice(1)) surface.addSession(session.id, session.title,
@@ -525,18 +534,18 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         surface.writeTo(id, `${error instanceof Error ? error.message : "The model choices could not be read"}.`, "warning");
         return;
       }
-      const offered = offeredModels();
+      const models = offered();
       if (argument === undefined) {
         surface.writeTo(id, `The agent uses ${current} in this session; new sessions use ${role} (tesota models agent).\n` +
           "/model <route:model> switches it: on the same engine its conversation continues, on another it starts a new one. " +
           `/model default returns to ${role}. Add @low, @medium, @high, @xhigh or @max for a reasoning level the model ` +
-          `accepts. Offered:\n${routeListing(offered)}`);
+          `accepts. Offered:\n${routeListing(models)}`);
         return;
       }
       const choice = argument === "default" ? role : argument;
       const from = parseModelChoice(current);
       const to = parseModelChoice(choice);
-      if (from === undefined || to === undefined || !offeredChoices(offered).includes(choice)) {
+      if (from === undefined || to === undefined || !offeredChoices(models).includes(choice)) {
         surface.writeTo(id, `${choice} is not offered. /model lists the models.`, "warning");
         return;
       }

@@ -1,3 +1,5 @@
+import { visibleWidth } from "@earendil-works/pi-tui";
+
 const TESOTA_SHELL_THEME_NAMES = ["tesota-dark", "tesota-light", "terminal"] as const;
 
 export type TesotaShellThemeName = typeof TESOTA_SHELL_THEME_NAMES[number];
@@ -64,4 +66,10 @@ function dim(text: string): string { return `\x1b[2m${text}\x1b[22m`; }
 /** The theme's muted color, or the terminal's dim style when the theme leaves colors to the terminal. */
 export function mutedText(text: string, theme: TesotaShellTheme): string {
   return theme.muted === null ? dim(text) : colorText(text, theme.muted);
+}
+
+/** A selected row, filled to the width: the theme's selection background, or reverse video when colors are the terminal's. */
+export function selectedRow(line: string, width: number, theme: TesotaShellTheme): string {
+  const padded = line + " ".repeat(Math.max(0, width - visibleWidth(line)));
+  return theme.selectionBackground === null ? `\x1b[7m${padded}\x1b[27m` : backgroundText(padded, theme.selectionBackground);
 }

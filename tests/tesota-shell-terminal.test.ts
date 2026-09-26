@@ -125,6 +125,42 @@ it("passes /model with its argument, and /handoff, to the shell", () => {
   shell.stop();
 });
 
+it("opens a model picker on /model: filtered by typing, a reasoning level with left and right, Enter switches", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onModel = vi.fn();
+  const levels = ["low", "medium", "high", "xhigh", "max"] as const;
+  const modelPicker = () => ({ current: "claude-code:opus", entries: [
+    { id: "codex:gpt-6-sol", detail: "your ChatGPT plan's limits", reasoning: levels },
+    { id: "claude-code:opus", detail: "your Claude Code sign-in", reasoning: levels },
+    { id: "claude-code:haiku", detail: "your Claude Code sign-in", reasoning: [] } ] });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onModel, modelPicker });
+  shell.start();
+  shell.ask("> ").catch(() => undefined);
+  const screen = (): string => { terminal.writes.length = 0; tui.renderNow(true); return visible(terminal); };
+  terminal.send("/model");
+  terminal.send("\r");
+  expect(onModel).not.toHaveBeenCalled();
+  const opened = screen();
+  expect(opened).toContain("codex:gpt-6-sol");
+  expect(opened).toMatch(/● claude-code:opus/u);
+  expect(opened).toContain("←→ reasoning");
+  terminal.send("sol");
+  const filtered = screen();
+  expect(filtered).toContain("codex:gpt-6-sol");
+  expect(filtered).not.toContain("claude-code:haiku");
+  for (let step = 0; step < 3; step++) terminal.send("\x1b[C");
+  expect(screen()).toContain("‹ high ›");
+  terminal.send("\r");
+  expect(onModel).toHaveBeenCalledWith("default", "codex:gpt-6-sol@high");
+  // Esc closes the picker and leaves what was typed; a name typed in full still switches without it.
+  shell.ask("> ").catch(() => undefined);
+  terminal.send("/model hai");
+  terminal.send("\x1b");
+  expect(screen()).not.toContain("claude-code:haiku");
+  shell.stop();
+});
+
 it("filters slash commands before dispatching a typed command", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
