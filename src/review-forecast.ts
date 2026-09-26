@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL } from "./model-roles.js";
 import type { ReviewDepth } from "./review-depth.js";
 import { canEstimate, middlePositions } from "./verification/review-estimate.js";
 
@@ -6,6 +7,12 @@ import { canEstimate, middlePositions } from "./verification/review-estimate.js"
  * The forecast describes; it never asks for consent or changes the review,
  * and it is drawn only from this repository's measured reviews.
  */
+
+/** The models a review step ran with (decision 020). */
+export type ReviewModels = Readonly<{ reviewer: string; refuter: string; validator: string }>;
+
+/** Measurements recorded before models were chosen per role all used the default. */
+const earlierModels: ReviewModels = { reviewer: DEFAULT_MODEL, refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL };
 
 /** One measured review step, from its first reviewer to its refuter. */
 export interface ReviewMeasurement {
@@ -16,6 +23,8 @@ export interface ReviewMeasurement {
   readonly durationMs: number;
   /** Every model token the step used, as the model provider reported it through Pi. */
   readonly tokens: number;
+  /** Absent in measurements recorded before decision 020, which all used the default model. */
+  readonly models?: ReviewModels | undefined;
 }
 
 /** What the review step is about to run. */
@@ -26,6 +35,11 @@ export interface ReviewPlan {
   readonly lenses: readonly string[];
   /** Whether the ClaimCheck method compares proved contracts. */
   readonly claimcheck: boolean;
+  readonly models: ReviewModels;
+}
+
+function sameModels(a: ReviewModels, b: ReviewModels): boolean {
+  return a.reviewer === b.reviewer && a.refuter === b.refuter && a.validator === b.validator;
 }
 
 /** Measurements kept per repository, newest last. */
@@ -59,7 +73,9 @@ function steps(plan: ReviewPlan): string {
 /** One line: what the step runs, and what comparable reviews of this repository took. */
 export function forecastLine(plan: ReviewPlan, history: readonly ReviewMeasurement[]): string {
   const kind = `${plan.depth === "deep" ? "Deep review" : "Review"}${plan.correction ? " of a correction" : ""}`;
-  const comparable = history.filter((entry) => entry.depth === plan.depth && entry.correction === plan.correction);
+  // Only reviews made the same way, with the same models, say what this one will cost.
+  const comparable = history.filter((entry) => entry.depth === plan.depth && entry.correction === plan.correction &&
+    sameModels(entry.models ?? earlierModels, plan.models));
   const basis = !canEstimate(comparable.length, MIN_MEASUREMENTS)
     ? `Not enough ${plan.depth === "deep" ? "deep " : ""}reviews of this repository have been measured to estimate its cost ` +
       `(${comparable.length} of ${MIN_MEASUREMENTS}).`

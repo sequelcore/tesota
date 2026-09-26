@@ -6,7 +6,8 @@ import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { hostProvider } from "./host-environment.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
-import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
+import type { ModelAccess } from "./integrations/pi-coding-session.js";
+import { readModelChoices } from "./model-roles.js";
 import { refuteFindings } from "./integrations/pi-refuter.js";
 import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.js";
 import { attributeOrigins } from "./finding-origin.js";
@@ -45,7 +46,14 @@ function totals(scores: readonly CaseScore[]): Record<string, number> {
  * resolve the first and not the second, and the review of the real fix should
  * confirm nothing new.
  */
-async function measureCorrections(ai: { readonly modelRuntime: ModelRuntime; readonly model: Model<Api> },
+/** The model access for each role in this run. */
+interface RoleAccess {
+  readonly reviewer: ModelAccess;
+  readonly refuter: ModelAccess;
+  readonly validator: ModelAccess;
+}
+
+async function measureCorrections(ai: RoleAccess,
   testCase: EvaluationCase, workspace: Workspace, snapshot: WorkspaceSnapshot,
   input: ReviewInput, tested: readonly ReviewReport[], signal: AbortSignal): Promise<unknown> {
   if (testCase.corrections === undefined) return undefined;
@@ -60,9 +68,9 @@ async function measureCorrections(ai: { readonly modelRuntime: ModelRuntime; rea
     const corrected = workspace.snapshot();
     const scope = { ...corrected, base: snapshot.tree, ...workspace.compare(snapshot.tree, corrected.tree) };
     const correctionInput: ReviewInput = { ...input, snapshot: scope, correction: { sentBack } };
-    const validation = await validateFixes(ai, correctionInput, sentBack, signal);
-    const delta = await refuteFindings(ai, correctionInput,
-      attributeOrigins([await createPiReviewer(ai).review(correctionInput, signal)], corrected), signal);
+    const validation = await validateFixes(ai.validator, correctionInput, sentBack, signal);
+    const delta = await refuteFindings(ai.refuter, correctionInput,
+      attributeOrigins([await createPiReviewer(ai.reviewer).review(correctionInput, signal)], corrected), signal);
     const remaining = validation.status === "completed" ? validation.findings : [];
     results[variant] = { sentBack: sentBack.length, resolved: sentBack.length - remaining.length,
       unresolved: remaining.filter((finding) => finding.standing === "confirmed").length,
@@ -82,8 +90,17 @@ const depthMode = depthArgument as "computed" | "standard" | "deep";
 const skipCorrections = process.argv.includes("--skip-corrections");
 
 const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false, allowModelNetwork: false });
-const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
-if (model === undefined) throw new Error("The Codex model is unavailable. Run tesota auth login.");
+// --model-reviewer=, --model-refuter= and --model-validator= compare models; otherwise the operator's choices apply.
+const chosen = readModelChoices();
+const modelIds = Object.fromEntries((["reviewer", "refuter", "validator"] as const).map((role) => [role,
+  process.argv.find((argument) => argument.startsWith(`--model-${role}=`))?.slice(`--model-${role}=`.length) ?? chosen[role]])) as
+  Record<"reviewer" | "refuter" | "validator", string>;
+const modelFor = (role: keyof typeof modelIds): Model<Api> => {
+  const found = runtime.getModel("openai-codex", modelIds[role]);
+  if (found === undefined) throw new Error(`The ${role}'s model, ${modelIds[role]}, is unavailable. Check tesota models.`);
+  return found;
+};
+const models = { reviewer: modelFor("reviewer"), refuter: modelFor("refuter"), validator: modelFor("validator") };
 const root = mkdtempSync(join(tmpdir(), "tesota-review-eval-"));
 const cases: unknown[] = [];
 const plantedResults: string[] = [];
@@ -112,9 +129,12 @@ try {
     const deep = depthMode === "deep" || depthMode === "computed" && decision.depth === "deep";
     // Tokens of the reviewers and the refuter, as the review step counts them (decision 018).
     let tokens = 0;
-    const ai = { modelRuntime: runtime, model, onUsage: (count: number) => { tokens += count; } };
-    const reviews = attributeOrigins(await Promise.all([createPiReviewer(ai),
-      ...(deep ? applicableLenses(workspace.checkout).map((lens) => createPiReviewer({ ...ai, lens })) : [])]
+    const onUsage = (count: number): void => { tokens += count; };
+    const ai: RoleAccess = { reviewer: { modelRuntime: runtime, model: models.reviewer, onUsage },
+      refuter: { modelRuntime: runtime, model: models.refuter, onUsage },
+      validator: { modelRuntime: runtime, model: models.validator, onUsage } };
+    const reviews = attributeOrigins(await Promise.all([createPiReviewer(ai.reviewer),
+      ...(deep ? applicableLenses(workspace.checkout).map((lens) => createPiReviewer({ ...ai.reviewer, lens })) : [])]
       .map((reviewer) => reviewer.review(input, signal))), snapshot);
     const reviewed = Date.now();
     // A run where no reviewer finished measures the environment, not the review: stop instead of recording zeros.
@@ -122,7 +142,7 @@ try {
     if (failed !== undefined && reviews.every((report) => report.status === "incomplete")) {
       throw new Error(`Every reviewer failed on "${testCase.name}", so nothing was measured: ${failed.reason}`);
     }
-    const tested = await refuteFindings(ai, input, reviews, signal);
+    const tested = await refuteFindings(ai.refuter, input, reviews, signal);
     const done = Date.now();
     const reviewTokens = tokens;
     // Measure the refuter directly: a planted false finding it should kill.
@@ -130,7 +150,7 @@ try {
     if (testCase.falseClaim !== undefined) {
       const claim: ReviewReport = { reviewer: "Planted", tree: snapshot.tree, status: "completed", summary: "",
         findings: [{ severity: "high", disposition: "fixable", origin: "introduced", ...testCase.falseClaim }] };
-      const [judged] = await refuteFindings({ modelRuntime: runtime, model }, input, [claim], signal);
+      const [judged] = await refuteFindings({ modelRuntime: runtime, model: models.refuter }, input, [claim], signal);
       planted = judged?.status === "completed" ? judged.findings[0]?.standing : "unsettled";
       plantedResults.push(planted ?? "unsettled");
     }
@@ -145,7 +165,7 @@ try {
       (planted === undefined ? "" : ` | planted false claim: ${planted}`));
   }
 } finally { rmSync(root, { recursive: true, force: true }); }
-const record = { at: new Date().toISOString(), model: LIVE_CODEX_MODEL_ID, depthMode, raw: totals(raw), refuted: totals(refuted),
+const record = { at: new Date().toISOString(), models: modelIds, depthMode, raw: totals(raw), refuted: totals(refuted),
   plantedFalseClaims: { total: plantedResults.length, refuted: plantedResults.filter((result) => result === "refuted").length,
     confirmed: plantedResults.filter((result) => result === "confirmed").length }, cases };
 mkdirSync(join("live-runs", "review"), { recursive: true });

@@ -110,6 +110,7 @@ at once; applications are serialized.
 | `repository-git.ts` | Git invocation without ambient config, hooks or network |
 | `windows-system.ts` | Windows' own programs located in the system directory, never found through PATH |
 | `integrations/codex-credentials.ts`, `auth.ts` | Codex login storage |
+| `model-roles.ts`, `models-command.ts` | Which model each role uses, and `tesota models` |
 | `verification/` | Standalone Oxlint profile and the formal invocation-budget predicate |
 | `live-codex.ts`, `integrations/pi-live*.ts` | Live Codex probe and model route |
 

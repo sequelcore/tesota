@@ -7,6 +7,7 @@ Usage: tesota [--help | -h | help]
        tesota [--theme <tesota-dark|tesota-light|terminal>]
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout>
+       tesota models [<role> <model|default>]
        tesota prune [--force]
        tesota setup
 
@@ -31,6 +32,9 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
 } else if (args.length === 2 && args[0] === "auth" && args[1] !== undefined) {
   const { runAuthCommand } = await import("./auth.js");
   process.exit(await runAuthCommand(args[1]));
+} else if (args[0] === "models") {
+  const { runModelsCommand } = await import("./models-command.js");
+  process.exitCode = runModelsCommand(args.slice(1), (text) => { process.stdout.write(text); });
 } else if (args[0] === "prune" && (args.length === 1 || args.length === 2 && args[1] === "--force")) {
   const { formatPrunePlan, planWorkspacePrune, removeWorkspaces } = await import("./workspace-prune.js");
   const plan = await planWorkspacePrune();

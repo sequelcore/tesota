@@ -32,7 +32,8 @@ const sessionSchema: z.ZodType<{ id: string; title: string;
       interrupted: z.boolean(), blocked: z.boolean() });
 const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.iso.datetime(),
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
-  tokens: z.number().nonnegative() });
+  tokens: z.number().nonnegative(), models: z.strictObject({ reviewer: z.string().min(1).max(100),
+    refuter: z.string().min(1).max(100), validator: z.string().min(1).max(100) }).optional() });
 const snapshotVersion = 5;
 // `reviews` arrived after version 5 and is optional, so saved sessions survive; a missing list is empty.
 const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: typeof snapshotVersion; source: string;

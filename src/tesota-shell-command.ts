@@ -9,7 +9,7 @@ import { allowsAutonomy, type ExecutionEnvironment, type PreparationStep } from 
 import { chooseSessionMode, releaseWorkspace, type SessionMode } from "./execution-providers.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { CodingSession, type CommandApproval, type ModelAccess, type NetworkDecision } from "./integrations/pi-coding-session.js";
-import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
+import { type ModelRole, readModelChoices } from "./model-roles.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
 import { runTesotaShell, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
@@ -29,7 +29,7 @@ import { reviewDepth, type DepthDecision } from "./review-depth.js";
 import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
 import { applyRefutation, refuteFindings } from "./integrations/pi-refuter.js";
 import { attributeOrigins } from "./finding-origin.js";
-import { forecastLine, type ReviewMeasurement, type ReviewPlan } from "./review-forecast.js";
+import { forecastLine, type ReviewMeasurement, type ReviewModels, type ReviewPlan } from "./review-forecast.js";
 import { countsAsMeasurement } from "./verification/review-estimate.js";
 import { validateFixes, validationReport } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
@@ -47,6 +47,8 @@ interface ReviewRun {
   /** Reads a file from the candidate's tree. */
   readonly read: (path: string) => string | undefined;
   readonly onUsage: (tokens: number) => void;
+  /** The models the review step's roles use, read once when the step starts. */
+  readonly models: ReviewModels;
   readonly signal: AbortSignal;
 }
 
@@ -271,16 +273,18 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     state.environment.catch(() => { state.environment = undefined; });
     return state.environment;
   };
-  const openModel = async (signal: AbortSignal): Promise<{ runtime: ModelRuntime; model: Model<Api> }> => {
+  /** The model the operator chose for a role (decision 020), read when the role starts work. */
+  const openModel = async (signal: AbortSignal, role: ModelRole): Promise<{ runtime: ModelRuntime; model: Model<Api> }> => {
+    const id = readModelChoices()[role];
     const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false,
       allowModelNetwork: false, signal });
-    const model = runtime.getModel("openai-codex", LIVE_CODEX_MODEL_ID);
-    if (model === undefined) throw new Error("The Codex model is unavailable. Run tesota auth login.");
+    const model = runtime.getModel("openai-codex", id);
+    if (model === undefined) throw new Error(`The ${role}'s model, ${id}, is unavailable. Check tesota models and tesota auth status.`);
     return { runtime, model };
   };
   /** The model for one of the review step's sessions, counting its tokens toward the step. */
-  const modelFor = async (run: ReviewRun): Promise<ModelAccess> => {
-    const { runtime, model } = await openModel(run.signal);
+  const modelFor = async (run: ReviewRun, role: ModelRole): Promise<ModelAccess> => {
+    const { runtime, model } = await openModel(run.signal, role);
     return { modelRuntime: runtime, model, onUsage: run.onUsage };
   };
   /** In a correction round, whether each finding sent back is resolved; a validator that cannot run settles nothing. */
@@ -289,7 +293,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     if (sentBack.length === 0) return undefined;
     surface.reportFor(run.id, { phase: "reviewing", activity: "Checking each fix" });
     try {
-      return await validateFixes(await modelFor(run), run.input, sentBack, run.signal);
+      return await validateFixes(await modelFor(run, "validator"), run.input, sentBack, run.signal);
     } catch {
       return validationReport(run.input.snapshot.tree, sentBack, { status: "cancelled" }, undefined);
     }
@@ -300,7 +304,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
    * review first says what it will run and what such reviews have cost here.
    */
   const reviewCandidate = async (run: ReviewRun): Promise<ReviewReport[]> => {
-    const plan: ReviewPlan = { depth: run.depth.depth, correction: run.input.correction !== undefined,
+    const plan: ReviewPlan = { depth: run.depth.depth, correction: run.input.correction !== undefined, models: run.models,
       lenses: run.depth.depth === "deep" ? applicableLenses(run.input.checkout).map((lens) => lens.name) : [],
       claimcheck: run.input.checks.some((check) => check.verifier === "lemmascript" && check.outcome === "passed") };
     if (plan.depth === "deep") surface.writeTo(run.id, forecastLine(plan, store.reviewMeasurements()));
@@ -317,7 +321,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     surface.reportFor(id, { phase: "reviewing", activity: plan.depth === "deep" ? "Deep review" : "Reviewing" });
     const reviewers: Reviewer[] = [];
     try {
-      const access = await modelFor(run);
+      const access = await modelFor(run, "reviewer");
       reviewers.push(createPiReviewer(access));
       for (const lens of applicableLenses(input.checkout).filter((entry) => plan.lenses.includes(entry.name))) {
         reviewers.push(createPiReviewer({ ...access, lens }));
@@ -333,7 +337,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     if (signal.aborted || !reports.some((report) => report.status === "completed" && report.findings.length > 0)) return reports;
     surface.reportFor(id, { phase: "reviewing", activity: "Testing each finding" });
     try {
-      return await refuteFindings(await modelFor(run), input, reports, signal);
+      return await refuteFindings(await modelFor(run, "refuter"), input, reports, signal);
     } catch {
       // A refuter that could not run leaves every finding unsettled, never confirmed.
       return applyRefutation(reports, undefined);
@@ -344,7 +348,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     state.coding ??= (async () => {
       const workspace = await workspaceFor(id);
       const environment = await environmentFor(id);
-      const { runtime, model } = await openModel(signal);
+      const { runtime, model } = await openModel(signal, "agent");
       const engineId = saved(id)?.engineId ?? store.rotateEngine(id);
       const existing = SessionManager.findById(workspace.checkout, engineId, piSessionsDirectory);
       const sessionManager = existing === undefined
@@ -514,13 +518,15 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const depth = reviewDepth(scope, flags, checks);
       const started = Date.now();
       let tokens = 0;
-      const reports = await reviewCandidate({ id, signal, depth, candidate: snapshot,
+      const { reviewer, refuter, validator } = readModelChoices();
+      const models: ReviewModels = { reviewer, refuter, validator };
+      const reports = await reviewCandidate({ id, signal, depth, candidate: snapshot, models,
         input: { checkout: workspace.checkout, requests, snapshot: scope, checks, flags,
           ...(correction === undefined ? {} : { correction: { sentBack: correction.sentBack } }) },
         read: (path) => read(snapshot.tree, path), onUsage: (count) => { tokens += count; } });
       if (signal.aborted) return { status: "cancelled" };
       const measurement: ReviewMeasurement = { at: new Date().toISOString(), depth: depth.depth,
-        correction: correction !== undefined, durationMs: Date.now() - started, tokens };
+        correction: correction !== undefined, durationMs: Date.now() - started, tokens, models };
       if (countsAsMeasurement(reports.map((report) => report.status))) {
         try { store.recordReviewMeasurement(measurement); } catch {
           surface.writeTo(id, "Tesota could not record what this review cost; later forecasts leave it out.", "warning");

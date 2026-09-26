@@ -20,6 +20,11 @@ tesota auth login
 Login stores a Codex credential under `~/.tesota/auth`; see
 [authentication](authentication.md). `bun unlink` removes the command.
 
+Every role uses GPT-6 Luna until you choose otherwise. `tesota models` lists
+the working agent, helpers, reviewer, refuter and fix validator with their
+models and catalogue prices; `tesota models reviewer gpt-6-astra`, for
+example, changes one, and `default` restores Luna.
+
 Sessions are **autonomous** when Docker Sandboxes is set up, and
 **supervised** otherwise. On Windows 11, autonomous sessions need the Windows
 Hypervisor Platform (an administrator prompt and a restart), Docker Sandboxes,

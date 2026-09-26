@@ -33,8 +33,10 @@ one JSON record per run under the ignored `live-runs/codex/` directory.
 `bun run live:review` runs the review evaluation set of
 [decision 016](decisions/016-review-precision.md) with the saved login and
 writes one record under `live-runs/review/`, with each case's scores, findings,
-time and tokens. Run it before and after a change to the reviewer, the
-refuter, origin checking or their prompts, and record the result in
+time and tokens. `--model-reviewer=`, `--model-refuter=` and
+`--model-validator=` override the chosen models to compare them. Run it
+before and after a change to the reviewer, the refuter, origin checking,
+their prompts or their models, and record the result in
 [findings](findings.md); a change that lowers precision is not adopted.
 
 ## Change scope
