@@ -38,6 +38,11 @@ on a real project has not started.
 The operator is adding further Tesota features before using it on a real
 project. They are listed here as they are chosen.
 
+- **Web access** for the agent and explorers (decision 024,
+  [design](design/agents.md#web-access)), built by Tesota itself on its own
+  repository as its first real change, then reviewed from outside it
+  before it is applied.
+
 ### 2. Measurement on public benchmarks
 
 Measure Tesota against benchmarks it did not write
