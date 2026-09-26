@@ -48,6 +48,12 @@ project. They are listed here as they are chosen.
   [design](design/agents.md#the-advisor)): built 2026-09-26, off by default.
 - **Reasoning levels per role** (decision 029,
   [design](design/agents.md#reasoning-levels)): built 2026-09-26.
+- **A native sandbox** (decision 030,
+  [design](design/execution.md#planned-native-sandbox)): commands confined
+  with no Docker, no administrator rights and no question per command, built
+  on Microsoft MXC and qualified on each machine; planned, in four phases.
+  Then routes for OpenRouter and OpenCode Go, after their terms are checked
+  ([research](research/model-access-landscape.md)).
 
 ### 2. Measurement on public benchmarks
 

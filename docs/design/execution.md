@@ -133,11 +133,118 @@ setup inputs skips setup when nothing changed.
   a phase in which nothing can be written to the repository, which in Tesota
   lasts until the operator applies. A plan is asked for in the request.
 
+## Planned: native sandbox
+
+Decision 030; evidence in the
+[native sandbox landscape](../research/native-sandbox-landscape.md). The goal
+is that, once Tesota is installed, commands run confined with no Docker, no
+administrator rights and no question per command, at close to the host's own
+speed: on Windows 11 first, then Linux and macOS.
+
+**Threat model.** It confines the agent's mistakes, such as deleting or
+overwriting the operator's files, and what prompt injection would try: reading
+credentials or sending data to arbitrary servers. It does not stop code that
+exploits the operating system's kernel; only a virtual machine, such as Docker
+Sandboxes, does. The documentation says so wherever a provider is named.
+
+**Qualified on each machine, not promised.** Before a provider declares a
+guarantee, Tesota's own controls pass on the operator's machine: a write
+outside the workspace, a read of the operator's credentials and documents, a
+direct connection to the internet, and stopping a command and its children.
+The check takes about a second, and its result is saved per machine and
+repeated when the operating system build or the provider's version changes.
+A provider declares only the guarantees that passed, so a host where one
+control fails, such as macOS, where MXC's proxy is cooperative, keeps asking
+before commands without a rule written for it.
+
+**Components.** Each has one owner, and only the adapter names MXC, so the
+native sandbox can later become a project of its own:
+
+| Component | Owns | Reuses |
+| --- | --- | --- |
+| The execution interface | prepare, run, dispose and guarantees | Unchanged; `workspace` is defined precisely below |
+| The `mxc` provider | Turning one command into an MXC policy and running it | `@microsoft/mxc-sdk`, pinned to an exact version |
+| The egress proxy | The allowlist: package registries and destinations the operator allows; refused destinations for the existing network question | Web access's public-address check, so the proxy cannot reach the operator's own network |
+| Qualification | The controls on the operator's machine and their saved result | The live suite's controls |
+| The choice | `tesota sandbox` and the operator's preference | `chooseSessionExecution` |
+| The live suite | The same controls for every provider | The Docker Sandboxes suite, made provider-neutral |
+
+**One command.** Each command runs in its own MXC `processcontainer`, about
+150 ms to start in the spike; the backend has no session that outlives a
+command. It may write the workspace, a temporary folder of the session's own
+(set as `TEMP` and `TMP`, rather than the operator's shared one) and the
+repository's package cache. It may read the workspace, the tools installed on
+the host (`node`, `git`, `bun` from `PATH`) and system files, and never the
+operator's data or credentials. Its network reaches only Tesota's proxy on the
+loopback address, which Windows' filtering platform enforces; the proxy
+resolves each destination itself. The environment passes only the variables
+it is given. For a native provider, `workspace` therefore means: writes only
+in the workspace and those folders, reads only the workspace, installed tools
+and system files; Docker Sandboxes' virtual machine is stricter, and is said
+to be.
+
+**Choice.** `tesota sandbox` shows each provider on this machine, what it
+proved and which one is in use; `tesota sandbox use auto`, the default,
+prefers the native sandbox, then Docker Sandboxes, then this computer, which
+asks before each command; `use mxc`, `use docker` or `use host` names one. The
+choice applies per session, when it opens, so one repository that is not
+trusted can have Docker while others run natively; a session never switches
+provider on its own.
+
+**Per command.** When the sandbox blocks a command that must run, the agent
+may ask to run it on this computer instead, and the operator is asked first,
+as for any command on this computer; as in Claude Code, the retry exists only
+with the operator's approval. Commands never move between two sandboxes: Docker
+Sandboxes keeps `node_modules` on its own disk, so a command in one would not
+see what the other installed.
+
+**Package caches.** Each repository has its own npm and Bun cache, owned by
+Tesota under `~/.tesota`, shared by that repository's sessions, and never the
+operator's own cache. npm verifies what it reads from its cache, but Bun
+installs by hard link on Windows and Linux, so a file in `node_modules` is the
+cached file itself, and a script that changes it changes the cache; a
+repository's cache confines that to the same repository, the scope Codex
+cloud and GitHub Actions cache by. `tesota sandbox clean` removes a
+repository's caches.
+
+**Proved rules.** Choosing a provider: commands run without asking only on a
+provider whose qualification on this machine proved both confined files and
+an allowlisted network. The proxy's admission: a destination passes only if it
+is allowed and resolves to public addresses, the rule `webAdmission` already
+proves for web access.
+
+**Targets, measured before adoption:** a session ready in under two seconds
+with a saved qualification, against about 30 for Docker Sandboxes; under 300
+ms added to each command; the host's own disk and tools, with nothing copied
+or installed.
+
+**Phases.** (1) The live suite made provider-neutral, which Docker Sandboxes
+passes unchanged. (2) The `mxc` provider and the proxy on Windows. (3)
+Qualification, `tesota sandbox` and the per-command retry. (4) Linux with a
+tester, a clean Windows 11, then macOS. Later, with evidence from real use,
+the native sandbox as a project of its own.
+
+**Rejected.** MXC with every connection refused and no proxy: simpler, but
+installing packages would fail. Allowing registries by address: they sit
+behind content delivery networks whose addresses change. Tesota's own
+AppContainer, Seatbelt and bubblewrap code: security-critical work on three
+systems that MXC and Codex already maintain. Docker Sandboxes alone: the
+friction this removes.
+
+**Risks.** MXC is a preview, and Microsoft states that "no MXC profiles should
+be treated as security boundaries currently"; Tesota pins its version, repeats
+qualification on every update and says so. The proxy runs as an ordinary
+process, which MXC calls its development and testing mode; binding the proxy's
+identity needs it in an AppContainer of its own, later. The SDK ships about
+68 MB of binaries for every platform. MXC documents no CPU or memory limits
+for `processcontainer`, so the native provider declares `unbounded`
+resources. Windows 10 is not supported and keeps Docker Sandboxes or asking.
+
 ## Planned
 
 - Placeholder secrets: a repository declares a secret by name and host, and
   the sandbox sees only a placeholder that the proxy replaces.
 - More providers behind the same interface once they pass the same controls:
-  WSL2 with bubblewrap, a native Windows sandbox, remote machines.
+  WSL2 with bubblewrap, remote machines.
 - A configurable number of concurrent sessions, and retrying model rate-limit
   errors instead of failing a session.
