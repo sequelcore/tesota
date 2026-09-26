@@ -23,7 +23,7 @@ export const DELEGATION_CASES: readonly DelegationCase[] = [
   facts: [["fixable"], ["introduced"], ["confirmed"], ["duplicate"], ["correction.ts"]] },
   { name: "depth", question: "How does Tesota decide whether a review is standard or deep? List every fact about the " +
     "candidate that makes it deep, and the file that decides it.",
-  facts: [["sensitive"], ["test"], ["verifier"], ["400"], ["review-depth.ts"]] },
+  facts: [["sensitive"], ["test"], ["verifier", "check result", "not pass", "did not pass", "failed check"], ["400"], ["review-depth.ts"]] },
   { name: "store lock", question: "What stops two Tesota shells from opening the same repository's saved sessions at " +
     "once, and what happens when the earlier shell crashed?",
   facts: [["lock"], ["pid", "process id", "process"], ["shell-session-store.ts"], ["already has an open", "stale", "no longer running", "not running"]] },

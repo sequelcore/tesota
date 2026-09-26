@@ -1,7 +1,7 @@
 # 019: Let the working agent start read-only helpers
 
-Status: adopted 2026-09-25 as a design; enabled by default only if the
-evaluation below shows it helps. Evidence is in the
+Status: adopted 2026-09-25 and built; off by default, because the first
+evaluation showed no gain for its cost (see Delivery). Evidence is in the
 [agent delegation landscape](../references/agent-delegation-landscape.md).
 
 ## Context
@@ -98,7 +98,16 @@ when the operator turns it on.
    limits, cancellation, streamed activity and saved transcripts.
 3. The agent's instructions, and the helper role as the switch.
 4. `bun run live:delegation`, the evaluation, and the default decided from
-   its results.
+   its results. First measured on 2026-09-25 with GPT-6 Luna as agent and
+   helper, two rounds of six questions about this repository at `2cccf074`:
+   52 of 52 facts stated with and without helpers, while helpers used 2.4
+   times the tokens (1,050k against 430k) and 2.7 times the time (355 s
+   against 133 s). The agent asked 11 helpers in 12 attempts and answered
+   two questions without any. **Helpers stay off by default.** The set
+   measures single questions a lone agent answers easily in a small
+   repository; it does not measure long sessions whose context fills, which
+   is where helpers are meant to help. Revisit with that evidence from real
+   use.
 
 ## Consequences
 
