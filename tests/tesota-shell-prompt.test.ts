@@ -10,6 +10,13 @@ import { Workspace } from "../src/workspace.js";
 
 const mocks = vi.hoisted(() => ({ openStore: vi.fn() }));
 vi.mock("../src/shell-session-store.js", () => ({ openShellSessionStore: mocks.openStore }));
+// The shell must not read the operator's own choices in ~/.tesota: every role takes its default, the Pi engine mocked here.
+vi.mock("../src/model-roles.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/model-roles.js")>();
+  const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  return { ...actual, readModelChoices: () => actual.readModelChoices(join(tmpdir(), "tesota-test-no-model-choices.json")) };
+});
 
 it.each([
   { outcome: "done", expected: "hello" },

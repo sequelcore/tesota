@@ -46,12 +46,43 @@ ignored `live-runs/` directory.
 | Command | Measures |
 | --- | --- |
 | `bun run live:review` | Review on eight frozen candidates with known truth: defects found, false positives, refutation, correction, time, tokens and models. `--depth=`, `--skip-corrections` and `--model-reviewer=`, `--model-refuter=`, `--model-validator=` (as `route:model`) vary it |
+| `bun run live:prbench` | Tesota's review answering SWE-PRBench's pull requests, before and after refutation, for the benchmark's own judge and scorer. `--split=`, `--config=`, `--max=`, `--label=`, `--depth=` and the model flags vary it |
 | `bun run live:delegation` | The agent with and without explorers on questions about a frozen copy of this repository. `--runs=`, `--model-agent=` and `--model-explorer=` vary it |
 
 Run the relevant evaluation before and after a change to a reviewer, the
 refuter, origin checking, explorers, their prompts or a role's model, and
 record the result in [findings](findings.md); a change that lowers precision
-or adds cost without a gain is not adopted.
+or adds cost without a gain is not adopted. `live:review`'s eight candidates
+were written with Tesota's prompts and every model finds their defects, so
+they check Tesota's machinery, not which model or prompt reviews better; that
+is SWE-PRBench's job.
+
+**SWE-PRBench** ([research](research/evaluation-landscape.md)) scores
+Tesota's review against human reviewers' comments on 100 real pull requests
+with the benchmark's own code, pinned at pipeline v0.4.1 (commit `379f0bf`).
+Set it up once under the ignored `live-runs/swe-prbench/`:
+
+```
+git clone https://github.com/FoundryHQ-AI/swe-prbench.git live-runs/swe-prbench/harness
+git -C live-runs/swe-prbench/harness checkout 379f0bf
+python -m venv live-runs/swe-prbench/.venv
+live-runs/swe-prbench/.venv/Scripts/python -m pip install -r live-runs/swe-prbench/harness/requirements.txt huggingface_hub
+live-runs/swe-prbench/.venv/Scripts/hf download foundry-ai/swe-prbench --repo-type dataset --local-dir live-runs/swe-prbench/data
+```
+
+Put the judge's `OPENAI_API_KEY=` line in `live-runs/swe-prbench/harness/.env`,
+never in the repository; the official judge, GPT-5.2, is billed per token to
+that key. Then answer and score:
+
+```
+bun run live:prbench --label=astra-sol
+live-runs/swe-prbench/.venv/Scripts/python evaluations/swe-prbench/score.py --label=astra-sol
+live-runs/swe-prbench/.venv/Scripts/python evaluations/swe-prbench/score.py --label=astra-sol --response=unrefuted
+```
+
+Tesota's reviewer receives the official context and an empty checkout, as the
+benchmark's agents do, so its scores compare with the published ones; scores
+from another judge or split do not.
 
 ## Adding a capability
 

@@ -38,7 +38,22 @@ on a real project has not started.
 The operator is adding further Tesota features before using it on a real
 project. They are listed here as they are chosen.
 
-### 2. Daily use on a real project
+### 2. Measurement on public benchmarks
+
+Measure Tesota against benchmarks it did not write
+([research](research/evaluation-landscape.md), decision 023). First
+SWE-PRBench for review: `live:prbench` and the official scorer are built;
+the 100-PR split is scored with the official judge, before and after
+refutation, for the default reviewer and the operator's chosen one. Then
+Terminal-Bench through Harbor for the whole loop against plain Pi on the same
+model, which needs Tesota to run without its interactive shell, work the
+session service also needs.
+
+**Done when:** SWE-PRBench scores for at least two reviewer setups are
+recorded in findings with the official judge, and Terminal-Bench compares
+Tesota with plain Pi on one model.
+
+### 3. Daily use on a real project
 
 Use Tesota on SIACODE, then on Tesota's own changes, and fix what gets in the
 way. Explorers are revisited with evidence from long sessions, and reviewer
@@ -48,11 +63,11 @@ and refuter models with the harder cases real work produces.
 verification, review, a correction round and the operator's decision on the
 whole record.
 
-### 3. Session service and remote access
+### 4. Session service and remote access
 
 The [session service](design/sessions.md#planned-a-session-service): sessions
 outlive the terminal, and the operator reaches them over SSH on a tailnet.
-Building it waits for step 2.
+Building it waits for step 3.
 
 **Done when:** over SSH from another device on the tailnet, the operator
 attaches to running sessions, answers a pending question, disconnects

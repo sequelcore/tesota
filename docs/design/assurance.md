@@ -161,6 +161,15 @@ after refutation, measures correction on known good and cosmetic fixes, and
 records time, tokens by kind and models. A change to a reviewer, the refuter, origin
 checking, a prompt or a role's model is measured before it is adopted.
 
+Those candidates were written with Tesota's own prompts, and every model
+measured finds their defects, so they guard the machinery rather than rank
+reviewers. Review quality is measured on **SWE-PRBench**: 100 real pull
+requests whose ground truth is their human reviewers' comments. Tesota's
+reviewers and refuter answer each one from the benchmark's official context,
+and the benchmark's own parser, judge, scorer and report score the answers
+unchanged, before and after refutation
+([research](../research/evaluation-landscape.md)).
+
 ## Why
 
 - **Tesota orchestrates, not an agent:** an orchestrating agent could skip
