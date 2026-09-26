@@ -4,22 +4,31 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { hostProvider } from "../src/host-environment.js";
-import { explorerTools } from "../src/integrations/pi-explorer.js";
+import { askPageReader, explorerTools } from "../src/integrations/pi-explorer.js";
 import { toolSubject, workingAgentSetup } from "../src/integrations/pi-coding-session.js";
 import { type WebAccess, webFetchTool, webReadTool, webSearchTool } from "../src/integrations/web-tools.js";
 
 // Every role's session is captured here instead of reaching a model.
-const started = vi.hoisted(() => ({ tools: [] as string[][] }));
+const started = vi.hoisted(() => ({ tools: [] as string[][], requests: [] as string[], reply: "" }));
 vi.mock("../src/integrations/model-session.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../src/integrations/model-session.js")>(),
-  startModelSession: async (_access: unknown, options: { tools: readonly ToolDefinition[] }) => {
+  startModelSession: async (access: { onUsage?: (usage: unknown) => void }, options: { tools: readonly ToolDefinition[] }) => {
     started.tools.push(options.tools.map((tool) => tool.name));
-    return { usable: true, dispose() {}, run: async () => ({ status: "completed", reply: "" }) };
+    return { usable: true, dispose() {}, run: async (request: string) => {
+      started.requests.push(request);
+      access.onUsage?.({ input: 5_000, output: 200, cacheRead: 0, cacheCreation: 0 });
+      return { status: "completed", reply: started.reply };
+    } };
   },
 }));
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); started.tools.length = 0; });
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  started.tools.length = 0;
+  started.requests.length = 0;
+  started.reply = "";
+});
 function checkout(): string {
   const root = mkdtempSync(join(tmpdir(), "tesota-web-tools-"));
   roots.push(root);
@@ -64,6 +73,13 @@ it("gives an explorer the page's text, and the agent only a reader's answer abou
   expect(questions).toEqual(["How is x installed?"]);
   expect(read).toContain("Install with `bun add x`.");
   expect(read).not.toContain("delete everything");
+  // The reader's tokens come back with its answer, as an explorer's do.
+  const counted = await call(webReadTool(web({ read: async (_page, _question, _signal, onUsage) => {
+    onUsage({ input: 9_000, output: 400, cacheRead: 0, cacheCreation: 0 });
+    onUsage({ input: 3_000, output: 100, cacheRead: 0, cacheCreation: 0 });
+    return { status: "answered", answer: "Yes." };
+  } })), { url: "https://docs.example.com/a", question: "q" });
+  expect(counted).toMatch(/^Answer from https:\/\/docs\.example\.com\/b, read by a separate reader \(\d+ s, 13k tokens; a lead to check\)/u);
   const denied = web({ fetch: async () => ({ status: "failed", error: "destination_denied", detail: "docs.example.com is not allowed" }) });
   expect(await call(webReadTool(denied), { url: "https://docs.example.com/a", question: "q" })).toContain("destination_denied");
 });
@@ -92,6 +108,18 @@ it("gives web search and reading to the agent and explorers, and never to a revi
   await validateFixes({ target }, { ...input, correction: { sentBack: [finding] } }, [finding], new AbortController().signal);
   expect(started.tools.length).toBeGreaterThanOrEqual(3);
   for (const tools of started.tools) expect(tools.filter((name) => name.startsWith("web_"))).toEqual([]);
+});
+
+it("reads a page in a session with no tools, the page fenced as data, and counts the reader's tokens", async () => {
+  started.reply = "The page says: \"Install with bun add x.\"";
+  const usage: number[] = [];
+  const result = await askPageReader({ target: { engine: "claude-code", model: "test" }, onUsage: (entry) => { usage.push(entry.input); } },
+    page, "How is x installed?", new AbortController().signal);
+  expect(result).toEqual({ status: "answered", answer: started.reply });
+  expect(started.tools).toEqual([[]]);
+  expect(started.requests[0]).toContain("Question: How is x installed?");
+  expect(started.requests[0]).toContain(`<page>\n${page.text}\n</page>`);
+  expect(usage).toEqual([5_000]);
 });
 
 it("names what a web call is about in the conversation", () => {

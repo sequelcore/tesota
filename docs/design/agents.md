@@ -227,7 +227,8 @@ candidate later.
   `unsupported_type`, `timeout`, `empty_page` and `fetch_failed` for pages,
   `provider_not_configured` and `provider_failed` for search.
 - **Visible.** Each search and read shows in the conversation with its query
-  or address. The reader's tokens are not yet counted in the session.
+  or address. The reader's time and tokens come back to the agent with its
+  answer, as an explorer's do.
 
 Pages that block automated requests, such as npm's, and pages that build
 their text with JavaScript give little or nothing; both engines' live runs

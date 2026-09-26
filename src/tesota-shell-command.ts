@@ -396,8 +396,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     return {
       search,
       fetch: (url, signal) => fetchPage(url, { permit, resolve: resolveHost, get: pinnedGet }, signal),
-      read: async (page, question, signal) => askPageReader({ target: await openModel(signal,
-        readModelChoices().explorer === EXPLORERS_OFF ? "agent" : "explorer") }, page, question, signal),
+      read: async (page, question, signal, onUsage) => askPageReader({ target: await openModel(signal,
+        readModelChoices().explorer === EXPLORERS_OFF ? "agent" : "explorer"), onUsage }, page, question, signal),
     };
   };
   /** What this session has recorded, for a brief to an agent that starts a new conversation (decision 026). */

@@ -2,6 +2,7 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { Type } from "@earendil-works/pi-ai";
 import type { WebFetchResult, WebPage } from "../web-fetch.js";
 import type { WebSearch } from "../web-search.js";
+import { runCost, type TokenUsage, totalTokens } from "../token-usage.js";
 
 /**
  * Web search and page reading (decision 024), as tools every engine gets the
@@ -19,8 +20,8 @@ export interface WebAccess {
   readonly search: WebSearch;
   /** Read one page under the operator's permission and the fetch rules. */
   fetch(url: string, signal: AbortSignal): Promise<WebFetchResult>;
-  /** Answer a question about a page in a session with no tools. */
-  read(page: WebPage, question: string, signal: AbortSignal): Promise<WebReadResult>;
+  /** Answer a question about a page in a session with no tools, reporting the tokens of each model call. */
+  read(page: WebPage, question: string, signal: AbortSignal, onUsage: (usage: TokenUsage) => void): Promise<WebReadResult>;
 }
 
 /** An explorer reads at most this much of a page; the rest is cut with a note. */
@@ -87,9 +88,13 @@ export function webReadTool(web: WebAccess): ToolDefinition {
       const running = signal ?? new AbortController().signal;
       const fetched = await web.fetch(params.url, running);
       if (fetched.status === "failed") return text(failure(fetched));
-      const answer = await web.read(fetched.page, params.question, running);
-      if (answer.status === "unfinished") return text(`The page was read but not answered: ${answer.reason}.`);
-      return text(`Answer from ${fetched.page.finalUrl}, read by a separate reader (a lead to check):\n\n${answer.answer}`);
+      const started = Date.now();
+      let tokens = 0;
+      const answer = await web.read(fetched.page, params.question, running, (usage) => { tokens += totalTokens(usage); });
+      // What the reader took comes back with its answer, as an explorer's does.
+      const cost = runCost(Date.now() - started, tokens);
+      if (answer.status === "unfinished") return text(`The page was read but not answered (${cost}): ${answer.reason}.`);
+      return text(`Answer from ${fetched.page.finalUrl}, read by a separate reader (${cost}; a lead to check):\n\n${answer.answer}`);
     },
   });
 }

@@ -2,7 +2,7 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { Type } from "@earendil-works/pi-ai";
 import { canStartExplorer } from "../verification/explorer-answer.js";
 import type { ExplorerResult } from "./pi-explorer.js";
-import { type TokenUsage, totalTokens } from "../token-usage.js";
+import { runCost, type TokenUsage, totalTokens } from "../token-usage.js";
 
 /**
  * The working agent's `explore` tool (decision 019): each call asks one
@@ -80,15 +80,10 @@ export class ExplorerPool {
   }
 }
 
-function cost(run: ExplorerRun): string {
-  const tokens = run.tokens < 1_000 ? `${run.tokens} tokens` : `${Math.round(run.tokens / 1_000)}k tokens`;
-  return `${Math.max(1, Math.round(run.durationMs / 1_000))} s, ${tokens}`;
-}
-
 /** What the agent reads back from one explorer. */
 export function exploreResult(run: ExplorerRun): string {
   if (run.result.status === "unfinished") return `The explorer did not answer: ${run.result.reason}.`;
-  return `Explorer's answer (${cost(run)}); check what you rely on:\n\n${run.result.answer}`;
+  return `Explorer's answer (${runCost(run.durationMs, run.tokens)}); check what you rely on:\n\n${run.result.answer}`;
 }
 
 const activityLines = 8;
