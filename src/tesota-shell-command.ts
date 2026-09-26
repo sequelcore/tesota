@@ -43,7 +43,7 @@ import { applyRefutation, refuteFindings } from "./integrations/pi-refuter.js";
 import { attributeOrigins } from "./finding-origin.js";
 import { forecastLine, type ReviewMeasurement, type ReviewModels, type ReviewPlan } from "./review-forecast.js";
 import { countsAsMeasurement } from "./verification/review-estimate.js";
-import { type TokenUsage, totalTokens } from "./token-usage.js";
+import { formatTokens, type TokenUsage, totalTokens } from "./token-usage.js";
 import { validateFixes, validationReport } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
 import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry, type AssuranceEntry } from "./assurance-journal.js";
@@ -144,6 +144,8 @@ class SessionState {
   explorers: ExplorerPool | undefined;
   /** The advisor the agent consults (decision 027); absent when it is off. */
   advisor: Advisor | undefined;
+  /** The agent once it has started, for what can be read without waiting: the size of its conversation. */
+  agent: WorkingAgent | undefined;
   /** Sites the operator allowed or refused for this session's page reading (decision 024). */
   readonly webAllowed: Set<string> = new Set();
   readonly webDenied: Set<string> = new Set();
@@ -241,7 +243,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onHandoff: (id) => { void agentModel.handOff(id); },
     modelPicker: (id) => {
       try {
-        return { current: agentChoice(id), entries: offered().map((model) => ({ id: model.id, detail: modelCost(model),
+        const context = states.get(id)?.agent?.contextTokens();
+        return { current: agentChoice(id), ...(context === undefined ? {} : { contextTokens: context }), entries: offered().map((model) => ({ id: model.id, detail: modelCost(model),
           reasoning: model.reasoning })) };
       } catch { return undefined; }
     },
@@ -492,6 +495,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         },
         onActivity: (activity) => { surface.showActivity(id, activity); } }, { sessionManager, conversationId: engineId });
       consulted = agent;
+      state.agent = agent;
       await briefNewConversation(id, agent, workspace);
       return agent;
     })();
@@ -509,6 +513,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     state.coding = undefined;
     state.explorers = undefined;
     state.advisor = undefined;
+    state.agent = undefined;
     await live?.then((coding) => { coding.dispose(); }, () => undefined);
     store.rotateEngine(id);
     store.setAgentModel(id, choice);
@@ -563,6 +568,13 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           store.setAgentModel(id, choice);
           surface.setSessionModel(id, choice);
           surface.writeTo(id, `The agent now uses ${choice}; its conversation continues.`);
+          const context = states.get(id)?.agent?.contextTokens();
+          // A prompt cache belongs to one model and level; measured on both engines, the next call reads everything anew.
+          if (context !== undefined) {
+            surface.writeTo(id, `The next request re-reads this conversation, about ${formatTokens(context)}, without the ` +
+              "prompt cache, which belongs to one model and level; later requests use the cache again. /handoff instead " +
+              "starts a new conversation with a short brief.");
+          }
           warnJudges(id, choice);
           return;
         }

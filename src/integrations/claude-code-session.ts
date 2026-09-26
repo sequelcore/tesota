@@ -87,6 +87,15 @@ export function claudeCodeEntries(role: "user" | "assistant", content: unknown):
   });
 }
 
+/** The input one API call read, cached or not, from an assistant message's usage; undefined when it has none. */
+export function callContext(message: unknown): number | undefined {
+  const usage: unknown = typeof message === "object" && message !== null ? Reflect.get(message, "usage") : undefined;
+  if (typeof usage !== "object" || usage === null) return undefined;
+  const size = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
+    .reduce((total, key) => total + (Number(Reflect.get(usage, key)) || 0), 0);
+  return size > 0 ? size : undefined;
+}
+
 /** Allows Tesota's tools and refuses anything else Claude Code tries to call. */
 export const onlyTesotaTools: CanUseTool = async (name, input) => name.startsWith(prefix)
   ? { behavior: "allow", updatedInput: input }
@@ -151,10 +160,12 @@ export class ClaudeCodeSession {
   #signal: AbortSignal = new AbortController().signal;
   /** The conversation: what Claude Code saved before this session started, then every message since. */
   readonly #entries: ConversationEntry[];
+  #contextTokens: number | undefined;
 
   private constructor(options: ClaudeCodeSessionOptions, root: string, conversationStarted: boolean,
-    earlier: readonly ConversationEntry[]) {
+    earlier: readonly ConversationEntry[], contextTokens: number | undefined) {
     this.#entries = [...earlier];
+    this.#contextTokens = contextTokens;
     this.#options = options;
     this.#root = root;
     this.#model = options.model;
@@ -168,12 +179,13 @@ export class ClaudeCodeSession {
     const root = realpathSync(options.cwd);
     const existing = options.conversationId === undefined ? false
       : await getSessionInfo(options.conversationId, { dir: root }) !== undefined;
-    const earlier = !existing || options.conversationId === undefined ? []
+    const saved = !existing || options.conversationId === undefined ? []
       : (await getSessionMessages(options.conversationId, { dir: root }))
-        .filter((message) => message.parent_tool_use_id === null && message.type !== "system")
-        .flatMap((message) => claudeCodeEntries(message.type === "assistant" ? "assistant" : "user",
-          typeof message.message === "object" && message.message !== null ? Reflect.get(message.message, "content") : undefined));
-    return new ClaudeCodeSession(options, root, existing, earlier);
+        .filter((message) => message.parent_tool_use_id === null && message.type !== "system");
+    const earlier = saved.flatMap((message) => claudeCodeEntries(message.type === "assistant" ? "assistant" : "user",
+      typeof message.message === "object" && message.message !== null ? Reflect.get(message.message, "content") : undefined));
+    const lastCall = saved.findLast((message) => message.type === "assistant");
+    return new ClaudeCodeSession(options, root, existing, earlier, lastCall === undefined ? undefined : callContext(lastCall.message));
   }
 
   get usable(): boolean { return this.#usable; }
@@ -194,12 +206,16 @@ export class ClaudeCodeSession {
   /** The conversation so far, including the turn in progress. */
   async conversation(): Promise<readonly ConversationEntry[]> { return [...this.#entries]; }
 
+  /** The input the last API call read, cached or not. */
+  contextTokens(): number | undefined { return this.#contextTokens; }
+
   #observe(message: SDKMessage): void {
     // Tool results come back as user messages; the request itself was recorded when it was sent.
     if (message.type === "user" && message.parent_tool_use_id === null && Array.isArray(message.message.content)) {
       this.#entries.push(...claudeCodeEntries("user", message.message.content).filter((entry) => entry.role === "tool_result"));
     }
     if (message.type !== "assistant" || message.parent_tool_use_id !== null) return;
+    this.#contextTokens = callContext(message.message) ?? this.#contextTokens;
     this.#entries.push(...claudeCodeEntries("assistant", message.message.content));
     const text = textOf(message.message.content).trim();
     if (text.length === 0) return;

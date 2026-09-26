@@ -130,7 +130,7 @@ it("opens a model picker on /model: filtered by typing, a reasoning level with l
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const onModel = vi.fn();
   const levels = ["low", "medium", "high", "xhigh", "max"] as const;
-  const modelPicker = () => ({ current: "claude-code:opus", entries: [
+  const modelPicker = () => ({ current: "claude-code:opus", contextTokens: 48_300, entries: [
     { id: "codex:gpt-6-sol", detail: "your ChatGPT plan's limits", reasoning: levels },
     { id: "claude-code:opus", detail: "your Claude Code sign-in", reasoning: levels },
     { id: "claude-code:haiku", detail: "your Claude Code sign-in", reasoning: [] } ] });
@@ -145,6 +145,7 @@ it("opens a model picker on /model: filtered by typing, a reasoning level with l
   expect(opened).toContain("codex:gpt-6-sol");
   expect(opened).toMatch(/● claude-code:opus/u);
   expect(opened).toContain("←→ reasoning");
+  expect(opened).toContain("A switch re-reads about 48k tokens without cache; /handoff starts fresh.");
   terminal.send("sol");
   const filtered = screen();
   expect(filtered).toContain("codex:gpt-6-sol");

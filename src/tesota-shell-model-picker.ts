@@ -1,5 +1,6 @@
-import { type Component, fuzzyFilter, truncateToWidth } from "@earendil-works/pi-tui";
+import { type Component, fuzzyFilter, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { bold, mutedText, selectedRow, type TesotaShellTheme } from "./tesota-shell-theme.js";
+import { formatTokens } from "./token-usage.js";
 
 /**
  * The `/model` picker (decision 026): the agent's model chosen from a list,
@@ -21,6 +22,8 @@ export interface ModelPickerEntry {
 export interface ModelPickerData {
   /** The session's agent model, with its level when it has one. */
   readonly current: string;
+  /** What the agent's next model call re-reads, when it has made one: the cost of switching model or level. */
+  readonly contextTokens?: number | undefined;
   readonly entries: readonly ModelPickerEntry[];
 }
 
@@ -126,7 +129,11 @@ export class ModelPicker implements Component {
       return selected ? selectedRow(bold(line), width, this.#theme) : mutedText(line, this.#theme);
     });
     const position = matches.length > maxRows ? ` · ${this.#selected + 1}/${matches.length}` : "";
+    const context = this.#data?.contextTokens;
+    // Caches belong to one model and level (decision 026): a switch's cost is known before it is made.
+    const cost = context === undefined ? [] : wrapTextWithAnsi(`  A switch re-reads about ${formatTokens(context)} without cache; ` +
+      "/handoff starts fresh.", width).map((line) => mutedText(line, this.#theme));
     return [mutedText(truncateToWidth(`  Agent model · ↑↓ choose · ←→ reasoning · Enter switch · Esc close${position}`, width),
-      this.#theme), ...rows];
+      this.#theme), ...cost, ...rows];
   }
 }

@@ -40,6 +40,12 @@ Decision 026; evidence in the
   the `codex` and `anthropic` routes; Claude Code's model per query, on a
   resumed conversation); a model on **another engine** starts a new
   conversation, because neither engine can read the other's.
+- **A switch in place costs one uncached turn.** A prompt cache belongs to
+  one model and reasoning level; measured on both engines, the next request
+  re-reads the whole conversation at the uncached rate, then caching resumes.
+  Each engine reports the input its last model call read (`contextTokens()`
+  in the engine contract), so the picker shows that size before a switch and
+  the shell repeats it after one, with `/handoff` as the cheaper choice.
 - **`/handoff`** starts a new conversation on the same model, for a fresh
   context. The earlier conversation's transcript is kept until the session
   closes (`retiredEngineIds`).

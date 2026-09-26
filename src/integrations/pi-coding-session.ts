@@ -392,6 +392,14 @@ export class CodingSession {
     this.#session.setThinkingLevel(target.reasoning ?? DEFAULT_REASONING);
   }
 
+  /** The input the last model call read, cached or not, from its reported usage. */
+  contextTokens(): number | undefined {
+    const last = this.#session.messages.findLast((message) => message.role === "assistant");
+    if (last?.role !== "assistant") return undefined;
+    const size = last.usage.input + last.usage.cacheRead + last.usage.cacheWrite;
+    return size > 0 ? size : undefined;
+  }
+
   /** The conversation Pi holds, including the turn in progress; thinking is left out. */
   async conversation(): Promise<readonly ConversationEntry[]> {
     return this.#session.messages.flatMap(piEntries);

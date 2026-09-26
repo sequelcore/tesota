@@ -62,7 +62,8 @@ beforeEach(() => {
     ? { engine: "claude-code", model: choice.slice("claude-code:".length) } : { engine: "pi", model: { id: choice } });
   mocks.startWorkingAgent.mockImplementation(async () => {
     const entry = { run: vi.fn(async () => ({ status: "completed" as const, reply: "ok" })), switchModel: vi.fn(async () => {}),
-      dispose: vi.fn(), conversation: vi.fn(async () => [{ role: "user", text: "Add a retry limit." }]) };
+      dispose: vi.fn(), conversation: vi.fn(async () => [{ role: "user", text: "Add a retry limit." }]),
+      contextTokens: () => 48_300 };
     agents.push({ ...entry, agent: { usable: true, resumed: false, ...entry } as unknown as WorkingAgent });
     return agents.at(-1)?.agent;
   });
@@ -100,6 +101,9 @@ it("switches in place on the same engine, and the conversation continues", async
   expect(record.engineId).toBe("11111111-1111-4111-8111-111111111111");
   expect(model).toHaveBeenLastCalledWith("session", "codex:gpt-6-sol");
   expect(said()).toContain("its conversation continues");
+  // Caches belong to one model and level: the operator learns what the next request re-reads, and the cheaper way.
+  expect(said()).toContain("The next request re-reads this conversation, about 48k tokens, without the prompt cache");
+  expect(said()).toContain("/handoff");
   // Every other role takes its default, Luna: the new agent is no longer judged by its own model.
   expect(said()).not.toContain("Same model judging");
   // A lab shared with its judges is a note, dimmed; the same model is a warning, colored.

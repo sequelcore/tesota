@@ -26,8 +26,12 @@ export function totalTokens(usage: TokenUsage): number {
   return usage.input + usage.output;
 }
 
+/** A token count as the operator reads it: `640 tokens`, or `48k tokens` past a thousand. */
+export function formatTokens(tokens: number): string {
+  return tokens < 1_000 ? `${tokens} tokens` : `${Math.round(tokens / 1_000)}k tokens`;
+}
+
 /** What a helper session took, as the agent is told it: `12 s, 8k tokens`. */
 export function runCost(durationMs: number, tokens: number): string {
-  const count = tokens < 1_000 ? `${tokens} tokens` : `${Math.round(tokens / 1_000)}k tokens`;
-  return `${Math.max(1, Math.round(durationMs / 1_000))} s, ${count}`;
+  return `${Math.max(1, Math.round(durationMs / 1_000))} s, ${formatTokens(tokens)}`;
 }

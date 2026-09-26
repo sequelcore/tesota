@@ -39,6 +39,9 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
     canUseTool: (name: string, input: unknown, options: { signal: AbortSignal }) => Promise<{ behavior: string }>;
     hooks?: { PostToolBatch?: { hooks: Hook[] }[] } };
   const usage = { inputTokens: 40, outputTokens: 10, cacheReadInputTokens: 300, cacheCreationInputTokens: 60 };
+  // One API call's usage, as an assistant message reports it: fresh input apart from the cache.
+  const callUsage = { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens,
+    cache_read_input_tokens: usage.cacheReadInputTokens, cache_creation_input_tokens: usage.cacheCreationInputTokens };
   const result = (fields: Record<string, unknown>, calls: number): Record<string, unknown> => ({ type: "result",
     modelUsage: { "claude-test": { inputTokens: usage.inputTokens * calls, outputTokens: usage.outputTokens * calls,
       cacheReadInputTokens: usage.cacheReadInputTokens * calls, cacheCreationInputTokens: usage.cacheCreationInputTokens * calls } },
@@ -81,13 +84,13 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
       }
       if ("fail" in step) { yield result({ subtype: "error_during_execution", is_error: true, errors: [step.fail] }, calls); return; }
       if ("text" in step) {
-        yield { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: step.text }] } };
+        yield { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: step.text }], usage: callUsage } };
         yield result({ subtype: "success", is_error: false, result: step.text }, calls);
         return;
       }
       const batch = [];
       for (const call of step.tools) batch.push(await runCall(options, call, `use-${sdk.calls}-${batch.length}`));
-      yield { type: "assistant", parent_tool_use_id: null, message: { content: batch.map((entry) =>
+      yield { type: "assistant", parent_tool_use_id: null, message: { usage: callUsage, content: batch.map((entry) =>
         ({ type: "tool_use", id: entry.tool_use_id, name: entry.tool_name, input: entry.tool_input })) } };
       yield { type: "user", parent_tool_use_id: null, message: { role: "user", content: batch.map((entry) =>
         ({ type: "tool_result", tool_use_id: entry.tool_use_id, content: [{ type: "text", text: entry.output }] })) } };
@@ -132,7 +135,7 @@ interface EngineHarness {
 /** A conversation kept across sessions: Pi's session manager, or Claude Code's conversation id. */
 type Conversation = Readonly<{ piManager: SessionManager; id: string }>;
 type WorkingSession = ModelSession & Readonly<{ resumed: boolean; switchModel(target: ModelTarget): Promise<void>;
-  conversation(): Promise<readonly ConversationEntry[]> }>;
+  conversation(): Promise<readonly ConversationEntry[]>; contextTokens(): number | undefined }>;
 
 function piHarness(): EngineHarness {
   const faux = fauxProvider({ models: [{ id: "scripted", reasoning: true }, { id: "other", reasoning: true }] });
@@ -312,6 +315,21 @@ describe.each([{ harness: piHarness }, { harness: claudeCodeHarness }])("the mod
     const resumed = await engine.start(root, readOnlyFileTools(root), observed, conversation);
     expect((await resumed.conversation()).slice(0, 2)).toEqual([{ role: "user", text: "The earlier request." },
       { role: "assistant", text: "first" }]);
+  });
+
+  it(`knows how large its conversation is: the input its last model call read, cached or not (${harness().engine})`, async () => {
+    const engine = harness();
+    const root = checkout();
+    const observed: Observed = { activity: [], usage: NO_TOKENS };
+    const session = await engine.start(root, readOnlyFileTools(root), observed,
+      { piManager: SessionManager.inMemory(root), id: randomUUID() });
+    expect(session.contextTokens()).toBeUndefined();
+    engine.script([{ tools: [{ name: "read", args: { path: "a.ts" } }] }, { text: "1" }]);
+    await session.run("What is a?", running());
+    const size = session.contextTokens() ?? 0;
+    expect(size).toBeGreaterThan(0);
+    // One call's input, not the turn's sum over its calls.
+    expect(size).toBeLessThan(observed.usage.input);
   });
 
   it(`reports tokens with cached input inside input (${harness().engine})`, async () => {

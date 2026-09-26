@@ -95,6 +95,12 @@ export interface WorkingAgent extends ModelSession {
   switchModel(target: ModelTarget): Promise<void>;
   /** The conversation so far, including the turn in progress, as the engine holds it (decision 027). */
   conversation(): Promise<readonly ConversationEntry[]>;
+  /**
+   * The input tokens the last model call read, cached or not: what the next
+   * call re-reads, and without cache after a switch of model or reasoning
+   * level. Undefined before the first call.
+   */
+  contextTokens(): number | undefined;
 }
 
 /** The working agent on its chosen engine, with the same tools and prompt on each. */

@@ -29,6 +29,34 @@ it informs decision 026. Recheck product behavior before relying on it.
 - **Between the two** no transcript carries over: Claude Code cannot read
   Pi's, nor Pi Claude Code's. The new engine starts a new conversation.
 
+## The prompt cache
+
+Checked on 2026-09-26. Both labs discount cached input heavily: OpenAI bills
+it at 0.1 of fresh input for GPT-5.6 and later, and keeps a prefix 30 minutes
+([prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching));
+Anthropic bills a cache hit at 0.1 of fresh input, 0.05 on Opus 5.5, and a
+five-minute write at 1.25
+([prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)).
+OpenAI lists the model and `reasoning.effort` among what breaks cache reuse,
+with one exception on GPT-6 models, a `configuration_update` input item that
+changes effort and keeps the prefix; Anthropic states that changing effort
+"always invalidates message blocks". Practitioners warn that switching to a
+cheaper model mid-conversation can cost more for this reason, and suggest a
+handoff document instead.
+
+Measured through Tesota on both engines, a conversation warmed at one model
+and level, then continued:
+
+| Engine | Same model and level | After a level change | After a model change | The turn after |
+| --- | --- | --- | --- | --- |
+| Pi, `codex:gpt-6-luna` to `@high` to `codex:gpt-6-sol` | 1,536 of 2,334 input read from cache | 0 | 0 | cache read again |
+| Pi, `codex:gpt-6-astra` to `@high` | 2,176 of 2,336 | 0: Pi does not send the `configuration_update` item | 0 | cache read again |
+| Claude Code, Sonnet 5 high to medium to Opus 5.5, per API call | cached from the second resumed turn | 0, 3,783 written | 0, 3,722 written | 3,783 and 3,722 read |
+
+So a switch of model or level costs one turn that reads the whole
+conversation at the uncached rate, on both engines; the first resumed turn on
+Claude Code also missed the cache once with nothing changed.
+
 ## Conclusions for Tesota
 
 1. Switch in place whenever the engine stays the same; the conversation is
@@ -42,7 +70,10 @@ it informs decision 026. Recheck product behavior before relying on it.
    and the agent's last reply. They cannot be invented, only incomplete,
    which the new agent is told. A replayed transcript, as in t3code, is
    larger and was cut silently at its cap.
-4. Keep the operator's request record the operator's own: context Tesota
+4. Say what an in-place switch costs before and after it is made: the
+   conversation's size, re-read once without cache, and `/handoff` as the
+   cheaper fresh start, since a short brief costs little uncached.
+5. Keep the operator's request record the operator's own: context Tesota
    sends is marked as Tesota's, as correction rounds already are. Amp lets the
    operator edit a generated prompt because a model wrote it; Tesota's brief
    is copied from records, is shown whole before it is sent, and the
