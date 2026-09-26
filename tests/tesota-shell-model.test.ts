@@ -100,6 +100,10 @@ it("switches in place on the same engine, and the conversation continues", async
   expect(record.engineId).toBe("11111111-1111-4111-8111-111111111111");
   expect(model).toHaveBeenLastCalledWith("session", "codex:gpt-6-sol");
   expect(said()).toContain("its conversation continues");
+  // Every other role takes its default, Luna: the new agent is no longer judged by its own model.
+  expect(said()).not.toContain("Same model judging");
+  await created.agentModel?.change("session", "codex:gpt-6-luna");
+  expect(said()).toContain("the reviewer judges the agent's work, and both use codex:gpt-6-luna");
   await created.session("session").work("Also log it.");
   expect(mocks.startWorkingAgent).toHaveBeenCalledTimes(1);
   created.dispose?.();

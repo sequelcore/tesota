@@ -53,9 +53,17 @@ measurements are in [findings](../findings.md).
   self-recognition ([Panickssery et al., NeurIPS 2024](https://arxiv.org/abs/2404.13076)).
   A panel from different families correlated better with human judgement than
   one large judge ([Verga et al., 2024](https://arxiv.org/abs/2404.18796)).
-  These studies judge text quality, not code defects; a claim that
-  self-preference extends to a whole model family appeared in a search
-  summary but not in the abstract checked, and is not relied on here.
+  These studies judge text quality, not code defects. Two 2026 studies,
+  checked on 2026-09-26, reach code and families: on LiveCodeBench and
+  IFEval, whose criteria are checked by programs, judges "can be more than
+  50% more likely to incorrectly mark them as satisfied when the output is
+  their own", and ensembles reduce but do not remove it
+  ([Pombal et al., 2026](https://arxiv.org/abs/2604.06996)); across four
+  open-weight families, judges favored their own family by 3.4 to 8.4
+  percentage points in pairwise preference, once candidate quality is held
+  fixed ([Awuni et al., 2026-09-15](https://arxiv.org/abs/2609.17857)). The
+  family result is on open models and preference judgments, not on the
+  labs' current models or on code.
 - **Cross-model code review is asymmetric, but the study's reviewer edits.**
   On 116 LiveCodeBench problems, Claude Opus 4.7 reviewing GPT-5.5 drafts
   raised the pass rate from 71.6% to 89.7%; GPT-5.5 reviewing Opus drafts

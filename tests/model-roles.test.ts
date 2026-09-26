@@ -86,6 +86,15 @@ it("lists each role with who pays for it and the model's list price, and sets on
   output = "";
   expect(runModelsCommand(["advisor", "off"], write, offered, path)).toBe(0);
   expect(output).toBe("The advisor is off.\n");
+  // Judges that share the author's model or lab are named, under the listing and after a choice.
+  output = "";
+  expect(runModelsCommand([], write, offered, path)).toBe(0);
+  expect(output).toContain("Same model judging its own output");
+  expect(output).toContain("the refuter tests the reviewer's findings, and both use claude-code:opus");
+  output = "";
+  expect(runModelsCommand(["advisor", "claude-code:opus"], write, offered, path)).toBe(0);
+  expect(output).toContain("The advisor now uses claude-code:opus.\n");
+  expect(output).toContain("the reviewer judges work the advisor's guidance shaped, and both use claude-code:opus");
   expect(runModelsCommand(["judge", "codex:gpt-6-sol"], write, offered, path)).toBe(2);
   expect(runModelsCommand(["agent", "codex:gpt-9"], write, offered, path)).toBe(1);
 });

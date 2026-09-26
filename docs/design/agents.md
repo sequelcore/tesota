@@ -144,6 +144,26 @@ measurements record the models so forecasts compare like with like. What the
 labs, benchmarks and practitioners say about choosing them is in the
 [models by role landscape](../research/model-roles-landscape.md).
 
+### Judges and their authors
+
+Decision 028. Several roles judge another's output: the reviewer, the
+validator and the refuter judge the agent's work, the reviewer and validator
+also judge work the advisor's guidance shaped, and the refuter tests the
+reviewer's findings. Evaluators favor their own output even on objective code
+criteria, and their own family less strongly (the
+[models by role landscape](../research/model-roles-landscape.md#the-reviewer)
+has the studies). `tesota models` lists every such pair that shares a model,
+as a warning, or a lab, as a note, and a choice or a `/model` switch that
+creates one says so (`src/judge-warnings.ts`; the levels are
+`judgeIndependence` in `src/verification/judge-independence.ts`, proved by
+`bun run formal:check`). A Claude Code alias counts as the same model as the
+models of its family, since it follows the newest of them. Tesota warns and
+never refuses: an operator with one plan may have no other model, and with
+two labs and more than two roles some pair must share a lab. When one must,
+a refuter that shares the reviewer's lab errs toward keeping findings the
+operator then sees, while one that shares the agent's lab errs toward
+dismissing real defects.
+
 ## Model routes
 
 A **route** is how Tesota reaches a model and whose account pays for it. Every

@@ -12,6 +12,7 @@ import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
 import { ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
 import { offeredModels, routeListing } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
+import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
 import { currentBranch } from "./repository-git.js";
 import { askExplorer, askPageReader } from "./integrations/pi-explorer.js";
@@ -507,6 +508,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const newConversationNote = "It starts a new conversation with your next request and will not have this conversation. " +
     "Tesota sends it a brief of this session: your requests for the pending changes, the changes, open findings " +
     "and the agent's last reply.";
+  /** Judges of this session's agent that share its model or lab (decision 028), after a switch. */
+  const warnJudges = (id: string, choice: string): void => {
+    const warnings = describeJudgeWarnings(judgeWarnings({ ...readModelChoices(), agent: choice })
+      .filter((warning) => warning.author === "agent"));
+    if (warnings !== "") surface.writeTo(id, warnings, "warning");
+  };
   const agentModel: AgentModelCommands = {
     change: async (id, argument) => {
       let current: string;
@@ -543,11 +550,13 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           store.setAgentModel(id, choice);
           surface.setSessionModel(id, choice);
           surface.writeTo(id, `The agent now uses ${choice}; its conversation continues.`);
+          warnJudges(id, choice);
           return;
         }
         case "new_conversation":
           await newConversation(id, choice);
           surface.writeTo(id, `The agent now uses ${choice}, which runs on another engine. ${newConversationNote}`);
+          warnJudges(id, choice);
       }
     },
     handOff: async (id) => {

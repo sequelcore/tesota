@@ -76,6 +76,11 @@ to sessions opened afterwards.
   their own output when they judge it. Tesota's reviewer only reports
   findings and the refuter tests them, so a reviewer from another family
   cannot rewrite the agent's work.
+- **Keep judges off their author's model.** `tesota models` warns when a
+  role judges output from its own model, and notes when it is from the same
+  lab. With two labs some pair shares one; prefer the refuter in the
+  reviewer's lab rather than the agent's, so a bias keeps findings for you to
+  see instead of dismissing real defects.
 - **Give the refuter a stronger model than the cheapest.** In Tesota's
   evaluations Luna as refuter once dismissed a real defect; Sol and Astra did
   not.
