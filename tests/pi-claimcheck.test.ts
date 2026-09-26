@@ -20,8 +20,10 @@ const requests = ["Denied paths must always win over allowed ones."];
 it("reads each function's contract, not annotations inside bodies or unannotated functions", () => {
   expect(items).toEqual([
     { path: "src/policy.ts", name: "canAccess", text: "//@ ensures denied ==> \\result === false\n" +
-      "//@ ensures !denied && allowed ==> \\result === true\nexport function canAccess(denied: boolean, allowed: boolean): boolean {" },
-    { path: "src/policy.ts", name: "double", text: "//@ requires n >= 0\n//@ ensures \\result >= 0\nfunction double(n: number): number { return n * 2; }" },
+      "//@ ensures !denied && allowed ==> \\result === true\nexport function canAccess(denied: boolean, allowed: boolean): boolean {",
+      line: 1, endLine: 3 },
+    { path: "src/policy.ts", name: "double", text: "//@ requires n >= 0\n//@ ensures \\result >= 0\nfunction double(n: number): number { return n * 2; }",
+      line: 9, endLine: 11 },
   ]);
 });
 
@@ -45,7 +47,7 @@ it("reports contracts that miss the request, and is unfinished when a contract w
     { name: "double", verdict: "vacuous", disposition: "operator", explanation: "Always true for doubles of non-negatives." },
   ], done)).toEqual({ reviewer: "ClaimCheck method", tree, status: "completed",
     summary: "1 of 2 proved contracts express what was asked.", findings: [
-      { severity: "high", disposition: "operator", origin: "introduced", path: "src/policy.ts",
+      { severity: "high", disposition: "operator", origin: "introduced", path: "src/policy.ts", line: 9, endLine: 11,
         statement: "The proved contract of double proves nothing beyond its assumptions.",
         reason: "Always true for doubles of non-negatives." }] });
   expect(claimcheckReport(tree, items, [{ name: "canAccess", verdict: "justified", disposition: "fixable", explanation: "" }], done))

@@ -34,10 +34,11 @@ it("resolves nothing when the validator does not finish", () => {
 it("shows the validator the correction's diff and what was sent back, and tells the reviewer to judge only the correction", () => {
   const message = validationMessage(input, sentBack);
   expect(message).toContain("1. [high] at src/price.js:2: Exactly $100 is discounted\n   Why it was a problem: why Exactly $100 is discounted");
-  expect(message).toContain("Diff of the correction, from the result that was sent back to the current one:\n`````diff\n-  return amount >= 100");
+  expect(message).toContain("Diff of the correction, from the result that was sent back to the current one (the left " +
+    "column numbers each line of the changed files):\n`````diff\n-  return amount >= 100");
   const review = reviewMessage(input);
   expect(review).toContain("report only problems the correction itself introduced:\n- Exactly $100 is discounted");
-  expect(review).toContain("Diff of the correction, from the result that was sent back to the current one:");
+  expect(review).toContain("Diff of the correction, from the result that was sent back to the current one (the left column");
   const { correction: _correction, ...firstRound } = input;
-  expect(reviewMessage(firstRound)).toContain("Diff from the starting point:");
+  expect(reviewMessage(firstRound)).toContain("Diff from the starting point (the left column numbers each line of the changed files):");
 });

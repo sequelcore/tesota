@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { activityOf, confinedPath } from "../src/integrations/pi-coding-session.js";
+import { activityOf, confinedPath, responseTokens } from "../src/integrations/pi-coding-session.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -76,4 +76,14 @@ it("turns the agent's streamed text and tool calls into activity a surface can s
     { type: "tool_finished", call: "c3", failed: true, output: "Edit failed" },
     undefined,
   ]);
+});
+
+it("counts the tokens of each finished model response, and nothing else", () => {
+  const usage = { input: 900, output: 100, cacheRead: 4_000, cacheWrite: 0, totalTokens: 5_000 };
+  const events = [
+    { type: "message_update", message: { role: "assistant", content: [], usage } },
+    { type: "message_end", message: { role: "assistant", content: [], usage } },
+    { type: "message_end", message: { role: "user", content: "hi" } },
+  ] as unknown as AgentSessionEvent[];
+  expect(events.map(responseTokens)).toEqual([undefined, 5_000, undefined]);
 });

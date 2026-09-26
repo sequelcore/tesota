@@ -8,7 +8,7 @@ import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { allowsAutonomy, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
 import { chooseSessionMode, releaseWorkspace, type SessionMode } from "./execution-providers.js";
 import { CodexCredentials } from "./integrations/codex-credentials.js";
-import { CodingSession, type CommandApproval, type NetworkDecision } from "./integrations/pi-coding-session.js";
+import { CodingSession, type CommandApproval, type ModelAccess, type NetworkDecision } from "./integrations/pi-coding-session.js";
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
@@ -28,11 +28,26 @@ import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.j
 import { reviewDepth, type DepthDecision } from "./review-depth.js";
 import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
 import { applyRefutation, refuteFindings } from "./integrations/pi-refuter.js";
+import { attributeOrigins } from "./finding-origin.js";
+import { forecastLine, type ReviewMeasurement, type ReviewPlan } from "./review-forecast.js";
 import { validateFixes, validationReport } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
 import { appendAssurance, decisionEntry, reviewEntry, type AssuranceEntry } from "./assurance-journal.js";
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
+
+/** One review step of a session: what is reviewed, against which candidate, and where its tokens are counted. */
+interface ReviewRun {
+  readonly id: string;
+  readonly input: ReviewInput;
+  /** The whole candidate, base to tree, which origins are checked against even in a correction round. */
+  readonly candidate: WorkspaceSnapshot;
+  readonly depth: DepthDecision;
+  /** Reads a file from the candidate's tree. */
+  readonly read: (path: string) => string | undefined;
+  readonly onUsage: (tokens: number) => void;
+  readonly signal: AbortSignal;
+}
 
 /** How the process shell tells the session runner about workspace-level events. */
 export interface WorkspaceCallbacks {
@@ -262,59 +277,62 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     if (model === undefined) throw new Error("The Codex model is unavailable. Run tesota auth login.");
     return { runtime, model };
   };
-  /** Tesota's reviewer, with its investigation shown as progress rather than as the agent's conversation. */
-  /**
-   * Every reviewer that applies to the candidate, in turn: Tesota's reviewer
-   * always, and ClaimCheck's method when LemmaScript proved contracts in it.
-   */
+  /** The model for one of the review step's sessions, counting its tokens toward the step. */
+  const modelFor = async (run: ReviewRun): Promise<ModelAccess> => {
+    const { runtime, model } = await openModel(run.signal);
+    return { modelRuntime: runtime, model, onUsage: run.onUsage };
+  };
   /** In a correction round, whether each finding sent back is resolved; a validator that cannot run settles nothing. */
-  const validateCorrection = async (id: string, input: ReviewInput, signal: AbortSignal): Promise<ReviewReport | undefined> => {
-    const sentBack = input.correction?.sentBack ?? [];
+  const validateCorrection = async (run: ReviewRun): Promise<ReviewReport | undefined> => {
+    const sentBack = run.input.correction?.sentBack ?? [];
     if (sentBack.length === 0) return undefined;
-    surface.reportFor(id, { phase: "reviewing", activity: "Checking each fix" });
+    surface.reportFor(run.id, { phase: "reviewing", activity: "Checking each fix" });
     try {
-      const { runtime, model } = await openModel(signal);
-      return await validateFixes({ modelRuntime: runtime, model }, input, sentBack, signal);
+      return await validateFixes(await modelFor(run), run.input, sentBack, run.signal);
     } catch {
-      return validationReport(input.snapshot.tree, sentBack, { status: "cancelled" }, undefined);
+      return validationReport(run.input.snapshot.tree, sentBack, { status: "cancelled" }, undefined);
     }
   };
   /**
    * The review of a candidate, or in a correction round the validation of what
-   * was sent back followed by the review of the correction's own diff.
+   * was sent back followed by the review of the correction's own diff. A deep
+   * review first says what it will run and what such reviews have cost here.
    */
-  const reviewCandidate = async (id: string, input: ReviewInput, depth: DepthDecision,
-    read: (path: string) => string | undefined, signal: AbortSignal): Promise<ReviewReport[]> => {
-    const validation = await validateCorrection(id, input, signal);
-    const reports = await reviewAndRefute(id, input, depth, read, signal);
+  const reviewCandidate = async (run: ReviewRun): Promise<ReviewReport[]> => {
+    const plan: ReviewPlan = { depth: run.depth.depth, correction: run.input.correction !== undefined,
+      lenses: run.depth.depth === "deep" ? applicableLenses(run.input.checkout).map((lens) => lens.name) : [],
+      claimcheck: run.input.checks.some((check) => check.verifier === "lemmascript" && check.outcome === "passed") };
+    if (plan.depth === "deep") surface.writeTo(run.id, forecastLine(plan, store.reviewMeasurements()));
+    const validation = await validateCorrection(run);
+    const reports = await reviewAndRefute(run, plan);
     return validation === undefined ? reports : [validation, ...reports];
   };
-  /** The reviewers for this depth, run in parallel, then one refuter over all their findings. */
-  const reviewAndRefute = async (id: string, input: ReviewInput, depth: DepthDecision,
-    read: (path: string) => string | undefined, signal: AbortSignal): Promise<ReviewReport[]> => {
-    surface.reportFor(id, { phase: "reviewing", activity: depth.depth === "deep" ? "Deep review" : "Reviewing" });
+  /**
+   * The reviewers for this plan, run in parallel; then Tesota checks each
+   * origin against the whole candidate's diff, and one refuter tests all their findings.
+   */
+  const reviewAndRefute = async (run: ReviewRun, plan: ReviewPlan): Promise<ReviewReport[]> => {
+    const { id, input, signal } = run;
+    surface.reportFor(id, { phase: "reviewing", activity: plan.depth === "deep" ? "Deep review" : "Reviewing" });
     const reviewers: Reviewer[] = [];
     try {
-      const { runtime, model } = await openModel(signal);
-      reviewers.push(createPiReviewer({ modelRuntime: runtime, model }));
-      if (depth.depth === "deep") {
-        for (const lens of applicableLenses(input.checkout)) reviewers.push(createPiReviewer({ modelRuntime: runtime, model, lens }));
+      const access = await modelFor(run);
+      reviewers.push(createPiReviewer(access));
+      for (const lens of applicableLenses(input.checkout).filter((entry) => plan.lenses.includes(entry.name))) {
+        reviewers.push(createPiReviewer({ ...access, lens }));
       }
-      if (input.checks.some((check) => check.verifier === "lemmascript" && check.outcome === "passed")) {
-        reviewers.push(createClaimCheckReviewer({ modelRuntime: runtime, model, read }));
-      }
+      if (plan.claimcheck) reviewers.push(createClaimCheckReviewer({ ...access, read: run.read }));
     } catch (error) {
       return [{ reviewer: "Tesota reviewer", tree: input.snapshot.tree, status: "incomplete",
         reason: error instanceof Error ? error.message : "the reviewer could not start" }];
     }
-    const reports = await Promise.all(reviewers.map((reviewer) => reviewer.review(input, signal)
+    const reports = attributeOrigins(await Promise.all(reviewers.map((reviewer) => reviewer.review(input, signal)
       .catch((error: unknown): ReviewReport => ({ reviewer: reviewer.name, tree: input.snapshot.tree, status: "incomplete",
-        reason: error instanceof Error ? error.message : "the reviewer failed" }))));
+        reason: error instanceof Error ? error.message : "the reviewer failed" })))), run.candidate);
     if (signal.aborted || !reports.some((report) => report.status === "completed" && report.findings.length > 0)) return reports;
     surface.reportFor(id, { phase: "reviewing", activity: "Testing each finding" });
     try {
-      const { runtime, model } = await openModel(signal);
-      return await refuteFindings({ modelRuntime: runtime, model }, input, reports, signal);
+      return await refuteFindings(await modelFor(run), input, reports, signal);
     } catch {
       // A refuter that could not run leaves every finding unsettled, never confirmed.
       return applyRefutation(reports, undefined);
@@ -493,17 +511,28 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const scope = correction === undefined ? snapshot
         : { ...snapshot, base: correction.previousTree, ...workspace.compare(correction.previousTree, snapshot.tree) };
       const depth = reviewDepth(scope, flags, checks);
-      const reports = await reviewCandidate(id, { checkout: workspace.checkout, requests, snapshot: scope, checks, flags,
-        ...(correction === undefined ? {} : { correction: { sentBack: correction.sentBack } }) },
-      depth, (path) => read(snapshot.tree, path), signal);
+      const started = Date.now();
+      let tokens = 0;
+      const reports = await reviewCandidate({ id, signal, depth, candidate: snapshot,
+        input: { checkout: workspace.checkout, requests, snapshot: scope, checks, flags,
+          ...(correction === undefined ? {} : { correction: { sentBack: correction.sentBack } }) },
+        read: (path) => read(snapshot.tree, path), onUsage: (count) => { tokens += count; } });
       if (signal.aborted) return { status: "cancelled" };
+      const measurement: ReviewMeasurement = { at: new Date().toISOString(), depth: depth.depth,
+        correction: correction !== undefined, durationMs: Date.now() - started, tokens };
+      // A step in which a reviewer did not finish did not cost what a review costs.
+      if (reports.every((report) => report.status === "completed")) {
+        try { store.recordReviewMeasurement(measurement); } catch {
+          surface.writeTo(id, "Tesota could not record what this review cost; later forecasts leave it out.", "warning");
+        }
+      }
       // Reviewers have no tool that writes, but only an unchanged candidate may be applied.
       const unchanged = workspace.snapshot().tree === snapshot.tree;
       const reviews: ReviewReport[] = unchanged ? reports : reports.map((report) => ({ reviewer: report.reviewer,
         tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" }));
       if (unchanged) state.reviewed = snapshot;
-      surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews, depth }));
-      await journal(id, workspace, reviewEntry(snapshot, requests, checks, flags, reviews, depth));
+      surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews, depth, measurement }));
+      await journal(id, workspace, reviewEntry(snapshot, requests, checks, flags, reviews, depth, measurement));
       return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews, requests };
     }),
     apply: () => serialized(async (): Promise<ApplyResult> => {

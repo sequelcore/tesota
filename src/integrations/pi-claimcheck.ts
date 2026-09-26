@@ -1,7 +1,7 @@
-import { type ModelRuntime, type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
-import { type Api, type Model, type Static, Type } from "@earendil-works/pi-ai";
+import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
+import { type Static, Type } from "@earendil-works/pi-ai";
 import type { Finding, ReviewInput, ReviewReport, Reviewer } from "../review.js";
-import { type CodingTurnResult, CodingSession } from "./pi-coding-session.js";
+import { type CodingTurnResult, CodingSession, type ModelAccess, usageOption } from "./pi-coding-session.js";
 
 /**
  * ClaimCheck's round-trip method (metareflection/claimcheck, MIT), adapted to
@@ -19,17 +19,23 @@ export interface Contract {
   readonly path: string;
   readonly name: string;
   readonly text: string;
+  /** The contract's first annotation line and its declaration line. */
+  readonly line: number;
+  readonly endLine: number;
 }
 
 /** The `//@` blocks directly above a function declaration; annotations inside bodies belong to proofs, not contracts. */
 export function contracts(path: string, source: string): Contract[] {
   const found: Contract[] = [];
   let block: string[] = [];
-  for (const raw of source.split(/\r?\n/u)) {
+  for (const [index, raw] of source.split(/\r?\n/u).entries()) {
     const line = raw.trim();
     if (line.startsWith("//@")) { block.push(line); continue; }
     const declaration = /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/u.exec(line);
-    if (declaration !== null && block.length > 0) found.push({ path, name: declaration[1] ?? "", text: [...block, line].join("\n") });
+    if (declaration !== null && block.length > 0) {
+      found.push({ path, name: declaration[1] ?? "", text: [...block, line].join("\n"), line: index + 1 - block.length,
+        endLine: index + 1 });
+    }
     if (line.length > 0) block = [];
   }
   return found;
@@ -114,10 +120,10 @@ function finding(item: Contract, comparison: Comparison): Finding | undefined {
   if (comparison.verdict === "justified") return undefined;
   const verdict = comparison.verdict === "vacuous" ? "proves nothing beyond its assumptions" :
     comparison.verdict === "partially_justified" ? "covers only part of what was asked" : "does not express what was asked";
-  // The proved contracts are part of this candidate, so a gap in them is one it introduced.
+  // Introduced when the candidate wrote or changed the contract; Tesota checks that against the diff.
   return { severity: comparison.verdict === "partially_justified" ? "medium" : "high", disposition: comparison.disposition,
     origin: "introduced",
-    path: item.path, statement: `The proved contract of ${item.name} ${verdict}.`, reason: comparison.explanation };
+    path: item.path, line: item.line, endLine: item.endLine, statement: `The proved contract of ${item.name} ${verdict}.`, reason: comparison.explanation };
 }
 
 /** Findings from the comparisons; a contract left without a comparison makes the review unfinished. */
@@ -140,9 +146,7 @@ export function claimcheckReport(tree: string, items: readonly Contract[],
     summary: `${items.length - findings.length} of ${items.length} proved contracts express what was asked.` };
 }
 
-export interface ClaimCheckOptions {
-  readonly modelRuntime: ModelRuntime;
-  readonly model: Model<Api>;
+export interface ClaimCheckOptions extends ModelAccess {
   /** Reads a file from the candidate's frozen tree. */
   readonly read: (path: string) => string | undefined;
 }
@@ -158,7 +162,7 @@ export function createClaimCheckReviewer(options: ClaimCheckOptions): Reviewer {
       const tree = input.snapshot.tree;
       if (items.length === 0) return { reviewer: REVIEWER, tree, status: "completed", findings: [], summary: "No proved contracts to compare." };
       const session = (tool: ToolDefinition): Promise<CodingSession> => CodingSession.start({ cwd: input.checkout,
-        modelRuntime: options.modelRuntime, model: options.model, tools: [tool],
+        modelRuntime: options.modelRuntime, model: options.model, tools: [tool], ...usageOption(options),
         systemPrompt: "You compare formal specifications with natural-language requirements. Answer only through the tool you are given." });
       let informalizations: readonly Informalization[] | undefined;
       const first = await session(recordTool("record_informalizations", informalizationSchema, (value) => { informalizations = value.informalizations; }));

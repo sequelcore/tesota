@@ -52,6 +52,10 @@ it("shows each finding once, marks the operator's calls, and never shows an unfi
   const deep = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [],
     depth: { depth: "deep", reasons: ["changes existing tests (src/price.test.ts)", "changes 500 lines"] } });
   expect(deep.summary).toContain("  · deep review: changes existing tests (src/price.test.ts); changes 500 lines");
+  const measured = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [],
+    depth: { depth: "deep", reasons: ["changes 500 lines"] },
+    measurement: { at: "2026-09-25T00:00:00.000Z", depth: "deep", correction: false, durationMs: 42_400, tokens: 118_300 } });
+  expect(measured.summary).toContain("  · deep review (took 42 s and 118k tokens): changes 500 lines");
   expect(inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [], depth: { depth: "standard", reasons: [] } })
     .summary).not.toContain("deep review");
   const context = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
@@ -59,4 +63,15 @@ it("shows each finding once, marks the operator's calls, and never shows an unfi
       { severity: "high", disposition: "fixable", origin: "preexisting", path: "src/tax.ts", statement: "Tax ignores refunds",
         reason: "Unchanged code" }] }] });
   expect(context.summary).toContain("  ✓ Tesota reviewer: no problems introduced\n  · already there · src/tax.ts — Tax ignores refunds");
+});
+
+it("shows a finding whose cause Tesota could not establish as the operator's call, with the reason in the detail", () => {
+  const note = "The reviewer said this change caused it, but this change does not touch src/tax.ts.";
+  const review = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
+    { reviewer: "Tesota reviewer", tree: snapshot.tree, status: "completed", summary: "One unclear.", findings: [
+      { severity: "high", disposition: "fixable", origin: "unknown", originNote: note, path: "src/tax.ts", line: 9,
+        statement: "Tax ignores refunds", reason: "r", standing: "confirmed" }] }] });
+  expect(review.summary).toContain("  ⚠ cause unclear · high · src/tax.ts:9 — Tax ignores refunds");
+  expect(review.summary).not.toContain("no problems introduced");
+  expect(review.detail).toContain(`cause unclear: src/tax.ts:9 — Tax ignores refunds [confirmed]\n  r\n  Origin: ${note}`);
 });

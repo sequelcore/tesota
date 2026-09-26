@@ -31,3 +31,11 @@ it("appends each reviewed candidate and the operator's decision, with the eviden
   expect(JSON.stringify(lines[0])).not.toContain("not journaled");
   expect(lines[1]).toMatchObject({ kind: "decision", tree, decision: "rejected" });
 });
+
+it("records how deeply a candidate was reviewed and what the review took", () => {
+  const tree = "t".repeat(40);
+  const depth = { depth: "deep" as const, reasons: ["changes 500 lines"] };
+  const measurement = { at: "2026-09-25T00:00:00.000Z", depth: "deep" as const, correction: false, durationMs: 42_000, tokens: 118_000 };
+  expect(reviewEntry({ base: "b".repeat(40), tree, diff: "", changes: [] }, [], [], [], [], depth, measurement))
+    .toMatchObject({ kind: "review", depth, measurement });
+});

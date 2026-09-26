@@ -9,6 +9,7 @@ import { CodexCredentials } from "./integrations/codex-credentials.js";
 import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
 import { refuteFindings } from "./integrations/pi-refuter.js";
 import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.js";
+import { attributeOrigins } from "./finding-origin.js";
 import { reviewDepth } from "./review-depth.js";
 import type { ReviewReport } from "./review.js";
 import { EVALUATION_CASES, scoreCase, type CaseScore, type EvaluationCase } from "./review-evaluation.js";
@@ -34,7 +35,8 @@ function write(root: string, files: Readonly<Record<string, string>>): void {
 function totals(scores: readonly CaseScore[]): Record<string, number> {
   const sum = (key: keyof Omit<CaseScore, "name">): number => scores.reduce((total, score) => total + score[key], 0);
   return { found: sum("found"), seeded: sum("seeded"), falsePositives: sum("falsePositives"),
-    unsettled: sum("unsettled"), refuted: sum("refuted"), duplicates: sum("duplicates"), shown: sum("shown") };
+    unsettled: sum("unsettled"), refuted: sum("refuted"), duplicates: sum("duplicates"), shown: sum("shown"),
+    unknownOrigin: sum("unknownOrigin"), defectsUnknown: sum("defectsUnknown") };
 }
 
 /**
@@ -59,7 +61,8 @@ async function measureCorrections(ai: { readonly modelRuntime: ModelRuntime; rea
     const scope = { ...corrected, base: snapshot.tree, ...workspace.compare(snapshot.tree, corrected.tree) };
     const correctionInput: ReviewInput = { ...input, snapshot: scope, correction: { sentBack } };
     const validation = await validateFixes(ai, correctionInput, sentBack, signal);
-    const delta = await refuteFindings(ai, correctionInput, [await createPiReviewer(ai).review(correctionInput, signal)], signal);
+    const delta = await refuteFindings(ai, correctionInput,
+      attributeOrigins([await createPiReviewer(ai).review(correctionInput, signal)], corrected), signal);
     const remaining = validation.status === "completed" ? validation.findings : [];
     results[variant] = { sentBack: sentBack.length, resolved: sentBack.length - remaining.length,
       unresolved: remaining.filter((finding) => finding.standing === "confirmed").length,
@@ -107,10 +110,12 @@ try {
     const started = Date.now();
     const decision = reviewDepth(snapshot, input.flags, checks);
     const deep = depthMode === "deep" || depthMode === "computed" && decision.depth === "deep";
-    const ai = { modelRuntime: runtime, model };
-    const reviews = await Promise.all([createPiReviewer(ai),
+    // Tokens of the reviewers and the refuter, as the review step counts them (decision 018).
+    let tokens = 0;
+    const ai = { modelRuntime: runtime, model, onUsage: (count: number) => { tokens += count; } };
+    const reviews = attributeOrigins(await Promise.all([createPiReviewer(ai),
       ...(deep ? applicableLenses(workspace.checkout).map((lens) => createPiReviewer({ ...ai, lens })) : [])]
-      .map((reviewer) => reviewer.review(input, signal)));
+      .map((reviewer) => reviewer.review(input, signal))), snapshot);
     const reviewed = Date.now();
     // A run where no reviewer finished measures the environment, not the review: stop instead of recording zeros.
     const failed = reviews.find((report) => report.status === "incomplete");
@@ -119,6 +124,7 @@ try {
     }
     const tested = await refuteFindings(ai, input, reviews, signal);
     const done = Date.now();
+    const reviewTokens = tokens;
     // Measure the refuter directly: a planted false finding it should kill.
     let planted: string | undefined;
     if (testCase.falseClaim !== undefined) {
@@ -131,10 +137,11 @@ try {
     raw.push(scoreCase(testCase, reviews, "raw"));
     refuted.push(scoreCase(testCase, tested, "refuted"));
     const corrections = skipCorrections ? undefined : await measureCorrections(ai, testCase, workspace, snapshot, input, tested, signal);
-    cases.push({ name: testCase.name, depth: deep ? "deep" : "standard", depthReasons: decision.reasons, checks: checks.map((check) => check.outcome), reviewMs: reviewed - started,
+    cases.push({ name: testCase.name, depth: deep ? "deep" : "standard", depthReasons: decision.reasons, checks: checks.map((check) => check.outcome), reviewMs: reviewed - started, reviewTokens,
       refuteMs: done - reviewed, raw: raw.at(-1), refuted: refuted.at(-1), plantedFalseClaim: planted, corrections, reports: tested });
     console.log(`${testCase.name}: raw ${JSON.stringify(raw.at(-1))} | refuted ${JSON.stringify(refuted.at(-1))} | ` +
-      `review ${Math.round((reviewed - started) / 1000)} s, refuter ${Math.round((done - reviewed) / 1000)} s` +
+      `review ${Math.round((reviewed - started) / 1000)} s, refuter ${Math.round((done - reviewed) / 1000)} s, ` +
+      `${Math.round(reviewTokens / 1000)}k tokens` +
       (planted === undefined ? "" : ` | planted false claim: ${planted}`));
   }
 } finally { rmSync(root, { recursive: true, force: true }); }

@@ -1,7 +1,8 @@
-import { type ModelRuntime, type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
-import { type Api, type Model, Type } from "@earendil-works/pi-ai";
+import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
+import { Type } from "@earendil-works/pi-ai";
 import type { Finding, FindingStanding, ReviewInput, ReviewReport } from "../review.js";
-import { type CodingTurnResult, CodingSession, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
+import { type CodingTurnResult, CodingSession, type ModelAccess, readOnlyFileTools, repositoryInstructions,
+  usageOption } from "./pi-coding-session.js";
 import { reviewMessage } from "./pi-reviewer.js";
 
 /**
@@ -144,10 +145,7 @@ export function verdictsFrom(turn: CodingTurnResult, recorded: readonly Refutati
   return turn.status === "cancelled" || turn.status === "unsettled" ? undefined : recorded;
 }
 
-export interface RefuterOptions {
-  readonly modelRuntime: ModelRuntime;
-  readonly model: Model<Api>;
-}
+export type RefuterOptions = ModelAccess;
 
 /** Test every finding in the reports and return them with their standing. */
 export async function refuteFindings(options: RefuterOptions, input: ReviewInput, reports: readonly ReviewReport[],
@@ -157,7 +155,7 @@ export async function refuteFindings(options: RefuterOptions, input: ReviewInput
   let recorded: readonly Refutation[] | undefined;
   const session = await CodingSession.start({ cwd: input.checkout, modelRuntime: options.modelRuntime, model: options.model,
     systemPrompt: refuterPrompt(input.checkout),
-    tools: [...readOnlyFileTools(input.checkout), recordVerdicts((verdicts) => { recorded ??= verdicts; })] });
+    tools: [...readOnlyFileTools(input.checkout), recordVerdicts((verdicts) => { recorded ??= verdicts; })], ...usageOption(options) });
   try {
     const turn = await session.run(refutationMessage(input, findings), signal);
     return applyRefutation(reports, verdictsFrom(turn, recorded));

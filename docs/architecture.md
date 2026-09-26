@@ -96,6 +96,10 @@ at once; applications are serialized.
 | `review.ts` | The reviewer contract: what a reviewer sees, its findings, and incomplete reviews |
 | `integrations/pi-claimcheck.ts` | ClaimCheck's round-trip method on contracts LemmaScript proved: restated without the requests, then compared with them |
 | `review-depth.ts` | Choosing standard or deep review from facts about the candidate, with the reasons shown |
+| `diff-lines.ts` | Candidate line numbers read from a diff: the lines a change touched, and the numbered diff reviewers read |
+| `finding-origin.ts` | Reading each finding's origin facts from the candidate's diff and explaining a changed claim |
+| `verification/finding-origin-rule.ts` | The proved rule deciding whether a finding's origin claim stands or becomes unknown |
+| `review-forecast.ts` | Measured review costs per repository and the forecast shown before a deep review |
 | `integrations/pi-fix-validator.ts` | After a correction round, whether each finding sent back is resolved in the current code |
 | `integrations/pi-refuter.ts` | The refuter: a cold, read-only session that tries to disprove every finding, and the standing each finding gets |
 | `review-evaluation.ts`, `live-review.ts` | The review evaluation set with known truth, its scoring, and `bun run live:review` |

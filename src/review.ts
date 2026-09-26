@@ -11,8 +11,12 @@ import type { CheckResult } from "./workspace-checks.js";
 export type FindingSeverity = "high" | "medium" | "low";
 /** `fixable`: a defect against the request the agent can fix. `operator`: needs the operator's judgment. */
 export type FindingDisposition = "fixable" | "operator";
-/** Whether this candidate introduced the problem or it was already there (decision 016). */
-export type FindingOrigin = "introduced" | "preexisting";
+/**
+ * Whether this candidate introduced the problem, it was already there
+ * (decision 016), or that cannot be told (decision 018). Tesota checks the
+ * reviewer's claim against the diff and makes an unsupported one `unknown`.
+ */
+export type FindingOrigin = "introduced" | "preexisting" | "unknown";
 /** Whether the finding survived refutation; Tesota sets it, never the reviewer (decision 016). */
 export type FindingStanding = "confirmed" | "refuted" | "unsettled";
 
@@ -22,10 +26,14 @@ export interface Finding {
   readonly origin: FindingOrigin;
   readonly path?: string;
   readonly line?: number;
+  /** The last line when the finding covers a range from `line`. */
+  readonly endLine?: number;
   /** The problem, in one sentence. */
   readonly statement: string;
   /** What in the request, the code or the checks shows it. */
   readonly reason: string;
+  /** Why Tesota made the reviewer's origin claim `unknown`; absent when the claim stood. */
+  readonly originNote?: string;
   /** Absent until the refuter has tested the finding. */
   readonly standing?: FindingStanding;
   /** The refuter's evidence for its verdict. */

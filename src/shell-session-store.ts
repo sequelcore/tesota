@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import * as z from "zod";
 import { isNetworkDestination } from "./execution-environment.js";
+import { MEASUREMENTS_KEPT, type ReviewMeasurement, withMeasurement } from "./review-forecast.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
 
 const text = z.string().max(2_000_000);
@@ -29,12 +30,18 @@ const sessionSchema: z.ZodType<{ id: string; title: string;
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
       workspace: z.string().min(1).nullable(),
       interrupted: z.boolean(), blocked: z.boolean() });
+const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.iso.datetime(),
+  depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
+  tokens: z.number().nonnegative() });
 const snapshotVersion = 5;
+// `reviews` arrived after version 5 and is optional, so saved sessions survive; a missing list is empty.
 const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: typeof snapshotVersion; source: string;
-  checks: string[] | null; network: string[]; sessions: z.infer<typeof sessionSchema>[] }> =
+  checks: string[] | null; network: string[]; reviews?: ReviewMeasurement[] | undefined;
+  sessions: z.infer<typeof sessionSchema>[] }> =
     z.strictObject({ format: z.literal("tesota-shell-sessions"), version: z.literal(snapshotVersion),
       source: z.string(), checks: z.array(z.string().min(1).max(1000)).max(20).nullable(),
       network: z.array(z.string().refine(isNetworkDestination)).max(200),
+      reviews: z.array(measurementSchema).max(MEASUREMENTS_KEPT).optional(),
       sessions: z.array(sessionSchema) });
 export type ShellSessionRecord = z.infer<typeof sessionSchema>;
 type Snapshot = z.infer<typeof snapshotSchema>;
@@ -52,6 +59,9 @@ export interface ShellSessionStore {
   /** Network destinations the operator allowed for every session of this repository. */
   allowedNetwork(): readonly string[];
   allowNetwork(destinations: readonly string[]): void;
+  /** This repository's measured review steps, newest last, from which reviews are forecast. */
+  reviewMeasurements(): readonly ReviewMeasurement[];
+  recordReviewMeasurement(measurement: ReviewMeasurement): void;
   markActive(id: string, active: boolean): void;
   block(id: string): void;
   rotateEngine(id: string): string;
@@ -108,8 +118,8 @@ export function referencedWorkspaces(root: string = DEFAULT_SESSION_STORE_ROOT):
 
 /**
  * The store records the human transcript, workspace locations, the
- * repository's approved check commands and allowed network destinations; never
- * command approvals or check results.
+ * repository's approved check commands, allowed network destinations and
+ * measured review costs; never command approvals or check results.
  */
 export function openShellSessionStore(sourceDirectory: string,
   root: string = DEFAULT_SESSION_STORE_ROOT): ShellSessionStore {
@@ -133,13 +143,14 @@ export function openShellSessionStore(sourceDirectory: string,
     if (sessions.size !== snapshot.sessions.length) throw new Error("Duplicate saved Tesota session");
     let checks = snapshot.checks;
     let network = snapshot.network;
+    let reviews: readonly ReviewMeasurement[] = snapshot.reviews ?? [];
     let closed = false;
     const save = (): void => {
       if (closed) throw new Error("Tesota session store closed");
       const temporary = `${path}.${randomUUID()}.tmp`;
       try {
         writeFileSync(temporary, JSON.stringify({ format: "tesota-shell-sessions", version: snapshotVersion,
-          source, checks, network, sessions: [...sessions.values()] }) + "\n", { encoding: "utf8", mode: 0o600 });
+          source, checks, network, reviews, sessions: [...sessions.values()] }) + "\n", { encoding: "utf8", mode: 0o600 });
         renameSync(temporary, path);
       } finally { if (existsSync(temporary)) unlinkSync(temporary); }
     };
@@ -192,6 +203,12 @@ export function openShellSessionStore(sourceDirectory: string,
         network = [...new Set([...network, ...destinations.map((destination) => z.string()
           .refine(isNetworkDestination).parse(destination))])];
         try { save(); } catch (error) { network = previous; throw error; }
+      },
+      reviewMeasurements: () => reviews,
+      recordReviewMeasurement: (measurement) => {
+        const previous = reviews;
+        reviews = withMeasurement(reviews, measurementSchema.parse(measurement));
+        try { save(); } catch (error) { reviews = previous; throw error; }
       },
       markActive: (id, active) => {
         const session = find(id);

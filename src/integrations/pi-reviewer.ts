@@ -1,9 +1,10 @@
 import { realpathSync } from "node:fs";
-import { type ModelRuntime, type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
-import { type Api, type Model, type Static, Type } from "@earendil-works/pi-ai";
+import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
+import { type Static, Type } from "@earendil-works/pi-ai";
+import { numberedDiff } from "../diff-lines.js";
 import type { Finding, ReviewInput, ReviewReport, Reviewer } from "../review.js";
-import { type AgentActivity, type CodingTurnResult, CodingSession, readOnlyFileTools,
-  repositoryInstructions } from "./pi-coding-session.js";
+import { type AgentActivity, type CodingTurnResult, CodingSession, type ModelAccess, readOnlyFileTools,
+  repositoryInstructions, usageOption } from "./pi-coding-session.js";
 
 const REVIEWER = "Tesota reviewer";
 const diffLimit = 150_000;
@@ -15,10 +16,12 @@ const findingSchema = Type.Object({
   disposition: Type.Union([Type.Literal("fixable"), Type.Literal("operator")],
     { description: "fixable: a clear defect against the requests that can be fixed without asking the user; " +
       "operator: needs the user's judgment" }),
-  origin: Type.Union([Type.Literal("introduced"), Type.Literal("preexisting")],
-    { description: "introduced: this change caused it; preexisting: it was already there before the change" }),
+  origin: Type.Union([Type.Literal("introduced"), Type.Literal("preexisting"), Type.Literal("unknown")],
+    { description: "introduced: this change caused it; preexisting: it was already there before the change; " +
+      "unknown: you cannot tell which" }),
   path: Type.Optional(Type.String({ description: "Repository-relative file, when the finding has a location" })),
-  line: Type.Optional(Type.Integer({ minimum: 1 })),
+  line: Type.Optional(Type.Integer({ minimum: 1, description: "The line in the changed file, as numbered in the diff's " +
+    "left column; for a problem the change causes, the changed line that causes it" })),
   statement: Type.String({ description: "The problem, in one sentence" }),
   reason: Type.String({ description: "What in the requests, the code or the checks shows it" }),
 });
@@ -80,7 +83,8 @@ function reviewerPrompt(root: string, lens?: ReviewLens): string {
     "the user asked and whether the checks' evidence covers it. You cannot change files: investigate with the " +
     "read, search and list tools, reading the changed files and whatever they touch. Passing checks show only " +
     "that the code meets its tests; ask whether those tests reflect the requests. Judge what this change " +
-    "introduced: mark a problem that was already there before the change as preexisting, and for an introduced " +
+    "introduced: mark a problem that was already there before the change as preexisting, and one whose cause you " +
+    "cannot tell as unknown; Tesota checks each origin against the diff. For an introduced " +
     "problem outside the diff, name the code that is provably affected rather than speculating. Do not rely on " +
     "assumptions about intent that the requests do not state. For every change Tesota lists " +
     "as altering what checks the result, say whether it weakens what is checked. Report only real problems, not " +
@@ -102,8 +106,9 @@ function checkLine(check: ReviewInput["checks"][number]): string {
 /** What the reviewer is told: the requests verbatim, the evidence, the flags and the diff; never the worker's reasoning. */
 export function reviewMessage(input: ReviewInput): string {
   const { snapshot } = input;
-  const diff = snapshot.diff.length <= diffLimit ? snapshot.diff :
-    `${snapshot.diff.slice(0, diffLimit)}\n[The diff is cut at ${diffLimit} characters; read the files for the rest.]`;
+  const numbered = numberedDiff(snapshot.diff);
+  const diff = numbered.length <= diffLimit ? numbered :
+    `${numbered.slice(0, diffLimit)}\n[The diff is cut at ${diffLimit} characters; read the files for the rest.]`;
   return [
     `The user's requests, verbatim:\n${input.requests.map((request, index) => `${index + 1}. ${request}`).join("\n") ||
       "(not recorded)"}`,
@@ -115,7 +120,8 @@ export function reviewMessage(input: ReviewInput): string {
       `and a separate validator checks them; report only problems the correction itself introduced:\n` +
       input.correction.sentBack.map((finding) => `- ${finding.statement}`).join("\n")]),
     `${input.correction === undefined ? "Diff from the starting point" :
-      "Diff of the correction, from the result that was sent back to the current one"}:\n\`\`\`\`\`diff\n${diff}\n\`\`\`\`\``,
+      "Diff of the correction, from the result that was sent back to the current one"} ` +
+      `(the left column numbers each line of the changed files):\n\`\`\`\`\`diff\n${diff}\n\`\`\`\`\``,
   ].join("\n\n");
 }
 
@@ -133,9 +139,7 @@ export function reviewReport(tree: string, turn: CodingTurnResult,
 const submissionReminder = "You finished without calling submit_review, so Tesota has no review. Call submit_review " +
   "now with the findings you reached, or an empty list if there are none. Do not investigate further.";
 
-export interface PiReviewerOptions {
-  readonly modelRuntime: ModelRuntime;
-  readonly model: Model<Api>;
+export interface PiReviewerOptions extends ModelAccess {
   readonly onActivity?: (activity: AgentActivity) => void;
   /** A focused lens; without one, the reviewer judges conformance to the requests as a whole. */
   readonly lens?: ReviewLens;
@@ -165,7 +169,7 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
           submitted = { summary, findings };
           return true;
         })],
-        ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
+        ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }), ...usageOption(options) });
       try {
         let turn = await session.run(reviewMessage(input), signal);
         // A model sometimes answers in prose; one reminder, without new investigation, before the review counts as unfinished.

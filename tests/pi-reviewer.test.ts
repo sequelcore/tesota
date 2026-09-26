@@ -24,6 +24,13 @@ it("tells the reviewer the requests verbatim, the flags, the check evidence and 
   expect(message).toContain("`````diff\ndiff --git a/src/price.ts b/src/price.ts\n-a\n+b\n`````");
 });
 
+it("numbers the diff's lines so findings name the candidate's own lines", () => {
+  const message = reviewMessage({ ...input, snapshot: { ...input.snapshot,
+    diff: "diff --git a/src/price.ts b/src/price.ts\n@@ -2 +2 @@\n-a\n+b" } });
+  expect(message).toContain("(the left column numbers each line of the changed files)");
+  expect(message).toContain("@@ -2 +2 @@\n      -a\n    2 +b\n`````");
+});
+
 it("cuts a long diff and says so", () => {
   const message = reviewMessage({ ...input, snapshot: { ...input.snapshot, diff: "x".repeat(200_000) } });
   expect(message).toContain("[The diff is cut at 150000 characters; read the files for the rest.]");

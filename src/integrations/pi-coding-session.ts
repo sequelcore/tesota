@@ -243,6 +243,11 @@ export function activityOf(event: AgentSessionEvent, message: number): AgentActi
   }
 }
 
+/** The tokens a finished model response used, as its provider reported them; undefined for any other event. */
+export function responseTokens(event: AgentSessionEvent): number | undefined {
+  return event.type === "message_end" && event.message.role === "assistant" ? event.message.usage.totalTokens : undefined;
+}
+
 /** The file tools that only read, each confined to the workspace. */
 export function readOnlyFileTools(root: string): ToolDefinition[] {
   return [
@@ -253,6 +258,19 @@ export function readOnlyFileTools(root: string): ToolDefinition[] {
   ];
 }
 
+/** The model a read-only Tesota session uses, and where its token usage is counted. */
+export interface ModelAccess {
+  readonly modelRuntime: ModelRuntime;
+  readonly model: Model<Api>;
+  /** Called with the tokens of each finished model response, as the provider reported them. */
+  readonly onUsage?: (tokens: number) => void;
+}
+
+/** The session options that carry a model access's usage counter, when it has one. */
+export function usageOption(access: ModelAccess): Pick<SessionStartOptions, "onUsage"> {
+  return access.onUsage === undefined ? {} : { onUsage: access.onUsage };
+}
+
 export interface SessionStartOptions {
   readonly cwd: string;
   readonly modelRuntime: ModelRuntime;
@@ -261,6 +279,8 @@ export interface SessionStartOptions {
   readonly systemPrompt: string;
   readonly tools: readonly ToolDefinition[];
   readonly onActivity?: (activity: AgentActivity) => void;
+  /** Called with the tokens of each finished model response, as the provider reported them. */
+  readonly onUsage?: (tokens: number) => void;
 }
 
 /** A general coding conversation whose file tools cannot leave the workspace. */
@@ -269,11 +289,14 @@ export class CodingSession {
   readonly #unsubscribe: () => void;
   #usable = true;
 
-  private constructor(session: AgentSession, onActivity: ((activity: AgentActivity) => void) | undefined) {
+  private constructor(session: AgentSession, onActivity: ((activity: AgentActivity) => void) | undefined,
+    onUsage: ((tokens: number) => void) | undefined) {
     this.#session = session;
     let message = session.messages.filter((entry) => entry.role === "assistant").length;
     this.#unsubscribe = session.subscribe((event) => {
       if (event.type === "message_start" && event.message.role === "assistant") message += 1;
+      const tokens = onUsage === undefined ? undefined : responseTokens(event);
+      if (tokens !== undefined) onUsage?.(tokens);
       const activity = onActivity === undefined ? undefined : activityOf(event, message);
       if (activity !== undefined) onActivity?.(activity);
     });
@@ -310,7 +333,7 @@ export class CodingSession {
     const { session } = await createAgentSession({ cwd: root, modelRuntime: options.modelRuntime, model: options.model,
       thinkingLevel: "medium", sessionManager: options.sessionManager ?? PiSessionManager.inMemory(root),
       settingsManager, resourceLoader, tools: options.tools.map((tool) => tool.name), customTools: [...options.tools] });
-    return new CodingSession(session, options.onActivity);
+    return new CodingSession(session, options.onActivity, options.onUsage);
   }
 
   get usable(): boolean { return this.#usable; }

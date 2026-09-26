@@ -119,14 +119,20 @@ findings appear as above; findings it could neither confirm nor disprove are
 marked `? unsettled`; refuted ones are only counted, with the refuter's
 evidence in the result panel. Only confirmed defects that this change
 introduced go back to the agent; problems that were already there appear as
-`· already there`.
+`· already there`. Tesota checks each reviewer's "introduced" or "already
+there" against the lines the change touched; when the diff does not support
+it, the finding is marked `⚠ cause unclear` and left to you, with the reason
+in the result panel.
 
 Tesota reviews more deeply when the changes touch security- or
 authority-sensitive files, change existing tests or what checks the result,
 leave a verifier failing, or are large. The review then says why, and focused
 reviewers for correctness, security and authority, and your repository's
 `AGENTS.md` or `CLAUDE.md` rules join in; findings several of them report are
-merged before you see them.
+merged before you see them. Before a deep review starts, a line says what will
+run and what comparable reviews of this repository have taken in time and
+tokens, once three have been measured; the review then shows what it took.
+It asks for nothing; `Ctrl+C` stops it.
 
 When LemmaScript proved contracts in the changes, a second reviewer follows
 ClaimCheck's method: one session restates each proved contract without

@@ -129,6 +129,9 @@ export interface CaseScore {
   readonly duplicates: number;
   /** Findings the operator would see: counted, not merged. */
   readonly shown: number;
+  /** Findings whose origin Tesota could not establish (decision 018), and how many of them match a planted defect. */
+  readonly unknownOrigin: number;
+  readonly defectsUnknown: number;
 }
 
 function matches(finding: Finding, defect: SeededDefect): boolean {
@@ -143,8 +146,10 @@ function matches(finding: Finding, defect: SeededDefect): boolean {
  * confirmed; `raw` counts every introduced finding, as if nothing tested them.
  */
 export function scoreCase(testCase: EvaluationCase, reports: readonly ReviewReport[], mode: "raw" | "refuted"): CaseScore {
-  const findings = reports.flatMap((report) => report.status === "completed" ? report.findings : [])
-    .filter((finding) => finding.origin === "introduced");
+  const all = reports.flatMap((report) => report.status === "completed" ? report.findings : []);
+  const findings = all.filter((finding) => finding.origin === "introduced");
+  const unknown = all.filter((finding) => finding.origin === "unknown" &&
+    (mode === "raw" || finding.standing !== "refuted" && finding.duplicateOf === undefined));
   const counted = mode === "raw" ? findings
     : findings.filter((finding) => finding.standing === "confirmed" && finding.duplicateOf === undefined);
   return {
@@ -157,5 +162,7 @@ export function scoreCase(testCase: EvaluationCase, reports: readonly ReviewRepo
     refuted: mode === "raw" ? 0 : findings.filter((finding) => finding.standing === "refuted").length,
     duplicates: mode === "raw" ? 0 : findings.filter((finding) => finding.duplicateOf !== undefined).length,
     shown: counted.length,
+    unknownOrigin: unknown.length,
+    defectsUnknown: testCase.defects.filter((defect) => unknown.some((finding) => matches(finding, defect))).length,
   };
 }

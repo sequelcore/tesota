@@ -1,7 +1,9 @@
-import { type ModelRuntime, type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
-import { type Api, type Model, Type } from "@earendil-works/pi-ai";
+import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
+import { Type } from "@earendil-works/pi-ai";
+import { numberedDiff } from "../diff-lines.js";
 import type { Finding, ReviewInput, ReviewReport } from "../review.js";
-import { type CodingTurnResult, CodingSession, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
+import { type CodingTurnResult, CodingSession, type ModelAccess, readOnlyFileTools, repositoryInstructions,
+  usageOption } from "./pi-coding-session.js";
 
 /**
  * The fix validator (decision 016): after a correction round, a read-only
@@ -54,7 +56,8 @@ export function validationMessage(input: ReviewInput, sentBack: readonly Finding
   }).join("\n");
   return `The user's requests, verbatim:\n${input.requests.map((request, index) => `${index + 1}. ${request}`).join("\n") ||
     "(not recorded)"}\n\nFindings sent back to the agent:\n${findings}\n\n` +
-    `Diff of the correction, from the result that was sent back to the current one:\n\`\`\`\`\`diff\n${input.snapshot.diff}\n\`\`\`\`\``;
+    "Diff of the correction, from the result that was sent back to the current one (the left column numbers each " +
+    `line of the changed files):\n\`\`\`\`\`diff\n${numberedDiff(input.snapshot.diff)}\n\`\`\`\`\``;
 }
 
 /**
@@ -76,17 +79,15 @@ export function validationReport(tree: string, sentBack: readonly Finding[], tur
     summary: `${resolved} of ${sentBack.length} findings sent back ${resolved === 1 ? "is" : "are"} resolved.` };
 }
 
-export interface FixValidatorOptions {
-  readonly modelRuntime: ModelRuntime;
-  readonly model: Model<Api>;
-}
+export type FixValidatorOptions = ModelAccess;
 
 export async function validateFixes(options: FixValidatorOptions, input: ReviewInput, sentBack: readonly Finding[],
   signal: AbortSignal): Promise<ReviewReport> {
   let recorded: readonly FixVerdict[] | undefined;
   const session = await CodingSession.start({ cwd: input.checkout, modelRuntime: options.modelRuntime, model: options.model,
     systemPrompt: validatorPrompt(input.checkout),
-    tools: [...readOnlyFileTools(input.checkout), recordResolutions((verdicts) => { recorded ??= verdicts; })] });
+    tools: [...readOnlyFileTools(input.checkout), recordResolutions((verdicts) => { recorded ??= verdicts; })],
+    ...usageOption(options) });
   try {
     return validationReport(input.snapshot.tree, sentBack, await session.run(validationMessage(input, sentBack), signal), recorded);
   } finally { session.dispose(); }

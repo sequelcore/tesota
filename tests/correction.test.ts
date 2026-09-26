@@ -36,9 +36,11 @@ it("sends a problem back once, however many reviewers reported it", () => {
   expect(correctionFor([check("passed")], [repeated])?.findings).toHaveLength(1);
 });
 
-it("never sends back a problem the candidate did not introduce", () => {
+it("never sends back a problem the candidate did not introduce, or one whose cause is unknown", () => {
   const old: ReviewReport = { ...review, findings: [{ ...review.findings[0]!, origin: "preexisting" }] };
   expect(correctionFor([check("passed")], [old])).toBeUndefined();
+  const unclear: ReviewReport = { ...review, findings: [{ ...review.findings[0]!, origin: "unknown" }] };
+  expect(correctionFor([check("passed")], [unclear])).toBeUndefined();
 });
 
 it("asks for no correction when only the operator can settle what is left", () => {

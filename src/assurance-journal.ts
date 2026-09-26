@@ -2,6 +2,7 @@ import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ReviewReport } from "./review.js";
 import type { DepthDecision } from "./review-depth.js";
+import type { ReviewMeasurement } from "./review-forecast.js";
 import type { VerificationChange } from "./verification-changes.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
 import type { CheckResult } from "./workspace-checks.js";
@@ -21,13 +22,15 @@ export type AssuranceEntry =
   | Readonly<{ kind: "review"; at: string; base: string; tree: string; requests: readonly string[];
       checks: readonly Readonly<Pick<CheckResult, "verifier" | "command" | "claim" | "limits" | "environment" | "outcome" |
         "exitCode" | "output">>[];
-      flags: readonly VerificationChange[]; reviews: readonly ReviewReport[]; depth?: DepthDecision }>
+      flags: readonly VerificationChange[]; reviews: readonly ReviewReport[]; depth?: DepthDecision;
+      measurement?: ReviewMeasurement }>
   | Readonly<{ kind: "decision"; at: string; tree: string; decision: AssuranceDecision }>;
 
 export function reviewEntry(snapshot: WorkspaceSnapshot, requests: readonly string[], checks: readonly CheckResult[],
-  flags: readonly VerificationChange[], reviews: readonly ReviewReport[], depth?: DepthDecision): AssuranceEntry {
+  flags: readonly VerificationChange[], reviews: readonly ReviewReport[], depth?: DepthDecision,
+  measurement?: ReviewMeasurement): AssuranceEntry {
   return { kind: "review", at: new Date().toISOString(), base: snapshot.base, tree: snapshot.tree, requests, flags, reviews,
-    ...(depth === undefined ? {} : { depth }),
+    ...(depth === undefined ? {} : { depth }), ...(measurement === undefined ? {} : { measurement }),
     checks: checks.map((check) => ({ verifier: check.verifier, command: check.command, claim: check.claim,
       limits: check.limits, environment: check.environment, outcome: check.outcome, exitCode: check.exitCode,
       output: check.output.slice(-outputTail) })) };

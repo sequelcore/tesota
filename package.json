@@ -20,7 +20,7 @@
     "test:fast": "vitest run --config tests/vitest.fast.config.ts",
     "test:run": "vitest run tests --exclude tests/workspace-checkout.test.ts --exclude tests/workspace.test.ts --exclude tests/workspace-prune.test.ts --exclude tests/workspace-update.test.ts --maxWorkers=1 --no-file-parallelism --testTimeout=10000 && vitest run tests/workspace-checkout.test.ts tests/workspace.test.ts tests/workspace-prune.test.ts tests/workspace-update.test.ts --maxWorkers=1 --no-file-parallelism --testTimeout=20000",
     "lint": "oxlint --config .oxlintrc.json --deny-warnings src tests",
-    "formal:check": "lsc check --backend=dafny src/verification/invocation-admission.ts",
+    "formal:check": "lsc check --backend=dafny src/verification/invocation-admission.ts && lsc check --backend=dafny src/verification/finding-origin-rule.ts",
     "check": "bun run typecheck && bun run test && bun run lint",
     "start": "bun --no-env-file dist/cli.js",
     "live:codex": "bun --no-env-file dist/live-codex.js --full-probe --stored",

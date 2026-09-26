@@ -82,6 +82,12 @@ review only their own diff; and depth computed from facts about the candidate,
 with focused lenses on deep reviews, whose repeated findings are grouped by
 location and merged within a file.
 
+[Decision 018](decisions/018-verified-origin-and-review-forecast.md): Tesota
+checks each finding's origin against the candidate's diff and leaves an
+unsupported one to the operator as unknown, reviewers read numbered diff
+lines, and a deep review first says what it will run and what comparable
+reviews of the repository cost.
+
 **Done when:** a change to Tesota goes through verification, an independent
 review and a correction round, and the operator decides on the whole record.
 

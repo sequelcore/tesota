@@ -1,7 +1,9 @@
 # 016: Make review findings precise enough to act on
 
 Status: adopted 2026-09-25. Extends the review role of
-[decision 015](015-assurance-around-the-agent-loop.md). Evidence is in the
+[decision 015](015-assurance-around-the-agent-loop.md). Origin is checked
+against the diff and depth is forecast under
+[decision 018](018-verified-origin-and-review-forecast.md). Evidence is in the
 [agent review landscape](../references/agent-review-landscape.md). Adapts ideas
 from Gentle AI's RDD (MIT) with attribution; it does not use Gentle AI's
 code or protocol.

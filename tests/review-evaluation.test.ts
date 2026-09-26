@@ -21,8 +21,10 @@ it("counts a matched planted defect once and every other counted finding as a fa
     reason: "Only one case is covered", standing: "confirmed" }), finding({ path: "src/other.js", statement: "Naming",
     reason: "Unclear", standing: "confirmed" }), finding({ standing: "refuted" }), finding({ origin: "preexisting" })])];
   // The thin-tests finding is a real secondary problem: neither a hit nor a false positive.
-  expect(scoreCase(boundary, reports, "raw")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 0, duplicates: 0, shown: 4 });
-  expect(scoreCase(boundary, reports, "refuted")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 1, duplicates: 0, shown: 3 });
+  expect(scoreCase(boundary, reports, "raw")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 0, duplicates: 0, shown: 4,
+    unknownOrigin: 0, defectsUnknown: 0 });
+  expect(scoreCase(boundary, reports, "refuted")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 1, duplicates: 0, shown: 3,
+    unknownOrigin: 0, defectsUnknown: 0 });
 });
 
 it("scores a refuted or unsettled finding on a control as removed, not as a false positive", () => {
@@ -30,4 +32,11 @@ it("scores a refuted or unsettled finding on a control as removed, not as a fals
     finding({ path: "src/total.js", statement: "Maybe", reason: "?", standing: "unsettled" })])];
   expect(scoreCase(control, reports, "raw")).toMatchObject({ falsePositives: 2 });
   expect(scoreCase(control, reports, "refuted")).toMatchObject({ falsePositives: 0, unsettled: 1, refuted: 1 });
+});
+
+it("counts findings whose origin is unknown apart, noting which planted defects only they matched", () => {
+  const reports = [report([finding({ origin: "unknown", standing: "confirmed" }),
+    finding({ origin: "unknown", path: "src/other.js", statement: "Naming", reason: "Unclear", standing: "refuted" })])];
+  expect(scoreCase(boundary, reports, "raw")).toMatchObject({ found: 0, unknownOrigin: 2, defectsUnknown: 1 });
+  expect(scoreCase(boundary, reports, "refuted")).toMatchObject({ found: 0, unknownOrigin: 1, defectsUnknown: 1 });
 });

@@ -1,5 +1,6 @@
 import type { Finding, ReviewReport } from "./review.js";
 import type { DepthDecision } from "./review-depth.js";
+import { costText, type ReviewMeasurement } from "./review-forecast.js";
 import type { ShellInspection } from "./tesota-shell-terminal.js";
 import type { VerificationChange } from "./verification-changes.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
@@ -15,6 +16,8 @@ export interface ReviewRecord {
   readonly reviews: readonly ReviewReport[];
   /** How deeply the candidate was reviewed and why; absent when no review ran. */
   readonly depth?: DepthDecision;
+  /** What the review step took, shown beside a deep review's forecast. */
+  readonly measurement?: ReviewMeasurement;
 }
 
 function checkDetail(check: CheckResult): string {
@@ -35,20 +38,23 @@ function location(finding: Finding): string {
 
 /**
  * One line per finding: ✗ for a defect this change introduced, ⚠ for the
- * operator's call, · for a problem that was already there. An unfinished
- * review never looks clean.
+ * operator's call, including a problem whose cause Tesota could not
+ * establish, · for a problem that was already there. An unfinished review
+ * never looks clean.
  */
 function reviewLines(report: ReviewReport): string[] {
   if (report.status === "incomplete") return [`  ✗ ${report.reviewer} did not finish: ${report.reason}`];
   const standing = report.findings.filter((finding) => finding.standing !== "refuted" && finding.duplicateOf === undefined);
-  const introduced = standing.filter((finding) => finding.origin === "introduced");
-  const lines = introduced.map((finding) => {
-    const what = finding.disposition === "operator" ? "needs you" : finding.severity;
+  const attention = standing.filter((finding) => finding.origin !== "preexisting");
+  const lines = attention.map((finding) => {
+    const what = finding.origin === "unknown" ? `cause unclear · ${finding.severity}`
+      : finding.disposition === "operator" ? "needs you" : finding.severity;
     if (finding.standing === "unsettled") return `  ? unsettled · ${what} · ${location(finding)}${finding.statement}`;
-    return `  ${finding.disposition === "operator" ? "⚠" : "✗"} ${what} · ${location(finding)}${finding.statement}`;
+    const mark = finding.origin === "introduced" && finding.disposition === "fixable" ? "✗" : "⚠";
+    return `  ${mark} ${what} · ${location(finding)}${finding.statement}`;
   });
   const duplicates = report.findings.filter((finding) => finding.duplicateOf !== undefined).length;
-  if (introduced.length === 0 && duplicates === 0) lines.push(`  ✓ ${report.reviewer}: no problems introduced`);
+  if (attention.length === 0 && duplicates === 0) lines.push(`  ✓ ${report.reviewer}: no problems introduced`);
   lines.push(...standing.filter((finding) => finding.origin === "preexisting")
     .map((finding) => `  · already there · ${location(finding)}${finding.statement}`));
   const refuted = report.findings.filter((finding) => finding.standing === "refuted").length;
@@ -59,9 +65,10 @@ function reviewLines(report: ReviewReport): string[] {
 function reviewDetail(report: ReviewReport): string {
   if (report.status === "incomplete") return `  ${report.reviewer}: did not finish (${report.reason})`;
   return `  ${report.reviewer}\n  ${report.summary}` + report.findings.map((finding) =>
-    `\n\n  ${finding.origin === "preexisting" ? "already there" : finding.disposition === "operator" ? "needs you" :
-      `${finding.severity}, fixable`}: ` +
+    `\n\n  ${finding.origin === "preexisting" ? "already there" : finding.origin === "unknown" ? "cause unclear" :
+      finding.disposition === "operator" ? "needs you" : `${finding.severity}, fixable`}: ` +
     `${location(finding)}${finding.statement}${finding.standing === undefined ? "" : ` [${finding.standing}]`}\n  ${finding.reason}` +
+    (finding.originNote === undefined ? "" : `\n  Origin: ${finding.originNote}`) +
     (finding.refutation === undefined ? "" : `\n  Refuter: ${finding.refutation}`) +
     (finding.duplicateOf === undefined ? "" : `\n  Same problem as ${finding.duplicateOf}`)).join("");
 }
@@ -71,7 +78,7 @@ function reviewDetail(report: ReviewReport): string {
  * file, check, flagged change and finding once, and the full record for the
  * result panel.
  */
-export function inspectReview({ snapshot, checks, flags, requests, reviews, depth }: ReviewRecord): ShellInspection {
+export function inspectReview({ snapshot, checks, flags, requests, reviews, depth, measurement }: ReviewRecord): ShellInspection {
   const first = checks[0];
   const where = first === undefined ? "No checks ran." : first.guarantees.filesystem === "host"
     ? `Checks ran on this exact content on this computer (${first.environment}), without isolation.`
@@ -85,7 +92,8 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews, dept
   return {
     title: `Review · ${snapshot.changes.length} ${snapshot.changes.length === 1 ? "file" : "files"}`,
     summary: [...files, ...results, ...flagged,
-      ...(depth?.depth === "deep" ? [`  · deep review: ${depth.reasons.join("; ")}`] : []),
+      ...(depth?.depth === "deep" ? [`  · deep review${measurement === undefined ? "" :
+        ` (took ${costText(measurement.durationMs, measurement.tokens)})`}: ${depth.reasons.join("; ")}`] : []),
       ...reviews.flatMap(reviewLines), ...flagNote,
       `${where} Checks and review do not replace reading the change.`].join("\n"),
     detail: `Requested\n${requests.map((request, index) => `  ${index + 1}. ${request}`).join("\n") || "  (not recorded)"}` +

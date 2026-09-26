@@ -77,6 +77,29 @@ it("persists network destinations allowed for the repository and refuses anythin
   reopened.close();
 });
 
+it("keeps the newest measured reviews, and reads a snapshot saved before they were recorded", () => {
+  const { root, source } = fixture();
+  const store = openShellSessionStore(source, root);
+  const session = store.create();
+  for (let index = 0; index < 22; index += 1) {
+    store.recordReviewMeasurement({ at: "2026-09-25T00:00:00.000Z", depth: "deep", correction: false, durationMs: index, tokens: index });
+  }
+  expect(() => { store.recordReviewMeasurement({ at: "now", depth: "deep", correction: false, durationMs: 1, tokens: 1 }); }).toThrow();
+  store.close();
+  const reopened = openShellSessionStore(source, root);
+  expect(reopened.reviewMeasurements().map((entry) => entry.tokens)).toEqual(Array.from({ length: 20 }, (_, index) => index + 2));
+  reopened.close();
+  const file = readdirSync(root).find((name) => name.endsWith(".json"));
+  if (file === undefined) throw new Error("Missing snapshot");
+  const saved = JSON.parse(readFileSync(join(root, file), "utf8")) as Record<string, unknown>;
+  delete saved["reviews"];
+  writeFileSync(join(root, file), JSON.stringify(saved));
+  const earlier = openShellSessionStore(source, root);
+  expect(earlier.list().map((entry) => entry.id)).toEqual([session.id]);
+  expect(earlier.reviewMeasurements()).toEqual([]);
+  earlier.close();
+});
+
 it("discards an older snapshot version and starts with no sessions", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);
