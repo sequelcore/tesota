@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import type { EnvironmentGuarantees, ExecutionEnvironment, RunOptions, RunResult } from "./execution-environment.js";
 
 /**
@@ -52,6 +52,15 @@ export function controlsFor(guarantees: EnvironmentGuarantees): ControlName[] {
 }
 
 const quote = (value: string): string => `"${value}"`;
+
+/**
+ * A host path as a probe inside the environment names it: relative to the
+ * workspace, with forward slashes, so the same argument means the same place
+ * in a Linux virtual machine that mounts the workspace and on the host itself.
+ */
+function fromWorkspace(site: ControlSite, path: string): string {
+  return relative(site.workspace, path).split(sep).join("/");
+}
 const cancelWaitMs = 10_000;
 
 interface Probe {
@@ -105,7 +114,7 @@ async function outsideRead(probe: Probe): Promise<ControlResult> {
   await writeFile(sentinel, token, "utf8");
   try {
     const run = await script(probe, "try { process.stdout.write(require('node:fs').readFileSync(process.argv[2], 'utf8')); }\n" +
-      "catch (error) { process.stdout.write('refused ' + error.code); }\n", [sentinel]);
+      "catch (error) { process.stdout.write('refused ' + error.code); }\n", [fromWorkspace(probe.site, sentinel)]);
     const passed = !run.output.includes(token);
     return { control: "outside_read", passed, detail: passed ? `a file outside the workspace was not read (${run.output.trim()})`
       : "a file outside the workspace was read" };
@@ -116,7 +125,7 @@ async function outsideWrite(probe: Probe): Promise<ControlResult> {
   const escaped = join(probe.site.outside, `.tesota-control-${randomUUID()}.txt`);
   try {
     const run = await script(probe, "try { require('node:fs').writeFileSync(process.argv[2], 'escaped'); process.stdout.write('wrote'); }\n" +
-      "catch (error) { process.stdout.write('refused ' + error.code); }\n", [escaped]);
+      "catch (error) { process.stdout.write('refused ' + error.code); }\n", [fromWorkspace(probe.site, escaped)]);
     const passed = !existsSync(escaped);
     return { control: "outside_write", passed, detail: passed ? `nothing was written outside the workspace (${run.output.trim()})`
       : "a file was written outside the workspace" };
@@ -147,7 +156,8 @@ async function cancelChildren(probe: Probe): Promise<ControlResult> {
     const running = script(probe, "const { spawn } = require('node:child_process');\n" +
       "spawn(process.execPath, ['-e', `setTimeout(() => require('node:fs').writeFileSync(${JSON.stringify(process.argv[3])}, 'late'), 8000)`], { stdio: 'ignore' });\n" +
       "require('node:fs').writeFileSync(process.argv[2], 'started');\nsetInterval(() => {}, 1000);\n",
-      [started, late], { signal: AbortSignal.any([probe.signal, cancellation.signal]) });
+      [fromWorkspace(probe.site, started), fromWorkspace(probe.site, late)],
+      { signal: AbortSignal.any([probe.signal, cancellation.signal]) });
     const deadline = Date.now() + 30_000;
     while (!existsSync(started) && Date.now() < deadline) await new Promise((wait) => setTimeout(wait, 200));
     cancellation.abort();

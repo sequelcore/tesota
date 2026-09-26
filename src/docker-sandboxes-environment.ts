@@ -37,6 +37,16 @@ const stopAttempts = 3;
 
 interface Invocation { readonly status: number | null; readonly stdout: string; readonly stderr: string }
 
+/**
+ * Whether `sbx policy check network <host>` shows the global policy denying a
+ * host that no rule names, which is what a deny-all policy does. It is read
+ * from the decision, not from how `sbx policy ls` lists policies, which
+ * changes between versions.
+ */
+export function deniesByDefault(check: Invocation): boolean {
+  return /^Denied:/mu.test(check.stdout) && /\(default deny\)/u.test(check.stdout);
+}
+
 function invoke(executable: string, args: readonly string[], timeoutMs: number = commandTimeoutMs): Promise<Invocation> {
   return new Promise((resolveInvocation) => {
     let stdout = "";
@@ -318,8 +328,7 @@ async function readinessSteps(): Promise<SetupStep[]> {
   if ((await invoke(sbx, ["ls"])).status !== 0) {
     return [{ description: "Sign in to Docker", command: "sbx login", action: { kind: "process", program: sbx, args: ["login"] } }];
   }
-  const policy = await invoke(sbx, ["policy", "ls"]);
-  if (policy.status !== 0 || !policy.stdout.includes("default-deny-all")) {
+  if (!deniesByDefault(await invoke(sbx, ["policy", "check", "network", "example.com"]))) {
     const args = ["policy", "init", "deny-all"];
     return [{ description: "Block all sandbox network traffic by default", command: `sbx ${args.join(" ")}`,
       action: { kind: "process", program: sbx, args } }];
