@@ -36,6 +36,11 @@ class TestTerminal implements Terminal {
   }
 }
 
+/** The last drawn screen line whose visible text contains `text`, with its styling; the TUI clears each line before drawing it. */
+function screenLine(raw: string, text: string): string {
+  return raw.split("\x1b[2K").findLast((line) => stripTerminalSequences(line).includes(text)) ?? "";
+}
+
 function visible(terminal: TestTerminal): string {
   return stripTerminalSequences(terminal.writes.join("\n"));
 }
@@ -250,7 +255,7 @@ it("keeps environment preparation visible at the first prompt until it finishes"
   shell.askIn("default", "> ").catch(() => undefined);
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Creating the sandbox");
-  expect(visible(terminal)).toContain("● Session 1");
+  expect(visible(terminal)).toContain("1 Session 1");
   expect(visible(terminal)).toContain("preparing");
   shell.reportFor("default", { phase: "working" });
   shell.clearProgressFor("default", "preparing");
@@ -373,8 +378,8 @@ it("moves back as well as forward between sessions, and jumps to the number the 
   shell.addSession("third", "Session 3");
   shell.start();
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("1 ● Session 1");
-  expect(visible(terminal)).toContain("3 ● Session 3");
+  expect(visible(terminal)).toContain("1 Session 1");
+  expect(visible(terminal)).toContain("3 Session 3");
   terminal.send("\x1bk"); // Alt+K: the previous session, wrapping from the first to the last.
   terminal.send("\x1b2"); // Alt+2
   terminal.send("\x1b9"); // No ninth session: nothing changes.
@@ -403,22 +408,29 @@ it("shows session needs in a rail that can be hidden and collapses on narrow ter
   shell.reportFor("other", { phase: "working" });
   shell.askIn("default", "Approve? [y/N] ").catch(() => undefined);
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("● Session 1");
+  expect(visible(terminal)).toContain("1 Session 1");
   expect(visible(terminal)).toContain("needs you");
-  expect(visible(terminal)).toContain("● Session 2");
+  expect(visible(terminal)).toContain("2 Session 2");
   expect(visible(terminal)).toContain("working");
+  // The selected session is highlighted as a selected command is; a state that needs the operator is in the warning color.
+  const raw = terminal.writes.join("");
+  const selection = "\x1b[48;2;75;61;83m";
+  expect(screenLine(raw, "1 Session 1")).toContain(selection);
+  expect(screenLine(raw, "2 Session 2")).not.toContain(selection);
+  expect(raw).toContain("\x1b[38;2;213;179;106mneeds you");
+  expect(raw).not.toContain("●");
 
   terminal.writes.length = 0;
   terminal.send("\x1bb"); // Alt+B hides the rail without changing the selected session.
   tui.renderNow(true);
-  expect(visible(terminal)).not.toContain("● Session 2");
+  expect(visible(terminal)).not.toContain("2 Session 2");
   expect(visible(terminal)).toContain("tesota · Session 1");
 
   terminal.send("\x1bb");
   terminal.resizeTo(70, 24);
   terminal.writes.length = 0;
   tui.renderNow(true);
-  expect(visible(terminal)).not.toContain("● Session 2");
+  expect(visible(terminal)).not.toContain("2 Session 2");
   shell.stop();
 });
 
@@ -434,7 +446,7 @@ it("keeps the selected session visible when the sidebar has more rows than the t
   shell.selectSession("session-9");
   terminal.writes.length = 0;
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("● Session 9");
+  expect(visible(terminal)).toContain("9 Session 9");
   shell.stop();
 });
 
@@ -451,7 +463,7 @@ it("offers a view-only comparison while one session keeps input focus", async ()
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Research · view only");
   expect(visible(terminal)).toContain("The other session found a source.");
-  expect(visible(terminal)).toContain("● Session 1");
+  expect(visible(terminal)).toContain("1 Session 1");
   terminal.send("reply");
   terminal.send("\r");
   await expect(pending).resolves.toBe("reply");

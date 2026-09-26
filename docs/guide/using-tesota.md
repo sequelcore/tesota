@@ -189,7 +189,8 @@ not show the change does what you asked; read the diff.
 ## Sessions and appearance
 
 The left sidebar names the repository and numbers each session with its
-state, such as `needs you`, `working`, or `idle`. It hides automatically on narrow terminals;
+state, such as `needs you`, `working`, or `idle`; the selected session is
+highlighted, and a state that needs you is in the warning color. It hides automatically on narrow terminals;
 `Alt+B` hides or shows it when there is room. The line below the prompt shows
 the mode, repository and selected session. Type `/` at the normal request prompt to see a
 command menu above the input; the selected row is highlighted. Use arrow keys to

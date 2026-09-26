@@ -109,6 +109,12 @@ export function sessionBeside(ids: readonly string[], current: string, step: 1 |
   return ids[(ids.indexOf(current) + step + ids.length) % ids.length] ?? current;
 }
 
+/** A selected row, filled to the width: the theme's selection background, or reverse video when colors are the terminal's. */
+function selectedRow(line: string, width: number, theme: TesotaShellTheme): string {
+  const padded = line + " ".repeat(Math.max(0, width - visibleWidth(line)));
+  return theme.selectionBackground === null ? `\x1b[7m${padded}\x1b[27m` : backgroundText(padded, theme.selectionBackground);
+}
+
 /** A compact command picker above the prompt, with a full-width selected row. */
 class CommandMenu implements Component {
   readonly #theme: TesotaShellTheme;
@@ -143,11 +149,7 @@ class CommandMenu implements Component {
       const selected = start + offset === this.#selected;
       const name = `${selected ? "›" : " "} /${command.name}`.padEnd(18);
       const line = truncateToWidth(`${name}${command.description}`, width);
-      const padded = line + " ".repeat(Math.max(0, width - visibleWidth(line)));
-      if (!selected) return mutedText(padded, this.#theme);
-      const emphasized = bold(padded);
-      return this.#theme.selectionBackground === null ? `\x1b[7m${emphasized}\x1b[27m` :
-        backgroundText(emphasized, this.#theme.selectionBackground);
+      return selected ? selectedRow(bold(line), width, this.#theme) : mutedText(line, this.#theme);
     });
     if (matches.length > maxRows) rows.push(mutedText(`  ↑↓ ${this.#selected + 1}/${matches.length}`, this.#theme));
     return rows;
@@ -165,11 +167,24 @@ class Line implements Component {
 }
 
 /** One repository's sessions, with each session's current need visible at a glance. */
+/** One line of the session rail; the selected session's lines are highlighted across the rail's width. */
+interface RailRow {
+  readonly text: string;
+  readonly selected?: boolean;
+}
+
 class SessionRail implements Component {
-  #rows: string[] = [];
-  setRows(rows: string[]): void { this.#rows = rows; }
+  readonly #theme: TesotaShellTheme;
+  #rows: readonly RailRow[] = [];
+  constructor(theme: TesotaShellTheme) { this.#theme = theme; }
+  setRows(rows: readonly RailRow[]): void { this.#rows = rows; }
   invalidate(): void {}
-  render(width: number): string[] { return this.#rows.map((row) => truncateToWidth(` ${row}`, width)); }
+  render(width: number): string[] {
+    return this.#rows.map((row) => {
+      const line = truncateToWidth(` ${row.text}`, width);
+      return row.selected === true ? selectedRow(line, width, this.#theme) : line;
+    });
+  }
 }
 
 /** Keep Pi's editing behavior and cursor handling while removing its visible frame. */
@@ -225,8 +240,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private sidebarVisible = true;
   private mode = "";
   private frame = 0;
-  private readonly sidebar = new SessionRail();
-  private readonly sidebarScroll = new ScrollView(this.sidebar, { scrollbar: "auto" });
+  private readonly sidebar: SessionRail;
+  private readonly sidebarScroll: ScrollView;
   private readonly secondaryTitle = new Line();
   private readonly status = new Line();
   private readonly footer = new Line();
@@ -243,6 +258,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.now = options.now ?? Date.now;
     this.interrupt = () => { (options.interrupt ?? ignoreInterrupt)(this.selectedId); };
     this.theme = tesotaShellTheme(options.theme);
+    this.sidebar = new SessionRail(this.theme);
+    this.sidebarScroll = new ScrollView(this.sidebar, { scrollbar: "auto" });
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
     initTheme(this.theme.name === "tesota-light" ? "light" : "dark");
     this.commandMenu = new CommandMenu(this.theme);
@@ -318,20 +335,24 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     return session.unread ? "new" : "";
   }
 
+  /** A session's state in the rail: a need of the operator's in the warning color, work in the accent. */
+  private attentionText(attention: string): string {
+    if (attention === "needs you" || attention === "unresolved") return colorText(attention, this.theme.warning);
+    if (attention === "working" || attention === "preparing") return colorText(attention, this.theme.accent);
+    return mutedText(attention || "idle", this.theme);
+  }
+
   private updateSidebar(): void {
-    const rows = [bold(colorText(safeTerminalText(basename(this.options.cwd)), this.theme.accent)), ""];
+    const rows: RailRow[] = [{ text: bold(colorText(safeTerminalText(basename(this.options.cwd)), this.theme.accent)) },
+      { text: "" }];
     for (const [index, session] of [...this.sessions.values()].entries()) {
       const attention = this.attention(session);
       const selected = session.id === this.selectedId;
-      const color = attention === "needs you" || attention === "unresolved" ? this.theme.warning :
-        attention === "working" || attention === "preparing" || selected ? this.theme.accent : this.theme.muted;
-      const dot = colorText("●", color);
       const title = safeTerminalText(session.title);
       // Numbered as Alt+1 to Alt+9 select them; later sessions are reached with Alt+J and Alt+K.
       const number = index < numberedSessionKeys.length ? String(index + 1).padStart(2) : "  ";
-      rows.push(`${mutedText(number, this.theme)} ${dot} ` +
-        `${selected ? bold(title) : mutedText(title, this.theme)}`);
-      rows.push(mutedText(`    ${attention || "idle"}`, this.theme));
+      rows.push({ selected, text: `${mutedText(number, this.theme)} ${selected ? bold(title) : mutedText(title, this.theme)}` });
+      rows.push({ selected, text: `   ${this.attentionText(attention)}` });
     }
     this.sidebar.setRows(rows);
     this.sidebarScroll.updateLayout(rows.length, this.tui.terminal.rows, () => this.tui.requestRender());
