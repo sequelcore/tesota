@@ -87,13 +87,14 @@ review and a correction round, and the operator decides on the whole record.
 
 ### Exploration: Gentle AI's review as a further reviewer
 
-A time-boxed spike, after the current review work is measured. In a private
-clone of Gentle AI (MIT), register `tesota` as its own host with its own relay
-contract, never gentle-pi's; implement the relay in Tesota behind the reviewer
-contract of decision 015; and run `bun run live:review` against Tesota's own
-reviewers. Keep it only if it reports defects they miss; then open an issue
-upstream with the measurements, and send approved work as pull requests of at
-most 400 changed lines. The modified build stays for personal use.
+Stopped on 2026-09-25 before any code, with the result in the
+[review landscape](references/agent-review-landscape.md#spike-result-2026-09-25):
+admitting a `tesota` host takes about seven small Go changes, but RDD is a
+complete assurance transaction, with consent, its own refuter, correction,
+validation and authority, not a reviewer that returns findings, and its lenses
+run only inside it. Integrating it would nest a second assurance loop inside
+Tesota's. Worth revisiting only if Gentle AI offers a findings-only review
+entry point; its ideas are already adopted in decision 016.
 
 ### 4. Session service and remote access
 

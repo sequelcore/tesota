@@ -69,6 +69,25 @@ agent, not changing one condition. Contributions require an issue approved by
 a maintainer before any pull request, pull requests of at most 400 changed
 lines, and the project's AI-assisted contribution policy.
 
+### Spike result, 2026-09-25
+
+A private worktree of gentle-ai at `8b52c465` (branch `tesota-host`) located
+every Pi-specific branch on the review path: the agent identifier, the
+capability manifest, admission and capture in
+`review_transport_capability.go`, host-mediated routing in
+`review_provider_runtime.go`, and the orchestration contract in
+`review_execution.go` and `reviewassets/contract.go`, about seven files of
+small changes. The host side is the obstacle. Pi's orchestration contract
+(`review-ledger-contract-pi.md`) makes the host drive a whole transaction:
+inspect, a start that freezes the candidate and creates authority, a consent
+prompt for medium- and high-risk candidates, a forecast, grouped lens
+captures, RDD's own refuter, bounded correction and fix validation, an
+acknowledgement that burns the authority, and more than fifteen stop codes
+with their own continuations. Lens prompts are materialized only inside a
+started transaction, so the lenses cannot be used alone. Integrating RDD
+would run a second assurance loop inside Tesota's, duplicating decisions 015
+and 016 rather than adding a reviewer.
+
 ## Open-source reviewers worth evaluating
 
 - **PR-Agent** (github.com/The-PR-Agent/pr-agent): community-owned since
