@@ -99,6 +99,11 @@ hooks, skills or MCP servers, so a review is the same whoever runs it. Only
 the working agent's conversation is saved, by Claude Code, and resumed on the
 next request; read-only roles keep none.
 
+On `live:review`, Claude Sonnet through `claude-code` reviewed as well as
+Luna, at the same speed and about 2.7 times the tokens, most of it a fixed
+cost of each Claude Code session. The `anthropic` route has not been
+exercised live.
+
 ## Why
 
 - **One writer.** Parallel writers fail in every report reviewed: each agent

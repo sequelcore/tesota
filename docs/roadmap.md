@@ -13,7 +13,9 @@ otherwise. Each result is checked by the operator's commands, Oxlint and
 LemmaScript on the exact tree, reviewed by read-only reviewers whose findings
 face a refuter and an origin check, and corrected by the agent at most twice
 before the operator applies, rejects or keeps working. Each role can use its
-own model, and the agent can ask read-only explorers, off by default.
+own model, through the operator's ChatGPT plan, an Anthropic API key or the
+operator's own Claude Code, and the agent can ask read-only explorers, off by
+default.
 
 The complete loop has run on throwaway and evaluation repositories; daily use
 on a real project has not started.
@@ -26,6 +28,7 @@ on a real project has not started.
 | Execution environments, Docker Sandboxes, autonomous and supervised modes, network questions, sandbox preparation and `tesota setup` | 2026-09-25 | [Execution](design/execution.md) |
 | Request record, flags, verifiers with claims, reviewer and lenses, ClaimCheck, refuter, origin check, correction loop with fix validation, assurance journal, forecast, `live:review` | 2026-09-25 | [Assurance](design/assurance.md) |
 | Explorers, models by role, `tesota models`, `live:delegation` | 2026-09-25 | [Agents](design/agents.md) |
+| Claude through an Anthropic API key or the operator's Claude Code | 2026-09-25 | [Agents](design/agents.md#model-routes) |
 
 ## Next
 
@@ -62,6 +65,8 @@ mid-work, and finds the work finished on reconnecting.
 - A non-TypeScript repository and another platform.
 - More execution providers once they pass the same live controls: WSL2,
   remote machines, a native Windows sandbox.
+- A time limit for reviewer, refuter and validator sessions, as explorers
+  have, so a stalled model stream cannot stop an unattended review.
 - A review queue and notifications across sessions.
 - Non-code tasks, and user-supplied verifiers and reviewers, by observed need.
 - Workflow profiles that choose verifiers, reviewers and rounds per
