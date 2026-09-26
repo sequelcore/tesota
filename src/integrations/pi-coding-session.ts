@@ -7,6 +7,7 @@ import { type AgentSession, type AgentSessionEvent, type BashOperations, type Mo
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
 import { allowsAutonomy, type ExecutionEnvironment } from "../execution-environment.js";
+import type { TokenUsage } from "../token-usage.js";
 import { exploreTool, type ExplorerPool } from "./pi-explore.js";
 
 export type CommandApproval = "once" | "always" | "deny";
@@ -53,7 +54,7 @@ export interface CodingSessionOptions {
   /** Read-only explorers the agent may start with `explore` (decision 019); absent when explorers are off. */
   readonly explorers?: ExplorerPool;
   /** Called with the tokens of each finished model response, as the provider reported them. */
-  readonly onUsage?: (tokens: number) => void;
+  readonly onUsage?: (usage: TokenUsage) => void;
 }
 
 const settlementMs = 10_000;
@@ -256,9 +257,11 @@ export function activityOf(event: AgentSessionEvent, message: number): AgentActi
   }
 }
 
-/** The tokens a finished model response used, as its provider reported them; undefined for any other event. */
-export function responseTokens(event: AgentSessionEvent): number | undefined {
-  return event.type === "message_end" && event.message.role === "assistant" ? event.message.usage.totalTokens : undefined;
+/** The tokens a finished model response used, by kind, as its provider reported them; undefined for any other event. */
+export function responseUsage(event: AgentSessionEvent): TokenUsage | undefined {
+  if (event.type !== "message_end" || event.message.role !== "assistant") return undefined;
+  const { input, output, cacheRead, cacheWrite } = event.message.usage;
+  return { input, output, cacheRead, cacheWrite };
 }
 
 /** The file tools that only read, each confined to the workspace. */
@@ -280,7 +283,7 @@ export interface SessionStartOptions {
   readonly tools: readonly ToolDefinition[];
   readonly onActivity?: (activity: AgentActivity) => void;
   /** Called with the tokens of each finished model response, as the provider reported them. */
-  readonly onUsage?: (tokens: number) => void;
+  readonly onUsage?: (usage: TokenUsage) => void;
 }
 
 /** What decides the working agent's tools, whichever engine runs it. */
@@ -315,13 +318,13 @@ export class CodingSession {
   #usable = true;
 
   private constructor(session: AgentSession, onActivity: ((activity: AgentActivity) => void) | undefined,
-    onUsage: ((tokens: number) => void) | undefined) {
+    onUsage: ((usage: TokenUsage) => void) | undefined) {
     this.#session = session;
     let message = session.messages.filter((entry) => entry.role === "assistant").length;
     this.#unsubscribe = session.subscribe((event) => {
       if (event.type === "message_start" && event.message.role === "assistant") message += 1;
-      const tokens = onUsage === undefined ? undefined : responseTokens(event);
-      if (tokens !== undefined) onUsage?.(tokens);
+      const usage = onUsage === undefined ? undefined : responseUsage(event);
+      if (usage !== undefined) onUsage?.(usage);
       const activity = onActivity === undefined ? undefined : activityOf(event, message);
       if (activity !== undefined) onActivity?.(activity);
     });

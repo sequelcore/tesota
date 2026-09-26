@@ -1,7 +1,7 @@
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import type { Finding, ReviewInput, ReviewReport, Reviewer } from "../review.js";
-import { type ModelAccess, type ModelSession, startModelSession } from "./model-session.js";
+import { type ModelAccess, type ModelSession, runRole, startModelSession } from "./model-session.js";
 import type { CodingTurnResult } from "./pi-coding-session.js";
 
 /**
@@ -168,11 +168,11 @@ export function createClaimCheckReviewer(options: ClaimCheckOptions): Reviewer {
       let informalizations: readonly Informalization[] | undefined;
       const first = await session(recordTool("record_informalizations", informalizationSchema, (value) => { informalizations = value.informalizations; }));
       let turn: CodingTurnResult;
-      try { turn = await first.run(informalizePrompt(items), signal); } finally { first.dispose(); }
+      try { turn = await runRole(first, informalizePrompt(items), signal); } finally { first.dispose(); }
       if (informalizations === undefined) return claimcheckReport(tree, items, undefined, turn);
       let comparisons: readonly Comparison[] | undefined;
       const second = await session(recordTool("record_comparisons", comparisonSchema, (value) => { comparisons = value.comparisons; }));
-      try { turn = await second.run(comparePrompt(input.requests, items, informalizations), signal); } finally { second.dispose(); }
+      try { turn = await runRole(second, comparePrompt(input.requests, items, informalizations), signal); } finally { second.dispose(); }
       return claimcheckReport(tree, items, comparisons, turn);
     },
   };

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { activityOf, confinedPath, responseTokens } from "../src/integrations/pi-coding-session.js";
+import { activityOf, confinedPath, responseUsage } from "../src/integrations/pi-coding-session.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -85,12 +85,12 @@ it("names an explorer call by its question", () => {
     subject: "Where is a finding's origin decided?" });
 });
 
-it("counts the tokens of each finished model response, and nothing else", () => {
-  const usage = { input: 900, output: 100, cacheRead: 4_000, cacheWrite: 0, totalTokens: 5_000 };
+it("counts the tokens of each finished model response by kind, and nothing else", () => {
+  const usage = { input: 900, output: 100, cacheRead: 4_000, cacheWrite: 7, totalTokens: 5_007, cost: { total: 0.1 } };
   const events = [
     { type: "message_update", message: { role: "assistant", content: [], usage } },
     { type: "message_end", message: { role: "assistant", content: [], usage } },
     { type: "message_end", message: { role: "user", content: "hi" } },
   ] as unknown as AgentSessionEvent[];
-  expect(events.map(responseTokens)).toEqual([undefined, 5_000, undefined]);
+  expect(events.map(responseUsage)).toEqual([undefined, { input: 900, output: 100, cacheRead: 4_000, cacheWrite: 7 }, undefined]);
 });

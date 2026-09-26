@@ -2,7 +2,7 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { Type } from "@earendil-works/pi-ai";
 import { numberedDiff } from "../diff-lines.js";
 import type { Finding, ReviewInput, ReviewReport } from "../review.js";
-import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type ModelAccess, runRole, startModelSession } from "./model-session.js";
 import { type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 
 /**
@@ -87,6 +87,6 @@ export async function validateFixes(options: FixValidatorOptions, input: ReviewI
   const session = await startModelSession(options, { cwd: input.checkout, systemPrompt: validatorPrompt(input.checkout),
     tools: [...readOnlyFileTools(input.checkout), recordResolutions((verdicts) => { recorded ??= verdicts; })] });
   try {
-    return validationReport(input.snapshot.tree, sentBack, await session.run(validationMessage(input, sentBack), signal), recorded);
+    return validationReport(input.snapshot.tree, sentBack, await runRole(session, validationMessage(input, sentBack), signal), recorded);
   } finally { session.dispose(); }
 }

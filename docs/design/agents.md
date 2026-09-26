@@ -95,13 +95,21 @@ built-in tool disabled and receives Tesota's own tools, the confined file
 tools, the execution environment's shell with its approvals, and each role's
 submission tool, from an in-process MCP server; a call to anything else is
 refused. It loads none of the operator's Claude Code settings, `CLAUDE.md`,
-hooks, skills or MCP servers, so a review is the same whoever runs it. Only
+hooks, skills or MCP servers, so a review is the same whoever runs it, and
+runs with Claude Code's nonessential traffic off, which also removes a
+background model call. As on Pi, a turn ends when every tool in a batch asks
+to end it, so no model call follows a role's submission. Only
 the working agent's conversation is saved, by Claude Code, and resumed on the
 next request; read-only roles keep none.
 
-On `live:review`, Claude Sonnet through `claude-code` reviewed as well as
-Luna, at the same speed and about 2.7 times the tokens, most of it a fixed
-cost of each Claude Code session. The `anthropic` route has not been
+Both engines report tokens by kind: fresh input, output, and input read from
+or written to the provider's prompt cache. The kinds are priced differently,
+and a cache read costs a fraction of fresh input; forecasts and summaries
+compare totals, and `live:review` records the kinds.
+
+On `live:review`, Claude Sonnet through `claude-code` reviews as well as
+Luna, in about 40 s of review against Luna's 64 to 72 s, and about 1.4 times
+Luna's tokens, most of them cache reads. The `anthropic` route has not been
 exercised live.
 
 ## Why

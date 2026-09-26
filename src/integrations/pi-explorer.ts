@@ -1,6 +1,6 @@
 import { realpathSync } from "node:fs";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
-import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type ModelAccess, runWithin, startModelSession } from "./model-session.js";
 import { type AgentActivity, type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 import { isExplorerAnswer } from "../verification/explorer-answer.js";
 
@@ -53,12 +53,11 @@ export function explorerResult(turn: CodingTurnResult, timedOut: boolean, limit:
 export async function askExplorer(options: ExplorerOptions, checkout: string, brief: string,
   signal: AbortSignal): Promise<ExplorerResult> {
   const root = realpathSync(checkout);
-  const limit = AbortSignal.timeout(options.timeLimitMs ?? EXPLORER_TIME_LIMIT_MS);
   const session = await startModelSession(options, { cwd: root, systemPrompt: explorerPrompt(root), tools: readOnlyFileTools(root),
     ...(options.sessionManager === undefined ? {} : { sessionManager: options.sessionManager }),
     ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
   try {
-    const turn = await session.run(brief, AbortSignal.any([signal, limit]));
-    return explorerResult(turn, limit.aborted && !signal.aborted);
+    const { turn, timedOut } = await runWithin(session, brief, signal, options.timeLimitMs ?? EXPLORER_TIME_LIMIT_MS);
+    return explorerResult(turn, timedOut);
   } finally { session.dispose(); }
 }

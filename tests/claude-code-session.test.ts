@@ -3,8 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { claudeCodeStatus } from "../src/auth.js";
-import { ClaudeCodeSession, claudeCodeTurn, onlyTesotaTools, resultTokens, toolShape } from "../src/integrations/claude-code-session.js";
+import { ClaudeCodeSession, claudeCodeTurn, onlyTesotaTools, resultUsage, toolShape } from "../src/integrations/claude-code-session.js";
+import { totalTokens } from "../src/token-usage.js";
 import { type AgentActivity, readOnlyFileTools } from "../src/integrations/pi-coding-session.js";
 
 // The SDK is replaced: tools keep their handlers, and query plays a scripted run against them.
@@ -43,8 +45,8 @@ function handlers(options: Record<string, unknown>): Handler[] {
   return (options["mcpServers"] as { tesota: { tools: Handler[] } }).tesota.tools;
 }
 
-it("counts every token of every model and reads how a run ended", () => {
-  expect(resultTokens(success("done"))).toBe(425 + 11);
+it("counts every token of every model by kind and reads how a run ended", () => {
+  expect(resultUsage(success("done"))).toEqual({ input: 110, output: 21, cacheRead: 300, cacheWrite: 5 });
   expect(claudeCodeTurn(success("  done  "), false)).toEqual({ status: "completed", reply: "done" });
   expect(claudeCodeTurn(success("done"), true)).toEqual({ status: "cancelled" });
   expect(claudeCodeTurn(undefined, false)).toEqual({ status: "failed", reason: "Claude Code stopped without a result" });
@@ -78,17 +80,40 @@ it("runs Claude Code with Tesota's tools only and none of the operator's setup, 
     yield success("The constant is 1.");
   };
   const session = await ClaudeCodeSession.start({ cwd: root, model: "opus", systemPrompt: "You review.",
-    tools: readOnlyFileTools(root), onActivity: (entry) => { activity.push(entry); }, onUsage: (count) => { tokens += count; } });
+    tools: readOnlyFileTools(root), onActivity: (entry) => { activity.push(entry); }, onUsage: (usage) => { tokens += totalTokens(usage); } });
   expect(await session.run("What is a?", new AbortController().signal)).toEqual({ status: "completed", reply: "The constant is 1." });
   const [options] = sdk.options;
   expect(options).toMatchObject({ model: "opus", tools: [], settingSources: [], strictMcpConfig: true, skills: [],
     canUseTool: onlyTesotaTools, persistSession: false });
   expect(options?.["allowedTools"]).toBeUndefined();
+  expect(options?.["env"]).toMatchObject({ CLAUDE_AGENT_SDK_CLIENT_APP: "tesota", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" });
   expect(String(options?.["systemPrompt"])).toMatch(/^You review\.[\s\S]*mcp__tesota__read/u);
   expect(options?.["resume"]).toBeUndefined();
   expect(activity.map((entry) => entry.type)).toEqual(["tool_started", "tool_finished", "reply"]);
   expect(activity[0]).toMatchObject({ tool: "read", subject: "a.ts" });
   expect(tokens).toBe(436);
+});
+
+it("ends the run after a batch whose every tool asked to end the turn, as Pi does, without another model call", async () => {
+  const root = checkout();
+  const submit = { ...readOnlyFileTools(root)[0], name: "submit", execute: async () =>
+    ({ content: [{ type: "text", text: "Recorded." }], details: undefined, terminate: true }) } as unknown as ToolDefinition;
+  const decisions: unknown[] = [];
+  sdk.script = async function* (options: Record<string, unknown>) {
+    const batch = (options["hooks"] as { PostToolBatch: { hooks: ((input: unknown) => Promise<unknown>)[] }[] }).PostToolBatch[0]?.hooks[0];
+    const [read, done] = handlers(options);
+    await done?.handler({});
+    decisions.push(await batch?.({ hook_event_name: "PostToolBatch", tool_calls: [{ tool_name: "mcp__tesota__submit" }] }));
+    await done?.handler({});
+    await read?.handler({ path: "a.ts" });
+    decisions.push(await batch?.({ hook_event_name: "PostToolBatch", tool_calls: [{ tool_name: "mcp__tesota__submit" }, { tool_name: "mcp__tesota__read" }] }));
+    await read?.handler({ path: "a.ts" });
+    decisions.push(await batch?.({ hook_event_name: "PostToolBatch", tool_calls: [{ tool_name: "mcp__tesota__read" }] }));
+    yield success("");
+  };
+  const session = await ClaudeCodeSession.start({ cwd: root, model: "opus", systemPrompt: "p", tools: [readOnlyFileTools(root)[0] as ToolDefinition, submit] });
+  expect(await session.run("go", new AbortController().signal)).toEqual({ status: "completed", reply: "" });
+  expect(decisions).toEqual([{ continue: false, stopReason: "Tesota's tool ended the turn." }, {}, {}]);
 });
 
 it("returns a tool's failure to the model as an error, not as a result", async () => {

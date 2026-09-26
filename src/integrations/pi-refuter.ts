@@ -1,7 +1,7 @@
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import type { Finding, FindingStanding, ReviewInput, ReviewReport } from "../review.js";
-import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type ModelAccess, runRole, startModelSession } from "./model-session.js";
 import { type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 import { reviewMessage } from "./pi-reviewer.js";
 
@@ -157,7 +157,7 @@ export async function refuteFindings(options: RefuterOptions, input: ReviewInput
   const session = await startModelSession(options, { cwd: input.checkout, systemPrompt: refuterPrompt(input.checkout),
     tools: [...readOnlyFileTools(input.checkout), recordVerdicts((verdicts) => { recorded ??= verdicts; })] });
   try {
-    const turn = await session.run(refutationMessage(input, findings), signal);
+    const turn = await runRole(session, refutationMessage(input, findings), signal);
     return applyRefutation(reports, verdictsFrom(turn, recorded));
   } finally { session.dispose(); }
 }

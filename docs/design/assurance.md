@@ -72,7 +72,10 @@ Tesota's **reviewer** is a fresh Pi session with read-only file tools and no
 shell. It receives the request record, the numbered diff, the verifier
 results and the flags, never the working agent's reasoning, and submits
 structured findings once. A reviewer that does not finish reports an
-incomplete review, which is never shown as clean. A deep review adds focused
+incomplete review, which is never shown as clean. Every request to a
+reviewer, lens, ClaimCheck, the refuter or the fix validator stops after ten
+minutes, answered or not, and counts as unfinished, so a stalled model stream
+cannot hold a review; measured requests take seconds to two minutes. A deep review adds focused
 **lenses**, each reporting only within its focus: correctness and
 regressions, security and authority, and the repository's own `AGENTS.md` or
 `CLAUDE.md` rules when it has them. When LemmaScript proved contracts in the
@@ -154,7 +157,7 @@ nothing: depth is computed from facts, correction rounds must not stall, and
 planted defects, a pre-existing bug, a correct control and two baits, with a
 planted false claim on each correct candidate. It scores findings raw and
 after refutation, measures correction on known good and cosmetic fixes, and
-records time, tokens and models. A change to a reviewer, the refuter, origin
+records time, tokens by kind and models. A change to a reviewer, the refuter, origin
 checking, a prompt or a role's model is measured before it is adopted.
 
 ## Why

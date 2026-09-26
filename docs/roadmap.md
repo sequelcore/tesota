@@ -65,8 +65,6 @@ mid-work, and finds the work finished on reconnecting.
 - A non-TypeScript repository and another platform.
 - More execution providers once they pass the same live controls: WSL2,
   remote machines, a native Windows sandbox.
-- A time limit for reviewer, refuter and validator sessions, as explorers
-  have, so a stalled model stream cannot stop an unattended review.
 - A review queue and notifications across sessions.
 - Non-code tasks, and user-supplied verifiers and reviewers, by observed need.
 - Workflow profiles that choose verifiers, reviewers and rounds per

@@ -3,7 +3,7 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { numberedDiff } from "../diff-lines.js";
 import type { Finding, ReviewInput, ReviewReport, Reviewer } from "../review.js";
-import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type ModelAccess, runRole, startModelSession } from "./model-session.js";
 import { type AgentActivity, type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 
 const REVIEWER = "Tesota reviewer";
@@ -171,9 +171,9 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
         })],
         ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
       try {
-        let turn = await session.run(reviewMessage(input), signal);
+        let turn = await runRole(session, reviewMessage(input), signal);
         // A model sometimes answers in prose; one reminder, without new investigation, before the review counts as unfinished.
-        if (turn.status === "completed" && submitted === undefined) turn = await session.run(submissionReminder, signal);
+        if (turn.status === "completed" && submitted === undefined) turn = await runRole(session, submissionReminder, signal);
         return { ...reviewReport(input.snapshot.tree, turn, submitted), reviewer: name };
       } finally { session.dispose(); }
     },

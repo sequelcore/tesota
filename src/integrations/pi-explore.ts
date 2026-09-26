@@ -2,6 +2,7 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { Type } from "@earendil-works/pi-ai";
 import { canStartExplorer } from "../verification/explorer-answer.js";
 import type { ExplorerResult } from "./pi-explorer.js";
+import { type TokenUsage, totalTokens } from "../token-usage.js";
 
 /**
  * The working agent's `explore` tool (decision 019): each call asks one
@@ -21,7 +22,7 @@ export interface ExplorerRun {
 
 /** Ask one explorer; `onLine` receives one line per file the explorer reads or searches, as it happens. */
 export type AskExplorer = (brief: string, signal: AbortSignal, onLine: (line: string) => void,
-  onUsage: (tokens: number) => void) => Promise<ExplorerResult>;
+  onUsage: (usage: TokenUsage) => void) => Promise<ExplorerResult>;
 
 export class ExplorerPool {
   readonly #ask: AskExplorer;
@@ -50,7 +51,7 @@ export class ExplorerPool {
     const started = Date.now();
     let tokens = 0;
     try {
-      const result = await this.#ask(brief, signal, onLine, (count) => { tokens += count; });
+      const result = await this.#ask(brief, signal, onLine, (usage) => { tokens += totalTokens(usage); });
       return { result, durationMs: Date.now() - started, tokens };
     } catch (error) {
       return { result: { status: "unfinished", reason: error instanceof Error ? error.message : "the explorer failed" },

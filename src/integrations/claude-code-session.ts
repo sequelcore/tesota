@@ -1,9 +1,10 @@
 import { realpathSync } from "node:fs";
-import { createSdkMcpServer, getSessionInfo, query, tool, type CanUseTool, type SDKMessage,
+import { createSdkMcpServer, getSessionInfo, query, tool, type CanUseTool, type HookCallback, type SDKMessage,
   type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import * as z from "zod";
 import { type AgentActivity, type CodingTurnResult, editChange, resultText, textOf, toolSubject } from "./pi-coding-session.js";
+import { NO_TOKENS, type TokenUsage, addTokens } from "../token-usage.js";
 
 /**
  * A role's session on Claude Code (decision 021), run by the Claude Agent SDK
@@ -13,7 +14,8 @@ import { type AgentActivity, type CodingTurnResult, editChange, resultText, text
  * The session gets Tesota's own tools and nothing else: every built-in tool
  * is disabled, Tesota's tools come from an in-process MCP server, and any
  * other call is refused. None of the operator's Claude Code settings,
- * CLAUDE.md, hooks, skills or MCP servers load.
+ * CLAUDE.md, hooks, skills or MCP servers load, and Claude Code's
+ * nonessential traffic, such as its background model call, is off.
  */
 
 const server = "tesota";
@@ -26,7 +28,7 @@ export interface ClaudeCodeSessionOptions {
   readonly systemPrompt: string;
   readonly tools: readonly ToolDefinition[];
   readonly onActivity?: (activity: AgentActivity) => void;
-  readonly onUsage?: (tokens: number) => void;
+  readonly onUsage?: (usage: TokenUsage) => void;
   /**
    * The conversation to keep across requests, under this id, for the working
    * agent; read-only roles keep none.
@@ -34,10 +36,10 @@ export interface ClaudeCodeSessionOptions {
   readonly conversationId?: string;
 }
 
-/** Every token a run used, over all the models it called, as Claude Code reported them. */
-export function resultTokens(result: SDKResultMessage): number {
-  return Object.values(result.modelUsage).reduce((total, usage) => total + usage.inputTokens + usage.outputTokens +
-    usage.cacheReadInputTokens + usage.cacheCreationInputTokens, 0);
+/** The tokens a run used, by kind, over all the models it called, as Claude Code reported them. */
+export function resultUsage(result: SDKResultMessage): TokenUsage {
+  return Object.values(result.modelUsage).reduce((total, usage) => addTokens(total, { input: usage.inputTokens,
+    output: usage.outputTokens, cacheRead: usage.cacheReadInputTokens, cacheWrite: usage.cacheCreationInputTokens }), NO_TOKENS);
 }
 
 /** How a run ended, from its result message; a run that stopped without one did not finish. */
@@ -63,8 +65,17 @@ export function toolShape(parameters: unknown): z.ZodRawShape {
 
 type Emit = (activity: AgentActivity) => void;
 
+/** How one of Tesota's tools reports back to its session. */
+interface ToolContext {
+  readonly signal: () => AbortSignal;
+  readonly emit: Emit;
+  readonly next: () => string;
+  /** Called when the tool asks to end the turn, as Tesota's submission tools do. */
+  readonly terminate: () => void;
+}
+
 /** One of Tesota's tools, run by Tesota when Claude Code calls it, reporting its activity as Pi's would. */
-function sdkTool(definition: ToolDefinition, signal: () => AbortSignal, emit: Emit, next: () => string) {
+function sdkTool(definition: ToolDefinition, { signal, emit, next, terminate }: ToolContext) {
   return tool(definition.name, definition.description, toolShape(definition.parameters), async (args) => {
     const call = next();
     emit({ type: "tool_started", call, tool: definition.name, subject: toolSubject(definition.name, args) });
@@ -76,6 +87,7 @@ function sdkTool(definition: ToolDefinition, signal: () => AbortSignal, emit: Em
       const output = resultText(result);
       const change = definition.name === "edit" ? editChange(result) : undefined;
       emit({ type: "tool_finished", call, failed: false, output, ...(change === undefined ? {} : { change }) });
+      if (result.terminate === true) terminate();
       return { content: [{ type: "text" as const, text: output }] };
     } catch (error) {
       const output = error instanceof Error ? error.message : "The tool failed";
@@ -95,6 +107,7 @@ export class ClaudeCodeSession {
   #message = 0;
   #calls = 0;
   #conversationStarted = false;
+  #terminating = 0;
   #signal: AbortSignal = new AbortController().signal;
 
   private constructor(options: ClaudeCodeSessionOptions, root: string, conversationStarted: boolean) {
@@ -123,6 +136,17 @@ export class ClaudeCodeSession {
     this.#emit({ type: "reply", message: this.#message, text, final: true });
   }
 
+  /**
+   * After each batch of tool calls: as on Pi, a batch whose every tool asked
+   * to end the turn ends it, so no model call follows a submission.
+   */
+  readonly #afterBatch: HookCallback = async (input) => {
+    const size = input.hook_event_name === "PostToolBatch" ? input.tool_calls.length : 0;
+    const ends = size > 0 && this.#terminating === size;
+    this.#terminating = 0;
+    return ends ? { continue: false, stopReason: "Tesota's tool ended the turn." } : {};
+  };
+
   #conversation(): Record<string, unknown> {
     const id = this.#options.conversationId;
     if (id === undefined) return { persistSession: false };
@@ -137,8 +161,10 @@ export class ClaudeCodeSession {
     const stop = (): void => { abort.abort(); };
     signal.addEventListener("abort", stop, { once: true });
     this.#signal = abort.signal;
-    const tools = this.#options.tools.map((definition) => sdkTool(definition, () => this.#signal,
-      (activity) => { this.#emit(activity); }, () => `claude-${++this.#calls}`));
+    this.#terminating = 0;
+    const tools = this.#options.tools.map((definition) => sdkTool(definition, { signal: () => this.#signal,
+      emit: (activity) => { this.#emit(activity); }, next: () => `claude-${++this.#calls}`,
+      terminate: () => { this.#terminating += 1; } }));
     let result: SDKResultMessage | undefined;
     try {
       for await (const message of query({ prompt: request, options: {
@@ -146,7 +172,8 @@ export class ClaudeCodeSession {
         tools: [], mcpServers: { [server]: createSdkMcpServer({ name: server, version: "1.0.0", tools }) },
         // Every call goes through one gate: Tesota's tools are allowed there, and nothing else is.
         canUseTool: onlyTesotaTools, settingSources: [], strictMcpConfig: true, skills: [],
-        abortController: abort, env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "tesota" },
+        hooks: { PostToolBatch: [{ hooks: [this.#afterBatch] }] }, abortController: abort,
+        env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "tesota", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
         ...this.#conversation(),
       } })) {
         this.#observe(message);
@@ -155,7 +182,7 @@ export class ClaudeCodeSession {
     } catch (error) {
       if (!abort.signal.aborted) return { status: "failed", reason: error instanceof Error ? error.message : "Claude Code failed" };
     } finally { signal.removeEventListener("abort", stop); }
-    if (result !== undefined) this.#options.onUsage?.(resultTokens(result));
+    if (result !== undefined) this.#options.onUsage?.(resultUsage(result));
     const turn = claudeCodeTurn(result, abort.signal.aborted);
     if (turn.status === "completed" && this.#options.conversationId !== undefined) this.#conversationStarted = true;
     return turn;

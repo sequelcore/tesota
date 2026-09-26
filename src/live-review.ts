@@ -17,6 +17,7 @@ import type { WorkspaceSnapshot } from "./workspace.js";
 import { flagVerificationChanges } from "./verification-changes.js";
 import { Workspace } from "./workspace.js";
 import { runChecks } from "./workspace-checks.js";
+import { NO_TOKENS, type TokenUsage, addTokens, totalTokens } from "./token-usage.js";
 
 /**
  * Run the review evaluation set live (decision 016) and write one JSON record
@@ -120,8 +121,8 @@ try {
     const decision = reviewDepth(snapshot, input.flags, checks);
     const deep = depthMode === "deep" || depthMode === "computed" && decision.depth === "deep";
     // Tokens of the reviewers and the refuter, as the review step counts them (decision 018).
-    let tokens = 0;
-    const onUsage = (count: number): void => { tokens += count; };
+    let usage = NO_TOKENS;
+    const onUsage = (used: TokenUsage): void => { usage = addTokens(usage, used); };
     const ai: RoleAccess = { reviewer: { target: models.reviewer, onUsage },
       refuter: { target: models.refuter, onUsage },
       validator: { target: models.validator, onUsage } };
@@ -136,7 +137,8 @@ try {
     }
     const tested = await refuteFindings(ai.refuter, input, reviews, signal);
     const done = Date.now();
-    const reviewTokens = tokens;
+    const reviewUsage = usage;
+    const reviewTokens = totalTokens(reviewUsage);
     // Measure the refuter directly: a planted false finding it should kill.
     let planted: string | undefined;
     if (testCase.falseClaim !== undefined) {
@@ -149,11 +151,11 @@ try {
     raw.push(scoreCase(testCase, reviews, "raw"));
     refuted.push(scoreCase(testCase, tested, "refuted"));
     const corrections = skipCorrections ? undefined : await measureCorrections(ai, testCase, workspace, snapshot, input, tested, signal);
-    cases.push({ name: testCase.name, depth: deep ? "deep" : "standard", depthReasons: decision.reasons, checks: checks.map((check) => check.outcome), reviewMs: reviewed - started, reviewTokens,
+    cases.push({ name: testCase.name, depth: deep ? "deep" : "standard", depthReasons: decision.reasons, checks: checks.map((check) => check.outcome), reviewMs: reviewed - started, reviewTokens, reviewUsage,
       refuteMs: done - reviewed, raw: raw.at(-1), refuted: refuted.at(-1), plantedFalseClaim: planted, corrections, reports: tested });
     console.log(`${testCase.name}: raw ${JSON.stringify(raw.at(-1))} | refuted ${JSON.stringify(refuted.at(-1))} | ` +
       `review ${Math.round((reviewed - started) / 1000)} s, refuter ${Math.round((done - reviewed) / 1000)} s, ` +
-      `${Math.round(reviewTokens / 1000)}k tokens` +
+      `${Math.round(reviewTokens / 1000)}k tokens (${Math.round(reviewUsage.cacheRead / 1000)}k cached)` +
       (planted === undefined ? "" : ` | planted false claim: ${planted}`));
   }
 } finally { rmSync(root, { recursive: true, force: true }); }

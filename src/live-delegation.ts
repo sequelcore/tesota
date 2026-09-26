@@ -9,6 +9,7 @@ import { openModelTarget, startWorkingAgent } from "./integrations/model-session
 import { ExplorerPool } from "./integrations/pi-explore.js";
 import { askExplorer } from "./integrations/pi-explorer.js";
 import { DEFAULT_MODEL, EXPLORERS_OFF, readModelChoices } from "./model-roles.js";
+import { type TokenUsage, totalTokens } from "./token-usage.js";
 
 /**
  * Run the delegation evaluation live (decision 019) and write one JSON record
@@ -51,7 +52,7 @@ interface Attempt {
 async function attempt(question: string, explorers: boolean): Promise<Omit<Attempt, "name" | "mode" | "run" | "score">> {
   let tokens = 0;
   let explorerCalls = 0;
-  const count = (value: number): void => { tokens += value; };
+  const count = (usage: TokenUsage): void => { tokens += totalTokens(usage); };
   const pool = explorers ? new ExplorerPool(async (brief, signal, _onLine, onUsage) => {
     explorerCalls += 1;
     return askExplorer({ target: explorerTarget, onUsage: (value) => { onUsage(value); count(value); } },

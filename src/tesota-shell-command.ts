@@ -32,6 +32,7 @@ import { applyRefutation, refuteFindings } from "./integrations/pi-refuter.js";
 import { attributeOrigins } from "./finding-origin.js";
 import { forecastLine, type ReviewMeasurement, type ReviewModels, type ReviewPlan } from "./review-forecast.js";
 import { countsAsMeasurement } from "./verification/review-estimate.js";
+import { type TokenUsage, totalTokens } from "./token-usage.js";
 import { validateFixes, validationReport } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
 import { appendAssurance, decisionEntry, reviewEntry, type AssuranceEntry } from "./assurance-journal.js";
@@ -47,7 +48,7 @@ interface ReviewRun {
   readonly depth: DepthDecision;
   /** Reads a file from the candidate's tree. */
   readonly read: (path: string) => string | undefined;
-  readonly onUsage: (tokens: number) => void;
+  readonly onUsage: (usage: TokenUsage) => void;
   /** The models the review step's roles use, read once when the step starts. */
   readonly models: ReviewModels;
   readonly signal: AbortSignal;
@@ -529,7 +530,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const reports = await reviewCandidate({ id, signal, depth, candidate: snapshot, models,
         input: { checkout: workspace.checkout, requests, snapshot: scope, checks, flags,
           ...(correction === undefined ? {} : { correction: { sentBack: correction.sentBack } }) },
-        read: (path) => read(snapshot.tree, path), onUsage: (count) => { tokens += count; } });
+        read: (path) => read(snapshot.tree, path), onUsage: (usage) => { tokens += totalTokens(usage); } });
       if (signal.aborted) return { status: "cancelled" };
       const measurement: ReviewMeasurement = { at: new Date().toISOString(), depth: depth.depth,
         correction: correction !== undefined, durationMs: Date.now() - started, tokens, models };
