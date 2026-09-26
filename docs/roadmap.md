@@ -90,6 +90,12 @@ mid-work, and finds the work finished on reconnecting.
 - Non-code tasks, and user-supplied verifiers and reviewers, by observed need.
 - Workflow profiles that choose verifiers, reviewers and rounds per
   repository, once two real alternatives exist.
+- Web evidence in review, once real use shows reviews missing errors that
+  only current documentation would catch: reviewers read only
+  operator-pinned documentation sites, through an explorer, and every page
+  they cite is saved with the review, so the refuter checks a web-based
+  finding against the same saved pages and the review stays reproducible.
+  Builds on web access (decision 024).
 - A Java backend in the monorepo of a first user will need Java checks in the
   sandbox, per-part checks and nested instructions.
 
