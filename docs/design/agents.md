@@ -68,7 +68,9 @@ model, who pays for it and the model's list price, and
 `tesota models <role> <route:model>` sets one from the models
 the route offers, or `default` to clear it. An unreadable file is an error,
 not a silent fallback. A role reads its model when it starts work, and review
-measurements record the models so forecasts compare like with like.
+measurements record the models so forecasts compare like with like. What the
+labs, benchmarks and practitioners say about choosing them is in the
+[models by role landscape](../research/model-roles-landscape.md).
 
 ## Model routes
 
