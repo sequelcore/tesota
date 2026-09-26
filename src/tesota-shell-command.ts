@@ -510,9 +510,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     "and the agent's last reply.";
   /** Judges of this session's agent that share its model or lab (decision 028), after a switch. */
   const warnJudges = (id: string, choice: string): void => {
-    const warnings = describeJudgeWarnings(judgeWarnings({ ...readModelChoices(), agent: choice })
-      .filter((warning) => warning.author === "agent"));
-    if (warnings !== "") surface.writeTo(id, warnings, "warning");
+    const warnings = judgeWarnings({ ...readModelChoices(), agent: choice }).filter((warning) => warning.author === "agent");
+    // The same model is a warning, colored; a shared lab is a note, dimmed like Tesota's other notes.
+    const same = describeJudgeWarnings(warnings.filter((warning) => warning.level === "same_model"));
+    const lab = describeJudgeWarnings(warnings.filter((warning) => warning.level === "same_lab"));
+    if (same !== "") surface.writeTo(id, same, "warning");
+    if (lab !== "") surface.writeTo(id, lab, "info");
   };
   const agentModel: AgentModelCommands = {
     change: async (id, argument) => {

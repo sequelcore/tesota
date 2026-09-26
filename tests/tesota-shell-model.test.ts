@@ -102,6 +102,8 @@ it("switches in place on the same engine, and the conversation continues", async
   expect(said()).toContain("its conversation continues");
   // Every other role takes its default, Luna: the new agent is no longer judged by its own model.
   expect(said()).not.toContain("Same model judging");
+  // A lab shared with its judges is a note, dimmed; the same model is a warning, colored.
+  expect(vi.mocked(created.surface.writeTo)).toHaveBeenCalledWith("session", expect.stringContaining("Same lab"), "info");
   await created.agentModel?.change("session", "codex:gpt-6-luna");
   expect(said()).toContain("the reviewer judges the agent's work, and both use codex:gpt-6-luna");
   await created.session("session").work("Also log it.");
