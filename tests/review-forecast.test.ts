@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { costText, forecastLine, MEASUREMENTS_KEPT, withMeasurement, type ReviewMeasurement } from "../src/review-forecast.js";
+import { canEstimate, middlePositions } from "../src/verification/review-estimate.js";
 
 const deep = { depth: "deep" as const, correction: false, lenses: ["correctness and regressions", "security and authority"],
   claimcheck: false };
@@ -28,4 +29,19 @@ it("keeps only the newest measurements and words small costs plainly", () => {
   expect(kept.at(-1)?.tokens).toBe(99);
   expect(kept[0]?.tokens).toBe(1);
   expect(costText(300, 850)).toBe("1 s and 850 tokens");
+});
+
+it("takes the median as the middle of the sorted values, averaging the middle two of an even count", () => {
+  for (let length = 1; length <= 9; length += 1) {
+    const { lower, upper } = middlePositions(length);
+    const at = Array.from({ length }, (_, index) => index);
+    expect(at.filter((index) => index <= lower).length * 2).toBeGreaterThanOrEqual(length);
+    expect(at.filter((index) => index >= upper).length * 2).toBeGreaterThanOrEqual(length);
+    expect(upper - lower).toBe(length % 2 === 1 ? 0 : 1);
+  }
+  const history = [measured(90_000, 10), measured(30_000, 40), measured(50_000, 20), measured(70_000, 30)];
+  expect(forecastLine(deep, history)).toContain("about 60 s and 25 tokens (median of 4)");
+  expect(canEstimate(3, 3)).toBe(true);
+  expect(canEstimate(2, 3)).toBe(false);
+  expect(canEstimate(5, 0)).toBe(false);
 });

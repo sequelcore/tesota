@@ -1,4 +1,5 @@
 import type { ReviewDepth } from "./review-depth.js";
+import { canEstimate, middlePositions } from "./verification/review-estimate.js";
 
 /**
  * What a review step will run and what it has cost before (decision 018).
@@ -32,10 +33,11 @@ export const MEASUREMENTS_KEPT = 20;
 /** Fewer comparable measurements than this and the forecast says so instead of estimating. */
 export const MIN_MEASUREMENTS = 3;
 
+/** The median of at least one value, from the proved middle positions. */
 function median(values: readonly number[]): number {
   const sorted = values.toSorted((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1 ? sorted[middle] ?? 0 : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+  const { lower, upper } = middlePositions(sorted.length);
+  return ((sorted[lower] ?? 0) + (sorted[upper] ?? 0)) / 2;
 }
 
 function tokens(count: number): string {
@@ -58,7 +60,7 @@ function steps(plan: ReviewPlan): string {
 export function forecastLine(plan: ReviewPlan, history: readonly ReviewMeasurement[]): string {
   const kind = `${plan.depth === "deep" ? "Deep review" : "Review"}${plan.correction ? " of a correction" : ""}`;
   const comparable = history.filter((entry) => entry.depth === plan.depth && entry.correction === plan.correction);
-  const basis = comparable.length < MIN_MEASUREMENTS
+  const basis = !canEstimate(comparable.length, MIN_MEASUREMENTS)
     ? `Not enough ${plan.depth === "deep" ? "deep " : ""}reviews of this repository have been measured to estimate its cost ` +
       `(${comparable.length} of ${MIN_MEASUREMENTS}).`
     : `Comparable reviews of this repository took about ${costText(median(comparable.map((entry) => entry.durationMs)),

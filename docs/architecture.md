@@ -100,6 +100,7 @@ at once; applications are serialized.
 | `finding-origin.ts` | Reading each finding's origin facts from the candidate's diff and explaining a changed claim |
 | `verification/finding-origin-rule.ts` | The proved rule deciding whether a finding's origin claim stands or becomes unknown |
 | `review-forecast.ts` | Measured review costs per repository and the forecast shown before a deep review |
+| `verification/review-estimate.ts` | The proved forecast rules: when there are enough measurements, and the median's middle positions |
 | `integrations/pi-fix-validator.ts` | After a correction round, whether each finding sent back is resolved in the current code |
 | `integrations/pi-refuter.ts` | The refuter: a cold, read-only session that tries to disprove every finding, and the standing each finding gets |
 | `review-evaluation.ts`, `live-review.ts` | The review evaluation set with known truth, its scoring, and `bun run live:review` |
