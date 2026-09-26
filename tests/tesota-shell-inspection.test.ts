@@ -17,6 +17,13 @@ it("lists changes to what gets checked as the operator's decision, and the reque
   expect(review.detail).toContain("Changes to what gets checked\n  modified src/price.test.ts (test)");
 });
 
+it("keeps the diff apart from the record, for the result panel to draw as a diff", () => {
+  const review = inspectReview({ snapshot, checks: [check], requests: ["Fix it"], flags: [], reviews: [] });
+  expect(review.diff).toBe(snapshot.diff);
+  expect(review.detail).not.toContain("diff --git");
+  expect(review.detail).toContain(`Content\n  tree ${snapshot.tree}\n  base ${snapshot.base}`);
+});
+
 it("says nothing about flags when no check-affecting file changed", () => {
   const review = inspectReview({ snapshot, checks: [check], requests: ["Fix it"], flags: [], reviews: [] });
   expect(review.summary).not.toContain("⚠");

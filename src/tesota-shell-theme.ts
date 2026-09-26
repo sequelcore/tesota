@@ -13,6 +13,9 @@ export interface TesotaShellTheme {
   readonly userBackground: string | null;
   /** Full-row highlight for the selected shell command. */
   readonly selectionBackground: string | null;
+  /** Tints of added and removed rows in the diff view. */
+  readonly addedBackground: string | null;
+  readonly removedBackground: string | null;
 }
 
 // Adapted from the Tesota light/dark operator palettes in kiln-legacy-2026-09.
@@ -21,16 +24,17 @@ const themes: Readonly<Record<TesotaShellThemeName, TesotaShellTheme>> = Object.
   "tesota-dark": Object.freeze({
     name: "tesota-dark", muted: "#b9b7aa", accent: "#c6a8d2",
     success: "#9ab08f", warning: "#d5b36a", error: "#d88c8c", userBackground: "#2f2a35",
-    selectionBackground: "#4b3d53",
+    selectionBackground: "#4b3d53", addedBackground: "#1d3324", removedBackground: "#3d1f24",
   }),
   "tesota-light": Object.freeze({
     name: "tesota-light", muted: "#5f6258", accent: "#6d4b78",
     success: "#4f624a", warning: "#6e602c", error: "#8e3b3b", userBackground: "#efe9f2",
-    selectionBackground: "#e2d6e8",
+    selectionBackground: "#e2d6e8", addedBackground: "#dcefe0", removedBackground: "#f6dfdf",
   }),
   terminal: Object.freeze({
     name: "terminal", muted: null, accent: null,
     success: null, warning: null, error: null, userBackground: null, selectionBackground: null,
+    addedBackground: null, removedBackground: null,
   }),
 });
 

@@ -7,6 +7,7 @@ import { tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-prog
 import { backgroundText, bold, colorText, mutedText, tesotaShellTheme, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
+import { DiffView } from "./tesota-shell-diff.js";
 
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
@@ -58,6 +59,8 @@ export interface ShellInspection {
   readonly title: string;
   readonly summary: string;
   readonly detail: string;
+  /** The candidate's unified diff, drawn as a diff view below `detail`; absent from results recorded before it was kept apart. */
+  readonly diff?: string | undefined;
 }
 
 interface PendingPrompt {
@@ -218,15 +221,16 @@ function busy(progress: TesotaShellProgress | undefined): boolean {
     progress?.phase === "reviewing";
 }
 
-/** Color a unified diff and check output for the result panel. */
-function resultDetail(detail: string, theme: TesotaShellTheme): string {
-  return safeTerminalText(detail).split("\n").map((line) => {
-    if (line.startsWith("+++") || line.startsWith("---")) return bold(line);
-    if (line.startsWith("+")) return colorText(line, theme.success);
-    if (line.startsWith("-")) return colorText(line, theme.error);
-    if (line.startsWith("@@")) return colorText(line, theme.accent);
-    return line;
-  }).join("\n");
+/** The result panel: the record as text, then the candidate's diff as a diff view. */
+class ResultPanel implements Component {
+  readonly text = new Text("", 1, 0);
+  readonly diff: DiffView;
+  constructor(theme: TesotaShellTheme) { this.diff = new DiffView(theme); }
+  invalidate(): void { this.text.invalidate(); }
+  render(width: number): string[] {
+    const diff = this.diff.render(width);
+    return [...this.text.render(width), ...(diff.length === 0 ? [] : ["", ...diff])];
+  }
 }
 
 class PersistentTesotaShellTerminal implements TesotaShellTerminal {
@@ -248,7 +252,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly secondaryTitle = new Line();
   private readonly status = new Line();
   private readonly footer = new Line();
-  private readonly result = new Text("", 1, 0);
+  private readonly result: ResultPanel;
   private readonly commandMenu: CommandMenu;
   private readonly editor: Editor;
   private timer: ReturnType<typeof setInterval> | undefined;
@@ -264,6 +268,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.interrupt = () => { (options.interrupt ?? ignoreInterrupt)(this.selectedId); };
     this.theme = tesotaShellTheme(options.theme);
     this.sidebar = new SessionRail(this.theme);
+    this.result = new ResultPanel(this.theme);
     this.sidebarScroll = new ScrollView(this.sidebar, { scrollbar: "auto" });
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
     initTheme(this.theme.name === "tesota-light" ? "light" : "dark");
@@ -370,7 +375,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private updateResult(session: SessionView): void {
     const inspection = session.inspections[session.selectedInspection];
     if (inspection === undefined) {
-      this.result.setText(mutedText("No result yet. A review's full diff and check output appear here.", this.theme));
+      this.result.text.setText(mutedText("No result yet. A review's full diff and check output appear here.", this.theme));
+      this.result.diff.setDiff(undefined);
       return;
     }
     const note = session.selectedInspection < session.restoredInspectionCount ?
@@ -379,8 +385,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         "An earlier result. A pending decision applies to the latest one.\n" : "";
     const position = session.inspections.length > 1 ?
       mutedText(` ${session.selectedInspection + 1} of ${session.inspections.length} · Alt+, Alt+.`, this.theme) : "";
-    this.result.setText(`${bold(colorText(safeTerminalText(inspection.title), this.theme.accent))}${position}\n` +
-      `${mutedText(note, this.theme)}\n${resultDetail(inspection.detail, this.theme)}`);
+    this.result.text.setText(`${bold(colorText(safeTerminalText(inspection.title), this.theme.accent))}${position}\n` +
+      `${mutedText(note, this.theme)}\n${safeTerminalText(inspection.detail)}`);
+    this.result.diff.setDiff(inspection.diff);
   }
 
   addSession(id: string, title: string, entries: readonly TranscriptEntry[] = [],

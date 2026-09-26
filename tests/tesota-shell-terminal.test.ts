@@ -670,14 +670,17 @@ it("shows and restores a successful edit's bounded inline patch", () => {
 it("presents a review once in the conversation and its diff beside it on a wide terminal", () => {
   const entries: TranscriptEntry[] = [];
   const { shell, render } = wideShell({ onEntry: (_id, entry) => { entries.push(entry); } });
-  shell.inspect({ title: "Review · 1 file", summary: "  edit   src/price.ts\n  ✓ npm test",
-    detail: "Diff\n-  return price + discount;\n+  return price - discount;" });
+  shell.inspect({ title: "Review · 1 file", summary: "  edit   src/price.ts\n  ✓ npm test", detail: "Requested\n  1. Fix it",
+    diff: "diff --git a/src/price.ts b/src/price.ts\n--- a/src/price.ts\n+++ b/src/price.ts\n@@ -2 +2 @@\n" +
+      "-  return price + discount;\n+  return price - discount;" });
   const rendered = render();
   const screen = stripTerminalSequences(rendered);
   expect(screen.split("Review · 1 file").length - 1).toBe(2);
   expect(screen.split("✓ npm test").length - 1).toBe(1);
-  expect(screen).toContain("+  return price - discount;");
-  expect(rendered).toContain("\x1b[38;2;154;176;143m+  return price - discount;");
+  expect(screen).toContain("1 file changed +1 -1");
+  expect(screen).toContain("2 +   return price - discount;");
+  expect(screen).toContain("2 -   return price + discount;");
+  expect(rendered).toContain("\x1b[48;2;29;51;36m"); // The added row's tint.
   expect(entries).toEqual([{ kind: "review", title: "Review · 1 file", text: "  edit   src/price.ts\n  ✓ npm test" }]);
   shell.stop();
 });

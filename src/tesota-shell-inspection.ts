@@ -102,6 +102,7 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews, dept
         `  ${flag.status} ${flag.path} (${flag.kind})`).join("\n")}`) +
       `\n\nChecks\n${checks.map(checkDetail).join("\n\n") || "  None"}` +
       `\n\nReview\n${reviews.map(reviewDetail).join("\n\n") || "  None"}` +
-      `\n\nContent\n  tree ${snapshot.tree}\n  base ${snapshot.base}\n\nDiff\n${snapshot.diff}`,
+      `\n\nContent\n  tree ${snapshot.tree}\n  base ${snapshot.base}`,
+    diff: snapshot.diff,
   };
 }

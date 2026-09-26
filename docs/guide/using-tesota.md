@@ -171,8 +171,11 @@ problem sent back is resolved, and reviews only what the correction changed,
 so a round settles what it was sent instead of raising a fresh list: at most
 two rounds, fewer if a round changes nothing. Each round shows its own review, and `Ctrl+C` stops it. Only then
 does Tesota ask for your decision. What only you can decide never goes back
-to the agent. The full diff and check output open beside it on a wide terminal;
-`Alt+R` shows or hides them, in place of the conversation on a narrow one.
+to the agent. The full record and the diff open beside it on a wide terminal;
+`Alt+R` shows or hides them, in place of the conversation on a narrow one. The
+diff lists the changed files with their added and removed lines, then shows
+each change with line numbers, added and removed lines tinted green and red,
+and code highlighted by language.
 The prompt stays visible in either view.
 Then choose:
 

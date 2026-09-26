@@ -18,12 +18,13 @@ const entrySchema: z.ZodType<TranscriptEntry> = z.discriminatedUnion("kind", [
     change: changeSchema.optional() }),
   z.strictObject({ kind: z.literal("review"), title: z.string().max(100), text }),
 ]);
-const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: string }> =
+// A result recorded before results kept their diff apart has none; its diff is in `detail`.
+const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: string; diff?: string | undefined }> =
   z.strictObject({ title: z.string().max(100), summary: z.string().max(10_000),
-    detail: z.string().max(2_000_000) });
+    detail: z.string().max(2_000_000), diff: z.string().max(2_000_000).optional() });
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: TranscriptEntry[];
-  inspections: { title: string; summary: string; detail: string }[];
+  inspections: { title: string; summary: string; detail: string; diff?: string | undefined }[];
   workspace: string | null;
   interrupted: boolean; blocked: boolean }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
@@ -52,7 +53,7 @@ export interface ShellSessionStore {
   create(): ShellSessionRecord;
   remove(id: string): void;
   append(id: string, entry: TranscriptEntry): void;
-  inspect(id: string, inspection: { title: string; summary: string; detail: string }): void;
+  inspect(id: string, inspection: { title: string; summary: string; detail: string; diff?: string | undefined }): void;
   setWorkspace(id: string, directory: string): void;
   /** Check commands the operator approved for this repository, or null before the first choice. */
   checks(): readonly string[] | null;

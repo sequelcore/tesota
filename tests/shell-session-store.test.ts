@@ -35,6 +35,20 @@ it("restores recorded conversation without treating it as task authority", () =>
   reopened.close();
 });
 
+it("keeps a result's diff, and reopens a result recorded before results had one", () => {
+  const { root, source } = fixture();
+  const first = openShellSessionStore(source, root);
+  const session = first.create();
+  first.inspect(session.id, { title: "Review · 1 file", summary: "s", detail: "d", diff: "diff --git a/a b/a" });
+  first.inspect(session.id, { title: "Review · 1 file", summary: "s", detail: "d\n\nDiff\ndiff --git a/a b/a" });
+  first.close();
+  const reopened = openShellSessionStore(source, root);
+  expect(reopened.list()[0]?.inspections).toEqual([
+    { title: "Review · 1 file", summary: "s", detail: "d", diff: "diff --git a/a b/a" },
+    { title: "Review · 1 file", summary: "s", detail: "d\n\nDiff\ndiff --git a/a b/a" }]);
+  reopened.close();
+});
+
 it("rejects a corrupt session snapshot instead of showing a clean history", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);
