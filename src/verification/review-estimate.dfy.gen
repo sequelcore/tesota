@@ -18,6 +18,8 @@ function JSRem(a: int, b: int): int
   if a < 0 then -r else r
 }
 
+datatype ReviewStatus = completed | incomplete
+
 datatype MiddlePositionsResult = MiddlePositionsResult(lower: int, upper: int)
 
 function canEstimate(count: int, minimum: int): bool
@@ -46,5 +48,15 @@ lemma middlePositions_ensures(length: int)
   ensures (((length - middlePositions(length).upper) * 2) >= length)
   ensures ((JSRem(length, 2) == 1) ==> (middlePositions(length).lower == middlePositions(length).upper))
   ensures ((JSRem(length, 2) == 0) ==> (middlePositions(length).upper == (middlePositions(length).lower + 1)))
+{
+}
+
+function countsAsMeasurement(statuses: seq<ReviewStatus>): bool
+{
+  Std.Collections.Seq.All(statuses, (status: ReviewStatus) => status.completed?)
+}
+
+lemma countsAsMeasurement_ensures(statuses: seq<ReviewStatus>)
+  ensures (countsAsMeasurement(statuses) == forall i: nat :: ((i < |statuses|) ==> statuses[i].completed?))
 {
 }

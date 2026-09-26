@@ -30,6 +30,7 @@ import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
 import { applyRefutation, refuteFindings } from "./integrations/pi-refuter.js";
 import { attributeOrigins } from "./finding-origin.js";
 import { forecastLine, type ReviewMeasurement, type ReviewPlan } from "./review-forecast.js";
+import { countsAsMeasurement } from "./verification/review-estimate.js";
 import { validateFixes, validationReport } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
 import { appendAssurance, decisionEntry, reviewEntry, type AssuranceEntry } from "./assurance-journal.js";
@@ -520,8 +521,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       if (signal.aborted) return { status: "cancelled" };
       const measurement: ReviewMeasurement = { at: new Date().toISOString(), depth: depth.depth,
         correction: correction !== undefined, durationMs: Date.now() - started, tokens };
-      // A step in which a reviewer did not finish did not cost what a review costs.
-      if (reports.every((report) => report.status === "completed")) {
+      if (countsAsMeasurement(reports.map((report) => report.status))) {
         try { store.recordReviewMeasurement(measurement); } catch {
           surface.writeTo(id, "Tesota could not record what this review cost; later forecasts leave it out.", "warning");
         }

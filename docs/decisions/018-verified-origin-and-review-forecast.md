@@ -105,11 +105,13 @@ the refuter, are not forecast.
 2. Token counting for every review session, the per-repository measurements,
    the forecast line before a deep review and the cost in its summary; the
    evaluation also records each case's tokens, 2k to 29k per case for the
-   reviewers and the refuter in those runs. Whether there are enough
-   measurements to estimate, and which sorted positions are the middle, are
-   `canEstimate` and `middlePositions` in `src/verification/review-estimate.ts`,
-   proved by `bun run formal:check`; averaging the middle two stays in plain
-   code, because LemmaScript models `number` as an integer.
+   reviewers and the refuter in those runs. Three rules in
+   `src/verification/review-estimate.ts` are proved by `bun run formal:check`:
+   `countsAsMeasurement`, which keeps out a step with an unfinished reviewer;
+   `canEstimate`, whether there are enough measurements; and
+   `middlePositions`, which sorted positions are the middle. Averaging the
+   middle two stays in plain code, because LemmaScript models `number` as an
+   integer.
 
 ## Consequences
 

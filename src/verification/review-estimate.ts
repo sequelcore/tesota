@@ -26,3 +26,15 @@ export function middlePositions(length: number): { lower: number; upper: number 
   const upper = Math.floor(length / 2);
   return { lower: length % 2 === 1 ? upper : upper - 1, upper };
 }
+
+export type ReviewStatus = "completed" | "incomplete";
+
+/**
+ * Whether a review step counts toward the repository's measured costs: only
+ * when every reviewer finished, since an unfinished step did not cost what a
+ * review costs.
+ */
+//@ ensures \result === forall(i: nat, i < statuses.length ==> statuses[i] === "completed")
+export function countsAsMeasurement(statuses: ReviewStatus[]): boolean {
+  return statuses.every((status) => status === "completed");
+}

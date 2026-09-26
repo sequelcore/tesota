@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { costText, forecastLine, MEASUREMENTS_KEPT, withMeasurement, type ReviewMeasurement } from "../src/review-forecast.js";
-import { canEstimate, middlePositions } from "../src/verification/review-estimate.js";
+import { canEstimate, countsAsMeasurement, middlePositions } from "../src/verification/review-estimate.js";
 
 const deep = { depth: "deep" as const, correction: false, lenses: ["correctness and regressions", "security and authority"],
   claimcheck: false };
@@ -44,4 +44,10 @@ it("takes the median as the middle of the sorted values, averaging the middle tw
   expect(canEstimate(3, 3)).toBe(true);
   expect(canEstimate(2, 3)).toBe(false);
   expect(canEstimate(5, 0)).toBe(false);
+});
+
+it("measures a review step only when every reviewer finished", () => {
+  expect(countsAsMeasurement(["completed", "completed"])).toBe(true);
+  expect(countsAsMeasurement(["completed", "incomplete"])).toBe(false);
+  expect(countsAsMeasurement(["incomplete"])).toBe(false);
 });
