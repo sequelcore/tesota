@@ -28,7 +28,14 @@ records the provider and those guarantees:
 A provider declares only the guarantees it passes under test: from inside it,
 reads and writes outside the workspace, reads of host credentials, unapproved
 network destinations, and stopping a running child process. There is no
-silent fallback to a weaker provider.
+silent fallback to a weaker provider. The controls are one module for every
+provider (`src/execution-controls.ts`): each guarantee claimed selects its
+controls, every environment must also work in its workspace and stop what it
+runs, and each control is a small probe run inside and judged from the host.
+File and process probes are JavaScript, so no shell is assumed; network probes
+use `curl`, which honors a sandbox's proxy. Run against the host provider,
+which confines nothing, the confinement controls fail, which shows they can
+tell a sandbox from none.
 
 ## Providers
 

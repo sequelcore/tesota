@@ -106,6 +106,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `repository-git.ts`, `windows-system.ts` | Git without ambient config, hooks or network; Windows' own programs, never found through PATH |
 | `execution-environment.ts`, `execution-providers.ts` | The provider-neutral execution interface, choosing a mode and provider, `tesota setup` |
 | `host-environment.ts`, `docker-sandboxes-environment.ts`, `docker-sandboxes-kit.ts`, `toolchain.ts` | The two providers, the cached sandbox image, and reading a repository's pinned runtimes |
+| `execution-controls.ts` | The controls every provider must pass, for the live suites and qualification |
 | `workspace-checks.ts`, `verification/oxlint*.ts`, `verification/lemmascript-verifier.ts` | Verifier results with claim and limits: approved commands, Oxlint, LemmaScript with Dafny |
 | `verification-changes.ts` | Flagging changes to tests, check configuration, CI, specifications and scripts |
 | `review.ts`, `integrations/pi-reviewer.ts`, `integrations/pi-claimcheck.ts` | The reviewer contract, Tesota's reviewer and lenses, and ClaimCheck's method |
