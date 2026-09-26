@@ -82,8 +82,8 @@ it("runs Claude Code with Tesota's tools only and none of the operator's setup, 
   expect(await session.run("What is a?", new AbortController().signal)).toEqual({ status: "completed", reply: "The constant is 1." });
   const [options] = sdk.options;
   expect(options).toMatchObject({ model: "opus", tools: [], settingSources: [], strictMcpConfig: true, skills: [],
-    canUseTool: onlyTesotaTools, persistSession: false,
-    allowedTools: ["mcp__tesota__read", "mcp__tesota__grep", "mcp__tesota__find", "mcp__tesota__ls"] });
+    canUseTool: onlyTesotaTools, persistSession: false });
+  expect(options?.["allowedTools"]).toBeUndefined();
   expect(String(options?.["systemPrompt"])).toMatch(/^You review\.[\s\S]*mcp__tesota__read/u);
   expect(options?.["resume"]).toBeUndefined();
   expect(activity.map((entry) => entry.type)).toEqual(["tool_started", "tool_finished", "reply"]);

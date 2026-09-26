@@ -144,7 +144,7 @@ export class ClaudeCodeSession {
       for await (const message of query({ prompt: request, options: {
         cwd: this.#root, model: this.#options.model, systemPrompt: this.#options.systemPrompt + toolNote,
         tools: [], mcpServers: { [server]: createSdkMcpServer({ name: server, version: "1.0.0", tools }) },
-        allowedTools: this.#options.tools.map((definition) => `${prefix}${definition.name}`),
+        // Every call goes through one gate: Tesota's tools are allowed there, and nothing else is.
         canUseTool: onlyTesotaTools, settingSources: [], strictMcpConfig: true, skills: [],
         abortController: abort, env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "tesota" },
         ...this.#conversation(),
