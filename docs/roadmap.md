@@ -79,8 +79,8 @@ different set of verifiers, reviewers or rounds.
 and face a refuter before they act, and `bun run live:review` measures review
 on an evaluation set with known truth; correction rounds validate each fix and
 review only their own diff; and depth computed from facts about the candidate,
-with focused lenses on deep reviews. Open: lenses repeat each other's findings
-and the refuter merges only some of them.
+with focused lenses on deep reviews, whose repeated findings are grouped by
+location and merged within a file.
 
 **Done when:** a change to Tesota goes through verification, an independent
 review and a correction round, and the operator decides on the whole record.

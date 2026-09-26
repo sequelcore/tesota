@@ -91,7 +91,11 @@ not adopted.
    review found the same planted defects as standard review with no false
    positives, but showed up to twice as many findings, because the refuter
    merged only some duplicates between lenses. Lenses run only when depth is
-   deep; merging duplicates reliably is open.
+   deep. Tesota then grouped findings at the same file and nearby lines for
+   the refuter, which decides whether each group is one problem, and accepts
+   a duplicate only within one file: deep runs showed 5 and 10 findings with
+   9 and 5 merged, including the authorization finding the refuter had left
+   repeated before. Duplicates across files stay, by design.
 6. Executable probes, where the refuter writes a check that demonstrates a
    finding and runs it in the sandbox on a copy of the candidate: after the
    evaluation set shows which findings remain unsettled.

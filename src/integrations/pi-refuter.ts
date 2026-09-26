@@ -62,10 +62,51 @@ function describeFinding(finding: Finding, id: number): string {
   return `${id}. [${finding.severity}, ${finding.origin}]${where}: ${finding.statement}\n   Reviewer's reason: ${finding.reason}`;
 }
 
-/** What the refuter is told: the review input and the findings, numbered across every report. */
+/** Lines at most this far apart in one file count as the same place, as Codex deduplicates by changed location. */
+const nearbyLines = 3;
+
+function samePlace(first: Finding, second: Finding): boolean {
+  if (first.path === undefined || first.path !== second.path) return false;
+  if (first.line === undefined || second.line === undefined) return first.line === second.line;
+  return Math.abs(first.line - second.line) <= nearbyLines;
+}
+
+/**
+ * Findings at the same place, as groups of 1-based numbers: candidates for
+ * one problem reported several times, as Bugbot buckets similar bugs before
+ * consolidating them. Only the refuter decides whether they are one problem.
+ */
+export function locationGroups(findings: readonly Finding[]): number[][] {
+  const groups: number[][] = [];
+  const grouped = new Set<number>();
+  findings.forEach((finding, index) => {
+    if (grouped.has(index)) return;
+    const group = [index];
+    for (let other = index + 1; other < findings.length; other++) {
+      const candidate = findings[other];
+      if (!grouped.has(other) && candidate !== undefined && group.some((member) => samePlace(findings[member] ?? candidate, candidate))) {
+        group.push(other);
+      }
+    }
+    if (group.length > 1) {
+      for (const member of group) grouped.add(member);
+      groups.push(group.map((member) => member + 1));
+    }
+  });
+  return groups;
+}
+
+/** What the refuter is told: the review input, the findings numbered across every report, and where they coincide. */
 export function refutationMessage(input: ReviewInput, findings: readonly Finding[]): string {
+  const groups = locationGroups(findings);
+  const places = groups.length === 0 ? "" : "\n\nFindings at the same place, which may report one problem more than " +
+    "once. For each group, mark every later finding that reports the same problem as an earlier one with duplicateOf; " +
+    "keep findings that report different problems separate:\n" + groups.map((group) => {
+      const first = findings[(group[0] ?? 1) - 1];
+      return `- ${group.join(", ")} at ${first?.path ?? "the same file"}${first?.line === undefined ? "" : `:${first.line}`}`;
+    }).join("\n");
   return `${reviewMessage(input)}\n\nFindings to test, one verdict each:\n${findings.map((finding, index) =>
-    describeFinding(finding, index + 1)).join("\n")}`;
+    describeFinding(finding, index + 1)).join("\n")}${places}`;
 }
 
 function standingOf(verdict: RefutationVerdict | undefined): FindingStanding {
@@ -86,8 +127,11 @@ export function applyRefutation(reports: readonly ReviewReport[], verdicts: read
     return { ...report, findings: report.findings.map((finding) => {
       id += 1;
       const verdict = verdicts?.find((entry) => entry.id === id);
-      // Only a strictly earlier finding can be the original, so duplicates cannot point at each other in a cycle.
-      const original = verdict?.duplicateOf !== undefined && verdict.duplicateOf < id ? numbered[verdict.duplicateOf - 1] : undefined;
+      // Only a strictly earlier finding in the same file can be the original: duplicates cannot form a cycle, and a
+      // mistaken verdict cannot merge problems in different files.
+      const candidate = verdict?.duplicateOf !== undefined && verdict.duplicateOf < id ? numbered[verdict.duplicateOf - 1] : undefined;
+      const original = candidate !== undefined && candidate.finding.path !== undefined && candidate.finding.path === finding.path
+        ? candidate : undefined;
       return { ...finding, standing: standingOf(verdict?.verdict),
         ...(verdict === undefined ? {} : { refutation: verdict.evidence }),
         ...(original === undefined ? {} : { duplicateOf: `${original.reviewer}: ${original.finding.statement}` }) };

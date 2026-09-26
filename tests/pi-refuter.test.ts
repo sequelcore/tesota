@@ -56,3 +56,26 @@ it("merges a finding that repeats an earlier one, and ignores a duplicate that p
   const third = tested[2];
   expect(third?.status === "completed" && "duplicateOf" in (third.findings[0] ?? {})).toBe(false);
 });
+
+it("groups findings at the same place for the refuter, and never across files", async () => {
+  const { locationGroups } = await import("../src/integrations/pi-refuter.js");
+  const at = (path: string | undefined, line?: number): Finding => {
+    const base = { severity: "high" as const, disposition: "fixable" as const, origin: "introduced" as const, statement: "s", reason: "r" };
+    return { ...base, ...(path === undefined ? {} : { path }), ...(line === undefined ? {} : { line }) };
+  };
+  expect(locationGroups([at("a.js", 2), at("b.js", 2), at("a.js", 4), at("a.js", 30), at("b.js"), at("b.js"), at(undefined)]))
+    .toEqual([[1, 3], [5, 6]]);
+  const message = refutationMessage({ checkout: "C:/work/repo", requests: [], checks: [], flags: [],
+    snapshot: { base: "b".repeat(40), tree, diff: "", changes: [] } }, [at("a.js", 2), at("a.js", 3)]);
+  expect(message).toContain("Findings at the same place, which may report one problem more than once.");
+  expect(message).toContain("- 1, 2 at a.js:2");
+});
+
+it("does not merge findings in different files even when the refuter says so", () => {
+  const split: ReviewReport[] = [{ reviewer: "Tesota reviewer", tree, status: "completed", summary: "", findings: [
+    finding("A"), { ...finding("B"), path: "src/other.ts" }] }];
+  const tested = applyRefutation(split, [{ id: 1, verdict: "confirmed", evidence: "" },
+    { id: 2, verdict: "confirmed", evidence: "", duplicateOf: 1 }]);
+  const report = tested[0];
+  expect(report?.status === "completed" && report.findings.map((entry) => entry.duplicateOf)).toEqual([undefined, undefined]);
+});
