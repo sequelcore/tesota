@@ -1,6 +1,6 @@
 # 020: Choose a model for each role
 
-Status: adopted 2026-09-25. Serves [decision 019](019-read-only-helpers.md)
+Status: adopted 2026-09-25. Serves [decision 019](019-read-only-explorers.md)
 and the review of [decisions 016](016-review-precision.md) and
 [018](018-verified-origin-and-review-forecast.md). Evidence is in the
 [agent delegation landscape](../references/agent-delegation-landscape.md).
@@ -9,7 +9,7 @@ and the review of [decisions 016](016-review-precision.md) and
 
 Tesota used one model, GPT-6 Luna, for everything: the working agent, the
 reviewers, the refuter and the fix validator. The roles differ in what they
-need. The agent writes and decides; helpers only read and summarize, and the
+need. The agent writes and decides; explorers only read and summarize, and the
 most repeated request in the sub-agent issue trackers of Claude Code, Codex,
 opencode and Pi is to give them a cheaper model; reviewers judge, and a
 refuter on a different model is less likely to share the reviewer's blind
@@ -20,7 +20,7 @@ different harness, so a choice for Tesota has to be measured in Tesota.
 
 ## Decision
 
-- Tesota has five roles: the working **agent**; **helpers**; the
+- Tesota has five roles: the working **agent**; **explorers**; the
   **reviewer**, which also covers focused lenses and ClaimCheck; the
   **refuter**; and the fix **validator**.
 - Each role uses the model the operator chose in `~/.tesota/models.json`, and
@@ -50,7 +50,7 @@ different harness, so a choice for Tesota has to be measured in Tesota.
 
 - **A model per repository.** The choice concerns the operator's
   subscription and trust in a model, not a repository.
-- **Letting the agent choose a helper's model.** The operator bears the cost,
+- **Letting the agent choose an explorer's model.** The operator bears the cost,
   so the operator chooses.
 - **Choosing from public rankings.** They measure other tasks, often with
   model judges, in other harnesses.

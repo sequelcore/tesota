@@ -1,6 +1,6 @@
 import { createModels } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { chooseModel, DEFAULT_MODEL, DEFAULT_MODELS_FILE, HELPERS_OFF, isModelRole, MODEL_ROLES, readModelChoices,
+import { chooseModel, DEFAULT_MODEL, DEFAULT_MODELS_FILE, EXPLORERS_OFF, isModelRole, MODEL_ROLES, readModelChoices,
   ROLE_DESCRIPTIONS } from "./model-roles.js";
 
 /** A model the Codex route offers, with its price in dollars per million tokens. */
@@ -27,11 +27,11 @@ function listing(offered: readonly OfferedModel[], path: string): string {
   const choices = readModelChoices(path);
   const rows = MODEL_ROLES.map((role) => {
     const chosen = offered.find((model) => model.id === choices[role]);
-    const cost = choices[role] === HELPERS_OFF ? "no helpers; choose a model to turn them on" : price(chosen);
+    const cost = choices[role] === EXPLORERS_OFF ? "no explorers; choose a model to turn them on" : price(chosen);
     return `  ${role.padEnd(10)}${choices[role].padEnd(22)}${cost}\n  ${"".padEnd(10)}${ROLE_DESCRIPTIONS[role]}`;
   });
   return `Models by role (${path}):\n${rows.join("\n")}\n\nOffered: ${offered.map((model) => model.id).join(", ")}\n` +
-    `Change one with tesota models <role> <model>; <role> default restores ${DEFAULT_MODEL}, and helpers off.\n`;
+    `Change one with tesota models <role> <model>; <role> default restores ${DEFAULT_MODEL}, and explorers off.\n`;
 }
 
 /**
@@ -49,7 +49,7 @@ export function runModelsCommand(args: readonly string[], write: (text: string) 
   }
   try {
     const choices = chooseModel(role, model, offered.map((entry) => entry.id), path);
-    write(choices[role] === HELPERS_OFF ? "Helpers are off.\n" : `The ${role} now uses ${choices[role]}.\n`);
+    write(choices[role] === EXPLORERS_OFF ? "Explorers are off.\n" : `The ${role} now uses ${choices[role]}.\n`);
     return 0;
   } catch (error) {
     write(`${error instanceof Error ? error.message : "The choice could not be saved"}.\n`);

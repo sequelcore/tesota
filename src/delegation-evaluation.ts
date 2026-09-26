@@ -1,8 +1,8 @@
 /**
  * The delegation evaluation (decision 019): questions whose answers need
  * reading several files of a frozen copy of Tesota's own repository, asked
- * of the agent with and without helpers. Each answer is scored by the facts
- * it states, so the two modes differ only by the helpers.
+ * of the agent with and without explorers. Each answer is scored by the facts
+ * it states, so the two modes differ only by the explorers.
  */
 
 /** The commit the questions describe; their answers hold there. */

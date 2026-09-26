@@ -7,7 +7,7 @@ import { type AgentSession, type AgentSessionEvent, type BashOperations, type Mo
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
 import { allowsAutonomy, type ExecutionEnvironment } from "../execution-environment.js";
-import { exploreTool, type HelperPool } from "./pi-explore.js";
+import { exploreTool, type ExplorerPool } from "./pi-explore.js";
 
 export type CommandApproval = "once" | "always" | "deny";
 /** How the operator answered a refused network destination: for this session, for the repository, or not at all. */
@@ -50,8 +50,8 @@ export interface CodingSessionOptions {
   /** Asked after a command whose network access the environment refused. */
   readonly decideNetwork?: (destinations: readonly string[]) => Promise<NetworkDecision>;
   readonly onActivity?: (activity: AgentActivity) => void;
-  /** Read-only helpers the agent may start with `explore` (decision 019); absent when helpers are off. */
-  readonly helpers?: HelperPool;
+  /** Read-only explorers the agent may start with `explore` (decision 019); absent when explorers are off. */
+  readonly explorers?: ExplorerPool;
   /** Called with the tokens of each finished model response, as the provider reported them. */
   readonly onUsage?: (tokens: number) => void;
 }
@@ -177,16 +177,16 @@ function commandGuidance(autonomous: boolean): string {
       "and run commands when they are worth an approval, such as installing dependencies or running tests. ";
 }
 
-/** When the agent should ask a helper, and what a helper's answer is worth (decision 019). */
-const helperGuidance = "The explore tool asks a read-only helper one question. Use it when an answer needs reading " +
-  "many files, or for independent questions you can ask in parallel; do small, targeted reads yourself. A helper " +
+/** When the agent should ask an explorer, and what an explorer's answer is worth (decision 019). */
+const explorerGuidance = "The explore tool asks a read-only explorer one question. Use it when an answer needs reading " +
+  "many files, or for independent questions you can ask in parallel; do small, targeted reads yourself. An explorer " +
   "does not see this conversation, so each question must stand on its own. Treat its answer as a lead to check, " +
   "not as fact, and never use it to change files. ";
 
-function systemPrompt(root: string, autonomous: boolean, helpers: boolean): string {
+function systemPrompt(root: string, autonomous: boolean, explorers: boolean): string {
   return "You are Tesota, a coding agent working in a private copy of the user's repository. " +
     "Read, search, edit, create and delete files as the task needs. " + commandGuidance(autonomous) +
-    (helpers ? helperGuidance : "") +
+    (explorers ? explorerGuidance : "") +
     "Do not commit, push or change Git " +
     "history: when you finish, Tesota shows the user your changes, runs the repository's checks and lets " +
     "the user apply or reject them. End each turn with a short summary of what you changed and anything " +
@@ -320,14 +320,14 @@ export class CodingSession {
       throw new Error("Autonomous sessions require an environment that confines files and network");
     }
     const root = realpathSync(options.cwd);
-    return CodingSession.start({ ...options, systemPrompt: systemPrompt(root, options.autonomous, options.helpers !== undefined), tools: [
+    return CodingSession.start({ ...options, systemPrompt: systemPrompt(root, options.autonomous, options.explorers !== undefined), tools: [
       ...readOnlyFileTools(root),
       defineTool(confine(root, createEditToolDefinition(root), true)),
       defineTool(confine(root, createWriteToolDefinition(root), true)),
       defineTool(createBashToolDefinition(root, { operations: environmentBash(options.environment,
         options.autonomous ? undefined : options.approveCommand, options.decideNetwork),
         exposeSessionEnvironment: false })),
-      ...(options.helpers === undefined ? [] : [exploreTool(options.helpers)]),
+      ...(options.explorers === undefined ? [] : [exploreTool(options.explorers)]),
     ] });
   }
 

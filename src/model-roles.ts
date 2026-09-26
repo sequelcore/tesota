@@ -10,12 +10,12 @@ import { LIVE_CODEX_MODEL_ID } from "./integrations/pi-live.js";
  * chooses; a role without a choice uses the default. Model choice is operator
  * configuration, kept in Tesota's own directory, never in a repository.
  */
-export const MODEL_ROLES = ["agent", "helper", "reviewer", "refuter", "validator"] as const;
+export const MODEL_ROLES = ["agent", "explorer", "reviewer", "refuter", "validator"] as const;
 export type ModelRole = typeof MODEL_ROLES[number];
 
 export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
   agent: "the working agent, which changes the workspace",
-  helper: "read-only helpers the agent starts",
+  explorer: "read-only explorers the agent starts",
   reviewer: "reviewers, focused lenses and ClaimCheck",
   refuter: "the refuter that tests every finding",
   validator: "the fix validator in correction rounds",
@@ -24,18 +24,18 @@ export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
 /** The model every role uses until the operator chooses another. */
 export const DEFAULT_MODEL: string = LIVE_CODEX_MODEL_ID;
 /**
- * Helpers are off until the operator chooses a model for them: decision 019
+ * Explorers are off until the operator chooses a model for them: decision 019
  * turns them on by default only after its evaluation shows they help.
  */
-export const HELPERS_OFF = "off";
-const defaults: Readonly<Record<ModelRole, string>> = { agent: DEFAULT_MODEL, helper: HELPERS_OFF,
+export const EXPLORERS_OFF = "off";
+const defaults: Readonly<Record<ModelRole, string>> = { agent: DEFAULT_MODEL, explorer: EXPLORERS_OFF,
   reviewer: DEFAULT_MODEL, refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL };
 export const DEFAULT_MODELS_FILE: string = join(homedir(), ".tesota", "models.json");
 
 export type ModelChoices = Readonly<Record<ModelRole, string>>;
 
 const modelId = z.string().min(1).max(100);
-const choicesSchema = z.strictObject({ agent: modelId.optional(), helper: modelId.optional(),
+const choicesSchema = z.strictObject({ agent: modelId.optional(), explorer: modelId.optional(),
   reviewer: modelId.optional(), refuter: modelId.optional(), validator: modelId.optional() });
 type StoredChoices = z.infer<typeof choicesSchema>;
 
@@ -58,14 +58,14 @@ export function readModelChoices(path: string = DEFAULT_MODELS_FILE): ModelChoic
 
 /**
  * Choose a role's model from the models the provider offers, `default` to
- * clear the choice, or `off` for helpers. The file is replaced whole, so a
+ * clear the choice, or `off` for explorers. The file is replaced whole, so a
  * failed write leaves the previous choices.
  */
 export function chooseModel(role: ModelRole, model: string, available: readonly string[],
   path: string = DEFAULT_MODELS_FILE): ModelChoices {
   const choices: Record<string, string | undefined> = { ...stored(path) };
   if (model === "default") delete choices[role];
-  else if (available.includes(model) || role === "helper" && model === HELPERS_OFF) choices[role] = model;
+  else if (available.includes(model) || role === "explorer" && model === EXPLORERS_OFF) choices[role] = model;
   else throw new Error(`${model} is not offered; choose one of ${available.join(", ")}`);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${randomUUID()}.tmp`;

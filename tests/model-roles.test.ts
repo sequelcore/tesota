@@ -15,18 +15,18 @@ function file(): string {
 const offered: OfferedModel[] = [{ id: "gpt-6-luna", name: "Luna", input: 0.1, output: 0.5 },
   { id: "gpt-6-sol", name: "Sol", input: 2, output: 10 }, { id: "gpt-6-astra", name: "Astra", input: 10, output: 50 }];
 
-it("gives every role the default until the operator chooses, with helpers off", () => {
-  expect(readModelChoices(file())).toEqual({ agent: DEFAULT_MODEL, helper: "off", reviewer: DEFAULT_MODEL,
+it("gives every role the default until the operator chooses, with explorers off", () => {
+  expect(readModelChoices(file())).toEqual({ agent: DEFAULT_MODEL, explorer: "off", reviewer: DEFAULT_MODEL,
     refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL });
 });
 
-it("turns helpers on with a model and off again, and accepts off for no other role", () => {
+it("turns explorers on with a model and off again, and accepts off for no other role", () => {
   const path = file();
   const ids = offered.map((model) => model.id);
-  expect(chooseModel("helper", "gpt-6-luna", ids, path).helper).toBe("gpt-6-luna");
-  expect(chooseModel("helper", "off", ids, path).helper).toBe("off");
+  expect(chooseModel("explorer", "gpt-6-luna", ids, path).explorer).toBe("gpt-6-luna");
+  expect(chooseModel("explorer", "off", ids, path).explorer).toBe("off");
   expect(() => chooseModel("reviewer", "off", ids, path)).toThrow("off is not offered");
-  expect(chooseModel("helper", "default", ids, path).helper).toBe("off");
+  expect(chooseModel("explorer", "default", ids, path).explorer).toBe("off");
 });
 
 it("keeps one role's choice, refuses a model the provider does not offer, and clears it with default", () => {

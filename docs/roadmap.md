@@ -102,10 +102,10 @@ run only inside it. Integrating it would nest a second assurance loop inside
 Tesota's. Worth revisiting only if Gentle AI offers a findings-only review
 entry point; its ideas are already adopted in decision 016.
 
-### Read-only helpers for the working agent
+### Read-only explorers for the working agent
 
-[Decision 019](decisions/019-read-only-helpers.md): the working agent can
-start read-only helpers that answer one question each, bounded, visible and
+[Decision 019](decisions/019-read-only-explorers.md): the working agent can
+start read-only explorers that answer one question each, bounded, visible and
 counted, while it stays the only writer; enabled by default only if
 `bun run live:delegation` shows it helps.
 

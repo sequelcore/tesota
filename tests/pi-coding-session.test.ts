@@ -78,7 +78,7 @@ it("turns the agent's streamed text and tool calls into activity a surface can s
   ]);
 });
 
-it("names a helper call by its question", () => {
+it("names an explorer call by its question", () => {
   const start = { type: "tool_execution_start", toolCallId: "h1", toolName: "explore",
     args: { question: "Where is a finding's origin decided?" } } as unknown as AgentSessionEvent;
   expect(activityOf(start, 1)).toEqual({ type: "tool_started", call: "h1", tool: "explore",
