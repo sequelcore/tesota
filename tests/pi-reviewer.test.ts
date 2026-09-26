@@ -86,7 +86,7 @@ it("reminds a reviewer that answered in prose once, and then accepts its submiss
     }) } as unknown as Awaited<ReturnType<typeof CodingSession.start>>;
   });
   try {
-    const reviewer = createPiReviewer({ modelRuntime: {} as never, model: {} as never });
+    const reviewer = createPiReviewer({ target: { engine: "pi", modelRuntime: {} as never, model: {} as never } });
     const report = await reviewer.review({ ...input, checkout: process.cwd() }, new AbortController().signal);
     expect(report).toEqual({ reviewer: "Tesota reviewer", tree, status: "completed", summary: "Late but complete", findings: [] });
     expect(prompts).toHaveLength(2);
@@ -117,7 +117,7 @@ it("names each lens, tells it its focus, and offers the rules lens only where th
     });
     try {
       const lens = REVIEW_LENSES[1]!;
-      const report = await createPiReviewer({ modelRuntime: {} as never, model: {} as never, lens })
+      const report = await createPiReviewer({ target: { engine: "pi", modelRuntime: {} as never, model: {} as never }, lens })
         .review({ ...input, checkout: root }, new AbortController().signal);
       expect(report.reviewer).toBe("Tesota reviewer · security and authority");
       expect(prompt).toContain(`This is a focused review: ${lens.focus} Other reviewers cover the rest: do not report a problem ` +

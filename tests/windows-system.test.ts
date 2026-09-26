@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { CodexCredentials } from "../src/integrations/codex-credentials.js";
+import { TesotaCredentials } from "../src/integrations/tesota-credentials.js";
 import { windowsPowerShell, windowsSystemProgram } from "../src/windows-system.js";
 
 const roots: string[] = [];
@@ -26,6 +26,6 @@ it.runIf(process.platform === "win32")("secures the credential directory when an
   // Git Bash puts its own whoami first; any program by that name that is not Windows' own must be ignored.
   copyFileSync(windowsSystemProgram("hostname.exe"), join(root, "whoami.exe"));
   vi.stubEnv("PATH", `${root}${delimiter}${process.env["PATH"] ?? ""}`);
-  const store = new CodexCredentials(join(root, "auth"));
+  const store = new TesotaCredentials(join(root, "auth"));
   await expect(store.list()).resolves.toEqual([]);
 });

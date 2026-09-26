@@ -20,17 +20,21 @@ tesota auth login
 Login stores a Codex credential under `~/.tesota/auth`; see
 [authentication](authentication.md). `bun unlink` removes the command.
 
-Every role uses GPT-6 Luna until you choose otherwise. `tesota models` lists
-the working agent, explorers, reviewer, refuter and fix validator with their
-models and catalogue prices; `tesota models reviewer gpt-6-astra`, for
-example, changes one, and `default` restores Luna.
+Every role uses `codex:gpt-6-luna` until you choose otherwise. `tesota models`
+lists the working agent, explorers, reviewer, refuter and fix validator with
+their models and costs, and every model each route offers. A choice is
+`route:model`: `tesota models reviewer claude-code:opus` reviews with Claude
+Opus on your Claude plan, `tesota models refuter anthropic:claude-opus-5-5`
+uses your Anthropic API key, and `default` restores Luna. See
+[authentication](authentication.md) for signing in to each route.
 
-Explorers are off by default. `tesota models explorer gpt-6-luna` lets the agent
+Explorers are off by default. `tesota models explorer codex:gpt-6-luna` lets the agent
 of sessions opened afterwards ask read-only explorers questions about the
 repository with its `explore` tool: each explorer reads and searches but cannot
 change files or run commands, at most three run at once and eight per
 request, and each shows in the conversation with what it read and what it
-cost. Their conversations are saved in the workspace's `explorers` directory.
+cost. On Pi's routes their conversations are saved in the workspace's
+`explorers` directory; on Claude Code they are not kept.
 `tesota models explorer off` turns them off again.
 
 Sessions are **autonomous** when Docker Sandboxes is set up, and

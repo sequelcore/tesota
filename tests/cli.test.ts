@@ -39,8 +39,8 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "Tesota\nUsage: tesota [--help | -h | help]\n" +
     "       tesota [--theme <tesota-dark|tesota-light|terminal>]\n" +
     "       tesota verify <file.ts|file.js>\n" +
-    "       tesota auth <login|status|logout>\n" +
-    "       tesota models [<role> <model|default|off>]\n" +
+    "       tesota auth <login|status|logout> [codex|anthropic|claude-code]\n" +
+    "       tesota models [<role> <route:model|default|off>]\n" +
     "       tesota prune [--force]\n" +
     "       tesota setup\n\n" +
     "Starts a coding session in the current repository. The agent works in a\n" +

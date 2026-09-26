@@ -6,8 +6,8 @@ const help = `Tesota
 Usage: tesota [--help | -h | help]
        tesota [--theme <tesota-dark|tesota-light|terminal>]
        tesota verify <file.ts|file.js>
-       tesota auth <login|status|logout>
-       tesota models [<role> <model|default|off>]
+       tesota auth <login|status|logout> [codex|anthropic|claude-code]
+       tesota models [<role> <route:model|default|off>]
        tesota prune [--force]
        tesota setup
 
@@ -29,9 +29,9 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   }
 } else if (args.length === 0 || (args.length === 1 && ["--help", "-h", "help"].includes(args[0] ?? ""))) {
   process.stdout.write(help);
-} else if (args.length === 2 && args[0] === "auth" && args[1] !== undefined) {
+} else if ((args.length === 2 || args.length === 3) && args[0] === "auth" && args[1] !== undefined) {
   const { runAuthCommand } = await import("./auth.js");
-  process.exit(await runAuthCommand(args[1]));
+  process.exit(await runAuthCommand(args[1], args[2]));
 } else if (args[0] === "models") {
   const { runModelsCommand } = await import("./models-command.js");
   process.exitCode = runModelsCommand(args.slice(1), (text) => { process.stdout.write(text); });

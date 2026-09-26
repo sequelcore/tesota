@@ -2,8 +2,8 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { Type } from "@earendil-works/pi-ai";
 import { numberedDiff } from "../diff-lines.js";
 import type { Finding, ReviewInput, ReviewReport } from "../review.js";
-import { type CodingTurnResult, CodingSession, type ModelAccess, readOnlyFileTools, repositoryInstructions,
-  usageOption } from "./pi-coding-session.js";
+import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 
 /**
  * The fix validator (decision 016): after a correction round, a read-only
@@ -84,10 +84,8 @@ export type FixValidatorOptions = ModelAccess;
 export async function validateFixes(options: FixValidatorOptions, input: ReviewInput, sentBack: readonly Finding[],
   signal: AbortSignal): Promise<ReviewReport> {
   let recorded: readonly FixVerdict[] | undefined;
-  const session = await CodingSession.start({ cwd: input.checkout, modelRuntime: options.modelRuntime, model: options.model,
-    systemPrompt: validatorPrompt(input.checkout),
-    tools: [...readOnlyFileTools(input.checkout), recordResolutions((verdicts) => { recorded ??= verdicts; })],
-    ...usageOption(options) });
+  const session = await startModelSession(options, { cwd: input.checkout, systemPrompt: validatorPrompt(input.checkout),
+    tools: [...readOnlyFileTools(input.checkout), recordResolutions((verdicts) => { recorded ??= verdicts; })] });
   try {
     return validationReport(input.snapshot.tree, sentBack, await session.run(validationMessage(input, sentBack), signal), recorded);
   } finally { session.dispose(); }

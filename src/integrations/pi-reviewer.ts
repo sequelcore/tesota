@@ -3,8 +3,8 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { numberedDiff } from "../diff-lines.js";
 import type { Finding, ReviewInput, ReviewReport, Reviewer } from "../review.js";
-import { type AgentActivity, type CodingTurnResult, CodingSession, type ModelAccess, readOnlyFileTools,
-  repositoryInstructions, usageOption } from "./pi-coding-session.js";
+import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type AgentActivity, type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 
 const REVIEWER = "Tesota reviewer";
 const diffLimit = 150_000;
@@ -162,14 +162,14 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
     async review(input, signal) {
       const root = realpathSync(input.checkout);
       let submitted: { summary: string; findings: readonly Finding[] } | undefined;
-      const session = await CodingSession.start({ cwd: root, modelRuntime: options.modelRuntime, model: options.model,
+      const session = await startModelSession(options, { cwd: root,
         systemPrompt: reviewerPrompt(root, options.lens),
         tools: [...readOnlyFileTools(root), submitReviewTool((summary, findings) => {
           if (submitted !== undefined) return false;
           submitted = { summary, findings };
           return true;
         })],
-        ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }), ...usageOption(options) });
+        ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
       try {
         let turn = await session.run(reviewMessage(input), signal);
         // A model sometimes answers in prose; one reminder, without new investigation, before the review counts as unfinished.

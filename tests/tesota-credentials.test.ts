@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { expect, it, vi } from "vitest";
 import { createModels, type OAuthCredential } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { CodexCredentials } from "../src/integrations/codex-credentials.js";
+import { TesotaCredentials } from "../src/integrations/tesota-credentials.js";
 
 const provider = "openai-codex";
 const secret: OAuthCredential = { type: "oauth", access: "TEST_ACCESS", refresh: "TEST_REFRESH", expires: 0, accountId: "TEST_ACCOUNT" };
@@ -34,9 +34,9 @@ it("compiled login persists across processes, status is sanitized, and logout re
 it("persists OAuth across instances, lists only metadata, and deletes through Pi logout", async () => {
   const root = await mkdtemp(join(tmpdir(), "tesota-auth-"));
   try {
-    const first = new CodexCredentials(join(root, "auth"));
+    const first = new TesotaCredentials(join(root, "auth"));
     await first.modify(provider, async () => secret);
-    const next = new CodexCredentials(join(root, "auth"));
+    const next = new TesotaCredentials(join(root, "auth"));
     expect(await next.read(provider)).toEqual(secret);
     expect(await next.list()).toEqual([{ providerId: provider, type: "oauth" }]);
     const models = createModels({ credentials: next });
@@ -49,10 +49,10 @@ it("persists OAuth across instances, lists only metadata, and deletes through Pi
 it("serializes Pi refresh across independent stores and preserves credentials on failure", async () => {
   const root = await mkdtemp(join(tmpdir(), "tesota-refresh-"));
   try {
-    const first = new CodexCredentials(join(root, "auth"));
+    const first = new TesotaCredentials(join(root, "auth"));
     await first.modify(provider, async () => secret);
     const refresh = vi.fn(async () => ({ ...secret, access: "ROTATED_ACCESS", expires: Date.now() + 3_600_000 }));
-    const instances = [first, new CodexCredentials(join(root, "auth"))].map((credentials) => {
+    const instances = [first, new TesotaCredentials(join(root, "auth"))].map((credentials) => {
       const models = createModels({ credentials });
       const codex = openaiCodexProvider();
       const oauth = codex.auth.oauth;
@@ -75,7 +75,7 @@ it("serializes Pi refresh across independent stores and preserves credentials on
 it("rejects foreign providers, corrupt records and cancelled writes without leaking stored text", async () => {
   const root = await mkdtemp(join(tmpdir(), "tesota-corrupt-auth-"));
   try {
-    const store = new CodexCredentials(join(root, "auth"));
+    const store = new TesotaCredentials(join(root, "auth"));
     await expect(store.modify("another-provider", async () => secret)).rejects.toThrow("Unsupported");
     await store.modify(provider, async () => secret);
     const cancel = new AbortController();
@@ -85,5 +85,24 @@ it("rejects foreign providers, corrupt records and cancelled writes without leak
     await writeFile(join(root, "auth/codex.json"), "TEST_SECRET_BROKEN_JSON");
     await expect(store.read(provider)).rejects.toThrow("Cannot read Tesota credentials");
     await expect(store.read(provider)).rejects.not.toThrow("TEST_SECRET");
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("keeps an Anthropic API key beside the Codex login, and never accepts a claude.ai OAuth credential", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tesota-anthropic-auth-"));
+  try {
+    const store = new TesotaCredentials(join(root, "auth"));
+    await expect(store.modify("anthropic", async () => ({ type: "oauth", access: "A", refresh: "R", expires: 0 })))
+      .rejects.toThrow("Only an Anthropic API key can be stored");
+    await expect(store.modify(provider, async () => ({ type: "api_key", key: "KEY" }))).rejects.toThrow("Only valid Codex OAuth");
+    await expect(store.modify("anthropic", async () => ({ type: "api_key", key: " " }))).rejects.toThrow();
+    await store.modify("anthropic", async () => ({ type: "api_key", key: "TEST_ANTHROPIC_KEY" }));
+    await store.modify(provider, async () => secret);
+    const next = new TesotaCredentials(join(root, "auth"));
+    expect(await next.read("anthropic")).toEqual({ type: "api_key", key: "TEST_ANTHROPIC_KEY" });
+    expect(await next.list()).toEqual([{ providerId: provider, type: "oauth" }, { providerId: "anthropic", type: "api_key" }]);
+    await next.delete("anthropic");
+    expect(await next.read("anthropic")).toBeUndefined();
+    expect(await next.read(provider)).toEqual(secret);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

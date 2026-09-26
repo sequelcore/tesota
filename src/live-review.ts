@@ -2,11 +2,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
 import { hostProvider } from "./host-environment.js";
-import { CodexCredentials } from "./integrations/codex-credentials.js";
-import type { ModelAccess } from "./integrations/pi-coding-session.js";
+import { type ModelAccess, openModelTarget } from "./integrations/model-session.js";
 import { readModelChoices } from "./model-roles.js";
 import { refuteFindings } from "./integrations/pi-refuter.js";
 import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.js";
@@ -89,18 +86,13 @@ if (!["computed", "standard", "deep"].includes(depthArgument)) throw new Error("
 const depthMode = depthArgument as "computed" | "standard" | "deep";
 const skipCorrections = process.argv.includes("--skip-corrections");
 
-const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false, allowModelNetwork: false });
-// --model-reviewer=, --model-refuter= and --model-validator= compare models; otherwise the operator's choices apply.
+// --model-reviewer=, --model-refuter= and --model-validator= compare route:model choices; otherwise the operator's apply.
 const chosen = readModelChoices();
 const modelIds = Object.fromEntries((["reviewer", "refuter", "validator"] as const).map((role) => [role,
   process.argv.find((argument) => argument.startsWith(`--model-${role}=`))?.slice(`--model-${role}=`.length) ?? chosen[role]])) as
   Record<"reviewer" | "refuter" | "validator", string>;
-const modelFor = (role: keyof typeof modelIds): Model<Api> => {
-  const found = runtime.getModel("openai-codex", modelIds[role]);
-  if (found === undefined) throw new Error(`The ${role}'s model, ${modelIds[role]}, is unavailable. Check tesota models.`);
-  return found;
-};
-const models = { reviewer: modelFor("reviewer"), refuter: modelFor("refuter"), validator: modelFor("validator") };
+const models = { reviewer: await openModelTarget(modelIds.reviewer), refuter: await openModelTarget(modelIds.refuter),
+  validator: await openModelTarget(modelIds.validator) };
 const root = mkdtempSync(join(tmpdir(), "tesota-review-eval-"));
 const cases: unknown[] = [];
 const plantedResults: string[] = [];
@@ -130,9 +122,9 @@ try {
     // Tokens of the reviewers and the refuter, as the review step counts them (decision 018).
     let tokens = 0;
     const onUsage = (count: number): void => { tokens += count; };
-    const ai: RoleAccess = { reviewer: { modelRuntime: runtime, model: models.reviewer, onUsage },
-      refuter: { modelRuntime: runtime, model: models.refuter, onUsage },
-      validator: { modelRuntime: runtime, model: models.validator, onUsage } };
+    const ai: RoleAccess = { reviewer: { target: models.reviewer, onUsage },
+      refuter: { target: models.refuter, onUsage },
+      validator: { target: models.validator, onUsage } };
     const reviews = attributeOrigins(await Promise.all([createPiReviewer(ai.reviewer),
       ...(deep ? applicableLenses(workspace.checkout).map((lens) => createPiReviewer({ ...ai.reviewer, lens })) : [])]
       .map((reviewer) => reviewer.review(input, signal))), snapshot);
@@ -150,7 +142,7 @@ try {
     if (testCase.falseClaim !== undefined) {
       const claim: ReviewReport = { reviewer: "Planted", tree: snapshot.tree, status: "completed", summary: "",
         findings: [{ severity: "high", disposition: "fixable", origin: "introduced", ...testCase.falseClaim }] };
-      const [judged] = await refuteFindings({ modelRuntime: runtime, model: models.refuter }, input, [claim], signal);
+      const [judged] = await refuteFindings({ target: models.refuter }, input, [claim], signal);
       planted = judged?.status === "completed" ? judged.findings[0]?.standing : "unsettled";
       plantedResults.push(planted ?? "unsettled");
     }

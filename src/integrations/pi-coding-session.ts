@@ -201,7 +201,7 @@ function replyText(session: AgentSession): string {
 }
 
 /** The argument that identifies what a tool call acts on: its command, pattern or path. */
-function toolSubject(name: string, args: unknown): string {
+export function toolSubject(name: string, args: unknown): string {
   if (typeof args !== "object" || args === null) return "";
   const key = name === "bash" ? "command" : name === "grep" || name === "find" ? "pattern" : name === "explore" ? "question" : "path";
   const value: unknown = Reflect.get(args, key);
@@ -209,19 +209,20 @@ function toolSubject(name: string, args: unknown): string {
 }
 
 /** The text parts of a message or tool result, in order. */
-function textOf(content: unknown): string {
+export function textOf(content: unknown): string {
   if (!Array.isArray(content)) return "";
   return content.flatMap((part: unknown) => typeof part === "object" && part !== null &&
     Reflect.get(part, "type") === "text" && typeof Reflect.get(part, "text") === "string"
     ? [String(Reflect.get(part, "text"))] : []).join("\n");
 }
 
-function resultText(result: unknown): string {
+/** The text a tool result returns to the model. */
+export function resultText(result: unknown): string {
   return typeof result === "object" && result !== null ? textOf(Reflect.get(result, "content")) : "";
 }
 
 /** A bounded view of the patch Pi reports after a successful edit. */
-function editChange(result: unknown): AgentChange | undefined {
+export function editChange(result: unknown): AgentChange | undefined {
   if (typeof result !== "object" || result === null) return undefined;
   const details: unknown = Reflect.get(result, "details");
   const patch: unknown = typeof details === "object" && details !== null ? Reflect.get(details, "patch") : undefined;
@@ -270,19 +271,6 @@ export function readOnlyFileTools(root: string): ToolDefinition[] {
   ];
 }
 
-/** The model a read-only Tesota session uses, and where its token usage is counted. */
-export interface ModelAccess {
-  readonly modelRuntime: ModelRuntime;
-  readonly model: Model<Api>;
-  /** Called with the tokens of each finished model response, as the provider reported them. */
-  readonly onUsage?: (tokens: number) => void;
-}
-
-/** The session options that carry a model access's usage counter, when it has one. */
-export function usageOption(access: ModelAccess): Pick<SessionStartOptions, "onUsage"> {
-  return access.onUsage === undefined ? {} : { onUsage: access.onUsage };
-}
-
 export interface SessionStartOptions {
   readonly cwd: string;
   readonly modelRuntime: ModelRuntime;
@@ -293,6 +281,31 @@ export interface SessionStartOptions {
   readonly onActivity?: (activity: AgentActivity) => void;
   /** Called with the tokens of each finished model response, as the provider reported them. */
   readonly onUsage?: (tokens: number) => void;
+}
+
+/** What decides the working agent's tools, whichever engine runs it. */
+export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "autonomous" | "approveCommand" |
+  "decideNetwork" | "explorers">;
+
+/**
+ * The working agent's system prompt and tools: every file tool confined to the
+ * workspace, commands in its execution environment with the operator's
+ * approvals, and `explore` when explorers are on. The same for every engine.
+ */
+export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt: string; tools: ToolDefinition[] } {
+  if (options.autonomous && !allowsAutonomy(options.environment.guarantees)) {
+    throw new Error("Autonomous sessions require an environment that confines files and network");
+  }
+  const root = realpathSync(options.cwd);
+  return { systemPrompt: systemPrompt(root, options.autonomous, options.explorers !== undefined), tools: [
+    ...readOnlyFileTools(root),
+    defineTool(confine(root, createEditToolDefinition(root), true)),
+    defineTool(confine(root, createWriteToolDefinition(root), true)),
+    defineTool(createBashToolDefinition(root, { operations: environmentBash(options.environment,
+      options.autonomous ? undefined : options.approveCommand, options.decideNetwork),
+      exposeSessionEnvironment: false })),
+    ...(options.explorers === undefined ? [] : [exploreTool(options.explorers)]),
+  ] };
 }
 
 /** A general coding conversation whose file tools cannot leave the workspace. */
@@ -314,21 +327,9 @@ export class CodingSession {
     });
   }
 
-  /** The working agent: every file tool confined to the workspace, and commands in its environment. */
+  /** The working agent on Pi: every file tool confined to the workspace, and commands in its environment. */
   static async create(options: CodingSessionOptions): Promise<CodingSession> {
-    if (options.autonomous && !allowsAutonomy(options.environment.guarantees)) {
-      throw new Error("Autonomous sessions require an environment that confines files and network");
-    }
-    const root = realpathSync(options.cwd);
-    return CodingSession.start({ ...options, systemPrompt: systemPrompt(root, options.autonomous, options.explorers !== undefined), tools: [
-      ...readOnlyFileTools(root),
-      defineTool(confine(root, createEditToolDefinition(root), true)),
-      defineTool(confine(root, createWriteToolDefinition(root), true)),
-      defineTool(createBashToolDefinition(root, { operations: environmentBash(options.environment,
-        options.autonomous ? undefined : options.approveCommand, options.decideNetwork),
-        exposeSessionEnvironment: false })),
-      ...(options.explorers === undefined ? [] : [exploreTool(options.explorers)]),
-    ] });
+    return CodingSession.start({ ...options, ...workingAgentSetup(options) });
   }
 
   /**

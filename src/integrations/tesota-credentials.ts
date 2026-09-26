@@ -7,8 +7,22 @@ import { setTimeout } from "node:timers/promises";
 import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
 import { windowsPowerShell, windowsSystemProgram } from "../windows-system.js";
 
-const provider = "openai-codex";
 const maxBytes = 64 * 1024;
+
+/**
+ * The credentials Tesota keeps, one kind per provider (decision 021): Codex's
+ * OAuth login, and an Anthropic API key. An Anthropic OAuth credential is
+ * never accepted: a claude.ai login belongs to Claude Code, not to Tesota.
+ */
+const providers = {
+  "openai-codex": { type: "oauth", file: "codex" },
+  anthropic: { type: "api_key", file: "anthropic" },
+} as const;
+type ProviderId = keyof typeof providers;
+
+function isProvider(id: string): id is ProviderId {
+  return Object.hasOwn(providers, id);
+}
 
 function isOAuthCredential(value: unknown): value is Credential {
   return typeof value === "object" && value !== null && "type" in value && value.type === "oauth" &&
@@ -17,19 +31,30 @@ function isOAuthCredential(value: unknown): value is Credential {
     "expires" in value && typeof value.expires === "number" && Number.isFinite(value.expires);
 }
 
+function isApiKeyCredential(value: unknown): value is Credential {
+  return typeof value === "object" && value !== null && "type" in value && value.type === "api_key" &&
+    "key" in value && typeof value.key === "string" && value.key.trim().length > 0 && !("env" in value);
+}
+
+/** Whether a record is the one kind of credential this provider may hold. */
+function isStorable(id: ProviderId, value: unknown): value is Credential {
+  return providers[id].type === "oauth" ? isOAuthCredential(value) : isApiKeyCredential(value);
+}
+
 function readErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
   return typeof error.code === "string" ? error.code : undefined;
 }
 
-/** Pi owns OAuth. This store owns one provider's private persistence and mutation lock. */
-export class CodexCredentials implements CredentialStore {
+/** Pi owns OAuth and API-key use. This store owns each provider's private persistence and mutation lock. */
+export class TesotaCredentials implements CredentialStore {
   private readonly directory: string;
   private prepared: Promise<void> | undefined;
   constructor(directory: string = join(homedir(), ".tesota", "auth")) { this.directory = directory; }
 
-  private checkProvider(id: string): void {
-    if (id !== provider) throw new Error("Unsupported credential provider");
+  private checkProvider(id: string): ProviderId {
+    if (!isProvider(id)) throw new Error("Unsupported credential provider");
+    return id;
   }
 
   private ensurePrivate(): Promise<void> { return this.prepared ??= this.prepare(); }
@@ -66,8 +91,8 @@ export class CodexCredentials implements CredentialStore {
     }
   }
 
-  private async load(): Promise<Credential | undefined> {
-    const path = join(this.directory, "codex.json");
+  private async load(id: ProviderId): Promise<Credential | undefined> {
+    const path = join(this.directory, `${providers[id].file}.json`);
     try {
       const info = await lstat(path);
       if (!info.isFile() || info.isSymbolicLink() || info.size > maxBytes) throw new Error("Invalid credential file");
@@ -88,7 +113,7 @@ export class CodexCredentials implements CredentialStore {
         bytes = bytes.subarray(0, length);
       } finally { await file.close(); }
       const value: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-      if (!isOAuthCredential(value)) throw new Error("Invalid OAuth credential");
+      if (!isStorable(id, value)) throw new Error("Invalid credential");
       return value;
     } catch (error) {
       if (readErrorCode(error) === "ENOENT") return undefined;
@@ -97,19 +122,24 @@ export class CodexCredentials implements CredentialStore {
   }
 
   async read(id: string, options?: AuthOperationOptions): Promise<Credential | undefined> {
-    this.checkProvider(id);
+    const provider = this.checkProvider(id);
     options?.signal?.throwIfAborted();
     await this.ensurePrivate();
-    return this.load();
+    return this.load(provider);
   }
 
   async list(options?: AuthOperationOptions): Promise<readonly CredentialInfo[]> {
-    return await this.read(provider, options) === undefined ? [] : [{ providerId: provider, type: "oauth" }];
+    const saved: CredentialInfo[] = [];
+    for (const id of Object.keys(providers) as ProviderId[]) {
+      if (await this.read(id, options) !== undefined) saved.push({ providerId: id, type: providers[id].type });
+    }
+    return saved;
   }
 
-  private async locked<T>(operation: () => Promise<T>, options?: AuthOperationOptions): Promise<T> {
+  private async locked<T>(id: ProviderId, operation: () => Promise<T>, options?: AuthOperationOptions): Promise<T> {
     await this.ensurePrivate();
-    const lock = join(this.directory, "codex.lock");
+    const name = `${providers[id].file}.lock`;
+    const lock = join(this.directory, name);
     const deadline = Date.now() + 10_000;
     let handle;
     while (handle === undefined) {
@@ -117,7 +147,7 @@ export class CodexCredentials implements CredentialStore {
       try { handle = await open(lock, "wx", 0o600); }
       catch (error) {
         if (readErrorCode(error) !== "EEXIST") throw new Error("Cannot lock Tesota credentials");
-        if (Date.now() >= deadline) throw new Error("Tesota credentials are busy; a stopped process may have left codex.lock");
+        if (Date.now() >= deadline) throw new Error(`Tesota credentials are busy; a stopped process may have left ${name}`);
         await setTimeout(50, undefined, options?.signal === undefined ? {} : { signal: options.signal });
       }
     }
@@ -127,15 +157,14 @@ export class CodexCredentials implements CredentialStore {
 
   async modify(id: string, fn: (current: Credential | undefined) => Promise<Credential | undefined>,
     options?: AuthOperationOptions): Promise<Credential | undefined> {
-    this.checkProvider(id);
-    return this.locked(async () => {
-      const current = await this.load();
+    const provider = this.checkProvider(id);
+    return this.locked(provider, async () => {
+      const current = await this.load(provider);
       const next = await fn(current);
       options?.signal?.throwIfAborted();
       if (next === undefined) return current;
-      if (next.type !== "oauth" || typeof next.access !== "string" || !next.access ||
-          typeof next.refresh !== "string" || !next.refresh || !Number.isFinite(next.expires)) {
-        throw new Error("Only valid Codex OAuth credentials are supported");
+      if (!isStorable(provider, next)) {
+        throw new Error(provider === "anthropic" ? "Only an Anthropic API key can be stored" : "Only valid Codex OAuth credentials are supported");
       }
       const bytes = Buffer.from(JSON.stringify(next));
       if (bytes.length > maxBytes) throw new Error("Credential exceeds storage bound");
@@ -144,14 +173,14 @@ export class CodexCredentials implements CredentialStore {
         const file = await open(temporary, "wx", 0o600);
         try { await file.writeFile(bytes); await file.sync(); } finally { await file.close(); }
         options?.signal?.throwIfAborted();
-        await rename(temporary, join(this.directory, "codex.json"));
+        await rename(temporary, join(this.directory, `${providers[provider].file}.json`));
       } finally { await rm(temporary, { force: true }); }
       return next;
     }, options);
   }
 
   async delete(id: string, options?: AuthOperationOptions): Promise<void> {
-    this.checkProvider(id);
-    await this.locked(async () => { await rm(join(this.directory, "codex.json"), { force: true }); }, options);
+    const provider = this.checkProvider(id);
+    await this.locked(provider, async () => { await rm(join(this.directory, `${providers[provider].file}.json`), { force: true }); }, options);
   }
 }

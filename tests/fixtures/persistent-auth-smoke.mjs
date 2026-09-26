@@ -1,12 +1,12 @@
 import { mock } from "bun:test";
-import { CodexCredentials } from "../../dist/integrations/codex-credentials.js";
+import { TesotaCredentials } from "../../dist/integrations/tesota-credentials.js";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 
 const directory = process.env["TESOTA_TEST_AUTH_DIRECTORY"];
 if (!directory) throw new Error("Synthetic storage required");
 const createProvider = openaiCodexProvider;
-mock.module("../../dist/integrations/codex-credentials.js", () => ({
-  CodexCredentials: class extends CodexCredentials { constructor() { super(directory); } },
+mock.module("../../dist/integrations/tesota-credentials.js", () => ({
+  TesotaCredentials: class extends TesotaCredentials { constructor() { super(directory); } },
 }));
 mock.module("@earendil-works/pi-ai/providers/openai-codex", () => ({
   openaiCodexProvider: () => {

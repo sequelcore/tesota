@@ -1,20 +1,29 @@
 # Authentication
 
-Tesota uses Pi's Codex OAuth implementation. Login is saved for later runs in
-`~/.tesota/auth/codex.json`; Pi refreshes expiring credentials when they are used.
-Tesota does not read or copy the credential stores of Codex, Pi or Kiln.
+Tesota reaches models through three routes ([design](../design/agents.md#model-routes)),
+each signed in its own way:
 
-## Commands
+| Route | Sign in | Stored by |
+| --- | --- | --- |
+| `codex` | `tesota auth login`: Pi's Codex OAuth | Tesota, in `~/.tesota/auth/codex.json` |
+| `anthropic` | `tesota auth login anthropic`: your Anthropic API key, typed without being shown | Tesota, in `~/.tesota/auth/anthropic.json`; `ANTHROPIC_API_KEY` also works |
+| `claude-code` | `tesota auth login claude-code`: Claude Code's own sign-in, the same as `claude auth login` | Claude Code, never Tesota |
 
-Build with `bun run build`. From the repository root:
+`tesota auth status [route]` and `tesota auth logout [route]` work the same
+way; without a route they mean `codex`. For `claude-code`, status shows only
+whether Claude Code is signed in and how, and Tesota does not sign it out,
+because that would also sign out your own Claude Code; use `claude auth
+logout` for that. Tesota never reads, copies or stores a Claude subscription
+login, and never accepts one for the `anthropic` route. Tesota does not read or
+copy the credential stores of Codex, Pi or Kiln.
 
-```sh
-bun start auth login
-bun start auth status
-bun start auth logout
-```
+Usage on the `claude-code` route draws on your Claude plan's limits, the same
+pool as your own Claude Code; the `anthropic` route is billed to the API key.
 
-`bun run auth:codex` is also a login command. Login requires an interactive,
+## Codex
+
+Pi refreshes expiring Codex credentials when they are used. `bun run
+auth:codex` is also a login command. Login requires an interactive,
 unrecorded terminal once: enter the temporary code only on the official website
 shown by Tesota, using the intended account. It performs no model inference.
 An existing saved login is retained; use logout before deliberately changing
@@ -37,8 +46,9 @@ in again.
 
 ## Storage and concurrency
 
-[CodexCredentials](../../src/integrations/codex-credentials.ts) implements Pi's
-public `CredentialStore` contract for `openai-codex` only. Pi owns authorization,
+[TesotaCredentials](../../src/integrations/tesota-credentials.ts) implements Pi's
+public `CredentialStore` contract for `openai-codex`, which holds only an OAuth
+login, and `anthropic`, which holds only an API key. Pi owns authorization,
 polling, token exchange and refresh; Tesota owns storage and presentation.
 
 Credentials are JSON protected by filesystem permissions, not encryption at rest.
@@ -66,4 +76,4 @@ login again; local locking cannot roll back a remote token rotation.
 Corrupt, oversized, foreign-provider or inaccessible records fail closed. A
 saved login does not grant verification authority, model entitlement or human
 acceptance. [Login](../../src/integrations/codex-login.ts) owns the device-code
-flow; [storage](../../src/integrations/codex-credentials.ts) owns the file.
+flow; [storage](../../src/integrations/tesota-credentials.ts) owns the files.

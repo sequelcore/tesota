@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import type { SessionManager } from "@earendil-works/pi-coding-agent";
-import { type AgentActivity, type CodingTurnResult, CodingSession, type ModelAccess, readOnlyFileTools,
-  repositoryInstructions, usageOption } from "./pi-coding-session.js";
+import { type ModelAccess, startModelSession } from "./model-session.js";
+import { type AgentActivity, type CodingTurnResult, readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 import { isExplorerAnswer } from "../verification/explorer-answer.js";
 
 /**
@@ -54,8 +54,7 @@ export async function askExplorer(options: ExplorerOptions, checkout: string, br
   signal: AbortSignal): Promise<ExplorerResult> {
   const root = realpathSync(checkout);
   const limit = AbortSignal.timeout(options.timeLimitMs ?? EXPLORER_TIME_LIMIT_MS);
-  const session = await CodingSession.start({ cwd: root, modelRuntime: options.modelRuntime, model: options.model,
-    systemPrompt: explorerPrompt(root), tools: readOnlyFileTools(root), ...usageOption(options),
+  const session = await startModelSession(options, { cwd: root, systemPrompt: explorerPrompt(root), tools: readOnlyFileTools(root),
     ...(options.sessionManager === undefined ? {} : { sessionManager: options.sessionManager }),
     ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
   try {

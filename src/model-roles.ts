@@ -5,10 +5,35 @@ import { randomUUID } from "node:crypto";
 import * as z from "zod";
 
 /**
- * Which model each of Tesota's roles uses (decision 020). The operator
- * chooses; a role without a choice uses the default. Model choice is operator
- * configuration, kept in Tesota's own directory, never in a repository.
+ * Which model each of Tesota's roles uses (decision 020), and through which
+ * route (decision 021). The operator chooses; a role without a choice uses the
+ * default. Model choice is operator configuration, kept in Tesota's own
+ * directory, never in a repository.
  */
+
+/**
+ * How Tesota reaches a model: `codex` through Pi and the operator's ChatGPT
+ * plan, `anthropic` through Pi and an Anthropic API key, and `claude-code`
+ * through the operator's own Claude Code, which signs in by itself.
+ */
+export const MODEL_ROUTES = ["codex", "anthropic", "claude-code"] as const;
+export type ModelRoute = typeof MODEL_ROUTES[number];
+
+/** A role's model as `route:model`. */
+export interface ModelChoice {
+  readonly route: ModelRoute;
+  readonly model: string;
+}
+
+/** Read `route:model`; undefined for anything else, including `off`. */
+export function parseModelChoice(value: string): ModelChoice | undefined {
+  const separator = value.indexOf(":");
+  if (separator <= 0) return undefined;
+  const route = value.slice(0, separator);
+  const model = value.slice(separator + 1);
+  if (!(MODEL_ROUTES as readonly string[]).includes(route) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(model)) return undefined;
+  return { route: route as ModelRoute, model };
+}
 export const MODEL_ROLES = ["agent", "explorer", "reviewer", "refuter", "validator"] as const;
 export type ModelRole = typeof MODEL_ROLES[number];
 
@@ -21,7 +46,7 @@ export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
 };
 
 /** The model every role uses until the operator chooses another: the cheapest on the Codex route. */
-export const DEFAULT_MODEL: string = "gpt-6-luna";
+export const DEFAULT_MODEL: string = "codex:gpt-6-luna";
 /**
  * Explorers are off until the operator chooses a model for them: decision 019
  * turns them on by default only after its evaluation shows they help.
@@ -33,7 +58,7 @@ export const DEFAULT_MODELS_FILE: string = join(homedir(), ".tesota", "models.js
 
 export type ModelChoices = Readonly<Record<ModelRole, string>>;
 
-const modelId = z.string().min(1).max(100);
+const modelId = z.string().max(120).refine((value) => value === EXPLORERS_OFF || parseModelChoice(value) !== undefined);
 const choicesSchema = z.strictObject({ agent: modelId.optional(), explorer: modelId.optional(),
   reviewer: modelId.optional(), refuter: modelId.optional(), validator: modelId.optional() });
 type StoredChoices = z.infer<typeof choicesSchema>;
@@ -56,9 +81,9 @@ export function readModelChoices(path: string = DEFAULT_MODELS_FILE): ModelChoic
 }
 
 /**
- * Choose a role's model from the models the provider offers, `default` to
- * clear the choice, or `off` for explorers. The file is replaced whole, so a
- * failed write leaves the previous choices.
+ * Choose a role's model, as `route:model`, from the models the routes offer,
+ * `default` to clear the choice, or `off` for explorers. The file is replaced
+ * whole, so a failed write leaves the previous choices.
  */
 export function chooseModel(role: ModelRole, model: string, available: readonly string[],
   path: string = DEFAULT_MODELS_FILE): ModelChoices {

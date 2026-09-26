@@ -1,7 +1,8 @@
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import type { Finding, ReviewInput, ReviewReport, Reviewer } from "../review.js";
-import { type CodingTurnResult, CodingSession, type ModelAccess, usageOption } from "./pi-coding-session.js";
+import { type ModelAccess, type ModelSession, startModelSession } from "./model-session.js";
+import type { CodingTurnResult } from "./pi-coding-session.js";
 
 /**
  * ClaimCheck's round-trip method (metareflection/claimcheck, MIT), adapted to
@@ -161,8 +162,8 @@ export function createClaimCheckReviewer(options: ClaimCheckOptions): Reviewer {
       const items = proved.flatMap((path) => { const source = options.read(path); return source === undefined ? [] : contracts(path, source); });
       const tree = input.snapshot.tree;
       if (items.length === 0) return { reviewer: REVIEWER, tree, status: "completed", findings: [], summary: "No proved contracts to compare." };
-      const session = (tool: ToolDefinition): Promise<CodingSession> => CodingSession.start({ cwd: input.checkout,
-        modelRuntime: options.modelRuntime, model: options.model, tools: [tool], ...usageOption(options),
+      const session = (tool: ToolDefinition): Promise<ModelSession> => startModelSession(options, { cwd: input.checkout,
+        tools: [tool],
         systemPrompt: "You compare formal specifications with natural-language requirements. Answer only through the tool you are given." });
       let informalizations: readonly Informalization[] | undefined;
       const first = await session(recordTool("record_informalizations", informalizationSchema, (value) => { informalizations = value.informalizations; }));

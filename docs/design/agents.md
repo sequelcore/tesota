@@ -41,8 +41,9 @@ cut at a fixed length. An unfinished or empty reply is never presented as an
 answer, and the per-request allowance is a proved rule
 (`src/verification/explorer-answer.ts`). Each call shows in the conversation
 with the explorer's reads as they happen and its time and tokens with its
-answer, and each explorer's conversation is saved in the workspace's
-`explorers` directory, where the agent cannot reach it.
+answer. On Pi's routes each explorer's conversation is saved in the
+workspace's `explorers` directory, where the agent cannot reach it; Claude
+Code keeps no conversation for a read-only role.
 
 **Explorers are off by default.** On six questions about this repository,
 asked twice with and without explorers, both stated all 52 expected facts;

@@ -2,13 +2,12 @@ import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { allowsAutonomy, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
 import { chooseSessionMode, releaseWorkspace, type SessionMode } from "./execution-providers.js";
-import { CodexCredentials } from "./integrations/codex-credentials.js";
-import { CodingSession, type CommandApproval, type ModelAccess, type NetworkDecision } from "./integrations/pi-coding-session.js";
+import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-session.js";
+import { type ModelAccess, type ModelSession, type ModelTarget, openModelTarget, startWorkingAgent } from "./integrations/model-session.js";
 import { EXPLORERS_OFF, type ModelRole, readModelChoices } from "./model-roles.js";
 import { askExplorer } from "./integrations/pi-explorer.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
@@ -120,7 +119,7 @@ function isAbort(error: unknown): boolean {
 class SessionState {
   workspace: Promise<Workspace> | undefined;
   environment: Promise<ExecutionEnvironment> | undefined;
-  coding: Promise<CodingSession> | undefined;
+  coding: Promise<ModelSession> | undefined;
   /** The agent's read-only explorers (decision 019); absent when explorers are off. */
   explorers: ExplorerPool | undefined;
   reviewed: WorkspaceSnapshot | undefined;
@@ -277,20 +276,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     state.environment.catch(() => { state.environment = undefined; });
     return state.environment;
   };
-  /** The model the operator chose for a role (decision 020), read when the role starts work. */
-  const openModel = async (signal: AbortSignal, role: ModelRole): Promise<{ runtime: ModelRuntime; model: Model<Api> }> => {
-    const id = readModelChoices()[role];
-    const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false,
-      allowModelNetwork: false, signal });
-    const model = runtime.getModel("openai-codex", id);
-    if (model === undefined) throw new Error(`The ${role}'s model, ${id}, is unavailable. Check tesota models and tesota auth status.`);
-    return { runtime, model };
-  };
+  /** The route and model the operator chose for a role (decisions 020 and 021), read when the role starts work. */
+  const openModel = (signal: AbortSignal, role: ModelRole): Promise<ModelTarget> => openModelTarget(readModelChoices()[role], signal);
   /** The model for one of the review step's sessions, counting its tokens toward the step. */
-  const modelFor = async (run: ReviewRun, role: ModelRole): Promise<ModelAccess> => {
-    const { runtime, model } = await openModel(run.signal, role);
-    return { modelRuntime: runtime, model, onUsage: run.onUsage };
-  };
+  const modelFor = async (run: ReviewRun, role: ModelRole): Promise<ModelAccess> =>
+    ({ target: await openModel(run.signal, role), onUsage: run.onUsage });
   /** In a correction round, whether each finding sent back is resolved; a validator that cannot run settles nothing. */
   const validateCorrection = async (run: ReviewRun): Promise<ReviewReport | undefined> => {
     const sentBack = run.input.correction?.sentBack ?? [];
@@ -347,12 +337,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       return applyRefutation(reports, undefined);
     }
   };
-  const codingFor = (id: string, signal: AbortSignal): Promise<CodingSession> => {
+  const codingFor = (id: string, signal: AbortSignal): Promise<ModelSession> => {
     const state = stateFor(id);
     state.coding ??= (async () => {
       const workspace = await workspaceFor(id);
       const environment = await environmentFor(id);
-      const { runtime, model } = await openModel(signal, "agent");
+      const target = await openModel(signal, "agent");
       const engineId = saved(id)?.engineId ?? store.rotateEngine(id);
       const existing = SessionManager.findById(workspace.checkout, engineId, piSessionsDirectory);
       const sessionManager = existing === undefined
@@ -361,15 +351,14 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       // Whether explorers are on is decided when the agent starts; which model they use, when each one starts.
       const explorers = readModelChoices().explorer === EXPLORERS_OFF ? undefined
         : new ExplorerPool(async (brief, explorerSignal, onLine, onUsage) => {
-          const access = await openModel(explorerSignal, "explorer");
-          return askExplorer({ modelRuntime: access.runtime, model: access.model, onUsage,
+          return askExplorer({ target: await openModel(explorerSignal, "explorer"), onUsage,
             // Saved beside the checkout, where the agent's tools cannot reach, for the operator to read.
             sessionManager: SessionManager.create(workspace.checkout, join(workspace.directory, "explorers")),
             onActivity: (activity) => { if (activity.type === "tool_started") onLine(`${activity.tool} ${activity.subject}`.trim()); } },
           workspace.checkout, brief, explorerSignal);
         });
       state.explorers = explorers;
-      return CodingSession.create({ cwd: workspace.checkout, modelRuntime: runtime, model, sessionManager, environment,
+      return startWorkingAgent({ target }, { cwd: workspace.checkout, environment,
         ...(explorers === undefined ? {} : { explorers }),
         autonomous: allowsAutonomy(environment.guarantees),
         approveCommand: async (command) => {
@@ -387,7 +376,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           if (decision === "repository") store.allowNetwork(destinations);
           return decision;
         },
-        onActivity: (activity) => { surface.showActivity(id, activity); } });
+        onActivity: (activity) => { surface.showActivity(id, activity); } }, { sessionManager, conversationId: engineId });
     })();
     state.coding.catch(() => { state.coding = undefined; });
     return state.coding;

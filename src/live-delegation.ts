@@ -1,13 +1,11 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
 import { DELEGATION_CASES, DELEGATION_COMMIT, type DelegationScore, scoreAnswer } from "./delegation-evaluation.js";
 import { hostProvider } from "./host-environment.js";
-import { CodexCredentials } from "./integrations/codex-credentials.js";
-import { CodingSession } from "./integrations/pi-coding-session.js";
+import { openModelTarget, startWorkingAgent } from "./integrations/model-session.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
 import { askExplorer } from "./integrations/pi-explorer.js";
 import { DEFAULT_MODEL, EXPLORERS_OFF, readModelChoices } from "./model-roles.js";
@@ -28,14 +26,8 @@ const chosen = readModelChoices();
 const agentId = option("model-agent") ?? chosen.agent;
 const explorerId = option("model-explorer") ?? (chosen.explorer === EXPLORERS_OFF ? DEFAULT_MODEL : chosen.explorer);
 
-const runtime = await ModelRuntime.create({ credentials: new CodexCredentials(), refreshOnCreate: false, allowModelNetwork: false });
-const model = (id: string): Model<Api> => {
-  const found = runtime.getModel("openai-codex", id);
-  if (found === undefined) throw new Error(`${id} is unavailable. Check tesota models and tesota auth status.`);
-  return found;
-};
-const agentModel = model(agentId);
-const explorerModel = model(explorerId);
+const agentTarget = await openModelTarget(agentId);
+const explorerTarget = await openModelTarget(explorerId);
 
 const root = mkdtempSync(join(tmpdir(), "tesota-delegation-eval-"));
 const checkout = join(root, "repo");
@@ -62,12 +54,12 @@ async function attempt(question: string, explorers: boolean): Promise<Omit<Attem
   const count = (value: number): void => { tokens += value; };
   const pool = explorers ? new ExplorerPool(async (brief, signal, _onLine, onUsage) => {
     explorerCalls += 1;
-    return askExplorer({ modelRuntime: runtime, model: explorerModel, onUsage: (value) => { onUsage(value); count(value); } },
+    return askExplorer({ target: explorerTarget, onUsage: (value) => { onUsage(value); count(value); } },
       checkout, brief, signal);
   }) : undefined;
-  const session = await CodingSession.create({ cwd: checkout, modelRuntime: runtime, model: agentModel,
+  const session = await startWorkingAgent({ target: agentTarget, onUsage: count }, { cwd: checkout,
     environment: await hostProvider.prepare(checkout), autonomous: false, approveCommand: async () => "deny",
-    onUsage: count, ...(pool === undefined ? {} : { explorers: pool }) });
+    ...(pool === undefined ? {} : { explorers: pool }) }, { conversationId: randomUUID() });
   const started = Date.now();
   try {
     const turn = await session.run(`${question}\n\nAnswer from the repository. Do not change any files.`,

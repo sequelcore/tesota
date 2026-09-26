@@ -37,3 +37,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+Tesota depends on @anthropic-ai/claude-agent-sdk, which bundles Anthropic's
+Claude Code program. It is not part of Tesota and is not redistributed with
+this repository; it is installed from npm under its own terms:
+
+© Anthropic PBC. All rights reserved. Use is subject to the Legal Agreements
+outlined here: https://code.claude.com/docs/en/legal-and-compliance.
