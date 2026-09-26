@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
+import { windowsPowerShell, windowsSystemProgram } from "../windows-system.js";
 
 const provider = "openai-codex";
 const maxBytes = 64 * 1024;
@@ -39,12 +40,12 @@ export class CodexCredentials implements CredentialStore {
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Credential directory is not private storage");
     if (process.platform === "win32") {
       // No credentials pass through subprocesses. Grant only the current Windows user.
-      const identity = execFileSync("whoami.exe", ["/user", "/fo", "csv", "/nh"],
+      const identity = execFileSync(windowsSystemProgram("whoami.exe"), ["/user", "/fo", "csv", "/nh"],
         { encoding: "utf8", windowsHide: true, timeout: 5_000 });
       const sid = identity.match(/S-1-5-(?:\d+-)*\d+/)?.[0];
       if (sid === undefined) throw new Error("Cannot establish credential directory owner");
       const path = this.directory.replaceAll("'", "''");
-      execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      execFileSync(windowsPowerShell(), ["-NoProfile", "-NonInteractive", "-Command",
         `$ErrorActionPreference='Stop'; $directory=[System.IO.DirectoryInfo]::new('${path}'); ` +
         `$owner=$directory.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Owner); ` +
         `$sid=[System.Security.Principal.SecurityIdentifier]::new('${sid}'); ` +

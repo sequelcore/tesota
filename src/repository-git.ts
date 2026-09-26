@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { lstatSync, realpathSync } from "node:fs";
 import { delimiter, isAbsolute, relative, resolve, sep } from "node:path";
+import { windowsSystemDirectory } from "./windows-system.js";
 
 const gitLimit = 8 * 1024 * 1024;
 const gitTimeoutMs = 60_000;
@@ -24,9 +25,7 @@ function repositoryGitEnvironment(source: string): NodeJS.ProcessEnv {
 
 function gitExecutionDirectory(source: string): string {
   if (process.platform !== "win32") return "/";
-  const systemRoot = process.env["SystemRoot"];
-  if (systemRoot === undefined || !isAbsolute(systemRoot)) throw new Error("Cannot locate Windows system directory");
-  const systemDirectory = resolve(systemRoot, "System32");
+  const systemDirectory = windowsSystemDirectory();
   const metadata = lstatSync(systemDirectory);
   const actual = realpathSync(systemDirectory);
   const runtime = realpathSync(process.execPath);

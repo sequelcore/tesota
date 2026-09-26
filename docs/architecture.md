@@ -107,6 +107,7 @@ at once; applications are serialized.
 | `verification-changes.ts` | Flagging a candidate's changes to tests, check configuration, CI, formal specifications, package scripts and Tesota setup |
 | `workspace-apply.ts` | Conflict-checked writes to the source repository and their journal |
 | `repository-git.ts` | Git invocation without ambient config, hooks or network |
+| `windows-system.ts` | Windows' own programs located in the system directory, never found through PATH |
 | `integrations/codex-credentials.ts`, `auth.ts` | Codex login storage |
 | `verification/` | Standalone Oxlint profile and the formal invocation-budget predicate |
 | `live-codex.ts`, `integrations/pi-live*.ts` | Live Codex probe and model route |

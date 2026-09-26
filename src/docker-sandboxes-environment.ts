@@ -5,6 +5,7 @@ import { mkdir } from "node:fs/promises";
 import { cpus, totalmem } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import * as z from "zod";
+import { windowsPowerShell } from "./windows-system.js";
 import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionProvider, isNetworkDestination,
   type NetworkControl, type PrepareOptions, type PreparationStep, type ProviderReadiness, type RunOptions,
   type RunResult, type SetupStep } from "./execution-environment.js";
@@ -60,7 +61,7 @@ async function locateSbx(): Promise<string | null> {
 
 async function hypervisorPlatformEnabled(): Promise<boolean> {
   if (process.platform !== "win32") return true;
-  const query = await invoke("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+  const query = await invoke(windowsPowerShell(), ["-NoProfile", "-NonInteractive", "-Command",
     "(Get-CimInstance -ClassName Win32_OptionalFeature -Filter \"Name='HypervisorPlatform'\").InstallState"], 30_000);
   return query.status === 0 && query.stdout.trim() === "1";
 }

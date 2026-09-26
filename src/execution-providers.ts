@@ -3,6 +3,7 @@ import { dockerSandboxesProvider } from "./docker-sandboxes-environment.js";
 import { allowsAutonomy, type ExecutionProvider, type ProviderReadiness, type SetupAction,
   type SetupStep } from "./execution-environment.js";
 import { hostProvider } from "./host-environment.js";
+import { windowsPowerShell } from "./windows-system.js";
 
 /** Providers that can confine commands enough for autonomous sessions, in order of preference. */
 export const isolatingProviders: readonly ExecutionProvider[] = [dockerSandboxesProvider]
@@ -39,10 +40,11 @@ export async function releaseWorkspace(checkout: string, providers: readonly Exe
 
 /** Run a setup action with the operator's terminal attached, so sign-in and installer prompts reach them. */
 export function runSetupAction(action: SetupAction): Promise<number | null> {
-  const [program, args] = action.kind === "process" ? [action.program, action.args] : ["powershell.exe", [
+  const powershell = action.kind === "process" ? "" : windowsPowerShell();
+  const [program, args] = action.kind === "process" ? [action.program, action.args] : [powershell, [
     "-NoProfile", "-Command",
     // The script travels encoded, so no quoting survives into the elevated process.
-    "$p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList " +
+    `$p = Start-Process -FilePath '${powershell.replaceAll("'", "''")}' -Verb RunAs -Wait -PassThru -ArgumentList ` +
       `'-NoProfile','-EncodedCommand','${Buffer.from(action.script, "utf16le").toString("base64")}'; exit $p.ExitCode`]];
   return new Promise((settle) => {
     const child = spawn(program, args, { stdio: "inherit" });
