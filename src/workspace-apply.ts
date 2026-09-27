@@ -93,12 +93,13 @@ async function planWrites(workspace: Workspace, snapshot: WorkspaceSnapshot, sou
     if (!isRepositoryPath(change.path)) throw new ApplyConflictError("Unsupported path", [change.path]);
     const target = join(source, ...change.path.split("/"));
     if (!contains(source, await nearestExistingParent(target))) throw new ApplyConflictError("Path leaves the repository", [change.path]);
-    const existing = await readExisting(target);
+    // Decided from Git's record before the file is read, so a link is refused the same way on every platform.
     const baseMode = treeMode(workspace, snapshot.base, change.path);
     const newMode = treeMode(workspace, snapshot.tree, change.path);
     if (isUnchangeableMode(baseMode) || isUnchangeableMode(newMode)) {
       throw new ApplyConflictError("Symbolic links and submodules cannot be changed", [change.path]);
     }
+    const existing = await readExisting(target);
     const reviewed = change.status === "deleted" ? null : gitBytes(workspace.checkout, ["cat-file", "blob", `${snapshot.tree}:${change.path}`]);
     const executable = newMode === "100755";
     if (change.status === "added") {
