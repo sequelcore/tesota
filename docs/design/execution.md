@@ -179,7 +179,29 @@ native sandbox can later become a project of its own:
 
 **One command.** Each command runs in its own MXC `processcontainer`, about
 150 ms to start in the spike; the backend has no session that outlives a
-command. It may write the workspace, a temporary folder of the session's own
+command. It runs in Windows PowerShell 5.1, as a script file written with a
+byte-order mark and run with `-File`, which reports errors as text: Git Bash
+cannot start in MXC's container, and Codex's Windows shell is PowerShell too.
+The agent is told which shell it has.
+
+**The workspace is a drive of its own.** Inside MXC's BaseContainer a command
+cannot query the workspace's parent folders, so tools that resolve paths by
+walking from the drive root fail: Git, npm and Node scripts among them. MXC's
+answer, `enumeratePaths`, lists folders without reading files, but needs a
+process security environment Windows 11 has not released: GitHub Copilot's
+MXC sandbox requires an Insider build for the same reason, and Codex avoids
+it by letting commands read the whole disk. So each prepared sandbox maps its
+workspace to a free drive letter with `subst`, which needs no administrator
+rights: with the command's folder at `T:\`, nothing lies above it. The grant
+names the real folder. Node runs with `--preserve-symlinks` and
+`--preserve-symlinks-main`, so npm does not walk its own install folder. The
+drive is removed when the sandbox is disposed or released, and one left
+behind by a crash is removed when a sandbox for the same workspace is
+prepared. Command output names paths on that drive; Tesota's file tools keep
+the real ones. When the SDK exposes `enumeratePaths` and qualification finds
+the host reports `fs_enumerate`, the workspace keeps its real path instead.
+`bun install` still fails in this sandbox and uses the per-command retry on
+this computer. It may write the workspace, a temporary folder of the session's own
 (set as `TEMP` and `TMP`, rather than the operator's shared one) and the
 repository's package cache. It may read the workspace, the tools installed on
 the host (`node`, `git`, `bun` from `PATH`) and system files, and never the

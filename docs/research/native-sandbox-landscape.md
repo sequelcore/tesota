@@ -81,6 +81,70 @@ Windows 11. Not yet tested: package-registry access through a proxy, Linux
 (bubblewrap), macOS, a clean Windows 11 24H2, and Windows 10, which MXC does
 not support.
 
+## Building the provider: what Windows allows
+
+Found on 2026-09-26 while building the `mxc` provider on the same machine,
+with `@microsoft/mxc-sdk` 0.8.0.
+
+**Git Bash cannot start in MXC's container.** MSYS2's `bash.exe`, launcher or
+not, exits with 66 before any output, with a valid environment and even with
+Git's folder writable. Windows PowerShell 5.1, installed with Windows, runs;
+PowerShell 7 was not installed. Codex's shell on Windows is PowerShell too
+(`shell-command/src/shell_detect.rs`).
+
+**An explicit environment needs `SYSTEMROOT` and `LOCALAPPDATA`.** Without
+them the launch fails with Windows error 203; Windows only checks that they
+exist, and MXC's main branch now validates them before launch (issues 1130
+and 1102, commit `491ac954`). Without an explicit environment, the command
+receives the operator's own Windows user environment, `APPDATA` included.
+
+**Tools cannot walk above the workspace.** In MXC's BaseContainer a process
+cannot query the workspace's parent folders. Tools that resolve a path by
+walking from the drive root fail: `node script.cjs` (Node's JavaScript
+`realpath` stops at `lstat C:\`), `npm`, whose entry file sits under
+`C:\Program Files`, and Git ("unable to get current working directory:
+Permission denied"); Bun ran scripts. MXC documents this as "Upward directory
+traversal for Windows BaseContainer". Granting `C:\` through the SDK was no
+way out: the command then read the operator's `~/.tesota` and listed their
+home folder.
+
+**MXC's intended fix is not on released Windows.**
+`processContainer.filesystem.enumeratePaths`, added on 2026-09-16
+([issue 1162](https://github.com/microsoft/mxc/issues/1162)), lets a command
+query and list folders "without granting file content reads". It needs
+schema `0.9.0-alpha`, not in any npm release yet, and Windows' process
+security environment 1.1 with `fs_enumerate`: MXC's support matrix marks it
+unavailable on 23H2, 24H2 and 25H2, possible only on builds from 26600, and
+validated on Insider builds 26657 and 26663; without it MXC fails rather than
+broaden access. Microsoft documents this API only through MXC.
+
+**How the labs meet it.** GitHub Copilot's local sandbox is built on MXC, the
+BaseContainer tier on Windows, and "Local sandboxing on Windows requires a
+Windows Insiders build"; its default also lets commands read package
+managers' configuration "and the tokens they store", with the network open
+([configuring local sandbox settings](https://docs.github.com/en/copilot/how-tos/cloud-and-local-sandboxes/configuring-local-sandbox-settings)).
+Codex's policy reads the whole disk, so it never meets the limit and does not
+use `enumeratePaths`. Claude Code has no native Windows sandbox. No lab offers
+confined reads on released Windows 11.
+
+**A drive rooted at the workspace works today.** `subst T: <workspace>` needs
+no administrator rights, and with the command's folder on `T:\` there is no
+parent to walk: Git and `node script.cjs` ran, and `npm install` fetched a
+package through Tesota's proxy with Node's `--preserve-symlinks` and
+`--preserve-symlinks-main` flags, which spare npm from walking its own
+install folder. The grant must name the real folder, not the drive, and the
+drive must be the workspace itself: a drive over a parent folder failed the
+same way. Home, temporary and cache folders at ordinary paths were fine for
+Git, Node and npm. `bun install` still failed with `ENOENT` before any
+download, with every Bun directory variable tried, so it is left to the
+per-command retry on this computer until `fs_enumerate` ships.
+
+**Certificate revocation.** Windows' own TLS, used by `curl.exe` and by Git
+configured with `schannel` as on this machine, checks revocation online and
+failed with `CRYPT_E_REVOCATION_OFFLINE`, since the revocation servers are
+not on the allowlist; npm and Bun use their own TLS. MXC tracks related work
+for proxies ([issue 1262](https://github.com/microsoft/mxc/issues/1262)).
+
 ## Implications for Tesota
 
 1. **A native provider can meet the friction goal on Windows today**: no
@@ -103,3 +167,12 @@ not support.
    yet tested.
 6. **Fallback for everyone else:** Windows 10 and hosts that fail the probe
    keep Docker Sandboxes or asking per command, and should say which applies.
+7. **Commands run in PowerShell 5.1** in the native Windows sandbox, as in
+   Codex, since Git Bash cannot start there; Docker Sandboxes and this
+   computer keep bash.
+8. **Keep reads confined on released Windows with a drive rooted at the
+   workspace,** the only way found that keeps the operator's files
+   unreadable and lets Git, Node and npm work; move to `enumeratePaths`,
+   which keeps real paths, once the SDK exposes it and qualification finds
+   the host reports `fs_enumerate`. Reading the whole disk, as Codex does,
+   would give up the guarantee that sets Tesota apart.
