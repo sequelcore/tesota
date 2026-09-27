@@ -138,7 +138,10 @@ uncertain". The plan is cleared when you apply or reject the work.
 
 The review also checks that everything you asked for is there, not only that
 the change has no defects: it shows how many of your requests held, and a
-part of a request that is confirmed missing goes back to the agent.
+part of a request that is confirmed missing goes back to the agent. A turn
+in which the agent changes no files gets an "Answer check" too: a question
+can be answered, but a reply that only says the work is done, when the code
+is not there, is caught and sent back.
 
 The agent reads, searches, edits, creates and deletes files in its own copy of
 your repository. In the sandbox its shell commands run without

@@ -27,9 +27,10 @@ import { Advisor } from "./integrations/advisor.js";
 import { consultAdvisor } from "./integrations/advisor-session.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
-import { runTesotaShell, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
+import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
   type WorkResult } from "./tesota-shell.js";
-import { inspectReview } from "./tesota-shell-inspection.js";
+import { inspectAnswer, inspectReview } from "./tesota-shell-inspection.js";
+import { obligationOutcome } from "./verification/obligation-outcome.js";
 import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
 import type { TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { UnsupportedSourceChange } from "./source-snapshot.js";
@@ -183,6 +184,8 @@ class SessionState {
   reviewed: WorkspaceSnapshot | undefined;
   /** Context the agent needs with the next request, such as a rejected change. */
   note: string | undefined;
+  /** The agent's last reply, which the answer check reads when a turn changes no files (decision 034). */
+  lastReply: string | undefined;
 }
 
 export function createProcessTesotaShell(cwd: string = process.cwd(),
@@ -858,6 +861,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         const result = await coding.run(prompt, signal);
         if (result.status === "unsettled") { blockSession(id); return result; }
         if (result.status !== "completed") return result;
+        state.lastReply = result.reply;
         const workspace = await workspaceFor(id);
         return { status: "completed", changes: workspace.snapshot().changes };
       } catch (error) {
@@ -919,6 +923,42 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       await journal(id, workspace, reviewEntry(snapshot, requests, checks, flags, reviews, depth, measurement));
       return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews, requests };
     }),
+    assessAnswer: () => runOperation(id, async (signal): Promise<AnswerResult> => {
+      const workspace = await workspaceFor(id);
+      const state = stateFor(id);
+      const snapshot = workspace.snapshot();
+      const requests = await workspace.requests();
+      const plan = saved(id)?.plan;
+      const claimedSteps = (plan ?? []).flatMap((step, index) => step.status === "done"
+        ? [{ index: index + 1, step: step.step, ...step.check === undefined ? {} : { check: step.check } }] : []);
+      const input = { checkout: workspace.checkout, requests, snapshot, checks: [], flags: [],
+        response: state.lastReply ?? "", ...(claimedSteps.length === 0 ? {} : { claimedSteps }) };
+      surface.reportFor(id, { phase: "reviewing", activity: "Checking the answer against your requests" });
+      let reports: ReviewReport[];
+      try {
+        const report = await createPiReviewer({ target: await openModel(signal, "reviewer") }).review(input, signal);
+        reports = [report];
+        if (!signal.aborted && hasClaimsToTest(reports)) {
+          surface.reportFor(id, { phase: "reviewing", activity: "Testing each gap" });
+          reports = await refuteFindings({ target: await openModel(signal, "refuter") }, input, reports, signal)
+            .catch(() => applyRefutation(reports, undefined));
+        }
+      } catch (error) {
+        if (signal.aborted) return { status: "cancelled" };
+        reports = [{ reviewer: "Tesota reviewer", tree: snapshot.tree, status: "incomplete",
+          reason: error instanceof Error ? error.message : "the reviewer could not start" }];
+      } finally { surface.clearProgressFor(id, "reviewing"); }
+      if (signal.aborted) return { status: "cancelled" };
+      const main = reports.find((report) => report.status === "completed");
+      // A request stays pending while its check left it not held or uncertain, or could not run.
+      const settled = main?.status === "completed" && (main.obligations ?? []).every((item) =>
+        obligationOutcome(item.status, item.standing ?? "untested") === "held");
+      workspace.keepRequestsOpen(!settled);
+      if (plan !== undefined && main?.status === "completed") showPlan(id, withReview(plan, main.obligations ?? []));
+      surface.inspectFor(id, inspectAnswer(requests, reports));
+      await journal(id, workspace, reviewEntry(snapshot, requests, [], [], reports));
+      return { status: "assessed", reviews: reports, requests };
+    }),
     apply: () => serialized(async (): Promise<ApplyResult> => {
       const state = stateFor(id);
       const reviewed = state.reviewed;
@@ -929,6 +969,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       try {
         const changes = await applyWorkspace(workspace, reviewed);
         await journal(id, workspace, decisionEntry(reviewed.tree, "applied"));
+        workspace.keepRequestsOpen(false);
         if (saved(id)?.plan !== undefined) showPlan(id, undefined);
         return { status: "applied", changes };
       } catch (error) {
@@ -948,6 +989,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const workspace = await workspaceFor(id);
       if (rejected !== undefined) await journal(id, workspace, decisionEntry(rejected.tree, "rejected"));
       workspace.revert();
+      workspace.keepRequestsOpen(false);
       if (saved(id)?.plan !== undefined) showPlan(id, undefined);
       state.note = "Note: the user rejected your previous changes, and the workspace was reset to the last applied state.";
     },

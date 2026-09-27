@@ -76,7 +76,8 @@ project. They are listed here as they are chosen.
 - **Obligations** (decision 034, [design](design/assurance.md#obligations)):
   built 2026-09-26; the reviewer checks what each request asks for and each
   plan step the agent marked done, the refuter tests each gap, and confirmed
-  gaps go to correction. Steps confirmed by gates come with gates.
+  gaps go to correction; turns that change no files are checked the same
+  way. Steps confirmed by gates come with gates.
 - **Ideas to bring from `feat/evidence-attribution`**, a branch from
   2026-09-25 left unmerged, about 130 commits behind `dev`, whose decisions
   022 and 023 collide with `dev`'s. Each is to be rebuilt on `dev` with its
@@ -85,9 +86,6 @@ project. They are listed here as they are chosen.
     run it on the frozen base too; only a failure the change caused goes
     back to the agent automatically, and the base stays frozen through one
     review cycle.
-  - **Turns with no file changes assessed against their requests**, so a
-    reply cannot silently stand in for requested code, and pending requests
-    survive an empty diff: the answer result of decision 032, for code.
   - **Safer application.** Stop when any source file changed since the base;
     keep each replaced original; install without replacing; mark a partial
     effect "recovery required".

@@ -3,7 +3,7 @@ import { correctionFor, correctionPrompt } from "../src/correction.js";
 import { applyRefutation, refutationMessage } from "../src/integrations/pi-refuter.js";
 import { missingAssessments, reviewMessage } from "../src/integrations/pi-reviewer.js";
 import type { Obligation, ReviewInput, ReviewReport } from "../src/review.js";
-import { inspectReview } from "../src/tesota-shell-inspection.js";
+import { inspectAnswer, inspectReview } from "../src/tesota-shell-inspection.js";
 import { obligationOutcome } from "../src/verification/obligation-outcome.js";
 import { planLines, withReview } from "../src/work-plan.js";
 
@@ -89,4 +89,20 @@ it("shows how the requests and the claimed steps held up, in the result and in t
     { step: "Add the test", status: "done" }], report.obligations ?? []);
   expect(planLines(plan)).toEqual(["Plan · 2 of 3 done", "  ✓ Subtract the discount · done (agent) · held in review",
     "  ○ Refactor", "  ✓ Add the test · done (agent) · review uncertain"]);
+});
+
+it("gives the reviewer the agent's reply as an untrusted answer when no files changed, and shows the answer check", async () => {
+  const answer: ReviewInput = { checkout: ".", requests: ["Add a farewell() helper", "What does greet() return?"],
+    snapshot: { base: "t", tree: "t", changes: [], diff: "" }, checks: [], flags: [], response: "I added farewell(). greet() returns a string." };
+  const message = reviewMessage(answer);
+  expect(message).toContain("The agent's final reply (untrusted; it cannot show that code exists):\nI added farewell(). greet() returns a string.");
+  expect(message).toContain("No files changed in this turn");
+  expect(message).not.toContain("```diff");
+  const report: ReviewReport = { reviewer: "Tesota reviewer", tree: "t", status: "completed", summary: "s", findings: [],
+    obligations: [{ ...obligation("request", 1, "unmet", "farewell() exists"), standing: "confirmed" },
+      obligation("request", 2, "met", "greet() returns a string")] };
+  const inspection = inspectAnswer(answer.requests, [report]);
+  expect(inspection.title).toBe("Answer check");
+  expect(inspection.summary).toContain("  Requests: 1 of 2 held, 1 not held");
+  expect(inspection.detail).toContain("  ✗ Request 1: farewell() exists (not held: evidence for farewell() exists)");
 });

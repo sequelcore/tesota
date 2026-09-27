@@ -144,7 +144,20 @@ nobody tested or settled; that rule is `obligationOutcome` in
 The operator sees how many requests held, and how many claimed plan steps
 held; each claimed step in the plan beside the prompt shows "held in
 review", "not held in review" or "review uncertain", which is a judged
-check, never shown as verified. The idea comes from the unmerged branch
+check, never shown as verified.
+
+**A turn that changes no files is checked too.** Otherwise a reply could
+stand in for requested code: asked to add a helper, an agent can answer that
+it did. The main reviewer alone then judges the obligations against the
+repository and the agent's final reply, which it is told is untrusted and
+can never show that code exists; a question can be met by an accurate reply.
+Gaps face the refuter, and confirmed ones go back to the agent for at most
+two rounds; a correction that writes files is then reviewed as any change.
+The result panel shows an "Answer check" with no application decision. While
+a check leaves a request not held or uncertain, the request stays pending,
+so "add farewell()" followed by "continue" is still checked as one request.
+Each such check is one reviewer session, and the refuter's when there are
+gaps. The idea comes from the unmerged branch
 `feat/evidence-attribution`, rebuilt here.
 
 ## Correction

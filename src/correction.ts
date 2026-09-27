@@ -66,6 +66,7 @@ export function correctionPrompt(requests: readonly string[], round: CorrectionR
       "(not recorded)"}\n\n` +
     `Problems to fix:\n${[...round.failedChecks.map(checkProblem), ...round.findings.map(findingProblem),
       ...round.obligations.map(obligationProblem)].join("\n")}\n\n` +
-    "Fix these problems in the workspace. Do not weaken, skip or delete tests or checks to make them pass. If a " +
+    "Fix these problems in the workspace; a request for a change is met only by the change itself, and a question " +
+    "by a correct answer. Do not weaken, skip or delete tests or checks to make them pass. If a " +
     "problem cannot be fixed without the user's decision, do not guess: say so in your summary.";
 }
