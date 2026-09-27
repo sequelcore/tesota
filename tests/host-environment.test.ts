@@ -5,7 +5,8 @@ import { afterEach, expect, it } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 
 const roots: string[] = [];
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
+// A command this file stops can hold its folder for a moment on Windows (EBUSY), so removal retries.
+afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))); });
 
 async function environment() {
   const root = await mkdtemp(join(tmpdir(), "tesota-host-env-"));

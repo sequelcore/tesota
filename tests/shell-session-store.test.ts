@@ -185,3 +185,15 @@ it("keeps a session's plan across restarts, clears it, and refuses one that is n
   expect(reopened.list()[0]?.plan).toBeUndefined();
   reopened.close();
 });
+
+it("opens the same saved sessions whatever the case of the path, as the path finds them", () => {
+  const { root, source } = fixture();
+  const first = openShellSessionStore(source, root);
+  const session = first.create();
+  first.close();
+  // Windows paths ignore case: a shell opened from C:\proyectos is the one saved from C:\Proyectos.
+  const other = source.replace(/repository$/u, "REPOSITORY");
+  const reopened = openShellSessionStore(other, root);
+  expect(reopened.list().map((entry) => entry.id)).toContain(session.id);
+  reopened.close();
+});
