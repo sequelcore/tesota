@@ -12,6 +12,7 @@ import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
 import { ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
 import { type WorkPlan, withReview } from "./work-plan.js";
+import { isGitRepository } from "./folder-source.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, routeListing } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
@@ -301,7 +302,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     store.setPlan(id, plan);
     surface.setSessionPlan(id, plan);
   };
-  surface.setBranch(currentBranch(cwd));
+  /** The source repository's branch; a plain folder has none (decision 032). */
+  const sourceBranch = (): string | undefined => isGitRepository(cwd) ? currentBranch(cwd) : undefined;
+  surface.setBranch(sourceBranch());
   for (const session of savedSessions) {
     if (session.interrupted) {
       surface.writeTo(session.id, "The previous shell stopped during work. Pending changes stay in the workspace.");
@@ -837,7 +840,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       });
     },
     work: (request, origin = "operator") => runOperation(id, async (signal): Promise<WorkResult> => {
-      surface.setBranch(currentBranch(cwd));
+      surface.setBranch(sourceBranch());
       try {
         const coding = await codingFor(id, signal);
         const state = stateFor(id);

@@ -4,6 +4,8 @@ import { delimiter, isAbsolute, relative, resolve, sep } from "node:path";
 import { windowsSystemDirectory } from "./windows-system.js";
 
 const gitLimit = 8 * 1024 * 1024;
+/** File contents can be large: a scanned PDF or a spreadsheet of a folder's work (decision 032). */
+const gitBytesLimit = 512 * 1024 * 1024;
 const gitTimeoutMs = 60_000;
 
 function contains(parent: string, child: string): boolean {
@@ -57,7 +59,7 @@ export function assertNoRepositoryGitPrograms(cwd: string): void {
 
 /** Git's own variables a caller may set, such as a temporary index or object directory. */
 export type RepositoryGitEnvironment = Readonly<Partial<Record<
-  "GIT_INDEX_FILE" | "GIT_OBJECT_DIRECTORY" | "GIT_ALTERNATE_OBJECT_DIRECTORIES", string>>>;
+  "GIT_INDEX_FILE" | "GIT_OBJECT_DIRECTORY" | "GIT_ALTERNATE_OBJECT_DIRECTORIES" | "GIT_DIR" | "GIT_WORK_TREE", string>>>;
 
 /** Run a fixed, shell-free local Git text operation without ambient config, hooks, credentials or network protocols. */
 export function runRepositoryGit(cwd: string, args: readonly string[], extra: RepositoryGitEnvironment = {}): string {
@@ -85,7 +87,7 @@ export function runRepositoryGitBytes(cwd: string, args: readonly string[], extr
   const source = resolve(cwd);
   const result = spawnSync("git", ["-C", source, ...repositoryGitArguments(args)], {
     cwd: gitExecutionDirectory(source), env: { ...repositoryGitEnvironment(source), ...extra }, windowsHide: true, shell: false, encoding: "buffer",
-    timeout: gitTimeoutMs, maxBuffer: gitLimit,
+    timeout: gitTimeoutMs, maxBuffer: gitBytesLimit,
   });
   if (result.error !== undefined || result.status !== 0 || result.signal !== null) {
     throw new Error("Repository Git operation failed");

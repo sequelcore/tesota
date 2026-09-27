@@ -1,8 +1,8 @@
 # Work and results
 
-**Planned; nothing here is built yet** (decision 032). This page describes
-how Tesota is to carry work beyond code, for review before any of it is
-built. Evidence is in the
+**Mostly planned** (decision 032): a plain folder as a workspace is built
+(2026-09-27, [workspace](workspace.md#a-folder-as-the-source)); the rest of
+this page is not. It describes how Tesota is to carry work beyond code. Evidence is in the
 [general work landscape](../research/general-work-landscape.md); what is
 built today is in the other design pages.
 
@@ -40,7 +40,7 @@ keeps its principles and extends what a result can be.
 | Workspace | What it is | Results |
 | --- | --- | --- |
 | A repository | A Git repository, as today | Changes, answers, actions |
-| A folder | Any folder. Tesota keeps a private Git store beside it, never inside it, so the copy, snapshots bound to a tree id and the guarded apply work unchanged, and the folder never becomes a repository | Changes, answers, actions |
+| A folder | Any folder, built: Tesota keeps a private Git store beside it, never inside it, so the copy, snapshots bound to a tree id and the guarded apply work unchanged, and the folder never becomes a repository | Changes, answers, actions |
 | None | A session without a folder | Answers and actions |
 
 A session without a folder is a conversation whose answers still carry their
@@ -102,7 +102,7 @@ beyond commands, such as MCP servers, come later.
 
 ## Order
 
-1. **Folders and documents:** a folder as a workspace, readable review of
+1. **Folders and documents:** a folder as a workspace (built), readable review of
    Word, Excel, PDF and presentation changes, document gates, and gates
    people define. This serves reviewing documents and organizing files.
 2. **Answers:** claims tied to their sources and checked, and sessions

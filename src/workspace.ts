@@ -75,8 +75,9 @@ export class Workspace {
     this.#base = checkout.head;
   }
 
-  static async create(sourceDirectory: string, root: string = DEFAULT_WORKSPACES_ROOT): Promise<Workspace> {
-    return Workspace.from(await createWorkspaceCheckout(sourceDirectory, root));
+  static async create(sourceDirectory: string, root: string = DEFAULT_WORKSPACES_ROOT,
+    foldersRoot?: string): Promise<Workspace> {
+    return Workspace.from(await createWorkspaceCheckout(sourceDirectory, root, foldersRoot));
   }
 
   /** Reopen a workspace; its current HEAD becomes the base, and uncommitted work stays pending. */
@@ -85,7 +86,8 @@ export class Workspace {
   }
 
   private static async from(checkout: WorkspaceCheckout): Promise<Workspace> {
-    return new Workspace(checkout, await SourceSnapshot.open(checkout.source, sourceSnapshotDirectory(checkout.directory)));
+    return new Workspace(checkout, await SourceSnapshot.open(checkout.source, sourceSnapshotDirectory(checkout.directory),
+      checkout.tracking));
   }
 
   get base(): string { return this.#base; }

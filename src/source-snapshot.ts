@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
+import { folderEnvironment } from "./folder-source.js";
 import { assertNoRepositoryGitPrograms, isGitObjectId, operatorLineEndingSetting, runRepositoryGit as git,
   runRepositoryGitBytes as gitBytes, type RepositoryGitEnvironment } from "./repository-git.js";
 
@@ -59,12 +60,14 @@ export class SourceSnapshot {
     this.#env = env;
   }
 
-  static async open(source: string, stateDirectory: string): Promise<SourceSnapshot> {
+  /** `tracking` is a folder's private repository (decision 032), absent for a Git repository. */
+  static async open(source: string, stateDirectory: string, tracking?: string): Promise<SourceSnapshot> {
     const objects = join(stateDirectory, "objects");
     await mkdir(objects, { recursive: true });
-    const sourceObjects = resolve(source, git(source, ["rev-parse", "--git-path", "objects"]).trim());
+    const view = tracking === undefined ? {} : folderEnvironment(source, tracking);
+    const sourceObjects = resolve(source, git(source, ["rev-parse", "--git-path", "objects"], view).trim());
     if (!isAbsolute(sourceObjects)) throw new Error("Invalid source object directory");
-    return new SourceSnapshot(source, stateDirectory, { GIT_INDEX_FILE: join(stateDirectory, "index"),
+    return new SourceSnapshot(source, stateDirectory, { ...view, GIT_INDEX_FILE: join(stateDirectory, "index"),
       GIT_OBJECT_DIRECTORY: objects, GIT_ALTERNATE_OBJECT_DIRECTORIES: sourceObjects });
   }
 

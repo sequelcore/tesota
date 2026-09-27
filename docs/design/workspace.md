@@ -17,6 +17,30 @@ Line endings follow the operator's `core.autocrlf` setting. Symbolic links are
 checked out as plain files holding the link text (`core.symlinks=false`) and
 submodules stay uninitialized; application refuses changes to either.
 
+## A folder as the source
+
+Decision 032. A directory that is not in a Git repository is worked on as a
+**folder**, after the person agrees once: `tesota` says how many files it
+holds and how large they are, and that nothing in it changes until a
+reviewed result is applied. Tesota then keeps a private Git view of the
+folder in `~/.tesota/folders/`, named by the folder's path, never inside the
+folder: a bare repository whose work tree is the folder, the pattern people
+use to version the dotfiles in their home directory. Its one commit holds
+the folder as Tesota first found it, and every later edit, the person's or
+an applied result, is to it what uncommitted changes are to a repository,
+so creating the copy, keeping it current and applying work the same way
+(`src/folder-source.ts`). The lock files Office and LibreOffice keep while a
+document is open, and the files Windows and macOS leave in folders, are not
+copied.
+
+The home directory and a drive or file system root are refused as folders:
+they hold far more than one piece of work, credentials included. For the
+same reason a directory is worked on as a repository only when its
+repository's top level is neither of them: a home directory kept in Git, as
+dotfiles often are, would otherwise make any folder inside it stand for the
+whole home. File contents up to 512 MB are read when the source changes, so
+a scanned PDF or a large spreadsheet can be brought into the copy.
+
 ## Keeping it current
 
 Before each request the workspace takes the source's newer state the way Git

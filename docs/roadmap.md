@@ -67,7 +67,10 @@ project. They are listed here as they are chosen.
   ([design](design/work.md)): changes, answers and actions as kinds of
   result, folders as workspaces, and gates of stated strength that people
   can define. Folders and documents come first, then answers, then actions;
-  her first real tasks decide the order within each.
+  her first real tasks decide the order within each. A plain folder as a
+  workspace was built 2026-09-27
+  ([design](design/workspace.md#a-folder-as-the-source)); documents and
+  gates are next.
 - **The agent's plan** (decision 033, [design](design/agents.md#the-plan)):
   built 2026-09-26, shown above the prompt as the agent's account.
 - **Obligations** (decision 034, [design](design/assurance.md#obligations)):

@@ -25,6 +25,25 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
     process.stderr.write("Choose a valid shell theme: tesota-dark, tesota-light or terminal.\n");
     process.exitCode = 2;
   } else {
+    // A plain folder is worked on only after the person agrees, once (decision 032).
+    const { folderProblem, folderQuestion, isGitRepository, trackingDirectory } = await import("./folder-source.js");
+    const { existsSync, realpathSync } = await import("node:fs");
+    const cwd = realpathSync(process.cwd());
+    const problem = isGitRepository(cwd) ? undefined : folderProblem(cwd);
+    if (problem !== undefined) {
+      process.stderr.write(`${problem}: run tesota in the folder of the work you want done.\n`);
+      process.exit(2);
+    }
+    if (!isGitRepository(cwd) && !existsSync(trackingDirectory(cwd))) {
+      const { createInterface } = await import("node:readline/promises");
+      const reader = createInterface({ input: process.stdin, output: process.stdout });
+      const answer = (await reader.question(await folderQuestion(cwd))).trim().toLowerCase();
+      reader.close();
+      if (answer !== "y" && answer !== "yes") {
+        process.stdout.write("Nothing was copied.\n");
+        process.exit(0);
+      }
+    }
     const { createProcessTesotaShell, runTesotaShellCommand } = await import("./tesota-shell-command.js");
     process.exit(await runTesotaShellCommand(createProcessTesotaShell(process.cwd(), theme)));
   }

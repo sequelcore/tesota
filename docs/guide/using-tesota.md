@@ -100,12 +100,19 @@ afterward. Without a terminal to ask in, it only lists what is missing.
 
 ## Work
 
-From a Git repository with at least one commit:
+From a Git repository with at least one commit, or from any folder of your
+work, such as a folder of spreadsheets and documents:
 
 ```console
 cd my-project
 tesota
 ```
+
+In a folder that is not a Git repository, Tesota first asks whether to work
+on it, saying how many files it holds. It keeps its own record of the
+folder in `~/.tesota/folders` and never adds anything to the folder itself;
+nothing in the folder changes until you apply a reviewed result. Your home
+directory as a whole, and the root of a drive, are refused.
 
 Then ask for what you need:
 
