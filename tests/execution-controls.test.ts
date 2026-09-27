@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { controlsFor, runControls, type ControlSite } from "../src/execution-controls.js";
-import type { EnvironmentGuarantees } from "../src/execution-environment.js";
+import type { EnvironmentGuarantees, ExecutionEnvironment } from "../src/execution-environment.js";
 import { hostProvider } from "../src/host-environment.js";
 
 /**
@@ -42,6 +42,20 @@ it("chooses the controls a provider's claimed guarantees call for", () => {
   expect(controlsFor(hostProvider.guarantees)).toEqual(["workspace_read_write", "cancel_children", "time_limit"]);
   expect(controlsFor(sandbox)).toEqual(["workspace_read_write", "cancel_children", "time_limit",
     "outside_read", "outside_write", "host_variables", "network_refused", "registry_reachable"]);
+});
+
+it("writes each probe in the environment's own shell", async () => {
+  const commands: string[] = [];
+  const powershell: ExecutionEnvironment = { provider: "fake", shell: "powershell", guarantees: sandbox, preparation: [],
+    run: async (command) => { commands.push(command); return { outcome: "exited", exitCode: 0 }; }, dispose: async () => {} };
+  await runControls(powershell, ["outside_read", "network_refused"], site, new AbortController().signal);
+  // PowerShell runs a quoted program only through `&`, and its `curl` is an alias for Invoke-WebRequest.
+  expect(commands[0]).toMatch(/^& ".+" "\.tesota-control-[^"]+\.cjs" "\.\.\/outside\/\.tesota-control-[^"]+\.txt"$/u);
+  expect(commands[1]).toMatch(/^& "curl\.exe" "-sS"/u);
+  expect(hostProvider.guarantees.filesystem).toBe("host");
+  const host = await hostProvider.prepare(site.workspace);
+  expect(host.shell).toBe("posix");
+  await host.dispose();
 });
 
 it("passes the host on what every environment must do, and fails it on every confinement it lacks", async () => {

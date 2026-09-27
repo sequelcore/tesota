@@ -7,7 +7,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import * as z from "zod";
 import { windowsPowerShell } from "./windows-system.js";
 import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionProvider, isNetworkDestination,
-  type NetworkControl, type PrepareOptions, type PreparationStep, type ProviderReadiness, type RunOptions,
+  type NetworkControl, PACKAGE_REGISTRY_HOSTS, type PrepareOptions, type PreparationStep, type ProviderReadiness, type RunOptions,
   type RunResult, type SetupStep } from "./execution-environment.js";
 import { DEPENDENCIES_ARGUMENT, KIT_RUNTIMES, kitRuntimes, writeToolchainKit } from "./docker-sandboxes-kit.js";
 import { hasNodeModules, miseFilesInstallScript, miseInstallScript, needsDownloadHosts, needsSetup, planToolchain,
@@ -22,14 +22,6 @@ import { hasNodeModules, miseFilesInstallScript, miseInstallScript, needsDownloa
 const guarantees: EnvironmentGuarantees = Object.freeze({
   filesystem: "workspace", network: "allowlist", secrets: "none", resources: "bounded",
 });
-
-/** Package registries every sandbox may reach; anything else is refused by the proxy. */
-const DEFAULT_ALLOWED_HOSTS: readonly string[] = Object.freeze([
-  "registry.npmjs.org", "registry.yarnpkg.com",
-  "pypi.org", "files.pythonhosted.org",
-  "crates.io", "index.crates.io", "static.crates.io",
-  "proxy.golang.org", "sum.golang.org",
-]);
 
 const commandTimeoutMs = 120_000;
 const daemonStartMs = 30_000;
@@ -162,6 +154,7 @@ function sandboxNetwork(sbx: string, name: string): NetworkControl {
 function sandboxEnvironment(sbx: string, name: string, workspace: string, prepared: PreparedToolchain): ExecutionEnvironment {
   return {
     provider: "docker-sandboxes",
+    shell: "posix",
     guarantees,
     preparation: prepared.steps,
     network: sandboxNetwork(sbx, name),
@@ -303,7 +296,7 @@ async function createSandbox(sbx: string, name: string, workspace: string, kit: 
   if (created.status !== 0) {
     throw new Error(`The sandbox could not be created: ${`${created.stdout}${created.stderr}`.trim().slice(-600)}`);
   }
-  const allowed = await invoke(sbx, ["policy", "allow", "network", "--sandbox", name, DEFAULT_ALLOWED_HOSTS.join(",")]);
+  const allowed = await invoke(sbx, ["policy", "allow", "network", "--sandbox", name, PACKAGE_REGISTRY_HOSTS.join(",")]);
   if (allowed.status !== 0) {
     await invoke(sbx, ["rm", "--force", name]);
     throw new Error("The sandbox network rules could not be set");

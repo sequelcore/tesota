@@ -62,9 +62,25 @@ export function isNetworkDestination(value: string): boolean {
   return /^(?:(?:[A-Za-z0-9-]+\.)*[A-Za-z0-9-]+|\[[0-9A-Fa-f:.]+\]):\d{1,5}$/u.test(value);
 }
 
+/**
+ * The shell an environment runs commands in: a POSIX shell (bash or sh), or
+ * Windows PowerShell where the native Windows sandbox cannot run Git Bash
+ * (decision 030).
+ */
+export type CommandShell = "posix" | "powershell";
+
+/** Package registries every sandbox reaches, over HTTPS, before the operator allows anything else. */
+export const PACKAGE_REGISTRY_HOSTS: readonly string[] = Object.freeze([
+  "registry.npmjs.org", "registry.yarnpkg.com",
+  "pypi.org", "files.pythonhosted.org",
+  "crates.io", "index.crates.io", "static.crates.io",
+  "proxy.golang.org", "sum.golang.org",
+]);
+
 /** A prepared environment for one workspace. */
 export interface ExecutionEnvironment {
   readonly provider: string;
+  readonly shell: CommandShell;
   readonly guarantees: EnvironmentGuarantees;
   /** What preparing this environment ran now; empty when nothing was needed or it was already prepared. */
   readonly preparation: readonly PreparationStep[];
@@ -76,6 +92,8 @@ export interface ExecutionEnvironment {
 
 export interface PrepareOptions {
   readonly onProgress?: (text: string) => void;
+  /** The repository's package cache, shared by its sessions (decision 030); a provider's own when absent. */
+  readonly cacheDirectory?: string;
 }
 
 /**

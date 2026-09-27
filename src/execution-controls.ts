@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import type { EnvironmentGuarantees, ExecutionEnvironment, RunOptions, RunResult } from "./execution-environment.js";
+import type { CommandShell, EnvironmentGuarantees, ExecutionEnvironment, RunOptions, RunResult } from "./execution-environment.js";
 
 /**
  * The controls an execution environment must pass before its guarantees are
@@ -54,6 +54,16 @@ export function controlsFor(guarantees: EnvironmentGuarantees): ControlName[] {
 const quote = (value: string): string => `"${value}"`;
 
 /**
+ * A program and its arguments as the environment's shell runs them: quoted
+ * words in a POSIX shell, and in PowerShell after `&`, which a quoted program
+ * needs, with `curl.exe`, since PowerShell's `curl` is Invoke-WebRequest.
+ */
+function commandLine(shell: CommandShell, program: string, args: readonly string[]): string {
+  if (shell === "posix") return [program, ...args].map(quote).join(" ");
+  return `& ${[program === "curl" ? "curl.exe" : program, ...args].map(quote).join(" ")}`;
+}
+
+/**
  * A host path as a probe inside the environment names it: relative to the
  * workspace, with forward slashes, so the same argument means the same place
  * in a Linux virtual machine that mounts the workspace and on the host itself.
@@ -86,7 +96,7 @@ async function script(probe: Probe, source: string, args: readonly string[],
   const name = `.tesota-control-${randomUUID()}.cjs`;
   await writeFile(join(probe.site.workspace, name), source, "utf8");
   try {
-    return await inside(probe, [probe.site.runtime, name, ...args].map(quote).join(" "), options);
+    return await inside(probe, commandLine(probe.environment.shell, probe.site.runtime, [name, ...args]), options);
   } finally { await rm(join(probe.site.workspace, name), { force: true }); }
 }
 
@@ -182,7 +192,7 @@ async function timeLimit(probe: Probe): Promise<ControlResult> {
 async function status(probe: Probe, url: string): Promise<string> {
   const body = `.tesota-control-body-${randomUUID()}`;
   try {
-    const run = await inside(probe, ["curl", "-sS", "-m", "15", "-o", body, "-w", "%{http_code}", url].map(quote).join(" "));
+    const run = await inside(probe, commandLine(probe.environment.shell, "curl", ["-sS", "-m", "15", "-o", body, "-w", "%{http_code}", url]));
     return /\b(\d{3})\s*$/u.exec(run.output.trim())?.[1] ?? "000";
   } finally { await rm(join(probe.site.workspace, body), { force: true }); }
 }

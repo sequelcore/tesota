@@ -30,7 +30,7 @@ it.each([
   mocks.openStore.mockReturnValue(store);
   const preparation = [{ description: "Install dependencies", outcome,
     output: outcome === "failed" ? "install failed" : "" }] as PreparationStep[];
-  const environment = { provider: "test", guarantees: hostProvider.guarantees, preparation,
+  const environment = { provider: "test", shell: "posix", guarantees: hostProvider.guarantees, preparation,
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
   const recordRequest = vi.fn(async () => {});
   const workspace = { directory: "workspace", checkout: "workspace/repo", included: [],

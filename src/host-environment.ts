@@ -22,6 +22,7 @@ function hostEnvironment(): ExecutionEnvironment {
   const shell = createLocalBashOperations();
   return {
     provider: "host",
+    shell: "posix",
     guarantees,
     preparation: [],
     async run(command: string, options: RunOptions): Promise<RunResult> {
