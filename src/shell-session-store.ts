@@ -113,8 +113,16 @@ function readSnapshot(path: string, source: string): Snapshot {
 
 export const DEFAULT_SESSION_STORE_ROOT: string = join(homedir(), ".tesota", "shell-sessions");
 
+/**
+ * A repository's identity for saved sessions: its resolved path, without case,
+ * since Windows paths ignore it. The file is found and checked by the same key.
+ */
+function sourceKey(source: string): string {
+  return resolve(source).toLocaleLowerCase("en-US");
+}
+
 function storePath(source: string, root: string): string {
-  return join(root, createHash("sha256").update(resolve(source).toLocaleLowerCase("en-US")).digest("hex") + ".json");
+  return join(root, createHash("sha256").update(sourceKey(source)).digest("hex") + ".json");
 }
 
 /** Whether a live process holds the lock; an unreadable lock counts as held. */
@@ -169,7 +177,7 @@ export function openShellSessionStore(sourceDirectory: string,
   try {
     writeFileSync(lock, String(process.pid));
     const snapshot = readSnapshot(path, source);
-    if (snapshot.source !== source) throw new Error("Saved Tesota sessions belong to another repository");
+    if (sourceKey(snapshot.source) !== sourceKey(source)) throw new Error("Saved Tesota sessions belong to another repository");
     const sessions = new Map(snapshot.sessions.map((session) => [session.id,
       { ...session, entries: [...session.entries], inspections: [...session.inspections] }]));
     if (sessions.size !== snapshot.sessions.length) throw new Error("Duplicate saved Tesota session");
