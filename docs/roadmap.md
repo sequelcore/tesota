@@ -56,8 +56,8 @@ project. They are listed here as they are chosen.
   MXC and qualified on each machine; built on Windows 11 24H2 and later
   2026-09-27, with Linux and macOS next.
 - **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
-  built 2026-09-26 and not yet exercised live; their models are unmeasured
-  as Tesota's roles.
+  built 2026-09-26; OpenRouter's contract suite passes live on a free model,
+  OpenCode awaits a key, and their models are unmeasured as Tesota's roles.
 
 ### 2. Measurement on public benchmarks
 
