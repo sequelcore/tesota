@@ -5,8 +5,8 @@ import { join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { confinesCommands, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
-import { chooseSessionExecution, packageCacheDirectory, releaseWorkspace, SANDBOX_NAMES,
-  type SessionExecution } from "./execution-providers.js";
+import { chooseSessionExecution, packageCacheDirectory, providersFor, readSandboxPreference, releaseWorkspace,
+  SANDBOX_NAMES, SANDBOX_PREFERENCES, type SandboxPreference, type SessionExecution } from "./execution-providers.js";
 import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-session.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
@@ -85,6 +85,13 @@ export interface TesotaShellCommandDependencies {
   readonly configureWorkspace: (callbacks: WorkspaceCallbacks) => void;
   /** The agent's model in a session: `/model` and `/handoff` (decision 026). */
   readonly agentModel?: AgentModelCommands;
+  /** Where a session's commands run: `/sandbox` (decision 030). */
+  readonly sessionSandbox?: SessionSandboxCommands;
+}
+
+export interface SessionSandboxCommands {
+  /** Show where the session's commands run, or switch it to a sandbox choice, or `default`. */
+  change(id: string, argument: string | undefined): Promise<void>;
 }
 
 export interface AgentModelCommands {
@@ -94,12 +101,29 @@ export interface AgentModelCommands {
   handOff(id: string): Promise<void>;
 }
 
-/** Where commands run, in the operator's words: the host is "this computer". */
 /** Where commands run, in the operator's words: which sandbox, or "this computer" for the host. */
 function executionLabel(execution: SessionExecution): string {
   if (execution.commands === "host") return "this computer · asks first";
   return `sandbox · ${SANDBOX_NAMES[execution.provider.name]?.label ?? execution.provider.name}`;
 }
+
+/** Where commands run, as a phrase: "in the native sandbox", or "on this computer" for the host. */
+function executionPlace(execution: SessionExecution): string {
+  if (execution.commands === "host") return "on this computer, which asks before each command";
+  return `in ${SANDBOX_NAMES[execution.provider.name]?.described ?? execution.provider.name}`;
+}
+
+/** Why a named sandbox is not in use here: its missing steps, or the controls that failed on this computer. */
+function unavailableReason(execution: SessionExecution): string {
+  if (execution.commands === "sandbox") return "";
+  return execution.missing.flatMap((entry) => {
+    const failed = entry.qualification?.results.filter((result) => !result.passed) ?? [];
+    if (failed.length > 0) return failed.map((result) => `its controls failed on this computer (${result.detail})`);
+    return entry.readiness.ready ? [] : entry.readiness.steps.map((step) => step.description);
+  }).join("; ");
+}
+
+const sandboxUsage = `Use /sandbox or /sandbox <${SANDBOX_PREFERENCES.join("|")}|default>.`;
 
 function describePreparation(steps: readonly PreparationStep[]): string | undefined {
   if (steps.length === 0) return undefined;
@@ -142,6 +166,8 @@ function isAbort(error: unknown): boolean {
 class SessionState {
   workspace: Promise<Workspace> | undefined;
   environment: Promise<ExecutionEnvironment> | undefined;
+  /** Where the environment's commands run, once chosen. */
+  execution: SessionExecution | undefined;
   coding: Promise<WorkingAgent> | undefined;
   /** The agent's read-only explorers (decision 019); absent when explorers are off. */
   explorers: ExplorerPool | undefined;
@@ -159,12 +185,21 @@ class SessionState {
 
 export function createProcessTesotaShell(cwd: string = process.cwd(),
   theme: TesotaShellThemeName = "tesota-dark",
-  chooseExecution: () => Promise<SessionExecution> = chooseSessionExecution): TesotaShellCommandDependencies {
-  let executionChoice: Promise<SessionExecution> | undefined;
-  const sessionExecution = (): Promise<SessionExecution> => {
-    executionChoice ??= chooseExecution();
-    return executionChoice;
+  chooseExecution: (preference: SandboxPreference) => Promise<SessionExecution> =
+    (preference) => chooseSessionExecution(providersFor(preference))): TesotaShellCommandDependencies {
+  // Each choice is made once per shell: the first on a machine qualifies the native sandbox, which takes some seconds.
+  const executionChoices = new Map<SandboxPreference, Promise<SessionExecution>>();
+  const executionFor = (preference: SandboxPreference): Promise<SessionExecution> => {
+    let choice = executionChoices.get(preference);
+    if (choice === undefined) {
+      choice = chooseExecution(preference);
+      choice.catch(() => { executionChoices.delete(preference); });
+      executionChoices.set(preference, choice);
+    }
+    return choice;
   };
+  /** A session's own choice from `/sandbox`, or else the operator's choice for new sessions. */
+  const sandboxPreference = (id: string): SandboxPreference => saved(id)?.sandbox ?? readSandboxPreference();
   const activeOperations = new Map<string, AbortController>();
   const states = new Map<string, SessionState>();
   const waiters: { readonly signal: AbortSignal; readonly grant: () => void;
@@ -244,6 +279,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onCloseSession: (id) => { void closeSession(id); },
     onModel: (id, argument) => { void agentModel.change(id, argument); },
     onHandoff: (id) => { void agentModel.handOff(id); },
+    onSandbox: (id, argument) => { void sessionSandbox.change(id, argument); },
     modelPicker: (id) => {
       try {
         const context = states.get(id)?.agent?.contextTokens();
@@ -297,8 +333,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     state.environment ??= (async () => {
       // The first choice on a machine qualifies the native sandbox there, which takes some seconds.
       surface.reportFor(id, { phase: "preparing", activity: "Choosing where commands run" });
-      const [workspace, execution] = await Promise.all([workspaceFor(id), sessionExecution()]);
-      surface.setExecution(executionLabel(execution));
+      const [workspace, execution] = await Promise.all([workspaceFor(id), executionFor(sandboxPreference(id))]);
+      state.execution = execution;
+      surface.setSessionExecution(id, executionLabel(execution));
       if (execution.commands === "host") {
         surface.writeTo(id, "Commands ask before running and run on this computer without isolation. " +
           "Run tesota setup to see what sandboxed sessions need.", "warning");
@@ -600,6 +637,84 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       surface.writeTo(id, `The agent stays on ${current}. ${newConversationNote}`);
     },
   };
+  /** End the session's agent and environment; its next request prepares them again, on the same conversation. */
+  const restartEnvironment = async (id: string): Promise<void> => {
+    const state = stateFor(id);
+    const live = state.coding;
+    const environment = state.environment;
+    state.coding = undefined;
+    state.environment = undefined;
+    state.execution = undefined;
+    state.explorers = undefined;
+    state.advisor = undefined;
+    state.agent = undefined;
+    await live?.then((coding) => { coding.dispose(); }, () => undefined);
+    await environment?.then((prepared) => prepared.dispose(), () => undefined);
+  };
+  const describeSandbox = (id: string): void => {
+    const execution = states.get(id)?.execution;
+    const own = saved(id)?.sandbox;
+    const current = execution === undefined ? "Commands in this session run where its next request chooses"
+      : `Commands in this session run ${executionPlace(execution)}`;
+    surface.writeTo(id, `${current}; ${own === undefined ? "it follows your choice for new sessions" : `its own choice is ${own}`}, ` +
+      `and new sessions use ${readSandboxPreference()} (tesota sandbox).\n` +
+      `/sandbox <${SANDBOX_PREFERENCES.join("|")}> switches this session: its environment is prepared again, and the ` +
+      "agent restarts with its conversation. /sandbox default follows your choice for new sessions.");
+  };
+  /** Switch a session to `preference`; a sandbox named outright is used only when it is ready here. */
+  const switchSandbox = async (id: string, preference: SandboxPreference, followDefault: boolean): Promise<void> => {
+    surface.reportFor(id, { phase: "preparing", activity: "Choosing where commands run" });
+    let next: SessionExecution;
+    try { next = await executionFor(preference); } finally { surface.clearProgressFor(id, "preparing"); }
+    const state = stateFor(id);
+    const current = state.execution;
+    if ((preference === "native" || preference === "docker") && next.commands === "host") {
+      const name = Object.values(SANDBOX_NAMES).find((entry) => entry.choice === preference)?.described ?? preference;
+      surface.writeTo(id, `${name.charAt(0).toUpperCase()}${name.slice(1)} is not ready here: ${unavailableReason(next)}. ` +
+        `Commands in this session still run ${current === undefined ? "where they did" : executionPlace(current)}. ` +
+        "tesota sandbox shows what each sandbox needs.", "warning");
+      return;
+    }
+    store.setSandbox(id, followDefault ? undefined : preference);
+    if (followDefault) surface.writeTo(id, `This session follows your choice for new sessions (${preference}).`);
+    if (current?.provider === next.provider) {
+      surface.writeTo(id, `Commands in this session already run ${executionPlace(next)}.`);
+      return;
+    }
+    if (state.environment === undefined) {
+      surface.writeTo(id, `Commands in this session will run ${executionPlace(next)}.`);
+      return;
+    }
+    await restartEnvironment(id);
+    surface.setSessionExecution(id, executionLabel(next));
+    // The conversation remembers commands from the earlier environment: its paths and shell may no longer apply.
+    const earlier = current === undefined ? "" : `; earlier commands in this conversation ran ${executionPlace(current)}, ` +
+      "so their paths and tools may differ";
+    state.note = [state.note, `Note: Commands now run ${executionPlace(next)}${earlier}.`]
+      .filter((note) => note !== undefined).join("\n\n");
+    surface.writeTo(id, `Commands in this session now run ${executionPlace(next)}. The agent restarts with your next ` +
+      "request: its conversation continues, with the tools for where commands now run.");
+  };
+  const sessionSandbox: SessionSandboxCommands = {
+    change: async (id, argument) => {
+      if (argument !== undefined && argument !== "default" && !(SANDBOX_PREFERENCES as readonly string[]).includes(argument)) {
+        surface.writeTo(id, sandboxUsage, "warning");
+        return;
+      }
+      if (argument !== undefined && activeOperations.has(id)) {
+        surface.writeTo(id, "Stop the current work (Esc) or wait for it before switching where commands run.", "warning");
+        return;
+      }
+      try {
+        if (argument === undefined) describeSandbox(id);
+        else if (argument === "default") await switchSandbox(id, readSandboxPreference(), true);
+        else await switchSandbox(id, argument as SandboxPreference, false);
+      } catch (error) {
+        surface.writeTo(id, `Tesota could not switch where commands run: ${error instanceof Error ? error.message : "unknown error"}.`,
+          "warning");
+      }
+    },
+  };
   const blockSession = (id: string): void => { store.block(id); surface.blockSession(id); };
   /** Evidence that could not be recorded is reported, never dropped silently. */
   const journal = async (id: string, workspace: Workspace, entry: AssuranceEntry): Promise<void> => {
@@ -811,6 +926,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     blockedSessionIds: savedSessions.filter((session) => session.blocked).map((session) => session.id),
     configureWorkspace: (callbacks) => { workspaceCallbacks = callbacks; },
     agentModel,
+    sessionSandbox,
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },
     dispose: () => {
       for (const state of states.values()) {

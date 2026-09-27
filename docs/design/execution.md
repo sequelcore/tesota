@@ -226,8 +226,17 @@ proved here and which one is in use (`src/sandbox-command.ts`); `tesota
 sandbox use auto`, the default, prefers the native sandbox, then Docker
 Sandboxes, then this computer, which asks before each command; `use native`,
 `use docker` or `use host` names one. The choice, kept in
-`~/.tesota/sandbox.json`, applies to sessions opened afterwards; a session
-never switches provider on its own. The footer names the sandbox in use. The
+`~/.tesota/sandbox.json`, applies to sessions opened afterwards. Inside a
+session, `/sandbox` shows where its commands run and `/sandbox <choice>`
+switches that session alone, so one repository that is not trusted can use
+Docker while others run natively; `/sandbox default` returns it to the
+operator's choice. The session keeps its choice in its record, and a sandbox
+named outright is used only when it is ready here, otherwise the session
+stays where it was and says why. A switch ends the session's environment and
+agent; the next request prepares the new environment and resumes the same
+conversation with that environment's tools (bash or PowerShell), with a note
+that earlier commands ran elsewhere. A session never switches provider on its
+own. The footer names the selected session's sandbox. The
 rule that commands run without asking only in a ready provider whose
 guarantees held on this machine is `runsWithoutAsking` in
 `src/verification/sandbox-qualification.ts`, proved beside the qualification
@@ -264,8 +273,8 @@ or installed.
 
 **Phases.** (1) The live suite made provider-neutral, which Docker Sandboxes
 passes unchanged: done. (2) The `mxc` provider and the proxy on Windows: done.
-(3) Qualification, `tesota sandbox` and the per-command retry: done; a choice
-of sandbox from inside a session is next. (4) Linux with a tester, a clean
+(3) Qualification, `tesota sandbox`, the per-command retry and `/sandbox` in
+a session: done. (4) Linux with a tester, a clean
 Windows 11, then macOS. Later, with evidence from real use, the native
 sandbox as a project of its own.
 

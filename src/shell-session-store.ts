@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import * as z from "zod";
 import { isNetworkDestination } from "./execution-environment.js";
+import { SANDBOX_PREFERENCES, type SandboxPreference } from "./execution-providers.js";
 import { parseModelChoice } from "./model-roles.js";
 import { MEASUREMENTS_KEPT, type ReviewMeasurement, withMeasurement } from "./review-forecast.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
@@ -24,17 +25,20 @@ const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: stri
   z.strictObject({ title: z.string().max(100), summary: z.string().max(10_000),
     detail: z.string().max(2_000_000), diff: z.string().max(2_000_000).optional() });
 const agentModelSchema = z.string().refine((value) => parseModelChoice(value) !== undefined, "not a route:model choice");
-// `agent` and `retiredEngineIds` arrived after version 5 and are optional, so saved sessions survive (decision 026).
+// `agent`, `retiredEngineIds` and `sandbox` arrived after version 5 and are optional, so saved sessions survive
+// (decisions 026 and 030).
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: TranscriptEntry[];
   inspections: { title: string; summary: string; detail: string; diff?: string | undefined }[];
   workspace: string | null;
-  interrupted: boolean; blocked: boolean; agent?: string | undefined; retiredEngineIds?: string[] | undefined }> =
+  interrupted: boolean; blocked: boolean; agent?: string | undefined; retiredEngineIds?: string[] | undefined;
+  sandbox?: SandboxPreference | undefined }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
       workspace: z.string().min(1).nullable(),
       interrupted: z.boolean(), blocked: z.boolean(),
-      agent: agentModelSchema.optional(), retiredEngineIds: z.array(z.uuid()).max(1_000).optional() });
+      agent: agentModelSchema.optional(), retiredEngineIds: z.array(z.uuid()).max(1_000).optional(),
+      sandbox: z.enum(SANDBOX_PREFERENCES).optional() });
 const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.iso.datetime(),
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
   tokens: z.number().nonnegative(), models: z.strictObject({ reviewer: z.string().min(1).max(100),
@@ -81,6 +85,11 @@ export interface ShellSessionStore {
    * Absent until then, when new agents use the operator's choice for the role.
    */
   setAgentModel(id: string, choice: string): void;
+  /**
+   * Where this session's commands run, chosen with `/sandbox` (decision 030);
+   * undefined follows the operator's choice for new sessions (`tesota sandbox`).
+   */
+  setSandbox(id: string, preference: SandboxPreference | undefined): void;
   close(): void;
 }
 
@@ -256,6 +265,15 @@ export function openShellSessionStore(sourceDirectory: string,
         session.agent = agentModelSchema.parse(choice);
         try { save(); } catch (error) {
           if (previous === undefined) delete session.agent; else session.agent = previous;
+          throw error;
+        }
+      },
+      setSandbox: (id, preference) => {
+        const session = find(id);
+        const previous = session.sandbox;
+        if (preference === undefined) delete session.sandbox; else session.sandbox = z.enum(SANDBOX_PREFERENCES).parse(preference);
+        try { save(); } catch (error) {
+          if (previous === undefined) delete session.sandbox; else session.sandbox = previous;
           throw error;
         }
       },

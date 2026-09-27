@@ -106,12 +106,13 @@ it("opens shell commands on slash and keeps the prompt active after running one"
   shell.stop();
 });
 
-it("passes /model with its argument, and /handoff, to the shell", () => {
+it("passes /model and /sandbox with their argument, and /handoff, to the shell", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const onModel = vi.fn();
   const onHandoff = vi.fn();
-  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onModel, onHandoff });
+  const onSandbox = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onModel, onHandoff, onSandbox });
   shell.start();
   shell.ask("> ").catch(() => undefined);
   terminal.send("/model claude-code:opus");
@@ -120,8 +121,13 @@ it("passes /model with its argument, and /handoff, to the shell", () => {
   terminal.send("\r");
   terminal.send("/handoff");
   terminal.send("\r");
+  terminal.send("/sandbox docker");
+  terminal.send("\r");
+  terminal.send("/sandbox");
+  terminal.send("\r");
   expect(onModel.mock.calls).toEqual([["default", "claude-code:opus"], ["default", undefined]]);
   expect(onHandoff).toHaveBeenCalledWith("default");
+  expect(onSandbox.mock.calls).toEqual([["default", "docker"], ["default", undefined]]);
   shell.stop();
 });
 
@@ -460,12 +466,16 @@ it("places workspace identity in the sidebar and execution context beside the pr
   terminal.columns = 120;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
-  shell.setExecution("this computer · asks first");
+  shell.setSessionExecution("default", "this computer · asks first");
   shell.setBranch("dev");
   shell.setSessionModel("default", "claude-code:opus");
+  shell.addSession("second", "Session 2");
+  shell.setSessionExecution("second", "sandbox · Docker");
   shell.start();
   tui.renderNow(true);
   const screen = visible(terminal);
+  // Each session runs its commands where it chose; the footer names the selected session's.
+  expect(screen).not.toContain("sandbox · Docker");
   expect(screen).toContain("tesota · dev");
   expect(screen).toContain("Session 1");
   expect(screen).toContain("this computer · asks first · claude-code:opus");

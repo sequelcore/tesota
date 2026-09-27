@@ -84,17 +84,22 @@ it("keeps a session's agent model and the conversations it left, and reads a ses
   const session = store.create();
   expect(session.agent).toBeUndefined();
   store.setAgentModel(session.id, "claude-code:opus");
+  expect(session.sandbox).toBeUndefined();
+  store.setSandbox(session.id, "docker");
   const first = session.engineId;
   const second = store.rotateEngine(session.id);
   store.rotateEngine(session.id);
   expect(() => { store.setAgentModel(session.id, "not a model"); }).toThrow();
   store.close();
   const reopened = openShellSessionStore(source, root);
-  expect(reopened.list()[0]).toMatchObject({ agent: "claude-code:opus", retiredEngineIds: [first, second] });
+  expect(reopened.list()[0]).toMatchObject({ agent: "claude-code:opus", sandbox: "docker", retiredEngineIds: [first, second] });
+  // Without a choice of its own, a session follows the operator's choice for new sessions.
+  reopened.setSandbox(session.id, undefined);
+  expect(reopened.list()[0]?.sandbox).toBeUndefined();
   reopened.close();
   const path = join(root, readdirSync(root).find((name) => name.endsWith(".json")) ?? "");
   const saved = JSON.parse(readFileSync(path, "utf8")) as { sessions: Record<string, unknown>[] };
-  for (const entry of saved.sessions) { delete entry["agent"]; delete entry["retiredEngineIds"]; }
+  for (const entry of saved.sessions) { delete entry["agent"]; delete entry["retiredEngineIds"]; delete entry["sandbox"]; }
   writeFileSync(path, JSON.stringify(saved));
   const older = openShellSessionStore(source, root);
   expect(older.list()[0]?.agent).toBeUndefined();

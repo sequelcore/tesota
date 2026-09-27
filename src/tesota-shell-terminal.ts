@@ -26,6 +26,8 @@ export interface TesotaShellTerminalOptions {
   /** The models the `/model` picker offers a session's agent; without it, `/model` alone asks the shell to list them. */
   readonly modelPicker?: (sessionId: string) => ModelPickerData | undefined;
   readonly onHandoff?: (sessionId: string) => void;
+  /** `/sandbox`, with its argument when one was given (decision 030). */
+  readonly onSandbox?: (sessionId: string, argument: string | undefined) => void;
   readonly onQuit?: () => void;
   readonly onEntry?: (sessionId: string, entry: TranscriptEntry) => void;
   readonly onInspection?: (sessionId: string, inspection: ShellInspection) => void;
@@ -55,8 +57,8 @@ export interface TesotaShellTerminal {
   inspectFor(id: string, inspection: ShellInspection): void;
   /** Show the agent's replies and tool calls in a session as they happen. */
   showActivity(id: string, activity: AgentActivity): void;
-  /** Name where commands run, such as the sandbox, beside the prompt. */
-  setExecution(label: string): void;
+  /** Where a session's commands run, such as its sandbox, shown beside the prompt while it is selected. */
+  setSessionExecution(id: string, label: string): void;
   /** The source repository's branch, shown with repository identity; undefined when Git cannot say. */
   setBranch(branch: string | undefined): void;
   /** The model the session's agent runs, as `route:model`, shown beside the prompt while it is selected. */
@@ -98,6 +100,8 @@ interface SessionView {
   ended: boolean;
   /** The model the session's agent runs, once known. */
   model?: string;
+  /** Where the session's commands run, once its environment is chosen. */
+  execution?: string;
 }
 
 const spinnerMs = 120;
@@ -112,6 +116,7 @@ const shellCommands = [
   { name: "close", description: "Close this session" },
   { name: "model", description: "Show or switch the agent's model" },
   { name: "handoff", description: "Start the agent's conversation afresh" },
+  { name: "sandbox", description: "Show or switch where this session's commands run" },
   { name: "result", description: "Show or hide the review" },
   { name: "sidebar", description: "Show or hide sessions" },
   { name: "details", description: "Expand or collapse a long notice" },
@@ -260,7 +265,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private showResult = false;
   private split = false;
   private sidebarPreference: SidebarPreference = "auto";
-  private execution = "";
   /** The source repository's branch, where results are applied. */
   private branch: string | undefined;
   private frame = 0;
@@ -399,8 +403,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   private updateFooter(): void {
-    const model = this.selected().model;
-    this.footer.setText(mutedText([this.execution, model === undefined ? "" : safeTerminalText(model)]
+    const { execution, model } = this.selected();
+    this.footer.setText(mutedText([execution ?? "", model === undefined ? "" : safeTerminalText(model)]
       .filter(Boolean).join(" · "), this.theme));
   }
 
@@ -669,10 +673,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (this.started && id === this.selectedId) this.compose();
   }
 
-  setExecution(label: string): void {
-    this.execution = label;
-    this.updateFooter();
-    this.tui.requestRender();
+  setSessionExecution(id: string, label: string): void {
+    const session = this.sessions.get(id);
+    if (session === undefined) return;
+    session.execution = label;
+    if (this.started && id === this.selectedId) this.compose();
   }
 
   inspect(inspection: ShellInspection): void { this.inspectFor(this.selectedId, inspection); }
@@ -824,11 +829,15 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       case "close": this.options.onCloseSession?.(session.id); break;
       case "model": this.changeModel(session, args); break;
       case "handoff": this.options.onHandoff?.(session.id); break;
+      case "sandbox":
+        if (args.length > 1) this.writeTo(session.id, "Use /sandbox or /sandbox <auto|native|docker|host|default>.", "warning");
+        else this.options.onSandbox?.(session.id, args[0]);
+        break;
       case "result": this.showResult = !this.showResult; this.compose(); break;
       case "sidebar": this.toggleSidebar(); break;
       case "details": this.toggleDetails(session, args); break;
       case "help":
-        this.writeTo(session.id, "Commands: /new /next /previous /close /model [route:model] /handoff /result /sidebar " +
+        this.writeTo(session.id, "Commands: /new /next /previous /close /model [route:model] /handoff /sandbox [where] /result /sidebar " +
           "/details [number] /help /quit\n" +
           "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
           "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +

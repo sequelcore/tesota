@@ -86,8 +86,10 @@ Windows PowerShell, and the workspace appears to them as a drive of its own,
 such as `T:\`; npm works, and a command the sandbox blocks, such as
 `bun install`, runs on your computer only if you approve it. `tesota sandbox`
 shows what each sandbox proved here and which one is in use; `tesota sandbox
-use docker` (or `native`, `host`, `auto`) chooses for new sessions, and
-`tesota sandbox clean` removes this repository's package cache. Docker
+use docker` (or `native`, `host`, `auto`) chooses for new sessions, `/sandbox
+docker` inside a session switches that session alone, keeping its
+conversation, and `tesota sandbox clean` removes this repository's package
+cache. Docker
 Sandboxes is the alternative on Windows 11, and the stronger wall, since it
 runs a virtual machine. It needs the Windows
 Hypervisor Platform (an administrator prompt and a restart), Docker Sandboxes,
