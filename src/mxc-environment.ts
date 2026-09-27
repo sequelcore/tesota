@@ -2,7 +2,8 @@ import { type ChildProcess, execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { createRequire } from "node:module";
+import { homedir, release } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { createConfigFromPolicy, getAvailableToolsPolicy, getPlatformSupport, spawnSandboxFromConfig } from "@microsoft/mxc-sdk";
 import { EgressProxy } from "./egress-proxy.js";
@@ -148,7 +149,7 @@ function prepare(workspace: string, options: PrepareOptions = {}): Promise<Execu
     const sandbox: Sandbox = { workspace: resolve(workspace), drive, scripts: join(root, "commands"), readable, writable,
       folders: { ...folders, proxy: proxy.url }, systemRoot: process.env["SYSTEMROOT"] ?? "C:\\Windows" };
     await mkdir(sandbox.scripts, { recursive: true });
-    return { provider: "mxc", shell: "powershell", guarantees: MXC_GUARANTEES, preparation: [], network: proxy,
+    return { provider: "mxc", shell: "powershell", javascriptRuntime: process.execPath, guarantees: MXC_GUARANTEES, preparation: [], network: proxy,
       run: (command, runOptions) => runCommand(sandbox, command, runOptions),
       dispose: async () => {
         await proxy.close();
@@ -225,11 +226,19 @@ function readiness(): Promise<ProviderReadiness> {
     `${support.reason === "" ? "" : ` (${support.reason})`}` }] });
 }
 
+/** Qualification holds for one Windows build and one MXC release: either can change what the sandbox enforces. */
+async function fingerprint(): Promise<string> {
+  const sdk: unknown = createRequire(import.meta.url)("@microsoft/mxc-sdk/package.json");
+  const version = typeof sdk === "object" && sdk !== null ? String(Reflect.get(sdk, "version")) : "unknown";
+  return `windows ${release()}; mxc-sdk ${version}`;
+}
+
 export const mxcProvider: ExecutionProvider = {
   name: "mxc",
   guarantees: MXC_GUARANTEES,
   readiness,
   prepare,
+  fingerprint,
   release: async (workspace) => {
     await unmapDrives(resolve(workspace));
     await rm(sandboxRoot(workspace), { recursive: true, force: true, maxRetries: 3 });

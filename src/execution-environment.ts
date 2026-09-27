@@ -81,6 +81,8 @@ export const PACKAGE_REGISTRY_HOSTS: readonly string[] = Object.freeze([
 export interface ExecutionEnvironment {
   readonly provider: string;
   readonly shell: CommandShell;
+  /** The program that runs JavaScript inside, for the execution controls' probes; `node` when absent. */
+  readonly javascriptRuntime?: string;
   readonly guarantees: EnvironmentGuarantees;
   /** What preparing this environment ran now; empty when nothing was needed or it was already prepared. */
   readonly preparation: readonly PreparationStep[];
@@ -126,6 +128,13 @@ export interface ExecutionProvider {
   /** Whether this machine can use the provider now, and what is missing otherwise. */
   readiness(): Promise<ProviderReadiness>;
   prepare(workspace: string, options?: PrepareOptions): Promise<ExecutionEnvironment>;
+  /**
+   * What qualification on the operator's machine depends on, such as the
+   * operating system build and the provider's version (decision 030). A
+   * provider without it is trusted on its declared guarantees, which its live
+   * suite qualifies.
+   */
+  fingerprint?(): Promise<string>;
   /** Remove anything the provider keeps for a workspace that is being deleted. */
   release(workspace: string): Promise<void>;
 }

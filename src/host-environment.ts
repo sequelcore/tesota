@@ -23,6 +23,7 @@ function hostEnvironment(): ExecutionEnvironment {
   return {
     provider: "host",
     shell: "posix",
+    javascriptRuntime: process.execPath,
     guarantees,
     preparation: [],
     async run(command: string, options: RunOptions): Promise<RunResult> {

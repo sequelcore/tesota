@@ -5,6 +5,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { controlsFor, runControls } from "../src/execution-controls.js";
 import type { ExecutionEnvironment } from "../src/execution-environment.js";
 import { mxcProvider } from "../src/mxc-environment.js";
+import { qualifyProvider } from "../src/execution-qualification.js";
 
 /**
  * The native Windows sandbox against the execution controls every provider
@@ -48,6 +49,15 @@ it.runIf(live)("passes every control its guarantees call for", async () => {
     runtime: "node", refusedUrl: "https://example.com/", registryUrl: "https://registry.npmjs.org/" }, new AbortController().signal);
   expect(results.filter((result) => !result.passed)).toEqual([]);
   expect(results.map((result) => result.control)).toEqual(controlsFor(mxcProvider.guarantees));
+}, 300_000);
+
+it.runIf(live)("qualifies on this machine with every claim upheld, from a workspace of its own", async () => {
+  const machine = await mxcProvider.fingerprint?.();
+  expect(machine).toMatch(/^windows \d+\.\d+\.\d+; mxc-sdk \d+\.\d+\.\d+$/u);
+  const record = await qualifyProvider(mxcProvider, { root: join(root, "qualification"), signal: new AbortController().signal,
+    fingerprint: machine ?? "" });
+  expect(record.guarantees).toEqual(mxcProvider.guarantees);
+  expect(record.results.every((result) => result.passed)).toBe(true);
 }, 300_000);
 
 it.runIf(live)("reports a refused destination and opens only what is allowed", async () => {

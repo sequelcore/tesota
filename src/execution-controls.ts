@@ -39,16 +39,16 @@ export interface ControlResult {
 }
 
 /** Every environment must work in its workspace and stop what it runs. */
-const processControls: readonly ControlName[] = ["workspace_read_write", "cancel_children", "time_limit"];
+export const PROCESS_CONTROLS: readonly ControlName[] = ["workspace_read_write", "cancel_children", "time_limit"];
 /** A `workspace` filesystem keeps the operator's files and variables out of reach. */
-const filesystemControls: readonly ControlName[] = ["outside_read", "outside_write", "host_variables"];
+export const FILESYSTEM_CONTROLS: readonly ControlName[] = ["outside_read", "outside_write", "host_variables"];
 /** An `allowlist` network refuses what is not allowed and still reaches package registries. */
-const networkControls: readonly ControlName[] = ["network_refused", "registry_reachable"];
+export const NETWORK_CONTROLS: readonly ControlName[] = ["network_refused", "registry_reachable"];
 
 /** The controls a provider's claimed guarantees call for. */
 export function controlsFor(guarantees: EnvironmentGuarantees): ControlName[] {
-  return [...processControls, ...guarantees.filesystem === "workspace" ? filesystemControls : [],
-    ...guarantees.network === "allowlist" ? networkControls : []];
+  return [...PROCESS_CONTROLS, ...guarantees.filesystem === "workspace" ? FILESYSTEM_CONTROLS : [],
+    ...guarantees.network === "allowlist" ? NETWORK_CONTROLS : []];
 }
 
 const quote = (value: string): string => `"${value}"`;
