@@ -949,10 +949,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         ? [{ index: index + 1, step: step.step, ...step.check === undefined ? {} : { check: step.check } }] : []);
       const input = { checkout: workspace.checkout, requests, snapshot, checks: [], flags: [],
         response: state.lastReply ?? "", ...(claimedSteps.length === 0 ? {} : { claimedSteps }) };
-      // A cheap first pass on the validator's model spares the reviewer a turn with nothing to check (decision 034).
+      // A cheap first pass spares the reviewer a turn with nothing to check (decision 034); off, every answer is checked.
       surface.reportFor(id, { phase: "reviewing", activity: "Deciding whether the answer needs checking" });
-      const triage = await triageAnswer({ target: await openModel(signal, "validator") }, requests, state.lastReply ?? "", signal)
-        .catch(() => ({ decided: false, checkable: true, reason: "the first pass failed" }));
+      const triage = readModelChoices().triage === ROLE_OFF ? { decided: false, checkable: true, reason: "the first pass is off" }
+        : await triageAnswer({ target: await openModel(signal, "triage") }, requests, state.lastReply ?? "", signal)
+          .catch(() => ({ decided: false, checkable: true, reason: "the first pass failed" }));
       if (signal.aborted) { surface.clearProgressFor(id, "reviewing"); return { status: "cancelled" }; }
       if (!runsAnswerCheck(triage.decided, triage.checkable)) {
         surface.clearProgressFor(id, "reviewing");

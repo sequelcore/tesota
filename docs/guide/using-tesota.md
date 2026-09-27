@@ -142,7 +142,8 @@ part of a request that is confirmed missing goes back to the agent. A turn
 in which the agent changes no files gets an "Answer check" too: a question
 can be answered, but a reply that only says the work is done, when the code
 is not there, is caught and sent back. A quick first pass, on your
-`validator` model, skips the check for greetings, thanks and small talk.
+`triage` model, skips the check for greetings, thanks and small talk;
+`tesota models triage off` checks every answer in full instead.
 
 The agent reads, searches, edits, creates and deletes files in its own copy of
 your repository. In the sandbox its shell commands run without

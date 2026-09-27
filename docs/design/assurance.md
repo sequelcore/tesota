@@ -157,7 +157,8 @@ The result panel shows an "Answer check" with no application decision. While
 a check leaves a request not held or uncertain, the request stays pending,
 so "add farewell()" followed by "continue" is still checked as one request.
 A cheap **first pass** comes before it, so a greeting does not cost the
-strongest reviewer: a session on the validator's model, with no file tools,
+strongest reviewer: a session on the `triage` role's model, `codex:gpt-6-luna`
+by default and `off` to check every answer in full, with no file tools,
 sees the pending requests and the reply and decides whether the turn holds
 anything checkable, a request to change something, a follow-up to one, or a
 claim about the code; when unsure it says checkable

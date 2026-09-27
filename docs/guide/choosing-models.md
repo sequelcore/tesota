@@ -15,6 +15,7 @@ and how to check a choice. Signing in to each route is in
 | `reviewer` | Reviews each result, with focused lenses on deep reviews and ClaimCheck on proved contracts | One to four sessions per result |
 | `refuter` | Tries to disprove every finding before it counts | One session per review |
 | `validator` | Checks whether a correction resolved what was sent back | One session per correction round |
+| `triage` | Decides whether an answer with no file changes needs the full check | One short session per such turn; `off` checks every answer in full |
 
 A choice is written `route:model`, optionally with a reasoning level:
 `codex:gpt-6-astra@high`. Levels are `low`, `medium`, `high`, `xhigh` and
@@ -77,6 +78,7 @@ tesota models agent openrouter:poolside/laguna-s-2.1:free
 tesota models reviewer openrouter:nvidia/nemotron-3-super-120b-a12b:free
 tesota models refuter openrouter:nvidia/nemotron-3-super-120b-a12b:free
 tesota models validator openrouter:nvidia/nemotron-3-super-120b-a12b:free
+tesota models triage openrouter:nvidia/nemotron-3-super-120b-a12b:free
 ```
 
 On Tesota's review evaluation, Nemotron as reviewer and refuter found every
