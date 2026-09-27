@@ -1,6 +1,8 @@
+import { createRequire } from "node:module";
+import { arch, platform, release } from "node:os";
 import { ModelRuntime, type SessionManager, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { parseModelChoice, type ReasoningLevel } from "../model-roles.js";
+import { type ModelRoute, parseModelChoice, type ReasoningLevel } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ClaudeCodeSession } from "./claude-code-session.js";
 import { TesotaCredentials } from "./tesota-credentials.js";
@@ -28,7 +30,28 @@ function reasoningOf(target: ModelTarget): { reasoning?: ReasoningLevel } {
 }
 
 /** Pi's provider for each route it serves. */
-const piProviders = { codex: "openai-codex", anthropic: "anthropic" } as const;
+const piProviders = { codex: "openai-codex", anthropic: "anthropic", openrouter: "openrouter", opencode: "opencode",
+  "opencode-go": "opencode-go" } as const satisfies Partial<Record<ModelRoute, string>>;
+
+/** How Tesota names itself to a gateway, as OpenCode Go asks of every client: its own name and version, and the system. */
+export function tesotaUserAgent(): string {
+  const manifest: unknown = createRequire(import.meta.url)("../../package.json");
+  const version = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, "version") : undefined;
+  return `tesota/${typeof version === "string" ? version : "0.0.0"} (${platform()} ${release()}; ${arch()})`;
+}
+
+/**
+ * The headers that name Tesota on a gateway route (decision 031), in place
+ * of Pi's own. Pi adds OpenCode's `x-opencode-session` from the
+ * conversation's id, which OpenCode needs to route and cache; the client is
+ * Tesota. OpenRouter is sent no app attribution, which would list Tesota
+ * publicly in its rankings.
+ */
+function identityHeaders(route: ModelRoute): Record<string, string> | undefined {
+  if (route === "openrouter") return { "User-Agent": tesotaUserAgent() };
+  if (route === "opencode" || route === "opencode-go") return { "User-Agent": tesotaUserAgent(), "x-opencode-client": "tesota" };
+  return undefined;
+}
 
 /**
  * The engine and model for a `route:model` choice. Pi's routes read Tesota's
@@ -45,7 +68,9 @@ export async function openModelTarget(choice: string, signal?: AbortSignal,
     ...(signal === undefined ? {} : { signal }) });
   const model = modelRuntime.getModel(piProviders[parsed.route], parsed.model);
   if (model === undefined) throw new Error(`${choice} is unavailable. Check tesota models and tesota auth status.`);
-  return { engine: "pi", modelRuntime, model, ...reasoning };
+  const identity = identityHeaders(parsed.route);
+  return { engine: "pi", modelRuntime, model: identity === undefined ? model : { ...model, headers: { ...model.headers, ...identity } },
+    ...reasoning };
 }
 
 /** The model a role uses, and where its token usage is counted. */

@@ -8,8 +8,17 @@ import { type JudgeIndependence, judgeIndependence } from "./verification/judge-
  * refuses, since an operator with one plan may have no other model.
  */
 
-/** The lab behind each route's models. */
-const routeLab: Readonly<Record<ModelRoute, string>> = { codex: "OpenAI", anthropic: "Anthropic", "claude-code": "Anthropic" };
+/** The lab behind every model of a route that serves one lab's models. */
+const routeLab: Readonly<Partial<Record<ModelRoute, string>>> = { codex: "OpenAI", anthropic: "Anthropic", "claude-code": "Anthropic" };
+/** The lab behind an OpenRouter vendor, as OpenRouter names it in `vendor/model`. */
+const vendorLab: Readonly<Record<string, string>> = { openai: "OpenAI", anthropic: "Anthropic", google: "Google", "x-ai": "xAI",
+  "z-ai": "Z.ai", moonshotai: "Moonshot AI", qwen: "Alibaba", deepseek: "DeepSeek", minimax: "MiniMax", xiaomi: "Xiaomi",
+  meta: "Meta", "meta-llama": "Meta", mistralai: "Mistral AI", nvidia: "NVIDIA", inclusionai: "inclusionAI", tencent: "Tencent",
+  meituan: "Meituan", "bytedance-seed": "ByteDance", amazon: "Amazon", cohere: "Cohere" };
+/** The lab behind an OpenCode model, by the family its id starts with. */
+const familyLab: Readonly<Record<string, string>> = { claude: "Anthropic", gpt: "OpenAI", gemini: "Google", grok: "xAI", glm: "Z.ai",
+  kimi: "Moonshot AI", qwen: "Alibaba", deepseek: "DeepSeek", minimax: "MiniMax", mimo: "Xiaomi", muse: "Meta", nemotron: "NVIDIA",
+  ling: "inclusionAI", hy: "Tencent", longcat: "Meituan" };
 /** Claude Code's aliases name a family and follow its newest model. */
 const claudeFamilies = ["opus", "sonnet", "fable", "haiku"] as const;
 
@@ -17,23 +26,49 @@ function claudeFamily(model: string): string | undefined {
   return claudeFamilies.find((family) => model === family || model.startsWith(`claude-${family}-`));
 }
 
+/** An alias that follows a family's newest model: Claude Code's `opus`, or OpenRouter's `~anthropic/claude-opus-latest`. */
+function isAlias(model: string): boolean {
+  return (claudeFamilies as readonly string[]).includes(model) || model.endsWith("-latest");
+}
+
 /**
- * Whether two choices run the same model: the same id on a route of the same
- * lab, or a Claude Code alias and a model of its family, which the alias may
+ * A choice's lab and the model itself, the same on every route: without
+ * OpenRouter's vendor, its `:variant` or its alias mark, and with its dots
+ * as the other routes' dashes (`claude-opus-5.5` is `claude-opus-5-5`). A
+ * router, a stealth model or an unknown vendor has no known lab.
+ */
+function identity(choice: string): { lab: string; model: string } | undefined {
+  const parsed = parseModelChoice(choice);
+  if (parsed === undefined) return undefined;
+  const { route } = parsed;
+  let model = parsed.model;
+  let lab = routeLab[route];
+  if (route === "openrouter") {
+    const [vendor = "", name] = model.replace(/^~/u, "").replace(/:[^/]*$/u, "").split("/");
+    if (name === undefined) return undefined;
+    lab = vendorLab[vendor];
+    model = name;
+  } else if (route === "opencode" || route === "opencode-go") {
+    lab = familyLab[model.split(/[-.\d]/u)[0] ?? ""];
+  }
+  return lab === undefined ? undefined : { lab, model: model.replaceAll(".", "-") };
+}
+
+/**
+ * Whether two choices run the same model: the same model from the same lab,
+ * on any route, or an alias and a model of its family, which the alias may
  * currently resolve to.
  */
 export function sameModel(first: string, second: string): boolean {
-  const a = parseModelChoice(first);
-  const b = parseModelChoice(second);
-  if (a === undefined || b === undefined || routeLab[a.route] !== routeLab[b.route]) return false;
+  const a = identity(first);
+  const b = identity(second);
+  if (a === undefined || b === undefined || a.lab !== b.lab) return false;
   if (a.model === b.model) return true;
-  const aliased = (claudeFamilies as readonly string[]).includes(a.model) || (claudeFamilies as readonly string[]).includes(b.model);
-  return aliased && claudeFamily(a.model) !== undefined && claudeFamily(a.model) === claudeFamily(b.model);
+  return (isAlias(a.model) || isAlias(b.model)) && claudeFamily(a.model) !== undefined && claudeFamily(a.model) === claudeFamily(b.model);
 }
 
 function lab(choice: string): string | undefined {
-  const parsed = parseModelChoice(choice);
-  return parsed === undefined ? undefined : routeLab[parsed.route];
+  return identity(choice)?.lab;
 }
 
 /** Each role that judges another's output, and what it judges. */

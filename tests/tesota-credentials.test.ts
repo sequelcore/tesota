@@ -106,3 +106,23 @@ it("keeps an Anthropic API key beside the Codex login, and never accepts a claud
     expect(await next.read(provider)).toEqual(secret);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+it("keeps an OpenRouter key or its browser sign-in, and one OpenCode key for Zen and Go", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tesota-gateway-auth-"));
+  try {
+    const store = new TesotaCredentials(join(root, "auth"));
+    // OpenRouter's sign-in issues a lasting key, which Pi keeps as an OAuth credential with no refresh token.
+    const signedIn: OAuthCredential = { type: "oauth", access: "TEST_OPENROUTER_KEY", refresh: "", expires: Number.MAX_SAFE_INTEGER };
+    await store.modify("openrouter", async () => signedIn);
+    expect(await store.read("openrouter")).toEqual(signedIn);
+    await store.modify("openrouter", async () => ({ type: "api_key", key: "TEST_PASTED_KEY" }));
+    await expect(store.modify("openrouter", async () => ({ type: "oauth", access: "", refresh: "", expires: 0 }))).rejects.toThrow();
+    await expect(store.modify("opencode", async () => signedIn)).rejects.toThrow("Only an OpenCode API key can be stored");
+    await store.modify("opencode-go", async () => ({ type: "api_key", key: "TEST_OPENCODE_KEY" }));
+    expect(await store.read("opencode")).toEqual({ type: "api_key", key: "TEST_OPENCODE_KEY" });
+    expect(await readFile(join(root, "auth/opencode.json"), "utf8")).toContain("TEST_OPENCODE_KEY");
+    await store.delete("opencode");
+    expect(await store.read("opencode-go")).toBeUndefined();
+    expect(await store.read("openrouter")).toEqual({ type: "api_key", key: "TEST_PASTED_KEY" });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

@@ -407,7 +407,8 @@ export class CodingSession {
    */
   static async start(options: SessionStartOptions): Promise<CodingSession> {
     const root = realpathSync(options.cwd);
-    const settingsManager = SettingsManager.inMemory({ defaultTools: [], enableSkillCommands: false },
+    // Pi's install telemetry would also name Pi, not Tesota, to OpenRouter on every call.
+    const settingsManager = SettingsManager.inMemory({ defaultTools: [], enableSkillCommands: false, enableInstallTelemetry: false },
       { projectTrusted: false });
     const resourceLoader = new DefaultResourceLoader({ cwd: root, agentDir: root, settingsManager,
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,

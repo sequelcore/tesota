@@ -13,10 +13,13 @@ import * as z from "zod";
 
 /**
  * How Tesota reaches a model: `codex` through Pi and the operator's ChatGPT
- * plan, `anthropic` through Pi and an Anthropic API key, and `claude-code`
- * through the operator's own Claude Code, which signs in by itself.
+ * plan, `anthropic` through Pi and an Anthropic API key, `claude-code`
+ * through the operator's own Claude Code, which signs in by itself, and
+ * through Pi the gateways of decision 031: `openrouter` with an OpenRouter
+ * key, and OpenCode's `opencode` (Zen, pay as you go) and `opencode-go` (a
+ * subscription) with one OpenCode key.
  */
-export const MODEL_ROUTES = ["codex", "anthropic", "claude-code"] as const;
+export const MODEL_ROUTES = ["codex", "anthropic", "claude-code", "openrouter", "opencode", "opencode-go"] as const;
 export type ModelRoute = typeof MODEL_ROUTES[number];
 
 /**
@@ -29,11 +32,15 @@ export const ROUTE_BILLING: Readonly<Record<ModelRoute, Readonly<{ payer: string
   codex: { payer: "your ChatGPT plan's limits", metered: false },
   anthropic: { payer: "your Anthropic API key", metered: true },
   "claude-code": { payer: "your Claude Code sign-in", metered: false },
+  openrouter: { payer: "your OpenRouter credits", metered: true },
+  opencode: { payer: "your OpenCode Zen balance", metered: true },
+  "opencode-go": { payer: "your OpenCode Go subscription's limits", metered: false },
 };
 
 /** The engine that runs a route's models: Pi, or Claude Code through the Claude Agent SDK. */
 export type ModelEngine = "pi" | "claude-code";
-export const ROUTE_ENGINE: Readonly<Record<ModelRoute, ModelEngine>> = { codex: "pi", anthropic: "pi", "claude-code": "claude-code" };
+export const ROUTE_ENGINE: Readonly<Record<ModelRoute, ModelEngine>> = { codex: "pi", anthropic: "pi", "claude-code": "claude-code",
+  openrouter: "pi", opencode: "pi", "opencode-go": "pi" };
 
 /**
  * How much a model reasons (decision 029): the effort levels both engines
@@ -53,13 +60,22 @@ export interface ModelChoice {
   readonly reasoning?: ReasoningLevel;
 }
 
+/**
+ * A model id on each route. OpenRouter names a model `vendor/model`, with an
+ * optional `:variant` such as `:free`, and a `~` for an alias that follows a
+ * family's newest model; the other routes use plain ids.
+ */
+const plainModel = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u;
+const openRouterModel = /^~?[A-Za-z0-9][A-Za-z0-9._-]{0,49}(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,99})?(?::[A-Za-z0-9][A-Za-z0-9._-]{0,29})?$/u;
+
 /** Read `route:model` or `route:model@level`; undefined for anything else, including `off`. */
 export function parseModelChoice(value: string): ModelChoice | undefined {
   const separator = value.indexOf(":");
   if (separator <= 0) return undefined;
   const route = value.slice(0, separator);
   const [model = "", level, ...rest] = value.slice(separator + 1).split("@");
-  if (!(MODEL_ROUTES as readonly string[]).includes(route) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u.test(model)) return undefined;
+  if (!(MODEL_ROUTES as readonly string[]).includes(route)) return undefined;
+  if (!(route === "openrouter" ? openRouterModel : plainModel).test(model)) return undefined;
   if (rest.length > 0 || level !== undefined && !isReasoningLevel(level)) return undefined;
   return { route: route as ModelRoute, model, ...(level === undefined ? {} : { reasoning: level as ReasoningLevel }) };
 }

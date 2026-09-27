@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
-import { offeredChoices, offeredModels, runModelsCommand, type OfferedModel } from "../src/models-command.js";
+import { dataNotice, modelCost, offeredChoices, offeredModels, runModelsCommand, type OfferedModel } from "../src/models-command.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -120,4 +120,47 @@ it("lists each role with who pays for it and the model's list price, and sets on
   expect(output).toContain("  validator codex:gpt-6-sol@high          your ChatGPT plan's limits; list price $2 in and $10 out");
   expect(runModelsCommand(["judge", "codex:gpt-6-sol"], write, offered, path)).toBe(2);
   expect(runModelsCommand(["agent", "codex:gpt-9"], write, offered, path)).toBe(1);
+});
+
+it("reads OpenRouter's vendor/model:variant ids only on OpenRouter, and OpenCode's ids on Zen and Go", () => {
+  expect(parseModelChoice("openrouter:qwen/qwen3.8-27b:free")).toEqual({ route: "openrouter", model: "qwen/qwen3.8-27b:free" });
+  expect(parseModelChoice("openrouter:anthropic/claude-opus-5.5@high"))
+    .toEqual({ route: "openrouter", model: "anthropic/claude-opus-5.5", reasoning: "high" });
+  expect(parseModelChoice("openrouter:auto")).toEqual({ route: "openrouter", model: "auto" });
+  expect(parseModelChoice("opencode:big-pickle")).toEqual({ route: "opencode", model: "big-pickle" });
+  expect(parseModelChoice("opencode-go:glm-5.3@max")).toEqual({ route: "opencode-go", model: "glm-5.3", reasoning: "max" });
+  for (const value of ["openrouter:a//b", "openrouter:/b", "openrouter:a/b/c", "openrouter:a/b:", "opencode:a/b",
+    "opencode-go:x:free", "codex:a:free"]) {
+    expect(parseModelChoice(value)).toBeUndefined();
+  }
+});
+
+it("offers the gateways' models, with who pays and what a free model's provider may do with your code", () => {
+  const real = offeredModels();
+  for (const id of ["openrouter:qwen/qwen3.8-27b:free", "openrouter:anthropic/claude-opus-5.5", "opencode:big-pickle",
+    "opencode:gpt-6-luna", "opencode-go:glm-5.3"]) {
+    expect(real.some((model) => model.id === id), id).toBe(true);
+  }
+  const find = (id: string): OfferedModel | undefined => real.find((model) => model.id === id);
+  expect(modelCost(find("opencode:gpt-6-luna"))).toBe("your OpenCode Zen balance, $0.1 in and $0.5 out per million tokens");
+  expect(modelCost(find("opencode-go:glm-5.3"))).toMatch(/^your OpenCode Go subscription's limits; list price/u);
+  expect(modelCost(find("openrouter:qwen/qwen3.8-27b:free"))).toMatch(/^free on OpenRouter/u);
+  // OpenRouter's own routers pick a model per request, so no one price applies.
+  expect(modelCost(find("openrouter:auto"))).toBe("your OpenRouter credits; the price is the model it picks");
+  for (const id of ["openrouter:qwen/qwen3.8-27b:free", "openrouter:openrouter/free", "opencode:big-pickle",
+    "opencode-go:muse-spark-1.3-contributor"]) {
+    expect(dataNotice(id), id).toMatch(/may keep your prompts and code/u);
+  }
+  for (const id of ["openrouter:anthropic/claude-opus-5.5", "opencode:gpt-6-luna", "opencode-go:glm-5.3", "codex:gpt-6-luna"]) {
+    expect(dataNotice(id), id).toBeUndefined();
+  }
+});
+
+it("lists a large route by count, and all of its models on request", () => {
+  const writes: string[] = [];
+  expect(runModelsCommand([], (text) => { writes.push(text); }, offeredModels(), file())).toBe(0);
+  expect(writes.join("")).toMatch(/openrouter: \d+ models, \d+ of them free; tesota models openrouter lists them/u);
+  writes.length = 0;
+  expect(runModelsCommand(["openrouter"], (text) => { writes.push(text); }, offeredModels(), file())).toBe(0);
+  expect(writes.join("")).toContain("qwen/qwen3.8-27b:free");
 });

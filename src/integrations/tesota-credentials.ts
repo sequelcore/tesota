@@ -10,14 +10,19 @@ import { windowsPowerShell, windowsSystemProgram } from "../windows-system.js";
 const maxBytes = 64 * 1024;
 
 /**
- * The credentials Tesota keeps, one kind per provider (decision 021): Codex's
- * OAuth login, and an Anthropic API key. An Anthropic OAuth credential is
- * never accepted: a claude.ai login belongs to Claude Code, not to Tesota.
+ * The credentials Tesota keeps, and the kinds each provider may hold
+ * (decisions 021 and 031): Codex's OAuth login, an Anthropic API key, an
+ * OpenRouter key, pasted or issued by its browser sign-in, and one OpenCode
+ * key that Zen and Go share, kept in one file. An Anthropic OAuth credential
+ * is never accepted: a claude.ai login belongs to Claude Code, not to Tesota.
  */
 const providers = {
-  "openai-codex": { type: "oauth", file: "codex" },
-  anthropic: { type: "api_key", file: "anthropic" },
-} as const;
+  "openai-codex": { types: ["oauth"], file: "codex", refused: "Only valid Codex OAuth credentials are supported" },
+  anthropic: { types: ["api_key"], file: "anthropic", refused: "Only an Anthropic API key can be stored" },
+  openrouter: { types: ["api_key", "issued_key"], file: "openrouter", refused: "Only an OpenRouter key can be stored" },
+  opencode: { types: ["api_key"], file: "opencode", refused: "Only an OpenCode API key can be stored" },
+  "opencode-go": { types: ["api_key"], file: "opencode", refused: "Only an OpenCode API key can be stored" },
+} as const satisfies Record<string, { types: readonly ("oauth" | "api_key" | "issued_key")[]; file: string; refused: string }>;
 type ProviderId = keyof typeof providers;
 
 function isProvider(id: string): id is ProviderId {
@@ -31,14 +36,26 @@ function isOAuthCredential(value: unknown): value is Credential {
     "expires" in value && typeof value.expires === "number" && Number.isFinite(value.expires);
 }
 
+/**
+ * OpenRouter's sign-in exchanges its code for a lasting, user-controlled key,
+ * which Pi keeps as an OAuth credential with no refresh token.
+ */
+function isIssuedKeyCredential(value: unknown): value is Credential {
+  return typeof value === "object" && value !== null && "type" in value && value.type === "oauth" &&
+    "access" in value && typeof value.access === "string" && value.access.length > 0 &&
+    "refresh" in value && value.refresh === "" && "expires" in value && value.expires === Number.MAX_SAFE_INTEGER;
+}
+
 function isApiKeyCredential(value: unknown): value is Credential {
   return typeof value === "object" && value !== null && "type" in value && value.type === "api_key" &&
     "key" in value && typeof value.key === "string" && value.key.trim().length > 0 && !("env" in value);
 }
 
-/** Whether a record is the one kind of credential this provider may hold. */
+const kinds = { oauth: isOAuthCredential, api_key: isApiKeyCredential, issued_key: isIssuedKeyCredential } as const;
+
+/** Whether a record is a kind of credential this provider may hold. */
 function isStorable(id: ProviderId, value: unknown): value is Credential {
-  return providers[id].type === "oauth" ? isOAuthCredential(value) : isApiKeyCredential(value);
+  return (providers[id].types as readonly (keyof typeof kinds)[]).some((kind) => kinds[kind](value));
 }
 
 function readErrorCode(error: unknown): string | undefined {
@@ -131,7 +148,8 @@ export class TesotaCredentials implements CredentialStore {
   async list(options?: AuthOperationOptions): Promise<readonly CredentialInfo[]> {
     const saved: CredentialInfo[] = [];
     for (const id of Object.keys(providers) as ProviderId[]) {
-      if (await this.read(id, options) !== undefined) saved.push({ providerId: id, type: providers[id].type });
+      const credential = await this.read(id, options);
+      if (credential !== undefined) saved.push({ providerId: id, type: credential.type });
     }
     return saved;
   }
@@ -163,9 +181,7 @@ export class TesotaCredentials implements CredentialStore {
       const next = await fn(current);
       options?.signal?.throwIfAborted();
       if (next === undefined) return current;
-      if (!isStorable(provider, next)) {
-        throw new Error(provider === "anthropic" ? "Only an Anthropic API key can be stored" : "Only valid Codex OAuth credentials are supported");
-      }
+      if (!isStorable(provider, next)) throw new Error(providers[provider].refused);
       const bytes = Buffer.from(JSON.stringify(next));
       if (bytes.length > maxBytes) throw new Error("Credential exceeds storage bound");
       const temporary = join(this.directory, `${randomUUID()}.tmp`);

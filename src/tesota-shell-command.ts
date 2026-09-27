@@ -11,7 +11,7 @@ import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
 import { ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
-import { modelCost, offeredChoices, offeredModels, type OfferedModel, routeListing } from "./models-command.js";
+import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, routeListing } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
@@ -565,7 +565,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const newConversationNote = "It starts a new conversation with your next request and will not have this conversation. " +
     "Tesota sends it a brief of this session: your requests for the pending changes, the changes, open findings " +
     "and the agent's last reply.";
-  /** Judges of this session's agent that share its model or lab (decision 028), after a switch. */
+  /** After a switch: judges of this session's agent that share its model or lab (decision 028), and a free model's data use. */
   const warnJudges = (id: string, choice: string): void => {
     const warnings = judgeWarnings({ ...readModelChoices(), agent: choice }).filter((warning) => warning.author === "agent");
     // The same model is a warning, colored; a shared lab is a note, dimmed like Tesota's other notes.
@@ -573,6 +573,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const lab = describeJudgeWarnings(warnings.filter((warning) => warning.level === "same_lab"));
     if (same !== "") surface.writeTo(id, same, "warning");
     if (lab !== "") surface.writeTo(id, lab, "info");
+    // A free gateway model may keep the repository's code (decision 031).
+    const notice = dataNotice(choice);
+    if (notice !== undefined) surface.writeTo(id, `Free model: ${notice}. Choose a paid model for code you would not share.`, "warning");
   };
   const agentModel: AgentModelCommands = {
     change: async (id, argument) => {

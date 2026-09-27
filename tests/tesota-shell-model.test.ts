@@ -136,6 +136,15 @@ it("starts a new conversation on another engine, says so, and sends the brief wi
   created.dispose?.();
 });
 
+it("warns when the agent switches to a free model whose provider may keep the code", async () => {
+  const { created, said } = shell();
+  await created.session("session").work("Add a retry limit.");
+  await created.agentModel?.change("session", "openrouter:qwen/qwen3.8-27b:free");
+  expect(agents[0]?.switchModel).toHaveBeenCalled();
+  expect(said()).toContain("Free model: its provider may keep your prompts and code");
+  created.dispose?.();
+});
+
 it("hands off on the same model with /handoff", async () => {
   const { created, said } = shell();
   await created.session("session").work("Add a retry limit.");

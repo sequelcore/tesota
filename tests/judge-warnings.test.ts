@@ -34,3 +34,19 @@ it("checks the advisor against the roles that judge work it shaped, and skips ro
   expect(judgeWarnings(choices({ agent: "claude-code:opus", reviewer: "codex:gpt-6-astra", refuter: "claude-code:fable",
     validator: "claude-code:haiku" })).some((warning) => warning.author === "advisor")).toBe(false);
 });
+
+it("knows a model's lab through the gateways, and the same model on any route", () => {
+  expect(sameModel("openrouter:anthropic/claude-opus-5.5", "anthropic:claude-opus-5-5")).toBe(true);
+  expect(sameModel("opencode:gpt-6-luna", "codex:gpt-6-luna")).toBe(true);
+  expect(sameModel("opencode-go:glm-5.3", "openrouter:z-ai/glm-5.3")).toBe(true);
+  expect(sameModel("openrouter:qwen/qwen3.8-27b:free", "openrouter:qwen/qwen3.8-27b")).toBe(true);
+  expect(sameModel("opencode:claude-opus-5-5", "claude-code:opus")).toBe(true);
+  expect(sameModel("opencode:glm-5.3", "opencode:kimi-k3")).toBe(false);
+  const warned = judgeWarnings(choices({ agent: "opencode-go:kimi-k3", reviewer: "openrouter:moonshotai/kimi-k2.6",
+    refuter: "opencode:gpt-6-sol", validator: "codex:gpt-6-luna" }));
+  expect(warned).toContainEqual(expect.objectContaining({ level: "same_lab", author: "agent", judge: "reviewer",
+    text: "the reviewer judges the agent's work, and both are Moonshot AI models" }));
+  // A router picks the model per request, and a stealth model hides its lab: no warning claims either way.
+  expect(judgeWarnings(choices({ agent: "openrouter:auto", reviewer: "openrouter:auto", refuter: "opencode:big-pickle",
+    validator: "opencode:big-pickle" })).filter((warning) => warning.author === "agent")).toEqual([]);
+});

@@ -8,14 +8,29 @@ import { deviceCodeAuth, deviceCodeTerminalRenderer, loginToCodex } from "./inte
 import { TesotaCredentials } from "./integrations/tesota-credentials.js";
 
 /**
- * `tesota auth` for each route (decision 021). Tesota stores Codex's OAuth
- * login and an Anthropic API key. It never holds a Claude subscription login:
- * for the `claude-code` route it runs Claude Code's own sign-in and status,
- * and reads only whether Claude Code is signed in and how.
+ * `tesota auth` for each route (decisions 021 and 031). Tesota stores Codex's
+ * OAuth login, an Anthropic API key, an OpenRouter key and one OpenCode key,
+ * which Zen and Go share. It never holds a Claude subscription login: for the
+ * `claude-code` route it runs Claude Code's own sign-in and status, and reads
+ * only whether Claude Code is signed in and how.
  */
 
-const routes = ["codex", "anthropic", "claude-code"] as const;
+const routes = ["codex", "anthropic", "claude-code", "openrouter", "opencode"] as const;
 type AuthRoute = typeof routes[number];
+
+/** A route whose credential is a key the operator pastes: its name, Pi's provider, the key's environment variable, and where to get one. */
+interface KeyRoute {
+  readonly label: string;
+  readonly provider: string;
+  readonly variable: string;
+  readonly source: string;
+}
+
+const keyRoutes: Readonly<Record<"anthropic" | "openrouter" | "opencode", KeyRoute>> = {
+  anthropic: { label: "Anthropic API", provider: "anthropic", variable: "ANTHROPIC_API_KEY", source: "https://console.anthropic.com" },
+  openrouter: { label: "OpenRouter", provider: "openrouter", variable: "OPENROUTER_API_KEY", source: "https://openrouter.ai/settings/keys" },
+  opencode: { label: "OpenCode (Zen and Go)", provider: "opencode", variable: "OPENCODE_API_KEY", source: "https://opencode.ai/auth" },
+};
 
 /** The Claude Code program bundled with the Claude Agent SDK for this platform, unmodified. */
 export function claudeCodeExecutable(): string {
@@ -91,23 +106,25 @@ async function codex(action: string, credentials: TesotaCredentials): Promise<nu
   } finally { cancel.abort(); clearTimeout(watchdog); }
 }
 
-async function anthropic(action: string, credentials: TesotaCredentials): Promise<number> {
+async function pastedKey(route: "anthropic" | "openrouter" | "opencode", action: string, credentials: TesotaCredentials): Promise<number> {
+  const { label, provider, variable, source } = keyRoutes[route];
   if (action === "status") {
-    const saved = await credentials.read("anthropic") !== undefined;
-    const ambient = (process.env["ANTHROPIC_API_KEY"] ?? "").length > 0;
-    console.log(saved ? "Anthropic API: saved key available." : ambient
-      ? "Anthropic API: ANTHROPIC_API_KEY is set; no key saved." : "Anthropic API: no key. Run tesota auth login anthropic.");
+    const saved = await credentials.read(provider);
+    const ambient = (process.env[variable] ?? "").length > 0;
+    console.log(saved !== undefined ? `${label}: saved ${saved.type === "oauth" ? "key from your sign-in" : "key"} available.` : ambient
+      ? `${label}: ${variable} is set; no key saved.` : `${label}: no key. Run tesota auth login ${route}.`);
     return 0;
   }
   if (action === "logout") {
-    await credentials.delete("anthropic");
-    console.log("Anthropic API: saved key removed.");
+    await credentials.delete(provider);
+    console.log(`${label}: saved key removed.`);
     return 0;
   }
-  const key = (await readSecret("Anthropic API key (not shown): ")).trim();
+  console.log(`Create a key at ${source}.`);
+  const key = (await readSecret(`${label} key (not shown): `)).trim();
   if (key.length === 0) { console.error("No key entered; nothing was saved."); return 1; }
-  await credentials.modify("anthropic", async () => ({ type: "api_key", key }));
-  console.log("Anthropic API: key saved for future Tesota runs.");
+  await credentials.modify(provider, async () => ({ type: "api_key", key }));
+  console.log(`${label}: key saved for future Tesota runs.`);
   return 0;
 }
 
@@ -132,17 +149,18 @@ async function claudeCode(action: string): Promise<number> {
   });
 }
 
-export async function runAuthCommand(action: string, route: string = "codex"): Promise<number> {
+export async function runAuthCommand(action: string, route: string = "codex",
+  credentials: TesotaCredentials = new TesotaCredentials()): Promise<number> {
   if (!["login", "status", "logout"].includes(action) || !(routes as readonly string[]).includes(route)) {
-    console.error("Usage: tesota auth <login|status|logout> [codex|anthropic|claude-code]");
+    console.error(`Usage: tesota auth <login|status|logout> [${routes.join("|")}]`);
     return 2;
   }
-  const credentials = new TesotaCredentials();
   try {
     switch (route as AuthRoute) {
       case "codex": return await codex(action, credentials);
-      case "anthropic": return await anthropic(action, credentials);
       case "claude-code": return await claudeCode(action);
+      case "anthropic": case "openrouter": case "opencode": return await pastedKey(route as "anthropic" | "openrouter" | "opencode",
+        action, credentials);
     }
   } catch {
     console.error(`${route} authentication operation failed. Credentials were not printed. Check private storage or retry after resolving the failure.`);
