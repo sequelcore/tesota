@@ -1,4 +1,4 @@
-import { stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
+import { HStack, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
 import { createTesotaShellTerminal } from "../src/tesota-shell-terminal.js";
 import type { TranscriptEntry } from "../src/tesota-shell-transcript.js";
@@ -282,6 +282,34 @@ it("moves once per key press when the terminal also reports releases", () => {
   terminal.send("\x1b[1;1:3B");
   tui.renderNow(true);
   expect(visible(terminal)).toContain("› /next");
+  shell.stop();
+});
+
+it("never renders a whole horizontal stack in a frame, whatever the conversation's length or the panels open", () => {
+  // pi-tui sizes an HStack's columns by rendering each whole; an HStack inside a column made every frame composite the
+  // entire conversation, 170 ms at 200 replies (findings, 2026-09-27).
+  const terminal = new TestTerminal();
+  terminal.columns = 200;
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const entries: TranscriptEntry[] = Array.from({ length: 300 }, (_, index) => index % 2 === 0
+    ? { kind: "agent", text: `Reply ${index} with **bold** text and \`code\`.` }
+    : { kind: "tool", tool: "read", subject: `src/file-${index}.ts`, failed: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, initialSession: { id: "s", title: "Long", entries } });
+  shell.start();
+  shell.ask("> ").catch(() => undefined);
+  tui.renderNow(true);
+  const whole = vi.spyOn(HStack.prototype, "render");
+  shell.refreshElapsed();
+  tui.renderNow(false);
+  shell.inspect({ title: "Review · 1 file", summary: "  edit   src/a.ts", detail: "Checks passed",
+    diff: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new" });
+  tui.renderNow(false);
+  expect(visible(terminal)).toContain("Checks passed");
+  terminal.send("\x1bs");
+  tui.renderNow(false);
+  expect(whole).not.toHaveBeenCalled();
+  whole.mockRestore();
   shell.stop();
 });
 

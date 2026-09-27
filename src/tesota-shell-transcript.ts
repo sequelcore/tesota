@@ -69,17 +69,31 @@ class ToolBlock implements Component {
     this.subject = subject;
   }
 
-  update(output: string): void { this.#output = output; }
+  /** The lines last drawn and their width: a finished call no longer changes, and every frame asks for it again. */
+  #cached: { width: number; lines: string[] } | undefined;
+
+  update(output: string): void { this.#output = output; this.#cached = undefined; }
   finish(failed: boolean, output: string, change?: AgentChange): void {
     this.#state = failed ? "failed" : "done";
     this.#output = output;
     this.#change = failed ? undefined : change;
+    this.#cached = undefined;
   }
-  stop(): void { if (this.#state === "running") this.#state = "stopped"; }
+  stop(): void {
+    if (this.#state === "running") this.#state = "stopped";
+    this.#cached = undefined;
+  }
 
-  invalidate(): void {}
+  invalidate(): void { this.#cached = undefined; }
 
   render(width: number): string[] {
+    if (this.#cached?.width === width) return this.#cached.lines;
+    const lines = this.#lines(width);
+    this.#cached = { width, lines };
+    return lines;
+  }
+
+  #lines(width: number): string[] {
     const color = this.#state === "failed" ? this.theme.error : this.#state === "done" ? this.theme.success :
       this.#state === "stopped" ? this.theme.warning : this.theme.accent;
     const name = toolNames[this.tool] ?? this.tool;
@@ -130,11 +144,13 @@ class ExpandableNotice implements Component {
       .replace(/:$/u, "");
     return `${truncateToWidth(heading, 42)} · ${lines.length - 1} lines hidden · Alt+D /details`;
   }
-  toggle(): void { this.#expanded = !this.#expanded; }
-  invalidate(): void {}
+  #shown: Text | undefined;
+  toggle(): void { this.#expanded = !this.#expanded; this.#shown = undefined; }
+  invalidate(): void { this.#shown = undefined; }
   render(width: number): string[] {
     const text = this.#expanded ? `${this.#text}\nAlt+D or /details to collapse` : this.preview;
-    return new Text(mutedText(text, this.#theme), 1, 0).render(width);
+    this.#shown ??= new Text(mutedText(text, this.#theme), 1, 0);
+    return this.#shown.render(width);
   }
 }
 
@@ -174,7 +190,6 @@ export class Transcript {
     const notice = this.#notices.at(-1 - index);
     if (notice === undefined) return false;
     notice.toggle();
-    this.container.invalidate();
     return true;
   }
 
@@ -261,7 +276,7 @@ export class Transcript {
     if (previous !== undefined && !(previous instanceof ToolBlock && component instanceof ToolBlock)) {
       this.container.addChild(new Spacer(1));
     }
+    // pi-tui's Container.invalidate() clears every child's cache; a new entry needs none cleared.
     this.container.addChild(component);
-    this.container.invalidate();
   }
 }

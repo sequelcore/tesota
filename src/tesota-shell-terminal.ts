@@ -305,6 +305,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly plan = new PlanPanel();
   private readonly footer = new Line();
   private readonly result: ResultPanel;
+  /** One scroll view for the result panel, kept across layouts so its position survives them. */
+  private readonly resultScroll: ScrollView;
   private readonly commandMenu: CommandMenu;
   private readonly modelPicker: ModelPicker;
   private readonly editor: Editor;
@@ -323,6 +325,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.sidebarHeader = new SessionSidebarHeader(this.theme);
     this.sidebar = new SessionRail(this.theme);
     this.result = new ResultPanel(this.theme);
+    this.resultScroll = new ScrollView(this.result, { scrollbar: "auto" });
     this.sidebarScroll = new ScrollView(this.sidebar, { scrollbar: "auto" });
     this.sessionHeading = new SessionHeading(this.theme, () => ({
       repository: basename(this.options.cwd), branch: this.branch, title: this.selected().title,
@@ -383,17 +386,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       { component: this.secondaryTitle, basis: "auto", shrink: 0 },
       { component: secondary?.scroll ?? new Text("", 0, 0), basis: 0, grow: 1, minSize: 1 },
     ], { gap: 1 });
-    const reading = new HStack([
-      { component: selected.scroll, basis: 0, grow: 1, minSize: 30,
-        visible: (viewport) => !this.showResult || viewport.width >= resultBesideWidth },
-      { component: comparison, basis: 48, shrink: 1, minSize: 30,
-        visible: (viewport) => this.split && secondary !== undefined && viewport.width >= comparisonWidth },
-      { component: new ScrollView(this.result, { scrollbar: "auto" }), basis: 0, grow: 1, minSize: 30,
-        visible: () => this.showResult },
-    ], { gap: 2 });
-    const content = new VStack([
+    // On a narrow terminal the result replaces the conversation in the session's column, above the prompt.
+    const resultInColumn = (): boolean => this.showResult && this.contentWidth(this.tui.terminal.columns) < resultBesideWidth;
+    const session = new VStack([
       { component: this.sessionHeading, basis: "auto", shrink: 0 },
-      { component: reading, basis: 0, grow: 1, minSize: 1 },
+      { component: selected.scroll, basis: 0, grow: 1, minSize: 1, visible: () => !resultInColumn() },
+      { component: this.resultScroll, basis: 0, grow: 1, minSize: 1, visible: () => resultInColumn() },
       { component: new VStack([{ component: this.plan, basis: "auto", visible: () => this.plan.visible },
         this.status, this.commandMenu, this.modelPicker, this.editor, this.footer]),
         basis: "auto", shrink: 1, minSize: 3 },
@@ -402,12 +400,24 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       { component: this.sidebarHeader, basis: "auto", shrink: 0 },
       { component: this.sidebarScroll, basis: 0, grow: 1, minSize: 1 },
     ], { gap: 1 });
+    // pi-tui sizes an HStack's columns by rendering each whole, every frame, so no HStack may hold one inside a
+    // column: a conversation nested there was composited line by line on each frame, 170 ms at 200 replies. The
+    // panels beside the conversation are the root's own columns instead, as Pi keeps its transcript in no HStack.
     this.tui.setLayoutRoot(new HStack([
       { component: sidebar, basis: sidebarWidth, shrink: 0,
         visible: (viewport) => sidebarPresentation(this.sidebarPreference, viewport.width) === "inline" },
-      { component: content, basis: 0, grow: 1, minSize: 30 },
+      { component: session, basis: 0, grow: 1, minSize: 30 },
+      { component: comparison, basis: 48, shrink: 1, minSize: 30,
+        visible: (viewport) => this.split && secondary !== undefined && this.contentWidth(viewport.width) >= comparisonWidth },
+      { component: this.resultScroll, basis: 0, grow: 1, minSize: 30,
+        visible: (viewport) => this.showResult && this.contentWidth(viewport.width) >= resultBesideWidth },
     ], { gap: 1 }));
     this.tui.requestRender();
+  }
+
+  /** What the terminal leaves for sessions and their panels beside an inline sidebar. */
+  private contentWidth(columns: number): number {
+    return columns - (sidebarPresentation(this.sidebarPreference, columns) === "inline" ? sidebarWidth + 1 : 0);
   }
 
   private sessionState(session: SessionView): SidebarSessionState {
@@ -738,9 +748,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.record(session, { kind: "review", title: inspection.title, text: inspection.summary }, true);
     if (id === this.selectedId) {
       // Beside the conversation there is room to show the diff at once; narrower, it waits for Alt+R.
-      const available = this.tui.terminal.columns -
-        (sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns) === "inline" ? sidebarWidth + 1 : 0);
-      if (available >= resultBesideWidth) this.showResult = true;
+      if (this.contentWidth(this.tui.terminal.columns) >= resultBesideWidth) this.showResult = true;
       this.compose();
     }
   }
