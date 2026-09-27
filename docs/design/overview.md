@@ -1,6 +1,7 @@
 # Overview
 
-**Tesota is an open-source agent for work that carries its evidence.** You
+**Tesota is an open-source, verification-first agent for work that carries
+its evidence.** You
 describe what you need, a coding agent does it in a separate copy of your
 repository, and you review the exact changes and what the checks establish
 before anything reaches your files. The [roadmap](../roadmap.md) owns status
@@ -76,9 +77,6 @@ why its evidence matters second, mechanism last. It never claims safety,
 reliability or autonomy beyond what the evidence supports, and never
 presents a passing check as proof that a change does what was asked.
 
-Tesota began as a deliberate reset of Kiln, whose code and roadmap it does
-not inherit ([Kiln reference](../research/kiln.md)).
-
 ## Name and identity
 
 Decisions 006 and 010; the original records, with the positioning review
@@ -96,6 +94,16 @@ animals depend on it, which makes it a keystone of its habitat
 For the project, the name suggests **a durable foundation that supports
 growth**. That is its intended meaning, not a literal translation, a
 dependability claim or an architecture term.
+
+**Why a new name.** Tesota replaced Kiln (decision 001). Kiln was meant to
+support its own development, but its scope and infrastructure grew faster
+than an everyday workflow reliable enough to depend on, and adding
+capabilities did not close that gap. Tesota reverses the order: a small loop
+that works end to end comes first, and a capability is added when a real use
+needs it and kept when evidence shows it helps. The name records that
+choice, the foundation before the growth it is meant to carry. Kiln's code,
+tests and lessons remain in the repository's history as a reference, not as
+a base or a roadmap ([Kiln reference](../research/kiln.md)).
 
 **What Tesota is called.** The category is **verification-first agent**, and
 the description:

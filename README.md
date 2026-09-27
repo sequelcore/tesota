@@ -1,10 +1,25 @@
 # Tesota
 
-**Tesota is an open-source agent for work that carries its evidence.** Ask for
-a change in your repository. A coding agent makes it in a separate copy,
-Tesota runs your checks and its own verifiers on exactly that result, an
-independent reviewer reads it against what you asked, and you decide whether
-to apply it. Nothing reaches your files until you do.
+**Tesota is an open-source, verification-first agent for work that carries
+its evidence.** Ask for a change in your repository. A coding agent makes it
+in a separate copy, Tesota runs your checks and its own verifiers on exactly
+that result, an independent reviewer reads it against what you asked, and
+you decide whether to apply it. Nothing reaches your files until you do.
+Software development is its first proving ground.
+
+## The name
+
+Tesota takes its name from *Olneya tesota*, the desert ironwood, *palo
+fierro* in Spanish: a tree of the Sonoran Desert whose wood is dense enough
+to sink in water, and under whose shelter other plants take root. The name stands for a durable foundation that supports growth.
+
+It is also a change of approach. Tesota replaced Kiln, whose scope and
+infrastructure grew faster than a workflow reliable enough to use every day.
+Tesota builds in the other order: a foundation that works first, then each
+capability once there is evidence it helps. The
+[design overview](docs/design/overview.md#name-and-identity) has the full
+identity, and the [Kiln reference](docs/research/kiln.md) preserves that
+history.
 
 ## Try it
 
@@ -54,9 +69,6 @@ clean review is advice; neither shows that the change does what you asked. The
 | Current status and next work | [Roadmap](docs/roadmap.md) |
 | What experiments established | [Findings](docs/findings.md) |
 | Build, test and contribution practice | [Development](docs/development.md) |
-
-Tesota began as a deliberate reset of Kiln; the [Kiln reference](docs/research/kiln.md)
-preserves that history without making its code or roadmap part of the product.
 
 Tesota is licensed under [Apache-2.0](LICENSE). Preserve [NOTICE](NOTICE) and
 retained third-party notices. See [CONTRIBUTING.md](CONTRIBUTING.md) and
