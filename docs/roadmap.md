@@ -68,6 +68,27 @@ project. They are listed here as they are chosen.
   result, folders as workspaces, and gates of stated strength that people
   can define. Folders and documents come first, then answers, then actions;
   her first real tasks decide the order within each.
+- **Ideas to bring from `feat/evidence-attribution`**, a branch from
+  2026-09-25 left unmerged, about 130 commits behind `dev`, whose decisions
+  022 and 023 collide with `dev`'s. Each is to be rebuilt on `dev` with its
+  tests, not merged:
+  - **Failed checks compared with the base.** When an approved check fails,
+    run it on the frozen base too; only a failure the change caused goes
+    back to the agent automatically, and the base stays frozen through one
+    review cycle.
+  - **Request obligations.** The reviewer lists what each request asks for
+    and judges each item met, partial, unmet or uncertain on the whole
+    result; the refuter challenges them, and confirmed gaps go to
+    correction. It catches missing work, not only defects: a judged gate
+    derived from the request, in decision 032's terms.
+  - **Turns with no file changes assessed against their requests**, so a
+    reply cannot silently stand in for requested code, and pending requests
+    survive an empty diff: the answer result of decision 032, for code.
+  - **Safer application.** Stop when any source file changed since the base;
+    keep each replaced original; install without replacing; mark a partial
+    effect "recovery required".
+
+  Two measured runs on the branch are in [findings](findings.md).
 
 ### 2. Measurement on public benchmarks
 
