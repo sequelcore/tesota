@@ -58,8 +58,10 @@ gates; people add their own per folder, and packaged tasks can carry theirs.
 | **Source-checked** | Each claim compared with the saved source it cites | Every total matches the invoice PDFs | Which claims held, which did not, which were not checked |
 | **Judged** | A model's reading against a stated criterion, then refuted as findings are | The event plan names a date, a place, a budget and who is responsible | Advice, never proof |
 
-A gate always says its strength, and a weaker gate is never reported as a
-stronger one: a recalculation that passes shows that formulas evaluate, not
+Tesota's built-in gates stay on by default wherever they apply, as the code
+verifiers are today, since they run only when relevant content changes
+(operator's decision, 2026-09-26). A gate always says its strength, and a
+weaker gate is never reported as a stronger one: a recalculation that passes shows that formulas evaluate, not
 that they are right, and a judged gate is a reading.
 
 ## Documents
@@ -110,8 +112,6 @@ if real use shows the terminal is the obstacle.
 
 ## Open questions
 
-- Whether Tesota's built-in gates stay on by default where they apply, as the
-  code verifiers are today, or become opt-in.
 - How people write their gates, and how a packaged task carries them.
 - The document tools' dependencies, such as LibreOffice for recalculation
   and rendering, and how Tesota provides them in the sandbox.
