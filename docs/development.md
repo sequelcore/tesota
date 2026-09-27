@@ -28,7 +28,9 @@ builds refresh that linked executable, and `bun unlink` removes it. The lint
 rule limits cyclomatic complexity to 20 in `src` and `tests` with no file
 exceptions. The Git workspace suites run in a separate Vitest process so a
 timed-out filesystem operation cannot contaminate later suites. The opt-in
-`TESOTA_LIVE_SANDBOX=1` suite exercises Docker Sandboxes' boundary live, and
+`TESOTA_LIVE_SANDBOX=1` suite exercises Docker Sandboxes' boundary live,
+`TESOTA_LIVE_MXC=1` exercises the native Windows sandbox on Windows 11 24H2 or
+later, and
 `TESOTA_LIVE_WEB=1` reads a real page and checks that a public name resolving
 to this computer is refused; add `TESOTA_LIVE_WEB_SEARCH=1` to search through
 the SearXNG in `~/.tesota/web.json`.

@@ -201,7 +201,11 @@ prepared. Command output names paths on that drive; Tesota's file tools keep
 the real ones. When the SDK exposes `enumeratePaths` and qualification finds
 the host reports `fs_enumerate`, the workspace keeps its real path instead.
 `bun install` still fails in this sandbox and uses the per-command retry on
-this computer. It may write the workspace, a temporary folder of the session's own
+this computer. Windows' own TLS checks certificate revocation on servers the
+allowlist does not reach, so Git runs with its OpenSSL backend inside the
+sandbox, set through Git's configuration variables for those commands only,
+and the network controls pass `--ssl-no-revoke` to Windows' `curl`; npm and
+Bun use their own TLS. It may write the workspace, a temporary folder of the session's own
 (set as `TEMP` and `TMP`, rather than the operator's shared one) and the
 repository's package cache. It may read the workspace, the tools installed on
 the host (`node`, `git`, `bun` from `PATH`) and system files, and never the

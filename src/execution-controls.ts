@@ -192,7 +192,11 @@ async function timeLimit(probe: Probe): Promise<ControlResult> {
 async function status(probe: Probe, url: string): Promise<string> {
   const body = `.tesota-control-body-${randomUUID()}`;
   try {
-    const run = await inside(probe, commandLine(probe.environment.shell, "curl", ["-sS", "-m", "15", "-o", body, "-w", "%{http_code}", url]));
+    // Windows' curl uses Windows' TLS, which checks revocation online on servers an allowlist does not reach;
+    // this control checks the network, so it leaves revocation out.
+    const revocation = probe.environment.shell === "powershell" ? ["--ssl-no-revoke"] : [];
+    const run = await inside(probe, commandLine(probe.environment.shell, "curl",
+      [...revocation, "-sS", "-m", "15", "-o", body, "-w", "%{http_code}", url]));
     return /\b(\d{3})\s*$/u.exec(run.output.trim())?.[1] ?? "000";
   } finally { await rm(join(probe.site.workspace, body), { force: true }); }
 }

@@ -51,7 +51,8 @@ it("writes each probe in the environment's own shell", async () => {
   await runControls(powershell, ["outside_read", "network_refused"], site, new AbortController().signal);
   // PowerShell runs a quoted program only through `&`, and its `curl` is an alias for Invoke-WebRequest.
   expect(commands[0]).toMatch(/^& ".+" "\.tesota-control-[^"]+\.cjs" "\.\.\/outside\/\.tesota-control-[^"]+\.txt"$/u);
-  expect(commands[1]).toMatch(/^& "curl\.exe" "-sS"/u);
+  // Windows' own TLS checks revocation online, which a sandbox's allowlist does not reach; the control checks the network.
+  expect(commands[1]).toMatch(/^& "curl\.exe" "--ssl-no-revoke" "-sS"/u);
   expect(hostProvider.guarantees.filesystem).toBe("host");
   const host = await hostProvider.prepare(site.workspace);
   expect(host.shell).toBe("posix");
