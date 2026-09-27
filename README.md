@@ -25,11 +25,13 @@ cd my-project
 tesota
 ```
 
-The agent can read, edit, create and delete files in its copy. With Docker
-Sandboxes set up (`tesota setup`), its commands run on their own inside a
-sandbox that sees only that copy and reaches only package registries;
-otherwise every command asks for your approval first and then runs with your
-permissions. See [Using Tesota](docs/guide/using-tesota.md) for the workflow
+The agent can read, edit, create and delete files in its copy. On Windows 11
+24H2 or later, its commands run on their own in Tesota's native sandbox, once
+Tesota has checked on your computer that the sandbox holds; with Docker
+Sandboxes set up (`tesota setup`), they can run in a virtual machine instead.
+A sandbox sees only that copy and reaches only package registries; without
+one, every command asks for your approval first and then runs with your
+permissions. `tesota sandbox` shows and chooses where they run. See [Using Tesota](docs/guide/using-tesota.md) for the workflow
 and limits. Run `bun unlink` in this checkout to remove the command.
 
 Tesota is pre-release and has been exercised live only on Windows. A passing

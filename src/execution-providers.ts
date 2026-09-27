@@ -1,39 +1,116 @@
 import { spawn } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import * as z from "zod";
 import { dockerSandboxesProvider } from "./docker-sandboxes-environment.js";
-import { confinesCommands, type ExecutionProvider, type ProviderReadiness, type SetupAction,
-  type SetupStep } from "./execution-environment.js";
+import type { ExecutionProvider, ProviderReadiness, SetupAction, SetupStep } from "./execution-environment.js";
+import { QualificationStore, type QualificationRecord, qualifyProvider } from "./execution-qualification.js";
 import { hostProvider } from "./host-environment.js";
+import { mxcProvider } from "./mxc-environment.js";
+import { runsWithoutAsking } from "./verification/sandbox-qualification.js";
 import { windowsPowerShell } from "./windows-system.js";
 
-/** Providers that can run commands in a sandbox, in order of preference. */
-const isolatingProviders: readonly ExecutionProvider[] = [dockerSandboxesProvider]
-  .filter((provider) => confinesCommands(provider.guarantees));
+/**
+ * Where the operator wants commands to run (decision 030): `auto` prefers the
+ * native sandbox, then Docker Sandboxes, then this computer; the others name
+ * one sandbox, or this computer, which asks before each command.
+ */
+export const SANDBOX_PREFERENCES = ["auto", "native", "docker", "host"] as const;
+export type SandboxPreference = typeof SANDBOX_PREFERENCES[number];
+export const DEFAULT_SANDBOX_FILE: string = join(homedir(), ".tesota", "sandbox.json");
 
-const allProviders: readonly ExecutionProvider[] = [...isolatingProviders, hostProvider];
+const orders: Readonly<Record<SandboxPreference, readonly ExecutionProvider[]>> = {
+  auto: [mxcProvider, dockerSandboxesProvider], native: [mxcProvider], docker: [dockerSandboxesProvider], host: [],
+};
+
+/** How the operator names each sandbox: the word they choose it by, the footer's label, and a description. */
+export const SANDBOX_NAMES: Readonly<Record<string, Readonly<{ choice: SandboxPreference; label: string; described: string }>>> = {
+  mxc: { choice: "native", label: "native", described: "the native sandbox" },
+  "docker-sandboxes": { choice: "docker", label: "Docker", described: "Docker Sandboxes" },
+};
+
+/** The sandboxes to try, in order, for the operator's choice. */
+export function providersFor(preference: SandboxPreference): readonly ExecutionProvider[] {
+  return orders[preference];
+}
+
+const preferenceSchema = z.strictObject({ use: z.enum(SANDBOX_PREFERENCES) });
+
+/** The operator's choice; `auto` until one is made. An unreadable file is an error, not a silent default. */
+export function readSandboxPreference(path: string = DEFAULT_SANDBOX_FILE): SandboxPreference {
+  if (!existsSync(path)) return "auto";
+  const parsed = preferenceSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+  if (!parsed.success) throw new Error(`${path} is not a valid sandbox choice; fix or delete it`);
+  return parsed.data.use;
+}
+
+/** Keep the operator's choice, replacing the file whole. */
+export function chooseSandboxPreference(preference: SandboxPreference, path: string = DEFAULT_SANDBOX_FILE): void {
+  const content = preferenceSchema.parse({ use: preference });
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, `${JSON.stringify(content, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    renameSync(temporary, path);
+  } finally { if (existsSync(temporary)) unlinkSync(temporary); }
+}
+
+/** A repository's package cache, shared by its sessions and owned by Tesota, never the operator's own. */
+export function packageCacheDirectory(repository: string): string {
+  const key = createHash("sha256").update(resolve(repository).toLocaleLowerCase("en-US")).digest("hex");
+  return join(homedir(), ".tesota", "cache", key);
+}
+
+const allProviders: readonly ExecutionProvider[] = [mxcProvider, dockerSandboxesProvider, hostProvider];
 
 /**
- * Where a session's commands run (decision 025): in a sandbox, where they run
- * without asking, or on the host, the operator's own computer, where each one
- * asks first. It follows from what is set up; nothing switches it.
+ * Where a session's commands run (decisions 025 and 030): in a sandbox, where
+ * they run without asking, or on the host, the operator's own computer, where
+ * each one asks first.
  */
 export type SessionExecution =
   | Readonly<{ commands: "sandbox"; provider: ExecutionProvider }>
   | Readonly<{ commands: "host"; provider: ExecutionProvider; missing: readonly Readonly<{ provider: string;
-      readiness: ProviderReadiness }>[] }>;
+      readiness: ProviderReadiness; qualification?: QualificationRecord }>[] }>;
+
+/** A provider's qualification on this machine, or undefined when it has none to run. */
+export type Trust = (provider: ExecutionProvider) => Promise<QualificationRecord | undefined>;
 
 /**
- * Commands run in a sandbox when an isolating provider is ready, and on the
- * host otherwise. There is no silent fallback: on the host every command asks
- * first.
+ * Qualify a provider on this machine once per fingerprint, keeping the result;
+ * `onProgress` hears when the controls run, which takes some seconds.
  */
-export async function chooseSessionExecution(candidates: readonly ExecutionProvider[] = isolatingProviders,
-  fallback: ExecutionProvider = hostProvider): Promise<SessionExecution> {
-  const missing: { provider: string; readiness: ProviderReadiness }[] = [];
+export async function qualifyOnThisMachine(provider: ExecutionProvider, onProgress?: (text: string) => void,
+  store: QualificationStore = new QualificationStore()): Promise<QualificationRecord | undefined> {
+  if (provider.fingerprint === undefined) return undefined;
+  const fingerprint = await provider.fingerprint();
+  const kept = store.read(provider.name, fingerprint);
+  if (kept !== undefined) return kept;
+  onProgress?.(`Checking ${SANDBOX_NAMES[provider.name]?.described ?? provider.name} on this computer`);
+  const record = await qualifyProvider(provider, { root: join(homedir(), ".tesota", "qualification-runs"),
+    signal: new AbortController().signal, fingerprint });
+  store.write(record);
+  return record;
+}
+
+/**
+ * Commands run in a sandbox when a provider is ready and its guarantees,
+ * qualified on this machine when it can be, confine both files and network
+ * (`runsWithoutAsking`, proved); on the host otherwise. There is no silent
+ * fallback: on the host every command asks first.
+ */
+export async function chooseSessionExecution(candidates: readonly ExecutionProvider[] = providersFor(readSandboxPreference()),
+  fallback: ExecutionProvider = hostProvider, trust: Trust = (provider) => qualifyOnThisMachine(provider)): Promise<SessionExecution> {
+  const missing: { provider: string; readiness: ProviderReadiness; qualification?: QualificationRecord }[] = [];
   for (const provider of candidates) {
     const readiness = await provider.readiness().catch((): ProviderReadiness => ({ ready: false,
       steps: [{ description: "The provider could not report whether it is ready" }] }));
-    if (readiness.ready && confinesCommands(provider.guarantees)) return { commands: "sandbox", provider };
-    missing.push({ provider: provider.name, readiness });
+    const qualification = readiness.ready ? await trust(provider).catch((): QualificationRecord | undefined => undefined) : undefined;
+    const guarantees = qualification?.guarantees ?? provider.guarantees;
+    if (runsWithoutAsking(readiness.ready, guarantees.filesystem, guarantees.network)) return { commands: "sandbox", provider };
+    missing.push({ provider: provider.name, readiness, ...qualification === undefined ? {} : { qualification } });
   }
   return { commands: "host", provider: fallback, missing };
 }
@@ -109,6 +186,11 @@ export function formatSetup(execution: SessionExecution): string {
   }
   const lines = ["The sandbox is not ready yet: commands run on this computer and ask before each one.", ""];
   for (const entry of execution.missing) {
+    const failed = entry.qualification?.results.filter((result) => !result.passed) ?? [];
+    if (failed.length > 0) {
+      lines.push(`${entry.provider}:`, ...failed.map((result) => `  - Its controls failed on this computer: ${result.detail}`));
+      continue;
+    }
     if (entry.readiness.ready) continue;
     lines.push(`${entry.provider}:`);
     for (const step of entry.readiness.steps) {

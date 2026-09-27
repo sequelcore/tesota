@@ -10,6 +10,7 @@ Usage: tesota [--help | -h | help]
        tesota models [<role> <route:model|default|off>]
        tesota prune [--force]
        tesota setup
+       tesota sandbox [use <auto|native|docker|host> | clean]
 
 Starts a coding session in the current repository. The agent works in a
 separate copy; you review its changes and checks before anything is applied.
@@ -45,6 +46,9 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   } else if (plan.remove.length > 0) {
     process.stdout.write("Nothing was removed. Run tesota prune --force to remove the listed workspaces.\n");
   }
+} else if (args[0] === "sandbox") {
+  const { runSandboxCommand } = await import("./sandbox-command.js");
+  process.exitCode = await runSandboxCommand(args.slice(1), (text) => { process.stdout.write(text); });
 } else if (args.length === 1 && args[0] === "setup") {
   const { runSetup, runSetupAction } = await import("./execution-providers.js");
   const { createInterface } = await import("node:readline/promises");

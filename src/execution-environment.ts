@@ -83,6 +83,8 @@ export interface ExecutionEnvironment {
   readonly shell: CommandShell;
   /** The program that runs JavaScript inside, for the execution controls' probes; `node` when absent. */
   readonly javascriptRuntime?: string;
+  /** Where the workspace appears to commands, when not at its own path, such as `T:\\` in the native Windows sandbox. */
+  readonly commandRoot?: string;
   readonly guarantees: EnvironmentGuarantees;
   /** What preparing this environment ran now; empty when nothing was needed or it was already prepared. */
   readonly preparation: readonly PreparationStep[];

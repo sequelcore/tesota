@@ -66,7 +66,7 @@ other harnesses fold into their modes are separate here:
 
 | | Rule |
 | --- | --- |
-| **Where commands run** | In a **sandbox** when a provider with a `workspace` filesystem and an `allowlist` network is ready, and on **this computer** (the host) otherwise. `tesota setup` decides it; nothing switches it during a session |
+| **Where commands run** | In a **sandbox** when a provider is ready and its `workspace` filesystem and `allowlist` network hold on this machine, and on **this computer** (the host) otherwise. The operator's choice (`tesota sandbox`, decision 030) orders the sandboxes; nothing switches it during a session |
 | **When the operator is asked** | Follows from where commands run and is not a setting: on this computer every command asks (yes, always for this session, or no); in the sandbox commands run without asking, and a destination the network refused asks |
 | **Where edits land** | Always the session's own copy of the repository; nothing reaches the repository until the operator applies a result after its checks and review |
 
@@ -141,13 +141,14 @@ setup inputs skips setup when nothing changed.
   a phase in which nothing can be written to the repository, which in Tesota
   lasts until the operator applies. A plan is asked for in the request.
 
-## Planned: native sandbox
+## Native sandbox
 
 Decision 030; evidence in the
 [native sandbox landscape](../research/native-sandbox-landscape.md). The goal
 is that, once Tesota is installed, commands run confined with no Docker, no
 administrator rights and no question per command, at close to the host's own
-speed: on Windows 11 first, then Linux and macOS.
+speed. It is built on Windows 11 24H2 and later (`src/mxc-environment.ts`);
+Linux and macOS come next.
 
 **Threat model.** It confines the agent's mistakes, such as deleting or
 overwriting the operator's files, and what prompt injection would try: reading
@@ -159,8 +160,11 @@ Sandboxes, does. The documentation says so wherever a provider is named.
 guarantee, Tesota's own controls pass on the operator's machine: a write
 outside the workspace, a read of the operator's credentials and documents, a
 direct connection to the internet, and stopping a command and its children.
-The check takes about a second, and its result is saved per machine and
-repeated when the operating system build or the provider's version changes.
+The check takes about 20 seconds the first time, in a scratch workspace
+(`src/execution-qualification.ts`); its result is saved in
+`~/.tesota/qualification.json` and repeated when the Windows build or the
+MXC release changes, and a result that withdrew a claim is tried again after
+a day, since a missing network can fail it once.
 A provider declares only the guarantees that passed, so a host where one
 control fails, such as macOS, where MXC's proxy is cooperative, keeps asking
 before commands without a rule written for it.
@@ -217,18 +221,24 @@ in the workspace and those folders, reads only the workspace, installed tools
 and system files; Docker Sandboxes' virtual machine is stricter, and is said
 to be.
 
-**Choice.** `tesota sandbox` shows each provider on this machine, what it
-proved and which one is in use; `tesota sandbox use auto`, the default,
-prefers the native sandbox, then Docker Sandboxes, then this computer, which
-asks before each command; `use mxc`, `use docker` or `use host` names one. The
-choice applies per session, when it opens, so one repository that is not
-trusted can have Docker while others run natively; a session never switches
-provider on its own.
+**Choice.** `tesota sandbox` shows each sandbox on this machine, what it
+proved here and which one is in use (`src/sandbox-command.ts`); `tesota
+sandbox use auto`, the default, prefers the native sandbox, then Docker
+Sandboxes, then this computer, which asks before each command; `use native`,
+`use docker` or `use host` names one. The choice, kept in
+`~/.tesota/sandbox.json`, applies to sessions opened afterwards; a session
+never switches provider on its own. The footer names the sandbox in use. The
+rule that commands run without asking only in a ready provider whose
+guarantees held on this machine is `runsWithoutAsking` in
+`src/verification/sandbox-qualification.ts`, proved beside the qualification
+rules.
 
-**Per command.** When the sandbox blocks a command that must run, the agent
-may ask to run it on this computer instead, and the operator is asked first,
-as for any command on this computer; as in Claude Code, the retry exists only
-with the operator's approval. Commands never move between two sandboxes: Docker
+**Per command.** In the native sandbox the agent's shell is Pi's `powershell`
+tool, and its instructions say where it runs. When the sandbox blocks a
+command the task needs, such as `bun install`, the agent may set
+`outside_sandbox`: the command then runs on this computer, in Git Bash, only
+after the operator approves it, as for any command on this computer; as in
+Claude Code, the retry exists only with the operator's approval. Commands never move between two sandboxes: Docker
 Sandboxes keeps `node_modules` on its own disk, so a command in one would not
 see what the other installed.
 
@@ -253,10 +263,11 @@ ms added to each command; the host's own disk and tools, with nothing copied
 or installed.
 
 **Phases.** (1) The live suite made provider-neutral, which Docker Sandboxes
-passes unchanged. (2) The `mxc` provider and the proxy on Windows. (3)
-Qualification, `tesota sandbox` and the per-command retry. (4) Linux with a
-tester, a clean Windows 11, then macOS. Later, with evidence from real use,
-the native sandbox as a project of its own.
+passes unchanged: done. (2) The `mxc` provider and the proxy on Windows: done.
+(3) Qualification, `tesota sandbox` and the per-command retry: done; a choice
+of sandbox from inside a session is next. (4) Linux with a tester, a clean
+Windows 11, then macOS. Later, with evidence from real use, the native
+sandbox as a project of its own.
 
 **Rejected.** MXC with every connection refused and no proxy: simpler, but
 installing packages would fail. Allowing registries by address: they sit

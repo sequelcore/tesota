@@ -75,11 +75,21 @@ reads it and answers the agent's question, so a page cannot make the agent
 act. Reviews never use the web. Sites that block automated requests, such as
 npm's, and pages built with JavaScript give little text.
 
-Commands run in a **sandbox** when Docker Sandboxes is set up, and on **this
-computer** otherwise, where each one asks you first. There is no mode to
-switch: `tesota setup` decides it, and the agent's edits always go to its own
-copy of your repository, never to the repository itself until you apply
-them. On Windows 11, the sandbox needs the Windows
+Commands run in a **sandbox** when one is ready, and on **this computer**
+otherwise, where each one asks you first; the agent's edits always go to its
+own copy of your repository, never to the repository itself until you apply
+them. On Windows 11 24H2 or later, the **native sandbox** needs nothing
+installed: the first time, Tesota checks on your computer, for about 20
+seconds, that it keeps your files, credentials and network out of reach, and
+uses it only if every check passes. In it the agent's commands run in
+Windows PowerShell, and the workspace appears to them as a drive of its own,
+such as `T:\`; npm works, and a command the sandbox blocks, such as
+`bun install`, runs on your computer only if you approve it. `tesota sandbox`
+shows what each sandbox proved here and which one is in use; `tesota sandbox
+use docker` (or `native`, `host`, `auto`) chooses for new sessions, and
+`tesota sandbox clean` removes this repository's package cache. Docker
+Sandboxes is the alternative on Windows 11, and the stronger wall, since it
+runs a virtual machine. It needs the Windows
 Hypervisor Platform (an administrator prompt and a restart), Docker Sandboxes,
 a Docker sign-in and a deny-all network policy. Run `tesota setup` to go
 through them: it shows each missing step and its command, runs it when you

@@ -35,3 +35,13 @@ lemma qualifiedNetwork_ensures(claimed: NetworkClaim, processPassed: bool, netwo
   ensures (qualifiedNetwork(claimed, processPassed, networkPassed).allowlist? <==> ((claimed.allowlist? && processPassed) && networkPassed))
 {
 }
+
+function runsWithoutAsking(ready: bool, filesystem: FilesystemClaim, network: NetworkClaim): bool
+{
+  ((ready && filesystem.workspace?) && network.allowlist?)
+}
+
+lemma runsWithoutAsking_ensures(ready: bool, filesystem: FilesystemClaim, network: NetworkClaim)
+  ensures (runsWithoutAsking(ready, filesystem, network) <==> ((ready && filesystem.workspace?) && network.allowlist?))
+{
+}

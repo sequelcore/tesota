@@ -5,7 +5,8 @@ import { join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { confinesCommands, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
-import { chooseSessionExecution, releaseWorkspace, type SessionExecution } from "./execution-providers.js";
+import { chooseSessionExecution, packageCacheDirectory, releaseWorkspace, SANDBOX_NAMES,
+  type SessionExecution } from "./execution-providers.js";
 import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-session.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
@@ -94,8 +95,10 @@ export interface AgentModelCommands {
 }
 
 /** Where commands run, in the operator's words: the host is "this computer". */
+/** Where commands run, in the operator's words: which sandbox, or "this computer" for the host. */
 function executionLabel(execution: SessionExecution): string {
-  return execution.commands === "sandbox" ? "sandbox" : "this computer · asks first";
+  if (execution.commands === "host") return "this computer · asks first";
+  return `sandbox · ${SANDBOX_NAMES[execution.provider.name]?.label ?? execution.provider.name}`;
 }
 
 function describePreparation(steps: readonly PreparationStep[]): string | undefined {
@@ -292,6 +295,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const environmentFor = (id: string): Promise<ExecutionEnvironment> => {
     const state = stateFor(id);
     state.environment ??= (async () => {
+      // The first choice on a machine qualifies the native sandbox there, which takes some seconds.
+      surface.reportFor(id, { phase: "preparing", activity: "Choosing where commands run" });
       const [workspace, execution] = await Promise.all([workspaceFor(id), sessionExecution()]);
       surface.setExecution(executionLabel(execution));
       if (execution.commands === "host") {
@@ -302,7 +307,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       surface.reportFor(id, { phase: "preparing" });
       try {
         environment = await execution.provider.prepare(workspace.checkout,
-          { onProgress: (activity) => { surface.reportFor(id, { phase: "preparing", activity }); } });
+          { onProgress: (activity) => { surface.reportFor(id, { phase: "preparing", activity }); },
+            cacheDirectory: packageCacheDirectory(cwd) });
       } catch (error) {
         throw new Error(`The ${execution.provider.name} environment could not start` +
           `${error instanceof Error ? `: ${error.message}` : ""}. Run tesota setup to check it.`);

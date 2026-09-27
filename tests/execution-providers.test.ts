@@ -1,8 +1,12 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
 import { sandboxPath } from "../src/docker-sandboxes-environment.js";
 import { confinesCommands, type EnvironmentGuarantees, type ExecutionProvider, type ProviderReadiness,
   type SetupAction, type SetupStep } from "../src/execution-environment.js";
-import { chooseSessionExecution, formatSetup, runSetup, type SessionExecution, type SetupRunner } from "../src/execution-providers.js";
+import { chooseSandboxPreference, chooseSessionExecution, formatSetup, providersFor, readSandboxPreference, runSetup,
+  type SessionExecution, type SetupRunner } from "../src/execution-providers.js";
 import { hostProvider } from "../src/host-environment.js";
 
 const confined: EnvironmentGuarantees = { filesystem: "workspace", network: "allowlist", secrets: "none", resources: "bounded" };
@@ -39,6 +43,37 @@ it("falls back to the host, where commands ask first, and lists what is missing"
   expect(text).toContain("vm:\n  - Turn on the hypervisor (administrator PowerShell, then restart)\n      enable it");
   expect(text).toContain("broken:\n  - The provider could not report whether it is ready");
   expect(text).not.toContain("open:\n  -");
+});
+
+it("runs commands without asking only where this machine's qualification upheld the provider's claims", async () => {
+  const native = provider("native", { ready: true });
+  const docker = provider("docker", { ready: true });
+  const withdrawn = { provider: "native", fingerprint: "x", at: "2026-09-26T00:00:00.000Z",
+    guarantees: { ...confined, network: "open" as const }, results: [{ control: "registry_reachable" as const, passed: false,
+      detail: "the package registry gave 000" }] };
+  const mode = await chooseSessionExecution([native, docker], hostProvider,
+    async (candidate) => candidate === native ? withdrawn : undefined);
+  expect(mode).toEqual({ commands: "sandbox", provider: docker });
+  const fallback = await chooseSessionExecution([native], hostProvider, async () => withdrawn);
+  expect(fallback.commands).toBe("host");
+  expect(formatSetup(fallback)).toContain("native:\n  - Its controls failed on this computer: the package registry gave 000");
+});
+
+it("orders the providers by the operator's choice: native first, then Docker, or one of them, or none", () => {
+  const names = (preference: Parameters<typeof providersFor>[0]): string[] => providersFor(preference).map((entry) => entry.name);
+  expect(names("auto")).toEqual(["mxc", "docker-sandboxes"]);
+  expect(names("native")).toEqual(["mxc"]);
+  expect(names("docker")).toEqual(["docker-sandboxes"]);
+  expect(names("host")).toEqual([]);
+});
+
+it("keeps the operator's choice of sandbox, and refuses anything else", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "tesota-sandbox-choice-")), "sandbox.json");
+  expect(readSandboxPreference(path)).toBe("auto");
+  chooseSandboxPreference("docker", path);
+  expect(readSandboxPreference(path)).toBe("docker");
+  expect(() => { chooseSandboxPreference("vm" as never, path); }).toThrow();
+  rmSync(dirname(path), { recursive: true, force: true });
 });
 
 it.each([

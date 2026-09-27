@@ -108,6 +108,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `host-environment.ts`, `docker-sandboxes-environment.ts`, `docker-sandboxes-kit.ts`, `toolchain.ts` | The two providers, the cached sandbox image, and reading a repository's pinned runtimes |
 | `execution-controls.ts` | The controls every provider must pass, for the live suites and qualification |
 | `mxc-environment.ts`, `egress-proxy.ts` | The native Windows sandbox on MXC, and the allowlist proxy its commands reach the network through |
+| `execution-qualification.ts`, `sandbox-command.ts`, `verification/sandbox-qualification.ts` | Qualification on the operator's machine, `tesota sandbox`, and their proved rules |
 | `workspace-checks.ts`, `verification/oxlint*.ts`, `verification/lemmascript-verifier.ts` | Verifier results with claim and limits: approved commands, Oxlint, LemmaScript with Dafny |
 | `verification-changes.ts` | Flagging changes to tests, check configuration, CI, specifications and scripts |
 | `review.ts`, `integrations/pi-reviewer.ts`, `integrations/pi-claimcheck.ts` | The reviewer contract, Tesota's reviewer and lenses, and ClaimCheck's method |

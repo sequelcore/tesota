@@ -50,9 +50,10 @@ project. They are listed here as they are chosen.
 - **Reasoning levels per role** (decision 029,
   [design](design/agents.md#reasoning-levels)): built 2026-09-26.
 - **A native sandbox** (decision 030,
-  [design](design/execution.md#planned-native-sandbox)): commands confined
-  with no Docker, no administrator rights and no question per command, built
-  on Microsoft MXC and qualified on each machine; planned, in four phases.
+  [design](design/execution.md#native-sandbox)): commands confined with no
+  Docker, no administrator rights and no question per command, on Microsoft
+  MXC and qualified on each machine; built on Windows 11 24H2 and later
+  2026-09-27, with Linux and macOS next.
   Then routes for OpenRouter and OpenCode Go, after their terms are checked
   ([research](research/model-access-landscape.md)).
 

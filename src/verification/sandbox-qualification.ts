@@ -20,3 +20,13 @@ export function qualifiedNetwork(claimed: NetworkClaim, processPassed: boolean, 
   if (claimed !== "allowlist") return "open";
   return processPassed && networkPassed ? "allowlist" : "open";
 }
+
+/**
+ * Decision 030's choice rule: commands run without asking only in a provider
+ * that is ready on this machine and whose qualified guarantees confine both
+ * files and network; anywhere else each command asks first.
+ */
+//@ ensures \result <==> (ready && filesystem === "workspace" && network === "allowlist")
+export function runsWithoutAsking(ready: boolean, filesystem: FilesystemClaim, network: NetworkClaim): boolean {
+  return ready && filesystem === "workspace" && network === "allowlist";
+}

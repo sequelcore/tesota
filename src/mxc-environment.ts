@@ -149,7 +149,8 @@ function prepare(workspace: string, options: PrepareOptions = {}): Promise<Execu
     const sandbox: Sandbox = { workspace: resolve(workspace), drive, scripts: join(root, "commands"), readable, writable,
       folders: { ...folders, proxy: proxy.url }, systemRoot: process.env["SYSTEMROOT"] ?? "C:\\Windows" };
     await mkdir(sandbox.scripts, { recursive: true });
-    return { provider: "mxc", shell: "powershell", javascriptRuntime: process.execPath, guarantees: MXC_GUARANTEES, preparation: [], network: proxy,
+    return { provider: "mxc", shell: "powershell", javascriptRuntime: process.execPath, commandRoot: `${drive}:\\`,
+      guarantees: MXC_GUARANTEES, preparation: [], network: proxy,
       run: (command, runOptions) => runCommand(sandbox, command, runOptions),
       dispose: async () => {
         await proxy.close();

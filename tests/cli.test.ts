@@ -42,7 +42,8 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota auth <login|status|logout> [codex|anthropic|claude-code]\n" +
     "       tesota models [<role> <route:model|default|off>]\n" +
     "       tesota prune [--force]\n" +
-    "       tesota setup\n\n" +
+    "       tesota setup\n" +
+    "       tesota sandbox [use <auto|native|docker|host> | clean]\n\n" +
     "Starts a coding session in the current repository. The agent works in a\n" +
     "separate copy; you review its changes and checks before anything is applied.\n",
   );

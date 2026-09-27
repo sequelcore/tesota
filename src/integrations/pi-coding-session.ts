@@ -2,11 +2,12 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type AgentSession, type AgentSessionEvent, type BashOperations, type ModelRuntime, type SessionManager, type ToolDefinition,
   createAgentSession, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition,
-  createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition,
+  createGrepToolDefinition, createLsToolDefinition, createPowerShellToolDefinition, createReadToolDefinition,
   createWriteToolDefinition, DefaultResourceLoader, defineTool, SessionManager as PiSessionManager, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
+import { type Api, type Model, type TSchema, Type } from "@earendil-works/pi-ai";
 import { confinesCommands, type ExecutionEnvironment } from "../execution-environment.js";
+import { hostProvider } from "../host-environment.js";
 import type { ReasoningLevel } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ADVISOR_GUIDANCE, type Advisor, advisorTool } from "./advisor.js";
@@ -159,13 +160,23 @@ export function repositoryInstructions(root: string): string {
   return "";
 }
 
-function commandGuidance(sandboxed: boolean): string {
-  return sandboxed
+function commandGuidance(sandboxed: boolean, environment: ExecutionEnvironment): string {
+  const where = sandboxed
     ? "Shell commands run without asking in an isolated sandbox that sees only this copy of the repository; " +
       "network access is limited to package registries and hosts the user allowed. When a command reaches " +
       "another host, the user is asked whether to allow it and you are told the answer. "
     : "Every shell command asks the user for approval first; prefer the file tools for reading and editing, " +
       "and run commands when they are worth an approval, such as installing dependencies or running tests. ";
+  return environment.shell === "powershell" ? where + powershellGuidance(environment.commandRoot) : where;
+}
+
+/** The native Windows sandbox's shell (decision 030): PowerShell on a drive of the workspace's own, with a retry outside. */
+function powershellGuidance(commandRoot: string | undefined): string {
+  return "Shell commands go through the powershell tool: Windows PowerShell 5.1, not bash. Use its syntax: `;` between " +
+    "commands, `$env:NAME` for variables, `curl.exe` for curl. " +
+    `${commandRoot === undefined ? "" : `In commands the workspace is the drive ${commandRoot}; the file tools keep its real path. `}` +
+    "Install packages with npm; `bun install` cannot run in this sandbox. For a command the sandbox blocks and the task " +
+    "needs, set outside_sandbox: it then runs on the user's computer, in Git Bash, only after the user approves. ";
 }
 
 /** When the agent should ask an explorer, and what an explorer's answer is worth (decision 019). */
@@ -181,9 +192,9 @@ const explorerGuidance = "The explore tool asks a read-only explorer one questio
 
 interface Helpers { readonly explorers: boolean; readonly web: boolean; readonly advisor: boolean }
 
-function systemPrompt(root: string, sandboxed: boolean, helpers: Helpers): string {
+function systemPrompt(root: string, sandboxed: boolean, environment: ExecutionEnvironment, helpers: Helpers): string {
   return "You are Tesota, a coding agent working in a private copy of the user's repository. " +
-    "Read, search, edit, create and delete files as the task needs. " + commandGuidance(sandboxed) +
+    "Read, search, edit, create and delete files as the task needs. " + commandGuidance(sandboxed, environment) +
     (helpers.explorers ? explorerGuidance : "") + (helpers.web ? webGuidance : "") + (helpers.advisor ? ADVISOR_GUIDANCE : "") +
     "Do not commit, push or change Git " +
     "history: when you finish, Tesota shows the user your changes, runs the repository's checks and lets " +
@@ -213,10 +224,41 @@ function piEntries(message: AgentSession["messages"][number]): ConversationEntry
   }
 }
 
+/**
+ * The agent's shell: bash where commands run on this computer or in Docker
+ * Sandboxes; in the native Windows sandbox, PowerShell, with a retry of one
+ * command on this computer, in Git Bash, after the operator approves it
+ * (decision 030).
+ */
+function shellTool(root: string, options: WorkingAgentOptions): ToolDefinition {
+  const operations = environmentBash(options.environment, options.sandboxed ? undefined : options.approveCommand, options.decideNetwork);
+  if (options.environment.shell !== "powershell") {
+    return defineTool(createBashToolDefinition(root, { operations, exposeSessionEnvironment: false }));
+  }
+  const inside = createPowerShellToolDefinition(root, { operations, exposeSessionEnvironment: false });
+  let host: Promise<ExecutionEnvironment> | undefined;
+  const onHost: ExecutionEnvironment = { provider: "host", shell: "posix", guarantees: hostProvider.guarantees, preparation: [],
+    run: async (command, runOptions) => (await (host ??= hostProvider.prepare(root))).run(command, runOptions),
+    dispose: async () => { await (await host)?.dispose(); } };
+  const outside = createBashToolDefinition(root, { operations: environmentBash(onHost, options.approveCommand),
+    exposeSessionEnvironment: false });
+  return defineTool({ ...inside,
+    description: `${inside.description} Set outside_sandbox to run a command the sandbox blocks on the user's computer ` +
+      "instead, in Git Bash, after the user approves it.",
+    parameters: Type.Object({ ...inside.parameters.properties,
+      outside_sandbox: Type.Optional(Type.Boolean({ description: "Run on the user's computer, in Git Bash, after they approve; " +
+        "only for a command the sandbox blocked that the task needs" })) }),
+    execute: (id, params, signal, onUpdate, context) => {
+      const { outside_sandbox: onComputer, ...command } = params;
+      return onComputer === true ? outside.execute(id, command, signal, onUpdate, context)
+        : inside.execute(id, command, signal, onUpdate, context);
+    } }) as unknown as ToolDefinition;
+}
+
 /** The argument that identifies what a tool call acts on: its command, pattern or path. */
 export function toolSubject(name: string, args: unknown): string {
   if (typeof args !== "object" || args === null) return "";
-  const key = name === "bash" ? "command" : name === "grep" || name === "find" ? "pattern"
+  const key = name === "bash" || name === "powershell" ? "command" : name === "grep" || name === "find" ? "pattern"
     : name === "explore" || name === "advisor" ? "question"
     : name === "web_search" ? "query" : name === "web_read" || name === "web_fetch" ? "url" : "path";
   const value: unknown = Reflect.get(args, key);
@@ -321,13 +363,11 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
   }
   const root = realpathSync(options.cwd);
   const helpers = { explorers: options.explorers !== undefined, web: options.web !== undefined, advisor: options.advisor !== undefined };
-  return { systemPrompt: systemPrompt(root, options.sandboxed, helpers), tools: [
+  return { systemPrompt: systemPrompt(root, options.sandboxed, options.environment, helpers), tools: [
     ...readOnlyFileTools(root),
     defineTool(confine(root, createEditToolDefinition(root), true)),
     defineTool(confine(root, createWriteToolDefinition(root), true)),
-    defineTool(createBashToolDefinition(root, { operations: environmentBash(options.environment,
-      options.sandboxed ? undefined : options.approveCommand, options.decideNetwork),
-      exposeSessionEnvironment: false })),
+    shellTool(root, options),
     ...(options.explorers === undefined ? [] : [exploreTool(options.explorers)]),
     ...(options.web === undefined ? [] : [webSearchTool(options.web), webReadTool(options.web)]),
     ...(options.advisor === undefined ? [] : [advisorTool(options.advisor)]),
