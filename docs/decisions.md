@@ -17,7 +17,7 @@ short statement, and its substance goes into the design document it changes.
 | 003 | 2026-09-12 | Start from a natural-language message, with read-only discovery, a task proposal and an operator-approved grant before any change | Superseded by 013; the "Tesota Shell" name and the rule that a check is not acceptance remain ([sessions](design/sessions.md), [overview](design/overview.md#principles)) |
 | 004 | 2026-09-13 | Qualify a fixed-command isolation boundary for the first code task | Superseded by 013 and 014 ([execution](design/execution.md)) |
 | 005 | 2026-09-14 | Recover Kiln selectively: regression oracles and invariants first, code only after a matched comparison, whole packages never without a buildable boundary | Current. [Development](development.md#reusing-kiln) |
-| 006 | 2026-09-14 | Present Tesota as a verification-first agent: "Work that carries its evidence" | Current, with 010's ordering. [Overview](design/overview.md#direction) |
+| 006 | 2026-09-14 | Present Tesota as a verification-first agent: "Work that carries its evidence" | Current, with 010's ordering. [Overview](design/overview.md#name-and-identity) |
 | 007 | 2026-09-16 | Keep execution policy independent of its environment | Superseded by 014 ([execution](design/execution.md)) |
 | 008 | 2026-09-16 | Rename the shared repository to `sequelcore/tesota`; the `kiln-legacy-2026-09` tag preserves Kiln's final state | Current. [Development](development.md#branches) |
 | 009 | 2026-09-16 | `main` is the stable branch and `dev` the protected integration branch; work reaches them through pull requests with Ubuntu and Windows checks | Current. [Development](development.md#branches) |

@@ -46,9 +46,10 @@ request
 Tesota owns the workspace, execution environments, checks, review, correction
 and application. Pi (`@earendil-works/pi-*`) is the agent engine and terminal
 toolkit, used through its public APIs; Tesota does not reimplement the agent
-loop or OAuth. Models are reached through three routes: Codex through Pi's OAuth support,
-Anthropic's API through Pi with an API key, and the operator's Claude
-subscription through Claude Code, run by the Claude Agent SDK
+loop or OAuth. Models are reached through routes: Codex through Pi's OAuth
+support, Anthropic's API through Pi with an API key, the operator's Claude
+subscription through Claude Code, run by the Claude Agent SDK, and OpenRouter
+and OpenCode's Zen and Go through Pi with their keys
 ([agents](agents.md#model-routes), [authentication](../guide/authentication.md)).
 Every role runs through one session interface over the two engines; adding a
 route means re-exercising the roles on it.
@@ -75,10 +76,72 @@ why its evidence matters second, mechanism last. It never claims safety,
 reliability or autonomy beyond what the evidence supports, and never
 presents a passing check as proof that a change does what was asked.
 
-The name comes from *Olneya tesota*, the Sonoran Desert ironwood tree; it is
-not a dependability claim, and trademark clearance has not been done. Tesota
-began as a deliberate reset of Kiln, whose code and roadmap it does not
-inherit ([Kiln reference](../research/kiln.md)).
+Tesota began as a deliberate reset of Kiln, whose code and roadmap it does
+not inherit ([Kiln reference](../research/kiln.md)).
+
+## Name and identity
+
+Decisions 006 and 010; the original records, with the positioning review
+behind them, are in Git at the commit the [decision log](../decisions.md)
+names.
+
+**The name.** Tesota takes its name from *Olneya tesota*, the desert
+ironwood, *palo fierro* in Spanish, a tree of the Sonoran Desert
+([Arizona-Sonora Desert Museum](https://www.desertmuseum.org/programs/ifnm_ironwoodtree.php)).
+Its wood is dense enough to sink in water, some trees are estimated at 800
+years old, and more than 500 species of plants and animals depend on it,
+which makes it a keystone of its habitat
+([Friends of Ironwood Forest](https://ironwoodforest.org/about/the-monument/learn/desert-ironwood-tree/)).
+The name suggests a durable foundation. It is not a dependability claim,
+and not an architecture term.
+
+**What Tesota is called.** The category is **verification-first agent**, and
+the description:
+
+> Tesota is an open-source, verification-first agent designed to carry work
+> from intent to an inspectable result, with evidence bound to what it
+> actually produced.
+
+The primary line is **Work that carries its evidence.** Where the context is
+explicitly software, **verification-first coding agent** and **Build the
+change. Keep the evidence.** are its translations. Software development is
+the first proving ground, not the permanent category: public text says so,
+and separates the long-term direction from what the pre-release does today.
+
+**Names of the parts.**
+
+| Name | What it is |
+| --- | --- |
+| **Tesota** | The product and the agent |
+| `tesota` | The package and the command |
+| **Tesota Shell** | The terminal the command opens ([sessions](sessions.md)) |
+| Pi | The agent engine, not Tesota's identity |
+| Claude Code, OpenRouter, OpenCode | Routes to models ([agents](agents.md#model-routes)), not parts of Tesota |
+| Oxlint, LemmaScript and Dafny | Verifiers Tesota runs, not modes of it |
+
+**Voice.** Calm engineering precision: direct, specific and candid about
+limits. Observable behavior comes before adjectives; safe, trusted,
+reliable, autonomous and production-ready are used only where the evidence
+supports that exact wording. Tesota does not claim that other agents lack
+tests, approvals, sandboxes or review; it claims that the path from work to
+evidence to the operator's decision is what it is organized around.
+
+**Positions rejected.**
+
+| Position | Why not |
+| --- | --- |
+| The safest agent | An absolute comparison no evidence supports |
+| A general-purpose agent today | Coding is what it does now; general work is the direction |
+| A coding-only agent | Needlessly closes the direction |
+| A universal agent framework | Promises breadth of infrastructure instead of one coherent experience |
+| An AI verifier | Too narrow: Tesota does the work as well as checking it |
+| A model-agnostic agent | Tesota reaches many models, but its promise is the evidence, not the breadth |
+| An autonomous team | Not built, and against one operator with one writing agent |
+| A wrapper around Pi or Claude Code | They are engines inside a lifecycle Tesota owns |
+
+**Before a public launch.** The name needs trademark, domain and
+social-handle clearance, which has not been done; a web search is not legal
+clearance. Visual identity is open.
 
 ## Trust
 
