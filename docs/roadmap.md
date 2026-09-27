@@ -54,10 +54,18 @@ project. They are listed here as they are chosen.
   [design](design/execution.md#native-sandbox)): commands confined with no
   Docker, no administrator rights and no question per command, on Microsoft
   MXC and qualified on each machine; built on Windows 11 24H2 and later
-  2026-09-27, with Linux and macOS next.
+  2026-09-27. Linux and macOS are paused, 2026-09-26, until real use gives
+  feedback.
 - **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
   built 2026-09-26; OpenRouter's contract suite passes live on a free model,
   OpenCode awaits a key, and their models are unmeasured as Tesota's roles.
+- **Work beyond code** (decision 012's direction): a first real user works in
+  public administration, with documents, spreadsheets, presentations and
+  research, and the operator also uses agents for answers and actions on
+  live systems. The [general work landscape](research/general-work-landscape.md)
+  gathers how other agents serve that work; a design pass on changes,
+  answers and actions as kinds of result comes next, before any building,
+  and her first real tasks decide the order.
 
 ### 2. Measurement on public benchmarks
 
