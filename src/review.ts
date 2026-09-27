@@ -92,6 +92,12 @@ export interface ReviewInput {
    * reviewer to check against the result; never as an account to trust.
    */
   readonly claimedSteps?: readonly ClaimedStep[];
+  /**
+   * The agent's final reply, when its turn changed no files (decision 034):
+   * the reviewer checks the requests against the repository and this reply,
+   * which is untrusted and can never show that requested code exists.
+   */
+  readonly response?: string;
 }
 
 export type ReviewReport =

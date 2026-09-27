@@ -1,8 +1,9 @@
 import { expect, it, vi } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import type { TesotaShellProgress } from "../src/shell-progress.js";
-import type { Finding } from "../src/review.js";
-import { runTesotaShell, type ApplyResult, type ReviewResult, type TesotaShellDependencies, type WorkResult } from "../src/tesota-shell.js";
+import type { Finding, Obligation, ReviewReport } from "../src/review.js";
+import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
+  type WorkResult } from "../src/tesota-shell.js";
 import type { WorkspaceChange } from "../src/workspace.js";
 
 const change: WorkspaceChange = { status: "modified", path: "src/price.ts" };
@@ -193,4 +194,47 @@ it("skips the decision when a correction is stopped, keeping the changes", async
   expect(fixture.text()).toContain("The correction was stopped. The changes stay in the workspace");
   expect(fixture.progress.map((event) => event.phase)).not.toContain("awaiting_decision");
   expect(fixture.dependencies.apply).not.toHaveBeenCalled();
+});
+
+const answered = (obligations: Obligation[]): AnswerResult => ({ status: "assessed", requests: ["Add a farewell() helper"],
+  reviews: [{ reviewer: "Tesota reviewer", tree: "t", status: "completed", summary: "s", findings: [], obligations } satisfies ReviewReport] });
+const unmet: Obligation = { source: "request", index: 1, obligation: "farewell() exists", status: "unmet",
+  evidence: "no farewell in src/", standing: "confirmed" };
+const met: Obligation = { source: "request", index: 1, obligation: "farewell() exists", status: "met", evidence: "src/greet.ts:4" };
+
+it("checks a turn that changed nothing against its requests, and asks nothing more when every request held", async () => {
+  const assessAnswer = vi.fn(async () => answered([met]));
+  const fixture = shell(["Explain pricing", ""], { assessAnswer,
+    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [] })) });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(assessAnswer).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.review).not.toHaveBeenCalled();
+  expect(fixture.progress.map((event) => event.phase)).toEqual(["working", "reviewing"]);
+  expect(fixture.text()).toBe("Session ended.\n");
+});
+
+it("sends a request a reply only claimed back to the agent, and reviews the files its correction then writes", async () => {
+  const assessAnswer = vi.fn(async () => answered([unmet]));
+  const work = vi.fn(async (_request: string, _origin?: string): Promise<WorkResult> => ({ status: "completed", changes: [] }))
+    .mockResolvedValueOnce({ status: "completed", changes: [] })
+    .mockResolvedValueOnce({ status: "completed", changes: [added] });
+  const fixture = shell(["Add a farewell() helper", "", "a", ""], { assessAnswer, work });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(work).toHaveBeenCalledTimes(2);
+  expect(work.mock.calls[1]?.[1]).toBe("tesota");
+  expect(String(work.mock.calls[1]?.[0])).toContain("- Request 1 is not done: farewell() exists");
+  expect(fixture.text()).toContain("Correction round 1 of 2: sending 1 problem back to the agent.");
+  // Files now exist, so the correction faces the full review and the operator's decision.
+  expect(fixture.dependencies.review).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);
+});
+
+it("stops checking an answer after two correction rounds and leaves the rest to the operator", async () => {
+  const assessAnswer = vi.fn(async () => answered([unmet]));
+  const fixture = shell(["Add a farewell() helper", ""], { assessAnswer,
+    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [] })) });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(assessAnswer).toHaveBeenCalledTimes(3);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(3);
+  expect(fixture.dependencies.review).not.toHaveBeenCalled();
 });

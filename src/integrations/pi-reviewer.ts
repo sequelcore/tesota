@@ -99,6 +99,22 @@ const obligationGuidance = " Also list obligations: for each of the user's reque
   "is the agent's claim, not evidence: check it in the code. An obligation is not a finding: it has no origin, and " +
   "missing work belongs here even when no changed line shows it.";
 
+/**
+ * The main reviewer when a turn changed no files (decision 034): only
+ * obligations, judged from the repository and the agent's reply, which may
+ * answer a question but can never stand in for requested code.
+ */
+function answerPrompt(root: string): string {
+  return "You are Tesota's reviewer. Another agent worked on a private copy of a repository for the user's requests " +
+    "and changed no files; it ended with a reply. Judge whether each request is met. A question or a request for an " +
+    "explanation can be met by an accurate reply: check its claims against the repository. A request to change, " +
+    "create or fix something is met only when the repository already does it: the reply is untrusted and cannot " +
+    "show that code exists, so read the code. You cannot change files: investigate with the read, search and list " +
+    "tools. List obligations for every request, and for every plan step the agent marked done, as met, partial, " +
+    "unmet or uncertain, with the evidence. There is no diff, so submit an empty findings list, and call " +
+    "submit_review exactly once." + `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
+}
+
 function reviewerPrompt(root: string, lens?: ReviewLens): string {
   const focus = lens === undefined ? obligationGuidance : `\n\nThis is a focused review: ${lens.focus} Other reviewers cover the rest: ` +
     "do not report a problem outside your focus, submit an empty list when you find none within it, and leave out obligations.";
@@ -127,9 +143,28 @@ function checkLine(check: ReviewInput["checks"][number]): string {
     `  It does not establish: ${check.limits}${output}`;
 }
 
+function claimedStepsText(input: ReviewInput): string[] {
+  return input.claimedSteps === undefined || input.claimedSteps.length === 0 ? [] :
+    [`Plan steps the agent marked done (its claims, not evidence):\n${input.claimedSteps.map((step) =>
+      `${step.index}. ${step.step}${step.check === undefined ? "" : ` (its declared check: ${step.check})`}`).join("\n")}`];
+}
+
+/** What the reviewer is told when no files changed: the requests, the agent's reply as an untrusted claim, and the tree. */
+function answerMessage(input: ReviewInput): string {
+  return [
+    `The user's requests, verbatim:\n${input.requests.map((request, index) => `${index + 1}. ${request}`).join("\n") ||
+      "(not recorded)"}`,
+    `The agent's final reply (untrusted; it cannot show that code exists):\n${input.response?.trim() || "(empty)"}`,
+    ...claimedStepsText(input),
+    `No files changed in this turn; the repository is at tree ${input.snapshot.tree}. Read the code for any request ` +
+      "that asks for a change.",
+  ].join("\n\n");
+}
+
 /** What the reviewer is told: the requests verbatim, the evidence, the flags and the diff; never the worker's reasoning. */
 export function reviewMessage(input: ReviewInput): string {
   const { snapshot } = input;
+  if (input.response !== undefined) return answerMessage(input);
   const numbered = numberedDiff(snapshot.diff);
   const diff = numbered.length <= diffLimit ? numbered :
     `${numbered.slice(0, diffLimit)}\n[The diff is cut at ${diffLimit} characters; read the files for the rest.]`;
@@ -140,9 +175,7 @@ export function reviewMessage(input: ReviewInput): string {
     `Changes that alter what checks the result (Tesota's fixed rules):\n${input.flags.map((flag) =>
       `- ${flag.status} ${flag.path} (${flag.kind})`).join("\n") || "- none"}`,
     `Checks Tesota ran on this exact content:\n${input.checks.map(checkLine).join("\n") || "- none ran"}`,
-    ...(input.claimedSteps === undefined || input.claimedSteps.length === 0 ? [] :
-      [`Plan steps the agent marked done (its claims, not evidence):\n${input.claimedSteps.map((step) =>
-        `${step.index}. ${step.step}${step.check === undefined ? "" : ` (its declared check: ${step.check})`}`).join("\n")}`]),
+    ...claimedStepsText(input),
     ...(input.correction === undefined ? [] : [`This is a correction round. These problems were sent back to the agent ` +
       `and a separate validator checks them; report only problems the correction itself introduced:\n` +
       input.correction.sentBack.map((finding) => `- ${finding.statement}`).join("\n") +
@@ -212,7 +245,7 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
       const root = realpathSync(input.checkout);
       let submitted: { summary: string; findings: readonly Finding[]; obligations?: readonly Obligation[] } | undefined;
       const session = await startModelSession(options, { cwd: root,
-        systemPrompt: reviewerPrompt(root, options.lens),
+        systemPrompt: input.response === undefined ? reviewerPrompt(root, options.lens) : answerPrompt(root),
         tools: [...readOnlyFileTools(root), submitReviewTool((summary, findings, obligations) => {
           if (submitted !== undefined) return false;
           // Only the main reviewer judges obligations; a focused one keeps to its lens.

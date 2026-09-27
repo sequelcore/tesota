@@ -117,6 +117,22 @@ function reviewDetail(report: ReviewReport): string {
 }
 
 /**
+ * The check of a turn that changed no files (decision 034): how each request
+ * held against the repository and the agent's reply; there is nothing to apply.
+ */
+export function inspectAnswer(requests: readonly string[], reviews: readonly ReviewReport[]): ShellInspection {
+  const incomplete = reviews.flatMap((report) => report.status === "incomplete"
+    ? [`  ✗ ${report.reviewer} did not finish: ${report.reason}`] : []);
+  return {
+    title: "Answer check",
+    summary: [...incomplete, ...reviews.flatMap(obligationLines),
+      "No files changed. The reviewer checked your requests against the repository and the agent's reply."].join("\n"),
+    detail: `Requested\n${requests.map((request, index) => `  ${index + 1}. ${request}`).join("\n") || "  (not recorded)"}` +
+      `\n\nReview\n${reviews.map(reviewDetail).join("\n\n") || "  None"}`,
+  };
+}
+
+/**
  * The review of a candidate: a summary for the conversation, listing each
  * file, check, flagged change and finding once, and the full record for the
  * result panel.

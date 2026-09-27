@@ -210,3 +210,14 @@ it("compares one candidate with its correction", async () => {
   expect(correction.diff).toContain("-export const price = 2;\n+export const price = 3;");
   expect(correction.diff).not.toContain("price = 1");
 });
+
+it("keeps a request pending across a turn that changed nothing while its answer check left gaps", async () => {
+  const { workspace } = await fixture();
+  await workspace.recordRequest("Add a farewell() helper");
+  workspace.keepRequestsOpen(true);
+  await workspace.recordRequest("Continue");
+  expect(await workspace.requests()).toEqual(["Add a farewell() helper", "Continue"]);
+  workspace.keepRequestsOpen(false);
+  await workspace.recordRequest("Explain pricing");
+  expect(await workspace.requests()).toEqual(["Explain pricing"]);
+});

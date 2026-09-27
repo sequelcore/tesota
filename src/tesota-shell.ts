@@ -16,6 +16,11 @@ export type ReviewResult =
       reviews: readonly ReviewReport[]; requests: readonly string[] }>
   | Readonly<{ status: "cancelled" }>;
 
+/** The check of a turn that changed no files (decision 034): the main review of its requests, or a stop. */
+export type AnswerResult =
+  | Readonly<{ status: "assessed"; reviews: readonly ReviewReport[]; requests: readonly string[] }>
+  | Readonly<{ status: "cancelled" }>;
+
 export type ApplyResult =
   | Readonly<{ status: "applied"; changes: readonly WorkspaceChange[] }>
   | Readonly<{ status: "conflict"; reason: string; paths: readonly string[] }>
@@ -46,6 +51,11 @@ export interface TesotaShellDependencies {
    * request record; Tesota's correction messages do not.
    */
   readonly work: (request: string, origin?: RequestOrigin) => Promise<WorkResult>;
+  /**
+   * Check a turn that changed no files against its requests and the agent's
+   * reply, and present it (decision 034); absent where nothing checks answers.
+   */
+  readonly assessAnswer?: () => Promise<AnswerResult>;
   /** Checks the operator approved earlier, or null when none were chosen yet. */
   readonly checks: () => readonly string[] | null;
   readonly suggestChecks: () => readonly string[];
@@ -174,6 +184,36 @@ async function reviewChanges(dependencies: TesotaShellDependencies,
   return false;
 }
 
+/**
+ * After a turn that changed no files, check its requests against the
+ * repository and the agent's reply (decision 034). Confirmed gaps go back to
+ * the agent for at most MAX_CORRECTION_ROUNDS rounds; a correction that writes
+ * files leaves them for the normal review. Nothing is ever applied from here.
+ */
+async function checkAnswer(dependencies: TesotaShellDependencies,
+  report: (progress: TesotaShellProgress) => void): Promise<"done" | "changed" | "unsettled"> {
+  if (dependencies.assessAnswer === undefined) return "done";
+  for (let round = 0; ; round++) {
+    report({ phase: "reviewing" });
+    const assessment = await dependencies.assessAnswer();
+    if (assessment.status === "cancelled") return "done";
+    const correction = correctionFor([], assessment.reviews);
+    if (correction === undefined || round >= MAX_CORRECTION_ROUNDS) return "done";
+    const count = problemCount(correction);
+    dependencies.write(`Correction round ${round + 1} of ${MAX_CORRECTION_ROUNDS}: sending ${count} ` +
+      `${count === 1 ? "problem" : "problems"} back to the agent.\n`);
+    report({ phase: "working" });
+    const result = await dependencies.work(correctionPrompt(assessment.requests, correction), "tesota");
+    if (result.status === "unsettled") return "unsettled";
+    if (result.status !== "completed") {
+      dependencies.write(`The correction ${result.status === "cancelled" ? "was stopped" : `failed: ${result.reason}`}. ` +
+        "Continue with another request.\n", "warning");
+      return "done";
+    }
+    if (result.changes.length > 0) return "changed";
+  }
+}
+
 /** Surface-independent conversation loop: work, review, then apply or reject. */
 export async function runTesotaShell(dependencies: TesotaShellDependencies): Promise<number> {
   const report = dependencies.report ?? ignoreProgress;
@@ -198,7 +238,14 @@ export async function runTesotaShell(dependencies: TesotaShellDependencies): Pro
       dependencies.write(`The request failed: ${result.reason}\n`, "warning");
       continue;
     }
-    if (result.changes.length === 0) continue;
+    if (result.changes.length === 0) {
+      const answer = await checkAnswer(dependencies, report);
+      if (answer === "unsettled") {
+        dependencies.write("The agent did not stop cleanly. This session is closed; check the workspace before continuing.\n", "warning");
+        return 1;
+      }
+      if (answer === "done") continue;
+    }
     if (!(await reviewChanges(dependencies, report))) return 1;
   }
 }
