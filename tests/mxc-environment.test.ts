@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { onDrive, powershellScript, sandboxToolPaths, sandboxVariables, substitutedDrives } from "../src/mxc-environment.js";
+import { type DriveLease, isRunning, onDrive, powershellScript, sandboxToolPaths, sandboxVariables, staleDrives,
+  substitutedDrives } from "../src/mxc-environment.js";
 
 /**
  * The native Windows sandbox's own rules (decision 030): what a command may
@@ -17,6 +18,21 @@ it("reads which drives subst maps, as the command lists them", () => {
   expect(substitutedDrives("T:\\: => C:\\Users\\Ana\\.tesota\\workspaces\\a\\repo\r\nU:\\: => D:\\src\r\n\r\n"))
     .toEqual(new Map([["T", "C:\\Users\\Ana\\.tesota\\workspaces\\a\\repo"], ["U", "D:\\src"]]));
   expect(substitutedDrives("")).toEqual(new Map());
+});
+
+it("removes only drives leased to their letter by a process no longer running", async () => {
+  const listing = ["T:\\: => C:\\ws\\ended\\repo", "U:\\: => C:\\ws\\running\\repo", "V:\\: => D:\\operator",
+    "W:\\: => C:\\ws\\moved\\repo", "X:\\: => C:\\ws\\older\\repo", ""].join("\r\n");
+  const leases: Partial<Record<string, DriveLease>> = { "C:\\ws\\ended\\repo": { drive: "t", pid: 10 },
+    "C:\\ws\\running\\repo": { drive: "U", pid: 20 }, "C:\\ws\\moved\\repo": { drive: "Z", pid: 30 } };
+  const stale = await staleDrives(listing, async (workspace) => leases[workspace], (pid) => pid === 20);
+  // V is the operator's own, W's lease names another letter, and X was mapped by a Tesota without leases.
+  expect(stale).toEqual(["T"]);
+});
+
+it("tells a running process from one that has ended", () => {
+  expect(isRunning(process.pid)).toBe(true);
+  expect(isRunning(2 ** 31 - 2)).toBe(false);
 });
 
 it("runs a command on the workspace's drive, where no folder lies above the workspace", () => {

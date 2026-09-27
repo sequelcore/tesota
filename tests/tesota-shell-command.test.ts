@@ -35,6 +35,23 @@ it("owns the persistent surface for the whole shell session", async () => {
   expect(fixture.events.at(-1)).toBe("stop");
 });
 
+it("returns only after the sessions' environments are released, since the process exits on return", async () => {
+  const fixture = surface();
+  let controls: Controls | undefined;
+  let finishRelease: (() => void) | undefined;
+  let returned = false;
+  const running = runTesotaShellCommand({ surface: fixture.surface, initialSessionId: "default",
+    session: () => work(vi.fn()), configureWorkspace: (callbacks) => { controls = callbacks; },
+    dispose: () => new Promise<void>((settle) => { finishRelease = settle; }) }).then((code) => { returned = true; return code; });
+  await vi.waitFor(() => { expect(fixture.events).toContain("Session ended.\n"); });
+  controls?.quit();
+  await vi.waitFor(() => { expect(finishRelease).toBeDefined(); });
+  await new Promise((settle) => { setTimeout(settle, 20); });
+  expect(returned).toBe(false);
+  finishRelease?.();
+  await expect(running).resolves.toBe(0);
+});
+
 it("routes simultaneous session turns to their own conversation", async () => {
   const pending = new Map<string, (answer: string) => void>();
   const output: { id: string; text: string }[] = [];
