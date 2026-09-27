@@ -168,6 +168,26 @@ it("opens a model picker on /model: filtered by typing, a reasoning level with l
   shell.stop();
 });
 
+it("renames a session with /rename, asks for a suggestion without a name, and shows a new name", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onRename = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onRename });
+  shell.start();
+  shell.ask("> ").catch(() => undefined);
+  terminal.send("/rename Budget totals for March");
+  terminal.send("\r");
+  shell.ask("> ").catch(() => undefined);
+  terminal.send("/rename");
+  terminal.send("\r");
+  expect(onRename.mock.calls).toEqual([["default", "Budget totals for March"], ["default", undefined]]);
+  shell.setSessionTitle("default", "Budget totals for March");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Budget totals for March");
+  shell.stop();
+});
+
 it("chooses a role's model with /models: a role, then its model, which Enter sets", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });

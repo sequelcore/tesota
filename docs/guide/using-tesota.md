@@ -317,7 +317,10 @@ agent runs. Type `/` at the normal request prompt to see a command menu above
 the input; the selected row is highlighted. Use arrow keys to choose and Enter
 to run a command, or `/help` for commands and keyboard shortcuts. These
 commands stay in the shell and do not become agent requests. `Ctrl+N` starts a
-new session; `Alt+J` selects the next and `Alt+K` the previous in the visible
+new session. Your first request names it at once, and a short title written
+by the `triage` role's model, or the validator's, follows a few seconds
+later; `/rename <name>` names it yourself, and a name you give is kept.
+`/rename` alone suggests a name from the session's latest requests; `Alt+J` selects the next and `Alt+K` the previous in the visible
 newest-first order, and `Alt+1` to `Alt+9` select those visible positions.
 `Ctrl+Tab` also selects the next where the terminal passes it on; Windows
 Terminal keeps it for its own tabs. `Ctrl+W` closes the selected session and removes
