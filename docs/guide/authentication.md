@@ -37,7 +37,8 @@ revoke it at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys);
 Answer `k` to paste a key you already have instead.
 
 Free models need no credits. OpenRouter allows 20 requests a minute and 50 a
-day until you have bought $10 of credit in total, then 1,000 a day; one
+day until you have bought $10 of credit in total, then 1,000 a day, counted
+for the whole account, whichever of its keys is used; one
 request to the agent, with its review, makes many model calls. A free model
 can also be refused for a while when its shared provider is busy (429, "temporarily
 rate-limited upstream"). Their providers may keep your prompts and code and

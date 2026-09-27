@@ -73,18 +73,30 @@ every role off the default, which needs a ChatGPT plan, and keep the judges
 in another lab than the agent:
 
 ```
-tesota models agent openrouter:nvidia/nemotron-3-super-120b-a12b:free
-tesota models reviewer openrouter:qwen/qwen3.8-27b:free
-tesota models refuter openrouter:qwen/qwen3.8-27b:free
-tesota models validator openrouter:qwen/qwen3.8-27b:free
+tesota models agent openrouter:poolside/laguna-s-2.1:free
+tesota models reviewer openrouter:nvidia/nemotron-3-super-120b-a12b:free
+tesota models refuter openrouter:nvidia/nemotron-3-super-120b-a12b:free
+tesota models validator openrouter:nvidia/nemotron-3-super-120b-a12b:free
 ```
 
-Nemotron passed Tesota's live engine checks; Qwen was refused once while its
-shared provider was busy. Neither has been measured as a Tesota role, so
-treat the result with care. A free model's provider may keep your code and
-train on it, so use them for code you would share. OpenRouter allows 50 free
-requests a day until you buy $10 of credit, then 1,000; one request with its
-review makes many model calls. The $10 also pays for OpenRouter's paid models.
+On Tesota's review evaluation, Nemotron as reviewer and refuter found every
+planted defect with no false positive and refuted every planted false
+claim, as the paid models do; as validator it left two of five findings open
+after a real fix, where the paid models resolved every real fix. That is
+one run. Laguna S read a file and answered correctly through Tesota's tools,
+but has not been measured as the agent; `openrouter:cohere/north-mini-code:free`
+also answered, if Laguna is unavailable.
+
+Free models come and go. A free model can be refused for a while when its
+shared provider is busy ("temporarily rate-limited upstream"), as Qwen and
+Gemma were, a purchase does not change that, and some are offered only to
+coding agents listed in OpenRouter's app directory, which Tesota is not. If
+one keeps failing, choose another from `tesota models openrouter`. A free
+model's provider may keep your code and train on it, so use them for code
+you would share. OpenRouter allows 50 free requests a day until you buy $10
+of credit, then 1,000, counted per account across all its keys; the
+evaluation above and the trials around it used 120. The $10 also pays for OpenRouter's
+paid models.
 
 **OpenRouter credits or OpenCode.** Both reach many labs' models, so the agent
 and its judges can come from different labs on one account.

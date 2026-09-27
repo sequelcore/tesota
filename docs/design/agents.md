@@ -227,7 +227,10 @@ conversation, so the model carries `tesota/<version>` and
 `x-opencode-client: tesota`, and Pi adds the session from the conversation's
 id. Pi's install telemetry is off in Tesota's sessions, since it would list
 Tesota's OpenRouter calls under Pi; Tesota sends no OpenRouter attribution of
-its own, which would list it publicly in OpenRouter's rankings.
+its own, which would list it publicly in OpenRouter's rankings. That has a
+cost: OpenRouter offers some free models only to agents in its app
+directory (403 "only available on agentic harnesses", at the routing step
+"Gate Free Endpoints by Agentic Harness"), so Tesota cannot use them.
 `src/integrations/model-session.ts` owns these headers, and a test reads them
 from the wire.
 

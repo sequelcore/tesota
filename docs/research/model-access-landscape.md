@@ -52,7 +52,12 @@ model outside Pi's agent loop.
 **OpenRouter's app headers are optional.** `HTTP-Referer` is "the primary
 identifier for rankings" and needed to create an app's public page;
 `X-OpenRouter-Title` and `X-OpenRouter-Categories` only name and file it
-([app attribution](https://openrouter.ai/docs/app-attribution)).
+([app attribution](https://openrouter.ai/docs/app-attribution)). Some free
+models are nevertheless offered only to listed apps: on 2026-09-26
+`thinkingmachines/inkling:free` answered a client without them with 403,
+"only available on agentic harnesses. Try plugging it into a coding agent or
+productivity app listed on https://openrouter.ai/apps", which the
+documentation does not mention.
 
 **OpenRouter's catalogue has models no role can use.** Its `:batch` variants
 are the Batch API, which answers within 24 hours at about half the price
