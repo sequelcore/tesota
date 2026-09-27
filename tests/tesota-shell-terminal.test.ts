@@ -45,6 +45,83 @@ function visible(terminal: TestTerminal): string {
   return stripTerminalSequences(terminal.writes.join("\n"));
 }
 
+it("opens /themes, filters, navigates and switches without consuming the request", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 140;
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const answer = shell.ask("> ");
+  const screen = (): string => { terminal.writes.length = 0; tui.renderNow(true); return visible(terminal); };
+  terminal.send("/themes");
+  terminal.send("\r");
+  const choices = screen();
+  expect(choices).toContain("Theme: tesota-dark");
+  for (const name of ["tesota-light", "vesper", "sequel", "automata", "phosphor", "terminal"]) {
+    expect(choices).toContain(name);
+  }
+  terminal.send("\x1b[B");
+  terminal.send("\r");
+  expect(screen()).toContain("Theme: tesota-light.");
+  terminal.send("/themes ves");
+  const filtered = screen();
+  expect(filtered).toContain("charcoal and peach");
+  expect(filtered).not.toContain("parchment and ink");
+  terminal.send("\t");
+  terminal.send("\r");
+  expect(screen()).toContain("Theme: vesper.");
+  terminal.send("/themes automata");
+  terminal.send("\x1b");
+  expect(screen()).not.toContain("↑↓ choose");
+  terminal.send("\x03");
+  terminal.send("/themes");
+  terminal.send("\r");
+  expect(screen()).toContain("Theme: vesper");
+  terminal.send("\x1b");
+  terminal.send("\x03");
+  terminal.send("/themes nonexistent");
+  expect(screen()).toContain("No matching themes");
+  terminal.send("\r");
+  expect(screen()).toContain("No matching themes");
+  terminal.send("\x03");
+  terminal.send("continue");
+  terminal.send("\r");
+  await expect(answer).resolves.toBe("continue");
+  shell.stop();
+});
+
+it("switches themes in place across sessions without answering the pending prompt", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 140;
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.addSession("other", "Other", [{ kind: "notice", text: "Saved warning", tone: "warning" }]);
+  shell.start();
+  shell.write("Existing warning", "warning");
+  const answer = shell.ask("> ");
+  const send = (command: string): void => { terminal.send(command); terminal.send("\r"); tui.renderNow(true); };
+  send("/themes tesota-light");
+  expect(screenLine(terminal.writes.join(""), "Existing warning")).toContain("\x1b[38;2;110;96;44m");
+  shell.selectSession("other");
+  tui.renderNow(true);
+  expect(screenLine(terminal.writes.join(""), "Saved warning")).toContain("\x1b[38;2;110;96;44m");
+  shell.selectSession("default");
+  send("/themes invalid extra");
+  send("/themes terminal extra");
+  expect(visible(terminal)).toContain("Theme: tesota-light");
+  send("/themes terminal");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(terminal.writes.join("")).not.toContain("\x1b[38;2;");
+  send("/themes tesota-dark");
+  expect(screenLine(terminal.writes.join(""), "Existing warning")).toContain("\x1b[38;2;213;179;106m");
+  send("continue");
+  await expect(answer).resolves.toBe("continue");
+  shell.stop();
+});
+
 it("retains the last message when stopping before the scheduled render", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });

@@ -18,6 +18,14 @@ identity joins that heading when the sidebar is absent. Execution location and
 the selected model stay beside the prompt ([using Tesota](../guide/using-tesota.md)
 lists the keys).
 
+`tesota-shell-theme.ts` owns the terminal palettes, and
+`tesota-shell-theme-picker.ts` uses pi-tui's `SelectList` for `/themes`.
+Switching mutates a shell-local palette shared by its components and rebuilds
+cached styled content without replacing sessions or streaming tool calls.
+The accepted theme names are specified and proved in
+`verification/shell-theme-rule.ts`. These are terminal adaptations, not the
+GUI's surface system: the terminal still owns the canvas and ordinary text.
+
 The sidebar's responsive mode, state precedence, moving states and
 newest-first index are pure rules in `verification/sidebar-rule.ts`, with
 LemmaScript specifications proved by Dafny. Rendering belongs to

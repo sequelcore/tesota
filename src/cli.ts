@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 
 import { configuredOxlint, runOxlint } from "./verification/oxlint.js";
+import { TESOTA_SHELL_THEME_NAMES } from "./verification/shell-theme-rule.js";
 
 const help = `Tesota
 Usage: tesota [--help | -h | help]
-       tesota [--theme <tesota-dark|tesota-light|terminal>]
+       tesota [--theme <${TESOTA_SHELL_THEME_NAMES.join("|")}>]
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe]
        tesota models [<route> | <role> <route:model|default|off>]
@@ -22,7 +23,7 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   const { parseTesotaShellTheme } = await import("./tesota-shell-theme.js");
   const theme = args.length === 0 ? "tesota-dark" : parseTesotaShellTheme(args[1] ?? "");
   if (theme === undefined) {
-    process.stderr.write("Choose a valid shell theme: tesota-dark, tesota-light or terminal.\n");
+    process.stderr.write(`Choose a valid shell theme: ${TESOTA_SHELL_THEME_NAMES.join(", ")}.\n`);
     process.exitCode = 2;
   } else {
     // A plain folder is worked on only after the person agrees, once (decision 032).

@@ -37,7 +37,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
   expect(result.stderr).toBe("");
   expect(result.stdout).toBe(
     "Tesota\nUsage: tesota [--help | -h | help]\n" +
-    "       tesota [--theme <tesota-dark|tesota-light|terminal>]\n" +
+    "       tesota [--theme <tesota-dark|tesota-light|vesper|sequel|automata|phosphor|terminal>]\n" +
     "       tesota verify <file.ts|file.js>\n" +
     "       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe]\n" +
     "       tesota models [<route> | <role> <route:model|default|off>]\n" +

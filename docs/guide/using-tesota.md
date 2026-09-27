@@ -335,7 +335,25 @@ Sessions, their workspaces and their conversations are restored after a
 restart.
 
 `tesota --theme tesota-light` or `--theme terminal` changes the appearance for
-one run.
+one run. Inside the shell, `/themes` opens a list like `/models`: type to
+filter, use Up/Down to choose, Enter to switch, Tab to complete the name,
+and Esc to close without switching. `/themes <name>` switches every session immediately
+without restarting work. The selection lasts for this run.
+
+| Theme | Appearance |
+| --- | --- |
+| `tesota-dark` (default) | Ironwood neutrals and lavender |
+| `tesota-light` | Ivory and lavender |
+| `vesper` | Charcoal and peach |
+| `sequel` | Warm neutrals and sand |
+| `automata` | Parchment and ink, with darker status colors |
+| `phosphor` | Green phosphor, with subdued text and distinct status colors |
+| `terminal` | Your terminal's own colors |
+
+Themes do not change your terminal profile or its background. Use a light
+terminal background with `tesota-light` or `automata`, and a dark background
+with the dark themes. Messages and selections use their own paired text and
+background colors; plain conversation text still uses the terminal's foreground.
 
 ## Limits
 

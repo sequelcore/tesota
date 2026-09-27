@@ -43,7 +43,7 @@ function markdownTheme(theme: TesotaShellTheme): MarkdownTheme {
     italic: (text) => `\x1b[3m${text}\x1b[23m`,
     strikethrough: (text) => `\x1b[9m${text}\x1b[29m`,
     underline: (text) => `\x1b[4m${text}\x1b[24m`,
-    ...(theme.accent === null ? {} : { highlightCode: (code: string, lang?: string) => highlightCode(code, lang) }),
+    highlightCode: (code: string, lang?: string) => theme.accent === null ? code.split("\n") : highlightCode(code, lang),
   };
 }
 
@@ -178,7 +178,13 @@ export class Transcript {
 
   add(entry: TranscriptEntry): void {
     const component = this.#render(entry);
-    this.#append(component);
+    if (entry.kind === "user" || entry.kind === "review" || entry.kind === "notice" && !(component instanceof ExpandableNotice)) {
+      let shown: Component | undefined = component;
+      this.#append({
+        invalidate: () => { shown = undefined; },
+        render: (width) => { shown ??= this.#render(entry); return shown.render(width); },
+      });
+    } else this.#append(component);
     if (component instanceof ExpandableNotice) this.#notices.push(component);
     if (entry.kind === "agent" || entry.kind === "notice") {
       this.#last = component instanceof ExpandableNotice ? component.preview : safeTerminalText(entry.text);
@@ -245,7 +251,7 @@ export class Transcript {
       case "user": {
         if (theme.userBackground === null) return new Text(`${bold("›")} ${safeTerminalText(entry.text)}`, 1, 0);
         const box = new Box(1, 1, (line) => backgroundText(line, theme.userBackground));
-        box.addChild(new Text(safeTerminalText(entry.text), 0, 0));
+        box.addChild(new Text(colorText(safeTerminalText(entry.text), theme.foreground), 0, 0));
         return box;
       }
       case "agent": return new Markdown(safeTerminalText(entry.text), 1, 0, this.#markdown);

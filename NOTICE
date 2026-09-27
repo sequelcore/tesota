@@ -7,6 +7,17 @@ You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2
 Tesota was reconstructed from the Kiln repository and retains selected Kiln
 history, attribution, documentation and adapted engineering work.
 
+Terminal themes
+
+The palettes in src/tesota-shell-theme.ts adapt the visual direction of
+packages/operator-appearance/src/palettes.ts from Kiln commit
+f02c70b6c312e22f76edf912902e8efaa8aa736a (kiln-legacy-2026-09).
+Kiln credited Automata, Phosphor and Vesper to the community themes at
+https://github.com/SunkenInTime/t3-themes. Tesota's terminal implementation
+does not copy that gallery's source code or theme JSON. Status colors,
+message backgrounds and selections are adapted to Tesota's terminal roles;
+the GUI appearance infrastructure is not included.
+
 Kiln
 Copyright 2024-2026 Sequel
 
