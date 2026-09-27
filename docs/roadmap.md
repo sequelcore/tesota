@@ -57,8 +57,11 @@ project. They are listed here as they are chosen.
   2026-09-27. Linux and macOS are paused, 2026-09-26, until real use gives
   feedback.
 - **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
-  built 2026-09-26; OpenRouter's contract suite passes live on a free model,
-  OpenCode awaits a key, and their models are unmeasured as Tesota's roles.
+  built 2026-09-26; OpenRouter's contract suite passes live on a free model.
+  OpenCode refuses Zen's free models to clients other than its own, and Go
+  answers only a key whose workspace has an active Go subscription, so
+  neither OpenCode route has run a request yet; the routes' models are
+  unmeasured as Tesota's roles, apart from Nemotron as a free judge.
 - **Work beyond code** (decision 012's direction): a first real user works in
   public administration, with documents, spreadsheets, presentations and
   research, and the operator also uses agents for answers and actions on
