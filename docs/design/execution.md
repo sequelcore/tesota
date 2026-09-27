@@ -12,7 +12,9 @@ The interface is Tesota's and names no vendor: **prepare** an environment for
 one workspace, **run** a command with a working directory, environment
 variables, a time limit and cancellation, streaming its output and reporting
 how it ended (exited, timed out, cancelled, or could not start), and
-**dispose** of it. Pi's shell tool reaches it through an adapter that drops the
+**dispose** of it. Preparing can be stopped: the provider then releases what
+it had acquired and rejects, and an environment it finishes preparing anyway
+is still released through dispose. Pi's shell tool reaches it through an adapter that drops the
 host environment variables Pi would otherwise pass along.
 
 Each provider declares its guarantees in neutral terms, and every check result
@@ -115,6 +117,13 @@ rather than the slower workspace mount. A failed step stops setup but not the
 session, and the operator and agent are told what failed; a fingerprint of the
 setup inputs skips setup when nothing changed.
 
+Preparation stops when its session closes, switches sandbox or Tesota quits
+([sessions](sessions.md#what-a-session-holds)). The native sandbox stops the
+dependency install under way and releases its drive and proxy; Docker
+Sandboxes stops between steps, since a step already running in `sbx` runs to
+its own time limit, and the sandbox it keeps by name is removed with its
+workspace.
+
 ## Why
 
 - **Approval and isolation are separate settings**, as in Codex and Claude
@@ -209,7 +218,10 @@ are denied too: a command can list their names, never read or write them.
 The grants name the real folders. Node runs with `--preserve-symlinks` and
 `--preserve-symlinks-main`, so npm does not walk its own install folder.
 
-The drive is removed when the sandbox is disposed or released, and quitting
+Preparing acquires the proxy and then the drive, and a later step that fails
+or is stopped, such as the dependency install, releases both, in reverse
+order, before the error is reported (`AsyncDisposableStack`); a failed release
+does not stop the others. The drive is removed when the sandbox is disposed or released, and quitting
 waits, up to five seconds, for every session's sandbox to be disposed before
 the process exits. A `subst` drive lasts until the operator signs out,
 whatever becomes of the process that mapped it, so a session that never

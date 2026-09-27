@@ -61,6 +61,35 @@ The loop itself, request, checks, review, correction and decision, is
 independent of the terminal (`tesota-shell.ts`); the terminal only renders it
 and asks the operator's questions.
 
+## What a session holds
+
+A session acquires its workspace, then its execution environment, then its
+working agent with its explorers and advisor, each the first time it is
+needed, and keeps them until it ends (decision 038). Preparation starts when
+the session opens and runs in the background. Closing the session, switching
+its sandbox and quitting all end what it holds the same way: a preparation
+still under way is stopped, the agent ends, and the environment is released,
+so a ten-minute dependency install does not outlive the session that asked
+for it. What failed to be acquired is forgotten, so the next request tries
+again, but only while nothing newer has taken its place: an environment
+prepared after a sandbox switch stays the session's even when the earlier
+preparation fails later. Closing also removes the session's workspace, unless
+the session holds unresolved effects, which keep it as evidence. Quitting
+waits for the releases up to five seconds; the native sandbox's drive leases
+cover one that does not finish ([execution](execution.md#native-sandbox)).
+
+At most two sessions work at once, and a turn runs at most three explorers;
+both limits are one semaphore (`src/semaphore.ts`), which grants places in
+the order they were asked for and drops a waiter whose work was stopped.
+
+This is built on the platform's own promises, abort signals and
+`AsyncDisposableStack`. Effect v4's scopes and structured concurrency were
+evaluated for it and not adopted for now: they would replace this plumbing
+but not the outcomes Tesota keeps distinct, such as a stop an engine did not
+confirm, and v4 was still a release candidate. The choice is taken again, by
+a matched comparison, before the session service below is built
+([Effect runtime landscape](../research/effect-runtime-landscape.md)).
+
 ## What is saved
 
 Each repository has one saved store under `~/.tesota/shell-sessions/`, and a

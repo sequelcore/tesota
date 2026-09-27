@@ -152,6 +152,18 @@ The [session service](design/sessions.md#planned-a-session-service): sessions
 outlive the terminal, and the operator reaches them over SSH on a tailnet.
 Building it waits for step 3.
 
+The service owns every session's resources for several clients, which
+decides what it runs on. Before building it, the session lifecycle is built
+twice, on Effect v4's scopes and structured concurrency and on the platform's
+own primitives that Tesota uses today (decision 038), and measured against
+the same fault-injection tests with criteria registered first: exact outcome
+classification and nothing left open for every failure or stop injected at
+each acquisition step, then code size, the time and first-pass correctness of
+a change made by the operator and by a coding agent, and readability for a
+contributor who does not know Effect
+([Effect runtime landscape](research/effect-runtime-landscape.md)). Effect is
+adopted only if it wins on that evidence and 4.0 is stable by then.
+
 **Done when:** over SSH from another device on the tailnet, the operator
 attaches to running sessions, answers a pending question, disconnects
 mid-work, and finds the work finished on reconnecting.
