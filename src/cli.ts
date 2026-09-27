@@ -6,7 +6,7 @@ const help = `Tesota
 Usage: tesota [--help | -h | help]
        tesota [--theme <tesota-dark|tesota-light|terminal>]
        tesota verify <file.ts|file.js>
-       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode]
+       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe]
        tesota models [<route> | <role> <route:model|default|off>]
        tesota prune [--force]
        tesota setup

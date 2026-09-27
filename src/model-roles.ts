@@ -79,6 +79,21 @@ export function parseModelChoice(value: string): ModelChoice | undefined {
   if (rest.length > 0 || level !== undefined && !isReasoningLevel(level)) return undefined;
   return { route: route as ModelRoute, model, ...(level === undefined ? {} : { reasoning: level as ReasoningLevel }) };
 }
+/**
+ * A typed decision model, which answers a fixed question with a probability
+ * rather than holding a conversation (decision 035): only the answer check's
+ * first pass may use one. `typesafe` is TypeSafe's API, reached with the
+ * operator's own TypeSafe key; its models are pinned to the versions qualified
+ * on the first pass's registered cases, since a newer one may decide
+ * differently.
+ */
+export const DECISION_MODELS = ["typesafe:jev-1.13.0"] as const;
+export type DecisionModel = typeof DECISION_MODELS[number];
+
+export function isDecisionModel(value: string): value is DecisionModel {
+  return (DECISION_MODELS as readonly string[]).includes(value);
+}
+
 export const MODEL_ROLES = ["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage"] as const;
 export type ModelRole = typeof MODEL_ROLES[number];
 
@@ -110,8 +125,9 @@ export const DEFAULT_MODELS_FILE: string = join(homedir(), ".tesota", "models.js
 export type ModelChoices = Readonly<Record<ModelRole, string>>;
 
 const modelId = z.string().max(120).refine((value) => value === ROLE_OFF || parseModelChoice(value) !== undefined);
+const triageId = z.string().max(120).refine((value) => value === ROLE_OFF || isDecisionModel(value) || parseModelChoice(value) !== undefined);
 const choicesSchema = z.strictObject({ agent: modelId.optional(), explorer: modelId.optional(), advisor: modelId.optional(),
-  reviewer: modelId.optional(), refuter: modelId.optional(), validator: modelId.optional(), triage: modelId.optional() });
+  reviewer: modelId.optional(), refuter: modelId.optional(), validator: modelId.optional(), triage: triageId.optional() });
 type StoredChoices = z.infer<typeof choicesSchema>;
 
 export function isModelRole(value: string): value is ModelRole {
@@ -140,7 +156,9 @@ export function chooseModel(role: ModelRole, model: string, available: readonly 
   path: string = DEFAULT_MODELS_FILE): ModelChoices {
   const choices: Record<string, string | undefined> = { ...stored(path) };
   if (model === "default") delete choices[role];
-  else if (available.includes(model) || OPTIONAL_ROLES.includes(role) && model === ROLE_OFF) choices[role] = model;
+  else if (available.includes(model) && (!isDecisionModel(model) || role === "triage") ||
+    OPTIONAL_ROLES.includes(role) && model === ROLE_OFF) choices[role] = model;
+  else if (isDecisionModel(model)) throw new Error(`${model} answers only the answer check's first pass; choose it for triage`);
   else throw new Error(`${model} is not offered; tesota models lists the models and the reasoning levels each supports`);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.${randomUUID()}.tmp`;

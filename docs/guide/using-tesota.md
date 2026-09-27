@@ -198,6 +198,12 @@ brief of the session, which the conversation shows first: your requests for
 the pending changes, the changes, open review findings and the agent's last
 reply. `tesota models agent` sets the model for new sessions.
 
+`/models` chooses the model of every role, as `tesota models` does: pick a
+role, then its model, from the same kind of list. The choice holds for every
+session: the judges and the first pass use it from their next check, and
+the agent's role from the next new session. You can also type it, for
+example `/models triage typesafe:jev-1.13.0` or `/models advisor off`.
+
 ## Review and apply
 
 When a request leaves changes, Tesota runs your checks on exactly that

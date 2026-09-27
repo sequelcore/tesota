@@ -39,7 +39,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "Tesota\nUsage: tesota [--help | -h | help]\n" +
     "       tesota [--theme <tesota-dark|tesota-light|terminal>]\n" +
     "       tesota verify <file.ts|file.js>\n" +
-    "       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode]\n" +
+    "       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe]\n" +
     "       tesota models [<route> | <role> <route:model|default|off>]\n" +
     "       tesota prune [--force]\n" +
     "       tesota setup\n" +

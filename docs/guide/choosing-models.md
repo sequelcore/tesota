@@ -15,7 +15,7 @@ and how to check a choice. Signing in to each route is in
 | `reviewer` | Reviews each result, with focused lenses on deep reviews and ClaimCheck on proved contracts | One to four sessions per result |
 | `refuter` | Tries to disprove every finding before it counts | One session per review |
 | `validator` | Checks whether a correction resolved what was sent back | One session per correction round |
-| `triage` | Decides whether an answer with no file changes needs the full check | One short session per such turn; `off` checks every answer in full |
+| `triage` | Decides whether an answer with no file changes needs the full check | One short session per such turn, or one Jev decision; `off` checks every answer in full |
 
 A choice is written `route:model`, optionally with a reasoning level:
 `codex:gpt-6-astra@high`. Levels are `low`, `medium`, `high`, `xhigh` and
@@ -110,9 +110,28 @@ subscription; Zen's free models work only in OpenCode's own app. Tesota has
 not yet measured these routes' models as its roles, so check a choice
 (below) before relying on it.
 
+**A TypeSafe key: Jev for the first pass.** The `triage` role can use Jev,
+TypeSafe's typed decision model, which decides in about a tenth of a second
+where a model session takes about two, and costs about 340 tokens a
+decision. It made no wrong decision on Tesota's 20 registered cases. Save
+your key from [console.typesafe.ai](https://console.typesafe.ai) and choose
+it:
+
+```
+tesota auth login typesafe
+tesota models triage typesafe:jev-1.13.0
+```
+
+TypeSafe receives the requests and the agent's reply of each turn that
+changed no files; it says it does not train on them, and states no retention
+period. Without a key, or when TypeSafe does not answer, every such answer
+gets the full check. Only the `triage` role can use Jev.
+
 `tesota models` shows each role's model, who pays for it and the model's list
-price; `tesota models <role> default` restores Luna, and a new choice applies
-to sessions opened afterwards.
+price; `tesota models <role> default` restores Luna. In a session, `/models`
+does the same: choose a role, then its model. The reviewer, refuter,
+validator and first pass use a new choice from their next check; the agent's
+applies to new sessions, and `/model` switches the current session's.
 
 ## Why these setups
 

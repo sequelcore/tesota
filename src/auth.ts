@@ -11,13 +11,14 @@ import { windowsSystemProgram } from "./windows-system.js";
 
 /**
  * `tesota auth` for each route (decisions 021 and 031). Tesota stores Codex's
- * OAuth login, an Anthropic API key, an OpenRouter key and one OpenCode key,
- * which Zen and Go share. It never holds a Claude subscription login: for the
- * `claude-code` route it runs Claude Code's own sign-in and status, and reads
- * only whether Claude Code is signed in and how.
+ * OAuth login, an Anthropic API key, an OpenRouter key, one OpenCode key,
+ * which Zen and Go share, and a TypeSafe key (decision 035). It never holds a
+ * Claude subscription login: for the `claude-code` route it runs Claude Code's
+ * own sign-in and status, and reads only whether Claude Code is signed in and
+ * how.
  */
 
-const routes = ["codex", "anthropic", "claude-code", "openrouter", "opencode"] as const;
+const routes = ["codex", "anthropic", "claude-code", "openrouter", "opencode", "typesafe"] as const;
 type AuthRoute = typeof routes[number];
 
 /** A route whose credential is a key the operator pastes: its name, Pi's provider, the key's environment variable, and where to get one. */
@@ -28,10 +29,12 @@ interface KeyRoute {
   readonly source: string;
 }
 
-const keyRoutes: Readonly<Record<"anthropic" | "openrouter" | "opencode", KeyRoute>> = {
+type KeyRouteName = "anthropic" | "openrouter" | "opencode" | "typesafe";
+const keyRoutes: Readonly<Record<KeyRouteName, KeyRoute>> = {
   anthropic: { label: "Anthropic API", provider: "anthropic", variable: "ANTHROPIC_API_KEY", source: "https://console.anthropic.com" },
   openrouter: { label: "OpenRouter", provider: "openrouter", variable: "OPENROUTER_API_KEY", source: "https://openrouter.ai/settings/keys" },
   opencode: { label: "OpenCode (Zen and Go)", provider: "opencode", variable: "OPENCODE_API_KEY", source: "https://opencode.ai/auth" },
+  typesafe: { label: "TypeSafe (Jev)", provider: "typesafe", variable: "TYPESAFE_API_KEY", source: "https://console.typesafe.ai" },
 };
 
 /** The Claude Code program bundled with the Claude Agent SDK for this platform, unmodified. */
@@ -132,7 +135,7 @@ async function codex(action: string, credentials: TesotaCredentials): Promise<nu
   } finally { cancel.abort(); clearTimeout(watchdog); }
 }
 
-async function pastedKey(route: "anthropic" | "openrouter" | "opencode", action: string, credentials: TesotaCredentials): Promise<number> {
+async function pastedKey(route: KeyRouteName, action: string, credentials: TesotaCredentials): Promise<number> {
   const { label, provider, variable, source } = keyRoutes[route];
   if (action === "status") {
     const saved = await credentials.read(provider);
@@ -207,7 +210,7 @@ export async function runAuthCommand(action: string, route: string = "codex",
       case "codex": return await codex(action, credentials);
       case "claude-code": return await claudeCode(action);
       case "openrouter": return await openRouter(action, credentials);
-      case "anthropic": case "opencode": return await pastedKey(route as "anthropic" | "opencode", action, credentials);
+      case "anthropic": case "opencode": case "typesafe": return await pastedKey(route as KeyRouteName, action, credentials);
     }
   } catch {
     console.error(`${route} authentication operation failed. Credentials were not printed. Check private storage or retry after resolving the failure.`);

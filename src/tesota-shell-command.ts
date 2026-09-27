@@ -10,10 +10,11 @@ import { chooseSessionExecution, packageCacheDirectory, providersFor, readSandbo
 import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-session.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
-import { ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
+import { isDecisionModel, ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
 import { type WorkPlan, withReview } from "./work-plan.js";
 import { isGitRepository } from "./folder-source.js";
-import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, routeListing } from "./models-command.js";
+import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, rolePicker, routeListing,
+  runModelsCommand } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
@@ -32,7 +33,8 @@ import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult,
 import { inspectAnswer, inspectReview } from "./tesota-shell-inspection.js";
 import { obligationOutcome } from "./verification/obligation-outcome.js";
 import { runsAnswerCheck } from "./verification/answer-check-rule.js";
-import { triageAnswer } from "./integrations/answer-triage.js";
+import { triageAnswer, type TriageDecision } from "./integrations/answer-triage.js";
+import { jevTriage, typesafeKey } from "./integrations/jev-triage.js";
 import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
 import type { TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { UnsupportedSourceChange } from "./source-snapshot.js";
@@ -291,8 +293,16 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onModel: (id, argument) => { void agentModel.change(id, argument); },
     onHandoff: (id) => { void agentModel.handOff(id); },
     onSandbox: (id, argument) => { void sessionSandbox.change(id, argument); },
-    modelPicker: (id) => {
+    onRoleModel: (id, args) => {
+      let text = "";
+      const code = runModelsCommand(args, (written) => { text += written; }, offered());
+      // The agent's role sets the model new sessions start with; `/model` switches a running session's.
+      const agent = code === 0 && args[0] === "agent" ? "New sessions start with it; /model switches this one's.\n" : "";
+      surface.writeTo(id, `${text}${agent}`.trimEnd(), code === 0 ? "success" : "warning");
+    },
+    modelPicker: (id, prefix) => {
       try {
+        if (prefix !== "/model ") return rolePicker(prefix, offered());
         const context = states.get(id)?.agent?.contextTokens();
         return { current: agentChoice(id), ...(context === undefined ? {} : { contextTokens: context }), entries: offered().map((model) => ({ id: model.id, detail: modelCost(model),
           reasoning: model.reasoning })) };
@@ -391,6 +401,20 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   };
   /** The route and model the operator chose for a role (decisions 020 and 021), read when the role starts work. */
   const openModel = (signal: AbortSignal, role: ModelRole): Promise<ModelTarget> => openModelTarget(readModelChoices()[role], signal);
+  /**
+   * The answer check's first pass on the triage role's choice (decisions 034 and 035): a model session or a typed
+   * decision model. Off, or failing in any way, it decides nothing, and the full check runs.
+   */
+  const firstPass = async (requests: readonly string[], reply: string, signal: AbortSignal): Promise<TriageDecision> => {
+    const undecided = (reason: string): TriageDecision => ({ decided: false, checkable: true, reason });
+    try {
+      const choice = readModelChoices().triage;
+      if (choice === ROLE_OFF) return undecided("the first pass is off");
+      if (!isDecisionModel(choice)) return await triageAnswer({ target: await openModelTarget(choice, signal) }, requests, reply, signal);
+      const key = await typesafeKey();
+      return key === undefined ? undecided("no TypeSafe key") : await jevTriage(key, choice, requests, reply, signal);
+    } catch { return undecided("the first pass failed"); }
+  };
   /** The model for one of the review step's sessions, counting its tokens toward the step. */
   const modelFor = async (run: ReviewRun, role: ModelRole): Promise<ModelAccess> =>
     ({ target: await openModel(run.signal, role), onUsage: run.onUsage });
@@ -955,9 +979,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         response: state.lastReply ?? "", ...(claimedSteps.length === 0 ? {} : { claimedSteps }) };
       // A cheap first pass spares the reviewer a turn with nothing to check (decision 034); off, every answer is checked.
       surface.reportFor(id, { phase: "reviewing", activity: "Deciding whether the answer needs checking" });
-      const triage = readModelChoices().triage === ROLE_OFF ? { decided: false, checkable: true, reason: "the first pass is off" }
-        : await triageAnswer({ target: await openModel(signal, "triage") }, requests, state.lastReply ?? "", signal)
-          .catch(() => ({ decided: false, checkable: true, reason: "the first pass failed" }));
+      const triage = await firstPass(requests, state.lastReply ?? "", signal);
       if (signal.aborted) { surface.clearProgressFor(id, "reviewing"); return { status: "cancelled" }; }
       if (!runsAnswerCheck(triage.decided, triage.checkable)) {
         surface.clearProgressFor(id, "reviewing");

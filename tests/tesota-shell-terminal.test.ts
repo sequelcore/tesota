@@ -168,6 +168,48 @@ it("opens a model picker on /model: filtered by typing, a reasoning level with l
   shell.stop();
 });
 
+it("chooses a role's model with /models: a role, then its model, which Enter sets", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onRoleModel = vi.fn();
+  const prefixes: string[] = [];
+  const modelPicker = (_id: string, prefix: string) => {
+    prefixes.push(prefix);
+    return prefix === "/models "
+      ? { title: "Role", completes: true, current: "", entries: [
+        { id: "reviewer", detail: "codex:gpt-6-astra", reasoning: [] }, { id: "triage", detail: "codex:gpt-6-luna", reasoning: [] }] }
+      : { title: "The triage's model, for every session", current: "codex:gpt-6-luna", entries: [
+        { id: "typesafe:jev-1.13.0", detail: "your TypeSafe key", reasoning: [] },
+        { id: "codex:gpt-6-luna", detail: "your ChatGPT plan's limits", reasoning: [] }] };
+  };
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onRoleModel, modelPicker });
+  shell.start();
+  shell.ask("> ").catch(() => undefined);
+  const screen = (): string => { terminal.writes.length = 0; tui.renderNow(true); return visible(terminal); };
+  terminal.send("/models");
+  terminal.send("\r");
+  const roles = screen();
+  expect(roles).toContain("Role · ↑↓ choose · Enter choose");
+  expect(roles).not.toContain("←→ reasoning");
+  terminal.send("tri");
+  terminal.send("\r");
+  // Choosing a role runs nothing: it opens that role's models.
+  expect(onRoleModel).not.toHaveBeenCalled();
+  expect(prefixes).toEqual(["/models ", "/models triage "]);
+  const models = screen();
+  expect(models).toContain("The triage's model, for every session");
+  expect(models).toMatch(/● codex:gpt-6-luna/u);
+  terminal.send("jev");
+  terminal.send("\r");
+  expect(onRoleModel).toHaveBeenCalledWith("default", ["triage", "typesafe:jev-1.13.0"]);
+  // Typed in full, it runs without the picker.
+  shell.ask("> ").catch(() => undefined);
+  terminal.send("/models triage off");
+  terminal.send("\r");
+  expect(onRoleModel).toHaveBeenLastCalledWith("default", ["triage", "off"]);
+  shell.stop();
+});
+
 it("filters slash commands before dispatching a typed command", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -203,6 +245,21 @@ it.each([
   expect(visible(terminal)).toContain("› /new");
   terminal.writes.length = 0;
   terminal.send("\x1b[B");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("› /next");
+  shell.stop();
+});
+
+it("moves once per key press when the terminal also reports releases", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  shell.ask("> ").catch(() => undefined);
+  terminal.send("/");
+  // Down pressed, then released, as the Kitty keyboard protocol reports them.
+  terminal.send("\x1b[1;1:1B");
+  terminal.send("\x1b[1;1:3B");
   tui.renderNow(true);
   expect(visible(terminal)).toContain("› /next");
   shell.stop();
