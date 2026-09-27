@@ -88,12 +88,14 @@ names.
 **The name.** Tesota takes its name from *Olneya tesota*, the desert
 ironwood, *palo fierro* in Spanish, a tree of the Sonoran Desert
 ([Arizona-Sonora Desert Museum](https://www.desertmuseum.org/programs/ifnm_ironwoodtree.php)).
-Its wood is dense enough to sink in water, some trees are estimated at 800
-years old, and more than 500 species of plants and animals depend on it,
-which makes it a keystone of its habitat
+Its wood is dense enough to sink in water, and some trees are estimated at
+800 years old. It is a nurse tree: its shade and shelter help other plants
+establish themselves beneath it, and more than 500 species of plants and
+animals depend on it, which makes it a keystone of its habitat
 ([Friends of Ironwood Forest](https://ironwoodforest.org/about/the-monument/learn/desert-ironwood-tree/)).
-The name suggests a durable foundation. It is not a dependability claim,
-and not an architecture term.
+For the project, the name suggests **a durable foundation that supports
+growth**. That is its intended meaning, not a literal translation, a
+dependability claim or an architecture term.
 
 **What Tesota is called.** The category is **verification-first agent**, and
 the description:
