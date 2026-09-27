@@ -172,6 +172,7 @@ function modelsOf(route: ModelRoute, offered: readonly OfferedModel[]): string {
 }
 
 const offText: Partial<Record<string, string>> = { triage: "no first pass; every answer gets the full check",
+  namer: "no titles; a session keeps its first request as its name",
   explorer: "no explorers; choose a model to turn them on",
   advisor: "no advisor; choose a model to turn it on" };
 

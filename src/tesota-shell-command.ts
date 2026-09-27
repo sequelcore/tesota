@@ -35,6 +35,8 @@ import { obligationOutcome } from "./verification/obligation-outcome.js";
 import { runsAnswerCheck } from "./verification/answer-check-rule.js";
 import { triageAnswer, type TriageDecision } from "./integrations/answer-triage.js";
 import { jevTriage, typesafeKey } from "./integrations/jev-triage.js";
+import { nameSession } from "./integrations/session-namer.js";
+import { cleanTitle, seedTitle } from "./session-title.js";
 import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
 import type { TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { UnsupportedSourceChange } from "./source-snapshot.js";
@@ -300,6 +302,22 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const agent = code === 0 && args[0] === "agent" ? "New sessions start with it; /model switches this one's.\n" : "";
       surface.writeTo(id, `${text}${agent}`.trimEnd(), code === 0 ? "success" : "warning");
     },
+    onRename: (id, name) => {
+      if (name === undefined) {
+        // As Codex's /rename suggests one: a title from the session's latest requests.
+        const requests = (store.list().find((session) => session.id === id)?.entries ?? [])
+          .flatMap((entry) => entry.kind === "user" && !entry.text.startsWith("/") ? [entry.text] : []).slice(-8);
+        if (requests.length === 0) { surface.writeTo(id, "Nothing to name yet. Use /rename <name>.", "warning"); return; }
+        surface.writeTo(id, "Naming the session from its requests.");
+        nameInBackground(id, requests, "operator");
+        return;
+      }
+      const title = cleanTitle(name);
+      try {
+        if (title !== undefined && store.setTitle(id, title, "operator")) surface.setSessionTitle(id, title);
+        else surface.writeTo(id, "Use /rename <name>, with some text.", "warning");
+      } catch { surface.writeTo(id, "The name could not be saved.", "warning"); }
+    },
     modelPicker: (id, prefix) => {
       try {
         if (prefix !== "/model ") return rolePicker(prefix, offered());
@@ -401,6 +419,24 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   };
   /** The route and model the operator chose for a role (decisions 020 and 021), read when the role starts work. */
   const openModel = (signal: AbortSignal, role: ModelRole): Promise<ModelTarget> => openModelTarget(readModelChoices()[role], signal);
+  /** Stops titles still being written when Tesota quits. */
+  const titling = new AbortController();
+  /** Name the session in the background on the namer's model (decision 036); a title that does not come leaves the name. */
+  const nameInBackground = (id: string, requests: readonly string[], source: "generated" | "operator"): void => {
+    void (async () => {
+      const choice = readModelChoices().namer;
+      if (choice === ROLE_OFF) return;
+      const title = await nameSession({ target: await openModelTarget(choice, titling.signal) }, requests, titling.signal);
+      if (title !== undefined && store.setTitle(id, title, source)) surface.setSessionTitle(id, title);
+    })().catch(() => undefined);
+  };
+  /** The operator's first request names a new session at once, and a model's title follows. */
+  const nameFromRequest = (id: string, request: string): void => {
+    const seed = seedTitle(request);
+    if (seed === undefined || !store.setTitle(id, seed, "request")) return;
+    surface.setSessionTitle(id, seed);
+    nameInBackground(id, [request], "generated");
+  };
   /**
    * The answer check's first pass on the triage role's choice (decisions 034 and 035): a model session or a typed
    * decision model. Off, or failing in any way, it decides nothing, and the full check runs.
@@ -896,7 +932,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         const notes = [state.note, await updateFromSource(id)].filter((note) => note !== undefined);
         // A new request makes any earlier review stale, whether or not the work finishes.
         stateFor(id).reviewed = undefined;
-        if (origin === "operator") await (await workspaceFor(id)).recordRequest(request);
+        if (origin === "operator") {
+          await (await workspaceFor(id)).recordRequest(request);
+          try { nameFromRequest(id, request); } catch { /* a session keeps its name when the store cannot save a new one */ }
+        }
         const prompt = notes.length === 0 ? request
           : `Tesota context (not written by the user):\n${notes.join("\n\n")}\n\nUser request:\n${request}`;
         state.note = undefined;
@@ -1044,6 +1083,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     sessionSandbox,
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },
     dispose: async () => {
+      titling.abort();
       const released = [...states.values()].map(async (state) => {
         await state.coding?.then((coding) => { coding.dispose(); }, () => undefined);
         await state.environment?.then((environment) => environment.dispose(), () => undefined);

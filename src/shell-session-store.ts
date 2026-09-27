@@ -9,6 +9,7 @@ import { MAX_PLAN_STEPS, PLAN_STATUSES, type PlanStep } from "./work-plan.js";
 import { parseModelChoice } from "./model-roles.js";
 import { MEASUREMENTS_KEPT, type ReviewMeasurement, withMeasurement } from "./review-forecast.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
+import { replacesTitle, type TitleSource } from "./verification/session-title-rule.js";
 
 const text = z.string().max(2_000_000);
 const changeSchema = z.strictObject({ added: z.number().int().nonnegative(), removed: z.number().int().nonnegative(),
@@ -30,20 +31,21 @@ const planSchema: z.ZodType<PlanStep[]> = z.array(z.strictObject({ step: z.strin
   status: z.enum(PLAN_STATUSES), check: z.string().max(2_000).optional(), blocked: z.string().max(2_000).optional(),
   review: z.enum(["held", "not_held", "uncertain"]).optional() }))
   .min(1).max(MAX_PLAN_STEPS);
-// `agent`, `retiredEngineIds`, `sandbox` and `plan` arrived after version 5 and are optional, so saved sessions survive
-// (decisions 026, 030 and 033).
+// `agent`, `retiredEngineIds`, `sandbox`, `plan` and `titleSource` arrived after version 5 and are optional, so saved
+// sessions survive (decisions 026, 030, 033 and 036); a name without a source is the counter's.
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: TranscriptEntry[];
   inspections: { title: string; summary: string; detail: string; diff?: string | undefined }[];
   workspace: string | null;
   interrupted: boolean; blocked: boolean; agent?: string | undefined; retiredEngineIds?: string[] | undefined;
-  sandbox?: SandboxPreference | undefined; plan?: PlanStep[] | undefined }> =
+  sandbox?: SandboxPreference | undefined; plan?: PlanStep[] | undefined; titleSource?: TitleSource | undefined }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
       workspace: z.string().min(1).nullable(),
       interrupted: z.boolean(), blocked: z.boolean(),
       agent: agentModelSchema.optional(), retiredEngineIds: z.array(z.uuid()).max(1_000).optional(),
-      sandbox: z.enum(SANDBOX_PREFERENCES).optional(), plan: planSchema.optional() });
+      sandbox: z.enum(SANDBOX_PREFERENCES).optional(), plan: planSchema.optional(),
+      titleSource: z.enum(["counter", "request", "generated", "operator"]).optional() });
 const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.iso.datetime(),
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
   tokens: z.number().nonnegative(), models: z.strictObject({ reviewer: z.string().min(1).max(100),
@@ -97,6 +99,11 @@ export interface ShellSessionStore {
   setSandbox(id: string, preference: SandboxPreference | undefined): void;
   /** The agent's plan for the session's current work (decision 033); undefined once that work ends. */
   setPlan(id: string, plan: readonly PlanStep[] | undefined): void;
+  /**
+   * Name the session, when `replacesTitle` lets a name from this source
+   * replace the current one (decision 036); whether it did.
+   */
+  setTitle(id: string, title: string, source: TitleSource): boolean;
   close(): void;
 }
 
@@ -291,6 +298,19 @@ export function openShellSessionStore(sourceDirectory: string,
           if (previous === undefined) delete session.sandbox; else session.sandbox = previous;
           throw error;
         }
+      },
+      setTitle: (id, title, source) => {
+        const session = find(id);
+        if (!replacesTitle(session.titleSource ?? "counter", source)) return false;
+        const previous = { title: session.title, source: session.titleSource };
+        session.title = z.string().min(1).max(100).parse(title);
+        session.titleSource = source;
+        try { save(); } catch (error) {
+          session.title = previous.title;
+          if (previous.source === undefined) delete session.titleSource; else session.titleSource = previous.source;
+          throw error;
+        }
+        return true;
       },
       setPlan: (id, plan) => {
         const session = find(id);

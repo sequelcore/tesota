@@ -29,6 +29,8 @@ export interface TesotaShellTerminalOptions {
   readonly modelPicker?: (sessionId: string, prefix: string) => ModelPickerData | undefined;
   /** `/models <role> <choice>`: the model a role uses in every session, as `tesota models` sets it. */
   readonly onRoleModel?: (sessionId: string, args: readonly string[]) => void;
+  /** `/rename <name>` names the session; `/rename` alone asks for a title from its requests (decision 036). */
+  readonly onRename?: (sessionId: string, name: string | undefined) => void;
   readonly onHandoff?: (sessionId: string) => void;
   /** `/sandbox`, with its argument when one was given (decision 030). */
   readonly onSandbox?: (sessionId: string, argument: string | undefined) => void;
@@ -69,6 +71,7 @@ export interface TesotaShellTerminal {
   setBranch(branch: string | undefined): void;
   /** The model the session's agent runs, as `route:model`, shown beside the prompt while it is selected. */
   setSessionModel(id: string, model: string): void;
+  setSessionTitle(id: string, title: string): void;
   blockSession(id: string): void;
   endSession(id: string): void;
   /** Remove a session from the workspace; its pending prompt fails with a closed error. */
@@ -91,7 +94,7 @@ interface PendingPrompt {
 
 interface SessionView {
   readonly id: string;
-  readonly title: string;
+  title: string;
   readonly transcript: Transcript;
   readonly scroll: ScrollView;
   readonly inspections: ShellInspection[];
@@ -122,6 +125,7 @@ const shellCommands = [
   { name: "next", description: "Switch to the next session" },
   { name: "previous", description: "Switch to the previous session" },
   { name: "close", description: "Close this session" },
+  { name: "rename", description: "Name this session, or suggest a name" },
   { name: "model", description: "Show or switch the agent's model" },
   { name: "models", description: "Choose each role's model" },
   { name: "handoff", description: "Start the agent's conversation afresh" },
@@ -711,6 +715,13 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (this.started && id === this.selectedId) this.compose();
   }
 
+  setSessionTitle(id: string, title: string): void {
+    const session = this.sessions.get(id);
+    if (session === undefined) return;
+    session.title = title;
+    if (this.started) this.compose();
+  }
+
   setSessionExecution(id: string, label: string): void {
     const session = this.sessions.get(id);
     if (session === undefined) return;
@@ -856,33 +867,36 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     pending.resolve(answer);
   }
 
+  /** Each shell command, by name: what it does with the selected session and its arguments. */
+  private readonly commandHandlers: Readonly<Record<string, (session: SessionView, args: readonly string[]) => void>> = {
+    new: () => { this.options.onNewSession?.(); },
+    next: () => { this.selectSession(sessionBeside(this.sessionOrder().map((item) => item.id), this.selectedId, 1)); },
+    previous: () => { this.selectSession(sessionBeside(this.sessionOrder().map((item) => item.id), this.selectedId, -1)); },
+    close: (session) => { this.options.onCloseSession?.(session.id); },
+    rename: (session, args) => { this.options.onRename?.(session.id, args.length === 0 ? undefined : args.join(" ")); },
+    model: (session, args) => { this.changeModel(session, args); },
+    models: (session, args) => { this.changeRoleModel(session, args); },
+    handoff: (session) => { this.options.onHandoff?.(session.id); },
+    sandbox: (session, args) => { this.changeSandbox(session, args); },
+    result: () => { this.showResult = !this.showResult; this.compose(); },
+    sidebar: () => { this.toggleSidebar(); },
+    details: (session, args) => { this.toggleDetails(session, args); },
+    help: (session) => {
+      this.writeTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /models [role] [route:model|default|off] " +
+        "/handoff /sandbox [where] /result /sidebar " +
+        "/details [number] /help /quit\n" +
+        "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
+        "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +
+        "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split");
+    },
+    quit: () => { this.options.onQuit?.(); },
+  };
+
   private runShellCommand(session: SessionView, input: string): void {
-    const [command, ...args] = input.slice(1).split(/\s+/u);
-    switch (command) {
-      case "new": this.options.onNewSession?.(); break;
-      case "next": case "previous":
-        this.selectSession(sessionBeside(this.sessionOrder().map((item) => item.id), this.selectedId,
-          command === "next" ? 1 : -1));
-        break;
-      case "close": this.options.onCloseSession?.(session.id); break;
-      case "model": this.changeModel(session, args); break;
-      case "models": this.changeRoleModel(session, args); break;
-      case "handoff": this.options.onHandoff?.(session.id); break;
-      case "sandbox": this.changeSandbox(session, args); break;
-      case "result": this.showResult = !this.showResult; this.compose(); break;
-      case "sidebar": this.toggleSidebar(); break;
-      case "details": this.toggleDetails(session, args); break;
-      case "help":
-        this.writeTo(session.id, "Commands: /new /next /previous /close /model [route:model] /models [role] [route:model|default|off] " +
-          "/handoff /sandbox [where] /result /sidebar " +
-          "/details [number] /help /quit\n" +
-          "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
-          "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +
-          "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split");
-        break;
-      case "quit": this.options.onQuit?.(); break;
-      default: this.writeTo(session.id, "Unknown command. Type / for commands or /help for shortcuts.", "warning");
-    }
+    const [command = "", ...args] = input.slice(1).split(/\s+/u);
+    const run = Object.hasOwn(this.commandHandlers, command) ? this.commandHandlers[command] : undefined;
+    if (run === undefined) this.writeTo(session.id, "Unknown command. Type / for commands or /help for shortcuts.", "warning");
+    else run(session, args);
   }
 
   private changeModel(session: SessionView, args: readonly string[]): void {

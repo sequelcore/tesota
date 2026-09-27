@@ -13,7 +13,7 @@ function surface(overrides: Partial<TesotaShellTerminal> = {}): { surface: Tesot
     report: () => {}, refreshElapsed: () => {}, inspect: () => {}, addSession: () => {}, selectSession: () => {},
     writeTo: (_id, text) => { events.push(text); }, askIn: async () => "",
     reportFor: () => {}, clearProgressFor: () => {}, inspectFor: () => {}, showActivity: () => {}, setSessionExecution: () => {}, setSessionPlan: () => {},
-    setBranch: () => {}, setSessionModel: () => {}, blockSession: () => {}, endSession: () => {}, removeSession: () => {},
+    setBranch: () => {}, setSessionModel: () => {}, setSessionTitle: () => {}, blockSession: () => {}, endSession: () => {}, removeSession: () => {},
     ...overrides,
   } };
 }
