@@ -1,4 +1,7 @@
-import { isAbsolute, resolve } from "node:path";
+import { win32 } from "node:path";
+
+// Windows paths follow Windows' rules whatever the host, so this module means the same everywhere it is tested.
+const { isAbsolute, resolve } = win32;
 
 /**
  * Windows' own programs, by their place in the system directory. Tesota never

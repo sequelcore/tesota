@@ -154,10 +154,19 @@ export function commitAll(checkout: string, message: string): string {
 /** Where a workspace keeps its private snapshot of the source. */
 export function sourceSnapshotDirectory(directory: string): string { return join(directory, "source-snapshot"); }
 
+/** Whether the source is a Git repository or a plain folder (decision 032). */
+export type SourceKind = "repository" | "folder";
+
+/** Where a folder's private repository lives, and what the source is when the caller has decided; otherwise it is detected. */
+export interface SourceOptions {
+  readonly foldersRoot?: string;
+  readonly kind?: SourceKind;
+}
+
 /** The source's identity: a Git repository's top level and HEAD, or a folder and its private repository's commit. */
-async function sourceIdentity(sourceDirectory: string, foldersRoot: string):
+async function sourceIdentity(sourceDirectory: string, foldersRoot: string, kind: SourceKind | undefined):
   Promise<{ source: string; baseline: string; tracking?: string }> {
-  if (!isGitRepository(sourceDirectory)) {
+  if (kind === "folder" || kind === undefined && !isGitRepository(sourceDirectory)) {
     const { folder, tracking, head } = await openFolder(sourceDirectory, foldersRoot);
     return { source: folder, baseline: head, tracking };
   }
@@ -176,8 +185,9 @@ async function sourceIdentity(sourceDirectory: string, foldersRoot: string):
  * folder is cloned from its private repository (decision 032).
  */
 export async function createWorkspaceCheckout(sourceDirectory: string,
-  workspacesRoot: string = DEFAULT_WORKSPACES_ROOT, foldersRoot: string = DEFAULT_FOLDERS_ROOT): Promise<WorkspaceCheckout> {
-  const { source, baseline, tracking } = await sourceIdentity(sourceDirectory, foldersRoot);
+  workspacesRoot: string = DEFAULT_WORKSPACES_ROOT, options: SourceOptions = {}): Promise<WorkspaceCheckout> {
+  const { source, baseline, tracking } = await sourceIdentity(sourceDirectory, options.foldersRoot ?? DEFAULT_FOLDERS_ROOT,
+    options.kind);
   validateTree(tracking ?? source, baseline);
   const requestedRoot = resolve(workspacesRoot);
   if (contains(source, requestedRoot) || contains(requestedRoot, source)) {

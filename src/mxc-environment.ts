@@ -4,7 +4,9 @@ import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { homedir, release } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+import { win32 } from "node:path";
+// MXC sandboxes run on Windows, so their paths follow Windows' rules whatever the host running the tests.
+const { join, relative, resolve, sep } = win32;
 import { createConfigFromPolicy, getAvailableToolsPolicy, getPlatformSupport, spawnSandboxFromConfig } from "@microsoft/mxc-sdk";
 import { EgressProxy } from "./egress-proxy.js";
 import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionProvider, PACKAGE_REGISTRY_HOSTS,

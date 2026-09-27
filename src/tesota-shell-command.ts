@@ -302,8 +302,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     store.setPlan(id, plan);
     surface.setSessionPlan(id, plan);
   };
-  /** The source repository's branch; a plain folder has none (decision 032). */
-  const sourceBranch = (): string | undefined => isGitRepository(cwd) ? currentBranch(cwd) : undefined;
+  /** Whether the shell works on a Git repository or a plain folder, decided once (decision 032). */
+  const sourceKind = isGitRepository(cwd) ? "repository" as const : "folder" as const;
+  /** The source repository's branch; a plain folder has none. */
+  const sourceBranch = (): string | undefined => sourceKind === "repository" ? currentBranch(cwd) : undefined;
   surface.setBranch(sourceBranch());
   for (const session of savedSessions) {
     if (session.interrupted) {
@@ -329,7 +331,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       if (directory !== null && directory !== undefined) {
         try { return await Workspace.open(directory); } catch { store.rotateEngine(id); }
       }
-      const workspace = await Workspace.create(cwd);
+      const workspace = await Workspace.create(cwd, undefined, { kind: sourceKind });
       store.setWorkspace(id, workspace.directory);
       if (workspace.included.length > 0) {
         surface.writeTo(id, `The workspace includes your ${workspace.included.length} uncommitted ` +

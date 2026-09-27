@@ -43,7 +43,8 @@ it("tells a folder from a repository, and never takes a home directory that is a
 
 it("works on a folder through a private copy, and applies back without ever putting Git inside it", async () => {
   const { folder, folders, workspaces } = await fixture();
-  const workspace = await Workspace.create(folder, workspaces, folders);
+  // CI keeps temporary files inside the repository checkout, so the test says what the source is.
+  const workspace = await Workspace.create(folder, workspaces, { foldersRoot: folders, kind: "folder" });
   expect(existsSync(join(folder, ".git"))).toBe(false);
   expect(await readdir(folders)).toHaveLength(1);
   // Office's lock files are not the person's work, so the copy leaves them out.
@@ -62,7 +63,8 @@ it("works on a folder through a private copy, and applies back without ever putt
 
 it("brings the person's own later edits into the copy, large files included, and reopens a saved workspace", async () => {
   const { folder, folders, workspaces } = await fixture();
-  const workspace = await Workspace.create(folder, workspaces, folders);
+  // CI keeps temporary files inside the repository checkout, so the test says what the source is.
+  const workspace = await Workspace.create(folder, workspaces, { foldersRoot: folders, kind: "folder" });
   // A scanned PDF or a large spreadsheet is often past Git's default output buffers.
   const large = Buffer.alloc(12 * 1024 * 1024, 7);
   await writeFile(join(folder, "escaneo.pdf"), large);

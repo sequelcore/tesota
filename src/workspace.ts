@@ -4,7 +4,7 @@ import { join } from "node:path";
 import * as z from "zod";
 import { isGitObjectId, runRepositoryGit as git } from "./repository-git.js";
 import { SourceSnapshot } from "./source-snapshot.js";
-import { commitAll, createWorkspaceCheckout, DEFAULT_WORKSPACES_ROOT, inspectWorkspaceCheckout,
+import { commitAll, createWorkspaceCheckout, type SourceOptions, DEFAULT_WORKSPACES_ROOT, inspectWorkspaceCheckout,
   sourceSnapshotDirectory, writeSourceChanges, type WorkspaceCheckout } from "./workspace-checkout.js";
 
 export type WorkspaceChangeStatus = "added" | "modified" | "deleted";
@@ -76,8 +76,8 @@ export class Workspace {
   }
 
   static async create(sourceDirectory: string, root: string = DEFAULT_WORKSPACES_ROOT,
-    foldersRoot?: string): Promise<Workspace> {
-    return Workspace.from(await createWorkspaceCheckout(sourceDirectory, root, foldersRoot));
+    options: SourceOptions = {}): Promise<Workspace> {
+    return Workspace.from(await createWorkspaceCheckout(sourceDirectory, root, options));
   }
 
   /** Reopen a workspace; its current HEAD becomes the base, and uncommitted work stays pending. */
