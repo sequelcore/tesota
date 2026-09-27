@@ -234,13 +234,15 @@ from the wire.
 Not every catalogue model is offered. OpenRouter's `:batch` variants answer
 within a day through its Batch API, too late for any role, and its routers
 (`auto`, `openrouter/fusion`) bill the model they pick, so they are shown
-without a price rather than as free. `tesota models` lists OpenRouter and
-Zen by count, and `tesota models openrouter` lists every model with its price.
+without a price rather than as free. Zen's free models are not offered:
+OpenCode refuses them to every client but its own, with 403 "OpenCode's free
+tier can only be used from within OpenCode", which Zen's documentation does
+not state. `tesota models` lists OpenRouter and Zen by count, and
+`tesota models openrouter` lists every model with its price.
 
 **A free model's provider may keep the repository's code.** OpenRouter's free
-models' providers may log and train, Zen's free trials may keep data to
-improve the model, and Meta's contributor models on Zen and Go train on what
-they are sent. `dataNotice` in `src/models-command.ts` marks them; choosing
+models' providers may log and train, and Meta's contributor models on Zen
+and Go train on what they are sent. `dataNotice` in `src/models-command.ts` marks them; choosing
 one, with `tesota models` or `/model`, warns and never refuses, as for
 judges. Paid models on these gateways keep nothing or 30 days by their
 stated policies.
@@ -249,7 +251,7 @@ A judge's lab (decision 028) is the route's on `codex`, `anthropic` and
 `claude-code`, OpenRouter's vendor, and the family an OpenCode model's id
 starts with. The same model on another route is the same model
 (`openrouter:anthropic/claude-opus-5.5` is `anthropic:claude-opus-5-5`); a
-router or a stealth model such as Big Pickle has no known lab, and no
+router, or a model whose family names no lab, has no known lab, and no
 warning claims it independent or not.
 
 ### The engine contract

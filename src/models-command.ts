@@ -36,8 +36,7 @@ function isOpenRouterRouter(model: string): boolean {
 /**
  * Whether a gateway model's provider may keep what Tesota sends it, the
  * repository's code included, and use it for training (decision 031):
- * OpenRouter's free models, whose providers may log and train; Zen's free
- * models, some of which keep data to improve the model; and Meta's
+ * OpenRouter's free models, whose providers may log and train, and Meta's
  * "contributor" Muse Spark models on Zen and Go, which train on it by their
  * terms. Paid models on these gateways do not, by their stated policies.
  */
@@ -45,8 +44,7 @@ export function dataNotice(choice: string): string | undefined {
   const parsed = parseModelChoice(choice);
   if (parsed === undefined) return undefined;
   const { route, model } = parsed;
-  const free = route === "openrouter" && (model.endsWith(":free") || model === "openrouter/free") ||
-    route === "opencode" && (model === "big-pickle" || model.endsWith("-free"));
+  const free = route === "openrouter" && (model.endsWith(":free") || model === "openrouter/free");
   const contributor = (route === "opencode" || route === "opencode-go") && model.includes("-contributor");
   if (!free && !contributor) return undefined;
   return "its provider may keep your prompts and code, and use them to train models";
@@ -109,9 +107,12 @@ export function offeredModels(): OfferedModel[] {
   const priced = (route: ModelRoute, provider: string, accepted: (model: Model<Api>) => ReasoningLevel[]): OfferedModel[] =>
     models.getModels(provider).map((model) => ({ id: `${route}:${model.id}`, route, name: model.name,
       listPrice: { input: model.cost.input, output: model.cost.output }, reasoning: accepted(model) }));
-  // OpenRouter's `:batch` variants answer within a day through its Batch API, too late for any role.
+  // OpenRouter's `:batch` variants answer within a day through its Batch API, too late for any role. Zen's free
+  // models answer only OpenCode's own client: any other gets 403 "OpenCode's free tier can only be used from within
+  // OpenCode" (observed 2026-09-26; not in Zen's documentation).
   const gateway = (route: ModelRoute, provider: string): OfferedModel[] => models.getModels(provider)
-    .filter((model) => !model.id.endsWith(":batch")).map((model) => gatewayModel(route, model));
+    .filter((model) => !model.id.endsWith(":batch")).map((model) => gatewayModel(route, model))
+    .filter((model) => !(route === "opencode" && model.free === true));
   const claude = models.getModels("anthropic");
   const aliases = claudeCodeAliases.map((alias): OfferedModel => {
     const newest = newestOf(alias, claude);

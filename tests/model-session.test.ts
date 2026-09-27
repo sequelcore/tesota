@@ -40,8 +40,8 @@ it("opens the gateway routes on Pi, with one OpenCode key for Zen and Go", async
   const store = credentials();
   const router = await openModelTarget("openrouter:qwen/qwen3.8-27b:free", undefined, store);
   expect(router.engine === "pi" && [router.model.provider, router.model.id]).toEqual(["openrouter", "qwen/qwen3.8-27b:free"]);
-  const zen = await openModelTarget("opencode:big-pickle", undefined, store);
-  expect(zen.engine === "pi" && [zen.model.provider, zen.model.id]).toEqual(["opencode", "big-pickle"]);
+  const zen = await openModelTarget("opencode:gpt-6-luna", undefined, store);
+  expect(zen.engine === "pi" && [zen.model.provider, zen.model.id]).toEqual(["opencode", "gpt-6-luna"]);
   const go = await openModelTarget("opencode-go:glm-5.3@high", undefined, store);
   expect(go.engine === "pi" && [go.model.provider, go.model.id, go.reasoning]).toEqual(["opencode-go", "glm-5.3", "high"]);
   await store.modify("opencode", async () => ({ type: "api_key", key: "TEST_OPENCODE_KEY" }));

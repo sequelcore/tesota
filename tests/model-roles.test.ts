@@ -137,18 +137,20 @@ it("reads OpenRouter's vendor/model:variant ids only on OpenRouter, and OpenCode
 
 it("offers the gateways' models, with who pays and what a free model's provider may do with your code", () => {
   const real = offeredModels();
-  for (const id of ["openrouter:qwen/qwen3.8-27b:free", "openrouter:anthropic/claude-opus-5.5", "opencode:big-pickle",
-    "opencode:gpt-6-luna", "opencode-go:glm-5.3"]) {
+  for (const id of ["openrouter:qwen/qwen3.8-27b:free", "openrouter:anthropic/claude-opus-5.5", "opencode:gpt-6-luna",
+    "opencode-go:glm-5.3", "opencode-go:muse-spark-1.3-contributor"]) {
     expect(real.some((model) => model.id === id), id).toBe(true);
   }
+  // OpenCode refuses Zen's free models to every client but its own (403 FreeTierError, 2026-09-26).
+  expect(real.filter((model) => model.route === "opencode" && model.free === true)).toEqual([]);
+  expect(real.some((model) => model.id === "opencode:big-pickle")).toBe(false);
   const find = (id: string): OfferedModel | undefined => real.find((model) => model.id === id);
   expect(modelCost(find("opencode:gpt-6-luna"))).toBe("your OpenCode Zen balance, $0.1 in and $0.5 out per million tokens");
   expect(modelCost(find("opencode-go:glm-5.3"))).toMatch(/^your OpenCode Go subscription's limits; list price/u);
   expect(modelCost(find("openrouter:qwen/qwen3.8-27b:free"))).toMatch(/^free on OpenRouter/u);
   // OpenRouter's own routers pick a model per request, so no one price applies.
   expect(modelCost(find("openrouter:auto"))).toBe("your OpenRouter credits; the price is the model it picks");
-  for (const id of ["openrouter:qwen/qwen3.8-27b:free", "openrouter:openrouter/free", "opencode:big-pickle",
-    "opencode-go:muse-spark-1.3-contributor"]) {
+  for (const id of ["openrouter:qwen/qwen3.8-27b:free", "openrouter:openrouter/free", "opencode-go:muse-spark-1.3-contributor"]) {
     expect(dataNotice(id), id).toMatch(/may keep your prompts and code/u);
   }
   for (const id of ["openrouter:anthropic/claude-opus-5.5", "opencode:gpt-6-luna", "opencode-go:glm-5.3", "codex:gpt-6-luna"]) {
