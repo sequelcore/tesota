@@ -87,10 +87,12 @@ flat, as in every tool compared: nesting adds state the model must keep
 consistent, which Pi's author gives as the reason Pi has no to-do list at
 all.
 
+The review checks each step the agent marked done against the result, with
+the request obligations (decision 034,
+[assurance](assurance.md#obligations)), and the plan then shows what it found
+of each: "held in review", "not held in review" or "review uncertain".
 Planned: a step whose check is a gate (decision 032) shows "verified" when
-that gate passes on the result, and the review checks each step the agent
-marked done against the result, with the request obligations, without
-trusting the agent's account.
+that gate passes on the result.
 
 ## Explorers
 

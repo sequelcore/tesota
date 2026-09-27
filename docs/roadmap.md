@@ -69,9 +69,11 @@ project. They are listed here as they are chosen.
   can define. Folders and documents come first, then answers, then actions;
   her first real tasks decide the order within each.
 - **The agent's plan** (decision 033, [design](design/agents.md#the-plan)):
-  built 2026-09-26, shown above the prompt as the agent's account; steps
-  confirmed by gates and a review of the whole plan come with gates and the
-  request obligations.
+  built 2026-09-26, shown above the prompt as the agent's account.
+- **Obligations** (decision 034, [design](design/assurance.md#obligations)):
+  built 2026-09-26; the reviewer checks what each request asks for and each
+  plan step the agent marked done, the refuter tests each gap, and confirmed
+  gaps go to correction. Steps confirmed by gates come with gates.
 - **Ideas to bring from `feat/evidence-attribution`**, a branch from
   2026-09-25 left unmerged, about 130 commits behind `dev`, whose decisions
   022 and 023 collide with `dev`'s. Each is to be rebuilt on `dev` with its
@@ -80,11 +82,6 @@ project. They are listed here as they are chosen.
     run it on the frozen base too; only a failure the change caused goes
     back to the agent automatically, and the base stays frozen through one
     review cycle.
-  - **Request obligations.** The reviewer lists what each request asks for
-    and judges each item met, partial, unmet or uncertain on the whole
-    result; the refuter challenges them, and confirmed gaps go to
-    correction. It catches missing work, not only defects: a judged gate
-    derived from the request, in decision 032's terms.
   - **Turns with no file changes assessed against their requests**, so a
     reply cannot silently stand in for requested code, and pending requests
     survive an empty diff: the answer result of decision 032, for code.

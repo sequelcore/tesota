@@ -27,7 +27,8 @@ const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: stri
     detail: z.string().max(2_000_000), diff: z.string().max(2_000_000).optional() });
 const agentModelSchema = z.string().refine((value) => parseModelChoice(value) !== undefined, "not a route:model choice");
 const planSchema: z.ZodType<PlanStep[]> = z.array(z.strictObject({ step: z.string().min(1).max(2_000),
-  status: z.enum(PLAN_STATUSES), check: z.string().max(2_000).optional(), blocked: z.string().max(2_000).optional() }))
+  status: z.enum(PLAN_STATUSES), check: z.string().max(2_000).optional(), blocked: z.string().max(2_000).optional(),
+  review: z.enum(["held", "not_held", "uncertain"]).optional() }))
   .min(1).max(MAX_PLAN_STEPS);
 // `agent`, `retiredEngineIds`, `sandbox` and `plan` arrived after version 5 and are optional, so saved sessions survive
 // (decisions 026, 030 and 033).

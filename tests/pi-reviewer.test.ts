@@ -82,7 +82,9 @@ it("reminds a reviewer that answered in prose once, and then accepts its submiss
     return { dispose: vi.fn(), run: vi.fn(async (prompt: string) => {
       prompts.push(prompt);
       if (prompts.length === 2) {
-        await submit?.execute("call", { summary: "Late but complete", findings: [] }, undefined, undefined, {} as ExtensionContext);
+        await submit?.execute("call", { summary: "Late but complete", findings: [], obligations: [{ source: "request", index: 1,
+          obligation: "The discount applies", status: "met", evidence: "price.ts:3" }, { source: "request", index: 2,
+          obligation: "Prices round to cents", status: "met", evidence: "price.ts:4" }] }, undefined, undefined, {} as ExtensionContext);
       }
       return { status: "completed" as const, reply: "It looks fine." };
     }) } as unknown as Awaited<ReturnType<typeof CodingSession.start>>;
@@ -90,7 +92,9 @@ it("reminds a reviewer that answered in prose once, and then accepts its submiss
   try {
     const reviewer = createPiReviewer({ target: { engine: "pi", modelRuntime: {} as never, model: {} as never } });
     const report = await reviewer.review({ ...input, checkout: process.cwd() }, new AbortController().signal);
-    expect(report).toEqual({ reviewer: "Tesota reviewer", tree, status: "completed", summary: "Late but complete", findings: [] });
+    expect(report).toEqual({ reviewer: "Tesota reviewer", tree, status: "completed", summary: "Late but complete", findings: [],
+      obligations: [{ source: "request", index: 1, obligation: "The discount applies", status: "met", evidence: "price.ts:3" },
+        { source: "request", index: 2, obligation: "Prices round to cents", status: "met", evidence: "price.ts:4" }] });
     expect(prompts).toHaveLength(2);
     expect(prompts[1]).toContain("You finished without calling submit_review");
   } finally { start.mockRestore(); }
@@ -123,7 +127,7 @@ it("names each lens, tells it its focus, and offers the rules lens only where th
         .review({ ...input, checkout: root }, new AbortController().signal);
       expect(report.reviewer).toBe("Tesota reviewer · security and authority");
       expect(prompt).toContain(`This is a focused review: ${lens.focus} Other reviewers cover the rest: do not report a problem ` +
-        "outside your focus, and submit an empty list when you find none within it.");
+        "outside your focus, submit an empty list when you find none within it, and leave out obligations.");
       expect(prompt).toContain("Never log secrets.");
     } finally { start.mockRestore(); }
   } finally { await rm(root, { recursive: true, force: true }); }

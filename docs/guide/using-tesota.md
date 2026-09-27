@@ -125,7 +125,13 @@ and updates it as it works:
 
 "done (agent)" is the agent's own word, and "will be checked" is how it says
 the step can be confirmed; Tesota's checks and review, not the plan, are the
-evidence. The plan is cleared when you apply or reject the work.
+evidence. After the review, each step the agent marked done also shows what
+the reviewer found of it: "held in review", "not held in review" or "review
+uncertain". The plan is cleared when you apply or reject the work.
+
+The review also checks that everything you asked for is there, not only that
+the change has no defects: it shows how many of your requests held, and a
+part of a request that is confirmed missing goes back to the agent.
 
 The agent reads, searches, edits, creates and deletes files in its own copy of
 your repository. In the sandbox its shell commands run without

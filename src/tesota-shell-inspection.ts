@@ -1,4 +1,5 @@
-import type { Finding, ReviewReport } from "./review.js";
+import type { Finding, Obligation, ReviewReport } from "./review.js";
+import { type ObligationOutcome, obligationOutcome } from "./verification/obligation-outcome.js";
 import type { DepthDecision } from "./review-depth.js";
 import { costText, type ReviewMeasurement } from "./review-forecast.js";
 import type { ShellInspection } from "./tesota-shell-terminal.js";
@@ -62,6 +63,46 @@ function reviewLines(report: ReviewReport): string[] {
   return lines;
 }
 
+function outcomeOf(obligation: Obligation): ObligationOutcome {
+  return obligationOutcome(obligation.status, obligation.standing ?? "untested");
+}
+
+function tally(obligations: readonly Obligation[]): string {
+  const count = (outcome: ObligationOutcome): number => obligations.filter((item) => outcomeOf(item) === outcome).length;
+  return [["held", count("held")], ["not held", count("not_held")], ["uncertain", count("uncertain")]]
+    .flatMap(([label, number]) => number === 0 ? [] : [`${number} ${label}`]).join(", ");
+}
+
+/**
+ * How the requests and the plan steps the agent claimed held up (decision
+ * 034), one line each: a request holds only when all its obligations do.
+ */
+function obligationLines(report: ReviewReport): string[] {
+  if (report.status !== "completed" || report.obligations === undefined || report.obligations.length === 0) return [];
+  const requests = [...new Set(report.obligations.filter((item) => item.source === "request").map((item) => item.index))];
+  const outcome = (index: number): ObligationOutcome => {
+    const outcomes = report.obligations?.filter((item) => item.source === "request" && item.index === index).map(outcomeOf) ?? [];
+    return outcomes.includes("not_held") ? "not_held" : outcomes.includes("uncertain") ? "uncertain" : "held";
+  };
+  const held = requests.filter((index) => outcome(index) === "held").length;
+  const rest = ["not_held", "uncertain"].flatMap((kind) => {
+    const number = requests.filter((index) => outcome(index) === kind).length;
+    return number === 0 ? [] : [`${number} ${kind === "not_held" ? "not held" : "uncertain"}`];
+  });
+  const steps = report.obligations.filter((item) => item.source === "plan");
+  return [...requests.length === 0 ? [] : [`  Requests: ${held} of ${requests.length} held${rest.map((part) => `, ${part}`).join("")}`],
+    ...steps.length === 0 ? [] : [`  Plan steps claimed done: ${tally(steps)}`]];
+}
+
+const outcomeMarks: Readonly<Record<ObligationOutcome, string>> = { held: "✓", not_held: "✗", uncertain: "?" };
+
+function obligationDetail(obligation: Obligation): string {
+  const outcome = outcomeOf(obligation);
+  const what = obligation.source === "request" ? `Request ${obligation.index}` : `Plan step ${obligation.index}`;
+  return `  ${outcomeMarks[outcome]} ${what}: ${obligation.obligation} (${outcome.replace("_", " ")}: ${obligation.evidence})` +
+    (obligation.refutation === undefined ? "" : `\n    Refuter: ${obligation.refutation}`);
+}
+
 function reviewDetail(report: ReviewReport): string {
   if (report.status === "incomplete") return `  ${report.reviewer}: did not finish (${report.reason})`;
   return `  ${report.reviewer}\n  ${report.summary}` + report.findings.map((finding) =>
@@ -70,7 +111,9 @@ function reviewDetail(report: ReviewReport): string {
     `${location(finding)}${finding.statement}${finding.standing === undefined ? "" : ` [${finding.standing}]`}\n  ${finding.reason}` +
     (finding.originNote === undefined ? "" : `\n  Origin: ${finding.originNote}`) +
     (finding.refutation === undefined ? "" : `\n  Refuter: ${finding.refutation}`) +
-    (finding.duplicateOf === undefined ? "" : `\n  Same problem as ${finding.duplicateOf}`)).join("");
+    (finding.duplicateOf === undefined ? "" : `\n  Same problem as ${finding.duplicateOf}`)).join("") +
+    (report.obligations === undefined || report.obligations.length === 0 ? ""
+      : `\n\n  What the result must hold\n${report.obligations.map(obligationDetail).join("\n")}`);
 }
 
 /**
@@ -94,7 +137,7 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews, dept
     summary: [...files, ...results, ...flagged,
       ...(depth?.depth === "deep" ? [`  · deep review${measurement === undefined ? "" :
         ` (took ${costText(measurement.durationMs, measurement.tokens)})`}: ${depth.reasons.join("; ")}`] : []),
-      ...reviews.flatMap(reviewLines), ...flagNote,
+      ...reviews.flatMap(reviewLines), ...reviews.flatMap(obligationLines), ...flagNote,
       `${where} Checks and review do not replace reading the change.`].join("\n"),
     detail: `Requested\n${requests.map((request, index) => `  ${index + 1}. ${request}`).join("\n") || "  (not recorded)"}` +
       `\n\nFiles\n${snapshot.changes.map((change) => `  ${change.status} ${change.path}`).join("\n")}` +

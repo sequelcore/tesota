@@ -121,14 +121,41 @@ for the operator's call, including a cause Tesota could not establish, `?
 unsettled`, and `· already there` for what the change did not cause; refuted
 findings are counted, with the refuter's evidence in the result panel.
 
+### Obligations
+
+Decision 034. A defect has a changed line to point at; missing work has
+none. So the main reviewer also lists **obligations**: for each operator
+request, the concrete things it asks for, and for each step of the agent's
+plan (decision 033) that the agent marked done, whether it really happened.
+It judges each against the whole result, unchanged files included, as
+`met`, `partial`, `unmet` or `uncertain`, with the evidence. A plan step is
+the agent's claim, given to the reviewer as a claim to check, never as an
+account to trust. A main review that leaves a request or a claimed step
+unassessed, or assesses one that does not exist, is incomplete
+(`missingAssessments` in `src/integrations/pi-reviewer.ts`); focused lenses
+and ClaimCheck report none.
+
+Every **gap**, a partial or unmet obligation, faces the refuter with the
+findings, numbered after them. An obligation **held** when the reviewer
+found it met or the refuter disproved its gap, **did not hold** only when the
+refuter confirmed the gap, and is **uncertain** otherwise, including a gap
+nobody tested or settled; that rule is `obligationOutcome` in
+`src/verification/obligation-outcome.ts`, proved by `bun run formal:check`.
+The operator sees how many requests held, and how many claimed plan steps
+held; each claimed step in the plan beside the prompt shows "held in
+review", "not held in review" or "review uncertain", which is a judged
+check, never shown as verified. The idea comes from the unmerged branch
+`feat/evidence-attribution`, rebuilt here.
+
 ## Correction
 
-Failed or timed-out checks, and findings that are fixable, introduced,
-confirmed and not a repeat, go back to the working agent in the same
+Failed or timed-out checks, findings that are fixable, introduced,
+confirmed and not a repeat, and obligations that did not hold, go back to the working agent in the same
 conversation, with the request record unchanged. Tesota then verifies the new
 candidate, has a **fix validator** confirm whether each finding sent back is
 resolved, and reviews only the correction's own diff, so a round settles what
-it was sent instead of raising a fresh list. At most two rounds run, fewer if
+it was sent instead of raising a fresh list; the main reviewer reassesses
+every obligation against the whole current result. At most two rounds run, fewer if
 a round leaves the tree unchanged. Operator findings, unknown origins,
 incomplete reviews and checks that could not run never go back to the agent.
 

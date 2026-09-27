@@ -1,6 +1,6 @@
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
-import type { Finding, FindingStanding, ReviewInput, ReviewReport } from "../review.js";
+import type { Finding, FindingStanding, Obligation, ReviewInput, ReviewReport } from "../review.js";
 import { type ModelAccess, startModelSession } from "./model-session.js";
 import { type LimitedTurnResult, REVIEW_TIME_LIMIT_MS, runWithTimeLimit } from "./model-session-contract.js";
 import { readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
@@ -54,8 +54,11 @@ function refuterPrompt(root: string): string {
     "Do not confirm a finding because it sounds plausible or because a reviewer was confident. Correct code is " +
     "often judged non-conformant by mistake, so look for the evidence that it is correct first. Several reviewers " +
     "may report the same problem: when a finding reports the same problem at the same place as an earlier one, " +
-    "give that earlier number as duplicateOf. When you are done, " +
-    "call record_verdicts once with a verdict for every finding." +
+    "give that earlier number as duplicateOf. Gaps are numbered after the findings: work the reviewer found " +
+    "missing or partial, from a request or from a plan step the agent marked done. For a gap, confirmed means it " +
+    "really is missing or partial in the result, and refuted means the result does it after all; look for the " +
+    "work in the whole repository before confirming. When you are done, " +
+    "call record_verdicts once with a verdict for every finding and every gap." +
     `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
 }
 
@@ -98,8 +101,28 @@ export function locationGroups(findings: readonly Finding[]): number[][] {
   return groups;
 }
 
-/** What the refuter is told: the review input, the findings numbered across every report, and where they coincide. */
-export function refutationMessage(input: ReviewInput, findings: readonly Finding[]): string {
+/** A partial or unmet obligation, which the refuter tests before it can send work back (decision 034). */
+function isGap(obligation: Obligation): boolean {
+  return obligation.status === "partial" || obligation.status === "unmet";
+}
+
+function gapsOf(reports: readonly ReviewReport[]): Obligation[] {
+  return reports.flatMap((report) => report.status === "completed" ? (report.obligations ?? []).filter(isGap) : []);
+}
+
+function describeGap(gap: Obligation, id: number): string {
+  const what = gap.source === "request" ? `Request ${gap.index} asks: ${gap.obligation}.`
+    : `Plan step ${gap.index}, which the agent marked done: ${gap.obligation}.`;
+  return `${id}. ${what} The reviewer found it ${gap.status}: ${gap.evidence}`;
+}
+
+/**
+ * What the refuter is told: the review input, the findings numbered across
+ * every report and where they coincide, then the gaps, numbered after them.
+ */
+export function refutationMessage(input: ReviewInput, reports: readonly ReviewReport[]): string {
+  const findings = reports.flatMap((report) => report.status === "completed" ? report.findings : []);
+  const gaps = gapsOf(reports);
   const groups = locationGroups(findings);
   const places = groups.length === 0 ? "" : "\n\nFindings at the same place, which may report one problem more than " +
     "once. For each group, mark every later finding that reports the same problem as an earlier one with duplicateOf; " +
@@ -107,8 +130,11 @@ export function refutationMessage(input: ReviewInput, findings: readonly Finding
       const first = findings[(group[0] ?? 1) - 1];
       return `- ${group.join(", ")} at ${first?.path ?? "the same file"}${first?.line === undefined ? "" : `:${first.line}`}`;
     }).join("\n");
-  return `${reviewMessage(input)}\n\nFindings to test, one verdict each:\n${findings.map((finding, index) =>
+  const findingText = findings.length === 0 ? "" : `\n\nFindings to test, one verdict each:\n${findings.map((finding, index) =>
     describeFinding(finding, index + 1)).join("\n")}${places}`;
+  const gapText = gaps.length === 0 ? "" : `\n\nGaps to test, numbered after the findings:\n${gaps.map((gap, index) =>
+    describeGap(gap, findings.length + index + 1)).join("\n")}`;
+  return `${reviewMessage(input)}${findingText}${gapText}`;
 }
 
 function standingOf(verdict: RefutationVerdict | undefined): FindingStanding {
@@ -124,9 +150,16 @@ export function applyRefutation(reports: readonly ReviewReport[], verdicts: read
   const numbered = reports.flatMap((report) => report.status === "completed"
     ? report.findings.map((finding) => ({ reviewer: report.reviewer, finding })) : []);
   let id = 0;
+  let gapId = numbered.length;
+  const tested = (obligation: Obligation): Obligation => {
+    if (!isGap(obligation)) return obligation;
+    gapId += 1;
+    const verdict = verdicts?.find((entry) => entry.id === gapId);
+    return { ...obligation, standing: standingOf(verdict?.verdict), ...(verdict === undefined ? {} : { refutation: verdict.evidence }) };
+  };
   return reports.map((report) => {
     if (report.status !== "completed") return report;
-    return { ...report, findings: report.findings.map((finding) => {
+    const findings = report.findings.map((finding) => {
       id += 1;
       const verdict = verdicts?.find((entry) => entry.id === id);
       // Only a strictly earlier finding in the same file and of the same origin can be the original: duplicates
@@ -138,8 +171,10 @@ export function applyRefutation(reports: readonly ReviewReport[], verdicts: read
       return { ...finding, standing: standingOf(verdict?.verdict),
         ...(verdict === undefined ? {} : { refutation: verdict.evidence }),
         ...(original === undefined ? {} : { duplicateOf: `${original.reviewer}: ${original.finding.statement}` }) };
-    }) };
-  });
+    });
+    return { ...report, findings, ...(report.obligations === undefined ? {} : { obligations: report.obligations }) };
+  }).map((report) => report.status === "completed" && report.obligations !== undefined
+    ? { ...report, obligations: report.obligations.map(tested) } : report);
 }
 
 /** The refuter's verdicts, or undefined when it did not record them. */
@@ -149,16 +184,20 @@ export function verdictsFrom(turn: LimitedTurnResult, recorded: readonly Refutat
 
 export type RefuterOptions = ModelAccess;
 
-/** Test every finding in the reports and return them with their standing. */
+/** Whether the reports hold anything for the refuter: a finding, or a gap in an obligation. */
+export function hasClaimsToTest(reports: readonly ReviewReport[]): boolean {
+  return reports.some((report) => report.status === "completed" && report.findings.length > 0) || gapsOf(reports).length > 0;
+}
+
+/** Test every finding and every gap in the reports and return them with their standing. */
 export async function refuteFindings(options: RefuterOptions, input: ReviewInput, reports: readonly ReviewReport[],
   signal: AbortSignal): Promise<ReviewReport[]> {
-  const findings = reports.flatMap((report) => report.status === "completed" ? report.findings : []);
-  if (findings.length === 0) return [...reports];
+  if (!hasClaimsToTest(reports)) return [...reports];
   let recorded: readonly Refutation[] | undefined;
   const session = await startModelSession(options, { cwd: input.checkout, systemPrompt: refuterPrompt(input.checkout),
     tools: [...readOnlyFileTools(input.checkout), recordVerdicts((verdicts) => { recorded ??= verdicts; })] });
   try {
-    const turn = await runWithTimeLimit(session, refutationMessage(input, findings), signal, REVIEW_TIME_LIMIT_MS);
+    const turn = await runWithTimeLimit(session, refutationMessage(input, reports), signal, REVIEW_TIME_LIMIT_MS);
     return applyRefutation(reports, verdictsFrom(turn, recorded));
   } finally { session.dispose(); }
 }

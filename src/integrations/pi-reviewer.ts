@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { numberedDiff } from "../diff-lines.js";
-import type { Finding, ReviewInput, ReviewReport, Reviewer } from "../review.js";
+import type { Finding, Obligation, ReviewInput, ReviewReport, Reviewer } from "../review.js";
 import { type ModelAccess, startModelSession } from "./model-session.js";
 import { type AgentActivity, type LimitedTurnResult, REVIEW_TIME_LIMIT_MS, runWithTimeLimit } from "./model-session-contract.js";
 import { readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
@@ -26,9 +26,20 @@ const findingSchema = Type.Object({
   statement: Type.String({ description: "The problem, in one sentence" }),
   reason: Type.String({ description: "What in the requests, the code or the checks shows it" }),
 });
+const obligationSchema = Type.Object({
+  source: Type.Union([Type.Literal("request"), Type.Literal("plan")],
+    { description: "request: part of one of the user's requests; plan: a plan step the agent marked done" }),
+  index: Type.Integer({ minimum: 1, description: "The request's number, or the plan step's number, as listed" }),
+  obligation: Type.String({ description: "What the result must hold, in one sentence" }),
+  status: Type.Union([Type.Literal("met"), Type.Literal("partial"), Type.Literal("unmet"), Type.Literal("uncertain")],
+    { description: "Judged against the whole result, not only the changed lines" }),
+  evidence: Type.String({ description: "The code, check output or request text that shows the status, or what is missing" }),
+});
 const submissionSchema = Type.Object({
   summary: Type.String({ description: "One paragraph: whether the result does what was asked, and how well the checks cover it" }),
   findings: Type.Array(findingSchema, { description: "Every real problem; an empty list when there are none" }),
+  obligations: Type.Optional(Type.Array(obligationSchema, { description: "Main review: at least one for every request " +
+    "and one for every plan step the agent marked done. Focused reviews: leave out" })),
 });
 type Submission = Static<typeof submissionSchema>;
 
@@ -40,13 +51,14 @@ function finding(submitted: Submission["findings"][number]): Finding {
 }
 
 /** The reviewer's only way to report: one structured submission, after which the review ends. */
-export function submitReviewTool(record: (summary: string, findings: readonly Finding[]) => boolean): ToolDefinition {
+export function submitReviewTool(record: (summary: string, findings: readonly Finding[],
+  obligations: readonly Obligation[]) => boolean): ToolDefinition {
   return defineTool({
     name: "submit_review", label: "Submit review",
     description: "Submit your review once you have finished investigating. Call it exactly once.",
     parameters: submissionSchema,
     execute: async (_id, submission) => {
-      const accepted = record(submission.summary, submission.findings.map(finding));
+      const accepted = record(submission.summary, submission.findings.map(finding), submission.obligations ?? []);
       return { content: [{ type: "text", text: accepted ? "Review recorded." :
         "A review was already recorded; only the first submission counts." }], details: undefined, terminate: true };
     },
@@ -76,9 +88,20 @@ export const REVIEW_LENSES: readonly ReviewLens[] = [
     "with its file and line in the reason." },
 ];
 
+/**
+ * The main reviewer also judges what the result must hold (decision 034):
+ * every part of each request, and every plan step the agent claims done, on
+ * the whole result, since missing work has no changed line.
+ */
+const obligationGuidance = " Also list obligations: for each of the user's requests, the concrete things it asks " +
+  "for, and for each plan step the agent marked done, whether that step really happened. Judge each against the " +
+  "whole result, reading unchanged files too, as met, partial, unmet or uncertain, with the evidence. A plan step " +
+  "is the agent's claim, not evidence: check it in the code. An obligation is not a finding: it has no origin, and " +
+  "missing work belongs here even when no changed line shows it.";
+
 function reviewerPrompt(root: string, lens?: ReviewLens): string {
-  const focus = lens === undefined ? "" : `\n\nThis is a focused review: ${lens.focus} Other reviewers cover the rest: ` +
-    "do not report a problem outside your focus, and submit an empty list when you find none within it.";
+  const focus = lens === undefined ? obligationGuidance : `\n\nThis is a focused review: ${lens.focus} Other reviewers cover the rest: ` +
+    "do not report a problem outside your focus, submit an empty list when you find none within it, and leave out obligations.";
   return "You are Tesota's reviewer. Another agent changed a private copy of a repository to satisfy the user's " +
     "requests; Tesota froze the result and ran the repository's checks on it. Judge whether the result does what " +
     "the user asked and whether the checks' evidence covers it. You cannot change files: investigate with the " +
@@ -117,18 +140,42 @@ export function reviewMessage(input: ReviewInput): string {
     `Changes that alter what checks the result (Tesota's fixed rules):\n${input.flags.map((flag) =>
       `- ${flag.status} ${flag.path} (${flag.kind})`).join("\n") || "- none"}`,
     `Checks Tesota ran on this exact content:\n${input.checks.map(checkLine).join("\n") || "- none ran"}`,
+    ...(input.claimedSteps === undefined || input.claimedSteps.length === 0 ? [] :
+      [`Plan steps the agent marked done (its claims, not evidence):\n${input.claimedSteps.map((step) =>
+        `${step.index}. ${step.step}${step.check === undefined ? "" : ` (its declared check: ${step.check})`}`).join("\n")}`]),
     ...(input.correction === undefined ? [] : [`This is a correction round. These problems were sent back to the agent ` +
       `and a separate validator checks them; report only problems the correction itself introduced:\n` +
-      input.correction.sentBack.map((finding) => `- ${finding.statement}`).join("\n")]),
+      input.correction.sentBack.map((finding) => `- ${finding.statement}`).join("\n") +
+      "\nReassess every obligation against the whole current result, not only the correction."]),
     `${input.correction === undefined ? "Diff from the starting point" :
       "Diff of the correction, from the result that was sent back to the current one"} ` +
       `(the left column numbers each line of the changed files):\n\`\`\`\`\`diff\n${diff}\n\`\`\`\`\``,
   ].join("\n\n");
 }
 
+/**
+ * Why a main review's obligations do not cover what it had to assess: every
+ * request and every claimed plan step, and nothing that does not exist.
+ * Undefined when they do; a review that misses one is incomplete, never clean.
+ */
+export function missingAssessments(input: ReviewInput, obligations: readonly Obligation[]): string | undefined {
+  const steps = (input.claimedSteps ?? []).map((step) => step.index);
+  const known = (item: Obligation): boolean => item.source === "request"
+    ? item.index <= input.requests.length : steps.includes(item.index);
+  const unknown = obligations.find((item) => !known(item));
+  if (unknown !== undefined) {
+    return `the reviewer assessed ${unknown.source === "request" ? "request" : "plan step"} ${unknown.index}, which does not exist`;
+  }
+  const request = input.requests.findIndex((_, index) => !obligations.some((item) => item.source === "request" && item.index === index + 1));
+  if (request >= 0) return `the reviewer did not assess request ${request + 1}`;
+  const step = steps.find((index) => !obligations.some((item) => item.source === "plan" && item.index === index));
+  return step === undefined ? undefined : `the reviewer did not assess plan step ${step}`;
+}
+
 /** A review counts only when the reviewer submitted it and was not stopped. */
 export function reviewReport(tree: string, turn: LimitedTurnResult,
-  submitted: { readonly summary: string; readonly findings: readonly Finding[] } | undefined): ReviewReport {
+  submitted: { readonly summary: string; readonly findings: readonly Finding[];
+    readonly obligations?: readonly Obligation[] } | undefined): ReviewReport {
   const incomplete = (reason: string): ReviewReport => ({ reviewer: REVIEWER, tree, status: "incomplete", reason });
   if (turn.status === "cancelled") return incomplete("the review was stopped");
   if (turn.status === "unsettled") return incomplete("the reviewer did not stop cleanly");
@@ -163,12 +210,13 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
     name,
     async review(input, signal) {
       const root = realpathSync(input.checkout);
-      let submitted: { summary: string; findings: readonly Finding[] } | undefined;
+      let submitted: { summary: string; findings: readonly Finding[]; obligations?: readonly Obligation[] } | undefined;
       const session = await startModelSession(options, { cwd: root,
         systemPrompt: reviewerPrompt(root, options.lens),
-        tools: [...readOnlyFileTools(root), submitReviewTool((summary, findings) => {
+        tools: [...readOnlyFileTools(root), submitReviewTool((summary, findings, obligations) => {
           if (submitted !== undefined) return false;
-          submitted = { summary, findings };
+          // Only the main reviewer judges obligations; a focused one keeps to its lens.
+          submitted = options.lens === undefined ? { summary, findings, obligations } : { summary, findings };
           return true;
         })],
         ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
@@ -176,7 +224,10 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
         let turn = await runWithTimeLimit(session, reviewMessage(input), signal, REVIEW_TIME_LIMIT_MS);
         // A model sometimes answers in prose; one reminder, without new investigation, before the review counts as unfinished.
         if (turn.status === "completed" && submitted === undefined) turn = await runWithTimeLimit(session, submissionReminder, signal, REVIEW_TIME_LIMIT_MS);
-        return { ...reviewReport(input.snapshot.tree, turn, submitted), reviewer: name };
+        const report = { ...reviewReport(input.snapshot.tree, turn, submitted), reviewer: name };
+        const missing = options.lens === undefined && report.status === "completed"
+          ? missingAssessments(input, report.obligations ?? []) : undefined;
+        return missing === undefined ? report : { reviewer: name, tree: input.snapshot.tree, status: "incomplete", reason: missing };
       } finally { session.dispose(); }
     },
   };

@@ -40,7 +40,7 @@ it("never confirms or clears a finding when the refuter did not finish", () => {
 it("shows the refuter each finding's claim, numbered, with the review input", () => {
   const input: ReviewInput = { checkout: "C:/work/repo", requests: ["Discount orders over $100"], checks: [], flags: [],
     snapshot: { base: "b".repeat(40), tree, diff: "diff --git a/src/price.ts b/src/price.ts", changes: [{ status: "modified", path: "src/price.ts" }] } };
-  const message = refutationMessage(input, [finding("A"), finding("C")]);
+  const message = refutationMessage(input, [{ reviewer: "Tesota reviewer", tree, status: "completed", summary: "", findings: [finding("A"), finding("C")] }]);
   expect(message).toContain("1. Discount orders over $100");
   expect(message).toContain("Findings to test, one verdict each:\n1. [high, introduced] at src/price.ts:3: A\n   Reviewer's reason: why A\n2.");
 });
@@ -67,7 +67,8 @@ it("groups findings at the same place for the refuter, and never across files", 
   expect(locationGroups([at("a.js", 2), at("b.js", 2), at("a.js", 4), at("a.js", 30), at("b.js"), at("b.js"), at(undefined)]))
     .toEqual([[1, 3], [5, 6]]);
   const message = refutationMessage({ checkout: "C:/work/repo", requests: [], checks: [], flags: [],
-    snapshot: { base: "b".repeat(40), tree, diff: "", changes: [] } }, [at("a.js", 2), at("a.js", 3)]);
+    snapshot: { base: "b".repeat(40), tree, diff: "", changes: [] } },
+    [{ reviewer: "Tesota reviewer", tree, status: "completed", summary: "", findings: [at("a.js", 2), at("a.js", 3)] }]);
   expect(message).toContain("Findings at the same place, which may report one problem more than once.");
   expect(message).toContain("- 1, 2 at a.js:2");
 });

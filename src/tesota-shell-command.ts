@@ -11,7 +11,7 @@ import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
 import { ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
-import type { WorkPlan } from "./work-plan.js";
+import { type WorkPlan, withReview } from "./work-plan.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, routeListing } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
@@ -41,7 +41,7 @@ import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
 import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.js";
 import { reviewDepth, type DepthDecision } from "./review-depth.js";
 import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
-import { applyRefutation, refuteFindings } from "./integrations/pi-refuter.js";
+import { applyRefutation, hasClaimsToTest, refuteFindings } from "./integrations/pi-refuter.js";
 import { attributeOrigins } from "./finding-origin.js";
 import { forecastLine, type ReviewMeasurement, type ReviewModels, type ReviewPlan } from "./review-forecast.js";
 import { countsAsMeasurement } from "./verification/review-estimate.js";
@@ -427,8 +427,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const reports = attributeOrigins(await Promise.all(reviewers.map((reviewer) => reviewer.review(input, signal)
       .catch((error: unknown): ReviewReport => ({ reviewer: reviewer.name, tree: input.snapshot.tree, status: "incomplete",
         reason: error instanceof Error ? error.message : "the reviewer failed" })))), run.candidate);
-    if (signal.aborted || !reports.some((report) => report.status === "completed" && report.findings.length > 0)) return reports;
-    surface.reportFor(id, { phase: "reviewing", activity: "Testing each finding" });
+    if (signal.aborted || !hasClaimsToTest(reports)) return reports;
+    surface.reportFor(id, { phase: "reviewing", activity: "Testing each finding and gap" });
     try {
       return await refuteFindings(await modelFor(run, "refuter"), input, reports, signal);
     } catch {
@@ -885,8 +885,13 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       let tokens = 0;
       const { reviewer, refuter, validator } = readModelChoices();
       const models: ReviewModels = { reviewer, refuter, validator };
+      // The plan steps the agent marked done go to the reviewer as claims to check (decision 034).
+      const plan = saved(id)?.plan;
+      const claimedSteps = (plan ?? []).flatMap((step, index) => step.status === "done"
+        ? [{ index: index + 1, step: step.step, ...step.check === undefined ? {} : { check: step.check } }] : []);
       const reports = await reviewCandidate({ id, signal, depth, candidate: snapshot, models,
         input: { checkout: workspace.checkout, requests, snapshot: scope, checks, flags,
+          ...(claimedSteps.length === 0 ? {} : { claimedSteps }),
           ...(correction === undefined ? {} : { correction: { sentBack: correction.sentBack } }) },
         read: (path) => read(snapshot.tree, path), onUsage: (usage) => { tokens += totalTokens(usage); } });
       if (signal.aborted) return { status: "cancelled" };
@@ -902,6 +907,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const reviews: ReviewReport[] = unchanged ? reports : reports.map((report) => ({ reviewer: report.reviewer,
         tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" }));
       if (unchanged) state.reviewed = snapshot;
+      // Each claimed step shows what the review found of it, a judged check, beside the prompt.
+      const main = reviews.find((report) => report.status === "completed" && report.obligations !== undefined);
+      if (plan !== undefined && main?.status === "completed") showPlan(id, withReview(plan, main.obligations ?? []));
       surface.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews, depth, measurement }));
       await journal(id, workspace, reviewEntry(snapshot, requests, checks, flags, reviews, depth, measurement));
       return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews, requests };

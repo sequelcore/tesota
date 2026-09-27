@@ -1,3 +1,5 @@
+import type { Obligation } from "./review.js";
+import { type ObligationOutcome, obligationOutcome } from "./verification/obligation-outcome.js";
 import { planAccepted } from "./verification/plan-rule.js";
 
 /**
@@ -17,6 +19,8 @@ export interface PlanStep {
   readonly check?: string | undefined;
   /** Why a blocked step cannot go on. */
   readonly blocked?: string | undefined;
+  /** What the review found of a step the agent marked done (decision 034): a judged check, never proof. */
+  readonly review?: ObligationOutcome | undefined;
 }
 
 export type WorkPlan = readonly PlanStep[];
@@ -35,6 +39,20 @@ export function planProblem(plan: WorkPlan): string | undefined {
   return "a blocked step must say why";
 }
 
+const reviewText: Readonly<Record<ObligationOutcome, string>> =
+  { held: "held in review", not_held: "not held in review", uncertain: "review uncertain" };
+
+/** The plan with what the review found of each step the agent marked done, from the main reviewer's obligations. */
+export function withReview(plan: WorkPlan, obligations: readonly Obligation[]): WorkPlan {
+  return plan.map((step, index) => {
+    const assessed = obligations.filter((item) => item.source === "plan" && item.index === index + 1)
+      .map((item) => obligationOutcome(item.status, item.standing ?? "untested"));
+    if (step.status !== "done" || assessed.length === 0) return step;
+    const review = assessed.includes("not_held") ? "not_held" : assessed.includes("uncertain") ? "uncertain" : "held";
+    return { ...step, review };
+  });
+}
+
 const marks: Readonly<Record<PlanStatus, string>> = { pending: "○", in_progress: "▸", done: "✓", blocked: "!" };
 
 function detail(step: PlanStep): string[] {
@@ -42,7 +60,8 @@ function detail(step: PlanStep): string[] {
   switch (step.status) {
     case "pending": return check === undefined || check === "" ? [] : [`will be checked: ${check}`];
     case "in_progress": return ["in progress", ...check === undefined || check === "" ? [] : [`will be checked: ${check}`]];
-    case "done": return ["done (agent)", ...check === undefined || check === "" ? [] : [`check not run: ${check}`]];
+    case "done": return ["done (agent)", ...step.review === undefined ? [] : [reviewText[step.review]],
+      ...check === undefined || check === "" ? [] : [`check not run: ${check}`]];
     case "blocked": return [`blocked: ${step.blocked?.trim() ?? ""}`];
   }
 }

@@ -1,3 +1,4 @@
+import type { ObligationStatus } from "./verification/obligation-outcome.js";
 import type { VerificationChange } from "./verification-changes.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
 import type { CheckResult } from "./workspace-checks.js";
@@ -46,6 +47,32 @@ export interface Finding {
   readonly duplicateOf?: string;
 }
 
+/**
+ * Something the result must hold (decision 034): a part of an operator
+ * request, or a plan step the agent marked done, which is its claim. The main
+ * reviewer judges each against the whole result; the refuter tests each gap.
+ */
+export interface Obligation {
+  readonly source: "request" | "plan";
+  /** The 1-based number of the request, or of the step in the agent's plan. */
+  readonly index: number;
+  /** What must hold, in one sentence. */
+  readonly obligation: string;
+  readonly status: ObligationStatus;
+  /** What in the code, the checks or the request shows the status. */
+  readonly evidence: string;
+  /** Set on a partial or unmet obligation once the refuter tested it; absent otherwise. */
+  readonly standing?: FindingStanding;
+  readonly refutation?: string;
+}
+
+/** A plan step the agent marked done, given to the reviewer as a claim to check. */
+export interface ClaimedStep {
+  readonly index: number;
+  readonly step: string;
+  readonly check?: string | undefined;
+}
+
 /** Everything a reviewer may see. The working agent's reasoning is deliberately absent. */
 export interface ReviewInput {
   /** The candidate's checkout, for read-only investigation. */
@@ -60,10 +87,17 @@ export interface ReviewInput {
    * findings, sent back to the agent, are checked by the fix validator.
    */
   readonly correction?: { readonly sentBack: readonly Finding[] };
+  /**
+   * The plan steps the agent marked done (decision 033), as claims for the
+   * reviewer to check against the result; never as an account to trust.
+   */
+  readonly claimedSteps?: readonly ClaimedStep[];
 }
 
 export type ReviewReport =
-  | Readonly<{ reviewer: string; tree: string; status: "completed"; summary: string; findings: readonly Finding[] }>
+  | Readonly<{ reviewer: string; tree: string; status: "completed"; summary: string; findings: readonly Finding[];
+      /** The main reviewer's obligations; focused reviewers and ClaimCheck report none. */
+      obligations?: readonly Obligation[] }>
   | Readonly<{ reviewer: string; tree: string; status: "incomplete"; reason: string }>;
 
 export interface Reviewer {

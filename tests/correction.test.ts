@@ -19,8 +19,8 @@ const review: ReviewReport = { reviewer: "Tesota reviewer", tree, status: "compl
 
 it("sends back failed checks and fixable findings, and keeps the operator's calls with the operator", () => {
   expect(correctionFor([check("failed"), check("passed", "lint"), check("not_started", "e2e")], [review])).toEqual({
-    failedChecks: [check("failed")], findings: [review.findings[0]] });
-  expect(correctionFor([check("timed_out")], [])).toEqual({ failedChecks: [check("timed_out")], findings: [] });
+    failedChecks: [check("failed")], findings: [review.findings[0]], obligations: [] });
+  expect(correctionFor([check("timed_out")], [])).toEqual({ failedChecks: [check("timed_out")], findings: [], obligations: [] });
 });
 
 it("sends back only findings that survived refutation", () => {
@@ -52,7 +52,7 @@ it("asks for no correction when only the operator can settle what is left", () =
 
 it("repeats the user's requests unchanged and gives each problem with its evidence", () => {
   const prompt = correctionPrompt(["Give orders over $100 a 10% discount"],
-    { failedChecks: [check("failed")], findings: [review.findings[0]!] });
+    { failedChecks: [check("failed")], findings: [review.findings[0]!], obligations: [] });
   expect(prompt).toContain("(not written by the user)");
   expect(prompt).toContain("The user's requests, unchanged:\n1. Give orders over $100 a 10% discount\n");
   expect(prompt).toContain("- The check `bun run check` failed (exit 1).\n  Last output:\n    FAIL price.test.ts\n    expected 90");
