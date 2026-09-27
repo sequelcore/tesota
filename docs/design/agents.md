@@ -172,6 +172,7 @@ off until the operator chooses a model for it (`tesota models advisor
 | `refuter` | The refuter |
 | `validator` | The fix validator |
 | `triage` | The answer check's first pass (decision 034); it may also use Jev, a typed decision model (decision 035), and `off` sends every answer to the full check |
+| `namer` | Writes a short title for each new session from its first request (decision 036); `codex:gpt-6-luna@low` by default, and `off` keeps the request as the name |
 
 Each role uses the model the operator chose in `~/.tesota/models.json`,
 written as `route:model`, and `codex:gpt-6-luna`, the cheapest on the Codex

@@ -421,24 +421,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const openModel = (signal: AbortSignal, role: ModelRole): Promise<ModelTarget> => openModelTarget(readModelChoices()[role], signal);
   /** Stops titles still being written when Tesota quits. */
   const titling = new AbortController();
-  /**
-   * The model that names sessions (decision 036): the first pass's, a cheap model by design, or the validator's when
-   * the first pass is off or a decision model, which cannot write; at low reasoning when it accepts that.
-   */
-  const titleModel = (): string | undefined => {
-    const choices = readModelChoices();
-    const choice = parseModelChoice(choices.triage) === undefined ? choices.validator : choices.triage;
-    const parsed = parseModelChoice(choice);
-    if (parsed === undefined) return undefined;
-    const low = parsed.reasoning === undefined && offered().find((model) => model.id === `${parsed.route}:${parsed.model}`)
-      ?.reasoning.includes("low") === true;
-    return low ? `${choice}@low` : choice;
-  };
-  /** Name the session in the background; a title that does not come leaves the name it has. */
+  /** Name the session in the background on the namer's model (decision 036); a title that does not come leaves the name. */
   const nameInBackground = (id: string, requests: readonly string[], source: "generated" | "operator"): void => {
     void (async () => {
-      const choice = titleModel();
-      if (choice === undefined) return;
+      const choice = readModelChoices().namer;
+      if (choice === ROLE_OFF) return;
       const title = await nameSession({ target: await openModelTarget(choice, titling.signal) }, requests, titling.signal);
       if (title !== undefined && store.setTitle(id, title, source)) surface.setSessionTitle(id, title);
     })().catch(() => undefined);

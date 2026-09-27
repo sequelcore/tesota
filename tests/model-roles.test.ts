@@ -50,7 +50,7 @@ it("reads a reasoning level after the model, and offers only the levels each mod
 
 it("gives every role the default until the operator chooses, with explorers and the advisor off", () => {
   expect(readModelChoices(file())).toEqual({ agent: DEFAULT_MODEL, explorer: "off", advisor: "off", reviewer: DEFAULT_MODEL,
-    refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL });
+    refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL, namer: "codex:gpt-6-luna@low" });
   expect(DEFAULT_MODEL).toBe("codex:gpt-6-luna");
 });
 
@@ -201,7 +201,8 @@ it("offers /models a role, then that role's models with default and, when it can
   const path = file();
   const roles = rolePicker("/models ", offered, path);
   expect(roles?.completes).toBe(true);
-  expect(roles?.entries.map((entry) => entry.id)).toEqual(["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage"]);
+  expect(roles?.entries.map((entry) => entry.id)).toEqual(["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage",
+    "namer"]);
   const triage = rolePicker("/models triage ", offered, path)?.entries.map((entry) => entry.id) ?? [];
   expect(triage[0]).toBe("typesafe:jev-1.13.0");
   expect(triage.slice(-2)).toEqual(["default", "off"]);

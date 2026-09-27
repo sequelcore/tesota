@@ -94,7 +94,7 @@ export function isDecisionModel(value: string): value is DecisionModel {
   return (DECISION_MODELS as readonly string[]).includes(value);
 }
 
-export const MODEL_ROLES = ["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage"] as const;
+export const MODEL_ROLES = ["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage", "namer"] as const;
 export type ModelRole = typeof MODEL_ROLES[number];
 
 export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
@@ -105,21 +105,26 @@ export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
   refuter: "the refuter that tests every finding",
   validator: "the fix validator in correction rounds",
   triage: "the first pass that decides whether an answer needs the full check",
+  namer: "writes a short title for each new session from its first request",
 };
 
 /** The model every role uses until the operator chooses another: the cheapest on the Codex route. */
 export const DEFAULT_MODEL: string = "codex:gpt-6-luna";
+/** Naming a session needs little reasoning, so its default reasons at low, as Codex's own titles do. */
+export const DEFAULT_NAMER: string = `${DEFAULT_MODEL}@low`;
 /**
  * Roles that can be off. The helpers the agent may call, explorers (decision
  * 019) and the advisor (decision 027), are off until the operator chooses a
  * model for them; each is turned on by default only after an evaluation shows
  * it helps. The answer check's first pass (decision 034) is on by default;
- * off, every turn that changes no files gets the full check.
+ * off, every turn that changes no files gets the full check. The namer
+ * (decision 036) is on by default; off, a session keeps its first request,
+ * shortened, as its name.
  */
 export const ROLE_OFF = "off";
-export const OPTIONAL_ROLES: readonly ModelRole[] = ["explorer", "advisor", "triage"];
+export const OPTIONAL_ROLES: readonly ModelRole[] = ["explorer", "advisor", "triage", "namer"];
 const defaults: Readonly<Record<ModelRole, string>> = { agent: DEFAULT_MODEL, explorer: ROLE_OFF, advisor: ROLE_OFF,
-  reviewer: DEFAULT_MODEL, refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL };
+  reviewer: DEFAULT_MODEL, refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL, namer: DEFAULT_NAMER };
 export const DEFAULT_MODELS_FILE: string = join(homedir(), ".tesota", "models.json");
 
 export type ModelChoices = Readonly<Record<ModelRole, string>>;
@@ -127,7 +132,8 @@ export type ModelChoices = Readonly<Record<ModelRole, string>>;
 const modelId = z.string().max(120).refine((value) => value === ROLE_OFF || parseModelChoice(value) !== undefined);
 const triageId = z.string().max(120).refine((value) => value === ROLE_OFF || isDecisionModel(value) || parseModelChoice(value) !== undefined);
 const choicesSchema = z.strictObject({ agent: modelId.optional(), explorer: modelId.optional(), advisor: modelId.optional(),
-  reviewer: modelId.optional(), refuter: modelId.optional(), validator: modelId.optional(), triage: triageId.optional() });
+  reviewer: modelId.optional(), refuter: modelId.optional(), validator: modelId.optional(), triage: triageId.optional(),
+  namer: modelId.optional() });
 type StoredChoices = z.infer<typeof choicesSchema>;
 
 export function isModelRole(value: string): value is ModelRole {

@@ -1,6 +1,6 @@
 # Choosing models
 
-Tesota runs a model in each of six roles, and you choose each one. This page
+Tesota runs a model in each of eight roles, and you choose each one. This page
 shows the setups that fit the accounts you have, the principles behind them,
 and how to check a choice. Signing in to each route is in
 [authentication](authentication.md).
@@ -16,6 +16,7 @@ and how to check a choice. Signing in to each route is in
 | `refuter` | Tries to disprove every finding before it counts | One session per review |
 | `validator` | Checks whether a correction resolved what was sent back | One session per correction round |
 | `triage` | Decides whether an answer with no file changes needs the full check | One short session per such turn, or one Jev decision; `off` checks every answer in full |
+| `namer` | Writes a short title for each new session | One short session per new session, at low reasoning by default; `off` keeps the first request as the name |
 
 A choice is written `route:model`, optionally with a reasoning level:
 `codex:gpt-6-astra@high`. Levels are `low`, `medium`, `high`, `xhigh` and
@@ -79,6 +80,7 @@ tesota models reviewer openrouter:nvidia/nemotron-3-super-120b-a12b:free
 tesota models refuter openrouter:nvidia/nemotron-3-super-120b-a12b:free
 tesota models validator openrouter:nvidia/nemotron-3-super-120b-a12b:free
 tesota models triage openrouter:nvidia/nemotron-3-super-120b-a12b:free
+tesota models namer openrouter:nvidia/nemotron-3-super-120b-a12b:free
 ```
 
 On Tesota's review evaluation, Nemotron as reviewer and refuter found every
