@@ -31,6 +31,8 @@ import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult,
   type WorkResult } from "./tesota-shell.js";
 import { inspectAnswer, inspectReview } from "./tesota-shell-inspection.js";
 import { obligationOutcome } from "./verification/obligation-outcome.js";
+import { runsAnswerCheck } from "./verification/answer-check-rule.js";
+import { triageAnswer } from "./integrations/answer-triage.js";
 import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
 import type { TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { UnsupportedSourceChange } from "./source-snapshot.js";
@@ -742,6 +744,20 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       }
     },
   };
+  /** The answer check's full review: the main reviewer, then the refuter on any gap; never throws. */
+  const reviewAnswer = async (id: string, input: ReviewInput, signal: AbortSignal): Promise<ReviewReport[]> => {
+    surface.reportFor(id, { phase: "reviewing", activity: "Checking the answer against your requests" });
+    try {
+      const reports = [await createPiReviewer({ target: await openModel(signal, "reviewer") }).review(input, signal)];
+      if (signal.aborted || !hasClaimsToTest(reports)) return reports;
+      surface.reportFor(id, { phase: "reviewing", activity: "Testing each gap" });
+      return await refuteFindings({ target: await openModel(signal, "refuter") }, input, reports, signal)
+        .catch(() => applyRefutation(reports, undefined));
+    } catch (error) {
+      return [{ reviewer: "Tesota reviewer", tree: input.snapshot.tree, status: "incomplete",
+        reason: error instanceof Error ? error.message : "the reviewer could not start" }];
+    } finally { surface.clearProgressFor(id, "reviewing"); }
+  };
   const blockSession = (id: string): void => { store.block(id); surface.blockSession(id); };
   /** Evidence that could not be recorded is reported, never dropped silently. */
   const journal = async (id: string, workspace: Workspace, entry: AssuranceEntry): Promise<void> => {
@@ -933,21 +949,17 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         ? [{ index: index + 1, step: step.step, ...step.check === undefined ? {} : { check: step.check } }] : []);
       const input = { checkout: workspace.checkout, requests, snapshot, checks: [], flags: [],
         response: state.lastReply ?? "", ...(claimedSteps.length === 0 ? {} : { claimedSteps }) };
-      surface.reportFor(id, { phase: "reviewing", activity: "Checking the answer against your requests" });
-      let reports: ReviewReport[];
-      try {
-        const report = await createPiReviewer({ target: await openModel(signal, "reviewer") }).review(input, signal);
-        reports = [report];
-        if (!signal.aborted && hasClaimsToTest(reports)) {
-          surface.reportFor(id, { phase: "reviewing", activity: "Testing each gap" });
-          reports = await refuteFindings({ target: await openModel(signal, "refuter") }, input, reports, signal)
-            .catch(() => applyRefutation(reports, undefined));
-        }
-      } catch (error) {
-        if (signal.aborted) return { status: "cancelled" };
-        reports = [{ reviewer: "Tesota reviewer", tree: snapshot.tree, status: "incomplete",
-          reason: error instanceof Error ? error.message : "the reviewer could not start" }];
-      } finally { surface.clearProgressFor(id, "reviewing"); }
+      // A cheap first pass on the validator's model spares the reviewer a turn with nothing to check (decision 034).
+      surface.reportFor(id, { phase: "reviewing", activity: "Deciding whether the answer needs checking" });
+      const triage = await triageAnswer({ target: await openModel(signal, "validator") }, requests, state.lastReply ?? "", signal)
+        .catch(() => ({ decided: false, checkable: true, reason: "the first pass failed" }));
+      if (signal.aborted) { surface.clearProgressFor(id, "reviewing"); return { status: "cancelled" }; }
+      if (!runsAnswerCheck(triage.decided, triage.checkable)) {
+        surface.clearProgressFor(id, "reviewing");
+        workspace.keepRequestsOpen(false);
+        return { status: "assessed", reviews: [], requests };
+      }
+      const reports = await reviewAnswer(id, input, signal);
       if (signal.aborted) return { status: "cancelled" };
       const main = reports.find((report) => report.status === "completed");
       // A request stays pending while its check left it not held or uncertain, or could not run.
