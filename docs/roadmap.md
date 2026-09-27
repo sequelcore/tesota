@@ -7,15 +7,18 @@ record why.
 ## Status
 
 Tesota is pre-release. A terminal shell runs a Pi coding agent in a separate
-workspace per session. Commands run in a Docker Sandboxes microVM without
-asking when it is set up, and with the operator's approval on the host
+workspace per session and names each session after its work. Commands run
+without asking in the native sandbox on Windows 11 24H2 and later or in a
+Docker Sandboxes microVM, and with the operator's approval on the host
 otherwise. Each result is checked by the operator's commands, Oxlint and
 LemmaScript on the exact tree, reviewed by read-only reviewers whose findings
 face a refuter and an origin check, and corrected by the agent at most twice
-before the operator applies, rejects or keeps working. Each role can use its
-own model, through the operator's ChatGPT plan, an Anthropic API key, the
-operator's own Claude Code, OpenRouter or OpenCode, and the agent can ask
-read-only explorers and consult an advisor, both off by default.
+before the operator applies, rejects or keeps working; the answer check's
+first pass, on turns that change no files, can use TypeSafe's Jev with the
+operator's own key. Each role can use its own model, through the operator's
+ChatGPT plan, an Anthropic API key, the operator's own Claude Code,
+OpenRouter or OpenCode, and the agent can ask read-only explorers and consult
+an advisor, both off by default.
 
 The complete loop has run on throwaway and evaluation repositories; daily use
 on a real project has not started.
@@ -81,6 +84,16 @@ project. They are listed here as they are chosen.
   plan step the agent marked done, the refuter tests each gap, and confirmed
   gaps go to correction; turns that change no files are checked the same
   way. Steps confirmed by gates come with gates.
+- **Jev for the answer check's first pass** (decision 035,
+  [design](design/assurance.md#obligations)): built 2026-09-27; the `triage`
+  role may use TypeSafe's Jev with the operator's own key, pinned to
+  `typesafe:jev-1.13.0`, and skips a turn only below a 0.2 probability of
+  being checkable. An error, a refusal, no key or no answer within ten
+  seconds decide nothing, so the full check runs.
+- **Session names** (decision 036, [design](design/sessions.md#the-shell)):
+  built 2026-09-27; the shortened first request names a session at once,
+  then the `namer` role writes a short title in the background, and
+  `/rename` sets or suggests a name. The operator's name always wins.
 - **Ideas to bring from `feat/evidence-attribution`**, a branch from
   2026-09-25 left unmerged, about 130 commits behind `dev`, whose decisions
   022 and 023 collide with `dev`'s. Each is to be rebuilt on `dev` with its
@@ -150,7 +163,9 @@ mid-work, and finds the work finished on reconnecting.
   Tesota-specific.
 - A non-TypeScript repository and another platform.
 - More execution providers once they pass the same live controls: WSL2,
-  remote machines, a native Windows sandbox.
+  remote machines.
+- A relay that offers Jev to users without their own TypeSafe key, once
+  there are real users and TypeSafe agrees (decision 035).
 - A review queue and notifications across sessions.
 - Workflow profiles that choose verifiers, reviewers and rounds per
   repository, once two real alternatives exist.
