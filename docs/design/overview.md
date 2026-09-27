@@ -151,7 +151,9 @@ evidence to the operator's decision is what it is organized around.
 
 **Before a public launch.** The name needs trademark, domain and
 social-handle clearance, which has not been done; a web search is not legal
-clearance. Visual identity is open.
+clearance. Visual identity is open. Tesota also stays out of OpenRouter's
+public app directory until then, which keeps some free models from it
+([agents](agents.md#model-routes)); listing it is part of the launch.
 
 ## Trust
 

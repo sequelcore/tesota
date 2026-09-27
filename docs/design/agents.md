@@ -230,7 +230,11 @@ Tesota's OpenRouter calls under Pi; Tesota sends no OpenRouter attribution of
 its own, which would list it publicly in OpenRouter's rankings. That has a
 cost: OpenRouter offers some free models only to agents in its app
 directory (403 "only available on agentic harnesses", at the routing step
-"Gate Free Endpoints by Agentic Harness"), so Tesota cannot use them.
+"Gate Free Endpoints by Agentic Harness"), so Tesota cannot use them. The
+operator chose on 2026-09-26 to keep attribution off while Tesota is
+pre-release, and to revisit it with the public launch; turning it on means
+sending `HTTP-Referer` with a public Tesota address and `X-OpenRouter-Title`
+from `identityHeaders` in `src/integrations/model-session.ts`.
 `src/integrations/model-session.ts` owns these headers, and a test reads them
 from the wire.
 
