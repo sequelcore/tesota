@@ -139,6 +139,22 @@ Git, Node and npm. `bun install` still failed with `ENOENT` before any
 download, with every Bun directory variable tried, so it is left to the
 per-command retry on this computer until `fs_enumerate` ships.
 
+**Corrected 2026-09-27, after the first dogfooding session.** A drive over
+the workspace's parent works when the sandbox may read that parent: the
+earlier failure came from a parent it was not granted. With the drive over
+the folder that holds the workspace, readable, and everything else in it
+denied through `deniedPaths`, Git, Node scripts, npm and `bun run` all ran
+from `T:\repo`, and `..` listed only names. The workspace at the drive's
+root had broken every Bun script: `bun run` fails at any drive's root,
+sandbox or not (`bunsh: No such file or directory: T:\T:`), which the
+controls then in use never ran. `bun install` still fails, now with `EBADF`
+on its temporary folder, since Bun's installer cannot work through a drive
+letter other than the one its files live on
+([oven-sh/bun#39357](https://github.com/oven-sh/bun/issues/39357), fix
+open). npm hung because `PATH` found a global npm in the operator's
+`AppData\Roaming\npm`, which the sandbox cannot read; the installed npm
+worked. Decision 037 records the design that followed.
+
 **Certificate revocation.** Windows' own TLS, used by `curl.exe` and by Git
 configured with `schannel` as on this machine, checks revocation online and
 failed with `CRYPT_E_REVOCATION_OFFLINE`, since the revocation servers are
