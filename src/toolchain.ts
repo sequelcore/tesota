@@ -87,10 +87,16 @@ export function hasNodeModules(checkout: string): boolean {
   return existsSync(join(checkout, "package.json"));
 }
 
+/** The package manager whose lockfile the checkout commits, which installs exactly what that lockfile names. */
+export function lockfileManager(checkout: string): { readonly manager: "bun" | "npm"; readonly lockfile: string } | null {
+  for (const lockfile of ["bun.lock", "bun.lockb"]) if (existsSync(join(checkout, lockfile))) return { manager: "bun", lockfile };
+  return existsSync(join(checkout, "package-lock.json")) ? { manager: "npm", lockfile: "package-lock.json" } : null;
+}
+
 function dependencyInstall(checkout: string): string | null {
-  if (existsSync(join(checkout, "bun.lock")) || existsSync(join(checkout, "bun.lockb"))) return "bun install --frozen-lockfile";
-  if (existsSync(join(checkout, "package-lock.json"))) return "npm ci";
-  return null;
+  const found = lockfileManager(checkout);
+  if (found === null) return null;
+  return found.manager === "bun" ? "bun install --frozen-lockfile" : "npm ci";
 }
 
 export function planToolchain(checkout: string): ToolchainPlan {

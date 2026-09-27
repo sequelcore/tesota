@@ -32,10 +32,10 @@ afterAll(async () => {
 
 const sandbox: EnvironmentGuarantees = { filesystem: "workspace", network: "allowlist", secrets: "none", resources: "unbounded" };
 const result = (control: ControlResult["control"], passed: boolean): ControlResult => ({ control, passed, detail: "" });
-const processes = ["workspace_read_write", "cancel_children", "time_limit"] as const;
+const processes = ["workspace_read_write", "package_script", "cancel_children", "time_limit"] as const;
 
 it("keeps a claim only when the controls behind it, and every environment's own, passed", () => {
-  const all = [...processes, "outside_read", "outside_write", "host_variables", "network_refused", "registry_reachable"] as const;
+  const all = [...processes, "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "registry_reachable"] as const;
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, true)))).toEqual(sandbox);
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "outside_read"))))
     .toEqual({ ...sandbox, filesystem: "host" });
