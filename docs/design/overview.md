@@ -14,6 +14,7 @@ and priorities; this page and its siblings describe the design as it is.
 | [Assurance](assurance.md) | Checks, verifiers, review, refutation, correction, the journal and the forecast |
 | [Agents](agents.md) | The working agent, explorers, the advisor and the model for each role |
 | [Sessions](sessions.md) | The shell, saved sessions, and the planned session service |
+| [Work and results](work.md) | Planned: changes, answers and actions as results, folders, gates and documents |
 
 ## Principles
 

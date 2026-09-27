@@ -63,9 +63,11 @@ project. They are listed here as they are chosen.
   public administration, with documents, spreadsheets, presentations and
   research, and the operator also uses agents for answers and actions on
   live systems. The [general work landscape](research/general-work-landscape.md)
-  gathers how other agents serve that work; a design pass on changes,
-  answers and actions as kinds of result comes next, before any building,
-  and her first real tasks decide the order.
+  gathers how other agents serve that work, and decision 032 plans it
+  ([design](design/work.md)): changes, answers and actions as kinds of
+  result, folders as workspaces, and gates of stated strength that people
+  can define. Folders and documents come first, then answers, then actions;
+  her first real tasks decide the order within each.
 
 ### 2. Measurement on public benchmarks
 
@@ -111,7 +113,6 @@ mid-work, and finds the work finished on reconnecting.
 - More execution providers once they pass the same live controls: WSL2,
   remote machines, a native Windows sandbox.
 - A review queue and notifications across sessions.
-- Non-code tasks, and user-supplied verifiers and reviewers, by observed need.
 - Workflow profiles that choose verifiers, reviewers and rounds per
   repository, once two real alternatives exist.
 - Web evidence in review, once real use shows reviews missing errors that
