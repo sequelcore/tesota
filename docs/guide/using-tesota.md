@@ -21,23 +21,23 @@ Login stores a Codex credential under `~/.tesota/auth`; see
 [authentication](authentication.md). `bun unlink` removes the command.
 
 Every role uses `codex:gpt-6-luna` until you choose otherwise, except explorers
-and the advisor, which are off. `tesota models` lists the working agent,
+and the advisor, which are off. `tesota roles` lists the working agent,
 explorers, advisor, reviewer, refuter and fix validator with
 their models, who pays for each and the model's list price, and
-`tesota models <role> <route:model>` changes one. [Choosing
+`tesota roles <role> <route:model>` changes one. [Choosing
 models](choosing-models.md) has setups for the accounts you have and why they
 work; [authentication](authentication.md) covers signing in to each route.
 
-Explorers are off by default. `tesota models explorer codex:gpt-6-luna` lets the agent
+Explorers are off by default. `tesota roles explorer codex:gpt-6-luna` lets the agent
 of sessions opened afterwards ask read-only explorers questions about the
 repository with its `explore` tool: each explorer reads and searches but cannot
 change files or run commands, at most three run at once and eight per
 request, and each shows in the conversation with what it read and what it
 cost. On Pi's routes their conversations are saved in the workspace's
 `explorers` directory; on Claude Code they are not kept.
-`tesota models explorer off` turns them off again.
+`tesota roles explorer off` turns them off again.
 
-An **advisor** is off by default too. `tesota models advisor claude-code:opus`
+An **advisor** is off by default too. `tesota roles advisor claude-code:opus`
 gives the agent of sessions opened afterwards an `advisor` tool: a stronger
 model that reads the agent's conversation, has no tools, and answers with a
 plan, a correction or a reason to stop, at most three times a request. The
@@ -86,9 +86,10 @@ Windows PowerShell, and the workspace appears to them as a drive of its own,
 such as `T:\`; npm works, and a command the sandbox blocks, such as
 `bun install`, runs on your computer only if you approve it. `tesota sandbox`
 shows what each sandbox proved here and which one is in use; `tesota sandbox
-use docker` (or `native`, `host`, `auto`) chooses for new sessions, `/sandbox
-docker` inside a session switches that session alone, keeping its
-conversation, and `tesota sandbox clean` removes this repository's package
+use docker` (or `native`, `host`, `auto`) chooses for new sessions. Inside a
+session, `/sandbox` opens a list including `default`, which follows the
+choice for new sessions; `/sandbox docker` switches that session alone,
+keeping its conversation. `tesota sandbox clean` removes this repository's package
 cache. Docker
 Sandboxes is the alternative on Windows 11, and the stronger wall, since it
 runs a virtual machine. It needs the Windows
@@ -143,7 +144,7 @@ in which the agent changes no files gets an "Answer check" too: a question
 can be answered, but a reply that only says the work is done, when the code
 is not there, is caught and sent back. A quick first pass, on your
 `triage` model, skips the check for greetings, thanks and small talk;
-`tesota models triage off` checks every answer in full instead.
+`tesota roles triage off` checks every answer in full instead.
 
 The agent reads, searches, edits, creates and deletes files in its own copy of
 your repository. In the sandbox its shell commands run without
@@ -196,13 +197,13 @@ keeps the model, the agent starts a **new conversation**: it will not have
 the earlier one, and Tesota says so. With your next request Tesota sends it a
 brief of the session, which the conversation shows first: your requests for
 the pending changes, the changes, open review findings and the agent's last
-reply. `tesota models agent` sets the model for new sessions.
+reply. `tesota roles agent` sets the model for new sessions.
 
-`/models` chooses the model of every role, as `tesota models` does: pick a
+`/roles` chooses the model of every role, as `tesota roles` does: pick a
 role, then its model, from the same kind of list. The choice holds for every
 session: the judges and the first pass use it from their next check, and
 the agent's role from the next new session. You can also type it, for
-example `/models triage typesafe:jev-1.13.0` or `/models advisor off`.
+example `/roles triage typesafe:jev-1.13.0` or `/roles advisor off`.
 
 ## Review and apply
 
@@ -293,6 +294,18 @@ not show the change does what you asked; read the diff.
 
 ## Sessions and appearance
 
+`tesota` starts a new session in the current repository or folder. Saved
+sessions remain in the sidebar: select one to continue it without losing its
+conversation or workspace. `tesota resume` lists saved sessions to choose
+from before opening the shell; `tesota resume <session-id>` opens that exact
+session. If there are no saved sessions, start with `tesota` instead. Leaving
+a new session without sending a request does not keep an empty session.
+
+In an interactive terminal, `tesota resume`, `tesota sandbox use`,
+`tesota auth login`, `tesota auth logout` and `tesota roles <role>` offer
+numbered, filterable choices when their target is omitted. Enter cancels;
+explicit IDs and names still work in commands and scripts.
+
 The left sidebar puts the repository and branch above its sessions. New
 sessions appear first and activity never moves an existing row. Each row
 keeps its precise state—such as `Running checks`, `Needs approval`,
@@ -301,6 +314,9 @@ folding every phase into working. Executing phases have a spinner; waiting and
 terminal states stay still. The selected session is highlighted, operator
 attention is in the warning color, and unresolved effects are in the error
 color.
+
+The rail shows titles and states without position numbers; `Alt+1` to `Alt+9`
+remain optional shortcuts for the first nine sessions in newest-first order.
 
 The sidebar appears beside the conversation when there is room and hides
 automatically on a narrow terminal. `Alt+B` hides it, or opens it over the
@@ -317,9 +333,11 @@ agent runs. Type `/` at the normal request prompt to see a command menu above
 the input; the selected row is highlighted. Use arrow keys to choose and Enter
 to run a command, or `/help` for commands and keyboard shortcuts. These
 commands stay in the shell and do not become agent requests. `Ctrl+N` starts a
-new session. Your first request names it at once, and a short title written
+new session. `/details` lists long notices, newest first, to expand or collapse;
+`/details <number>` targets one directly, and `Alt+D` toggles the latest.
+Your first request names it at once, and a short title written
 by the `namer` role's model follows a few seconds later
-(`tesota models namer off` keeps the request as the name); `/rename <name>` names it yourself, and a name you give is kept.
+(`tesota roles namer off` keeps the request as the name); `/rename <name>` names it yourself, and a name you give is kept.
 `/rename` alone suggests a name from the session's latest requests; `Alt+J` selects the next and `Alt+K` the previous in the visible
 newest-first order, and `Alt+1` to `Alt+9` select those visible positions.
 `Ctrl+Tab` also selects the next where the terminal passes it on; Windows
@@ -335,7 +353,7 @@ Sessions, their workspaces and their conversations are restored after a
 restart.
 
 `tesota --theme tesota-light` or `--theme terminal` changes the appearance for
-one run. Inside the shell, `/themes` opens a list like `/models`: type to
+one run. Inside the shell, `/themes` opens a list like `/roles`: type to
 filter, use Up/Down to choose, Enter to switch, Tab to complete the name,
 and Esc to close without switching. `/themes <name>` switches every session immediately
 without restarting work. The selection lasts for this run.
@@ -366,9 +384,10 @@ background colors; plain conversation text still uses the terminal's foreground.
   `mise.toml`), then your `.tesota/setup.sh` or the lockfile install. The first
   session with a new set of runtime versions builds them into a cached image,
   which can take a few minutes; later sessions reuse it and prepare in about
-  half a minute. Preparation starts as soon as a session opens, and the status
-  line shows it, so it is often done before you send your first request. Installed `node_modules` stay inside the sandbox, so your
-  workspace folder shows it empty. Dev Container definitions are not read yet.
+  half a minute. Restored sessions prepare when opened; new sessions prepare
+  with their first request so unused sessions create no workspace. The status
+  line shows preparation. Installed `node_modules` stay inside the sandbox,
+  so your workspace folder shows it empty. Dev Container definitions are not read yet.
 - Closing a session removes its workspace. `tesota prune` lists other
   workspaces it would remove, and `tesota prune --force` removes those that no
   session uses and that hold no unapplied changes.

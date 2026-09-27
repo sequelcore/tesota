@@ -18,7 +18,8 @@ import { windowsSystemProgram } from "./windows-system.js";
  * how.
  */
 
-const routes = ["codex", "anthropic", "claude-code", "openrouter", "opencode", "typesafe"] as const;
+export const AUTH_ROUTES = ["codex", "anthropic", "claude-code", "openrouter", "opencode", "typesafe"] as const;
+const routes = AUTH_ROUTES;
 type AuthRoute = typeof routes[number];
 
 /** A route whose credential is a key the operator pastes: its name, Pi's provider, the key's environment variable, and where to get one. */

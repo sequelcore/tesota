@@ -10,6 +10,7 @@ import type { SandboxPreference, SessionExecution } from "../src/execution-provi
 import { hostProvider } from "../src/host-environment.js";
 import type { ShellSessionRecord, ShellSessionStore } from "../src/shell-session-store.js";
 import type { TesotaShellTerminalOptions } from "../src/tesota-shell-terminal.js";
+import type { TranscriptEntry } from "../src/tesota-shell-transcript.js";
 import { Workspace } from "../src/workspace.js";
 
 /**
@@ -51,7 +52,9 @@ beforeEach(() => {
     workspace: null, entries: [], inspections: [], interrupted: false, blocked: false });
   records = [record("session")];
   const find = (id: string): ShellSessionRecord | undefined => records.find((entry) => entry.id === id);
-  const store = { list: () => records, append: () => {},
+  const store = { list: () => [...records], append: (id: string, entry: TranscriptEntry) => {
+    find(id)?.entries.push(entry);
+  },
     create: () => { const created = record("replacement"); records.push(created); return created; },
     remove: (id: string) => { records = records.filter((entry) => entry.id !== id); },
     setWorkspace: (id: string, path: string) => { const found = find(id); if (found !== undefined) found.workspace = path; },
@@ -108,12 +111,39 @@ function shell(native: ReturnType<typeof provider>) {
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment };
   const dockerProvider: ExecutionProvider = { ...hostProvider, name: "docker-sandboxes", prepare: async () => docker.environment };
   const created = createProcessTesotaShell("source", "tesota-dark", async (preference: SandboxPreference): Promise<SessionExecution> =>
-    preference === "docker" ? { commands: "sandbox", provider: dockerProvider } : { commands: "sandbox", provider: native.provider });
+    preference === "docker" ? { commands: "sandbox", provider: dockerProvider } : { commands: "sandbox", provider: native.provider }, "session");
   const notices = vi.spyOn(created.surface, "writeTo");
   spies.push(notices);
   const said = (): string => notices.mock.calls.map((call) => call[1]).join("\n");
   return { created, docker, said };
 }
+
+it("starts a fresh session after saved ones without preparing or retaining an untouched session", async () => {
+  const created = createProcessTesotaShell("source", "tesota-dark", async () => { throw new Error("unused"); });
+  expect(created.initialSessionId).toBe("replacement");
+  expect(mocks.terminal?.initialSession?.id).toBe("session");
+  expect(records.map((record) => record.id)).toEqual(["session", "replacement"]);
+  created.session("replacement").prepare?.();
+  expect(Workspace.create).not.toHaveBeenCalled();
+  await created.dispose?.();
+  expect(records.map((record) => record.id)).toEqual(["session"]);
+});
+
+it("resumes exactly the requested saved session and rejects an unknown id", async () => {
+  const created = createProcessTesotaShell("source", "tesota-dark", async () => { throw new Error("unused"); }, "session");
+  expect(created.initialSessionId).toBe("session");
+  expect(records.map((record) => record.id)).toEqual(["session"]);
+  await created.dispose?.();
+  expect(() => createProcessTesotaShell("source", "tesota-dark", async () => { throw new Error("unused"); }, "missing"))
+    .toThrow("Session missing was not found in this workspace.");
+});
+
+it("keeps a new session once it has a request", async () => {
+  const created = createProcessTesotaShell("source", "tesota-dark", async () => { throw new Error("unused"); });
+  mocks.terminal?.onEntry?.("replacement", { kind: "user", text: "Review this change" });
+  await created.dispose?.();
+  expect(records.map((record) => record.id)).toEqual(["session", "replacement"]);
+});
 
 it("stops a session's preparation when the shell quits, instead of waiting out the release limit", async () => {
   const native = provider("mxc", true);

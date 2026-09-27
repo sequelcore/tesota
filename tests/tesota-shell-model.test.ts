@@ -84,7 +84,7 @@ function shell() {
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
   const mode = { commands: "host", provider: { ...hostProvider, name: "test", prepare: async () => environment },
     missing: [] } satisfies SessionExecution;
-  const created = createProcessTesotaShell("source", "tesota-dark", async () => mode);
+  const created = createProcessTesotaShell("source", "tesota-dark", async () => mode, "session");
   const notices = vi.spyOn(created.surface, "writeTo");
   const model = vi.spyOn(created.surface, "setSessionModel");
   spies.push(notices, model);

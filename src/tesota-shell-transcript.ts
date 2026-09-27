@@ -199,6 +199,8 @@ export class Transcript {
     return true;
   }
 
+  get noticePreviews(): readonly string[] { return this.#notices.toReversed().map((notice) => notice.preview); }
+
   /** Show agent activity; returns the entry to record once a reply or tool call is complete. */
   activity(activity: AgentActivity): TranscriptEntry | undefined {
     switch (activity.type) {

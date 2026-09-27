@@ -30,7 +30,7 @@ on a real project has not started.
 | Workspaces with uncommitted changes, updates from the source, guarded application, pruning | 2026-09-25 | [Workspace](design/workspace.md) |
 | Execution environments, Docker Sandboxes, commands in a sandbox or on this computer, network questions, sandbox preparation and `tesota setup` | 2026-09-25 | [Execution](design/execution.md) |
 | Request record, flags, verifiers with claims, reviewer and lenses, ClaimCheck, refuter, origin check, correction loop with fix validation, assurance journal, forecast, `live:review` | 2026-09-25 | [Assurance](design/assurance.md) |
-| Explorers, models by role, `tesota models`, `live:delegation` | 2026-09-25 | [Agents](design/agents.md) |
+| Explorers, models by role, `tesota roles`, `tesota models`, `live:delegation` | 2026-09-25 | [Agents](design/agents.md) |
 | Claude through an Anthropic API key or the operator's Claude Code | 2026-09-25 | [Agents](design/agents.md#model-routes) |
 | OpenRouter, OpenCode Zen and OpenCode Go as routes, with OpenRouter's browser sign-in | 2026-09-26 | [Agents](design/agents.md#model-routes) |
 | One model-session contract for every engine, with shared and live suites, time limits and token kinds | 2026-09-26 | [Agents](design/agents.md#the-engine-contract) |

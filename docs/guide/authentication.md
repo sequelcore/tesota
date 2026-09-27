@@ -5,16 +5,17 @@ each signed in its own way:
 
 | Route | Sign in | Stored by |
 | --- | --- | --- |
-| `codex` | `tesota auth login`: Pi's Codex OAuth | Tesota, in `~/.tesota/auth/codex.json` |
+| `codex` | `tesota auth login codex`: Pi's Codex OAuth | Tesota, in `~/.tesota/auth/codex.json` |
 | `anthropic` | `tesota auth login anthropic`: your Anthropic API key, typed without being shown | Tesota, in `~/.tesota/auth/anthropic.json`; `ANTHROPIC_API_KEY` also works |
 | `claude-code` | `tesota auth login claude-code`: Claude Code's own sign-in, the same as `claude auth login` | Claude Code, never Tesota |
 | `openrouter` | `tesota auth login openrouter`: sign in with OpenRouter in your browser, or paste a key you have | Tesota, in `~/.tesota/auth/openrouter.json`; `OPENROUTER_API_KEY` also works |
 | `opencode`, `opencode-go` | `tesota auth login opencode`: your OpenCode key, from [opencode.ai/auth](https://opencode.ai/auth), which serves both Zen and Go | Tesota, in `~/.tesota/auth/opencode.json`; `OPENCODE_API_KEY` also works |
 | `typesafe`, for the `triage` role only | `tesota auth login typesafe`: your TypeSafe key, from [console.typesafe.ai](https://console.typesafe.ai) | Tesota, in `~/.tesota/auth/typesafe.json`; `TYPESAFE_API_KEY` also works |
 
-`tesota auth status [route]` and `tesota auth logout [route]` work the same
-way; without a route they mean `codex`. For `claude-code`, status shows only
-whether Claude Code is signed in and how, and Tesota does not sign it out,
+In an interactive terminal, `tesota auth login` and `tesota auth logout`
+offer a route selector. `tesota auth status` defaults to `codex`. For
+`claude-code`, status shows only whether Claude Code is signed in and how,
+and Tesota does not sign it out,
 because that would also sign out your own Claude Code; use `claude auth
 logout` for that. Tesota never reads, copies or stores a Claude subscription
 login, and never accepts one for the `anthropic` route. Tesota does not read or

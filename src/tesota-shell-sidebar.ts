@@ -51,7 +51,7 @@ export class SessionRail implements Component {
     return index < 0 ? undefined : index * 2;
   }
   invalidate(): void {}
-  render(width: number): string[] { return this.renderSessions(this.#sessions, width, 0); }
+  render(width: number): string[] { return this.renderSessions(this.#sessions, width); }
 
   /** A selected-session window for overlays, whose renderer does not allocate a nested scroll viewport. */
   renderWindow(width: number, height: number): string[] {
@@ -59,25 +59,23 @@ export class SessionRail implements Component {
     if (this.#sessions.length <= count) return this.render(width);
     const selected = Math.max(0, this.#sessions.findIndex((session) => session.selected));
     const start = Math.max(0, Math.min(selected - Math.floor(count / 2), this.#sessions.length - count));
-    return this.renderSessions(this.#sessions.slice(start, start + count), width, start);
+    return this.renderSessions(this.#sessions.slice(start, start + count), width);
   }
 
-  private renderSessions(sessions: readonly SidebarSession[], width: number, start: number): string[] {
+  private renderSessions(sessions: readonly SidebarSession[], width: number): string[] {
     const lines: string[] = [];
-    for (const [offset, session] of sessions.entries()) {
-      const position = start + offset;
-      const shortcut = position >= 0 && position < 9 ? String(position + 1) : " ";
+    for (const session of sessions) {
       const title = safeTerminalText(session.title);
-      const heading = `${mutedText(shortcut.padStart(2), this.#theme)} ${session.selected ? bold(title) : title}`;
+      const heading = ` ${session.selected ? bold(title) : title}`;
       const state = this.presentation(session.state);
       const stateText = `${state.icon} ${state.label}`;
-      const detail = `   ${state.muted === true ? mutedText(stateText, this.#theme) : colorText(stateText, state.color)}`;
+      const detail = `  ${state.muted === true ? mutedText(stateText, this.#theme) : colorText(stateText, state.color)}`;
       if (session.selected) {
-        lines.push(selectedRow(truncateToWidth(` ${heading}`, width), width, this.#theme));
-        lines.push(selectedRow(truncateToWidth(` ${detail}`, width), width, this.#theme));
+        lines.push(selectedRow(truncateToWidth(heading, width), width, this.#theme));
+        lines.push(selectedRow(truncateToWidth(detail, width), width, this.#theme));
       } else {
-        lines.push(truncateToWidth(` ${heading}`, width));
-        lines.push(truncateToWidth(` ${detail}`, width));
+        lines.push(truncateToWidth(heading, width));
+        lines.push(truncateToWidth(detail, width));
       }
     }
     return lines;

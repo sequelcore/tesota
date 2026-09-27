@@ -14,7 +14,7 @@ it("compiled login persists across processes, status is sanitized, and logout re
   const root = await mkdtemp(join(tmpdir(), "tesota-auth-cli-"));
   try {
     const invoke = (action: string) => spawnSync("bun", ["--no-env-file", "--preload",
-      resolve("tests/fixtures/persistent-auth-smoke.mjs"), resolve("dist/cli.js"), "auth", action], {
+      resolve("tests/fixtures/persistent-auth-smoke.mjs"), resolve("dist/cli.js"), "auth", action, "codex"], {
       encoding: "utf8", timeout: 8_000, windowsHide: true,
       env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"], TESOTA_TEST_AUTH_DIRECTORY: join(root, "auth") },
     });

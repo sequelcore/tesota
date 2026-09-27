@@ -25,7 +25,7 @@ Decision 026; evidence in the
 [model switch landscape](../research/model-switch-landscape.md).
 
 - **A session keeps its agent's model.** The first time its agent starts,
-  the session records the model it runs on, from `tesota models agent`;
+  the session records the model it runs on, from `tesota roles agent`;
   afterwards that choice sets only new sessions, so a restarted session never
   lands on another engine behind its old transcript.
 - **`/model`** opens a picker, as in Claude Code and Codex
@@ -62,7 +62,7 @@ Decision 026; evidence in the
   not carry over. That rule is `needsBrief`, proved beside `modelSwitch`.
 - Commands are taken only at the request prompt, so a switch never lands in
   the middle of a turn. Review roles are unaffected: they read
-  `tesota models` when each review starts.
+  `tesota roles` when each review starts.
 
 ### The plan
 
@@ -130,7 +130,7 @@ to help. `bun run live:delegation` repeats the comparison.
 
 Decision 027; evidence in the [advisor landscape](../research/advisor-landscape.md).
 The advisor is a stronger model the working agent consults at hard decisions,
-off until the operator chooses a model for it (`tesota models advisor
+off until the operator chooses a model for it (`tesota roles advisor
 <route:model>`), like explorers.
 
 - **What it sees and can do.** As in Anthropic's advisor tool, it reads the
@@ -176,9 +176,9 @@ off until the operator chooses a model for it (`tesota models advisor
 
 Each role uses the model the operator chose in `~/.tesota/models.json`,
 written as `route:model`, and `codex:gpt-6-luna`, the cheapest on the Codex
-route, when there is no choice. `tesota models` lists each role with its
+route, when there is no choice. `tesota roles` lists each role with its
 model, who pays for it and the model's list price, and
-`tesota models <role> <route:model>` sets one from the models
+`tesota roles <role> <route:model>` sets one from the models
 the route offers, or `default` to clear it. An unreadable file is an error,
 not a silent fallback. A role reads its model when it starts work, and review
 measurements record the models so forecasts compare like with like. What the
@@ -191,7 +191,7 @@ Decision 029; evidence in the
 [reasoning levels landscape](../research/reasoning-levels-landscape.md). A
 choice may end in a reasoning level, `route:model@level` with `low`,
 `medium`, `high`, `xhigh` or `max`, the levels both engines share: Pi's
-thinking level and Claude Code's effort. `tesota models` and `/model` accept
+thinking level and Claude Code's effort. `tesota roles` and `/model` accept
 only a level the model takes on its route, from Pi's catalogue; through
 Claude Code, only models Pi maps to effort levels take one, and an alias
 takes its family's newest model's levels. Pi would otherwise lower an
@@ -211,7 +211,7 @@ also judge work the advisor's guidance shaped, and the refuter tests the
 reviewer's findings. Evaluators favor their own output even on objective code
 criteria, and their own family less strongly (the
 [models by role landscape](../research/model-roles-landscape.md#the-reviewer)
-has the studies). `tesota models` lists every such pair that shares a model,
+has the studies). `tesota roles` lists every such pair that shares a model,
 as a warning, or a lab, as a note, and a choice or a `/model` switch that
 creates one says so (`src/judge-warnings.ts`; the levels are
 `judgeIndependence` in `src/verification/judge-independence.ts`, proved by
@@ -232,7 +232,7 @@ role can use any route. Evidence is in the
 
 | Route | Engine | Signed in by | Paid through |
 | --- | --- | --- | --- |
-| `codex` | Pi | `tesota auth login`: Pi's Codex OAuth, stored by Tesota | The operator's ChatGPT plan, against its limits |
+| `codex` | Pi | `tesota auth login codex`: Pi's Codex OAuth, stored by Tesota | The operator's ChatGPT plan, against its limits |
 | `anthropic` | Pi | `tesota auth login anthropic`: the operator's Anthropic API key, stored by Tesota, or `ANTHROPIC_API_KEY` | The API key, per token |
 | `claude-code` | Claude Code, through the Claude Agent SDK | The operator, in Claude Code itself (`claude`, then `/login`) | Whatever Claude Code is signed in with, usually a Claude plan |
 | `openrouter` | Pi | `tesota auth login openrouter`: OpenRouter's browser sign-in, which issues a key, or a pasted key, stored by Tesota; or `OPENROUTER_API_KEY` | The operator's OpenRouter credits, per token; `:free` models cost nothing |
@@ -282,7 +282,7 @@ not state. `tesota models` lists OpenRouter and Zen by count, and
 **A free model's provider may keep the repository's code.** OpenRouter's free
 models' providers may log and train, and Meta's contributor models on Zen
 and Go train on what they are sent. `dataNotice` in `src/models-command.ts` marks them; choosing
-one, with `tesota models` or `/model`, warns and never refuses, as for
+one, with `tesota roles` or `/model`, warns and never refuses, as for
 judges. Paid models on these gateways keep nothing or 30 days by their
 stated policies.
 

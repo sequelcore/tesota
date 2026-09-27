@@ -46,7 +46,7 @@ it.each([
   ];
   const mode = { commands: "host", provider: { ...hostProvider, name: "test", prepare: async () => environment },
     missing: [] } satisfies SessionExecution;
-  const shell = createProcessTesotaShell("source", "tesota-dark", async () => mode);
+  const shell = createProcessTesotaShell("source", "tesota-dark", async () => mode, "session");
   const notices = vi.spyOn(shell.surface, "writeTo");
   try {
     const result = await shell.session("session").work("hello");

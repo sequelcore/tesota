@@ -14,7 +14,7 @@ import { isDecisionModel, ROLE_OFF, type ModelRole, parseModelChoice, readModelC
 import { type WorkPlan, withReview } from "./work-plan.js";
 import { isGitRepository } from "./folder-source.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, rolePicker, routeListing,
-  runModelsCommand } from "./models-command.js";
+  runRolesCommand } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
@@ -229,7 +229,8 @@ class SessionState {
 export function createProcessTesotaShell(cwd: string = process.cwd(),
   theme: TesotaShellThemeName = "tesota-dark",
   chooseExecution: (preference: SandboxPreference) => Promise<SessionExecution> =
-    (preference) => chooseSessionExecution(providersFor(preference))): TesotaShellCommandDependencies {
+    (preference) => chooseSessionExecution(providersFor(preference)),
+  resumeSessionId?: string): TesotaShellCommandDependencies {
   // Each choice is made once per shell: the first on a machine qualifies the native sandbox, which takes some seconds.
   const executionChoices = new Map<SandboxPreference, Promise<SessionExecution>>();
   const executionFor = (preference: SandboxPreference): Promise<SessionExecution> => {
@@ -254,7 +255,14 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   };
   const store: ShellSessionStore = openShellSessionStore(cwd);
   const savedSessions = store.list();
-  const initial = savedSessions[0] ?? store.create();
+  const resumed = resumeSessionId === undefined ? undefined : savedSessions.find((session) => session.id === resumeSessionId);
+  if (resumeSessionId !== undefined && resumed === undefined) {
+    store.close();
+    throw new Error(`Session ${resumeSessionId} was not found in this workspace.`);
+  }
+  const initial = resumed ?? store.create();
+  const freshSessions = new Set(resumed === undefined ? [initial.id] : []);
+  const firstDisplayed = savedSessions[0] ?? initial;
   let workspaceCallbacks: WorkspaceCallbacks | undefined;
   const piSessionsDirectory = join(homedir(), ".tesota", "pi-sessions",
     createHash("sha256").update(resolve(cwd).toLocaleLowerCase("en-US")).digest("hex"));
@@ -288,10 +296,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     try { surface.setSessionModel(id, agentChoice(id)); } catch { /* the agent reports an unreadable choice when it opens */ }
   };
   const surface = createTesotaShellTerminal({ cwd, tui, interrupt, theme,
-    initialSession: initial, onEntry: (id, entry) => { store.append(id, entry); },
+    initialSession: firstDisplayed, onEntry: (id, entry) => { store.append(id, entry); },
     onInspection: (id, inspection) => { store.inspect(id, inspection); },
     onNewSession: () => {
       const session = store.create();
+      freshSessions.add(session.id);
       surface.addSession(session.id, session.title);
       showAgentModel(session.id);
       surface.selectSession(session.id);
@@ -301,9 +310,21 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onModel: (id, argument) => { void agentModel.change(id, argument); },
     onHandoff: (id) => { void agentModel.handOff(id); },
     onSandbox: (id, argument) => { void sessionSandbox.change(id, argument); },
+    sandboxPicker: (id) => {
+      const own = saved(id)?.sandbox;
+      const preference = readSandboxPreference();
+      const current = own ?? preference;
+      return { title: `Sandbox: ${own === undefined ? `default (${current})` : current}`, entries: [
+        { value: "default", label: "default", detail: `Follow the choice for new sessions (${preference})` },
+        ...SANDBOX_PREFERENCES.map((value) => ({ value, label: value,
+          detail: `${value === current ? "Current · " : ""}${value === "auto" ? "Native, then Docker, then this computer" :
+            value === "host" ? "This computer; asks before commands" :
+              `${Object.values(SANDBOX_NAMES).find((entry) => entry.choice === value)?.described ?? value}; availability checked on selection`}` })),
+      ] };
+    },
     onRoleModel: (id, args) => {
       let text = "";
-      const code = runModelsCommand(args, (written) => { text += written; }, offered());
+      const code = runRolesCommand(args, (written) => { text += written; }, offered());
       // The agent's role sets the model new sessions start with; `/model` switches a running session's.
       const agent = code === 0 && args[0] === "agent" ? "New sessions start with it; /model switches this one's.\n" : "";
       surface.writeTo(id, `${text}${agent}`.trimEnd(), code === 0 ? "success" : "warning");
@@ -336,6 +357,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onQuit: () => { workspaceCallbacks?.quit(); } });
   for (const session of savedSessions.slice(1)) surface.addSession(session.id, session.title,
     session.entries, session.inspections);
+  if (resumed === undefined && savedSessions.length > 0) surface.addSession(initial.id, initial.title);
+  surface.selectSession(initial.id);
+  if (resumed === undefined) showAgentModel(initial.id);
   for (const session of savedSessions) {
     showAgentModel(session.id);
     if (session.plan !== undefined) surface.setSessionPlan(session.id, session.plan);
@@ -686,7 +710,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       }
       const models = offered();
       if (argument === undefined) {
-        surface.writeTo(id, `The agent uses ${current} in this session; new sessions use ${role} (tesota models agent).\n` +
+        surface.writeTo(id, `The agent uses ${current} in this session; new sessions use ${role} (tesota roles agent).\n` +
           "/model <route:model> switches it: on the same engine its conversation continues, on another it starts a new one. " +
           `/model default returns to ${role}. Add @low, @medium, @high, @xhigh or @max for a reasoning level the model ` +
           `accepts. Offered:\n${routeListing(models)}`);
@@ -892,6 +916,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     if (awaitingConfirmation(id, record, await pendingChangeCount(id))) return;
     if (store.list().length === 1) {
       const replacement = store.create();
+      freshSessions.add(replacement.id);
       surface.addSession(replacement.id, replacement.title);
       showAgentModel(replacement.id);
       workspaceCallbacks?.newSession(replacement.id);
@@ -926,6 +951,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
 
   const sessionWork = (id: string): SessionWork => ({
     prepare: () => {
+      if (freshSessions.has(id)) return;
       environmentFor(id).catch((error: unknown) => {
         // The first request prepares again and reports its own outcome; a preparation stopped on purpose says nothing.
         if (states.has(id) && !isAbort(error)) surface.writeTo(id, `${error instanceof Error ? error.message : "The environment could not start."}`, "warning");
@@ -1094,6 +1120,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const released = [...states.values()].map(release);
       // A release that hangs must not keep Tesota from exiting; the next session's sweep removes what it left.
       await Promise.race([Promise.allSettled(released), new Promise((settle) => { setTimeout(settle, RELEASE_TIME_LIMIT_MS).unref(); })]);
+      for (const id of freshSessions) {
+        const session = saved(id);
+        if (session !== undefined && session.workspace === null && !session.blocked && session.plan === undefined &&
+          session.titleSource !== "operator" && !session.entries.some((entry) => entry.kind === "user")) store.remove(id);
+      }
       store.close();
     },
   };
