@@ -162,7 +162,8 @@ function modelsOf(route: ModelRoute, offered: readonly OfferedModel[]): string {
     .map((model) => `  ${model.id.slice(route.length + 1).padEnd(44)}${modelCost(model)}`).join("\n")}\n`;
 }
 
-const offText: Partial<Record<string, string>> = { explorer: "no explorers; choose a model to turn them on",
+const offText: Partial<Record<string, string>> = { triage: "no first pass; every answer gets the full check",
+  explorer: "no explorers; choose a model to turn them on",
   advisor: "no advisor; choose a model to turn it on" };
 
 function listing(offered: readonly OfferedModel[], path: string): string {
@@ -178,7 +179,7 @@ function listing(offered: readonly OfferedModel[], path: string): string {
     "Add @low, @medium, @high, @xhigh or @max for a reasoning level the model accepts, such as codex:gpt-6-astra@high; " +
     "without one, Pi's models reason at medium and Claude Code's at their default.\n" +
     `Change one with tesota models <role> <route:model>; <role> default restores ${DEFAULT_MODEL}, ` +
-    "and turns explorers and the advisor off.\n";
+    "and turns explorers and the advisor off; tesota models triage off checks every answer in full.\n";
 }
 
 /**
@@ -199,7 +200,8 @@ export function runModelsCommand(args: readonly string[], write: (text: string) 
   }
   try {
     const choices = chooseModel(role, model, offeredChoices(offered), path);
-    write(choices[role] === ROLE_OFF ? (role === "explorer" ? "Explorers are off.\n" : `The ${role} is off.\n`)
+    write(choices[role] === ROLE_OFF ? (role === "explorer" ? "Explorers are off.\n"
+      : role === "triage" ? "The first pass is off: every answer gets the full check.\n" : `The ${role} is off.\n`)
       : `The ${role} now uses ${choices[role]}.\n`);
     const notice = dataNotice(choices[role]);
     if (notice !== undefined) write(`Free model: ${notice}. Choose a paid model for code you would not share.\n`);

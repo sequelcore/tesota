@@ -171,6 +171,7 @@ off until the operator chooses a model for it (`tesota models advisor
 | `reviewer` | The reviewer, its lenses and ClaimCheck |
 | `refuter` | The refuter |
 | `validator` | The fix validator |
+| `triage` | The answer check's first pass (decision 034); `off` sends every answer to the full check |
 
 Each role uses the model the operator chose in `~/.tesota/models.json`,
 written as `route:model`, and `codex:gpt-6-luna`, the cheapest on the Codex
