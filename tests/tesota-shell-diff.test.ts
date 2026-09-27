@@ -107,4 +107,15 @@ describe("the diff view", () => {
     expect(rendered).not.toContain("\x1b]0;owned");
     expect(rendered).not.toContain("\x1b[2J");
   });
+
+  it("draws a diff once per width, and again only when the diff or the width changes", () => {
+    const view = new DiffView(theme);
+    view.setDiff(modified);
+    const first = view.render(60);
+    // Every frame asks again; highlighting a large diff each time slowed the whole shell (findings, 2026-09-27).
+    expect(view.render(60)).toBe(first);
+    expect(view.render(70)).not.toBe(first);
+    view.setDiff(modified);
+    expect(view.render(70)).not.toBe(first);
+  });
 });

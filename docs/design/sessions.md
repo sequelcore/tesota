@@ -41,6 +41,22 @@ shortened request only the counter, so a late title never undoes a rename.
 A title that does not come within 30 seconds, or at all, leaves the name the
 session has. Names are one printable line, at most 60 characters.
 
+**A frame costs what the screen shows, not what the session holds.** The
+shell redraws while a session works, up to eight times a second for its
+spinner, so each frame must not grow with the conversation, as Codex keeps
+finished history in the terminal's scrollback and Claude Code renders
+finished messages once. Two rules follow from pi-tui's layout. No horizontal
+stack holds another inside a column: pi-tui sizes an `HStack`'s columns by
+rendering each whole on every frame, so the result and comparison panels are
+columns of the root beside the session's own, as Pi keeps its transcript in
+no `HStack`. And every entry keeps its rendered lines per width until what it
+shows changes, as pi-tui's own guidance asks: the agent's replies through
+pi-tui's Markdown, tool calls, notices and the diff view through their own
+caches; adding an entry clears none of them, since `Container.invalidate()`
+clears every child's. A test fails if a frame renders any `HStack` whole.
+With 800 entries a frame takes about 2 ms, against 472 ms before (findings,
+2026-09-27).
+
 The loop itself, request, checks, review, correction and decision, is
 independent of the terminal (`tesota-shell.ts`); the terminal only renders it
 and asks the operator's questions.

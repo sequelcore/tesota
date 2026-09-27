@@ -133,12 +133,24 @@ function counts(added: number, removed: number, theme: TesotaShellTheme): string
 export class DiffView implements Component {
   readonly #theme: TesotaShellTheme;
   #files: readonly DiffFile[] = [];
+  /** The lines last drawn and their width: highlighting a large diff on every frame would slow the whole shell. */
+  #cached: { width: number; lines: string[] } | undefined;
   constructor(theme: TesotaShellTheme) { this.#theme = theme; }
   /** File contents and names can hold terminal control sequences; they are made inert before anything is drawn. */
-  setDiff(diff: string | undefined): void { this.#files = diff === undefined ? [] : parseUnifiedDiff(safeTerminalText(diff)); }
-  invalidate(): void {}
+  setDiff(diff: string | undefined): void {
+    this.#files = diff === undefined ? [] : parseUnifiedDiff(safeTerminalText(diff));
+    this.#cached = undefined;
+  }
+  invalidate(): void { this.#cached = undefined; }
 
   render(width: number): string[] {
+    if (this.#cached?.width === width) return this.#cached.lines;
+    const lines = this.#lines(width);
+    this.#cached = { width, lines };
+    return lines;
+  }
+
+  #lines(width: number): string[] {
     if (this.#files.length === 0 || width < 20) return [];
     const theme = this.#theme;
     const added = this.#files.reduce((sum, file) => sum + file.added, 0);
