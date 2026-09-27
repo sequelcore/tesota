@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import type { CommandShell, EnvironmentGuarantees, ExecutionEnvironment, RunOptions, RunResult } from "./execution-environment.js";
 
 /**
@@ -14,8 +14,8 @@ import type { CommandShell, EnvironmentGuarantees, ExecutionEnvironment, RunOpti
  * proxy, where JavaScript's `fetch` ignores proxy variables.
  */
 
-export type ControlName = "workspace_read_write" | "cancel_children" | "time_limit" | "outside_read" | "outside_write" |
-  "host_variables" | "network_refused" | "registry_reachable";
+export type ControlName = "workspace_read_write" | "cancel_children" | "time_limit" | "package_script" | "outside_read" |
+  "outside_write" | "beside_read" | "host_variables" | "network_refused" | "registry_reachable";
 
 /** Where the controls run: a workspace to probe from, a directory outside it, and what to probe with. */
 export interface ControlSite {
@@ -38,10 +38,16 @@ export interface ControlResult {
   readonly detail: string;
 }
 
-/** Every environment must work in its workspace and stop what it runs. */
-export const PROCESS_CONTROLS: readonly ControlName[] = ["workspace_read_write", "cancel_children", "time_limit"];
-/** A `workspace` filesystem keeps the operator's files and variables out of reach. */
-export const FILESYSTEM_CONTROLS: readonly ControlName[] = ["outside_read", "outside_write", "host_variables"];
+/**
+ * Every environment must work in its workspace, run the workspace's package
+ * scripts from its root, as checks do, and stop what it runs.
+ */
+export const PROCESS_CONTROLS: readonly ControlName[] = ["workspace_read_write", "package_script", "cancel_children", "time_limit"];
+/**
+ * A `workspace` filesystem keeps the operator's files and variables out of
+ * reach, and what lies beside the workspace, such as Tesota's records of it.
+ */
+export const FILESYSTEM_CONTROLS: readonly ControlName[] = ["outside_read", "outside_write", "beside_read", "host_variables"];
 /** An `allowlist` network refuses what is not allowed and still reaches package registries. */
 export const NETWORK_CONTROLS: readonly ControlName[] = ["network_refused", "registry_reachable"];
 
@@ -131,6 +137,38 @@ async function outsideRead(probe: Probe): Promise<ControlResult> {
   } finally { await rm(sentinel, { force: true }); }
 }
 
+/**
+ * A package script run from the workspace's root with Bun, which every
+ * environment carries and which runs Tesota's own checks; a script runner
+ * that fails there fails every check.
+ */
+async function packageScript(probe: Probe): Promise<ControlResult> {
+  const manifest = join(probe.site.workspace, "package.json");
+  if (existsSync(manifest)) return { control: "package_script", passed: false, detail: "the workspace already has a package.json" };
+  const token = randomUUID();
+  await writeFile(manifest, JSON.stringify({ name: "tesota-control", private: true, scripts: { control: `echo ${token}` } }), "utf8");
+  try {
+    const run = await inside(probe, commandLine(probe.environment.shell, "bun", ["run", "control"]));
+    const passed = run.exitCode === 0 && run.output.includes(token);
+    return { control: "package_script", passed, detail: passed ? "a package script ran from the workspace's root"
+      : `exit ${run.exitCode}: ${run.output.trim().split(/\r?\n/u).at(-1) ?? ""}` };
+  } finally { await rm(manifest, { force: true }); }
+}
+
+/** A file beside the workspace, in the folder that holds it, where Tesota keeps its records of a session. */
+async function besideRead(probe: Probe): Promise<ControlResult> {
+  const token = randomUUID();
+  const sentinel = join(dirname(probe.site.workspace), `.tesota-control-${token}.txt`);
+  await writeFile(sentinel, token, "utf8");
+  try {
+    const run = await script(probe, "try { process.stdout.write(require('node:fs').readFileSync(process.argv[2], 'utf8')); }\n" +
+      "catch (error) { process.stdout.write('refused ' + error.code); }\n", [fromWorkspace(probe.site, sentinel)]);
+    const passed = !run.output.includes(token);
+    return { control: "beside_read", passed, detail: passed ? `a file beside the workspace was not read (${run.output.trim()})`
+      : "a file beside the workspace was read" };
+  } finally { await rm(sentinel, { force: true }); }
+}
+
 async function outsideWrite(probe: Probe): Promise<ControlResult> {
   const escaped = join(probe.site.outside, `.tesota-control-${randomUUID()}.txt`);
   try {
@@ -215,8 +253,8 @@ async function registryReachable(probe: Probe): Promise<ControlResult> {
 }
 
 const controls: Readonly<Record<ControlName, (probe: Probe) => Promise<ControlResult>>> = {
-  workspace_read_write: workspaceReadWrite, cancel_children: cancelChildren, time_limit: timeLimit,
-  outside_read: outsideRead, outside_write: outsideWrite, host_variables: hostVariables,
+  workspace_read_write: workspaceReadWrite, package_script: packageScript, cancel_children: cancelChildren, time_limit: timeLimit,
+  outside_read: outsideRead, outside_write: outsideWrite, beside_read: besideRead, host_variables: hostVariables,
   network_refused: networkRefused, registry_reachable: registryReachable,
 };
 

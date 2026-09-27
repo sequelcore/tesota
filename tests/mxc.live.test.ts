@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -74,8 +75,8 @@ it.runIf(live)("runs PowerShell in the workspace with the host's tools, in well 
   expect(result.exitCode).toBe(0);
   expect(result.output).toMatch(/v\d+\.\d+/u);
   expect(result.output).toContain("git version");
-  // The workspace is a drive of its own, so tools that walk upward find nothing above it.
-  expect(result.output).toMatch(/^[D-Z]:\\\s*$/mu);
+  // The workspace sits one level below its drive's root (decision 037), where Bun's scripts run, with nothing above the drive.
+  expect(result.output).toMatch(/^[D-Z]:\\workspace\s*$/mu);
   expect((await run("node -e \"process.exit(3)\"")).exitCode).toBe(3);
   expect((await run("Get-Item does-not-exist")).exitCode).toBe(1);
   const timings = [];
@@ -93,4 +94,18 @@ it.runIf(live)("works with Git, Node scripts and npm, which walk their paths fro
   const npm = await run("npm install --no-audit --no-fund; node -e \"console.log(require('is-number')(5))\"");
   expect(npm.exitCode).toBe(0);
   expect(npm.output).toContain("true");
+  // Bun's scripts, which run Tesota's own checks, and no PowerShell cache left in the workspace (decision 037).
+  await writeFile(join(workspace, "package.json"), JSON.stringify({ name: "probe", version: "1.0.0", scripts: { hello: "echo hello-script" } }));
+  expect((await run("bun run hello")).output).toContain("hello-script");
+  expect(existsSync(join(workspace, "Microsoft"))).toBe(false);
 }, 300_000);
+
+it.runIf(live)("denies what lies beside the workspace on its drive, such as Tesota's records, while listing only names", async () => {
+  await writeFile(join(root, "assurance.jsonl"), "record");
+  const read = await run("Get-Content ..\\assurance.jsonl");
+  expect(read.exitCode).not.toBe(0);
+  expect(read.output).not.toContain("record");
+  const write = await run("Set-Content ..\\beside.txt x");
+  expect(write.exitCode).not.toBe(0);
+  expect(existsSync(join(root, "beside.txt"))).toBe(false);
+}, 120_000);
