@@ -61,11 +61,13 @@ export interface InstallOptions {
   readonly cache: string;
   readonly onProgress?: (text: string) => void;
   readonly timeLimitMs?: number;
+  /** Stops the install, as when its session closes; the install then rejects and records nothing. */
+  readonly signal?: AbortSignal;
 }
 
-/** Run a program on this computer, keeping the end of its output. */
+/** Run a program on this computer, keeping the end of its output, until it ends, reaches its time limit or is stopped. */
 function run(program: string, args: readonly string[], cwd: string, env: Record<string, string>,
-  timeLimitMs: number): Promise<{ ok: boolean; output: string }> {
+  timeLimitMs: number, signal: AbortSignal | undefined): Promise<{ ok: boolean; output: string }> {
   return new Promise((settle) => {
     // npm is a batch file on Windows, which only a shell starts; the arguments are Tesota's own, never the repository's.
     const child = spawn(program, [...args], { cwd, env, windowsHide: true, shell: program === "npm" && process.platform === "win32" });
@@ -74,8 +76,15 @@ function run(program: string, args: readonly string[], cwd: string, env: Record<
     child.stdout.on("data", keep);
     child.stderr.on("data", keep);
     const timer = setTimeout(() => { output += "\nStopped after the time limit."; child.kill(); }, timeLimitMs);
-    child.once("error", (error) => { clearTimeout(timer); settle({ ok: false, output: error.message }); });
-    child.once("close", (code) => { clearTimeout(timer); settle({ ok: code === 0, output }); });
+    const stop = (): void => { child.kill(); };
+    signal?.addEventListener("abort", stop, { once: true });
+    const finish = (result: { ok: boolean; output: string }): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", stop);
+      settle(result);
+    };
+    child.once("error", (error) => { finish({ ok: false, output: error.message }); });
+    child.once("close", (code) => { finish({ ok: code === 0, output }); });
   });
 }
 
@@ -86,11 +95,13 @@ export async function installOnHost(checkout: string, options: InstallOptions): 
   const previous = await readFile(options.marker, "utf8").catch(() => "");
   if (previous.trim() === install.fingerprint && existsSync(join(checkout, "node_modules"))) return [];
   const description = `${install.manager} ${install.args.join(" ")} (on this computer; no package's scripts run)`;
+  options.signal?.throwIfAborted();
   options.onProgress?.("Installing dependencies");
   // Tesota runs on Bun, so its own executable installs a Bun lockfile at the version it was tested with.
   const program = install.manager === "bun" && process.versions["bun"] !== undefined ? process.execPath : install.manager;
   const result = await run(program, install.args, checkout, installVariables(process.env, options.proxy, options.cache),
-    options.timeLimitMs ?? INSTALL_TIME_LIMIT_MS);
+    options.timeLimitMs ?? INSTALL_TIME_LIMIT_MS, options.signal);
+  options.signal?.throwIfAborted();
   if (result.ok) await writeFile(options.marker, install.fingerprint);
   return [{ description, outcome: result.ok ? "done" : "failed", output: result.ok ? "" : result.output.trim() }];
 }

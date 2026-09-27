@@ -270,24 +270,39 @@ function prepare(workspace: string, options: PrepareOptions = {}): Promise<Execu
     const folders = { home: join(root, "home"), temp: join(root, "tmp"), cache: options.cacheDirectory ?? join(root, "cache") };
     for (const folder of [folders.home, join(folders.home, "AppData", "Local"), join(folders.home, "AppData", "Roaming"),
       folders.temp, join(folders.cache, "npm"), join(folders.cache, "bun")]) await mkdir(folder, { recursive: true });
-    const proxy = await EgressProxy.start({ allowed: PACKAGE_REGISTRY_HOSTS.map((host) => `${host}:443`) });
-    // The drive's folder is readable so tools can resolve the workspace's parent; what else it holds is denied per command.
-    const readable = [...sandboxToolPaths(getAvailableToolsPolicy(process.env).readonlyPaths ?? [], homedir()), driveTarget(workspace)];
-    const writable = [resolve(workspace), root, ...options.cacheDirectory === undefined ? [] : [folders.cache]];
-    const drive = await mapDrive(resolve(workspace)).catch(async (error: unknown) => { await proxy.close(); throw error; });
-    const sandbox: Sandbox = { workspace: resolve(workspace), drive, scripts: join(root, "commands"), readable, writable,
-      folders: { ...folders, proxy: proxy.url }, systemRoot: process.env["SYSTEMROOT"] ?? "C:\\Windows" };
-    await mkdir(sandbox.scripts, { recursive: true });
-    const preparation = await installOnHost(resolve(workspace), { marker: join(root, "dependencies.sha256"), proxy: proxy.url,
-      cache: folders.cache, ...options.onProgress === undefined ? {} : { onProgress: options.onProgress } });
-    return { provider: "mxc", shell: "powershell", javascriptRuntime: process.execPath,
-      commandRoot: onDrive(drive, sandbox.workspace, sandbox.workspace), guarantees: MXC_GUARANTEES, preparation, network: proxy,
-      run: (command, runOptions) => runCommand(sandbox, command, runOptions),
-      dispose: async () => {
-        await proxy.close();
-        if ((await subst([`${drive}:`, "/d"])).ok) await rm(leaseFile(drive), { force: true });
-      } };
+    // Each thing acquired is released as soon as a later step fails or is stopped, in reverse order, and by dispose once prepared.
+    const acquired = new AsyncDisposableStack();
+    try {
+      options.signal?.throwIfAborted();
+      const proxy = await EgressProxy.start({ allowed: PACKAGE_REGISTRY_HOSTS.map((host) => `${host}:443`) });
+      acquired.defer(() => proxy.close());
+      // The drive's folder is readable so tools can resolve the workspace's parent; what else it holds is denied per command.
+      const readable = [...sandboxToolPaths(getAvailableToolsPolicy(process.env).readonlyPaths ?? [], homedir()), driveTarget(workspace)];
+      const writable = [resolve(workspace), root, ...options.cacheDirectory === undefined ? [] : [folders.cache]];
+      const drive = await mapDrive(resolve(workspace));
+      acquired.defer(() => unmapDrive(drive));
+      const sandbox: Sandbox = { workspace: resolve(workspace), drive, scripts: join(root, "commands"), readable, writable,
+        folders: { ...folders, proxy: proxy.url }, systemRoot: process.env["SYSTEMROOT"] ?? "C:\\Windows" };
+      await mkdir(sandbox.scripts, { recursive: true });
+      const preparation = await installOnHost(resolve(workspace), { marker: join(root, "dependencies.sha256"), proxy: proxy.url,
+        cache: folders.cache, ...options.onProgress === undefined ? {} : { onProgress: options.onProgress },
+        ...options.signal === undefined ? {} : { signal: options.signal } });
+      const held = acquired.move();
+      return { provider: "mxc", shell: "powershell", javascriptRuntime: process.execPath,
+        commandRoot: onDrive(drive, sandbox.workspace, sandbox.workspace), guarantees: MXC_GUARANTEES, preparation, network: proxy,
+        run: (command, runOptions) => runCommand(sandbox, command, runOptions),
+        dispose: () => held.disposeAsync() };
+    } catch (error) {
+      // The step's own error is the one reported; a drive whose release failed is removed by a later session's sweep.
+      await acquired.disposeAsync().catch(() => undefined);
+      throw error;
+    }
   })();
+}
+
+/** Remove a drive this process mapped, and its lease. */
+async function unmapDrive(letter: string): Promise<void> {
+  if ((await subst([`${letter}:`, "/d"])).ok) await rm(leaseFile(letter), { force: true });
 }
 
 /** What every command of one prepared sandbox shares. */

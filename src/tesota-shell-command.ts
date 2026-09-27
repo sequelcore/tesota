@@ -26,6 +26,7 @@ import { readWebSearch, type WebSearch } from "./web-search.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
 import { Advisor } from "./integrations/advisor.js";
 import { consultAdvisor } from "./integrations/advisor-session.js";
+import { Semaphore } from "./semaphore.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
 import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
@@ -62,6 +63,9 @@ export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "repor
 
 /** How long quitting waits for the sessions' environments to be released, such as the native sandbox's drive. */
 const RELEASE_TIME_LIMIT_MS = 5_000;
+
+/** How many sessions' operations run at once; the rest wait their turn. */
+const OPERATIONS_AT_ONCE = 2;
 
 /** One review step of a session: what is reviewed, against which candidate, and where its tokens are counted. */
 interface ReviewRun {
@@ -171,6 +175,28 @@ function parseNetworkDecision(answer: string): NetworkDecision {
   return "deny";
 }
 
+/**
+ * Keep a session's resource while it is being acquired, and forget it if
+ * acquiring fails, so the next request tries again. A resource replaced in
+ * the meantime, as a sandbox switch replaces the environment, stays.
+ */
+function remember<T>(pending: Promise<T>, current: () => Promise<T> | undefined,
+  set: (value: Promise<T> | undefined) => void): Promise<T> {
+  set(pending);
+  pending.catch(() => { if (current() === pending) set(undefined); });
+  return pending;
+}
+
+/**
+ * End what a session holds: stop a preparation still under way, then end the
+ * agent and release the environment; one that never came leaves nothing.
+ */
+async function release(held: Pick<SessionState, "coding" | "environment" | "preparation">): Promise<void> {
+  held.preparation?.abort();
+  await held.coding?.then((coding) => { coding.dispose(); }, () => undefined);
+  await held.environment?.then((environment) => environment.dispose(), () => undefined);
+}
+
 function isAbort(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
@@ -179,6 +205,8 @@ function isAbort(error: unknown): boolean {
 class SessionState {
   workspace: Promise<Workspace> | undefined;
   environment: Promise<ExecutionEnvironment> | undefined;
+  /** Stops the environment's preparation when the session closes, switches sandbox or the shell quits. */
+  preparation: AbortController | undefined;
   /** Where the environment's commands run, once chosen. */
   execution: SessionExecution | undefined;
   coding: Promise<WorkingAgent> | undefined;
@@ -217,29 +245,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const sandboxPreference = (id: string): SandboxPreference => saved(id)?.sandbox ?? readSandboxPreference();
   const activeOperations = new Map<string, AbortController>();
   const states = new Map<string, SessionState>();
-  const waiters: { readonly signal: AbortSignal; readonly grant: () => void;
-    readonly reject: (error: Error) => void }[] = [];
-  let slotsUsed = 0;
-  const releaseSlot = (): void => {
-    slotsUsed -= 1;
-    const next = waiters.shift();
-    if (next !== undefined) { slotsUsed += 1; next.grant(); }
-  };
-  const acquireSlot = (signal: AbortSignal): Promise<void> => {
-    if (signal.aborted) return Promise.reject(new DOMException("cancelled", "AbortError"));
-    if (slotsUsed < 2) { slotsUsed += 1; return Promise.resolve(); }
-    return new Promise<void>((resolveSlot, reject) => {
-      const waiter = { signal, grant: () => { signal.removeEventListener("abort", abort); resolveSlot(); },
-        reject: (error: Error) => { signal.removeEventListener("abort", abort); reject(error); } };
-      const abort = (): void => {
-        const index = waiters.indexOf(waiter);
-        if (index >= 0) waiters.splice(index, 1);
-        waiter.reject(new DOMException("cancelled", "AbortError"));
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      waiters.push(waiter);
-    });
-  };
+  const operations = new Semaphore(OPERATIONS_AT_ONCE);
   let applicationQueue: Promise<void> = Promise.resolve();
   const serialized = <T>(operation: () => Promise<T>): Promise<T> => {
     const result = applicationQueue.then(operation);
@@ -264,11 +270,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     activeOperations.set(sessionId, cancellation);
     let acquired = false;
     try {
-      await acquireSlot(cancellation.signal);
-      acquired = true;
+      acquired = await operations.acquire(cancellation.signal);
+      if (!acquired) throw new DOMException("cancelled", "AbortError");
       return await operation(cancellation.signal);
     } finally {
-      if (acquired) releaseSlot();
+      if (acquired) operations.release();
       if (activeOperations.get(sessionId) === cancellation) activeOperations.delete(sessionId);
       store.markActive(sessionId, false);
     }
@@ -363,7 +369,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   };
   const workspaceFor = (id: string): Promise<Workspace> => {
     const state = stateFor(id);
-    state.workspace ??= (async () => {
+    if (state.workspace !== undefined) return state.workspace;
+    const pending = (async () => {
       const directory = saved(id)?.workspace;
       if (directory !== null && directory !== undefined) {
         try { return await Workspace.open(directory); } catch { store.rotateEngine(id); }
@@ -376,12 +383,14 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       }
       return workspace;
     })();
-    state.workspace.catch(() => { state.workspace = undefined; });
-    return state.workspace;
+    return remember(pending, () => state.workspace, (value) => { state.workspace = value; });
   };
   const environmentFor = (id: string): Promise<ExecutionEnvironment> => {
     const state = stateFor(id);
-    state.environment ??= (async () => {
+    if (state.environment !== undefined) return state.environment;
+    const preparation = new AbortController();
+    state.preparation = preparation;
+    const pending = (async () => {
       // The first choice on a machine qualifies the native sandbox there, which takes some seconds.
       surface.reportFor(id, { phase: "preparing", activity: "Choosing where commands run" });
       const [workspace, execution] = await Promise.all([workspaceFor(id), executionFor(sandboxPreference(id))]);
@@ -396,8 +405,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       try {
         environment = await execution.provider.prepare(workspace.checkout,
           { onProgress: (activity) => { surface.reportFor(id, { phase: "preparing", activity }); },
-            cacheDirectory: packageCacheDirectory(cwd) });
+            cacheDirectory: packageCacheDirectory(cwd), signal: preparation.signal });
       } catch (error) {
+        if (preparation.signal.aborted) throw new DOMException("preparation stopped", "AbortError");
         throw new Error(`The ${execution.provider.name} environment could not start` +
           `${error instanceof Error ? `: ${error.message}` : ""}. Run tesota setup to check it.`);
       } finally { surface.clearProgressFor(id, "preparing"); }
@@ -414,8 +424,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       }
       return environment;
     })();
-    state.environment.catch(() => { state.environment = undefined; });
-    return state.environment;
+    return remember(pending, () => state.environment, (value) => { state.environment = value; });
   };
   /** The route and model the operator chose for a role (decisions 020 and 021), read when the role starts work. */
   const openModel = (signal: AbortSignal, role: ModelRole): Promise<ModelTarget> => openModelTarget(readModelChoices()[role], signal);
@@ -568,7 +577,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   };
   const codingFor = (id: string, signal: AbortSignal): Promise<WorkingAgent> => {
     const state = stateFor(id);
-    state.coding ??= (async () => {
+    if (state.coding !== undefined) return state.coding;
+    const pending = (async () => {
       const workspace = await workspaceFor(id);
       const environment = await environmentFor(id);
       // A session keeps the model its conversation runs on; the footer names it.
@@ -632,8 +642,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       await briefNewConversation(id, agent, workspace);
       return agent;
     })();
-    state.coding.catch(() => { state.coding = undefined; });
-    return state.coding;
+    return remember(pending, () => state.coding, (value) => { state.coding = value; });
   };
 
   /** The session's agent when it is running; never starts one. */
@@ -733,16 +742,15 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   /** End the session's agent and environment; its next request prepares them again, on the same conversation. */
   const restartEnvironment = async (id: string): Promise<void> => {
     const state = stateFor(id);
-    const live = state.coding;
-    const environment = state.environment;
+    const held = { coding: state.coding, environment: state.environment, preparation: state.preparation };
     state.coding = undefined;
     state.environment = undefined;
+    state.preparation = undefined;
     state.execution = undefined;
     state.explorers = undefined;
     state.advisor = undefined;
     state.agent = undefined;
-    await live?.then((coding) => { coding.dispose(); }, () => undefined);
-    await environment?.then((prepared) => prepared.dispose(), () => undefined);
+    await release(held);
   };
   const describeSandbox = (id: string): void => {
     const execution = states.get(id)?.execution;
@@ -856,8 +864,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const discardSession = async (id: string, record: ShellSessionRecord): Promise<void> => {
     const state = states.get(id);
     states.delete(id);
-    await state?.coding?.then((coding) => { coding.dispose(); }, () => undefined);
-    await state?.environment?.then((environment) => environment.dispose(), () => undefined);
+    if (state !== undefined) await release(state);
     if (record.workspace !== null) {
       await releaseWorkspace(join(record.workspace, "repo"));
       // The conversation and those it left behind at a handoff (decision 026).
@@ -920,8 +927,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const sessionWork = (id: string): SessionWork => ({
     prepare: () => {
       environmentFor(id).catch((error: unknown) => {
-        // The first request prepares again and reports its own outcome.
-        if (states.has(id)) surface.writeTo(id, `${error instanceof Error ? error.message : "The environment could not start."}`, "warning");
+        // The first request prepares again and reports its own outcome; a preparation stopped on purpose says nothing.
+        if (states.has(id) && !isAbort(error)) surface.writeTo(id, `${error instanceof Error ? error.message : "The environment could not start."}`, "warning");
       });
     },
     work: (request, origin = "operator") => runOperation(id, async (signal): Promise<WorkResult> => {
@@ -1084,10 +1091,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },
     dispose: async () => {
       titling.abort();
-      const released = [...states.values()].map(async (state) => {
-        await state.coding?.then((coding) => { coding.dispose(); }, () => undefined);
-        await state.environment?.then((environment) => environment.dispose(), () => undefined);
-      });
+      const released = [...states.values()].map(release);
       // A release that hangs must not keep Tesota from exiting; the next session's sweep removes what it left.
       await Promise.race([Promise.allSettled(released), new Promise((settle) => { setTimeout(settle, RELEASE_TIME_LIMIT_MS).unref(); })]);
       store.close();
