@@ -170,3 +170,18 @@ it("removes a session and never reuses a title number while others remain", () =
   expect(reopened.list().map((session) => session.title)).toEqual([second.title, "Session 3"]);
   reopened.close();
 });
+
+it("keeps a session's plan across restarts, clears it, and refuses one that is not a plan", () => {
+  const { root, source } = fixture();
+  const store = openShellSessionStore(source, root);
+  const session = store.create();
+  expect(session.plan).toBeUndefined();
+  store.setPlan(session.id, [{ step: "Update the totals", status: "in_progress", check: "recalculates with zero errors" }]);
+  expect(() => { store.setPlan(session.id, [{ step: "x", status: "finished" } as never]); }).toThrow();
+  store.close();
+  const reopened = openShellSessionStore(source, root);
+  expect(reopened.list()[0]?.plan).toEqual([{ step: "Update the totals", status: "in_progress", check: "recalculates with zero errors" }]);
+  reopened.setPlan(session.id, undefined);
+  expect(reopened.list()[0]?.plan).toBeUndefined();
+  reopened.close();
+});

@@ -835,3 +835,26 @@ it("restores a recorded conversation with the same presentation", () => {
   expect(screen).toContain("Applied to your repository.");
   shell.stop();
 });
+
+it("shows the selected session's plan above the prompt, and nothing once it is cleared", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 120;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.setSessionPlan("default", [{ step: "Update the totals", status: "done", check: "recalculates with zero errors" },
+    { step: "Write the summary", status: "in_progress" }]);
+  shell.addSession("second", "Session 2");
+  shell.setSessionPlan("second", [{ step: "Another session's step", status: "pending" }]);
+  shell.start();
+  tui.renderNow(true);
+  const screen = visible(terminal);
+  expect(screen).toContain("Plan · 1 of 2 done");
+  expect(screen).toContain("Update the totals · done (agent) · check not run: recalculates with zero errors");
+  expect(screen).toContain("Write the summary · in progress");
+  expect(screen).not.toContain("Another session's step");
+  shell.setSessionPlan("default", undefined);
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).not.toContain("Plan ·");
+  shell.stop();
+});

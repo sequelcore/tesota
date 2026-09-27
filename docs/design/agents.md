@@ -64,6 +64,34 @@ Decision 026; evidence in the
   the middle of a turn. Review roles are unaffected: they read
   `tesota models` when each review starts.
 
+### The plan
+
+Decision 033. For a request of three or more steps, the agent keeps a
+**plan** with the `plan` tool (`src/integrations/plan-tool.ts`), as Claude
+Code, Codex (`update_plan`) and OpenCode (`todowrite`) do: it sends every
+step each time, each `pending`, `in_progress`, `done` or `blocked`, and may
+say how a step's result can be checked. The shell shows the plan above the
+prompt, saves it with the session and clears it when the work is applied or
+rejected; its tool calls stay out of the conversation. It is a Tesota tool,
+so it works on every engine, and it keeps the plan out of the workspace's
+files, where a `TODO.md` would end up in the diff.
+
+**A plan is the agent's account, never evidence.** A step it marks done reads
+"done (agent)", and a check it declares reads "will be checked" or, once the
+step is done, "check not run", because nothing yet runs it
+(`planLines` in `src/work-plan.ts`). An update is accepted only with one to
+twenty steps, at most one in progress, and a reason for every blocked step,
+and is refused whole otherwise; that rule is `planAccepted` in
+`src/verification/plan-rule.ts`, proved by `bun run formal:check`. Steps stay
+flat, as in every tool compared: nesting adds state the model must keep
+consistent, which Pi's author gives as the reason Pi has no to-do list at
+all.
+
+Planned: a step whose check is a gate (decision 032) shows "verified" when
+that gate passes on the result, and the review checks each step the agent
+marked done against the result, with the request obligations, without
+trusting the agent's account.
+
 ## Explorers
 
 With `explore`, the working agent asks a read-only **explorer** one question.

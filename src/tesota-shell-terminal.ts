@@ -10,6 +10,7 @@ import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } f
 import { DiffView } from "./tesota-shell-diff.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
 import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, type SidebarSession } from "./tesota-shell-sidebar.js";
+import { planLines, type WorkPlan } from "./work-plan.js";
 import { animatedSidebarState, newestFirstSourceIndex, sidebarPresentation, sidebarSessionState,
   type SidebarPreference, type SidebarPresentation, type SidebarSessionState } from "./verification/sidebar-rule.js";
 
@@ -59,6 +60,8 @@ export interface TesotaShellTerminal {
   showActivity(id: string, activity: AgentActivity): void;
   /** Where a session's commands run, such as its sandbox, shown beside the prompt while it is selected. */
   setSessionExecution(id: string, label: string): void;
+  /** The agent's plan for a session's work (decision 033), shown above the prompt while it is selected; undefined clears it. */
+  setSessionPlan(id: string, plan: WorkPlan | undefined): void;
   /** The source repository's branch, shown with repository identity; undefined when Git cannot say. */
   setBranch(branch: string | undefined): void;
   /** The model the session's agent runs, as `route:model`, shown beside the prompt while it is selected. */
@@ -102,6 +105,8 @@ interface SessionView {
   model?: string;
   /** Where the session's commands run, once its environment is chosen. */
   execution?: string;
+  /** The agent's plan for the session's current work. */
+  plan?: WorkPlan;
 }
 
 const spinnerMs = 120;
@@ -193,6 +198,21 @@ class Line implements Component {
   }
 }
 
+/** The agent's plan: progress, then its steps, the one in progress in full color and the rest dimmed. */
+class PlanPanel implements Component {
+  #lines: string[] = [];
+  set(plan: WorkPlan | undefined, theme: TesotaShellTheme): void {
+    if (plan === undefined) { this.#lines = []; return; }
+    const current = plan.findIndex((step) => step.status === "in_progress");
+    // The steps come from the model, so their text is made safe for the terminal.
+    this.#lines = planLines(plan).map((line, index) => index === current + 1 ? safeTerminalText(line)
+      : mutedText(safeTerminalText(line), theme));
+  }
+  get visible(): boolean { return this.#lines.length > 0; }
+  invalidate(): void {}
+  render(width: number): string[] { return this.#lines.map((line) => truncateToWidth(` ${line}`, width)); }
+}
+
 /** The selected content's identity; workspace identity joins it only while the sidebar is absent. */
 class SessionHeading implements Component {
   readonly #theme: TesotaShellTheme;
@@ -274,6 +294,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly sessionHeading: SessionHeading;
   private readonly secondaryTitle = new Line();
   private readonly status = new Line();
+  private readonly plan = new PlanPanel();
   private readonly footer = new Line();
   private readonly result: ResultPanel;
   private readonly commandMenu: CommandMenu;
@@ -340,6 +361,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   private compose(): void {
     const selected = this.selected();
+    this.plan.set(selected.plan, this.theme);
     this.updateSidebar();
     this.updateFooter();
     this.updateResult(selected);
@@ -364,7 +386,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const content = new VStack([
       { component: this.sessionHeading, basis: "auto", shrink: 0 },
       { component: reading, basis: 0, grow: 1, minSize: 1 },
-      { component: new VStack([this.status, this.commandMenu, this.modelPicker, this.editor, this.footer]),
+      { component: new VStack([{ component: this.plan, basis: "auto", visible: () => this.plan.visible },
+        this.status, this.commandMenu, this.modelPicker, this.editor, this.footer]),
         basis: "auto", shrink: 1, minSize: 3 },
     ], { gap: 1 });
     const sidebar = new VStack([
@@ -664,6 +687,13 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   setBranch(branch: string | undefined): void {
     this.branch = branch;
     if (this.started) this.compose();
+  }
+
+  setSessionPlan(id: string, plan: WorkPlan | undefined): void {
+    const session = this.sessions.get(id);
+    if (session === undefined) return;
+    if (plan === undefined) delete session.plan; else session.plan = plan;
+    if (this.started && id === this.selectedId) this.compose();
   }
 
   setSessionModel(id: string, model: string): void {

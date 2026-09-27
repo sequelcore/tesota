@@ -68,6 +68,10 @@ project. They are listed here as they are chosen.
   result, folders as workspaces, and gates of stated strength that people
   can define. Folders and documents come first, then answers, then actions;
   her first real tasks decide the order within each.
+- **The agent's plan** (decision 033, [design](design/agents.md#the-plan)):
+  built 2026-09-26, shown above the prompt as the agent's account; steps
+  confirmed by gates and a review of the whole plan come with gates and the
+  request obligations.
 - **Ideas to bring from `feat/evidence-attribution`**, a branch from
   2026-09-25 left unmerged, about 130 commits behind `dev`, whose decisions
   022 and 023 collide with `dev`'s. Each is to be rebuilt on `dev` with its

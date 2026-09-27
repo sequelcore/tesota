@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import * as z from "zod";
 import { isNetworkDestination } from "./execution-environment.js";
 import { SANDBOX_PREFERENCES, type SandboxPreference } from "./execution-providers.js";
+import { MAX_PLAN_STEPS, PLAN_STATUSES, type PlanStep } from "./work-plan.js";
 import { parseModelChoice } from "./model-roles.js";
 import { MEASUREMENTS_KEPT, type ReviewMeasurement, withMeasurement } from "./review-forecast.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
@@ -25,20 +26,23 @@ const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: stri
   z.strictObject({ title: z.string().max(100), summary: z.string().max(10_000),
     detail: z.string().max(2_000_000), diff: z.string().max(2_000_000).optional() });
 const agentModelSchema = z.string().refine((value) => parseModelChoice(value) !== undefined, "not a route:model choice");
-// `agent`, `retiredEngineIds` and `sandbox` arrived after version 5 and are optional, so saved sessions survive
-// (decisions 026 and 030).
+const planSchema: z.ZodType<PlanStep[]> = z.array(z.strictObject({ step: z.string().min(1).max(2_000),
+  status: z.enum(PLAN_STATUSES), check: z.string().max(2_000).optional(), blocked: z.string().max(2_000).optional() }))
+  .min(1).max(MAX_PLAN_STEPS);
+// `agent`, `retiredEngineIds`, `sandbox` and `plan` arrived after version 5 and are optional, so saved sessions survive
+// (decisions 026, 030 and 033).
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: TranscriptEntry[];
   inspections: { title: string; summary: string; detail: string; diff?: string | undefined }[];
   workspace: string | null;
   interrupted: boolean; blocked: boolean; agent?: string | undefined; retiredEngineIds?: string[] | undefined;
-  sandbox?: SandboxPreference | undefined }> =
+  sandbox?: SandboxPreference | undefined; plan?: PlanStep[] | undefined }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
       workspace: z.string().min(1).nullable(),
       interrupted: z.boolean(), blocked: z.boolean(),
       agent: agentModelSchema.optional(), retiredEngineIds: z.array(z.uuid()).max(1_000).optional(),
-      sandbox: z.enum(SANDBOX_PREFERENCES).optional() });
+      sandbox: z.enum(SANDBOX_PREFERENCES).optional(), plan: planSchema.optional() });
 const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.iso.datetime(),
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
   tokens: z.number().nonnegative(), models: z.strictObject({ reviewer: z.string().min(1).max(100),
@@ -90,6 +94,8 @@ export interface ShellSessionStore {
    * undefined follows the operator's choice for new sessions (`tesota sandbox`).
    */
   setSandbox(id: string, preference: SandboxPreference | undefined): void;
+  /** The agent's plan for the session's current work (decision 033); undefined once that work ends. */
+  setPlan(id: string, plan: readonly PlanStep[] | undefined): void;
   close(): void;
 }
 
@@ -274,6 +280,15 @@ export function openShellSessionStore(sourceDirectory: string,
         if (preference === undefined) delete session.sandbox; else session.sandbox = z.enum(SANDBOX_PREFERENCES).parse(preference);
         try { save(); } catch (error) {
           if (previous === undefined) delete session.sandbox; else session.sandbox = previous;
+          throw error;
+        }
+      },
+      setPlan: (id, plan) => {
+        const session = find(id);
+        const previous = session.plan;
+        if (plan === undefined) delete session.plan; else session.plan = planSchema.parse(plan);
+        try { save(); } catch (error) {
+          if (previous === undefined) delete session.plan; else session.plan = previous;
           throw error;
         }
       },

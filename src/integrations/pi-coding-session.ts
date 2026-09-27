@@ -11,6 +11,8 @@ import { hostProvider } from "../host-environment.js";
 import type { ReasoningLevel } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ADVISOR_GUIDANCE, type Advisor, advisorTool } from "./advisor.js";
+import { PLAN_GUIDANCE, planTool } from "./plan-tool.js";
+import type { WorkPlan } from "../work-plan.js";
 import { exploreTool, type ExplorerPool } from "./pi-explore.js";
 import { type WebAccess, webReadTool, webSearchTool } from "./web-tools.js";
 import type { ModelTarget } from "./model-session.js";
@@ -42,6 +44,8 @@ export interface CodingSessionOptions {
   readonly web?: WebAccess;
   /** The advisor the agent may consult (decision 027); absent when it is off. */
   readonly advisor?: Advisor;
+  /** Shows the agent's plan to the person (decision 033); absent where nobody watches, as in evaluations. */
+  readonly plan?: (plan: WorkPlan) => void;
   /** Called with the tokens of each finished model response, as the provider reported them. */
   readonly onUsage?: (usage: TokenUsage) => void;
 }
@@ -190,13 +194,13 @@ const explorerGuidance = "The explore tool asks a read-only explorer one questio
   "does not see this conversation, so each question must stand on its own. Treat its answer as a lead to check, " +
   "not as fact, and never use it to change files. ";
 
-interface Helpers { readonly explorers: boolean; readonly web: boolean; readonly advisor: boolean }
+interface Helpers { readonly explorers: boolean; readonly web: boolean; readonly advisor: boolean; readonly plan: boolean }
 
 function systemPrompt(root: string, sandboxed: boolean, environment: ExecutionEnvironment, helpers: Helpers): string {
   return "You are Tesota, a coding agent working in a private copy of the user's repository. " +
     "Read, search, edit, create and delete files as the task needs. " + commandGuidance(sandboxed, environment) +
     (helpers.explorers ? explorerGuidance : "") + (helpers.web ? webGuidance : "") + (helpers.advisor ? ADVISOR_GUIDANCE : "") +
-    "Do not commit, push or change Git " +
+    (helpers.plan ? PLAN_GUIDANCE : "") + "Do not commit, push or change Git " +
     "history: when you finish, Tesota shows the user your changes, runs the repository's checks and lets " +
     "the user apply or reject them. End each turn with a short summary of what you changed and anything " +
     "the user should verify. If a request needs no changes, just answer it." +
@@ -350,7 +354,7 @@ export interface SessionStartOptions {
 
 /** What decides the working agent's tools, whichever engine runs it. */
 export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "approveCommand" |
-  "decideNetwork" | "explorers" | "web" | "advisor">;
+  "decideNetwork" | "explorers" | "web" | "advisor" | "plan">;
 
 /**
  * The working agent's system prompt and tools: every file tool confined to the
@@ -362,7 +366,8 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
     throw new Error("Sandboxed sessions require an environment that confines files and network");
   }
   const root = realpathSync(options.cwd);
-  const helpers = { explorers: options.explorers !== undefined, web: options.web !== undefined, advisor: options.advisor !== undefined };
+  const helpers = { explorers: options.explorers !== undefined, web: options.web !== undefined, advisor: options.advisor !== undefined,
+    plan: options.plan !== undefined };
   return { systemPrompt: systemPrompt(root, options.sandboxed, options.environment, helpers), tools: [
     ...readOnlyFileTools(root),
     defineTool(confine(root, createEditToolDefinition(root), true)),
@@ -371,6 +376,7 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
     ...(options.explorers === undefined ? [] : [exploreTool(options.explorers)]),
     ...(options.web === undefined ? [] : [webSearchTool(options.web), webReadTool(options.web)]),
     ...(options.advisor === undefined ? [] : [advisorTool(options.advisor)]),
+    ...(options.plan === undefined ? [] : [planTool(options.plan)]),
   ] };
 }
 

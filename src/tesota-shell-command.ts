@@ -11,6 +11,7 @@ import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
 import { ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
+import type { WorkPlan } from "./work-plan.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, routeListing } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
@@ -291,7 +292,15 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onQuit: () => { workspaceCallbacks?.quit(); } });
   for (const session of savedSessions.slice(1)) surface.addSession(session.id, session.title,
     session.entries, session.inspections);
-  for (const session of savedSessions) showAgentModel(session.id);
+  for (const session of savedSessions) {
+    showAgentModel(session.id);
+    if (session.plan !== undefined) surface.setSessionPlan(session.id, session.plan);
+  }
+  /** The agent's plan (decision 033), shown and saved; undefined when the work it planned ends. */
+  const showPlan = (id: string, plan: WorkPlan | undefined): void => {
+    store.setPlan(id, plan);
+    surface.setSessionPlan(id, plan);
+  };
   surface.setBranch(currentBranch(cwd));
   for (const session of savedSessions) {
     if (session.interrupted) {
@@ -499,6 +508,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         ? SessionManager.create(workspace.checkout, piSessionsDirectory, { id: engineId })
         : SessionManager.open(existing, piSessionsDirectory, workspace.checkout);
       const web = webFor(id);
+      const planCalls = new Set<string>();
       // Whether explorers are on is decided when the agent starts; which model they use, when each one starts.
       const explorers = readModelChoices().explorer === ROLE_OFF ? undefined
         : new ExplorerPool(async (brief, explorerSignal, onLine, onUsage) => {
@@ -536,7 +546,13 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           if (decision === "repository") store.allowNetwork(destinations);
           return decision;
         },
-        onActivity: (activity) => { surface.showActivity(id, activity); } }, { sessionManager, conversationId: engineId });
+        plan: (plan) => { showPlan(id, plan); },
+        // The plan shows beside the prompt, so its tool calls stay out of the conversation.
+        onActivity: (activity) => {
+          if (activity.type === "tool_started" && activity.tool === "plan") planCalls.add(activity.call);
+          if ("call" in activity && planCalls.has(activity.call)) return;
+          surface.showActivity(id, activity);
+        } }, { sessionManager, conversationId: engineId });
       consulted = agent;
       state.agent = agent;
       await briefNewConversation(id, agent, workspace);
@@ -900,6 +916,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       try {
         const changes = await applyWorkspace(workspace, reviewed);
         await journal(id, workspace, decisionEntry(reviewed.tree, "applied"));
+        if (saved(id)?.plan !== undefined) showPlan(id, undefined);
         return { status: "applied", changes };
       } catch (error) {
         if (error instanceof ApplyConflictError) {
@@ -918,6 +935,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const workspace = await workspaceFor(id);
       if (rejected !== undefined) await journal(id, workspace, decisionEntry(rejected.tree, "rejected"));
       workspace.revert();
+      if (saved(id)?.plan !== undefined) showPlan(id, undefined);
       state.note = "Note: the user rejected your previous changes, and the workspace was reset to the last applied state.";
     },
   });

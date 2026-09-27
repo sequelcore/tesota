@@ -113,6 +113,20 @@ Then ask for what you need:
 > The discount is added instead of subtracted in src/price.ts. Fix it and add a test.
 ```
 
+For a request with several steps, the agent shows its plan above the prompt
+and updates it as it works:
+
+```text
+ Plan · 1 of 3 done
+   ✓ Find where the discount is applied · done (agent)
+   ▸ Subtract the discount · in progress · will be checked: the price tests pass
+   ○ Add a test for a 100% discount
+```
+
+"done (agent)" is the agent's own word, and "will be checked" is how it says
+the step can be confirmed; Tesota's checks and review, not the plan, are the
+evidence. The plan is cleared when you apply or reject the work.
+
 The agent reads, searches, edits, creates and deletes files in its own copy of
 your repository. In the sandbox its shell commands run without
 asking, inside a sandbox that sees only that copy and reaches only package
