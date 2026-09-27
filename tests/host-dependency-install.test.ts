@@ -45,6 +45,20 @@ it("reaches registries only through the sandbox's proxy, and fills the repositor
   expect(variables["NPM_TOKEN"]).toBe("kept");
 });
 
+it("installs nothing once its session stopped it, and records no install", async () => {
+  const repo = checkout();
+  writeFileSync(join(repo, "package.json"), "{}");
+  writeFileSync(join(repo, "bun.lock"), "{}");
+  const marker = join(repo, ".install-marker");
+  const stop = new AbortController();
+  stop.abort();
+  const progress: string[] = [];
+  await expect(installOnHost(repo, { marker, proxy: "http://127.0.0.1:9", cache: join(repo, ".cache"), signal: stop.signal,
+    onProgress: (text) => { progress.push(text); } })).rejects.toMatchObject({ name: "AbortError" });
+  expect(progress).toEqual([]);
+  expect(existsSync(marker)).toBe(false);
+});
+
 it("installs a lockfile once, and again only when it changes", async () => {
   const repo = checkout();
   // A dependency in the checkout itself installs without reaching any registry.

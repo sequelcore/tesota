@@ -349,6 +349,8 @@ export const dockerSandboxesProvider: ExecutionProvider = {
     if (listed.status !== 0) throw new Error("Docker Sandboxes is not signed in");
     const existing = listedSandboxes(listed.stdout).filter((sandbox) => sandbox.startsWith(sandboxPrefix(workspace)));
     for (const stale of existing.filter((sandbox) => sandbox !== name)) await invoke(sbx, ["rm", "--force", stale]);
+    // A sandbox is kept and reused by name, so a stop between steps leaves nothing that its workspace's release does not remove.
+    options.signal?.throwIfAborted();
     if (!existing.includes(name)) {
       const tools = Object.entries(runtimes).map(([tool, version]) => `${tool} ${version}`).join(", ");
       onProgress(`Creating the sandbox${tools.length === 0 ? "" : ` with ${tools}`}`);
@@ -357,7 +359,9 @@ export const dockerSandboxesProvider: ExecutionProvider = {
       await createSandbox(sbx, name, workspace, kit.directory,
         dependencies ? [`${DEPENDENCIES_ARGUMENT}=${sandboxPath(resolve(workspace))}/node_modules`] : []);
     }
+    options.signal?.throwIfAborted();
     const prepared = await prepareToolchain(sbx, name, resolve(workspace), plan, onProgress);
+    options.signal?.throwIfAborted();
     return sandboxEnvironment(sbx, name, resolve(workspace), prepared);
   },
   async release(workspace: string): Promise<void> {

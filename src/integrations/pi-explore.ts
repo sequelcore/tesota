@@ -2,6 +2,7 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { Type } from "@earendil-works/pi-ai";
 import { canStartHelper } from "../verification/helper-answer.js";
 import type { ExplorerResult } from "./pi-explorer.js";
+import { Semaphore } from "../semaphore.js";
 import { runCost, type TokenUsage, totalTokens } from "../token-usage.js";
 
 /**
@@ -26,15 +27,13 @@ export type AskExplorer = (brief: string, signal: AbortSignal, onLine: (line: st
 
 export class ExplorerPool {
   readonly #ask: AskExplorer;
-  readonly #concurrency: number;
+  readonly #places: Semaphore;
   readonly #perTurn: number;
-  #running = 0;
   #started = 0;
-  readonly #waiting: (() => void)[] = [];
 
   constructor(ask: AskExplorer, concurrency: number = EXPLORER_CONCURRENCY, perTurn: number = EXPLORERS_PER_TURN) {
     this.#ask = ask;
-    this.#concurrency = concurrency;
+    this.#places = new Semaphore(concurrency);
     this.#perTurn = perTurn;
   }
 
@@ -47,7 +46,7 @@ export class ExplorerPool {
       return refused(`this turn already asked ${this.#perTurn} explorers; continue with what you have`);
     }
     this.#started += 1;
-    if (!await this.#acquire(signal)) return refused("the explorer was stopped before it started");
+    if (!await this.#places.acquire(signal)) return refused("the explorer was stopped before it started");
     const started = Date.now();
     let tokens = 0;
     try {
@@ -56,27 +55,7 @@ export class ExplorerPool {
     } catch (error) {
       return { result: { status: "unfinished", reason: error instanceof Error ? error.message : "the explorer failed" },
         durationMs: Date.now() - started, tokens };
-    } finally { this.#release(); }
-  }
-
-  async #acquire(signal: AbortSignal): Promise<boolean> {
-    if (signal.aborted) return false;
-    if (this.#running < this.#concurrency) { this.#running += 1; return true; }
-    return new Promise((settle) => {
-      const grant = (): void => { signal.removeEventListener("abort", abort); this.#running += 1; settle(true); };
-      const abort = (): void => {
-        const index = this.#waiting.indexOf(grant);
-        if (index >= 0) this.#waiting.splice(index, 1);
-        settle(false);
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      this.#waiting.push(grant);
-    });
-  }
-
-  #release(): void {
-    this.#running -= 1;
-    this.#waiting.shift()?.();
+    } finally { this.#places.release(); }
   }
 }
 
