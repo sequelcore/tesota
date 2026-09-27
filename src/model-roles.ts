@@ -79,7 +79,7 @@ export function parseModelChoice(value: string): ModelChoice | undefined {
   if (rest.length > 0 || level !== undefined && !isReasoningLevel(level)) return undefined;
   return { route: route as ModelRoute, model, ...(level === undefined ? {} : { reasoning: level as ReasoningLevel }) };
 }
-export const MODEL_ROLES = ["agent", "explorer", "advisor", "reviewer", "refuter", "validator"] as const;
+export const MODEL_ROLES = ["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage"] as const;
 export type ModelRole = typeof MODEL_ROLES[number];
 
 export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
@@ -89,26 +89,29 @@ export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
   reviewer: "reviewers, focused lenses and ClaimCheck",
   refuter: "the refuter that tests every finding",
   validator: "the fix validator in correction rounds",
+  triage: "the first pass that decides whether an answer needs the full check",
 };
 
 /** The model every role uses until the operator chooses another: the cheapest on the Codex route. */
 export const DEFAULT_MODEL: string = "codex:gpt-6-luna";
 /**
- * The helpers the agent may call, explorers (decision 019) and the advisor
- * (decision 027), are off until the operator chooses a model for them; each
- * is turned on by default only after an evaluation shows it helps.
+ * Roles that can be off. The helpers the agent may call, explorers (decision
+ * 019) and the advisor (decision 027), are off until the operator chooses a
+ * model for them; each is turned on by default only after an evaluation shows
+ * it helps. The answer check's first pass (decision 034) is on by default;
+ * off, every turn that changes no files gets the full check.
  */
 export const ROLE_OFF = "off";
-export const OPTIONAL_ROLES: readonly ModelRole[] = ["explorer", "advisor"];
+export const OPTIONAL_ROLES: readonly ModelRole[] = ["explorer", "advisor", "triage"];
 const defaults: Readonly<Record<ModelRole, string>> = { agent: DEFAULT_MODEL, explorer: ROLE_OFF, advisor: ROLE_OFF,
-  reviewer: DEFAULT_MODEL, refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL };
+  reviewer: DEFAULT_MODEL, refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL };
 export const DEFAULT_MODELS_FILE: string = join(homedir(), ".tesota", "models.json");
 
 export type ModelChoices = Readonly<Record<ModelRole, string>>;
 
 const modelId = z.string().max(120).refine((value) => value === ROLE_OFF || parseModelChoice(value) !== undefined);
 const choicesSchema = z.strictObject({ agent: modelId.optional(), explorer: modelId.optional(), advisor: modelId.optional(),
-  reviewer: modelId.optional(), refuter: modelId.optional(), validator: modelId.optional() });
+  reviewer: modelId.optional(), refuter: modelId.optional(), validator: modelId.optional(), triage: modelId.optional() });
 type StoredChoices = z.infer<typeof choicesSchema>;
 
 export function isModelRole(value: string): value is ModelRole {

@@ -50,8 +50,15 @@ it("reads a reasoning level after the model, and offers only the levels each mod
 
 it("gives every role the default until the operator chooses, with explorers and the advisor off", () => {
   expect(readModelChoices(file())).toEqual({ agent: DEFAULT_MODEL, explorer: "off", advisor: "off", reviewer: DEFAULT_MODEL,
-    refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL });
+    refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL });
   expect(DEFAULT_MODEL).toBe("codex:gpt-6-luna");
+});
+
+it("turns the answer check's first pass off, so every answer gets the full check, and back to its default", () => {
+  const path = file();
+  expect(chooseModel("triage", "codex:gpt-6-sol@low", ids, path).triage).toBe("codex:gpt-6-sol@low");
+  expect(chooseModel("triage", "off", ids, path).triage).toBe("off");
+  expect(chooseModel("triage", "default", ids, path).triage).toBe(DEFAULT_MODEL);
 });
 
 it("turns explorers and the advisor on with a model and off again, and accepts off for no other role", () => {

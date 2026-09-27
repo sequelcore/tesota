@@ -156,8 +156,21 @@ two rounds; a correction that writes files is then reviewed as any change.
 The result panel shows an "Answer check" with no application decision. While
 a check leaves a request not held or uncertain, the request stays pending,
 so "add farewell()" followed by "continue" is still checked as one request.
-Each such check is one reviewer session, and the refuter's when there are
-gaps. The idea comes from the unmerged branch
+A cheap **first pass** comes before it, so a greeting does not cost the
+strongest reviewer: a session on the `triage` role's model, `codex:gpt-6-luna`
+by default and `off` to check every answer in full, with no file tools,
+sees the pending requests and the reply and decides whether the turn holds
+anything checkable, a request to change something, a follow-up to one, or a
+claim about the code; when unsure it says checkable
+(`src/integrations/answer-triage.ts`). The full check is skipped only when
+the first pass decided that nothing is checkable; one that failed, timed out
+or never decided runs it (`runsAnswerCheck` in
+`src/verification/answer-check-rule.ts`, proved by `bun run formal:check`).
+The first pass takes about two seconds; the full check is one reviewer
+session, and the refuter's when there are gaps. This is the discretionary
+review triage issue #124 asked a consumer for; Jev, the decision model it
+proposes, remains to be compared with this first pass under that issue's
+protocol. The idea comes from the unmerged branch
 `feat/evidence-attribution`, rebuilt here.
 
 ## Correction
