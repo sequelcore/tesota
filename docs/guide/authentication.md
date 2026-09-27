@@ -36,10 +36,23 @@ revoke it at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys);
 `tesota auth logout openrouter` removes Tesota's copy without revoking it.
 Answer `k` to paste a key you already have instead.
 
-Free models need no credits, and OpenRouter limits them to 50 requests a day
-until you have bought $10 of credit, which may not last one request of the
-agent. Their providers may keep your prompts and code and train on them:
-`tesota models openrouter` marks them, and choosing one warns you.
+Free models need no credits. OpenRouter allows 20 requests a minute and 50 a
+day until you have bought $10 of credit in total, then 1,000 a day; one
+request to the agent, with its review, makes many model calls. A free model
+can also be refused for a while when its shared provider is busy (429, "temporarily
+rate-limited upstream"). Their providers may keep your prompts and code and
+train on them: `tesota models openrouter` marks them, and choosing one warns
+you.
+
+## OpenCode
+
+`tesota auth login opencode` saves one key from
+[opencode.ai/auth](https://opencode.ai/auth) for both Zen and Go; a key with
+**Inference only** permission is enough. Zen's models need a positive Zen
+balance, and Go's an active Go subscription in the workspace where the key
+was created. Zen's free models, such as Big Pickle, are not offered: OpenCode
+lets only its own app use them, and refuses other tools with "OpenCode's free
+tier can only be used from within OpenCode".
 
 ## Codex
 

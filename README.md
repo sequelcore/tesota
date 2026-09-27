@@ -18,6 +18,11 @@ bun link
 tesota auth login
 ```
 
+`tesota auth login` signs in with a ChatGPT plan. Without one, Tesota can use
+Claude Code, an Anthropic API key, OpenCode, or OpenRouter, whose free models
+need no payment; [choosing models](docs/guide/choosing-models.md) shows the
+setup for each.
+
 Then, in the repository you want to work on:
 
 ```sh

@@ -67,15 +67,34 @@ tesota models refuter codex:gpt-6-sol
 **An Anthropic API key.** The same setups work with `anthropic:` models, such
 as `anthropic:claude-opus-5-5`, billed per token to the key.
 
-**OpenRouter or OpenCode, without a ChatGPT or Claude plan.** Both reach many
-labs' models, so the agent and its judges can come from different labs on one
-account. `tesota models openrouter`, `tesota models opencode` and
+**No plan and no money: OpenRouter's free models.** They are the only way to
+use Tesota at no cost. Sign in with `tesota auth login openrouter`, then move
+every role off the default, which needs a ChatGPT plan, and keep the judges
+in another lab than the agent:
+
+```
+tesota models agent openrouter:nvidia/nemotron-3-super-120b-a12b:free
+tesota models reviewer openrouter:qwen/qwen3.8-27b:free
+tesota models refuter openrouter:qwen/qwen3.8-27b:free
+tesota models validator openrouter:qwen/qwen3.8-27b:free
+```
+
+Nemotron passed Tesota's live engine checks; Qwen was refused once while its
+shared provider was busy. Neither has been measured as a Tesota role, so
+treat the result with care. A free model's provider may keep your code and
+train on it, so use them for code you would share. OpenRouter allows 50 free
+requests a day until you buy $10 of credit, then 1,000; one request with its
+review makes many model calls. The $10 also pays for OpenRouter's paid models.
+
+**OpenRouter credits or OpenCode.** Both reach many labs' models, so the agent
+and its judges can come from different labs on one account.
+`tesota models openrouter`, `tesota models opencode` and
 `tesota models opencode-go` list the models and prices; OpenRouter writes a
-model `vendor/model`, as in `openrouter:anthropic/claude-opus-5.5`. Tesota
-has not yet measured these routes' models as its roles, so check a choice
-(below) before relying on it. A free model costs nothing but its provider may
-keep your code and train on it, and OpenRouter's 50 free requests a day may
-not last one request of the agent; use free models for code you would share.
+model `vendor/model`, as in `openrouter:anthropic/claude-opus-5.5`. OpenCode
+Zen bills your Zen balance, and OpenCode Go, at $10 a month, needs an active
+subscription; Zen's free models work only in OpenCode's own app. Tesota has
+not yet measured these routes' models as its roles, so check a choice
+(below) before relying on it.
 
 `tesota models` shows each role's model, who pays for it and the model's list
 price; `tesota models <role> default` restores Luna, and a new choice applies
