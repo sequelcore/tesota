@@ -2,19 +2,19 @@
 
 Tesota is an early-stage, verification-first agent. Software development is its
 first proving ground. Contributions are welcome when they advance a demonstrated
-user need without weakening task authority, candidate identity, evidence
-integrity or human acceptance.
+user need without weakening command approval, review of the exact changes,
+evidence integrity or human acceptance.
 
 ## Before changing code
 
-Read the [project identity](docs/identity.md), [architecture](docs/architecture.md),
+Read the [design](docs/design/overview.md),
 [roadmap](docs/roadmap.md) and [development guide](docs/development.md). For a
 substantial new capability, open a focused discussion or issue first so its user,
 owner, effect boundary and qualification evidence are explicit.
 
-Kiln is a historical reference, not an inherited roadmap. Follow the
-[selective extraction policy](docs/decisions/005-recover-kiln-selectively.md)
-when adapting its code, tests or contracts.
+Kiln is a historical reference, not an inherited roadmap. Follow
+[reusing Kiln](docs/development.md#reusing-kiln) when adapting its code, tests
+or contracts.
 
 ## Development setup
 
@@ -27,9 +27,8 @@ bun run check
 ```
 
 `bun run check` builds and type-checks the project, runs the test suites and
-executes Oxlint without applying fixes. Live provider, authentication and
-candidate experiments are separate commands and are not part of the offline
-contribution gate.
+executes Oxlint without applying fixes. Live evaluations and the proofs are
+separate commands and are not part of the offline contribution gate.
 
 ## Change expectations
 

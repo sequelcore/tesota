@@ -1,15 +1,25 @@
 # Tesota
 
-**Tesota is a pre-release, open-source, verification-first agent.** It helps you
-inspect a repository and attempt a bounded TypeScript change, then shows the
-exact result, applicable checks and remaining unknowns before you decide whether
-to apply it.
+**Tesota is an open-source, verification-first agent for work that carries
+its evidence.** Ask for a change in your repository. A coding agent makes it
+in a separate copy, Tesota runs your checks and its own verifiers on exactly
+that result, an independent reviewer reads it against what you asked, and
+you decide whether to apply it. Nothing reaches your files until you do.
+Software development is its first proving ground.
 
-The current interface is a local terminal conversation. It can answer related
-questions about a committed repository, ask for clarification and propose a
-supported change. After you approve the scope, it works in an independent
-checkout, runs fixed checks and presents the diff for review. Acceptance and
-application are separate steps.
+## The name
+
+Tesota takes its name from *Olneya tesota*, the desert ironwood, *palo
+fierro* in Spanish: a tree of the Sonoran Desert whose wood is dense enough
+to sink in water, and under whose shelter other plants take root. The name stands for a durable foundation that supports growth.
+
+It is also a change of approach. Tesota replaced Kiln, whose scope and
+infrastructure grew faster than a workflow reliable enough to use every day.
+Tesota builds in the other order: a foundation that works first, then each
+capability once there is evidence it helps. The
+[design overview](docs/design/overview.md#name-and-identity) has the full
+identity, and the [Kiln reference](docs/research/kiln.md) preserves that
+history.
 
 ## Try it
 
@@ -23,6 +33,11 @@ bun link
 tesota auth login
 ```
 
+`tesota auth login` signs in with a ChatGPT plan. Without one, Tesota can use
+Claude Code, an Anthropic API key, OpenCode, or OpenRouter, whose free models
+need no payment; [choosing models](docs/guide/choosing-models.md) shows the
+setup for each.
+
 Then, in the repository you want to work on:
 
 ```sh
@@ -30,44 +45,30 @@ cd my-project
 tesota
 ```
 
-The supported change path currently requires Windows, Git, Docker Desktop, the
-pinned verification image already available locally and, for the TypeScript
-profile, a matching dependency installation in the target repository. Tesota
-does not install dependencies or pull images during a task. See
-[Using Tesota](docs/using-tesota.md) for setup, task scope, review and recovery.
-Run `bun unlink` in this checkout to remove the development command.
+The agent can read, edit, create and delete files in its copy. On Windows 11
+24H2 or later, its commands run on their own in Tesota's native sandbox, once
+Tesota has checked on your computer that the sandbox holds; with Docker
+Sandboxes set up (`tesota setup`), they can run in a virtual machine instead.
+A sandbox sees only that copy and reaches only package registries; without
+one, every command asks for your approval first and then runs with your
+permissions. `tesota sandbox` shows and chooses where they run. See [Using Tesota](docs/guide/using-tesota.md) for the workflow
+and limits. Run `bun unlink` in this checkout to remove the command.
 
-## Scope
-
-The source-only task can change one or two existing non-test TypeScript files
-under `src/` and run a contained no-emit typecheck. A separate source-and-test
-task can change one existing TypeScript source file and one existing regression
-test, then run a fixed targeted Node test. Both require explicit approval and
-human review. The source-and-test path has development checks but still needs a
-successful ordinary live walkthrough and fresh external evaluation.
-
-Tesota does not currently handle arbitrary repository changes, new or deleted
-files, model-selected shell commands, dependency changes or interrupted-task
-resume. A passing check establishes only its stated claim for the bound result;
-it does not establish that the requested behavior is correct. The
-[roadmap](docs/roadmap.md) owns current status and priorities.
+Tesota is pre-release and has been exercised live only on Windows. A passing
+check shows only that the command succeeded on the reviewed content, and a
+clean review is advice; neither shows that the change does what you asked. The
+[roadmap](docs/roadmap.md) owns status and priorities.
 
 ## Documentation
 
 | Need | Read |
 | --- | --- |
-| Complete user workflow | [Using Tesota](docs/using-tesota.md) |
-| Product purpose and terms | [Identity](docs/identity.md) |
+| The user workflow | [Using Tesota](docs/guide/using-tesota.md), [authentication](docs/guide/authentication.md), [choosing models](docs/guide/choosing-models.md) |
+| How it works and why | [Design](docs/design/overview.md) |
+| Decisions, in order | [Decisions](docs/decisions.md) |
 | Current status and next work | [Roadmap](docs/roadmap.md) |
-| Implementation and authority boundaries | [Architecture](docs/architecture.md) |
-| Checks and their claims | [Verification](docs/verification.md) |
-| Build, test and contribution guidance | [Development](docs/development.md) |
-| Qualification criteria and retained observations | [Qualification](docs/qualification.md) and [experiments](experiments/README.md) |
-
-Tesota began as a deliberate reset of Kiln. The
-[reconstruction decision](docs/decisions/001-start-tesota.md) and
-[Kiln reference](docs/references/kiln.md) preserve that history without making
-its code or roadmap part of the current product.
+| What experiments established | [Findings](docs/findings.md) |
+| Build, test and contribution practice | [Development](docs/development.md) |
 
 Tesota is licensed under [Apache-2.0](LICENSE). Preserve [NOTICE](NOTICE) and
 retained third-party notices. See [CONTRIBUTING.md](CONTRIBUTING.md) and

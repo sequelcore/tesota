@@ -1,108 +1,204 @@
-import { formatConversationTurn, type ConversationCommandResult } from "./conversation-turn.js";
-import type { ConversationInput } from "./conversation-turn-contract.js";
+import { correctionFor, correctionPrompt, MAX_CORRECTION_ROUNDS, problemCount } from "./correction.js";
+import type { Finding, ReviewReport } from "./review.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
-import type { TaskStartProgress, TaskStartResult } from "./task-start.js";
+import type { NoticeTone } from "./tesota-shell-transcript.js";
+import type { WorkspaceChange } from "./workspace.js";
+import type { CheckResult } from "./workspace-checks.js";
+
+export type WorkResult =
+  | Readonly<{ status: "completed"; changes: readonly WorkspaceChange[] }>
+  | Readonly<{ status: "failed"; reason: string }>
+  | Readonly<{ status: "cancelled" }>
+  | Readonly<{ status: "unsettled" }>;
+
+export type ReviewResult =
+  | Readonly<{ status: "ready"; tree: string; changes: readonly WorkspaceChange[]; checks: readonly CheckResult[];
+      reviews: readonly ReviewReport[]; requests: readonly string[] }>
+  | Readonly<{ status: "cancelled" }>;
+
+export type ApplyResult =
+  | Readonly<{ status: "applied"; changes: readonly WorkspaceChange[] }>
+  | Readonly<{ status: "conflict"; reason: string; paths: readonly string[] }>
+  | Readonly<{ status: "uncertain"; applied: readonly string[] }>;
+
+/** The result a correction round started from, and the findings it sent back. */
+export interface CorrectionContext {
+  readonly previousTree: string;
+  readonly sentBack: readonly Finding[];
+}
+
+/** Who wrote a message to the working agent: the operator, or Tesota in a correction round. */
+export type RequestOrigin = "operator" | "tesota";
 
 export interface TesotaShellDependencies {
-  readonly write: (text: string) => void;
+  /**
+   * Start preparing the session's environment in the background, as cloud
+   * agents do when a task opens, so it is usually ready by the first request.
+   */
+  readonly prepare?: () => void;
+  /** Add a Tesota notice; the agent's own replies reach the surface as they stream. */
+  readonly write: (text: string, tone?: NoticeTone) => void;
   readonly ask: (prompt: string) => Promise<string>;
-  readonly discover: (input: ConversationInput) => Promise<ConversationCommandResult>;
-  readonly start: (proposalId: string, report: (progress: TaskStartProgress) => void) => Promise<TaskStartResult>;
   readonly report?: (progress: TesotaShellProgress) => void;
+  /**
+   * Run one request in the workspace, showing the agent's work as it happens,
+   * and report the pending changes. Only the operator's own requests join the
+   * request record; Tesota's correction messages do not.
+   */
+  readonly work: (request: string, origin?: RequestOrigin) => Promise<WorkResult>;
+  /** Checks the operator approved earlier, or null when none were chosen yet. */
+  readonly checks: () => readonly string[] | null;
+  readonly suggestChecks: () => readonly string[];
+  readonly setChecks: (commands: readonly string[]) => void;
+  /**
+   * Snapshot the pending changes, run the approved checks on them and present
+   * the review, once. After a correction round, `correction` names the result
+   * sent back and what was sent, so only the correction is reviewed and the
+   * sent-back findings are validated (decision 016).
+   */
+  readonly review: (checks: readonly string[], correction?: CorrectionContext) => Promise<ReviewResult>;
+  readonly apply: () => Promise<ApplyResult>;
+  readonly reject: () => Promise<void>;
 }
 
 function ignoreProgress(_progress: TesotaShellProgress): void {}
 
-function toolFailureDetail(result: ConversationCommandResult): string {
-  if (result.status !== "unavailable" || result.reason !== "tool_failed" || result.toolFailure == null) return "";
-  return ` (${result.toolFailure.tool}: ${result.toolFailure.cause})`;
+const changeVerbs: Readonly<Record<WorkspaceChange["status"], string>> = { added: "add", modified: "edit", deleted: "delete" };
+
+function describeChanges(changes: readonly WorkspaceChange[]): string {
+  return changes.map((change) => `  ${changeVerbs[change.status]} ${change.path}`).join("\n");
 }
 
-async function runShellRequest(dependencies: TesotaShellDependencies, request: string,
-  report: (progress: TesotaShellProgress) => void): Promise<{ readonly exitCode: number; readonly continue: boolean }> {
-  let input: ConversationInput = { request };
-  let clarificationBaseline: string | undefined;
+async function chooseChecks(dependencies: TesotaShellDependencies): Promise<readonly string[]> {
+  const existing = dependencies.checks();
+  if (existing !== null) return existing;
+  const suggested = dependencies.suggestChecks();
+  dependencies.write(suggested.length === 0
+    ? "No checks were found for this repository.\n"
+    : `Suggested checks:\n${suggested.map((command) => `  ${command}`).join("\n")}\n`);
+  const answer = (await dependencies.ask(suggested.length === 0
+    ? "Commands to run after each change (separate with ;), or Enter for none: "
+    : "Enter to use these, type other commands (separate with ;), or 'none': ")).trim();
+  const chosen = answer.length === 0 ? suggested : answer.toLowerCase() === "none" ? [] :
+    answer.split(";").map((command) => command.trim()).filter((command) => command.length > 0);
+  dependencies.setChecks(chosen);
+  return chosen;
+}
+
+type Decision = "apply" | "reject" | "keep";
+
+async function askDecision(dependencies: TesotaShellDependencies): Promise<Decision> {
   for (;;) {
-    dependencies.write("\n");
-    report({ phase: "discovering", operation: "repository_discovery" });
-    const result = await dependencies.discover(input);
-    if (result.status === "cancelled") {
-      dependencies.write("Repository discovery cancelled. Nothing changed.\n");
-      return { exitCode: result.exitCode, continue: true };
-    }
-    if (result.status === "unsettled") {
-      dependencies.write("Repository discovery settlement is unconfirmed. End this session before retrying.\n");
-      return { exitCode: result.exitCode, continue: false };
-    }
-    if (result.status === "unavailable") {
-      if (result.reason === "invalid_result" || result.reason === "tool_failed") {
-        dependencies.write(result.reason === "invalid_result"
-          ? "The model returned an invalid response. Nothing changed.\n"
-          : `A repository tool failed or was denied${toolFailureDetail(result)}. Nothing changed.\n`);
-        return { exitCode: result.exitCode, continue: false };
-      }
-      if (result.reason === "baseline_changed") {
-        dependencies.write("The repository baseline changed during this conversation. Start a new Tesota session. Nothing changed.\n");
-        return { exitCode: result.exitCode, continue: false };
-      }
-      if (result.reason === "context_limit") {
-        dependencies.write("The conversation reached the model context limit. Start a new Tesota session. Nothing changed.\n");
-        return { exitCode: result.exitCode, continue: false };
-      }
-      if (result.reason === "limits_exhausted") {
-        dependencies.write("The bounded conversation limit was reached. Start a new Tesota session. Nothing changed.\n");
-        return { exitCode: result.exitCode, continue: false };
-      }
-      if (result.reason === "timeout") {
-        dependencies.write("Repository discovery timed out after confirmed settlement. Start a new request. Nothing changed.\n");
-        return { exitCode: result.exitCode, continue: true };
-      }
-      dependencies.write("Request blocked or unavailable. Nothing changed.\n");
-      return { exitCode: result.exitCode, continue: false };
-    }
-    dependencies.write(formatConversationTurn(result.turn));
-    if (result.turn.kind === "clarification") {
-      if (clarificationBaseline !== undefined) {
-        dependencies.write("A second clarification is not supported. Nothing changed.\n");
-        return { exitCode: 1, continue: false };
-      }
-      clarificationBaseline = result.turn.baseline;
-      report({ phase: "awaiting_clarification", operation: "operator_answer" });
-      const answer = (await dependencies.ask("Answer: ")).trim();
-      if (answer.length === 0) {
-        dependencies.write("Clarification cancelled. Nothing changed.\n");
-        return { exitCode: 0, continue: false };
-      }
-      input = { request, clarification: { question: result.turn.clarification.question, answer,
-        baseline: clarificationBaseline } };
-      continue;
-    }
-    if (result.turn.kind !== "task_proposal") {
-      dependencies.write("Read-only turn complete. No execution authority was created.\n");
-      return { exitCode: result.exitCode, continue: true };
-    }
-    if (result.exitCode !== 0 || result.turn.proposedTask.record.status !== "ready") {
-      dependencies.write("Request blocked or unavailable. Nothing changed.\n");
-      return { exitCode: result.exitCode, continue: false };
-    }
-    dependencies.write("Proposal ready. Execution still requires your approval.\n");
-    const started = await dependencies.start(result.turn.proposedTask.record.id, report);
-    return { exitCode: started.exitCode, continue: started.status === "settled" };
+    const answer = (await dependencies.ask("[a]pply, [r]eject, or [k]eep working: ")).trim().toLowerCase();
+    if (answer === "a" || answer === "apply") return "apply";
+    if (answer === "r" || answer === "reject") return "reject";
+    if (answer === "k" || answer === "keep" || answer === "") return "keep";
   }
 }
 
-/** Surface-independent conversation and admitted-task lifecycle for Tesota Shell. */
+type Assessment = "ready" | "stopped" | "unsettled";
+
+/**
+ * Check and review the candidate; send failed checks and fixable findings back
+ * to the agent for at most MAX_CORRECTION_ROUNDS rounds, stopping early when a
+ * round changes nothing (decision 015).
+ */
+async function assess(dependencies: TesotaShellDependencies,
+  report: (progress: TesotaShellProgress) => void): Promise<Assessment> {
+  const checks = await chooseChecks(dependencies);
+  let previousTree: string | undefined;
+  let context: CorrectionContext | undefined;
+  for (let round = 0; ; round++) {
+    report({ phase: "checking" });
+    const review = context === undefined ? await dependencies.review(checks) : await dependencies.review(checks, context);
+    if (review.status === "cancelled") {
+      dependencies.write("Checks cancelled. The changes stay in the workspace.\n");
+      return "stopped";
+    }
+    const correction = correctionFor(review.checks, review.reviews);
+    if (correction === undefined || round >= MAX_CORRECTION_ROUNDS) return "ready";
+    if (review.tree === previousTree) {
+      dependencies.write("The agent's correction changed nothing; the remaining problems are yours to judge.\n", "warning");
+      return "ready";
+    }
+    previousTree = review.tree;
+    context = { previousTree: review.tree, sentBack: correction.findings };
+    const count = problemCount(correction);
+    dependencies.write(`Correction round ${round + 1} of ${MAX_CORRECTION_ROUNDS}: sending ${count} ` +
+      `${count === 1 ? "problem" : "problems"} back to the agent.\n`);
+    report({ phase: "working" });
+    const result = await dependencies.work(correctionPrompt(review.requests, correction), "tesota");
+    if (result.status === "unsettled") return "unsettled";
+    if (result.status !== "completed") {
+      dependencies.write(`The correction ${result.status === "cancelled" ? "was stopped" : `failed: ${result.reason}`}. ` +
+        "The changes stay in the workspace; continue with another request.\n", "warning");
+      return "stopped";
+    }
+  }
+}
+
+async function reviewChanges(dependencies: TesotaShellDependencies,
+  report: (progress: TesotaShellProgress) => void): Promise<boolean> {
+  const assessment = await assess(dependencies, report);
+  if (assessment === "unsettled") {
+    dependencies.write("The agent did not stop cleanly. This session is closed; check the workspace before continuing.\n", "warning");
+    return false;
+  }
+  if (assessment === "stopped") return true;
+  report({ phase: "awaiting_decision" });
+  const decision = await askDecision(dependencies);
+  if (decision === "keep") {
+    dependencies.write("The changes stay in the workspace. Continue with another request.\n");
+    return true;
+  }
+  if (decision === "reject") {
+    await dependencies.reject();
+    dependencies.write("Changes discarded. Your repository was not touched.\n");
+    return true;
+  }
+  report({ phase: "applying" });
+  const applied = await dependencies.apply();
+  if (applied.status === "applied") {
+    dependencies.write(`Applied to your repository:\n${describeChanges(applied.changes)}\n`, "success");
+    return true;
+  }
+  if (applied.status === "conflict") {
+    dependencies.write(`Not applied: ${applied.reason}.\n` +
+      (applied.paths.length > 0 ? `${applied.paths.map((path) => `  ${path}`).join("\n")}\n` : "") +
+      "Nothing was written. The changes stay in the workspace.\n", "warning");
+    return true;
+  }
+  dependencies.write("Application stopped partway. These files may have changed:\n" +
+    `${applied.applied.map((path) => `  ${path}`).join("\n") || "  (unknown)"}\n` +
+    "Check your repository before continuing. This session is closed.\n", "warning");
+  return false;
+}
+
+/** Surface-independent conversation loop: work, review, then apply or reject. */
 export async function runTesotaShell(dependencies: TesotaShellDependencies): Promise<number> {
   const report = dependencies.report ?? ignoreProgress;
-  let completedTurn = false;
+  dependencies.prepare?.();
   for (;;) {
     const request = (await dependencies.ask("> ")).trim();
     if (request.length === 0) {
-      dependencies.write(completedTurn ? "Tesota session ended. Nothing changed.\n" : "No request entered. Nothing changed.\n");
+      dependencies.write("Session ended.\n");
       return 0;
     }
-    const result = await runShellRequest(dependencies, request, report);
-    if (!result.continue) return result.exitCode;
-    completedTurn = true;
+    report({ phase: "working" });
+    const result = await dependencies.work(request);
+    if (result.status === "unsettled") {
+      dependencies.write("The agent did not stop cleanly. This session is closed; check the workspace before continuing.\n", "warning");
+      return 1;
+    }
+    if (result.status === "cancelled") {
+      dependencies.write("Stopped. Any changes so far stay in the workspace.\n");
+      continue;
+    }
+    if (result.status === "failed") {
+      dependencies.write(`The request failed: ${result.reason}\n`, "warning");
+      continue;
+    }
+    if (result.changes.length === 0) continue;
+    if (!(await reviewChanges(dependencies, report))) return 1;
   }
 }
