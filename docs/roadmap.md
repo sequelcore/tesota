@@ -94,6 +94,19 @@ project. They are listed here as they are chosen.
     effect "recovery required".
 
   Two measured runs on the branch are in [findings](findings.md).
+- **Proposal: out-of-scope work and overengineering.** Tesota flags changes to
+  what gets checked, deepens review for large or sensitive changes, and asks
+  the reviewer to mark work beyond what was asked as the operator's call; but
+  nothing measures whether that marking works, obligations catch only missing
+  work, and nothing compares a change with its request. In order, each step
+  only if the one before shows the need:
+  1. An evaluation case that fixes what was asked and also adds an unrequested
+     abstraction or refactor, to measure whether today's reviewer flags it.
+  2. Obligations in both directions: "the result does nothing beyond the
+     requests", judged and refuted like the other gaps, shown to the operator
+     and never sent back automatically, since an extra may be welcome.
+  3. A deterministic hint: changed files that no request or plan step names,
+     shown for attention only, since legitimate changes often touch them.
 
 ### 2. Measurement on public benchmarks
 
