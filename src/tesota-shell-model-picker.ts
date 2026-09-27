@@ -7,7 +7,9 @@ import { formatTokens } from "./token-usage.js";
  * as in Claude Code and Codex, while `/model <route:model>` still works when
  * typed. Typing after `/model ` filters the list; left and right choose a
  * reasoning level for the highlighted model, as Claude Code's effort slider
- * does (decision 029); Enter switches.
+ * does (decision 029); Enter switches. `/models` uses the same picker to
+ * choose a role, then `/models <role> ` that role's model, which it keeps for
+ * every session, as `tesota models` does.
  */
 
 export interface ModelPickerEntry {
@@ -20,14 +22,28 @@ export interface ModelPickerEntry {
 }
 
 export interface ModelPickerData {
-  /** The session's agent model, with its level when it has one. */
+  /** What is chosen, as the picker's heading names it; the agent's model when not given. */
+  readonly title?: string;
+  /** Choosing fills in the command's next argument rather than running it: a role, before its model. */
+  readonly completes?: boolean;
+  /** The current choice, with its level when it has one. */
   readonly current: string;
   /** What the agent's next model call re-reads, when it has made one: the cost of switching model or level. */
   readonly contextTokens?: number | undefined;
   readonly entries: readonly ModelPickerEntry[];
 }
 
-const prefix = "/model ";
+/**
+ * What the picker completes in the editor: `/model `, `/models ` for a role,
+ * or `/models <role> ` for that role's model; undefined when it stays closed.
+ */
+export function pickerPrefix(value: string): string | undefined {
+  if (value.startsWith("/model ")) return "/model ";
+  const role = /^\/models [^\s]+ /u.exec(value);
+  if (role !== null) return role[0];
+  return value.startsWith("/models ") ? "/models " : undefined;
+}
+
 const maxRows = 8;
 /** A model without a chosen level runs at its engine's default. */
 const DEFAULT_LEVEL = "default";
@@ -35,6 +51,7 @@ const DEFAULT_LEVEL = "default";
 export class ModelPicker implements Component {
   readonly #theme: TesotaShellTheme;
   #data: ModelPickerData | undefined;
+  #prefix: string | undefined;
   #query = "";
   #enabled = false;
   #dismissed = false;
@@ -73,20 +90,30 @@ export class ModelPicker implements Component {
     return level === DEFAULT_LEVEL ? entry.id : `${entry.id}@${level}`;
   }
 
+  /** The command the highlighted choice completes, such as `/model `. */
+  get prefix(): string | undefined { return this.#prefix; }
+
+  /** Whether choosing fills in the next argument rather than running the command. */
+  get completes(): boolean { return this.#data?.completes === true; }
+
   /**
-   * Follow the editor: the picker is open while it holds `/model ` and a
-   * filter with no space or level; `load` gives the models when it opens.
+   * Follow the editor: the picker is open while it holds a picker's prefix
+   * and a filter with no space or level; `load` gives the choices when it
+   * opens, or when the prefix changes, such as once a role is chosen.
    */
-  update(value: string, enabled: boolean, load: () => ModelPickerData | undefined): void {
-    const rest = value.startsWith(prefix) ? value.slice(prefix.length) : undefined;
+  update(value: string, enabled: boolean, load: (prefix: string) => ModelPickerData | undefined): void {
+    const prefix = pickerPrefix(value);
+    const rest = prefix === undefined ? undefined : value.slice(prefix.length);
     this.#enabled = enabled;
-    if (rest === undefined || /[\s@]/u.test(rest)) {
+    if (prefix !== this.#prefix) this.#data = undefined;
+    this.#prefix = prefix;
+    if (prefix === undefined || rest === undefined || /[\s@]/u.test(rest)) {
       this.#data = undefined;
       this.#query = "";
       return;
     }
     if (this.#data === undefined) {
-      this.#data = load();
+      this.#data = load(prefix);
       this.#levels.clear();
       this.#dismissed = false;
       this.#query = rest;
@@ -133,7 +160,9 @@ export class ModelPicker implements Component {
     // Caches belong to one model and level (decision 026): a switch's cost is known before it is made.
     const cost = context === undefined ? [] : wrapTextWithAnsi(`  A switch re-reads about ${formatTokens(context)} without cache; ` +
       "/handoff starts fresh.", width).map((line) => mutedText(line, this.#theme));
-    return [mutedText(truncateToWidth(`  Agent model · ↑↓ choose · ←→ reasoning · Enter switch · Esc close${position}`, width),
+    const heading = `  ${this.#data?.title ?? "Agent model"} · ↑↓ choose · ${this.completes ? "" : "←→ reasoning · "}` +
+      `Enter ${this.completes ? "choose" : "switch"} · Esc close${position}`;
+    return [mutedText(truncateToWidth(heading, width),
       this.#theme), ...cost, ...rows];
   }
 }

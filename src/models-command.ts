@@ -5,8 +5,9 @@ import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
-import { chooseModel, isReasoningLevel, type ReasoningLevel, ROLE_OFF, DEFAULT_MODEL, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES,
-  MODEL_ROUTES, type ModelRoute, parseModelChoice, readModelChoices, ROLE_DESCRIPTIONS, ROUTE_BILLING } from "./model-roles.js";
+import type { ModelPickerData } from "./tesota-shell-model-picker.js";
+import { chooseModel, DECISION_MODELS, isDecisionModel, isReasoningLevel, OPTIONAL_ROLES, type ReasoningLevel, ROLE_OFF, DEFAULT_MODEL, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES,
+  MODEL_ROUTES, type ModelRole, type ModelRoute, parseModelChoice, readModelChoices, ROLE_DESCRIPTIONS, ROUTE_BILLING } from "./model-roles.js";
 
 /**
  * A model a route offers, as `route:model`, with the catalogue's list price
@@ -50,10 +51,18 @@ export function dataNotice(choice: string): string | undefined {
   return "its provider may keep your prompts and code, and use them to train models";
 }
 
-/** Every choice the routes offer: each model, and each model at each reasoning level it accepts. */
-export function offeredChoices(offered: readonly OfferedModel[]): string[] {
-  return offered.flatMap((model) => [model.id, ...model.reasoning.map((level) => `${model.id}@${level}`)]);
+/**
+ * Every choice the routes offer: each model, and each model at each reasoning
+ * level it accepts; the answer check's first pass may also use a typed
+ * decision model (decision 035).
+ */
+export function offeredChoices(offered: readonly OfferedModel[], role?: ModelRole): string[] {
+  return [...offered.flatMap((model) => [model.id, ...model.reasoning.map((level) => `${model.id}@${level}`)]),
+    ...role === "triage" ? DECISION_MODELS : []];
 }
+
+/** What a typed decision model costs, and what it is sent. */
+export const DECISION_COST = "your TypeSafe key, about 340 tokens a decision; TypeSafe receives the requests and the reply";
 
 function levels(model: Model<Api>): ReasoningLevel[] {
   return getSupportedThinkingLevels(model).filter(isReasoningLevel);
@@ -169,17 +178,40 @@ const offText: Partial<Record<string, string>> = { triage: "no first pass; every
 function listing(offered: readonly OfferedModel[], path: string): string {
   const choices = readModelChoices(path);
   const rows = MODEL_ROLES.map((role) => {
-    const detail = choices[role] === ROLE_OFF ? offText[role] ?? "off"
+    const detail = choices[role] === ROLE_OFF ? offText[role] ?? "off" : isDecisionModel(choices[role]) ? DECISION_COST
       : modelCost(offered.find((model) => model.id === choices[role]?.split("@")[0]));
     return `  ${role.padEnd(10)}${choices[role].padEnd(30)}${detail}\n  ${"".padEnd(10)}${ROLE_DESCRIPTIONS[role]}`;
   });
   const warnings = describeJudgeWarnings(judgeWarnings(choices));
   return `Models by role (${path}):\n${rows.join("\n")}\n${warnings === "" ? "" : `\n${warnings}\n`}` +
-    `\nOffered, as route:model:\n${routeListing(offered)}\n` +
+    `\nOffered, as route:model:\n${routeListing(offered)}\n  typesafe, for triage only: ${DECISION_MODELS.map((model) =>
+      model.slice(model.indexOf(":") + 1)).join(", ")}\n` +
     "Add @low, @medium, @high, @xhigh or @max for a reasoning level the model accepts, such as codex:gpt-6-astra@high; " +
     "without one, Pi's models reason at medium and Claude Code's at their default.\n" +
     `Change one with tesota models <role> <route:model>; <role> default restores ${DEFAULT_MODEL}, ` +
     "and turns explorers and the advisor off; tesota models triage off checks every answer in full.\n";
+}
+
+/**
+ * The `/models` picker's choices: at `/models ` each role with its model, and
+ * at `/models <role> ` the models that role may use, with `default` and, for a
+ * role that can be off, `off`. The triage role's typed decision models come
+ * first, since they answer its question faster than any session.
+ */
+export function rolePicker(prefix: string, offered: readonly OfferedModel[], path: string = DEFAULT_MODELS_FILE): ModelPickerData | undefined {
+  const choices = readModelChoices(path);
+  const role = prefix.slice("/models ".length).trim();
+  if (role === "") {
+    return { title: "Role", completes: true, current: "",
+      entries: MODEL_ROLES.map((name) => ({ id: name, detail: `${choices[name]} · ${ROLE_DESCRIPTIONS[name]}`, reasoning: [] })) };
+  }
+  if (!isModelRole(role)) return undefined;
+  return { title: `The ${role}'s model, for every session`, current: choices[role], entries: [
+    ...role === "triage" ? DECISION_MODELS.map((id) => ({ id, detail: DECISION_COST, reasoning: [] })) : [],
+    ...offered.map((model) => ({ id: model.id, detail: modelCost(model), reasoning: model.reasoning })),
+    { id: "default", detail: "Tesota's default for this role", reasoning: [] },
+    ...OPTIONAL_ROLES.includes(role) ? [{ id: ROLE_OFF, detail: offText[role] ?? "off", reasoning: [] }] : [],
+  ] };
 }
 
 /**
@@ -199,12 +231,16 @@ export function runModelsCommand(args: readonly string[], write: (text: string) 
     return 2;
   }
   try {
-    const choices = chooseModel(role, model, offeredChoices(offered), path);
+    const choices = chooseModel(role, model, offeredChoices(offered, role), path);
     write(choices[role] === ROLE_OFF ? (role === "explorer" ? "Explorers are off.\n"
       : role === "triage" ? "The first pass is off: every answer gets the full check.\n" : `The ${role} is off.\n`)
       : `The ${role} now uses ${choices[role]}.\n`);
     const notice = dataNotice(choices[role]);
     if (notice !== undefined) write(`Free model: ${notice}. Choose a paid model for code you would not share.\n`);
+    if (isDecisionModel(choices[role])) {
+      write("TypeSafe receives each such turn's requests and the agent's reply, and says it does not train on them. " +
+        "It uses your key from tesota auth login typesafe or TYPESAFE_API_KEY; without one, every answer gets the full check.\n");
+    }
     const warnings = describeJudgeWarnings(judgeWarnings(choices).filter((warning) => warning.author === role || warning.judge === role));
     if (warnings !== "") write(`${warnings}\n`);
     return 0;

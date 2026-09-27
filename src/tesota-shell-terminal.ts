@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { Editor, HStack, ScrollView, Text, VStack, matchesKey, truncateToWidth, wrapTextWithAnsi,
+import { Editor, HStack, ScrollView, Text, VStack, isKeyRelease, matchesKey, truncateToWidth, wrapTextWithAnsi,
   type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
@@ -25,7 +25,10 @@ export interface TesotaShellTerminalOptions {
   /** `/model`, with its argument when one was given. */
   readonly onModel?: (sessionId: string, argument: string | undefined) => void;
   /** The models the `/model` picker offers a session's agent; without it, `/model` alone asks the shell to list them. */
-  readonly modelPicker?: (sessionId: string) => ModelPickerData | undefined;
+  /** The picker's choices for a prefix: `/model ` for the session's agent, `/models ` for a role, `/models <role> ` for its model. */
+  readonly modelPicker?: (sessionId: string, prefix: string) => ModelPickerData | undefined;
+  /** `/models <role> <choice>`: the model a role uses in every session, as `tesota models` sets it. */
+  readonly onRoleModel?: (sessionId: string, args: readonly string[]) => void;
   readonly onHandoff?: (sessionId: string) => void;
   /** `/sandbox`, with its argument when one was given (decision 030). */
   readonly onSandbox?: (sessionId: string, argument: string | undefined) => void;
@@ -120,6 +123,7 @@ const shellCommands = [
   { name: "previous", description: "Switch to the previous session" },
   { name: "close", description: "Close this session" },
   { name: "model", description: "Show or switch the agent's model" },
+  { name: "models", description: "Choose each role's model" },
   { name: "handoff", description: "Start the agent's conversation afresh" },
   { name: "sandbox", description: "Show or switch where this session's commands run" },
   { name: "result", description: "Show or hide the review" },
@@ -355,7 +359,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const session = this.selected();
     const atPrompt = session.pending !== undefined && session.prompt === "> ";
     this.commandMenu.update(value, atPrompt);
-    this.modelPicker.update(value, atPrompt, () => this.options.modelPicker?.(this.selectedId));
+    this.modelPicker.update(value, atPrompt, (prefix) => this.options.modelPicker?.(this.selectedId, prefix));
     this.tui.requestRender();
   }
 
@@ -490,7 +494,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   start(): void {
     if (this.started) return;
     this.started = true;
-    this.removeInputListener = this.tui.addInputListener((data) => this.handleKey(data));
+    // Pi's TUI asks terminals that speak the Kitty keyboard protocol to report releases too, and passes them to input
+    // listeners; `matchesKey` matches a release as the key, so handling it would act twice per press.
+    this.removeInputListener = this.tui.addInputListener((data) => isKeyRelease(data) ? undefined : this.handleKey(data));
     this.tui.terminal.setTitle("Tesota");
     this.compose();
     // Restored sessions are added before start; newest-first order can put the initial selection below the viewport.
@@ -589,10 +595,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     else if (matchesKey(data, "left") || matchesKey(data, "right")) this.modelPicker.shiftLevel(matchesKey(data, "left") ? -1 : 1);
     else if (matchesKey(data, "escape")) this.modelPicker.dismiss();
     else if (matchesKey(data, "enter") || matchesKey(data, "tab")) {
-      const choice = this.modelPicker.choice;
-      if (choice === undefined) return undefined;
-      if (matchesKey(data, "enter")) this.submit(`/model ${choice}`);
-      else { this.editor.setText(`/model ${choice}`); this.updateCommandMenu(`/model ${choice}`); }
+      const [choice, prefix] = [this.modelPicker.choice, this.modelPicker.prefix];
+      if (choice === undefined || prefix === undefined) return undefined;
+      // A role is completed so its model can be chosen next; a model is chosen with Enter, or completed with Tab.
+      const completed = `${prefix}${choice}${this.modelPicker.completes ? " " : ""}`;
+      if (matchesKey(data, "enter") && !this.modelPicker.completes) this.submit(completed);
+      else { this.editor.setText(completed); this.updateCommandMenu(completed); }
     } else return undefined;
     this.tui.requestRender();
     return { consume: true };
@@ -858,16 +866,15 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         break;
       case "close": this.options.onCloseSession?.(session.id); break;
       case "model": this.changeModel(session, args); break;
+      case "models": this.changeRoleModel(session, args); break;
       case "handoff": this.options.onHandoff?.(session.id); break;
-      case "sandbox":
-        if (args.length > 1) this.writeTo(session.id, "Use /sandbox or /sandbox <auto|native|docker|host|default>.", "warning");
-        else this.options.onSandbox?.(session.id, args[0]);
-        break;
+      case "sandbox": this.changeSandbox(session, args); break;
       case "result": this.showResult = !this.showResult; this.compose(); break;
       case "sidebar": this.toggleSidebar(); break;
       case "details": this.toggleDetails(session, args); break;
       case "help":
-        this.writeTo(session.id, "Commands: /new /next /previous /close /model [route:model] /handoff /sandbox [where] /result /sidebar " +
+        this.writeTo(session.id, "Commands: /new /next /previous /close /model [route:model] /models [role] [route:model|default|off] " +
+          "/handoff /sandbox [where] /result /sidebar " +
           "/details [number] /help /quit\n" +
           "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
           "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +
@@ -885,6 +892,20 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       this.editor.setText("/model ");
       this.updateCommandMenu("/model ");
     } else this.options.onModel?.(session.id, args[0]);
+  }
+
+  private changeSandbox(session: SessionView, args: readonly string[]): void {
+    if (args.length > 1) this.writeTo(session.id, "Use /sandbox or /sandbox <auto|native|docker|host|default>.", "warning");
+    else this.options.onSandbox?.(session.id, args[0]);
+  }
+
+  private changeRoleModel(session: SessionView, args: readonly string[]): void {
+    if (args.length < 2 && this.options.modelPicker !== undefined && session.pending !== undefined) {
+      // `/models` opens the role picker, and `/models <role>` that role's model picker.
+      const opened = args.length === 0 ? "/models " : `/models ${args[0]} `;
+      this.editor.setText(opened);
+      this.updateCommandMenu(opened);
+    } else this.options.onRoleModel?.(session.id, args);
   }
 
   private toggleDetails(session: SessionView, args: readonly string[]): void {

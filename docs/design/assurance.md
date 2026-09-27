@@ -168,9 +168,17 @@ or never decided runs it (`runsAnswerCheck` in
 `src/verification/answer-check-rule.ts`, proved by `bun run formal:check`).
 The first pass takes about two seconds; the full check is one reviewer
 session, and the refuter's when there are gaps. This is the discretionary
-review triage issue #124 asked a consumer for; Jev, the decision model it
-proposes, remains to be compared with this first pass under that issue's
-protocol. The idea comes from the unmerged branch
+review triage issue #124 asked a consumer for. The `triage` role may instead
+use Jev, the typed decision model that issue proposes (decision 035):
+`typesafe:jev-1.13.0`, with the operator's TypeSafe key, answers the same
+question with a probability in about a tenth of a second
+(`src/integrations/jev-triage.ts`). It skips a turn only below 0.2, the
+threshold registered with the first pass's cases before any model saw them,
+and a refusal, an error, a missing key or no answer within ten seconds
+decide nothing, so the same proved rule runs the full check. The version is
+pinned: a newer one is offered only once it has been measured on those
+cases. TypeSafe receives the turn's requests and reply, and says it does not
+train on them. The idea comes from the unmerged branch
 `feat/evidence-attribution`, rebuilt here.
 
 ## Correction

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
-import { dataNotice, modelCost, offeredChoices, offeredModels, runModelsCommand, type OfferedModel } from "../src/models-command.js";
+import { dataNotice, modelCost, offeredChoices, offeredModels, rolePicker, runModelsCommand, type OfferedModel } from "../src/models-command.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -172,4 +172,41 @@ it("lists a large route by count, and all of its models on request", () => {
   writes.length = 0;
   expect(runModelsCommand(["openrouter"], (text) => { writes.push(text); }, offeredModels(), file())).toBe(0);
   expect(writes.join("")).toContain("qwen/qwen3.8-27b:free");
+});
+
+it("lets only the triage role use a typed decision model, and says what TypeSafe receives", () => {
+  const path = file();
+  const writes: string[] = [];
+  expect(runModelsCommand(["reviewer", "typesafe:jev-1.13.0"], (text) => { writes.push(text); }, offered, path)).toBe(1);
+  expect(writes.join("")).toContain("answers only the answer check's first pass");
+  writes.length = 0;
+  expect(runModelsCommand(["triage", "typesafe:jev-1.13.0"], (text) => { writes.push(text); }, offered, path)).toBe(0);
+  expect(writes.join("")).toContain("TypeSafe receives each such turn's requests and the agent's reply");
+  expect(readModelChoices(path).triage).toBe("typesafe:jev-1.13.0");
+  // An unpinned or unknown version is not offered: only a qualified one may skip a check.
+  expect(() => chooseModel("triage", "typesafe:jev-latest", offeredChoices(offered, "triage"), path)).toThrow("not offered");
+  writes.length = 0;
+  runModelsCommand([], (text) => { writes.push(text); }, offered, path);
+  expect(writes.join("")).toMatch(/triage +typesafe:jev-1\.13\.0 +your TypeSafe key/u);
+  expect(writes.join("")).toContain("typesafe, for triage only: jev-1.13.0");
+});
+
+it("refuses a decision model saved by hand for any role but triage", () => {
+  const path = file();
+  writeFileSync(path, JSON.stringify({ reviewer: "typesafe:jev-1.13.0" }));
+  expect(() => readModelChoices(path)).toThrow("not a valid model choice file");
+});
+
+it("offers /models a role, then that role's models with default and, when it can be off, off", () => {
+  const path = file();
+  const roles = rolePicker("/models ", offered, path);
+  expect(roles?.completes).toBe(true);
+  expect(roles?.entries.map((entry) => entry.id)).toEqual(["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage"]);
+  const triage = rolePicker("/models triage ", offered, path)?.entries.map((entry) => entry.id) ?? [];
+  expect(triage[0]).toBe("typesafe:jev-1.13.0");
+  expect(triage.slice(-2)).toEqual(["default", "off"]);
+  const reviewer = rolePicker("/models reviewer ", offered, path)?.entries.map((entry) => entry.id) ?? [];
+  expect(reviewer).not.toContain("typesafe:jev-1.13.0");
+  expect(reviewer).not.toContain("off");
+  expect(rolePicker("/models nobody ", offered, path)).toBeUndefined();
 });

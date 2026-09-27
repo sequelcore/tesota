@@ -13,7 +13,8 @@ const maxBytes = 64 * 1024;
  * The credentials Tesota keeps, and the kinds each provider may hold
  * (decisions 021 and 031): Codex's OAuth login, an Anthropic API key, an
  * OpenRouter key, pasted or issued by its browser sign-in, and one OpenCode
- * key that Zen and Go share, kept in one file. An Anthropic OAuth credential
+ * key that Zen and Go share, kept in one file, and a TypeSafe key for the
+ * answer check's first pass on Jev (decision 035). An Anthropic OAuth credential
  * is never accepted: a claude.ai login belongs to Claude Code, not to Tesota.
  */
 const providers = {
@@ -22,6 +23,7 @@ const providers = {
   openrouter: { types: ["api_key", "issued_key"], file: "openrouter", refused: "Only an OpenRouter key can be stored" },
   opencode: { types: ["api_key"], file: "opencode", refused: "Only an OpenCode API key can be stored" },
   "opencode-go": { types: ["api_key"], file: "opencode", refused: "Only an OpenCode API key can be stored" },
+  typesafe: { types: ["api_key"], file: "typesafe", refused: "Only a TypeSafe API key can be stored" },
 } as const satisfies Record<string, { types: readonly ("oauth" | "api_key" | "issued_key")[]; file: string; refused: string }>;
 type ProviderId = keyof typeof providers;
 
