@@ -158,7 +158,7 @@ a list of the models: type to filter it, use ↑↓ to choose, ← → for a
 reasoning level, and Enter to switch this session's agent. You can also type
 the choice, for example `/model codex:gpt-6-sol@high` or
 `/model claude-code:opus`. On the same
-engine (the `codex` and `anthropic` routes share Pi; `claude-code` is its own)
+engine (every route but `claude-code` shares Pi; `claude-code` is its own)
 the conversation continues. On another engine, and with `/handoff`, which
 keeps the model, the agent starts a **new conversation**: it will not have
 the earlier one, and Tesota says so. With your next request Tesota sends it a

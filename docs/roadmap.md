@@ -13,9 +13,9 @@ otherwise. Each result is checked by the operator's commands, Oxlint and
 LemmaScript on the exact tree, reviewed by read-only reviewers whose findings
 face a refuter and an origin check, and corrected by the agent at most twice
 before the operator applies, rejects or keeps working. Each role can use its
-own model, through the operator's ChatGPT plan, an Anthropic API key or the
-operator's own Claude Code, and the agent can ask read-only explorers and
-consult an advisor, both off by default.
+own model, through the operator's ChatGPT plan, an Anthropic API key, the
+operator's own Claude Code, OpenRouter or OpenCode, and the agent can ask
+read-only explorers and consult an advisor, both off by default.
 
 The complete loop has run on throwaway and evaluation repositories; daily use
 on a real project has not started.
@@ -29,6 +29,7 @@ on a real project has not started.
 | Request record, flags, verifiers with claims, reviewer and lenses, ClaimCheck, refuter, origin check, correction loop with fix validation, assurance journal, forecast, `live:review` | 2026-09-25 | [Assurance](design/assurance.md) |
 | Explorers, models by role, `tesota models`, `live:delegation` | 2026-09-25 | [Agents](design/agents.md) |
 | Claude through an Anthropic API key or the operator's Claude Code | 2026-09-25 | [Agents](design/agents.md#model-routes) |
+| OpenRouter, OpenCode Zen and OpenCode Go as routes, with OpenRouter's browser sign-in | 2026-09-26 | [Agents](design/agents.md#model-routes) |
 | One model-session contract for every engine, with shared and live suites, time limits and token kinds | 2026-09-26 | [Agents](design/agents.md#the-engine-contract) |
 | Responsive newest-first session navigation with precise lifecycle states and a narrow-terminal overlay | 2026-09-26 | [Sessions](design/sessions.md#the-shell) |
 
@@ -54,8 +55,9 @@ project. They are listed here as they are chosen.
   Docker, no administrator rights and no question per command, on Microsoft
   MXC and qualified on each machine; built on Windows 11 24H2 and later
   2026-09-27, with Linux and macOS next.
-  Then routes for OpenRouter and OpenCode Go, after their terms are checked
-  ([research](research/model-access-landscape.md)).
+- **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
+  built 2026-09-26 and not yet exercised live; their models are unmeasured
+  as Tesota's roles.
 
 ### 2. Measurement on public benchmarks
 

@@ -1,6 +1,6 @@
 # Authentication
 
-Tesota reaches models through three routes ([design](../design/agents.md#model-routes)),
+Tesota reaches models through these routes ([design](../design/agents.md#model-routes)),
 each signed in its own way:
 
 | Route | Sign in | Stored by |
@@ -8,6 +8,8 @@ each signed in its own way:
 | `codex` | `tesota auth login`: Pi's Codex OAuth | Tesota, in `~/.tesota/auth/codex.json` |
 | `anthropic` | `tesota auth login anthropic`: your Anthropic API key, typed without being shown | Tesota, in `~/.tesota/auth/anthropic.json`; `ANTHROPIC_API_KEY` also works |
 | `claude-code` | `tesota auth login claude-code`: Claude Code's own sign-in, the same as `claude auth login` | Claude Code, never Tesota |
+| `openrouter` | `tesota auth login openrouter`: sign in with OpenRouter in your browser, or paste a key you have | Tesota, in `~/.tesota/auth/openrouter.json`; `OPENROUTER_API_KEY` also works |
+| `opencode`, `opencode-go` | `tesota auth login opencode`: your OpenCode key, from [opencode.ai/auth](https://opencode.ai/auth), which serves both Zen and Go | Tesota, in `~/.tesota/auth/opencode.json`; `OPENCODE_API_KEY` also works |
 
 `tesota auth status [route]` and `tesota auth logout [route]` work the same
 way; without a route they mean `codex`. For `claude-code`, status shows only
@@ -18,7 +20,26 @@ login, and never accepts one for the `anthropic` route. Tesota does not read or
 copy the credential stores of Codex, Pi or Kiln.
 
 Usage on the `claude-code` route draws on your Claude plan's limits, the same
-pool as your own Claude Code; the `anthropic` route is billed to the API key.
+pool as your own Claude Code; the `anthropic` route is billed to the API key,
+`openrouter` to your OpenRouter credits, `opencode` to your Zen balance, and
+`opencode-go` counts against your Go subscription's limits.
+
+## OpenRouter
+
+`tesota auth login openrouter` opens OpenRouter's own sign-in page in your
+browser, which returns to a server Tesota runs on this computer for the
+sign-in; OpenRouter then issues a key that belongs to your account, and
+Tesota saves it. If the browser is on another computer, paste the address
+it ended on when Tesota asks. Tesota shows only OpenRouter's sign-in
+address, and refuses to continue with any other. The key lasts until you
+revoke it at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys);
+`tesota auth logout openrouter` removes Tesota's copy without revoking it.
+Answer `k` to paste a key you already have instead.
+
+Free models need no credits, and OpenRouter limits them to 50 requests a day
+until you have bought $10 of credit, which may not last one request of the
+agent. Their providers may keep your prompts and code and train on them:
+`tesota models openrouter` marks them, and choosing one warns you.
 
 ## Codex
 
@@ -48,8 +69,11 @@ in again.
 
 [TesotaCredentials](../../src/integrations/tesota-credentials.ts) implements Pi's
 public `CredentialStore` contract for `openai-codex`, which holds only an OAuth
-login, and `anthropic`, which holds only an API key. Pi owns authorization,
-polling, token exchange and refresh; Tesota owns storage and presentation.
+login; `anthropic`, which holds only an API key; `openrouter`, which holds a
+pasted key or the key its sign-in issued, which Pi keeps as an OAuth
+credential without a refresh token; and `opencode` and `opencode-go`, which
+share one file holding one API key. Pi owns authorization, polling, token
+exchange and refresh; Tesota owns storage and presentation.
 
 Credentials are JSON protected by filesystem permissions, not encryption at rest.
 On Windows, storage checks the directory owner and restricts its ACL to that user.
@@ -76,4 +100,5 @@ login again; local locking cannot roll back a remote token rotation.
 Corrupt, oversized, foreign-provider or inaccessible records fail closed. A
 saved login does not grant verification authority, model entitlement or human
 acceptance. [Login](../../src/integrations/codex-login.ts) owns the device-code
-flow; [storage](../../src/integrations/tesota-credentials.ts) owns the files.
+flow and OpenRouter's sign-in; [storage](../../src/integrations/tesota-credentials.ts)
+owns the files.

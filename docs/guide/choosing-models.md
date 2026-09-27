@@ -27,6 +27,9 @@ plan's limits. The route decides who pays:
 | `codex` | Your ChatGPT plan, against its limits |
 | `claude-code` | Whatever your Claude Code is signed in with, usually your Claude plan's limits |
 | `anthropic` | Your Anthropic API key, per token |
+| `openrouter` | Your OpenRouter credits, per token; `:free` models cost nothing |
+| `opencode` | Your OpenCode Zen balance, per token |
+| `opencode-go` | Your OpenCode Go subscription, against its limits |
 
 ## Setups
 
@@ -63,6 +66,16 @@ tesota models refuter codex:gpt-6-sol
 
 **An Anthropic API key.** The same setups work with `anthropic:` models, such
 as `anthropic:claude-opus-5-5`, billed per token to the key.
+
+**OpenRouter or OpenCode, without a ChatGPT or Claude plan.** Both reach many
+labs' models, so the agent and its judges can come from different labs on one
+account. `tesota models openrouter`, `tesota models opencode` and
+`tesota models opencode-go` list the models and prices; OpenRouter writes a
+model `vendor/model`, as in `openrouter:anthropic/claude-opus-5.5`. Tesota
+has not yet measured these routes' models as its roles, so check a choice
+(below) before relying on it. A free model costs nothing but its provider may
+keep your code and train on it, and OpenRouter's 50 free requests a day may
+not last one request of the agent; use free models for code you would share.
 
 `tesota models` shows each role's model, who pays for it and the model's list
 price; `tesota models <role> default` restores Luna, and a new choice applies

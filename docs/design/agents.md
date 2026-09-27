@@ -195,13 +195,17 @@ dismissing real defects.
 
 A **route** is how Tesota reaches a model and whose account pays for it. Every
 role can use any route. Evidence is in the
-[Claude access landscape](../research/claude-access-landscape.md).
+[Claude access landscape](../research/claude-access-landscape.md) and the
+[model access landscape](../research/model-access-landscape.md).
 
 | Route | Engine | Signed in by | Paid through |
 | --- | --- | --- | --- |
 | `codex` | Pi | `tesota auth login`: Pi's Codex OAuth, stored by Tesota | The operator's ChatGPT plan, against its limits |
 | `anthropic` | Pi | `tesota auth login anthropic`: the operator's Anthropic API key, stored by Tesota, or `ANTHROPIC_API_KEY` | The API key, per token |
 | `claude-code` | Claude Code, through the Claude Agent SDK | The operator, in Claude Code itself (`claude`, then `/login`) | Whatever Claude Code is signed in with, usually a Claude plan |
+| `openrouter` | Pi | `tesota auth login openrouter`: OpenRouter's browser sign-in, which issues a key, or a pasted key, stored by Tesota; or `OPENROUTER_API_KEY` | The operator's OpenRouter credits, per token; `:free` models cost nothing |
+| `opencode` | Pi | `tesota auth login opencode`: the operator's OpenCode key, stored by Tesota; or `OPENCODE_API_KEY` | The operator's OpenCode Zen balance, per token |
+| `opencode-go` | Pi | The same OpenCode key | The operator's OpenCode Go subscription, against its limits |
 
 Who pays is the route's (`ROUTE_BILLING`); a model's list price is the
 catalogue's. A list price is what an API key is billed, and on a plan only a
@@ -213,6 +217,40 @@ SDK signs in through Anthropic's own flow, and Tesota only starts it. The
 credential store accepts nothing but an API key for `anthropic`, so Pi's own
 claude.ai login, which presents itself as Claude Code, cannot be used through
 Tesota.
+
+**The gateways** (decision 031) serve many labs' models through Pi's own
+providers. OpenRouter names a model `vendor/model`, with a `:variant` such
+as `:free` (`openrouter:qwen/qwen3.8-27b:free`); only that route accepts the
+slash and the variant. Tesota names itself to them, not Pi: OpenCode asks
+every client for its own user agent and a stable `x-opencode-session` per
+conversation, so the model carries `tesota/<version>` and
+`x-opencode-client: tesota`, and Pi adds the session from the conversation's
+id. Pi's install telemetry is off in Tesota's sessions, since it would list
+Tesota's OpenRouter calls under Pi; Tesota sends no OpenRouter attribution of
+its own, which would list it publicly in OpenRouter's rankings.
+`src/integrations/model-session.ts` owns these headers, and a test reads them
+from the wire.
+
+Not every catalogue model is offered. OpenRouter's `:batch` variants answer
+within a day through its Batch API, too late for any role, and its routers
+(`auto`, `openrouter/fusion`) bill the model they pick, so they are shown
+without a price rather than as free. `tesota models` lists OpenRouter and
+Zen by count, and `tesota models openrouter` lists every model with its price.
+
+**A free model's provider may keep the repository's code.** OpenRouter's free
+models' providers may log and train, Zen's free trials may keep data to
+improve the model, and Meta's contributor models on Zen and Go train on what
+they are sent. `dataNotice` in `src/models-command.ts` marks them; choosing
+one, with `tesota models` or `/model`, warns and never refuses, as for
+judges. Paid models on these gateways keep nothing or 30 days by their
+stated policies.
+
+A judge's lab (decision 028) is the route's on `codex`, `anthropic` and
+`claude-code`, OpenRouter's vendor, and the family an OpenCode model's id
+starts with. The same model on another route is the same model
+(`openrouter:anthropic/claude-opus-5.5` is `anthropic:claude-opus-5-5`); a
+router or a stealth model such as Big Pickle has no known lab, and no
+warning claims it independent or not.
 
 ### The engine contract
 
