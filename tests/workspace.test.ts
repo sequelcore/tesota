@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -123,9 +123,15 @@ it("builds on uncommitted work and applies only the agent's changes", async () =
 
 it("refuses to change a symbolic link and writes nothing", async () => {
   const { source, workspace: initial } = await fixture();
-  await writeFile(join(source, "link"), "src/price.ts");
-  const blob = git(source, ["hash-object", "-w", "link"]).trim();
-  git(source, ["update-index", "--add", "--cacheinfo", `120000,${blob},link`]);
+  if (process.platform === "win32") {
+    // Git for Windows keeps a link as a file holding its target, so the fixture records one that way.
+    await writeFile(join(source, "link"), "src/price.ts");
+    const blob = git(source, ["hash-object", "-w", "link"]).trim();
+    git(source, ["update-index", "--add", "--cacheinfo", `120000,${blob},link`]);
+  } else {
+    await symlink("src/price.ts", join(source, "link"));
+    git(source, ["add", "link"]);
+  }
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Link"]);
   const workspace = await Workspace.create(source, join(initial.directory, "..", "more"));
   await writeFile(join(workspace.checkout, "link"), "../../elsewhere");
