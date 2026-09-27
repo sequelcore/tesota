@@ -4,8 +4,10 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { createModels } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { deviceCodeAuth, deviceCodeTerminalRenderer, loginToCodex } from "./integrations/codex-login.js";
+import { browserSignInAuth, deviceCodeAuth, deviceCodeTerminalRenderer, loginToCodex, loginToOpenRouter,
+  type LoginResult } from "./integrations/codex-login.js";
 import { TesotaCredentials } from "./integrations/tesota-credentials.js";
+import { windowsSystemProgram } from "./windows-system.js";
 
 /**
  * `tesota auth` for each route (decisions 021 and 031). Tesota stores Codex's
@@ -50,10 +52,14 @@ export function claudeCodeStatus(output: string): string {
   return `Claude Code: signed in${typeof method === "string" ? ` (${method})` : ""}. Tesota does not hold this login.`;
 }
 
-/** Read a line from the terminal without showing it; the value is never printed. */
-async function readSecret(prompt: string): Promise<string> {
+/**
+ * Read a line from the terminal, shown as it is typed or, for a secret, not
+ * at all; a secret is never printed. The signal withdraws the question.
+ */
+async function readLine(prompt: string, options: { hidden: boolean; signal?: AbortSignal }): Promise<string> {
   const input = process.stdin;
   if (input.isTTY !== true || typeof input.setRawMode !== "function") throw new Error("An interactive terminal is required");
+  options.signal?.throwIfAborted();
   process.stdout.write(prompt);
   input.setRawMode(true);
   input.resume();
@@ -63,19 +69,39 @@ async function readSecret(prompt: string): Promise<string> {
       input.setRawMode(false);
       input.pause();
       input.off("data", onData);
+      options.signal?.removeEventListener("abort", withdrawn);
       process.stdout.write("\n");
       if (error === undefined) settle(value); else fail(error);
     };
+    const withdrawn = (): void => { finish(new DOMException("cancelled", "AbortError")); };
     const onData = (chunk: Buffer): void => {
       for (const character of chunk.toString("utf8")) {
         if (character === "\r" || character === "\n") { finish(); return; }
         if (character === "\u0003") { finish(new Error("Cancelled")); return; }
-        if (character === "\u007f" || character === "\b") value = value.slice(0, -1);
-        else if (character >= " ") value += character;
+        if (character === "\u007f" || character === "\b") {
+          if (!options.hidden && value.length > 0) process.stdout.write("\b \b");
+          value = value.slice(0, -1);
+        } else if (character >= " ") {
+          value += character;
+          if (!options.hidden) process.stdout.write(character);
+        }
       }
     };
+    options.signal?.addEventListener("abort", withdrawn, { once: true });
     input.on("data", onData);
   });
+}
+
+const readSecret = (prompt: string): Promise<string> => readLine(prompt, { hidden: true });
+
+/** Open an address in the operator's browser; the address is also shown, so a failure here is not an error. */
+function openInBrowser(url: string): void {
+  const [program, args] = process.platform === "win32"
+    ? [windowsSystemProgram("rundll32.exe"), ["url.dll,FileProtocolHandler", url]]
+    : [process.platform === "darwin" ? "open" : "xdg-open", [url]];
+  const child = spawn(program, args, { detached: true, stdio: "ignore", windowsHide: true });
+  child.once("error", () => {});
+  child.unref();
 }
 
 async function codex(action: string, credentials: TesotaCredentials): Promise<number> {
@@ -128,6 +154,27 @@ async function pastedKey(route: "anthropic" | "openrouter" | "opencode", action:
   return 0;
 }
 
+/** Sign in to OpenRouter in the browser, or save a key the operator already has (decision 031). */
+async function openRouter(action: string, credentials: TesotaCredentials): Promise<number> {
+  if (action !== "login") return pastedKey("openrouter", action, credentials);
+  const answer = (await readLine("OpenRouter: sign in with your [b]rowser (default), or paste a [k]ey you have: ",
+    { hidden: false })).trim().toLowerCase();
+  if (answer === "k" || answer === "key") return pastedKey("openrouter", action, credentials);
+  const cancel = new AbortController();
+  let result: LoginResult;
+  try {
+    result = await loginToOpenRouter(browserSignInAuth({ open: openInBrowser, write: (text) => { process.stdout.write(text); },
+      readLine: (prompt, signal) => readLine(prompt, { hidden: true, signal }) }, cancel.signal), credentials);
+  } finally { cancel.abort(); }
+  if (result !== "succeeded") {
+    console.error(result === "timed_out" ? "OpenRouter: the sign-in timed out; nothing was saved." : "OpenRouter: the sign-in did not complete; nothing was saved.");
+    return 1;
+  }
+  console.log("OpenRouter: signed in; the key OpenRouter issued is saved for future Tesota runs. You can revoke it at " +
+    "https://openrouter.ai/settings/keys. Free models' providers may keep your code: tesota models openrouter marks them.");
+  return 0;
+}
+
 async function claudeCode(action: string): Promise<number> {
   if (action === "logout") {
     console.log("Claude Code: Tesota does not hold this login, and signing out here would also sign out your own Claude " +
@@ -159,8 +206,8 @@ export async function runAuthCommand(action: string, route: string = "codex",
     switch (route as AuthRoute) {
       case "codex": return await codex(action, credentials);
       case "claude-code": return await claudeCode(action);
-      case "anthropic": case "openrouter": case "opencode": return await pastedKey(route as "anthropic" | "openrouter" | "opencode",
-        action, credentials);
+      case "openrouter": return await openRouter(action, credentials);
+      case "anthropic": case "opencode": return await pastedKey(route as "anthropic" | "opencode", action, credentials);
     }
   } catch {
     console.error(`${route} authentication operation failed. Credentials were not printed. Check private storage or retry after resolving the failure.`);

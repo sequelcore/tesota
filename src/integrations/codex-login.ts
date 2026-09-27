@@ -1,10 +1,13 @@
-import { createModels, type AuthInteraction, type CredentialStore, type Models } from "@earendil-works/pi-ai";
+import { createModels, type AuthInteraction, type CredentialStore, type Models, type Provider } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 
 /**
- * `tesota auth login`: Codex OAuth through Pi's device-code flow. Login never
- * reaches a model: every inference entry point is replaced before the flow
- * starts, and an attempt fails the login even when something catches it.
+ * `tesota auth login` for the routes that sign in through Pi: Codex OAuth
+ * through Pi's device-code flow, and OpenRouter's browser sign-in (decision
+ * 031), which issues a lasting key. Login never reaches a model: every
+ * inference entry point is replaced before the flow starts, and an attempt
+ * fails the login even when something catches it.
  */
 
 /** A login that has not finished by then is abandoned. */
@@ -13,13 +16,12 @@ export const LOGIN_TIME_LIMIT_MS: number = 180_000;
 export type LoginResult = "succeeded" | "failed" | "timed_out";
 
 class LoginTimeout extends Error {
-  constructor() { super("Codex login timed out"); }
+  constructor() { super("Login timed out"); }
 }
 
-/** A Pi model registry holding only Codex over OAuth, in which any inference attempt calls `deny`. */
-function loginModels(credentials: CredentialStore | undefined, deny: () => never): Models {
+/** A Pi model registry holding only this provider, with OAuth, in which any inference attempt calls `deny`. */
+function loginModels(provider: Provider, credentials: CredentialStore | undefined, deny: () => never): Models {
   const models = createModels(credentials === undefined ? {} : { credentials });
-  const provider = openaiCodexProvider();
   for (const method of ["stream", "streamSimple", "complete", "completeSimple",
     "streamDeferred", "fetchDeferred", "cancelDeferred"] as const satisfies readonly (keyof Models)[]) {
     Object.defineProperty(models, method, { value: deny, writable: false, configurable: false });
@@ -28,11 +30,23 @@ function loginModels(credentials: CredentialStore | undefined, deny: () => never
     Object.defineProperty(provider, method, { value: deny, writable: false, configurable: false });
   }
   models.setProvider(provider);
-  if (models.getProviders().length !== 1 || provider.id !== "openai-codex" ||
-      provider.auth.apiKey !== undefined || provider.auth.oauth === undefined) {
-    throw new Error("Codex login is not isolated to OAuth");
-  }
+  if (models.getProviders().length !== 1 || provider.auth.oauth === undefined) throw new Error("Login is not isolated to OAuth");
   return models;
+}
+
+/** Sign in to one provider and save the credential; succeeds only if no inference was attempted. */
+async function isolatedLogin(provider: Provider, interaction: AuthInteraction, credentials?: CredentialStore): Promise<LoginResult> {
+  let inferenceAttempted = false;
+  try {
+    const models = loginModels(provider, credentials, (): never => {
+      inferenceAttempted = true;
+      throw new Error("Inference is not allowed during login");
+    });
+    await runOAuthLogin((auth) => models.login(provider.id, "oauth", auth), interaction);
+    return inferenceAttempted ? "failed" : "succeeded";
+  } catch (error) {
+    return error instanceof LoginTimeout ? "timed_out" : "failed";
+  }
 }
 
 /**
@@ -79,17 +93,59 @@ export async function runOAuthLogin(login: (interaction: AuthInteraction) => Pro
 
 /** Log in to Codex and save the credential; succeeds only if no inference was attempted. */
 export async function loginToCodex(interaction: AuthInteraction, credentials?: CredentialStore): Promise<LoginResult> {
-  let inferenceAttempted = false;
-  try {
-    const models = loginModels(credentials, (): never => {
-      inferenceAttempted = true;
-      throw new Error("Inference is not allowed during login");
-    });
-    await runOAuthLogin((auth) => models.login("openai-codex", "oauth", auth), interaction);
-    return inferenceAttempted ? "failed" : "succeeded";
-  } catch (error) {
-    return error instanceof LoginTimeout ? "timed_out" : "failed";
-  }
+  const provider = openaiCodexProvider();
+  // Codex is reached only with its OAuth login, never with an API key.
+  if (provider.id !== "openai-codex" || provider.auth.apiKey !== undefined) return "failed";
+  return isolatedLogin(provider, interaction, credentials);
+}
+
+/**
+ * Sign in to OpenRouter in the browser and save the key it issues (decision
+ * 031); succeeds only if no inference was attempted.
+ */
+export async function loginToOpenRouter(interaction: AuthInteraction, credentials?: CredentialStore): Promise<LoginResult> {
+  return isolatedLogin(openrouterProvider(), interaction, credentials);
+}
+
+/** How the browser sign-in reaches the operator: the browser, the terminal, and a line they may paste. */
+export interface BrowserSignInTerminal {
+  readonly open: (url: string) => void;
+  readonly write: (text: string) => void;
+  /** Read a line, which stays hidden; the signal withdraws the question once the browser has returned. */
+  readonly readLine: (prompt: string, signal: AbortSignal) => Promise<string>;
+}
+
+/**
+ * OpenRouter's sign-in, through Pi's PKCE flow: it opens OpenRouter's own
+ * sign-in page, which returns to a server on this computer; when the browser
+ * cannot reach it, such as on another computer, the operator pastes the
+ * address it ended on. Any other address or request fails the sign-in.
+ */
+export function browserSignInAuth(terminal: BrowserSignInTerminal, signal: AbortSignal): AuthInteraction {
+  const cancellation = new AbortController();
+  const combined = AbortSignal.any([signal, cancellation.signal]);
+  const reject = (): never => {
+    const error = new Error("Sign-in interaction unavailable or unexpected");
+    cancellation.abort(error);
+    throw error;
+  };
+  return {
+    signal: combined,
+    prompt: async (prompt) => {
+      if (combined.aborted || prompt.type !== "manual_code") return reject();
+      return terminal.readLine("If the browser is on another computer, paste the address it ended on (not shown): ",
+        prompt.signal === undefined ? combined : AbortSignal.any([combined, prompt.signal]));
+    },
+    notify: (event) => {
+      if (combined.aborted) return reject();
+      if (event.type === "info" || event.type === "progress") return;
+      let address: URL | undefined;
+      try { address = event.type === "auth_url" ? new URL(event.url) : undefined; } catch { address = undefined; }
+      if (address?.origin !== "https://openrouter.ai" || address.pathname !== "/auth") return reject();
+      terminal.write(`Sign in with OpenRouter in your browser. If it does not open, go to:\n${address.href}\n`);
+      try { terminal.open(address.href); } catch { /* the address is shown; the operator can open it */ }
+    },
+  };
 }
 
 /** The only presentation data taken from Pi's device notification. */
