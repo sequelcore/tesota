@@ -199,9 +199,16 @@ workspace to a free drive letter with `subst`, which needs no administrator
 rights: with the command's folder at `T:\`, nothing lies above it. The grant
 names the real folder. Node runs with `--preserve-symlinks` and
 `--preserve-symlinks-main`, so npm does not walk its own install folder. The
-drive is removed when the sandbox is disposed or released, and one left
-behind by a crash is removed when a sandbox for the same workspace is
-prepared. Command output names paths on that drive; Tesota's file tools keep
+drive is removed when the sandbox is disposed or released, and quitting
+waits, up to five seconds, for every session's sandbox to be disposed before
+the process exits. A `subst` drive lasts until the operator signs out,
+whatever becomes of the process that mapped it, so a session that never
+disposes, such as one whose terminal is closed, would leave its drive behind.
+Each drive therefore has a lease in its sandbox folder, naming its letter and
+the process that mapped it, and preparing any sandbox first removes every
+drive whose lease names that letter and whose process is no longer running
+(`src/verification/drive-release-rule.ts`). A drive without a lease is never
+removed: it may be the operator's own. Command output names paths on that drive; Tesota's file tools keep
 the real ones. When the SDK exposes `enumeratePaths` and qualification finds
 the host reports `fs_enumerate`, the workspace keeps its real path instead.
 `bun install` still fails in this sandbox and uses the per-command retry on

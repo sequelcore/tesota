@@ -1,7 +1,7 @@
 import { type ChildProcess, execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { homedir, release } from "node:os";
 import { win32 } from "node:path";
@@ -9,6 +9,7 @@ import { win32 } from "node:path";
 const { join, relative, resolve, sep } = win32;
 import { createConfigFromPolicy, getAvailableToolsPolicy, getPlatformSupport, spawnSandboxFromConfig } from "@microsoft/mxc-sdk";
 import { EgressProxy } from "./egress-proxy.js";
+import { releasesDrive } from "./verification/drive-release-rule.js";
 import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionProvider, PACKAGE_REGISTRY_HOSTS,
   type PrepareOptions, type ProviderReadiness, type RunOptions, type RunResult } from "./execution-environment.js";
 
@@ -81,13 +82,73 @@ async function unmapDrives(target: string): Promise<void> {
   }
 }
 
+/**
+ * Which process mapped a workspace's drive, kept in the workspace's sandbox
+ * folder. A drive lasts until the operator signs out, whatever becomes of the
+ * process that mapped it, so a session that ends without cleaning up, such as
+ * one whose terminal is closed, leaves its drive behind; the lease lets a
+ * later session tell such a drive from one still in use.
+ */
+export interface DriveLease {
+  readonly drive: string;
+  readonly pid: number;
+}
+
+function leaseFile(workspace: string): string {
+  return join(sandboxRoot(workspace), "drive.json");
+}
+
+async function readLease(workspace: string): Promise<DriveLease | undefined> {
+  try {
+    const lease: unknown = JSON.parse(await readFile(leaseFile(workspace), "utf8"));
+    if (typeof lease !== "object" || lease === null) return undefined;
+    const [drive, pid] = [Reflect.get(lease, "drive"), Reflect.get(lease, "pid")];
+    return typeof drive === "string" && Number.isSafeInteger(pid) ? { drive, pid: pid as number } : undefined;
+  } catch { return undefined; }
+}
+
+/** Whether a process is running; one Tesota may not signal counts as running, so its drive is kept. */
+export function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error instanceof Error && Reflect.get(error, "code") === "EPERM";
+  }
+}
+
+/** The drives a session that has ended left behind: leased to their letter by a process no longer running. */
+export async function staleDrives(listing: string, lease: (workspace: string) => Promise<DriveLease | undefined>,
+  running: (pid: number) => boolean): Promise<string[]> {
+  const stale: string[] = [];
+  for (const [letter, mapped] of substitutedDrives(listing)) {
+    const held = await lease(mapped);
+    const leased = held !== undefined && held.drive.toUpperCase() === letter;
+    if (releasesDrive(leased, leased && running(held.pid))) stale.push(letter);
+  }
+  return stale;
+}
+
+/** Remove the drives sessions that have ended left behind, and their leases. */
+async function releaseStaleDrives(): Promise<void> {
+  const listing = (await subst([])).output;
+  const mapped = substitutedDrives(listing);
+  for (const letter of await staleDrives(listing, readLease, isRunning)) {
+    if ((await subst([`${letter}:`, "/d"])).ok) await rm(leaseFile(mapped.get(letter) ?? ""), { force: true });
+  }
+}
+
 /** Map the workspace to a free drive letter, trying from Z down so the operator's own letters stay free. */
 async function mapDrive(workspace: string): Promise<string> {
+  await releaseStaleDrives();
   await unmapDrives(workspace);
   const taken = new Set((substitutedDrives((await subst([])).output)).keys());
   for (const letter of "ZYXWVUTSRQPONMLKJIHGFED") {
     if (taken.has(letter) || existsSync(`${letter}:\\`)) continue;
-    if ((await subst([`${letter}:`, workspace])).ok) return letter;
+    if ((await subst([`${letter}:`, workspace])).ok) {
+      await writeFile(leaseFile(workspace), JSON.stringify({ drive: letter, pid: process.pid } satisfies DriveLease));
+      return letter;
+    }
   }
   throw new Error("No drive letter is free for the native sandbox's workspace");
 }
@@ -156,7 +217,7 @@ function prepare(workspace: string, options: PrepareOptions = {}): Promise<Execu
       run: (command, runOptions) => runCommand(sandbox, command, runOptions),
       dispose: async () => {
         await proxy.close();
-        await subst([`${drive}:`, "/d"]);
+        if ((await subst([`${drive}:`, "/d"])).ok) await rm(leaseFile(workspace), { force: true });
       } };
   })();
 }

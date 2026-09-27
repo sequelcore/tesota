@@ -56,6 +56,9 @@ import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry, type Assur
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
 
+/** How long quitting waits for the sessions' environments to be released, such as the native sandbox's drive. */
+const RELEASE_TIME_LIMIT_MS = 5_000;
+
 /** One review step of a session: what is reviewed, against which candidate, and where its tokens are counted. */
 interface ReviewRun {
   readonly id: string;
@@ -83,7 +86,8 @@ export interface WorkspaceCallbacks {
 export interface TesotaShellCommandDependencies {
   readonly surface: TesotaShellTerminal;
   readonly session: (id: string) => SessionWork;
-  readonly dispose?: () => void;
+  /** Release every session's environment; the process exits only after it settles. */
+  readonly dispose?: () => Promise<void> | void;
   readonly abortActive?: () => void;
   readonly initialSessionId?: string;
   readonly blockedSessionIds?: readonly string[];
@@ -1017,11 +1021,13 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     agentModel,
     sessionSandbox,
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },
-    dispose: () => {
-      for (const state of states.values()) {
-        void state.coding?.then((coding) => { coding.dispose(); }, () => undefined);
-        void state.environment?.then((environment) => environment.dispose(), () => undefined);
-      }
+    dispose: async () => {
+      const released = [...states.values()].map(async (state) => {
+        await state.coding?.then((coding) => { coding.dispose(); }, () => undefined);
+        await state.environment?.then((environment) => environment.dispose(), () => undefined);
+      });
+      // A release that hangs must not keep Tesota from exiting; the next session's sweep removes what it left.
+      await Promise.race([Promise.allSettled(released), new Promise((settle) => { setTimeout(settle, RELEASE_TIME_LIMIT_MS).unref(); })]);
       store.close();
     },
   };
@@ -1078,7 +1084,8 @@ export async function runTesotaShellCommand(
     surface.write(isAbort(error) ? "Tesota session cancelled.\n" : "Tesota session failed.\n");
     return isAbort(error) ? 130 : 1;
   } finally {
-    dependencies.dispose?.();
+    // The caller exits the process on return, which would abandon a release still under way.
+    await dependencies.dispose?.();
     surface.stop();
   }
 }
