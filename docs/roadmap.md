@@ -108,7 +108,9 @@ project. They are listed here as they are chosen.
     that the change added, sends back a check the base fails too.
   - **Safer application.** Stop when any source file changed since the base;
     keep each replaced original; install without replacing; mark a partial
-    effect "recovery required".
+    effect "recovery required". The
+    [application landscape](research/application-landscape.md) compares
+    other harnesses and proposes a model for it.
 
   Two measured runs on the branch are in [findings](findings.md).
 - **Proposal: out-of-scope work and overengineering.** Tesota flags changes to
