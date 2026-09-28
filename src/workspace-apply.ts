@@ -3,8 +3,8 @@ import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, rmdi
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { runRepositoryGit as git, runRepositoryGitBytes as gitBytes } from "./repository-git.js";
-import { applicationAdmission, applicationOutcome, commitStep, type PathContent, restoreStep }
-  from "./verification/application-rule.js";
+import { applicationAdmission, applicationOutcome, commitStep, type JournalStep, type PathContent, restoreStep,
+  type WriteEvidence, writeEvidence } from "./verification/application-rule.js";
 import type { Workspace, WorkspaceChange, WorkspaceSnapshot } from "./workspace.js";
 import { DEFAULT_WORKSPACES_ROOT, isRepositoryPath, isUnchangeableMode } from "./workspace-checkout.js";
 
@@ -242,14 +242,29 @@ async function linkNew(from: string, to: string): Promise<boolean> {
   return true;
 }
 
-/** Put `content` at `target` without ever replacing a file there, written and synced beside it first. */
+/**
+ * Put `content` at `target` without ever replacing a file there, written and
+ * synced beside it first. Once linked, the temporary is kept until the step is
+ * journaled, since it is the evidence that the file at `target` is Tesota's.
+ */
 async function install(target: string, content: Buffer, mode: number, tag: string): Promise<boolean> {
   await mkdir(dirname(target), { recursive: true });
   const temporary = sibling(target, tag, "tmp");
   await rm(temporary, { force: true });
   const file = await open(temporary, "wx", mode);
   try { await file.writeFile(content); await file.sync(); } finally { await file.close(); }
-  try { return await linkNew(temporary, target); } finally { await unlink(temporary).catch(() => {}); }
+  let installed = false;
+  try { installed = await linkNew(temporary, target); return installed; } finally {
+    if (!installed) await unlink(temporary).catch(() => {});
+  }
+}
+
+/** Whether `target` is the very file installed from `temporary`, not merely one with equal content. */
+async function sameFile(target: string, temporary: string): Promise<boolean> {
+  try {
+    const [installed, kept] = await Promise.all([lstat(target, { bigint: true }), lstat(temporary, { bigint: true })]);
+    return installed.isFile() && installed.dev === kept.dev && installed.ino === kept.ino;
+  } catch { return false; }
 }
 
 /**
@@ -300,25 +315,26 @@ class Journal {
 }
 
 /**
- * The journal's states, and the paths the application touched: those whose
- * last step is `intended` or `done`. A path whose attempt left it as it was
- * ends with `untouched`, and one a crash interrupted ends with `intended`, so
- * it counts as touched whatever it holds.
+ * The journal's states, and each path's last step. A path whose attempt left
+ * it as it was ends with `untouched`, and one a crash interrupted ends with
+ * `intended`, which alone does not show that anything was written.
  */
-async function readJournal(directory: string): Promise<{ states: readonly string[]; touched: ReadonlySet<string> }> {
+async function readJournal(directory: string):
+  Promise<{ states: readonly string[]; steps: ReadonlyMap<string, JournalStep> }> {
   const text = await readFile(join(directory, "journal.jsonl"), "utf8").catch(() => "");
   const states: string[] = [];
-  const steps = new Map<string, string>();
+  const steps = new Map<string, JournalStep>();
   for (const line of text.split("\n").filter((entry) => entry.length > 0)) {
     let entry: unknown;
     try { entry = JSON.parse(line); } catch { continue; }
     if (typeof entry !== "object" || entry === null) continue;
     if ("state" in entry && typeof entry.state === "string") states.push(entry.state);
-    if ("step" in entry && "path" in entry && typeof entry.step === "string" && typeof entry.path === "string") {
+    if ("step" in entry && "path" in entry && typeof entry.path === "string" &&
+        (entry.step === "intended" || entry.step === "done" || entry.step === "untouched")) {
       steps.set(entry.path, entry.step);
     }
   }
-  return { states, touched: new Set([...steps].filter(([, step]) => step !== "untouched").map(([path]) => path)) };
+  return { states, steps };
 }
 
 /** Prepared, and not yet applied, undone or resolved: a partial effect may remain. */
@@ -374,18 +390,36 @@ async function loadRecorded(directory: string): Promise<Recorded | undefined> {
 
 function tagFor(id: string, index: number): string { return `${id.slice(0, 8)}-${index}`; }
 
+/** What the journal and each path prove about whether Tesota wrote it (decision 042, proved). */
+async function evidence(recorded: Recorded): Promise<WriteEvidence[]> {
+  const { steps } = await readJournal(recorded.directory);
+  return Promise.all(recorded.writes.map(async (write, index) => {
+    const step = steps.get(write.change.path) ?? "none";
+    const installed = step === "intended" && write.after !== null &&
+      await sameFile(write.target, sibling(write.target, tagFor(recorded.manifest.id, index), "tmp"));
+    return writeEvidence(step, installed, write.after === null);
+  }));
+}
+
+/** Remove the temporaries kept as evidence of installed files, once nothing needs them. */
+async function removeTemporaries(recorded: Recorded): Promise<void> {
+  await Promise.all(recorded.writes.map((write, index) =>
+    rm(sibling(write.target, tagFor(recorded.manifest.id, index), "tmp"), { force: true }).catch(() => {})));
+}
+
 /**
  * Each path's state, and the proved outcome those states amount to. A path the
- * application never touched counts as unaffected whatever it holds, since
- * anything there is someone else's; a touched one only when it holds its
- * original again.
+ * application did not write counts as unaffected whatever it holds, since
+ * anything there is someone else's; a written one, or one whose writer is
+ * unknown, only when it holds its original again.
  */
-async function assess(writes: readonly PlannedWrite[], touched: ReadonlySet<string>):
+async function assess(recorded: Recorded):
   Promise<{ outcome: ReturnType<typeof applicationOutcome>; paths: ApplicationPathState[] }> {
-  const contents = await Promise.all(writes.map(contentAt));
+  const { writes } = recorded;
+  const [contents, written] = await Promise.all([Promise.all(writes.map(contentAt)), evidence(recorded)]);
   const after = contents.filter((content) => content === "after").length;
   const unaffected = contents.filter((content, index) => content === "before" ||
-    !touched.has(writes[index]?.change.path ?? "")).length;
+    written[index] === "not_written").length;
   const names = { before: "original", after: "applied", other: "changed" } as const;
   return {
     outcome: writes.length === 0 ? "applied" : applicationOutcome(writes.length, after, unaffected),
@@ -403,20 +437,23 @@ async function commit(id: string, writes: readonly PlannedWrite[], journal: Jour
     const exchanged = await exchange(write.target, write.before, write.after, write.mode, tagFor(id, index));
     if (exchanged === "partial") return write.change.path;
     await journal.write({ step: exchanged, path: write.change.path });
+    await rm(sibling(write.target, tagFor(id, index), "tmp"), { force: true });
     if (exchanged === "untouched") return write.change.path;
   }
   return undefined;
 }
 
 /**
- * Put each original back where the journal records a write by Tesota and the
- * path still holds exactly what it wrote, newest first.
+ * Put each original back where the evidence shows Tesota's write and the path
+ * still holds exactly what it wrote, newest first.
  */
 async function restore(recorded: Recorded): Promise<void> {
-  const { touched } = await readJournal(recorded.directory);
+  const written = await evidence(recorded);
   for (const [index, write] of [...recorded.writes.entries()].reverse()) {
-    if (restoreStep(touched.has(write.change.path), await contentAt(write)) !== "restore") continue;
-    await exchange(write.target, write.after, write.before, write.mode, tagFor(recorded.manifest.id, index)).catch(() => "partial");
+    if (restoreStep(written[index] ?? "unknown", await contentAt(write)) !== "restore") continue;
+    const tag = tagFor(recorded.manifest.id, index);
+    await exchange(write.target, write.after, write.before, write.mode, tag).catch(() => "partial");
+    await rm(sibling(write.target, tag, "tmp"), { force: true }).catch(() => {});
   }
   for (const directory of recorded.manifest.directories) {
     await rmdir(join(recorded.manifest.source, directory)).catch(() => {});
@@ -460,7 +497,7 @@ export async function unfinishedApplications(source: string, root: string = DEFA
     const recorded = await loadRecorded(directory);
     found.push({ id: manifest.id, startedAt: manifest.startedAt, directory,
       paths: recorded === undefined ? manifest.paths.map((path) => ({ path: path.path, state: "unknown" as const }))
-        : (await assess(recorded.writes, journal.touched)).paths });
+        : (await assess(recorded)).paths });
   }
   return found.toSorted((left, right) => left.startedAt.localeCompare(right.startedAt));
 }
@@ -488,13 +525,12 @@ async function pathsOutsideSource(recorded: Recorded): Promise<string[]> {
 /**
  * After a stop that left a file moved aside, such as a crash between moving it
  * and installing its replacement, put it back where its name is still free,
- * never over a file there; a leftover temporary file is removed.
+ * never over a file there. Temporaries stay until the application settles,
+ * as the evidence of which files Tesota installed.
  */
 async function returnHeld(recorded: Recorded): Promise<void> {
   for (const [index, write] of recorded.writes.entries()) {
-    const tag = tagFor(recorded.manifest.id, index);
-    await rm(sibling(write.target, tag, "tmp"), { force: true }).catch(() => {});
-    const hold = sibling(write.target, tag, "hold");
+    const hold = sibling(write.target, tagFor(recorded.manifest.id, index), "hold");
     if (await linkNew(hold, write.target).catch(() => false)) await unlink(hold).catch(() => {});
   }
 }
@@ -528,9 +564,12 @@ export async function recoverApplication(source: string, id: string, action: "un
     await returnHeld(recorded);
     if (action === "undo") await restore(recorded);
     else await commit(id, recorded.writes, journal);
-    const assessed = await assess(recorded.writes, (await readJournal(recorded.directory)).touched);
+    const assessed = await assess(recorded);
     const settled = assessed.outcome === (action === "undo" ? "not_applied" : "applied");
-    if (settled) await journal.write({ state: "resolved", how: action });
+    if (settled) {
+      await journal.write({ state: "resolved", how: action });
+      await removeTemporaries(recorded);
+    }
     return { settled, paths: assessed.paths };
   } finally { await journal.close(); }
 }
@@ -558,11 +597,13 @@ const unknownPath = "";
 async function run(recorded: Recorded, journal: Journal): Promise<void> {
   const { manifest, writes } = recorded;
   const stopped = await commit(manifest.id, writes, journal).catch(() => unknownPath);
-  let assessed = await assess(writes, (await readJournal(recorded.directory)).touched);
+  let assessed = await assess(recorded);
   if (stopped !== undefined || assessed.outcome !== "applied") {
     await restore(recorded);
-    assessed = await assess(writes, (await readJournal(recorded.directory)).touched);
+    assessed = await assess(recorded);
   }
+  // Kept only while recovery may still need to tell Tesota's installed files from others.
+  if (assessed.outcome !== "recovery_required") await removeTemporaries(recorded);
   if (assessed.outcome === "not_applied") {
     await journal.write({ state: "rolled_back" });
     throw new ApplyRolledBackError("a file changed or could not be replaced while applying, so everything " +

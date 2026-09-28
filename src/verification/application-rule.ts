@@ -44,25 +44,54 @@ export function commitStep(content: PathContent): CommitStep {
 }
 
 /**
- * Decision 042's step back to the original for one path, when an application
- * is undone: Tesota puts the original back only where its journal records a
- * write to the path and the path still holds exactly what it wrote. Equal
- * content alone is not Tesota's write: someone else may have put the same
- * bytes at a path Tesota never wrote, and that file is left where it is.
+ * What an application's journal and the path itself prove about whether
+ * Tesota wrote the path: `written`, `not_written`, or `unknown` when an
+ * interruption left only an intention and nothing shows whose file is there.
  */
-//@ ensures \result === "restore" <==> (touched && content === "after")
-//@ ensures \result === "done" <==> (!touched || content === "before")
-//@ ensures \result === "stop" <==> (touched && content === "other")
-export function restoreStep(touched: boolean, content: PathContent): RestoreStep {
-  if (!touched) return "done";
-  if (content === "after") return "restore";
-  return content === "before" ? "done" : "stop";
+export type WriteEvidence = "written" | "not_written" | "unknown";
+/** A path's last journal step, `none` when the application never reached it. */
+export type JournalStep = "none" | "intended" | "done" | "untouched";
+
+/**
+ * Decision 042's evidence of a write. A step journaled `done` is Tesota's
+ * write, and one never attempted or journaled `untouched` is not. An
+ * `intended` step records only that a write was about to start: it counts as
+ * one only when the file at the path is the very file Tesota installed (the
+ * same file as the temporary it kept for that write), or when the step
+ * removed the path, which undoing can only reverse by creating the original
+ * where the name is free, so no one else's file is ever removed on it.
+ * Otherwise whose file is there stays unknown, since equal content alone is
+ * not Tesota's write.
+ */
+//@ ensures \result === "written" <==> (step === "done" || step === "intended" && (installed || removal))
+//@ ensures \result === "not_written" <==> (step === "none" || step === "untouched")
+//@ ensures \result === "unknown" <==> (step === "intended" && !installed && !removal)
+export function writeEvidence(step: JournalStep, installed: boolean, removal: boolean): WriteEvidence {
+  if (step === "done") return "written";
+  if (step === "none" || step === "untouched") return "not_written";
+  return installed || removal ? "written" : "unknown";
+}
+
+/**
+ * Decision 042's step back to the original for one path, when an application
+ * is undone: Tesota puts the original back only where the evidence shows its
+ * own write and the path still holds exactly what it wrote. A path Tesota did
+ * not write is left whatever it holds, and one whose writer is unknown is
+ * left unless it holds its original, so the application stays unfinished
+ * rather than removing a file that may be someone else's.
+ */
+//@ ensures \result === "restore" <==> (evidence === "written" && content === "after")
+//@ ensures \result === "done" <==> (evidence === "not_written" || content === "before")
+//@ ensures \result === "stop" <==> (evidence !== "not_written" && content !== "before" && !(evidence === "written" && content === "after"))
+export function restoreStep(evidence: WriteEvidence, content: PathContent): RestoreStep {
+  if (evidence === "not_written" || content === "before") return "done";
+  return evidence === "written" && content === "after" ? "restore" : "stop";
 }
 
 /**
  * Decision 042's outcome of an application of `paths` changed paths, each read
  * back: `after` hold the reviewed content, and `unaffected` hold their
- * original or were never touched by the application, whatever someone else
+ * original or were never written by the application, whatever someone else
  * put there, even the reviewed content itself. Applied only when every path
  * holds the reviewed content, not applied only when otherwise no path keeps
  * an effect of the application, and anything between is a partial effect

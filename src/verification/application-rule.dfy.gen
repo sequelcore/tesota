@@ -10,6 +10,10 @@ datatype RestoreStep = done | stop | restore
 
 datatype ApplicationOutcome = applied | not_applied | recovery_required
 
+datatype WriteEvidence = written | not_written | unknown
+
+datatype JournalStep = done | none | intended | untouched
+
 function applicationAdmission(unfinished: bool, reviewCurrent: bool, sourceUnchanged: bool): ApplicationAdmission
 {
   if unfinished then
@@ -50,24 +54,42 @@ lemma commitStep_ensures(content: PathContent)
 {
 }
 
-function restoreStep(touched: bool, content: PathContent): RestoreStep
+function writeEvidence(step: JournalStep, installed: bool, removal: bool): WriteEvidence
 {
-  if !(touched) then
-    RestoreStep.done
+  if step.done? then
+    WriteEvidence.written
   else
-    if content.after? then
-      RestoreStep.restore
+    if (step.none? || step.untouched?) then
+      WriteEvidence.not_written
     else
-      if content.before? then
-        RestoreStep.done
+      if (installed || removal) then
+        WriteEvidence.written
       else
-        RestoreStep.stop
+        WriteEvidence.unknown
 }
 
-lemma restoreStep_ensures(touched: bool, content: PathContent)
-  ensures (restoreStep(touched, content).restore? <==> (touched && content.after?))
-  ensures (restoreStep(touched, content).done? <==> (!(touched) || content.before?))
-  ensures (restoreStep(touched, content).stop? <==> (touched && content.other?))
+lemma writeEvidence_ensures(step: JournalStep, installed: bool, removal: bool)
+  ensures (writeEvidence(step, installed, removal).written? <==> (step.done? || (step.intended? && (installed || removal))))
+  ensures (writeEvidence(step, installed, removal).not_written? <==> (step.none? || step.untouched?))
+  ensures (writeEvidence(step, installed, removal).unknown? <==> ((step.intended? && !(installed)) && !(removal)))
+{
+}
+
+function restoreStep(evidence: WriteEvidence, content: PathContent): RestoreStep
+{
+  if (evidence.not_written? || content.before?) then
+    RestoreStep.done
+  else
+    if (evidence.written? && content.after?) then
+      RestoreStep.restore
+    else
+      RestoreStep.stop
+}
+
+lemma restoreStep_ensures(evidence: WriteEvidence, content: PathContent)
+  ensures (restoreStep(evidence, content).restore? <==> (evidence.written? && content.after?))
+  ensures (restoreStep(evidence, content).done? <==> (evidence.not_written? || content.before?))
+  ensures (restoreStep(evidence, content).stop? <==> (((!evidence.not_written?) && (!content.before?)) && !((evidence.written? && content.after?))))
 {
 }
 

@@ -241,6 +241,46 @@ it("writes nothing when a recorded path leads outside the repository by the time
   expect((await readdir(outside)).toSorted()).toEqual(["price.ts"]);
 });
 
+it("undoes an install a crash interrupted before it was journaled, as its own file", async () => {
+  const { source, workspace, applications } = await fixture();
+  let reached: () => void = () => {};
+  const crashed = new Promise<void>((resolve) => { reached = resolve; });
+  vi.mocked(link).mockImplementation(async (from, to) => {
+    await actual.link(from, to);
+    if (ending(to, "tax.ts")) { reached(); await new Promise(() => {}); }
+  });
+  void applyWorkspace(workspace, workspace.snapshot());
+  await crashed;
+  vi.mocked(link).mockImplementation(actual.link);
+  const [unfinished] = await unfinishedApplications(source, applications);
+  await expect(recoverApplication(source, unfinished?.id ?? "", "undo", applications)).resolves.toMatchObject({ settled: true });
+  await expectOriginal(source);
+  expect(existsSync(join(source, "src/tax.ts"))).toBe(false);
+  expect(await leftovers(source)).toEqual([]);
+});
+
+it("keeps a file someone else created with the reviewed content while a crash interrupted its install", async () => {
+  const { source, workspace, applications } = await fixture();
+  let reached: () => void = () => {};
+  const crashed = new Promise<void>((resolve) => { reached = resolve; });
+  vi.mocked(link).mockImplementation(async (from, to) => {
+    if (ending(to, "tax.ts")) {
+      await writeFile(to, "export const tax = 0.2;\n");
+      reached();
+      await new Promise(() => {});
+    }
+    await actual.link(from, to);
+  });
+  void applyWorkspace(workspace, workspace.snapshot());
+  await crashed;
+  vi.mocked(link).mockImplementation(actual.link);
+  const [unfinished] = await unfinishedApplications(source, applications);
+  await expect(recoverApplication(source, unfinished?.id ?? "", "undo", applications)).resolves.toMatchObject({ settled: false });
+  await expectOriginal(source);
+  expect(await read(join(source, "src/tax.ts"))).toBe("export const tax = 0.2;\n");
+  await expect(unfinishedApplications(source, applications)).resolves.toHaveLength(1);
+});
+
 it("finishes an application a crash interrupted, putting back the file it had moved aside", async () => {
   const { source, workspace, applications } = await fixture();
   let reached: () => void = () => {};

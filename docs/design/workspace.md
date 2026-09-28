@@ -112,7 +112,13 @@ back only where the journal records a write by Tesota and the path still
 holds exactly what Tesota wrote, by the same move-aside step, so an edit
 someone made in the meantime is never replaced. Equal content alone is not
 Tesota's write: a file someone else created with the reviewed content, at a
-path Tesota never wrote, stays. A path application never touched counts as
+path Tesota never wrote, stays. The journal records each step as intended
+before it starts, and done or untouched after. After an interruption, an
+intended step counts as Tesota's write only when the file at the path is the
+very file it installed, shown by the temporary Tesota keeps linked to it
+until the step is journaled, or when the step removed the path. Otherwise
+whose file is there is unknown: it is left in place and the application
+stays unfinished (proved). A path application never wrote counts as
 unaffected, whatever someone put there.
 
 **Recovery.** A partial effect Tesota cannot undo, or one left by a process
