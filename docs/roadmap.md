@@ -98,10 +98,10 @@ project. They are listed here as they are chosen.
   2026-09-25 left unmerged, about 130 commits behind `dev`, whose decisions
   022 and 023 collide with `dev`'s. Each is to be rebuilt on `dev` with its
   tests, not merged:
-  - **Failed checks compared with the base.** When an approved check fails,
-    run it on the frozen base too; only a failure the change caused goes
-    back to the agent automatically, and the base stays frozen through one
-    review cycle.
+  - **Failed checks compared with the base** (decision 039,
+    [design](design/assurance.md#verifiers)): built 2026-09-28; a failed
+    check runs again on the base, only a failure the change caused goes back
+    to the agent, and a correction round keeps the base.
   - **Safer application.** Stop when any source file changed since the base;
     keep each replaced original; install without replacing; mark a partial
     effect "recovery required".

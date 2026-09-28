@@ -3,6 +3,7 @@ import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { numberedDiff } from "../diff-lines.js";
 import type { Finding, Obligation, ReviewInput, ReviewReport, Reviewer } from "../review.js";
+import { describeBase } from "../workspace-checks.js";
 import { type ModelAccess, startModelSession } from "./model-session.js";
 import { type AgentActivity, type LimitedTurnResult, REVIEW_TIME_LIMIT_MS, runWithTimeLimit } from "./model-session-contract.js";
 import { readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
@@ -140,7 +141,8 @@ function checkLine(check: ReviewInput["checks"][number]): string {
   const output = check.outcome === "passed" || check.output.trim().length === 0 ? "" :
     `\n  last output:\n${check.output.trimEnd().slice(-checkOutputLimit).replace(/^/gmu, "    ")}`;
   return `- ${check.command}: ${check.outcome.replace("_", " ")}${exit}\n  A pass establishes: ${check.claim}\n` +
-    `  It does not establish: ${check.limits}${output}`;
+    `  It does not establish: ${check.limits}` +
+    `${check.base === undefined ? "" : `\n  On the base: ${describeBase(check.base)}`}${output}`;
 }
 
 function claimedStepsText(input: ReviewInput): string[] {

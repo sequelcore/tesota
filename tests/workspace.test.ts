@@ -164,6 +164,65 @@ it("binds check outcomes to the reviewed tree", async () => {
   expect(changing.map((result) => result.outcome)).toEqual(["changed_files"]);
 });
 
+it("runs a failing check again on the base, and sends back only a failure the candidate brought", async () => {
+  const { workspace } = await fixture();
+  await mkdir(join(workspace.checkout, "node_modules"));
+  await writeFile(join(workspace.checkout, "node_modules/dep.js"), "installed\n");
+  await changeEverything(workspace);
+  const snapshot = workspace.snapshot();
+  const environment = await hostProvider.prepare(workspace.checkout);
+  const commands: string[] = [];
+  const counted = { ...environment, run: (command: string, options: Parameters<typeof environment.run>[1]) => {
+    commands.push(command);
+    return environment.run(command, options);
+  } };
+  // Passes only on the base: the base's files, and the ignored dependencies, in place of the candidate's.
+  const onBase = "node -e \"const fs = require('fs'); process.exit(fs.existsSync('src/old.ts') && !fs.existsSync('src/tax.ts') && " +
+    "fs.readFileSync('src/price.ts', 'utf8').includes('= 1;') && fs.existsSync('node_modules/dep.js') ? 0 : 1)\"";
+  const broken = "node -e \"process.exit(4)\"";
+  const baseRuns = new Map();
+  const results = await runChecks(counted, workspace, snapshot, [onBase, broken, "node -e \"process.exit(0)\""],
+    new AbortController().signal, { baseRuns });
+  expect(results.map((result) => [result.outcome, result.base])).toEqual([
+    ["failed", { outcome: "passed", exitCode: 0, origin: "introduced" }],
+    ["failed", { outcome: "failed", exitCode: 4, origin: "preexisting" }],
+    ["passed", undefined],
+  ]);
+  expect(workspace.snapshot().tree).toBe(snapshot.tree);
+  expect(await readFile(join(workspace.checkout, "src/tax.ts"), "utf8")).toBe("export const tax = 0.2;\n");
+  expect(existsSync(join(workspace.checkout, "src/old.ts"))).toBe(false);
+  expect(existsSync(join(workspace.checkout, "node_modules/dep.js"))).toBe(true);
+  // A correction round on the same base does not pay for the base again.
+  commands.length = 0;
+  await runChecks(counted, workspace, snapshot, [onBase, broken], new AbortController().signal, { baseRuns });
+  expect(commands).toEqual([onBase, broken]);
+});
+
+it("leaves the cause unknown when the base run changes files, and removes what it added", async () => {
+  const { workspace } = await fixture();
+  await changeEverything(workspace);
+  const snapshot = workspace.snapshot();
+  const environment = await hostProvider.prepare(workspace.checkout);
+  const writes = "node -e \"const fs = require('fs'); if (fs.existsSync('src/old.ts')) fs.writeFileSync('stray.txt', 'x'); process.exit(1)\"";
+  const [result] = await runChecks(environment, workspace, snapshot, [writes], new AbortController().signal);
+  expect(result?.base).toEqual({ outcome: "changed_files", exitCode: 1, origin: "unknown" });
+  expect(existsSync(join(workspace.checkout, "stray.txt"))).toBe(false);
+  expect(workspace.snapshot().tree).toBe(snapshot.tree);
+});
+
+it("restores a candidate that a stopped run on the base left pinned", async () => {
+  const { workspace } = await fixture();
+  await changeEverything(workspace);
+  const snapshot = workspace.snapshot();
+  // What Tesota leaves if it stops while the checkout holds the base.
+  git(workspace.checkout, ["update-ref", "refs/tesota/candidate", snapshot.tree]);
+  git(workspace.checkout, ["read-tree", "--reset", "-u", "HEAD"]);
+  expect(existsSync(join(workspace.checkout, "src/tax.ts"))).toBe(false);
+  const reopened = await Workspace.open(workspace.directory);
+  expect(reopened.snapshot().tree).toBe(snapshot.tree);
+  expect(() => git(reopened.checkout, ["rev-parse", "--verify", "--quiet", "refs/tesota/candidate"])).toThrow();
+});
+
 it("suggests the repository's own check script", async () => {
   const { workspace } = await fixture();
   expect(suggestChecks(workspace.checkout)).toEqual([]);

@@ -43,7 +43,9 @@ a scanned PDF or a large spreadsheet can be brought into the copy.
 
 ## Keeping it current
 
-Before each request the workspace takes the source's newer state the way Git
+Before each operator request, never before a correction round, which keeps
+the base its candidate was checked on ([assurance](assurance.md#correction)),
+the workspace takes the source's newer state the way Git
 rebases: the captured source becomes the new base, and pending work is carried
 onto it with a three-way cherry-pick. If pending work conflicts with the newer
 source, nothing changes and the operator is told which files; the agent is

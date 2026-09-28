@@ -18,12 +18,52 @@ vi.mock("../src/model-roles.js", async (importOriginal) => {
   return { ...actual, readModelChoices: () => actual.readModelChoices(join(tmpdir(), "tesota-test-no-model-choices.json")) };
 });
 
+it("brings the operator's newer repository state to their request, never to a correction round", async () => {
+  const record: ShellSessionRecord = { id: "session", title: "Session 1", engineId: "engine", workspace: null,
+    entries: [], inspections: [], interrupted: false, blocked: false,
+    retiredEngineIds: [], titleSource: "counter" };
+  const store = { list: () => [record], append: () => {},
+    setWorkspace: (_id: string, directory: string) => { record.workspace = directory; },
+    setAgentModel: () => {}, allowedNetwork: () => [], markActive: () => {}, close: () => {} } as unknown as ShellSessionStore;
+  mocks.openStore.mockReturnValue(store);
+  const environment = { provider: "test", shell: "posix", guarantees: hostProvider.guarantees, preparation: [],
+    run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
+  const update = vi.fn(async () => ({ status: "updated" as const, changes: [{ status: "modified" as const, path: "src/cli.ts" }] }));
+  const workspace = { directory: "workspace", checkout: "workspace/repo", included: [], update,
+    snapshot: () => ({ tree: "t", changes: [] }), requests: async () => [], recordRequest: vi.fn(async () => {}) } as unknown as Workspace;
+  const run = vi.fn(async () => ({ status: "completed" as const, reply: "ok" }));
+  const coding = { run, dispose: vi.fn(), resumed: false } as unknown as CodingSession;
+  const spies = [
+    vi.spyOn(Workspace, "create").mockResolvedValue(workspace),
+    vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}) } as unknown as ModelRuntime),
+    vi.spyOn(SessionManager, "findById").mockReturnValue(undefined),
+    vi.spyOn(SessionManager, "create").mockReturnValue({} as SessionManager),
+    vi.spyOn(CodingSession, "create").mockResolvedValue(coding),
+  ];
+  const mode = { commands: "host", provider: { ...hostProvider, name: "test", prepare: async () => environment },
+    missing: [] } satisfies SessionExecution;
+  const shell = createProcessTesotaShell("source", "tesota-dark", async () => mode, "session");
+  try {
+    await shell.session("session").work("Fix the retry limit");
+    expect(run).toHaveBeenLastCalledWith(expect.stringContaining("the workspace now includes them:\n  modified src/cli.ts"),
+      expect.any(AbortSignal));
+    // A correction's review compares it with the round before; the operator's edits must not appear in it as the agent's.
+    await shell.session("session").work("Tesota review of your changes", "tesota");
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenLastCalledWith("Tesota review of your changes", expect.any(AbortSignal));
+  } finally {
+    shell.dispose?.();
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
 it.each([
   { outcome: "done", expected: "hello" },
   { outcome: "failed", expected: "Tesota context (not written by the user):\nNote: Preparing the sandbox stopped at \"Install dependencies\"; later steps did not run.\ninstall failed\n\nUser request:\nhello" },
 ] as const)("keeps $outcome preparation distinct from the user request", async ({ outcome, expected }) => {
   const record: ShellSessionRecord = { id: "session", title: "Session 1", engineId: "engine", workspace: null,
-    entries: [], inspections: [], interrupted: false, blocked: false };
+    entries: [], inspections: [], interrupted: false, blocked: false,
+    retiredEngineIds: [], titleSource: "counter" };
   const store = { list: () => [record], append: () => {},
     setWorkspace: (_id: string, directory: string) => { record.workspace = directory; },
     setAgentModel: () => {}, allowedNetwork: () => [], markActive: () => {}, close: () => {} } as unknown as ShellSessionStore;

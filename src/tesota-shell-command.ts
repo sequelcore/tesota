@@ -43,7 +43,7 @@ import type { TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { UnsupportedSourceChange } from "./source-snapshot.js";
 import { Workspace, type WorkspaceSnapshot, type WorkspaceUpdate } from "./workspace.js";
 import { applyWorkspace, ApplyConflictError, ApplyUncertainError } from "./workspace-apply.js";
-import { runChecks, suggestChecks } from "./workspace-checks.js";
+import { type BaseRuns, runChecks, suggestChecks } from "./workspace-checks.js";
 import { flagVerificationChanges } from "./verification-changes.js";
 import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
 import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
@@ -220,6 +220,8 @@ class SessionState {
   readonly webAllowed: Set<string> = new Set();
   readonly webDenied: Set<string> = new Set();
   reviewed: WorkspaceSnapshot | undefined;
+  /** How failing checks ended on the base, so correction rounds on the same base do not run it again (decision 039). */
+  readonly baseRuns: BaseRuns = new Map();
   /** Context the agent needs with the next request, such as a rejected change. */
   note: string | undefined;
   /** The agent's last reply, which the answer check reads when a turn changes no files (decision 034). */
@@ -962,7 +964,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       try {
         const coding = await codingFor(id, signal);
         const state = stateFor(id);
-        const notes = [state.note, await updateFromSource(id)].filter((note) => note !== undefined);
+        // A correction keeps the base the candidate was checked on, so its review sees only the agent's own
+        // correction; the operator's newer repository state arrives with their next request (decision 039).
+        const notes = [state.note, origin === "operator" ? await updateFromSource(id) : undefined]
+          .filter((note) => note !== undefined);
         // A new request makes any earlier review stale, whether or not the work finishes.
         stateFor(id).reviewed = undefined;
         if (origin === "operator") {
@@ -997,7 +1002,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       state.reviewed = undefined;
       const snapshot = workspace.snapshot();
       const read = (revision: string, path: string): string | undefined => workspace.contentAt(revision, path);
-      const checks = [...await runChecks(await environmentFor(id), workspace, snapshot, commands, signal),
+      const checks = [...await runChecks(await environmentFor(id), workspace, snapshot, commands, signal,
+        { baseRuns: state.baseRuns }),
         ...await runOxlintVerifier(snapshot, read), ...await runLemmaScriptVerifier(snapshot, read, signal)];
       if (signal.aborted) return { status: "cancelled" };
       const flags = flagVerificationChanges(snapshot, read);

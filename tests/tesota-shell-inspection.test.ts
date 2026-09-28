@@ -91,3 +91,11 @@ it("nests a check's claim, limits and output under it, with the output behind a 
     "  ✗ failed (exit 1): bun run check\n    Claim: exits 0\n    Limits: only what it tests\n" +
     "    │  FAIL tests/a.test.ts\n    │ \n    │  expected 1\n\nReview");
 });
+
+it("says how a failing check ended without the changes, beside it in the summary and the record", () => {
+  const failed = { ...check, outcome: "failed" as const, exitCode: 1, output: "",
+    base: { outcome: "failed" as const, exitCode: 1, origin: "preexisting" as const } };
+  const review = inspectReview({ snapshot, checks: [failed], requests: [], flags: [], reviews: [] });
+  expect(review.summary).toContain("  ✗ bun run check (failed, exit 1)\n      also failed (exit 1) without these changes, so it does not come from them");
+  expect(review.detail).toContain("    Limits: only what it tests\n    Base: also failed (exit 1) without these changes, so it does not come from them");
+});

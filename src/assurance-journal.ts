@@ -23,7 +23,7 @@ export type AssuranceDecision = "applied" | "rejected" | "application_conflict" 
 export type AssuranceEntry =
   | Readonly<{ kind: "review"; at: string; base: string; tree: string; requests: readonly string[];
       checks: readonly Readonly<Pick<CheckResult, "verifier" | "command" | "claim" | "limits" | "environment" | "outcome" |
-        "exitCode" | "output">>[];
+        "exitCode" | "output" | "base">>[];
       flags: readonly VerificationChange[]; reviews: readonly ReviewReport[]; depth?: DepthDecision;
       measurement?: ReviewMeasurement }>
   | Readonly<{ kind: "decision"; at: string; tree: string; decision: AssuranceDecision }>;
@@ -35,7 +35,7 @@ export function reviewEntry(snapshot: WorkspaceSnapshot, requests: readonly stri
     ...(depth === undefined ? {} : { depth }), ...(measurement === undefined ? {} : { measurement }),
     checks: checks.map((check) => ({ verifier: check.verifier, command: check.command, claim: check.claim,
       limits: check.limits, environment: check.environment, outcome: check.outcome, exitCode: check.exitCode,
-      output: check.output.slice(-outputTail) })) };
+      ...(check.base === undefined ? {} : { base: check.base }), output: check.output.slice(-outputTail) })) };
 }
 
 export function decisionEntry(tree: string, decision: AssuranceDecision): AssuranceEntry {
