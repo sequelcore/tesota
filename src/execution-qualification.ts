@@ -20,7 +20,7 @@ import { qualifiedFilesystem, qualifiedNetwork } from "./verification/sandbox-qu
  */
 
 /** Raised when a control changes, so every machine qualifies again. */
-export const CONTROLS_VERSION = 1;
+export const CONTROLS_VERSION = 2;
 const FAILED_RETRY_MS = 24 * 60 * 60 * 1_000;
 export const DEFAULT_QUALIFICATION_FILE: string = join(homedir(), ".tesota", "qualification.json");
 

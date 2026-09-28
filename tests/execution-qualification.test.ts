@@ -35,11 +35,15 @@ const result = (control: ControlResult["control"], passed: boolean): ControlResu
 const processes = ["workspace_read_write", "package_script", "cancel_children", "time_limit"] as const;
 
 it("keeps a claim only when the controls behind it, and every environment's own, passed", () => {
-  const all = [...processes, "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "registry_reachable"] as const;
+  const all = [...processes, "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "network_direct",
+    "registry_reachable"] as const;
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, true)))).toEqual(sandbox);
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "outside_read"))))
     .toEqual({ ...sandbox, filesystem: "host" });
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "registry_reachable"))))
+    .toEqual({ ...sandbox, network: "open" });
+  // A proxy that refuses what is not allowed confines nothing when a client can go around it.
+  expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "network_direct"))))
     .toEqual({ ...sandbox, network: "open" });
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "time_limit"))))
     .toEqual({ ...sandbox, filesystem: "host", network: "open" });

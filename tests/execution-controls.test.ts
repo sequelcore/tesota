@@ -41,7 +41,7 @@ const sandbox: EnvironmentGuarantees = { filesystem: "workspace", network: "allo
 it("chooses the controls a provider's claimed guarantees call for", () => {
   expect(controlsFor(hostProvider.guarantees)).toEqual(["workspace_read_write", "package_script", "cancel_children", "time_limit"]);
   expect(controlsFor(sandbox)).toEqual(["workspace_read_write", "package_script", "cancel_children", "time_limit",
-    "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "registry_reachable"]);
+    "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "network_direct", "registry_reachable"]);
 });
 
 it("writes each probe in the environment's own shell", async () => {
@@ -66,7 +66,7 @@ it("passes the host on what every environment must do, and fails it on every con
     const passed = Object.fromEntries(results.map((result) => [result.control, result.passed]));
     expect(passed).toEqual({ workspace_read_write: true, package_script: true, cancel_children: true, time_limit: true,
       outside_read: false, outside_write: false, beside_read: false, host_variables: false, network_refused: false,
-      registry_reachable: true });
+      network_direct: false, registry_reachable: true });
     for (const result of results) expect(result.detail.length).toBeGreaterThan(0);
   } finally { await environment.dispose(); }
 }, 120_000);
