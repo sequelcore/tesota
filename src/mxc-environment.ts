@@ -127,26 +127,15 @@ function leaseFile(letter: string): string {
   return join(LEASES, `${letter.toUpperCase()}.json`);
 }
 
-/** A drive mapped before leases were kept by letter kept its lease in the sandbox folder beside the workspace it mapped. */
-function legacyLeaseFile(mapped: string): string {
-  return join(sandboxRoot(mapped), "drive.json");
-}
-
-async function leaseAt(file: string): Promise<{ drive: string; pid: number; target?: string } | undefined> {
-  try {
-    const lease: unknown = JSON.parse(await readFile(file, "utf8"));
-    if (typeof lease !== "object" || lease === null) return undefined;
-    const [drive, pid, target] = [Reflect.get(lease, "drive"), Reflect.get(lease, "pid"), Reflect.get(lease, "target")];
-    if (typeof drive !== "string" || !Number.isSafeInteger(pid)) return undefined;
-    return { drive, pid: pid as number, ...typeof target === "string" ? { target } : {} };
-  } catch { return undefined; }
-}
-
 /** The lease of the drive at this letter, when it names the folder the drive maps. */
 async function readLease(letter: string, mapped: string): Promise<DriveLease | undefined> {
-  const lease = await leaseAt(leaseFile(letter));
-  if (lease?.target !== undefined && normalized(lease.target) === normalized(mapped)) return lease;
-  return leaseAt(legacyLeaseFile(mapped));
+  try {
+    const lease: unknown = JSON.parse(await readFile(leaseFile(letter), "utf8"));
+    if (typeof lease !== "object" || lease === null) return undefined;
+    const [drive, pid, target] = [Reflect.get(lease, "drive"), Reflect.get(lease, "pid"), Reflect.get(lease, "target")];
+    if (typeof drive !== "string" || !Number.isSafeInteger(pid) || typeof target !== "string") return undefined;
+    return normalized(target) === normalized(mapped) ? { drive, pid: pid as number } : undefined;
+  } catch { return undefined; }
 }
 
 /** Whether a process is running; one Tesota may not signal counts as running, so its drive is kept. */
@@ -174,11 +163,8 @@ export async function staleDrives(listing: string, lease: (letter: string, mappe
 /** Remove the drives sessions that have ended left behind, and their leases. */
 async function releaseStaleDrives(): Promise<void> {
   const listing = (await subst([])).output;
-  const mapped = substitutedDrives(listing);
   for (const letter of await staleDrives(listing, readLease, isRunning)) {
-    if (!(await subst([`${letter}:`, "/d"])).ok) continue;
-    await rm(leaseFile(letter), { force: true });
-    await rm(legacyLeaseFile(mapped.get(letter) ?? ""), { force: true });
+    if ((await subst([`${letter}:`, "/d"])).ok) await rm(leaseFile(letter), { force: true });
   }
 }
 
@@ -186,9 +172,8 @@ async function releaseStaleDrives(): Promise<void> {
 async function mapDrive(workspace: string): Promise<string> {
   await releaseStaleDrives();
   const target = driveTarget(workspace);
-  // A drive this workspace had before, including one over the workspace itself as earlier versions mapped it.
+  // A drive this workspace had before.
   await unmapDrives(target);
-  await unmapDrives(workspace);
   const taken = new Set((substitutedDrives((await subst([])).output)).keys());
   for (const letter of "ZYXWVUTSRQPONMLKJIHGFED") {
     if (taken.has(letter) || existsSync(`${letter}:\\`)) continue;
@@ -390,7 +375,6 @@ export const mxcProvider: ExecutionProvider = {
   fingerprint,
   release: async (workspace) => {
     await unmapDrives(driveTarget(workspace));
-    await unmapDrives(resolve(workspace));
     await rm(sandboxRoot(workspace), { recursive: true, force: true, maxRetries: 3 });
   },
 };

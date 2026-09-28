@@ -52,7 +52,8 @@ const spies: { mockRestore(): void }[] = [];
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "tesota-shell-plan-"));
   record = { id: "session", title: "Session 1", engineId: "11111111-1111-4111-8111-111111111111", workspace: null,
-    entries: [], inspections: [], interrupted: false, blocked: false };
+    entries: [], inspections: [], interrupted: false, blocked: false,
+    retiredEngineIds: [], titleSource: "counter" };
   const store = { list: () => [record], append: vi.fn(),
     setWorkspace: (_id: string, path: string) => { record.workspace = path; },
     setAgentModel: (_id: string, choice: string) => { record.agent = choice; },

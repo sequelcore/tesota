@@ -42,13 +42,14 @@ const spies: { mockRestore(): void }[] = [];
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "tesota-shell-model-"));
   record = { id: "session", title: "Session 1", engineId: "11111111-1111-4111-8111-111111111111", workspace: null,
-    entries: [{ kind: "agent", text: "I added the limit." }], inspections: [], interrupted: false, blocked: false };
+    entries: [{ kind: "agent", text: "I added the limit." }], inspections: [], interrupted: false, blocked: false,
+    retiredEngineIds: [], titleSource: "counter" };
   let rotation = 0;
   const store = { list: () => [record], append: () => {},
     setWorkspace: (_id: string, path: string) => { record.workspace = path; },
     setAgentModel: vi.fn((_id: string, choice: string) => { record.agent = choice; }),
     rotateEngine: vi.fn(() => {
-      record.retiredEngineIds = [...record.retiredEngineIds ?? [], record.engineId];
+      record.retiredEngineIds = [...record.retiredEngineIds, record.engineId];
       record.engineId = `22222222-2222-4222-8222-22222222222${rotation++}`;
       return record.engineId;
     }),
