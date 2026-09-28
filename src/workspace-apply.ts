@@ -385,7 +385,7 @@ async function assess(writes: readonly PlannedWrite[], touched: ReadonlySet<stri
   const contents = await Promise.all(writes.map(contentAt));
   const after = contents.filter((content) => content === "after").length;
   const unaffected = contents.filter((content, index) => content === "before" ||
-    content === "other" && !touched.has(writes[index]?.change.path ?? "")).length;
+    !touched.has(writes[index]?.change.path ?? "")).length;
   const names = { before: "original", after: "applied", other: "changed" } as const;
   return {
     outcome: writes.length === 0 ? "applied" : applicationOutcome(writes.length, after, unaffected),
@@ -408,10 +408,14 @@ async function commit(id: string, writes: readonly PlannedWrite[], journal: Jour
   return undefined;
 }
 
-/** Put each original back where the path still holds exactly what Tesota wrote, newest first. */
-async function restore(recorded: Pick<Recorded, "manifest" | "writes">): Promise<void> {
+/**
+ * Put each original back where the journal records a write by Tesota and the
+ * path still holds exactly what it wrote, newest first.
+ */
+async function restore(recorded: Recorded): Promise<void> {
+  const { touched } = await readJournal(recorded.directory);
   for (const [index, write] of [...recorded.writes.entries()].reverse()) {
-    if (restoreStep(await contentAt(write)) !== "restore") continue;
+    if (restoreStep(touched.has(write.change.path), await contentAt(write)) !== "restore") continue;
     await exchange(write.target, write.after, write.before, write.mode, tagFor(recorded.manifest.id, index)).catch(() => "partial");
   }
   for (const directory of recorded.manifest.directories) {
@@ -462,6 +466,26 @@ export async function unfinishedApplications(source: string, root: string = DEFA
 }
 
 /**
+ * Recorded paths whose directory no longer resolves inside the source, such as
+ * one replaced by a link or junction to somewhere else since the application
+ * was planned. Recovery writes nothing while any path leaves the source.
+ */
+async function pathsOutsideSource(recorded: Recorded): Promise<string[]> {
+  const { source, directories } = recorded.manifest;
+  const inside = async (path: string): Promise<boolean> =>
+    missingParents(path).then(({ existing }) => contains(source, existing), () => false);
+  const outside: string[] = [];
+  for (const write of recorded.writes) {
+    if (!await inside(write.target)) outside.push(write.change.path);
+  }
+  for (const directory of directories) {
+    // A name inside it, so the directory's own resolved location is checked and one that became a link is caught.
+    if (!await inside(join(source, directory, "entry"))) outside.push(directory);
+  }
+  return outside;
+}
+
+/**
  * After a stop that left a file moved aside, such as a crash between moving it
  * and installing its replacement, put it back where its name is still free,
  * never over a file there; a leftover temporary file is removed.
@@ -496,6 +520,11 @@ export async function recoverApplication(source: string, id: string, action: "un
     }
     const recorded = await loadRecorded(unfinished.directory);
     if (recorded === undefined) throw new Error(`The store for application ${id} is incomplete; settle it by hand`);
+    const outside = await pathsOutsideSource(recorded);
+    if (outside.length > 0) {
+      throw new ApplyConflictError(`Application ${id} was left unfinished: these paths now lead outside the ` +
+        "repository, so nothing was written; restore them as directories inside it, or settle it by hand", outside);
+    }
     await returnHeld(recorded);
     if (action === "undo") await restore(recorded);
     else await commit(id, recorded.writes, journal);

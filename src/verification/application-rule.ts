@@ -45,13 +45,16 @@ export function commitStep(content: PathContent): CommitStep {
 
 /**
  * Decision 042's step back to the original for one path, when an application
- * is undone: Tesota puts the original back only where the path still holds
- * exactly what it wrote, and leaves anything else where it is.
+ * is undone: Tesota puts the original back only where its journal records a
+ * write to the path and the path still holds exactly what it wrote. Equal
+ * content alone is not Tesota's write: someone else may have put the same
+ * bytes at a path Tesota never wrote, and that file is left where it is.
  */
-//@ ensures \result === "restore" <==> content === "after"
-//@ ensures \result === "done" <==> content === "before"
-//@ ensures \result === "stop" <==> content === "other"
-export function restoreStep(content: PathContent): RestoreStep {
+//@ ensures \result === "restore" <==> (touched && content === "after")
+//@ ensures \result === "done" <==> (!touched || content === "before")
+//@ ensures \result === "stop" <==> (touched && content === "other")
+export function restoreStep(touched: boolean, content: PathContent): RestoreStep {
+  if (!touched) return "done";
   if (content === "after") return "restore";
   return content === "before" ? "done" : "stop";
 }
@@ -60,13 +63,14 @@ export function restoreStep(content: PathContent): RestoreStep {
  * Decision 042's outcome of an application of `paths` changed paths, each read
  * back: `after` hold the reviewed content, and `unaffected` hold their
  * original or were never touched by the application, whatever someone else
- * put there. Applied only when every path holds the reviewed content, not
- * applied only when no path keeps an effect of the application, and anything
- * between is a partial effect that needs recovery, never reported as either.
+ * put there, even the reviewed content itself. Applied only when every path
+ * holds the reviewed content, not applied only when otherwise no path keeps
+ * an effect of the application, and anything between is a partial effect
+ * that needs recovery, never reported as either.
  */
-//@ requires paths > 0 && after >= 0 && unaffected >= 0 && after + unaffected <= paths
+//@ requires paths > 0 && after >= 0 && unaffected >= 0 && after <= paths && unaffected <= paths
 //@ ensures \result === "applied" <==> after === paths
-//@ ensures \result === "not_applied" <==> unaffected === paths
+//@ ensures \result === "not_applied" <==> (after < paths && unaffected === paths)
 //@ ensures \result === "recovery_required" <==> (after < paths && unaffected < paths)
 export function applicationOutcome(paths: number, after: number, unaffected: number): ApplicationOutcome {
   if (after === paths) return "applied";

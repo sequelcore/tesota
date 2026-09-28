@@ -108,10 +108,12 @@ that file changes.
   first two.
 
 A stop after the first write undoes what was written. Each original is put
-back only where its path still holds exactly what Tesota wrote, by the same
-move-aside step, so an edit someone made in the meantime is never replaced.
-A path application never touched counts as unaffected, whatever someone put
-there.
+back only where the journal records a write by Tesota and the path still
+holds exactly what Tesota wrote, by the same move-aside step, so an edit
+someone made in the meantime is never replaced. Equal content alone is not
+Tesota's write: a file someone else created with the reviewed content, at a
+path Tesota never wrote, stays. A path application never touched counts as
+unaffected, whatever someone put there.
 
 **Recovery.** A partial effect Tesota cannot undo, or one left by a process
 that ended mid-application, is recorded as recovery required. It blocks the
@@ -124,7 +126,11 @@ what each path holds and settles the application in one of three ways:
   themselves. This is their acceptance, not check evidence.
 
 Undo and finish follow the same rules as application, and put back a file a
-crash left moved aside. A path someone else changed is never touched.
+crash left moved aside. A path someone else changed is never touched. Before
+writing anything, recovery checks again that every recorded path and created
+directory resolves inside the source; if one now leads elsewhere, for
+example through a link or junction put in its place, nothing is written and
+the application stays unfinished.
 Finished applications are removed from the store after 30 days; unfinished
 ones stay.
 

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { link, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -125,6 +125,23 @@ it("never replaces a file that appears at an added path, and undoes what it wrot
   expect(await leftovers(source)).toEqual([]);
 });
 
+it("leaves a file someone else created with the reviewed content at an added path, and undoes only its own writes", async () => {
+  const { source, workspace, applications } = await fixture();
+  vi.mocked(link).mockImplementation(async (from, to) => {
+    if (ending(to, "tax.ts")) {
+      await writeFile(to, "export const tax = 0.2;\n");
+      throw failure("EEXIST");
+    }
+    await actual.link(from, to);
+  });
+  const attempt = applyWorkspace(workspace, workspace.snapshot());
+  await expect(attempt).rejects.toBeInstanceOf(ApplyRolledBackError);
+  await expect(attempt).rejects.toMatchObject({ paths: ["src/tax.ts"] });
+  await expectOriginal(source);
+  expect(await read(join(source, "src/tax.ts"))).toBe("export const tax = 0.2;\n");
+  expect(await journalStates(applications)).toEqual(["prepared", "rolled_back"]);
+});
+
 it("stops at a file another program holds open, and undoes what it wrote", async () => {
   const { source, workspace } = await fixture();
   vi.mocked(rename).mockImplementation(async (from, to) => {
@@ -194,6 +211,34 @@ it("marks a partial effect it cannot undo as recovery required, and blocks later
   await expect(unfinishedApplications(source, applications)).resolves.toEqual([]);
   await applyWorkspace(workspace, snapshot);
   expect(await read(join(source, "src/tax.ts"))).toBe("export const tax = 0.2;\n");
+});
+
+it("writes nothing when a recorded path leads outside the repository by the time it is recovered", async () => {
+  const { source, workspace, applications } = await fixture();
+  vi.mocked(rename).mockImplementation(async (from, to) => {
+    if (ending(from, "price.ts")) throw failure("EBUSY");
+    await actual.rename(from, to);
+  });
+  vi.mocked(link).mockImplementation(async (from, to) => {
+    if (ending(to, "old.ts")) throw failure("EACCES");
+    await actual.link(from, to);
+  });
+  await expect(applyWorkspace(workspace, workspace.snapshot())).rejects.toBeInstanceOf(ApplyRecoveryError);
+  vi.mocked(link).mockImplementation(actual.link);
+  vi.mocked(rename).mockImplementation(actual.rename);
+  const outside = join(source, "..", "outside");
+  await actual.rename(join(source, "src"), outside);
+  await symlink(outside, join(source, "src"), "junction");
+  const [unfinished] = await unfinishedApplications(source, applications);
+  const attempt = recoverApplication(source, unfinished?.id ?? "", "undo", applications);
+  await expect(attempt).rejects.toBeInstanceOf(ApplyConflictError);
+  await expect(attempt).rejects.toMatchObject({ paths: ["src/old.ts", "src/price.ts", "src/tax.ts"] });
+  expect((await readdir(outside)).toSorted()).toEqual(["price.ts"]);
+  await expect(unfinishedApplications(source, applications)).resolves.toHaveLength(1);
+  const lines: string[] = [];
+  await expect(runRecoverCommand(["undo"], source, (text) => { lines.push(text); }, applications)).resolves.toBe(1);
+  expect(lines.join("")).toContain("lead outside the repository");
+  expect((await readdir(outside)).toSorted()).toEqual(["price.ts"]);
 });
 
 it("finishes an application a crash interrupted, putting back the file it had moved aside", async () => {

@@ -1,5 +1,5 @@
-import { type ApplicationPathState, DEFAULT_APPLICATIONS_ROOT, recoverApplication, unfinishedApplications,
-  type UnfinishedApplication } from "./workspace-apply.js";
+import { type ApplicationPathState, ApplyConflictError, DEFAULT_APPLICATIONS_ROOT, recoverApplication,
+  unfinishedApplications, type UnfinishedApplication } from "./workspace-apply.js";
 
 const actions = ["undo", "finish", "resolved"] as const;
 type RecoverAction = typeof actions[number];
@@ -46,7 +46,12 @@ export async function runRecoverCommand(args: readonly string[], source: string,
       : "Several applications are unfinished; name one:\n" + unfinished.map(describe).join(""));
     return unfinished.length === 0 ? 0 : 2;
   }
-  const result = await recoverApplication(source, id, action as RecoverAction, root);
+  let result: Awaited<ReturnType<typeof recoverApplication>>;
+  try { result = await recoverApplication(source, id, action as RecoverAction, root); } catch (error) {
+    if (!(error instanceof ApplyConflictError)) throw error;
+    write(`${error.message}:\n${error.paths.map((path) => `    ${path}\n`).join("")}`);
+    return 1;
+  }
   if (action === "resolved") {
     write(`Recorded as settled by you; Tesota checked nothing:\n${describePaths(result.paths)}`);
     return 0;

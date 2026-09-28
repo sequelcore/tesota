@@ -50,21 +50,24 @@ lemma commitStep_ensures(content: PathContent)
 {
 }
 
-function restoreStep(content: PathContent): RestoreStep
+function restoreStep(touched: bool, content: PathContent): RestoreStep
 {
-  if content.after? then
-    RestoreStep.restore
+  if !(touched) then
+    RestoreStep.done
   else
-    if content.before? then
-      RestoreStep.done
+    if content.after? then
+      RestoreStep.restore
     else
-      RestoreStep.stop
+      if content.before? then
+        RestoreStep.done
+      else
+        RestoreStep.stop
 }
 
-lemma restoreStep_ensures(content: PathContent)
-  ensures (restoreStep(content).restore? <==> content.after?)
-  ensures (restoreStep(content).done? <==> content.before?)
-  ensures (restoreStep(content).stop? <==> content.other?)
+lemma restoreStep_ensures(touched: bool, content: PathContent)
+  ensures (restoreStep(touched, content).restore? <==> (touched && content.after?))
+  ensures (restoreStep(touched, content).done? <==> (!(touched) || content.before?))
+  ensures (restoreStep(touched, content).stop? <==> (touched && content.other?))
 {
 }
 
@@ -72,7 +75,8 @@ function applicationOutcome(paths: int, after: int, unaffected: int): Applicatio
   requires (paths > 0)
   requires (after >= 0)
   requires (unaffected >= 0)
-  requires ((after + unaffected) <= paths)
+  requires (after <= paths)
+  requires (unaffected <= paths)
 {
   if (after == paths) then
     ApplicationOutcome.applied
@@ -87,9 +91,10 @@ lemma applicationOutcome_ensures(paths: int, after: int, unaffected: int)
   requires (paths > 0)
   requires (after >= 0)
   requires (unaffected >= 0)
-  requires ((after + unaffected) <= paths)
+  requires (after <= paths)
+  requires (unaffected <= paths)
   ensures (applicationOutcome(paths, after, unaffected).applied? <==> (after == paths))
-  ensures (applicationOutcome(paths, after, unaffected).not_applied? <==> (unaffected == paths))
+  ensures (applicationOutcome(paths, after, unaffected).not_applied? <==> ((after < paths) && (unaffected == paths)))
   ensures (applicationOutcome(paths, after, unaffected).recovery_required? <==> ((after < paths) && (unaffected < paths)))
 {
 }
