@@ -8,6 +8,7 @@ import { chooseSandboxPreference, chooseSessionExecution, DEFAULT_SANDBOX_FILE, 
 import { dockerSandboxesProvider } from "./docker-sandboxes-environment.js";
 import { hostProvider } from "./host-environment.js";
 import { mxcProvider } from "./mxc-environment.js";
+import { wslProvider } from "./wsl-environment.js";
 
 /**
  * `tesota sandbox` (decision 030): each sandbox on this computer with what it
@@ -26,13 +27,13 @@ export interface SandboxCommandDependencies {
 
 export function processSandboxDependencies(repository: string = process.cwd()): SandboxCommandDependencies {
   return { preferencePath: DEFAULT_SANDBOX_FILE, cacheDirectory: packageCacheDirectory(repository), providers: providersFor,
-    candidates: [mxcProvider, dockerSandboxesProvider],
+    candidates: [mxcProvider, wslProvider, dockerSandboxesProvider],
     trust: (provider) => qualifyOnThisMachine(provider, (text) => { process.stdout.write(`${text}...\n`); }) };
 }
 
 const described: Readonly<Record<SandboxPreference, string>> = {
   auto: "the native sandbox, then Docker Sandboxes, then this computer", native: "the native sandbox",
-  docker: "Docker Sandboxes", host: "this computer, which asks before each command",
+  wsl: "the WSL sandbox", docker: "Docker Sandboxes", host: "this computer, which asks before each command",
 };
 const usage = `Usage: tesota sandbox [use <${SANDBOX_PREFERENCES.join("|")}> | clean]\n`;
 const hostLine = "this computer, always available; asks before each command";
@@ -61,7 +62,7 @@ async function listing(dependencies: SandboxCommandDependencies): Promise<string
   }
   rows.push(`  ${"host".padEnd(9)}${chosen.commands === "host" ? "in use: " : ""}${hostLine}`);
   return `Where commands run (${preference}: ${described[preference]}):\n${rows.join("\n")}\n` +
-    "Change it with tesota sandbox use <auto|native|docker|host>; it applies to new sessions. " +
+    `Change it with tesota sandbox use <${SANDBOX_PREFERENCES.join("|")}>; it applies to new sessions. ` +
     "tesota sandbox clean removes this repository's package cache.\n";
 }
 

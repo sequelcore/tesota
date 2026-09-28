@@ -50,7 +50,7 @@ it("keeps the operator's choice for new sessions, and refuses what is not a choi
   expect(readSandboxPreference(dependencies.preferencePath)).toBe("docker");
   expect(output()).toContain("New sessions use Docker Sandboxes.");
   expect(await runSandboxCommand(["use", "vm"], write, dependencies)).toBe(2);
-  expect(output()).toContain("Usage: tesota sandbox [use <auto|native|docker|host> | clean]");
+  expect(output()).toContain("Usage: tesota sandbox [use <auto|native|wsl|docker|host> | clean]");
   await runSandboxCommand([], write, dependencies);
   // The chosen sandbox is not ready, so new sessions run on this computer and say so.
   expect(output()).toContain("host     in use: this computer, always available; asks before each command");

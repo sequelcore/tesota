@@ -14,7 +14,7 @@ Usage: tesota [--help | -h | help]
        tesota prune [--force]
        tesota recover [undo|finish|resolved [<id>]]
        tesota setup
-       tesota sandbox [use [<auto|native|docker|host>] | clean]
+       tesota sandbox [use [<auto|native|wsl|docker|host>] | clean]
 
 Starts a new coding session in the current repository. The agent works in a
 separate copy; you review its changes and checks before anything is applied.

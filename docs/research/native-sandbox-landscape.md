@@ -192,3 +192,62 @@ for proxies ([issue 1262](https://github.com/microsoft/mxc/issues/1262)).
    which keeps real paths, once the SDK exposes it and qualification finds
    the host reports `fs_enumerate`. Reading the whole disk, as Codex does,
    would give up the guarantee that sets Tesota apart.
+
+## WSL2 as the Windows backend (2026-09-28)
+
+Added on 2026-09-28 for issue 163, which asked whether a Linux sandbox inside
+WSL2 should replace MXC as Windows' default before MXC is extended. The
+sections above are unchanged. Sources: Codex's source at `44fe510ce3`
+(2026-09-28), Anthropic's Sandbox Runtime at `ddbeb74711` (2026-09-21),
+Microsoft MXC at `715942607f` (2026-09-27), WSL's source at
+[microsoft/WSL](https://github.com/microsoft/WSL) and its documentation at
+[MicrosoftDocs/WSL](https://github.com/MicrosoftDocs/WSL) (2026-09-16), and
+Cursor's [agent sandboxing post](https://cursor.com/blog/agent-sandboxing),
+read through a search summary because the page could not be fetched.
+
+| Source | Linux mechanism | On Windows |
+| --- | --- | --- |
+| Cursor | Landlock and seccomp | Its Linux sandbox inside WSL2, since general-purpose native Windows primitives are lacking; it works with Microsoft on native ones |
+| Codex (`linux-sandbox`) | bubblewrap with `--ro-bind / /` and writable roots; with a managed proxy, `--unshare-net` plus a TCP to Unix socket to TCP bridge, then seccomp forbids new `AF_UNIX` sockets | WSL2 takes the normal bubblewrap path, with WSLg's duplicate root masked; WSL1 is refused. Natively, its own and MXC backends |
+| Sandbox Runtime | bubblewrap with `--unshare-net`; `socat` relays on Unix sockets to the host's HTTP and SOCKS proxies; seccomp for Unix sockets | WSL2 is Linux; WSL1 unsupported. A native Windows backend is separate |
+| MXC (`docs/linux-wsl-roadmap-june-2026.md`) | Its bubblewrap backend shares the host's network namespace, so its proxy is advisory there | Its WSL container backend has no proxy code, rejects per-host egress rules before running, and its container cannot reach a proxy on Windows' loopback through WSL's NAT |
+
+What WSL's own source and documentation settle:
+
+- **Interop is reachable from any Linux process unless something removes its
+  socket.** In the virtual machine, WSL registers its `binfmt_misc`
+  interpreter with the `F` flag, so the kernel opens it once and hiding
+  `/init` changes nothing; the interpreter then connects to the socket named
+  by `WSL_INTEROP` or found as `/run/WSL/<pid>_interop` up the process tree.
+  A sandbox that mounts neither `/run` nor passes that variable cannot start
+  a Windows program; `[interop] enabled=false` in `/etc/wsl.conf` also stops
+  the registration.
+- **`/` includes Windows' drives** under `/mnt` by default (`[automount]`),
+  so bubblewrap's usual `--ro-bind / /`, which Codex uses, lets a command
+  read the operator's Windows files. A `workspace` filesystem needs a root
+  built from the system's folders instead.
+- **`wsl.exe --exec` runs no first-run setup**: a distribution's
+  out-of-box experience runs only for an interactive shell, so Tesota can
+  create a distribution with `--install <image> --name <name> --no-launch`
+  and prepare it as root.
+- **Configuration takes effect at the distribution's next start**; unlike
+  the setting, removing the interop registration from
+  `/proc/sys/fs/binfmt_misc` takes effect at once.
+
+Implications for Tesota:
+
+1. **The design other harnesses converged on fits Tesota's guarantees:**
+   a network namespace whose only exit is a Unix socket to Tesota's own
+   proxy, rather than proxy variables, which confine only programs that
+   honor them. MXC's WSL and bubblewrap backends do not establish
+   `allowlist` today.
+2. **Tesota's qualification could not tell the difference:** its network
+   control used `curl`, which honors the proxy. A control that connects to
+   the refused destination's address directly is needed for any provider's
+   network claim, MXC's included.
+3. **A minimal root makes seccomp unnecessary for Tesota's claims:** with
+   no host socket paths mounted and abstract sockets private to each network
+   namespace, a command has no Unix socket to reach but the proxy's, which
+   applies the allowlist anyway.
+4. **Whether WSL2 wins is a Windows measurement:** WSL's drive filesystem,
+   `wsl.exe`'s start-up and real repository work decide it, not Linux.

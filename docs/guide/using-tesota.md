@@ -90,7 +90,10 @@ use docker` (or `native`, `host`, `auto`) chooses for new sessions. Inside a
 session, `/sandbox` opens a list including `default`, which follows the
 choice for new sessions; `/sandbox docker` switches that session alone,
 keeping its conversation. `tesota sandbox clean` removes this repository's package
-cache. Docker
+cache. `tesota sandbox use wsl` tries the WSL sandbox, which is being compared
+with the native one and has not yet been checked on Windows: `tesota setup`
+creates a WSL distribution of Tesota's own for it, and its commands run in a
+Linux shell that sees the workspace under `/mnt`. Docker
 Sandboxes is the alternative on Windows 11, and the stronger wall, since it
 runs a virtual machine. It needs the Windows
 Hypervisor Platform (an administrator prompt and a restart), Docker Sandboxes,

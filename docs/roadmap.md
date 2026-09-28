@@ -58,7 +58,12 @@ project. They are listed here as they are chosen.
   Docker, no administrator rights and no question per command, on Microsoft
   MXC and qualified on each machine; built on Windows 11 24H2 and later
   2026-09-27. Linux and macOS are paused, 2026-09-26, until real use gives
-  feedback.
+  feedback. Before MXC is extended, a WSL sandbox (decision 043,
+  [design](design/execution.md#wsl-sandbox)) competes for Windows' default:
+  built 2026-09-28 and chosen only by name; its Linux side passed every
+  control and Tesota's own check on Linux. Next: both on one Windows machine,
+  with the same controls, repositories, timings and real work, then one
+  default and the other removed.
 - **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
   built 2026-09-26; OpenRouter's contract suite passes live on a free model.
   OpenCode refuses Zen's free models to clients other than its own, and Go
@@ -183,8 +188,8 @@ mid-work, and finds the work finished on reconnecting.
   repositories that already describe their environment need nothing
   Tesota-specific.
 - A non-TypeScript repository and another platform.
-- More execution providers once they pass the same live controls: WSL2,
-  remote machines.
+- More execution providers once they pass the same live controls: remote
+  machines.
 - A relay that offers Jev to users without their own TypeSafe key, once
   there are real users and TypeSafe agrees (decision 035).
 - A review queue and notifications across sessions.
