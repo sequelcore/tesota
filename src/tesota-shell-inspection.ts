@@ -5,7 +5,7 @@ import { costText, type ReviewMeasurement } from "./review-forecast.js";
 import type { ShellInspection } from "./tesota-shell-terminal.js";
 import type { VerificationChange } from "./verification-changes.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
-import type { CheckResult } from "./workspace-checks.js";
+import { type CheckResult, describeBase } from "./workspace-checks.js";
 
 /** Everything the operator decides on for one candidate. */
 export interface ReviewRecord {
@@ -27,7 +27,8 @@ function checkDetail(check: CheckResult): string {
   const output = check.output.trim().length === 0 ? "" :
     `\n${check.output.replace(/^\n+/u, "").trimEnd().split("\n").map((line) => `    │ ${line}`).join("\n")}`;
   return `  ${check.outcome === "passed" ? "✓" : "✗"} ${check.outcome.replace("_", " ")}${exit}: ${check.command}` +
-    `\n    Claim: ${check.claim}\n    Limits: ${check.limits}${output}`;
+    `\n    Claim: ${check.claim}\n    Limits: ${check.limits}` +
+    `${check.base === undefined ? "" : `\n    Base: ${describeBase(check.base)}`}${output}`;
 }
 
 const verbs: Readonly<Record<WorkspaceSnapshot["changes"][number]["status"], string>> =
@@ -159,7 +160,8 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews, dept
     : `Checks ran on this exact content in the isolated ${first.environment} environment.`;
   const files = snapshot.changes.map((change) => `  ${verbs[change.status]} ${change.path}`);
   const results = checks.map((check) => `  ${check.outcome === "passed" ? "✓" : "✗"} ${check.command}` +
-    (check.outcome === "passed" ? "" : ` (${check.outcome.replace("_", " ")}${check.exitCode === null ? "" : `, exit ${check.exitCode}`})`));
+    (check.outcome === "passed" ? "" : ` (${check.outcome.replace("_", " ")}${check.exitCode === null ? "" : `, exit ${check.exitCode}`})`) +
+    (check.base === undefined ? "" : `\n      ${describeBase(check.base)}`));
   const flagged = flags.map((flag) => `  ⚠ ${flagVerbs[flag.status]} ${flag.kind}: ${flag.path}`);
   const flagNote = flags.length === 0 ? [] :
     ["Changes marked ⚠ alter what checks this result; only you can decide whether they are legitimate."];

@@ -22,7 +22,7 @@ const entrySchema: z.ZodType<TranscriptEntry> = z.discriminatedUnion("kind", [
     change: changeSchema.optional() }),
   z.strictObject({ kind: z.literal("review"), title: z.string().max(100), text }),
 ]);
-// A result recorded before results kept their diff apart has none; its diff is in `detail`.
+// An answer check, which changed no files, has no diff.
 const inspectionSchema: z.ZodType<{ title: string; summary: string; detail: string; diff?: string | undefined }> =
   z.strictObject({ title: z.string().max(100), summary: z.string().max(10_000),
     detail: z.string().max(2_000_000), diff: z.string().max(2_000_000).optional() });
@@ -31,34 +31,33 @@ const planSchema: z.ZodType<PlanStep[]> = z.array(z.strictObject({ step: z.strin
   status: z.enum(PLAN_STATUSES), check: z.string().max(2_000).optional(), blocked: z.string().max(2_000).optional(),
   review: z.enum(["held", "not_held", "uncertain"]).optional() }))
   .min(1).max(MAX_PLAN_STEPS);
-// `agent`, `retiredEngineIds`, `sandbox`, `plan` and `titleSource` arrived after version 5 and are optional, so saved
-// sessions survive (decisions 026, 030, 033 and 036); a name without a source is the counter's.
+// `agent` is absent until the agent first starts (decision 026), `sandbox` while the session follows the operator's
+// choice (decision 030), and `plan` while no work is under way (decision 033).
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: TranscriptEntry[];
   inspections: { title: string; summary: string; detail: string; diff?: string | undefined }[];
   workspace: string | null;
-  interrupted: boolean; blocked: boolean; agent?: string | undefined; retiredEngineIds?: string[] | undefined;
-  sandbox?: SandboxPreference | undefined; plan?: PlanStep[] | undefined; titleSource?: TitleSource | undefined }> =
+  interrupted: boolean; blocked: boolean; agent?: string | undefined; retiredEngineIds: string[];
+  sandbox?: SandboxPreference | undefined; plan?: PlanStep[] | undefined; titleSource: TitleSource }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
       workspace: z.string().min(1).nullable(),
       interrupted: z.boolean(), blocked: z.boolean(),
-      agent: agentModelSchema.optional(), retiredEngineIds: z.array(z.uuid()).max(1_000).optional(),
+      agent: agentModelSchema.optional(), retiredEngineIds: z.array(z.uuid()).max(1_000),
       sandbox: z.enum(SANDBOX_PREFERENCES).optional(), plan: planSchema.optional(),
-      titleSource: z.enum(["counter", "request", "generated", "operator"]).optional() });
+      titleSource: z.enum(["counter", "request", "generated", "operator"]) });
 const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.iso.datetime(),
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
   tokens: z.number().nonnegative(), models: z.strictObject({ reviewer: z.string().min(1).max(100),
     refuter: z.string().min(1).max(100), validator: z.string().min(1).max(100) }).optional() });
-const snapshotVersion = 5;
-// `reviews` arrived after version 5 and is optional, so saved sessions survive; a missing list is empty.
+const snapshotVersion = 6;
 const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: typeof snapshotVersion; source: string;
-  checks: string[] | null; network: string[]; reviews?: ReviewMeasurement[] | undefined;
+  checks: string[] | null; network: string[]; reviews: ReviewMeasurement[];
   sessions: z.infer<typeof sessionSchema>[] }> =
     z.strictObject({ format: z.literal("tesota-shell-sessions"), version: z.literal(snapshotVersion),
       source: z.string(), checks: z.array(z.string().min(1).max(1000)).max(20).nullable(),
       network: z.array(z.string().refine(isNetworkDestination)).max(200),
-      reviews: z.array(measurementSchema).max(MEASUREMENTS_KEPT).optional(),
+      reviews: z.array(measurementSchema).max(MEASUREMENTS_KEPT),
       sessions: z.array(sessionSchema) });
 export type ShellSessionRecord = z.infer<typeof sessionSchema>;
 type Snapshot = z.infer<typeof snapshotSchema>;
@@ -109,7 +108,7 @@ export interface ShellSessionStore {
 
 function readSnapshot(path: string, source: string): Snapshot {
   const empty: Snapshot = { format: "tesota-shell-sessions", version: snapshotVersion, source, checks: null,
-    network: [], sessions: [] };
+    network: [], reviews: [], sessions: [] };
   if (!existsSync(path)) return empty;
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
   // Snapshots from earlier versions are discarded; the next save replaces the file.
@@ -190,7 +189,7 @@ export function openShellSessionStore(sourceDirectory: string,
     if (sessions.size !== snapshot.sessions.length) throw new Error("Duplicate saved Tesota session");
     let checks = snapshot.checks;
     let network = snapshot.network;
-    let reviews: readonly ReviewMeasurement[] = snapshot.reviews ?? [];
+    let reviews: readonly ReviewMeasurement[] = snapshot.reviews;
     let closed = false;
     const save = (): void => {
       if (closed) throw new Error("Tesota session store closed");
@@ -212,7 +211,7 @@ export function openShellSessionStore(sourceDirectory: string,
         const numbers = [...sessions.values()].map((existing) => Number(/^Session (\d+)$/u.exec(existing.title)?.[1] ?? 0));
         const session = { id: randomUUID(), title: `Session ${Math.max(0, ...numbers) + 1}`,
           engineId: randomUUID(), entries: [], inspections: [], workspace: null,
-          interrupted: false, blocked: false };
+          interrupted: false, blocked: false, retiredEngineIds: [], titleSource: "counter" as const };
         sessions.set(session.id, session);
         try { save(); } catch (error) { sessions.delete(session.id); throw error; }
         return session;
@@ -273,10 +272,10 @@ export function openShellSessionStore(sourceDirectory: string,
         const previous = session.engineId;
         const retired = session.retiredEngineIds;
         session.engineId = randomUUID();
-        session.retiredEngineIds = [...retired ?? [], previous];
+        session.retiredEngineIds = [...retired, previous];
         try { save(); } catch (error) {
           session.engineId = previous;
-          if (retired === undefined) delete session.retiredEngineIds; else session.retiredEngineIds = retired;
+          session.retiredEngineIds = retired;
           throw error;
         }
         return session.engineId;
@@ -301,13 +300,13 @@ export function openShellSessionStore(sourceDirectory: string,
       },
       setTitle: (id, title, source) => {
         const session = find(id);
-        if (!replacesTitle(session.titleSource ?? "counter", source)) return false;
+        if (!replacesTitle(session.titleSource, source)) return false;
         const previous = { title: session.title, source: session.titleSource };
         session.title = z.string().min(1).max(100).parse(title);
         session.titleSource = source;
         try { save(); } catch (error) {
           session.title = previous.title;
-          if (previous.source === undefined) delete session.titleSource; else session.titleSource = previous.source;
+          session.titleSource = previous.source;
           throw error;
         }
         return true;

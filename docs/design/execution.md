@@ -365,8 +365,9 @@ shell that cannot run in the container. And a test that starts a server on
 the loopback address and connects to it is refused, since the sandbox
 reaches only its proxy there; opening loopback would also reach whatever the
 operator runs on this computer. A check that fails for one of these reasons
-fails whatever the change, which the planned comparison of a failed check
-with the base tells apart from a failure the change caused.
+fails whatever the change; Tesota runs a failed check again on the base
+([assurance](assurance.md#verifiers)), so such a failure is shown as already
+there and is not sent back to the agent.
 
 **Risks.** MXC is a preview, and Microsoft states that "no MXC profiles should
 be treated as security boundaries currently"; Tesota pins its version, repeats

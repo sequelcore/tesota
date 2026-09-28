@@ -5,8 +5,11 @@ import type { ReviewReport } from "../src/review.js";
 import type { CheckResult } from "../src/workspace-checks.js";
 
 const tree = "t".repeat(40);
-function check(outcome: CheckResult["outcome"], command = "bun run check"): CheckResult {
-  return { verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree, environment: "host", guarantees: hostProvider.guarantees, outcome,
+/** A check; a failing command's base passed, so the failure comes with the candidate, unless `base` says otherwise. */
+function check(outcome: CheckResult["outcome"], command = "bun run check",
+  base: NonNullable<CheckResult["base"]> = { outcome: "passed", exitCode: 0, origin: "introduced" }): CheckResult {
+  const failing = outcome === "failed" || outcome === "timed_out";
+  return { ...failing ? { base } : {}, verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree, environment: "host", guarantees: hostProvider.guarantees, outcome,
     exitCode: outcome === "failed" ? 1 : outcome === "passed" ? 0 : null, durationMs: 1,
     output: outcome === "failed" ? "FAIL price.test.ts\nexpected 90" : "" };
 }
@@ -21,6 +24,17 @@ it("sends back failed checks and fixable findings, and keeps the operator's call
   expect(correctionFor([check("failed"), check("passed", "lint"), check("not_started", "e2e")], [review])).toEqual({
     failedChecks: [check("failed")], findings: [review.findings[0]], obligations: [] });
   expect(correctionFor([check("timed_out")], [])).toEqual({ failedChecks: [check("timed_out")], findings: [], obligations: [] });
+});
+
+it("keeps with the operator a check failure the base shares or that could not be compared with it", () => {
+  expect(correctionFor([check("failed", "bun run check", { outcome: "failed", exitCode: 1, origin: "preexisting" })], [])).toBeUndefined();
+  expect(correctionFor([check("timed_out", "bun run check", { outcome: "not_started", exitCode: null, origin: "unknown" })], []))
+    .toBeUndefined();
+  const { base: _base, ...uncompared } = check("failed");
+  expect(correctionFor([uncompared], [])).toBeUndefined();
+  // Oxlint and LemmaScript judge only the candidate's changed files, so their failures always come with it.
+  const lint: CheckResult = { ...uncompared, verifier: "oxlint", command: "Tesota's Oxlint profile" };
+  expect(correctionFor([lint], [])?.failedChecks).toEqual([lint]);
 });
 
 it("sends back only findings that survived refutation", () => {

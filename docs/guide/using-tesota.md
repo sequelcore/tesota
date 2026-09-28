@@ -220,6 +220,13 @@ marked ⚠: they can be a legitimate fix or a way to make checks pass, and
 only you can tell which. The result panel starts with your requests behind
 the changes, word for word, since everything else is measured against them.
 
+When a check fails, Tesota runs it once more without the changes, in the same
+place, and says beneath the ✗ how that ended. Only a failure the changes
+brought, one that passes without them, goes back to the agent; a check that
+fails either way, such as a test the sandbox cannot run, stays with you.
+While the agent corrects its work, your newer edits wait for your next
+request, so the review of a correction never counts them as the agent's.
+
 Besides your checks, Tesota runs its own verifiers on the changed files. Its
 Oxlint profile reports only problems the change introduced, such as an unused
 variable, a new `any`, or a comment that silences a check; a change that adds

@@ -97,13 +97,6 @@ it("keeps a session's agent model and the conversations it left, and reads a ses
   reopened.setSandbox(session.id, undefined);
   expect(reopened.list()[0]?.sandbox).toBeUndefined();
   reopened.close();
-  const path = join(root, readdirSync(root).find((name) => name.endsWith(".json")) ?? "");
-  const saved = JSON.parse(readFileSync(path, "utf8")) as { sessions: Record<string, unknown>[] };
-  for (const entry of saved.sessions) { delete entry["agent"]; delete entry["retiredEngineIds"]; delete entry["sandbox"]; }
-  writeFileSync(path, JSON.stringify(saved));
-  const older = openShellSessionStore(source, root);
-  expect(older.list()[0]?.agent).toBeUndefined();
-  older.close();
 });
 
 it("persists network destinations allowed for the repository and refuses anything else", () => {
@@ -119,10 +112,9 @@ it("persists network destinations allowed for the repository and refuses anythin
   reopened.close();
 });
 
-it("keeps the newest measured reviews, and reads a snapshot saved before they were recorded", () => {
+it("keeps the newest measured reviews", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);
-  const session = store.create();
   for (let index = 0; index < 22; index += 1) {
     store.recordReviewMeasurement({ at: "2026-09-25T00:00:00.000Z", depth: "deep", correction: false, durationMs: index, tokens: index });
   }
@@ -131,15 +123,6 @@ it("keeps the newest measured reviews, and reads a snapshot saved before they we
   const reopened = openShellSessionStore(source, root);
   expect(reopened.reviewMeasurements().map((entry) => entry.tokens)).toEqual(Array.from({ length: 20 }, (_, index) => index + 2));
   reopened.close();
-  const file = readdirSync(root).find((name) => name.endsWith(".json"));
-  if (file === undefined) throw new Error("Missing snapshot");
-  const saved = JSON.parse(readFileSync(join(root, file), "utf8")) as Record<string, unknown>;
-  delete saved["reviews"];
-  writeFileSync(join(root, file), JSON.stringify(saved));
-  const earlier = openShellSessionStore(source, root);
-  expect(earlier.list().map((entry) => entry.id)).toEqual([session.id]);
-  expect(earlier.reviewMeasurements()).toEqual([]);
-  earlier.close();
 });
 
 it("discards an older snapshot version and starts with no sessions", () => {
@@ -149,7 +132,7 @@ it("discards an older snapshot version and starts with no sessions", () => {
   store.close();
   const file = readdirSync(root).find((name) => name.endsWith(".json"));
   if (file === undefined) throw new Error("Missing snapshot");
-  writeFileSync(join(root, file), JSON.stringify({ format: "tesota-shell-sessions", version: 1, source, sessions: [] }));
+  writeFileSync(join(root, file), JSON.stringify({ format: "tesota-shell-sessions", version: 5, source, sessions: [] }));
   const reopened = openShellSessionStore(source, root);
   expect(reopened.list()).toEqual([]);
   expect(readdirSync(root).filter((name) => name.includes(".bak"))).toEqual([]);

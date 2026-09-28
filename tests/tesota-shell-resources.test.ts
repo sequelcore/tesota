@@ -49,7 +49,8 @@ const spies: { mockRestore(): void }[] = [];
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "tesota-shell-resources-"));
   const record = (id: string): ShellSessionRecord => ({ id, title: "Session 1", engineId: "11111111-1111-4111-8111-111111111111",
-    workspace: null, entries: [], inspections: [], interrupted: false, blocked: false });
+    workspace: null, entries: [], inspections: [], interrupted: false, blocked: false,
+    retiredEngineIds: [], titleSource: "counter" });
   records = [record("session")];
   const find = (id: string): ShellSessionRecord | undefined => records.find((entry) => entry.id === id);
   const store = { list: () => [...records], append: (id: string, entry: TranscriptEntry) => {

@@ -51,6 +51,8 @@ function nulSeparated(value: string): string[] { return value.split("\0").filter
 const requestsFile = "requests.jsonl";
 /** Present while the pending requests' answer check left gaps (decision 034). */
 const openRequestsFile = "requests-open";
+/** Holds the candidate's tree while the checkout holds the base for a check (decision 039). */
+const pinnedCandidateRef = "refs/tesota/candidate";
 const requestSchema = z.strictObject({ text: z.string().max(1_000_000), at: z.iso.datetime() });
 
 /**
@@ -88,8 +90,12 @@ export class Workspace {
   }
 
   private static async from(checkout: WorkspaceCheckout): Promise<Workspace> {
-    return new Workspace(checkout, await SourceSnapshot.open(checkout.source, sourceSnapshotDirectory(checkout.directory),
+    const workspace = new Workspace(checkout, await SourceSnapshot.open(checkout.source, sourceSnapshotDirectory(checkout.directory),
       checkout.tracking));
+    // A run on the base that Tesota could not finish, such as one a crash interrupted, leaves the candidate pinned.
+    const pinned = workspace.#pinnedCandidate();
+    if (pinned !== undefined) workspace.#restoreCandidate(pinned);
+    return workspace;
   }
 
   get base(): string { return this.#base; }
@@ -188,6 +194,42 @@ export class Workspace {
   contentAt(revision: string, path: string): string | undefined {
     if (!isGitObjectId(revision)) throw new Error("Invalid revision");
     try { return git(this.checkout, ["show", `${revision}:${path}`]); } catch { return undefined; }
+  }
+
+  /**
+   * Run `work` while the checkout holds the base instead of the candidate
+   * `snapshot`, then restore the candidate exactly, as Git's own
+   * `read-tree --reset -u` switches tracked files and leaves ignored ones, such
+   * as installed dependencies, in place. A ref pins the candidate meanwhile, so
+   * reopening the workspace restores it if Tesota stops before it could.
+   * `work` is given `intact`, which says whether the checkout still holds
+   * exactly the base.
+   */
+  async atBase<T>(snapshot: WorkspaceSnapshot, work: (intact: () => boolean) => Promise<T>): Promise<T> {
+    if (snapshot.base !== this.#base || this.snapshot().tree !== snapshot.tree) throw new Error("Workspace changed");
+    const baseTree = git(this.checkout, ["rev-parse", "--verify", `${this.#base}^{tree}`]).trim();
+    git(this.checkout, ["update-ref", pinnedCandidateRef, snapshot.tree]);
+    try {
+      git(this.checkout, ["read-tree", "--reset", "-u", this.#base]);
+      return await work(() => this.snapshot().tree === baseTree);
+    } finally {
+      this.#restoreCandidate(snapshot.tree);
+    }
+  }
+
+  #pinnedCandidate(): string | undefined {
+    try {
+      const tree = git(this.checkout, ["rev-parse", "--verify", "--quiet", `${pinnedCandidateRef}^{tree}`]).trim();
+      return isGitObjectId(tree) ? tree : undefined;
+    } catch { return undefined; }
+  }
+
+  /** Put the candidate back in the index and working tree, remove what a run on the base added, and unpin it. */
+  #restoreCandidate(tree: string): void {
+    git(this.checkout, ["read-tree", "--reset", "-u", tree]);
+    git(this.checkout, ["clean", "-d", "--force", "--quiet"]);
+    if (this.snapshot().tree !== tree) throw new Error("The workspace could not be restored to the reviewed candidate");
+    git(this.checkout, ["update-ref", "-d", pinnedCandidateRef]);
   }
 
   /** Discard all work after the base, keeping ignored files such as installed dependencies. */

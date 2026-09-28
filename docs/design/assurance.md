@@ -56,6 +56,28 @@ Rust and Go. A check that changes files is reported as `changed_files`, and
 the candidate must be reviewed again. The working agent may run the same tools
 while it works; those runs are feedback, not evidence.
 
+**A failing check runs again on the base** (decision 039), as a commit queue
+retries a failure without the patch: Chromium's CQ fails a change only for
+tests that fail with it and pass without it. When a check command fails or
+times out on the candidate, Tesota runs it again, in the same environment, on
+the candidate's base: the workspace pins the candidate's tree to a ref,
+switches the checkout's tracked files to the base with `git read-tree --reset
+-u`, which leaves ignored files such as installed dependencies in place, runs
+the command, and restores the candidate, removing anything the run added;
+reopening a workspace restores a candidate a stopped run left pinned. The
+failure's origin is `introduced` when the base passes, `preexisting` when the
+base ends the same way, and `unknown` otherwise, as when the base run could
+not start, was stopped or changed files (`checkOrigin` in
+`src/verification/check-origin-rule.ts`, proved by `bun run formal:check`).
+The result panel and the reviewers see how the base ended beside the failure.
+A session keeps each base run by command, base and environment, so correction
+rounds on the same base do not repeat it; a base run costs one more run of the
+command, only when it fails. The comparison is by outcome, so a candidate that
+adds a failure to a command that already fails on the base is `preexisting`:
+the operator still sees the failure and its output, but it is not sent back.
+Oxlint and LemmaScript judge only the changed files, so their failures always
+come with the candidate.
+
 ## Review
 
 ### Depth
@@ -183,15 +205,22 @@ train on them. The idea comes from the unmerged branch
 
 ## Correction
 
-Failed or timed-out checks, findings that are fixable, introduced,
+Failed or timed-out checks the candidate introduced, findings that are fixable, introduced,
 confirmed and not a repeat, and obligations that did not hold, go back to the working agent in the same
 conversation, with the request record unchanged. Tesota then verifies the new
 candidate, has a **fix validator** confirm whether each finding sent back is
 resolved, and reviews only the correction's own diff, so a round settles what
 it was sent instead of raising a fresh list; the main reviewer reassesses
 every obligation against the whole current result. At most two rounds run, fewer if
-a round leaves the tree unchanged. Operator findings, unknown origins,
-incomplete reviews and checks that could not run never go back to the agent.
+a round leaves the tree unchanged. Operator findings, unknown origins, check
+failures the base shares or that could not be compared with it, incomplete
+reviews and checks that could not run never go back to the agent.
+
+**The base stays fixed through the rounds** (decision 039). A correction turn
+does not bring the operator's newer repository state into the workspace, so
+the correction's diff holds only the agent's work; with an update in between,
+the operator's own edits would read as the agent's correction. That state
+arrives with the operator's next request, which starts a new cycle.
 
 ## The record
 
