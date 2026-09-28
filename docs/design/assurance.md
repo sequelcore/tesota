@@ -286,6 +286,11 @@ planted false claim on each correct candidate. It scores findings raw and
 after refutation, measures correction on known good and cosmetic fixes, and
 records time, tokens by kind and models. A change to a reviewer, the refuter, origin
 checking, a prompt or a role's model is measured before it is adopted.
+`--set=scope` runs five more: an out-of-scope refactor and an unrequested
+abstraction, which break nothing and should be marked as the operator's call
+rather than sent back; a quick hack that passes its checks; and a minimal and
+a large but necessary control that should draw nothing. They are kept apart
+so the eight cases' totals stay comparable.
 
 Those candidates were written with Tesota's own prompts, and every model
 measured finds their defects, so they guard the machinery rather than rank

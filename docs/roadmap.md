@@ -116,19 +116,42 @@ project. They are listed here as they are chosen.
     other harnesses and the incidents behind it.
 
   Two measured runs on the branch are in [findings](findings.md).
-- **Proposal: out-of-scope work and overengineering.** Tesota flags changes to
-  what gets checked, deepens review for large or sensitive changes, and asks
-  the reviewer to mark work beyond what was asked as the operator's call; but
+- **Work beyond the request, and answers longer than needed** (issue #165,
+  with the evidence and a recommendation). Tesota flags changes to what gets
+  checked, deepens review for large or sensitive changes, and asks the
+  reviewer to mark work beyond what was asked as the operator's call; but
   nothing measures whether that marking works, obligations catch only missing
-  work, and nothing compares a change with its request. In order, each step
+  work, and the working agent's prompt says nothing about scope, abstaining
+  or length. Other harnesses steer these with instructions and enforce only
+  machine-checkable boundaries; no study found shows that plan approval, a
+  file or line budget, or a prompted "simplify" pass helps, and trimming
+  patches by prompt lost resolved tasks (RECAP). Framing "nothing to change"
+  as success cut unneeded changes sharply (FixedBench). In order, each step
   only if the one before shows the need:
-  1. An evaluation case that fixes what was asked and also adds an unrequested
-     abstraction or refactor, to measure whether today's reviewer flags it.
-  2. Obligations in both directions: "the result does nothing beyond the
+  1. Registered cases, before any run. For review, `live:review --set=scope`
+     (built 2026-09-28): an out-of-scope refactor and an unrequested
+     abstraction that the review should mark `operator`, a quick hack that
+     passes the checks, a minimal control and a large but necessary one.
+     Adopted when every extra is marked `operator` in 2 of 2 runs, neither
+     control draws a finding, and the eight core cases lose nothing. For the
+     working agent, paired runs before and after a prompt change, two each:
+     an already fixed request (no change, with evidence), a partly fixed one
+     (over-abstention), an unfixed control, and about 15 requests measured in
+     words of the final reply, median and 90th percentile. Adopted when
+     correct abstention rises, partly fixed resolution does not fall, median
+     words fall and no obligation is lost. The agent runner is next.
+  2. A short block in the working agent's prompt, measured on those cases:
+     "nothing to change" framed as success, one sentence on scope, and
+     leading with the result.
+  3. Obligations in both directions: "the result does nothing beyond the
      requests", judged and refuted like the other gaps, shown to the operator
      and never sent back automatically, since an extra may be welcome.
-  3. A deterministic hint: changed files that no request or plan step names,
+  4. A deterministic hint: changed files that no request or plan step names,
      shown for attention only, since legitimate changes often touch them.
+
+  Deferred until daily use shows drift: a frame of files each plan step
+  declares, a `scope` role, plan approval (decision 025 has no plan modes),
+  an automatic "simplify" correction and native verbosity settings.
 
 ### 2. Measurement on public benchmarks
 
