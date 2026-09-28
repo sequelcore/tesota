@@ -69,7 +69,7 @@ it("reads the distributions wsl.exe lists in UTF-16", () => {
   expect(listedDistributions(Buffer.alloc(0))).toEqual([]);
 });
 
-it("sets up Tesota's distribution with its pinned runtimes through the hash-checked mise, its own user, and interop off", () => {
+it("sets up Tesota's distribution with its pinned runtimes through the hash-checked mise, its own user, and its settings", () => {
   const script = distributionSetupScript();
   expect(script).toMatch(/^set -eu\n/u);
   expect(script).toContain("apt-get install -y -q --no-install-recommends bubblewrap git curl");
@@ -77,6 +77,7 @@ it("sets up Tesota's distribution with its pinned runtimes through the hash-chec
   expect(script).toMatch(/mise" install node@\d+\.\d+\.\d+\n.*\ncp -a "\$\(.*mise" where node@\d+\.\d+\.\d+\)" \/opt\/tesota\/node\n/u);
   expect(script).toMatch(/mise" install bun@\d+\.\d+\.\d+\n/u);
   expect(script).toContain("useradd --create-home --shell /bin/bash tesota");
-  expect(script).toContain("[interop]\\nenabled=false\\nappendWindowsPath=false");
-  expect(script).toContain("echo -1 > /proc/sys/fs/binfmt_misc/WSLInterop");
+  // Windows' drives are owned by Tesota's user, whom Git trusts and who may change permissions there.
+  expect(script).toContain(`'[automount]\\noptions = "uid=%s,gid=%s"\\n[user]\\ndefault=%s\\n[interop]\\nenabled=false\\nappendWindowsPath=false\\n' ` +
+    `"$(id -u tesota)" "$(id -g tesota)" tesota > /etc/wsl.conf`);
 });

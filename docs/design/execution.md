@@ -35,9 +35,14 @@ provider (`src/execution-controls.ts`): each guarantee claimed selects its
 controls, every environment must also work in its workspace and stop what it
 runs, and each control is a small probe run inside and judged from the host.
 File and process probes are JavaScript, so no shell is assumed; network probes
-use `curl`, which honors a sandbox's proxy, and one more connects to a refused
-destination's address directly, ignoring the proxy, since proxy variables
-confine only programs that honor them. Run against the host provider,
+use `curl`, which honors a sandbox's proxy, and one more opens a connection
+to a refused destination's address directly, ignoring the proxy, since proxy
+variables confine only programs that honor them. That control passes only
+when the connection is refused inside while this computer connects to the
+same address; a connection that opened fails it whatever happened after, and
+a result that shows neither is indeterminate and fails too
+(`directConnection` in `src/verification/direct-connection-rule.ts`,
+proved). Run against the host provider,
 which confines nothing, the confinement controls fail, which shows they can
 tell a sandbox from none.
 
@@ -415,7 +420,14 @@ it is missing, creates a distribution named `tesota` from Ubuntu 24.04, and
 runs one script in it as root: bubblewrap and Git from the distribution,
 Node and Bun at Tesota's own pinned versions under `/opt/tesota` through the
 pinned, hash-checked mise (as the Docker Sandboxes kit does), a user of its
-own, and Windows interop off in `/etc/wsl.conf` and at once. Tesota starts
+own, and `/etc/wsl.conf` with Windows interop off and Windows' drives owned by
+that user. A distribution created without its first-run setup has root as its
+default user, and WSL mounts Windows' drives as their default user's, so Git
+refused the workspace as dubious ownership and `chmod` failed during
+`git init`. WSL applies these settings only when the distribution starts
+again, so the next step restarts it (`wsl.exe --terminate tesota`) while the
+sandbox's check still finds interop on or a drive owned by another user.
+Tesota starts `wsl.exe` from the Windows system directory, never by name, and
 its process as that user, never root, with Node from the Windows drive's
 copy of Tesota. Keeping a distribution of its own leaves the operator's
 distributions, their users and their interop setting alone.

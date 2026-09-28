@@ -1,15 +1,18 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, readlinkSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { constants, homedir, release } from "node:os";
-import { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } from "node:path";
+import { posix } from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import * as z from "zod";
 import { EgressProxy } from "./egress-proxy.js";
 import { PACKAGE_REGISTRY_HOSTS, type RunOutcome } from "./execution-environment.js";
 import { readsToolFolder } from "./verification/tool-folder-rule.js";
+
+// This side runs on Linux, so its paths follow Linux's rules wherever it is tested.
+const { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } = posix;
 
 /**
  * The Linux side of the WSL sandbox candidate (issue 163): one process per
@@ -180,7 +183,7 @@ export const sandboxMessage: z.ZodType<SandboxMessage> = z.discriminatedUnion("t
   z.strictObject({ type: z.literal("ended"), id: z.string(),
     outcome: z.enum(["exited", "timed_out", "cancelled", "not_started", "unconfirmed"]), exitCode: z.number().nullable() }),
   z.strictObject({ type: z.literal("blocked"), id: z.string(), destinations: z.array(z.string()) }),
-  z.strictObject({ type: z.literal("checked"), problems: z.array(z.string()), versions: z.string() }),
+  z.strictObject({ type: z.literal("checked"), problems: z.array(z.string()), settings: z.array(z.string()), versions: z.string() }),
 ]);
 export type SandboxMessage =
   | Readonly<{ type: "ready"; workspace: string }>
@@ -188,7 +191,7 @@ export type SandboxMessage =
   | Readonly<{ type: "output"; id: string; data: string }>
   | Readonly<{ type: "ended"; id: string; outcome: RunOutcome; exitCode: number | null }>
   | Readonly<{ type: "blocked"; id: string; destinations: readonly string[] }>
-  | Readonly<{ type: "checked"; problems: readonly string[]; versions: string }>;
+  | Readonly<{ type: "checked"; problems: readonly string[]; settings: readonly string[]; versions: string }>;
 
 /** How the host's paths become this side's: WSL's own translation of Windows paths, or the same path on Linux. */
 export type PathTranslation = "wsl" | "native";
@@ -366,12 +369,17 @@ export async function releaseState(workspace: string, paths: PathTranslation): P
 }
 
 /**
- * What stands between this machine and a working sandbox: bubblewrap missing
- * or unable to create its namespaces, and in WSL, interop still able to start
- * Windows programs. The versions are what qualification depends on.
+ * What stands between this machine and a working sandbox. Problems are what
+ * setup installs: bubblewrap missing or unable to create its namespaces.
+ * Settings are what WSL applies only when the distribution starts again:
+ * interop still able to start Windows programs, and Windows' drives owned by
+ * another user, which Git refuses as dubious ownership and where only the
+ * owner may change permissions. The versions are what qualification depends
+ * on.
  */
-export function check(paths: PathTranslation): Readonly<{ problems: string[]; versions: string }> {
+export function check(paths: PathTranslation): Readonly<{ problems: string[]; settings: string[]; versions: string }> {
   const problems: string[] = [];
+  const settings: string[] = [];
   const bubblewrap = locateBubblewrap();
   const version = bubblewrap === undefined ? "none" : spawnSync(bubblewrap, ["--version"], { encoding: "utf8" }).stdout.trim();
   if (bubblewrap === undefined) problems.push("bubblewrap (bwrap) is not installed");
@@ -382,6 +390,13 @@ export function check(paths: PathTranslation): Readonly<{ problems: string[]; ve
       { encoding: "utf8", env: {} });
     if (trial.status !== 0) problems.push(`bubblewrap cannot create its namespaces here: ${trial.stderr.trim().slice(-300)}`);
   }
-  if (paths === "wsl" && existsSync("/proc/sys/fs/binfmt_misc/WSLInterop")) problems.push("Windows interop is on in this distribution");
-  return { problems, versions: `${version}; linux ${release()}; node ${process.version}` };
+  if (paths === "wsl") {
+    if (existsSync("/proc/sys/fs/binfmt_misc/WSLInterop")) settings.push("Windows interop is on in this distribution");
+    const user = process.getuid?.();
+    for (const mount of windowsMounts(readFileSync("/proc/self/mountinfo", "utf8"))) {
+      const owner = statSync(mount).uid;
+      if (owner !== user) settings.push(`${mount} is owned by user ${owner}, not by this user (${user ?? "unknown"})`);
+    }
+  }
+  return { problems, settings, versions: `${version}; linux ${release()}; node ${process.version}` };
 }

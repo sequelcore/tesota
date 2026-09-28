@@ -10,6 +10,7 @@ import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionPr
   type NetworkControl, type PrepareOptions, type PreparationStep, type ProviderReadiness, type RunOptions, type RunResult,
   type SetupStep } from "./execution-environment.js";
 import { miseInstallScript, planToolchain } from "./toolchain.js";
+import { windowsSystemProgram } from "./windows-system.js";
 
 /**
  * The WSL sandbox (issue 163): the candidate to replace the native Windows
@@ -33,14 +34,20 @@ const DISTRIBUTION_IMAGE = "Ubuntu-24.04";
 /** Starts the sandbox's process with arguments, somewhere it can run bubblewrap. */
 export type Launch = (args: readonly string[]) => ChildProcessWithoutNullStreams;
 
-const SERVER = fileURLToPath(new URL("./bubblewrap-sandbox-server.js", import.meta.url));
+/** The built sandbox process, whether this module runs from `dist` or, in tests, from `src`. */
+const SERVER = fileURLToPath(new URL("../dist/bubblewrap-sandbox-server.js", import.meta.url));
+
+/** WSL's command, by its place in the system directory: never one `PATH` or the working folder could supply. */
+function wslProgram(): string {
+  return windowsSystemProgram("wsl.exe");
+}
 
 /** Where the distribution's setup puts Tesota's pinned runtimes, as the Docker Sandboxes kit does. */
 const RUNTIMES = ["node", "bun"] as const;
 const RUNTIMES_PATH = RUNTIMES.map((tool) => `/opt/tesota/${tool}/bin`).join(":");
 
 /** The sandbox's process inside Tesota's distribution, run by Tesota's pinned Node from Tesota's own files on the Windows drive. */
-const wslLaunch: Launch = (args) => spawn("wsl.exe", ["--distribution", WSL_DISTRIBUTION, "--user", WSL_USER, "--cd", "~",
+const wslLaunch: Launch = (args) => spawn(wslProgram(), ["--distribution", WSL_DISTRIBUTION, "--user", WSL_USER, "--cd", "~",
   "--exec", "sh", "-c", `PATH=${RUNTIMES_PATH}:$PATH exec node "$(wslpath -a -u "$0")" "$@"`, SERVER, ...args, "--wsl"],
   { windowsHide: true });
 
@@ -248,7 +255,9 @@ function pinnedRuntimes(): { node: string; bun: string } {
  * Root's script that makes Tesota's distribution a sandbox host: bubblewrap
  * and Git from the distribution, Node and Bun at Tesota's pinned versions
  * under `/opt/tesota` through the pinned, hash-checked mise, a user of its
- * own, and Windows interop off, now and at every start.
+ * own, and WSL's settings for the next start: interop off, and Windows'
+ * drives owned by that user, since a distribution created without its
+ * first-run setup mounts them as root's.
  */
 export function distributionSetupScript(): string {
   const versions = pinnedRuntimes();
@@ -260,30 +269,36 @@ export function distributionSetupScript(): string {
       `rm -rf /opt/tesota/${tool}`, `cp -a "$(${mise} where ${tool}@${versions[tool]})" /opt/tesota/${tool}`]),
     "rm -rf /tmp/tesota-mise",
     `id -u ${WSL_USER} >/dev/null 2>&1 || useradd --create-home --shell /bin/bash ${WSL_USER}`,
-    "printf '[interop]\\nenabled=false\\nappendWindowsPath=false\\n' > /etc/wsl.conf",
-    "if [ -e /proc/sys/fs/binfmt_misc/WSLInterop ]; then echo -1 > /proc/sys/fs/binfmt_misc/WSLInterop; fi"].join("\n");
+    `printf '[automount]\\noptions = "uid=%s,gid=%s"\\n[user]\\ndefault=%s\\n[interop]\\nenabled=false\\nappendWindowsPath=false\\n' ` +
+      `"$(id -u ${WSL_USER})" "$(id -g ${WSL_USER})" ${WSL_USER} > /etc/wsl.conf`].join("\n");
 }
 
 /** The first missing step only: each depends on the ones before it. */
 async function readinessSteps(launch: Launch): Promise<SetupStep[]> {
-  const listed = await invoke("wsl.exe", ["--list", "--quiet"]);
+  const wsl = wslProgram();
+  const listed = await invoke(wsl, ["--list", "--quiet"]);
   if (listed.status === null) {
-    const script = "wsl.exe --install --no-distribution";
+    const script = `& '${wsl.replaceAll("'", "''")}' --install --no-distribution`;
     return [{ description: "Install WSL", elevated: true, restart: true, command: script, action: { kind: "elevated-powershell", script } }];
   }
   if (!listedDistributions(listed.stdout).includes(WSL_DISTRIBUTION)) {
     const args = ["--install", DISTRIBUTION_IMAGE, "--name", WSL_DISTRIBUTION, "--no-launch"];
-    return [{ description: "Create Tesota's WSL distribution", command: `wsl.exe ${args.join(" ")}`,
-      action: { kind: "process", program: "wsl.exe", args } }];
+    return [{ description: "Create Tesota's WSL distribution", command: `"${wsl}" ${args.join(" ")}`,
+      action: { kind: "process", program: wsl, args } }];
   }
   const checked = await checkDistribution(launch);
-  if (checked !== undefined && checked.problems.length === 0) return [];
-  // The script travels encoded, so no quoting between Windows and the distribution's shell can change it.
-  const args = ["--distribution", WSL_DISTRIBUTION, "--user", "root", "--exec", "sh", "-c",
-    `echo ${Buffer.from(distributionSetupScript(), "utf8").toString("base64")} | base64 -d | sh`];
-  const problems = checked?.problems.join("; ") ?? "Node.js cannot run there yet";
-  return [{ description: `Set up Tesota's WSL distribution: bubblewrap, Git, Node.js, Bun, its own user and interop off (${problems})`,
-    command: `wsl.exe ${args.slice(0, 7).join(" ")} "<setup script>"`, action: { kind: "process", program: "wsl.exe", args } }];
+  if (checked === undefined || checked.problems.length > 0) {
+    // The script travels encoded, so no quoting between Windows and the distribution's shell can change it.
+    const args = ["--distribution", WSL_DISTRIBUTION, "--user", "root", "--exec", "sh", "-c",
+      `echo ${Buffer.from(distributionSetupScript(), "utf8").toString("base64")} | base64 -d | sh`];
+    const problems = checked?.problems.join("; ") ?? "Node.js cannot run there yet";
+    return [{ description: `Set up Tesota's WSL distribution: bubblewrap, Git, Node.js, Bun, its own user and settings (${problems})`,
+      command: `"${wsl}" ${args.slice(0, 7).join(" ")} "<setup script>"`, action: { kind: "process", program: wsl, args } }];
+  }
+  if (checked.settings.length === 0) return [];
+  const args = ["--terminate", WSL_DISTRIBUTION];
+  return [{ description: `Restart Tesota's WSL distribution so its settings apply (${checked.settings.join("; ")})`,
+    command: `"${wsl}" ${args.join(" ")}`, action: { kind: "process", program: wsl, args } }];
 }
 
 export const wslProvider: ExecutionProvider = {

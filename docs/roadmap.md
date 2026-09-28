@@ -61,9 +61,11 @@ project. They are listed here as they are chosen.
   feedback. Before MXC is extended, a WSL sandbox (decision 043,
   [design](design/execution.md#wsl-sandbox)) competes for Windows' default:
   built 2026-09-28 and chosen only by name; its Linux side passed every
-  control and Tesota's own check on Linux. Next: both on one Windows machine,
-  with the same controls, repositories, timings and real work, then one
-  default and the other removed.
+  control and Tesota's own check on Linux. A first Windows comparison found
+  three defects, fixed, and favored WSL in one uncontrolled run. Next: both
+  on one Windows machine again, with the corrected network control, the same
+  repositories, controlled caches and real work, then one default and the
+  other removed.
 - **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
   built 2026-09-26; OpenRouter's contract suite passes live on a free model.
   OpenCode refuses Zen's free models to clients other than its own, and Go
