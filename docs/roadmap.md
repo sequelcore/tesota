@@ -102,6 +102,10 @@ project. They are listed here as they are chosen.
     [design](design/assurance.md#verifiers)): built 2026-09-28; a failed
     check runs again on the base, only a failure the change caused goes back
     to the agent, and a correction round keeps the base.
+  - **Failed checks compared test by test** (decision 040,
+    [design](design/assurance.md#verifiers)): built 2026-09-28; a check may
+    name its JUnit XML reports, and a test that fails only with the change, or
+    that the change added, sends back a check the base fails too.
   - **Safer application.** Stop when any source file changed since the base;
     keep each replaced original; install without replacing; mark a partial
     effect "recovery required".

@@ -52,7 +52,10 @@ verifier is never reported as passed.
 The operator approves check commands once per repository; Tesota suggests the
 repository's `check` script, or its `typecheck`, `lint` and `test` scripts,
 using the lockfile's package manager, and `cargo test` or `go test ./...` for
-Rust and Go. A check that changes files is reported as `changed_files`, and
+Rust and Go. A check may also name the JUnit XML reports its command writes,
+as `command => report, report`, relative to the repository and in paths Git
+ignores; a check whose report Git does not ignore is not run, since writing
+the report would change the reviewed files, and is reported as not started. A check that changes files is reported as `changed_files`, and
 the candidate must be reviewed again. The working agent may run the same tools
 while it works; those runs are feedback, not evidence.
 
@@ -70,11 +73,35 @@ base ends the same way, and `unknown` otherwise, as when the base run could
 not start, was stopped or changed files (`checkOrigin` in
 `src/verification/check-origin-rule.ts`, proved by `bun run formal:check`).
 The result panel and the reviewers see how the base ended beside the failure.
-A session keeps each base run by command, base and environment, so correction
-rounds on the same base do not repeat it; a base run costs one more run of the
-command, only when it fails. The comparison is by outcome, so a candidate that
-adds a failure to a command that already fails on the base is `preexisting`:
-the operator still sees the failure and its output, but it is not sent back.
+A session keeps each base run by command, reports, base and environment, so
+correction rounds on the same base do not repeat it; a base run costs one more
+run of the command, only when it fails.
+
+**A check with reports is compared test by test** (decision 040). Tesota
+removes the check's reports before each run, on the candidate and on the base,
+since ignored files outlast the switch to the base, and after a failed run
+reads and merges them (`src/test-report.ts`): a test is failed when it has a
+`failure` or `error`, skipped when it has `skipped`, and a test named twice is
+failed when either run failed. A report that cannot be removed first, such as
+a directory, a locked file or a path through a link, stops the check as not
+started, and Tesota never removes or reads a report through a link. A test
+that fails with the changes is `introduced` when it passes without them, or
+when it has no result there although the base run wrote a report the candidate
+named it in (`baseTestStatus`); it is `preexisting` when it fails there too,
+and `unknown` when it was skipped there or its report was not written there
+(`testOrigin`). A failing check is then `introduced` when the base passes, or
+when the base failed or timed out too and some test is introduced, and
+`preexisting` only when the base ends the same way and no test is
+(`checkOrigin`, both proved by `bun run formal:check`). Tests can only make a
+failure introduced: a report does not cover the rest of what a command, such as
+a build or a linter, checks, so matching tests never make a failure
+`preexisting` that the outcome alone would not. The panel, the reviewers and
+the correction name the tests that fail only with the changes. Without a report
+that can be read, as when the command stops before writing it, the comparison
+is by outcome, and a candidate that adds a failure to a command that already
+fails on the base is `preexisting`: the operator still sees the failure and
+its output, but it is not sent back. A flaky test that fails only with the
+changes costs a correction round.
 Oxlint and LemmaScript judge only the changed files, so their failures always
 come with the candidate.
 

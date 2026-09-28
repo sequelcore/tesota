@@ -27,7 +27,11 @@ The package binary points to `dist/cli.js`. Build before `bun link`; later
 builds refresh that linked executable, and `bun unlink` removes it. The lint
 rule limits cyclomatic complexity to 20 in `src` and `tests` with no file
 exceptions. The Git workspace suites run in a separate Vitest process so a
-timed-out filesystem operation cannot contaminate later suites. The opt-in
+timed-out filesystem operation cannot contaminate later suites. Each of the
+two groups also writes a JUnit XML report to the ignored `test-reports/`
+(`unit.xml` and `workspace.xml`), so a Tesota session on this repository can
+approve `bun run check => test-reports/unit.xml, test-reports/workspace.xml`
+and compare its failures with the base test by test. The opt-in
 `TESOTA_LIVE_SANDBOX=1` suite exercises Docker Sandboxes' boundary live,
 `TESOTA_LIVE_MXC=1` exercises the native Windows sandbox on Windows 11 24H2 or
 later, and

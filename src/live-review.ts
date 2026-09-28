@@ -114,7 +114,7 @@ try {
     const snapshot = workspace.snapshot();
     const signal = new AbortController().signal;
     const checks = await runChecks(await hostProvider.prepare(workspace.checkout), workspace, snapshot,
-      ["node --test \"src/**/*.test.js\""], signal);
+      [{ command: "node --test \"src/**/*.test.js\"", reports: [] }], signal);
     const input = { checkout: workspace.checkout, requests: await workspace.requests(), snapshot, checks,
       flags: flagVerificationChanges(snapshot, (revision, path) => workspace.contentAt(revision, path)) };
     const started = Date.now();

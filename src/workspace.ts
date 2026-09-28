@@ -113,6 +113,14 @@ export class Workspace {
   }
 
   /**
+   * Whether Git ignores a relative path in the checkout, so that writing it is
+   * not work; a path Git tracks, or one it cannot judge, is not ignored.
+   */
+  ignores(path: string): boolean {
+    try { git(this.checkout, ["check-ignore", "--quiet", "--", path]); return true; } catch { return false; }
+  }
+
+  /**
    * Bring what the source repository holds now into the workspace, as Git
    * rebases work: the newer source state becomes the base, and pending work is
    * carried onto it with a three-way merge. On a conflict nothing changes.

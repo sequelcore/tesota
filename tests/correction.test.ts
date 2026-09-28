@@ -37,6 +37,19 @@ it("keeps with the operator a check failure the base shares or that could not be
   expect(correctionFor([lint], [])?.failedChecks).toEqual([lint]);
 });
 
+it("sends back a check the base fails too when some of its tests fail only with the changes, naming them", () => {
+  const introducedTests = Array.from({ length: 12 }, (_, index) => `tests/price.test.ts > case ${String(index).padStart(2, "0")}`);
+  const failing = check("failed", "bun run check", { outcome: "failed", exitCode: 1, origin: "introduced", introducedTests });
+  const round = correctionFor([failing], []);
+  expect(round?.failedChecks).toEqual([failing]);
+  if (round === undefined) throw new Error("Nothing sent back");
+  const prompt = correctionPrompt(["Fix pricing"], round);
+  expect(prompt).toContain("It also fails without your changes; these tests fail only with them: " +
+    "tests/price.test.ts > case 00; tests/price.test.ts > case 01;");
+  expect(prompt).toContain("tests/price.test.ts > case 09; and 2 more");
+  expect(prompt).not.toContain("case 10");
+});
+
 it("sends back only findings that survived refutation", () => {
   for (const standing of ["refuted", "unsettled", undefined] as const) {
     const { standing: _confirmed, ...untested } = review.findings[0]!;

@@ -187,6 +187,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `mxc-environment.ts`, `egress-proxy.ts` | The native Windows sandbox on MXC, and the allowlist proxy its commands reach the network through |
 | `execution-qualification.ts`, `sandbox-command.ts`, `verification/sandbox-qualification.ts` | Qualification on the operator's machine, `tesota sandbox`, and their proved rules |
 | `workspace-checks.ts`, `verification/oxlint*.ts`, `verification/lemmascript-verifier.ts` | Verifier results with claim and limits: approved commands, Oxlint, LemmaScript with Dafny |
+| `test-report.ts`, `verification/check-origin-rule.ts` | Reading a check's JUnit XML reports, and the proved rule for whose failure a check or test is |
 | `verification-changes.ts` | Flagging changes to tests, check configuration, CI, specifications and scripts |
 | `review.ts`, `integrations/pi-reviewer.ts`, `integrations/pi-claimcheck.ts` | The reviewer contract, Tesota's reviewer and lenses, and ClaimCheck's method |
 | `integrations/pi-refuter.ts`, `integrations/pi-fix-validator.ts` | The refuter and the fix validator |

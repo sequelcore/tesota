@@ -210,7 +210,10 @@ example `/roles triage typesafe:jev-1.13.0` or `/roles advisor off`.
 When a request leaves changes, Tesota runs your checks on exactly that
 content. The first time in a repository it suggests commands from it (for
 example `bun run check`); press Enter to accept, type your own separated by
-`;`, or type `none`. Tesota remembers the choice for that repository.
+`;`, or type `none`. Tesota remembers the choice for that repository. After a
+command you may name the JUnit XML reports it writes, in paths your
+`.gitignore` covers, so its failures are compared test by test:
+`bun run check => test-reports/unit.xml, test-reports/workspace.xml`.
 
 The conversation shows a review once, set apart from the agent's replies by a
 rule down its left side: each changed file and each check with ✓ or ✗.
@@ -223,7 +226,10 @@ the changes, word for word, since everything else is measured against them.
 When a check fails, Tesota runs it once more without the changes, in the same
 place, and says beneath the ✗ how that ended. Only a failure the changes
 brought, one that passes without them, goes back to the agent; a check that
-fails either way, such as a test the sandbox cannot run, stays with you.
+fails either way, such as a test the sandbox cannot run, stays with you. When
+the check names its reports, a test that fails only with the changes, or that
+the changes added and that fails, sends it back even though the check fails
+either way, and Tesota names those tests.
 While the agent corrects its work, your newer edits wait for your next
 request, so the review of a correction never counts them as the agent's.
 

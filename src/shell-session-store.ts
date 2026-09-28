@@ -8,6 +8,8 @@ import { SANDBOX_PREFERENCES, type SandboxPreference } from "./execution-provide
 import { MAX_PLAN_STEPS, PLAN_STATUSES, type PlanStep } from "./work-plan.js";
 import { parseModelChoice } from "./model-roles.js";
 import { MEASUREMENTS_KEPT, type ReviewMeasurement, withMeasurement } from "./review-forecast.js";
+import { MAX_CHECK_REPORTS, normalizeReportPath } from "./test-report.js";
+import type { ApprovedCheck } from "./workspace-checks.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
 import { replacesTitle, type TitleSource } from "./verification/session-title-rule.js";
 
@@ -50,12 +52,17 @@ const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.i
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
   tokens: z.number().nonnegative(), models: z.strictObject({ reviewer: z.string().min(1).max(100),
     refuter: z.string().min(1).max(100), validator: z.string().min(1).max(100) }).optional() });
-const snapshotVersion = 6;
+const checkSchema: z.ZodType<{ command: string; reports: string[] }> = z.strictObject({
+  command: z.string().min(1).max(1000),
+  reports: z.array(z.string().refine((path) => normalizeReportPath(path) === path, "not a report path"))
+    .max(MAX_CHECK_REPORTS) });
+// Version 7 names each check's JUnit XML reports (decision 040).
+const snapshotVersion = 7;
 const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: typeof snapshotVersion; source: string;
-  checks: string[] | null; network: string[]; reviews: ReviewMeasurement[];
+  checks: { command: string; reports: string[] }[] | null; network: string[]; reviews: ReviewMeasurement[];
   sessions: z.infer<typeof sessionSchema>[] }> =
     z.strictObject({ format: z.literal("tesota-shell-sessions"), version: z.literal(snapshotVersion),
-      source: z.string(), checks: z.array(z.string().min(1).max(1000)).max(20).nullable(),
+      source: z.string(), checks: z.array(checkSchema).max(20).nullable(),
       network: z.array(z.string().refine(isNetworkDestination)).max(200),
       reviews: z.array(measurementSchema).max(MEASUREMENTS_KEPT),
       sessions: z.array(sessionSchema) });
@@ -69,9 +76,9 @@ export interface ShellSessionStore {
   append(id: string, entry: TranscriptEntry): void;
   inspect(id: string, inspection: { title: string; summary: string; detail: string; diff?: string | undefined }): void;
   setWorkspace(id: string, directory: string): void;
-  /** Check commands the operator approved for this repository, or null before the first choice. */
-  checks(): readonly string[] | null;
-  setChecks(commands: readonly string[]): void;
+  /** Checks the operator approved for this repository, with their reports, or null before the first choice. */
+  checks(): readonly ApprovedCheck[] | null;
+  setChecks(checks: readonly ApprovedCheck[]): void;
   /** Network destinations the operator allowed for every session of this repository. */
   allowedNetwork(): readonly string[];
   allowNetwork(destinations: readonly string[]): void;
@@ -238,9 +245,9 @@ export function openShellSessionStore(sourceDirectory: string,
         try { save(); } catch (error) { session.workspace = previous; throw error; }
       },
       checks: () => checks,
-      setChecks: (commands) => {
+      setChecks: (approved) => {
         const previous = checks;
-        checks = [...commands];
+        checks = z.array(checkSchema).max(20).parse(approved.map((check) => ({ command: check.command, reports: [...check.reports] })));
         try { save(); } catch (error) { checks = previous; throw error; }
       },
       allowedNetwork: () => network,
