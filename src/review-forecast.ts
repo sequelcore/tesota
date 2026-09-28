@@ -31,6 +31,8 @@ export interface ReviewMeasurement {
 export interface ReviewPlan {
   readonly depth: ReviewDepth;
   readonly correction: boolean;
+  /** Why this review is thorough, in words the operator reads. */
+  readonly reasons?: readonly string[];
   /** The focused lenses of a deep review, by name. */
   readonly lenses: readonly string[];
   /** Whether the ClaimCheck method compares proved contracts. */
@@ -63,25 +65,21 @@ export function costText(durationMs: number, tokenCount: number): string {
   return `${Math.max(1, Math.round(durationMs / 1_000))} s and ${tokens(tokenCount)}`;
 }
 
-function steps(plan: ReviewPlan): string {
-  const reviewers = [plan.lenses.length === 0 ? "the reviewer" : `the reviewer and ${plan.lenses.length} focused ` +
-    `${plan.lenses.length === 1 ? "one" : "ones"} (${plan.lenses.join(", ")})`,
-  ...(plan.claimcheck ? ["the ClaimCheck method"] : [])].join(" and ");
-  return `${plan.correction ? "a check of each fix, " : ""}${reviewers}, then a refuter for any findings`;
-}
-
 /** One line: what the step runs, and what comparable reviews of this repository took. */
 export function forecastLine(plan: ReviewPlan, history: readonly ReviewMeasurement[]): string {
-  const kind = `${plan.depth === "deep" ? "Deep review" : "Review"}${plan.correction ? " of a correction" : ""}`;
+  const subject = plan.correction ? "the agent's fix" : "the agent's changes";
+  const why = plan.reasons?.length ? ` (reason: ${plan.reasons.join("; ")})` : "";
+  const reviewers = 1 + plan.lenses.length + Number(plan.claimcheck);
+  const steps = `${plan.correction ? "checking each fix, then " : ""}${reviewers} ` +
+    `${reviewers === 1 ? "reviewer" : "reviewers"}, followed by a second check of any problems`;
   // Only reviews made the same way, with the same models, say what this one will cost.
   const comparable = history.filter((entry) => entry.depth === plan.depth && entry.correction === plan.correction &&
     sameModels(entry.models ?? earlierModels, plan.models));
   const basis = !canEstimate(comparable.length, MIN_MEASUREMENTS)
-    ? `Not enough ${plan.depth === "deep" ? "deep " : ""}reviews of this repository have been measured to estimate its cost ` +
-      `(${comparable.length} of ${MIN_MEASUREMENTS}).`
-    : `Comparable reviews of this repository took about ${costText(median(comparable.map((entry) => entry.durationMs)),
-      median(comparable.map((entry) => entry.tokens)))} (median of ${comparable.length}).`;
-  return `${kind}: ${steps(plan)}. ${basis}`;
+    ? `No reliable time estimate yet (${comparable.length} of ${MIN_MEASUREMENTS} comparable reviews measured).`
+    : `Comparable reviews here took about ${Math.max(1, Math.round(median(comparable.map((entry) => entry.durationMs)) / 1_000))} s ` +
+      `(median of ${comparable.length}).`;
+  return `Reviewing ${subject}${plan.depth === "deep" ? " thoroughly" : ""}${why}: ${steps}. ${basis}`;
 }
 
 /** The history with a new measurement, keeping the newest. */

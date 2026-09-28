@@ -9,18 +9,18 @@ const measured = (durationMs: number, tokens: number, overrides: Partial<ReviewM
   ({ at: "2026-09-25T00:00:00.000Z", depth: "deep", correction: false, durationMs, tokens, ...overrides });
 
 it("says what a deep review runs and that too few reviews were measured to estimate it", () => {
-  expect(forecastLine(deep, [measured(40_000, 90_000)])).toBe("Deep review: the reviewer and 2 focused ones " +
-    "(correctness and regressions, security and authority), then a refuter for any findings. Not enough deep reviews " +
-    "of this repository have been measured to estimate its cost (1 of 3).");
+  expect(forecastLine({ ...deep, reasons: ["changes existing tests"] }, [measured(40_000, 90_000)]))
+    .toBe("Reviewing the agent's changes thoroughly (reason: changes existing tests): 3 reviewers, followed by a second " +
+      "check of any problems. No reliable time estimate yet (1 of 3 comparable reviews measured).");
 });
 
 it("estimates from the median of comparable measured reviews only", () => {
   const history = [measured(30_000, 80_000), measured(50_000, 120_000), measured(90_000, 400_000),
     measured(5_000, 10_000, { depth: "standard" }), measured(70_000, 200_000, { correction: true })];
-  expect(forecastLine(deep, history)).toContain("Comparable reviews of this repository took about 50 s and 120k tokens (median of 3).");
-  expect(forecastLine({ ...deep, correction: true, lenses: [], claimcheck: true }, history)).toBe("Deep review of a correction: " +
-    "a check of each fix, the reviewer and the ClaimCheck method, then a refuter for any findings. Not enough deep " +
-    "reviews of this repository have been measured to estimate its cost (1 of 3).");
+  expect(forecastLine(deep, history)).toContain("Comparable reviews here took about 50 s (median of 3).");
+  expect(forecastLine({ ...deep, correction: true, lenses: [], claimcheck: true }, history)).toBe("Reviewing the agent's fix thoroughly: " +
+    "checking each fix, then 2 reviewers, followed by a second check of any problems. " +
+    "No reliable time estimate yet (1 of 3 comparable reviews measured).");
 });
 
 it("keeps only the newest measurements and words small costs plainly", () => {
@@ -41,7 +41,7 @@ it("takes the median as the middle of the sorted values, averaging the middle tw
     expect(upper - lower).toBe(length % 2 === 1 ? 0 : 1);
   }
   const history = [measured(90_000, 10), measured(30_000, 40), measured(50_000, 20), measured(70_000, 30)];
-  expect(forecastLine(deep, history)).toContain("about 60 s and 25 tokens (median of 4)");
+  expect(forecastLine(deep, history)).toContain("about 60 s (median of 4)");
   expect(canEstimate(3, 3)).toBe(true);
   expect(canEstimate(2, 3)).toBe(false);
   expect(canEstimate(5, 0)).toBe(false);
@@ -57,5 +57,5 @@ it("compares only reviews made with the same models, reading older measurements 
   const astra = { ...luna, reviewer: "codex:gpt-6-astra" };
   const history = [measured(10_000, 10_000), measured(20_000, 20_000), measured(30_000, 30_000, { models: luna })];
   expect(forecastLine(deep, history)).toContain("median of 3");
-  expect(forecastLine({ ...deep, models: astra }, history)).toContain("(0 of 3)");
+  expect(forecastLine({ ...deep, models: astra }, history)).toContain("(0 of 3 comparable reviews measured)");
 });

@@ -40,7 +40,7 @@ export function planProblem(plan: WorkPlan): string | undefined {
 }
 
 const reviewText: Readonly<Record<ObligationOutcome, string>> =
-  { held: "held in review", not_held: "not held in review", uncertain: "review uncertain" };
+  { held: "review found it done", not_held: "review found it not done", uncertain: "review could not decide" };
 
 /** The plan with what the review found of each step the agent marked done, from the main reviewer's obligations. */
 export function withReview(plan: WorkPlan, obligations: readonly Obligation[]): WorkPlan {

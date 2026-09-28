@@ -82,13 +82,15 @@ it("shows how the requests and the claimed steps held up, in the result and in t
       { ...obligation("request", 2, "unmet", "a test for 100%"), standing: "confirmed" },
       obligation("plan", 1, "met", "subtracts"), { ...obligation("plan", 3, "unmet", "the test exists"), standing: "unsettled" }] };
   const inspection = inspectReview({ snapshot, checks: [], flags: [], requests: input.requests, reviews: [report] });
-  expect(inspection.summary).toContain("  Requests: 1 of 2 held, 1 not held");
-  expect(inspection.summary).toContain("  Plan steps claimed done: 1 held, 1 uncertain");
-  expect(inspection.detail).toContain("  ✗ Request 2: a test for 100% (not held: evidence for a test for 100%)");
+  expect(inspection.summary).toContain("For the agent to fix\n  ✗ Request 2 is not done: a test for 100%");
+  expect(inspection.summary).toContain("Needs you\n  ? Plan step 3, marked done, is unclear: the test exists");
+  expect(inspection.summary).toContain("Your requests: 1 of 2 done, 1 not done");
+  expect(inspection.summary).toContain("Plan steps the agent marked done: 1 done, 1 unclear");
+  expect(inspection.detail).toContain("  ✗ Request 2: a test for 100% (not done: evidence for a test for 100%)");
   const plan = withReview([{ step: "Subtract the discount", status: "done" }, { step: "Refactor", status: "pending" },
     { step: "Add the test", status: "done" }], report.obligations ?? []);
-  expect(planLines(plan)).toEqual(["Plan · 2 of 3 done", "  ✓ Subtract the discount · done (agent) · held in review",
-    "  ○ Refactor", "  ✓ Add the test · done (agent) · review uncertain"]);
+  expect(planLines(plan)).toEqual(["Plan · 2 of 3 done", "  ✓ Subtract the discount · done (agent) · review found it done",
+    "  ○ Refactor", "  ✓ Add the test · done (agent) · review could not decide"]);
 });
 
 it("gives the reviewer the agent's reply as an untrusted answer when no files changed, and shows the answer check", async () => {
@@ -103,6 +105,7 @@ it("gives the reviewer the agent's reply as an untrusted answer when no files ch
       obligation("request", 2, "met", "greet() returns a string")] };
   const inspection = inspectAnswer(answer.requests, [report]);
   expect(inspection.title).toBe("Answer check");
-  expect(inspection.summary).toContain("  Requests: 1 of 2 held, 1 not held");
-  expect(inspection.detail).toContain("  ✗ Request 1: farewell() exists (not held: evidence for farewell() exists)");
+  expect(inspection.summary).toContain("For the agent to fix\n  ✗ Request 1 is not done: farewell() exists");
+  expect(inspection.summary).toContain("Your requests: 1 of 2 done, 1 not done");
+  expect(inspection.detail).toContain("  ✗ Request 1: farewell() exists (not done: evidence for farewell() exists)");
 });

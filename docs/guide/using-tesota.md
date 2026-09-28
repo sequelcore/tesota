@@ -134,11 +134,11 @@ and updates it as it works:
 "done (agent)" is the agent's own word, and "will be checked" is how it says
 the step can be confirmed; Tesota's checks and review, not the plan, are the
 evidence. After the review, each step the agent marked done also shows what
-the reviewer found of it: "held in review", "not held in review" or "review
-uncertain". The plan is cleared when you apply or reject the work.
+the reviewer found of it: "review found it done", "review found it not done"
+or "review could not decide". The plan is cleared when you apply or reject the work.
 
 The review also checks that everything you asked for is there, not only that
-the change has no defects: it shows how many of your requests held, and a
+the change has no defects: it shows how many of your requests are done, and a
 part of a request that is confirmed missing goes back to the agent. A turn
 in which the agent changes no files gets an "Answer check" too: a question
 can be answered, but a reply that only says the work is done, when the code
@@ -239,40 +239,38 @@ variable, a new `any`, or a comment that silences a check; a change that adds
 an `eslint-disable` fails. In TypeScript files with LemmaScript `//@`
 annotations, LemmaScript and Dafny prove the annotated properties; this needs
 Dafny installed, and without it the result says nothing was proved. The result
-panel shows, for every verifier, what a pass establishes and what it does not.
+panel shows, for every check, what a pass establishes and what it does not.
 
 After the checks, an independent reviewer reads your requests, the changes
 and the check results, investigates the repository without being able to
-change it, and reports problems: ✗ for a defect against what you asked, ⚠
-for something only you can decide, such as an ambiguous requirement or a
-weakened test. A reviewer that does not finish says so; it is never shown as
+change it, and reports problems. The summary groups checks, findings and
+requests under **For the agent to fix**, **Needs you** and **For context**.
+A reviewer that does not finish says so; it is never shown as
 a clean review. Findings are advice, and a clean review does not replace
 reading the change.
 
-Before a finding can send work back to the agent, a separate refuter, which
-does not see the reviewer's reasoning, tries to disprove it. Confirmed
-findings appear as above; findings it could neither confirm nor disprove are
-marked `? unsettled`; refuted ones are only counted, with the refuter's
-evidence in the result panel. Only confirmed defects that this change
-introduced go back to the agent; problems that were already there appear as
-`· already there`. Tesota checks each reviewer's "introduced" or "already
-there" against the lines the change touched; when the diff does not support
-it, the finding is marked `⚠ cause unclear` and left to you, with the reason
-in the result panel.
+Before a finding can send work back to the agent, a second reviewer who has
+not seen the first reviewer's reasoning tries to rule it out. Only a confirmed,
+fixable problem this change introduced goes back to the agent. An unresolved
+finding needs your decision; a ruled-out or pre-existing finding is context.
+The result panel shows what caused a finding, how the second check ended and
+its evidence. When the diff does not support a reviewer's claim about cause,
+the cause is unclear and the finding stays with you.
 
 Tesota reviews more deeply when the changes touch security- or
 authority-sensitive files, change existing tests or what checks the result,
 leave a verifier failing, or are large. The review then says why, and focused
 reviewers for correctness, security and authority, and your repository's
 `AGENTS.md` or `CLAUDE.md` rules join in; findings several of them report are
-merged before you see them. Before a deep review starts, a line says what will
-run and what comparable reviews of this repository have taken in time and
-tokens, once three have been measured; the review then shows what it took.
+merged before you see them. Before a thorough review starts, a line says why
+it is thorough, how many reviewers will work, and how long comparable reviews
+have taken once three have been measured; the result then shows its time and tokens.
 It asks for nothing; `Ctrl+C` stops it.
 
-When LemmaScript proved contracts in the changes, a second reviewer follows
-ClaimCheck's method: one session restates each proved contract without
-seeing your requests, and another compares that restatement with them. A
+When LemmaScript proved contracts in the changes, an extra review checks
+whether those contracts cover what you asked: one session restates each
+proved contract without seeing your requests, and another compares that
+restatement with them. A
 proof can hold and still prove less than you asked, such as "denied and not
 allowed is refused" when you asked that denied always wins; this reviewer
 reports that gap.
@@ -281,8 +279,8 @@ Each workspace keeps an assurance journal, `assurance.jsonl` beside its
 checkout: for every reviewed version, your requests, each verifier's claim and
 outcome, each reviewer's findings, and whether you applied or rejected it.
 
-When checks fail or the reviewer finds a defect, Tesota first sends those
-problems back to the agent, with your requests unchanged. It then runs every
+When a check or review confirms a problem this change caused, Tesota sends it
+back to the agent, with your requests unchanged. It then runs every
 check on the corrected result, has a separate validator confirm that each
 problem sent back is resolved, and reviews only what the correction changed,
 so a round settles what it was sent instead of raising a fresh list: at most
@@ -291,7 +289,7 @@ does Tesota ask for your decision. What only you can decide never goes back
 to the agent. The full record and the diff open beside it on a wide terminal;
 `Alt+R` shows or hides them, in place of the conversation on a narrow one. The
 record groups your requests, the files, the checks and the review under
-headings; each check's claim, limits and output sit beneath it, the output
+headings; what each check shows and does not show, and its output, sit beneath it, the output
 behind a `│` and without its colors. The diff lists the changed files with
 their added and removed lines, then shows each change with line numbers,
 added and removed lines tinted green and red, and code highlighted by

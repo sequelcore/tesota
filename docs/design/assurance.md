@@ -232,6 +232,15 @@ train on them. The idea comes from the unmerged branch
 
 ## Correction
 
+Each check, finding and assessed request or plan step has one **who acts**
+decision (decision 041), owned by `src/verification/review-action-rule.ts` and
+proved with LemmaScript. `src/review-action.ts` translates the full review
+record into that decision. Correction sends only `agent` items back; the
+conversation groups items as **For the agent to fix**, **Needs you** and **For
+context**. Cause, severity and the second check's standing remain separate
+facts in the result panel. An unfinished review needs the operator and never
+counts as a clean result.
+
 Failed or timed-out checks the candidate introduced, findings that are fixable, introduced,
 confirmed and not a repeat, and obligations that did not hold, go back to the working agent in the same
 conversation, with the request record unchanged. Tesota then verifies the new
@@ -258,11 +267,11 @@ what the review step cost, and the operator's decision.
 
 ## Forecast
 
-Before a deep review, Tesota writes one line: which sessions will run, and
-what comparable reviews of this repository took (the median time and tokens of
+Before a deep review, Tesota writes one line: why it is thorough, how many
+reviewers will look at the result, and how long comparable reviews took (the median time of
 reviews at the same depth, in the same kind of round, with the same models),
 or that fewer than three have been measured. The review's summary then shows
-what it took. Measurements are kept per repository, the latest twenty, and only
+its time and tokens. Measurements are kept per repository, the latest twenty, and only
 from steps in which every reviewer finished. Whether there are enough
 measurements, which sorted positions are the median, and whether a step counts
 are proved rules in `src/verification/review-estimate.ts`. The forecast asks

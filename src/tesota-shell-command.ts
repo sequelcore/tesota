@@ -506,7 +506,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
    * review first says what it will run and what such reviews have cost here.
    */
   const reviewCandidate = async (run: ReviewRun): Promise<ReviewReport[]> => {
-    const plan: ReviewPlan = { depth: run.depth.depth, correction: run.input.correction !== undefined, models: run.models,
+    const plan: ReviewPlan = { depth: run.depth.depth, correction: run.input.correction !== undefined, reasons: run.depth.reasons,
+      models: run.models,
       lenses: run.depth.depth === "deep" ? applicableLenses(run.input.checkout).map((lens) => lens.name) : [],
       claimcheck: run.input.checks.some((check) => check.verifier === "lemmascript" && check.outcome === "passed") };
     if (plan.depth === "deep") surface.writeTo(run.id, forecastLine(plan, store.reviewMeasurements()));

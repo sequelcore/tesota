@@ -150,13 +150,13 @@ async function assess(dependencies: TesotaShellDependencies,
     previousTree = review.tree;
     context = { previousTree: review.tree, sentBack: correction.findings };
     const count = problemCount(correction);
-    dependencies.write(`Correction round ${round + 1} of ${MAX_CORRECTION_ROUNDS}: sending ${count} ` +
-      `${count === 1 ? "problem" : "problems"} back to the agent.\n`);
+    dependencies.write(`Sending ${count} ${count === 1 ? "item" : "items"} back to the agent to fix ` +
+      `(attempt ${round + 1} of ${MAX_CORRECTION_ROUNDS}).\n`);
     report({ phase: "working" });
     const result = await dependencies.work(correctionPrompt(review.requests, correction), "tesota");
     if (result.status === "unsettled") return "unsettled";
     if (result.status !== "completed") {
-      dependencies.write(`The correction ${result.status === "cancelled" ? "was stopped" : `failed: ${result.reason}`}. ` +
+      dependencies.write(`The agent's fix ${result.status === "cancelled" ? "was stopped" : `failed: ${result.reason}`}. ` +
         "The changes stay in the workspace; continue with another request.\n", "warning");
       return "stopped";
     }
@@ -216,13 +216,13 @@ async function checkAnswer(dependencies: TesotaShellDependencies,
     const correction = correctionFor([], assessment.reviews);
     if (correction === undefined || round >= MAX_CORRECTION_ROUNDS) return "done";
     const count = problemCount(correction);
-    dependencies.write(`Correction round ${round + 1} of ${MAX_CORRECTION_ROUNDS}: sending ${count} ` +
-      `${count === 1 ? "problem" : "problems"} back to the agent.\n`);
+    dependencies.write(`Sending ${count} ${count === 1 ? "item" : "items"} back to the agent to fix ` +
+      `(attempt ${round + 1} of ${MAX_CORRECTION_ROUNDS}).\n`);
     report({ phase: "working" });
     const result = await dependencies.work(correctionPrompt(assessment.requests, correction), "tesota");
     if (result.status === "unsettled") return "unsettled";
     if (result.status !== "completed") {
-      dependencies.write(`The correction ${result.status === "cancelled" ? "was stopped" : `failed: ${result.reason}`}. ` +
+      dependencies.write(`The agent's fix ${result.status === "cancelled" ? "was stopped" : `failed: ${result.reason}`}. ` +
         "Continue with another request.\n", "warning");
       return "done";
     }
