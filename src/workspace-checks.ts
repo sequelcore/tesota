@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EnvironmentGuarantees, ExecutionEnvironment } from "./execution-environment.js";
+import { terminalOutputText } from "./terminal-output.js";
 import type { Workspace, WorkspaceSnapshot } from "./workspace.js";
 
 export type CheckOutcome = "passed" | "failed" | "timed_out" | "cancelled" | "not_started" | "unconfirmed" | "changed_files";
@@ -25,7 +26,7 @@ export interface CheckResult {
   readonly outcome: CheckOutcome;
   readonly exitCode: number | null;
   readonly durationMs: number;
-  /** The end of combined stdout and stderr. */
+  /** The end of combined stdout and stderr, as a terminal would show it: without colors or redrawn progress. */
   readonly output: string;
 }
 
@@ -81,7 +82,8 @@ Promise<readonly CheckResult[]> {
       : run.outcome;
     results.push({ verifier: "command", command, claim: `\`${command}\` exits with code 0 on this tree`,
       limits: "Establishes only what the command itself tests.", tree: snapshot.tree, environment: environment.provider,
-      guarantees: environment.guarantees, outcome, exitCode: run.exitCode, durationMs: Date.now() - started, output });
+      guarantees: environment.guarantees, outcome, exitCode: run.exitCode, durationMs: Date.now() - started,
+      output: terminalOutputText(output) });
     if (outcome === "cancelled" || outcome === "unconfirmed" || outcome === "changed_files") break;
   }
   return results;

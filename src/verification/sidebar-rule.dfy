@@ -8,6 +8,8 @@ datatype SidebarProgressPhase = none | preparing | working | awaiting_command | 
 
 datatype SidebarSessionState = preparing | working | awaiting_command | checking | reviewing | awaiting_decision | applying | unresolved | ended | needs_operator | unread | idle
 
+datatype TerminalTitleMark = working | attention | selected
+
 function sidebarPresentation(preference: SidebarPreference, width: int): SidebarPresentation
 {
   if preference.hidden? then
@@ -91,6 +93,53 @@ function animatedSidebarState(state: SidebarSessionState): bool
 
 lemma animatedSidebarState_ensures(state: SidebarSessionState)
   ensures (animatedSidebarState(state) == ((((state.preparing? || state.working?) || state.checking?) || state.reviewing?) || state.applying?))
+{
+}
+
+function attentionSidebarState(state: SidebarSessionState): bool
+{
+  (((state.unresolved? || state.needs_operator?) || state.awaiting_command?) || state.awaiting_decision?)
+}
+
+lemma attentionSidebarState_ensures(state: SidebarSessionState)
+  ensures (attentionSidebarState(state) == (((state.unresolved? || state.needs_operator?) || state.awaiting_command?) || state.awaiting_decision?))
+{
+}
+
+function terminalTitleMark(waiting: int, working: int): TerminalTitleMark
+{
+  if (waiting > 0) then
+    TerminalTitleMark.attention
+  else
+    if (working > 0) then
+      TerminalTitleMark.working
+    else
+      TerminalTitleMark.selected
+}
+
+lemma terminalTitleMark_ensures(waiting: int, working: int)
+  ensures ((waiting > 0) ==> terminalTitleMark(waiting, working).attention?)
+  ensures ((waiting <= 0) ==> (working > 0) ==> terminalTitleMark(waiting, working).working?)
+  ensures ((waiting <= 0) ==> (working <= 0) ==> terminalTitleMark(waiting, working).selected?)
+{
+}
+
+function otherSessionsWaiting(waiting: int, selectedWaiting: bool): int
+  requires (waiting >= 0)
+  requires (!(selectedWaiting) || (waiting >= 1))
+{
+  if selectedWaiting then
+    (waiting - 1)
+  else
+    waiting
+}
+
+lemma otherSessionsWaiting_ensures(waiting: int, selectedWaiting: bool)
+  requires (waiting >= 0)
+  requires (!(selectedWaiting) || (waiting >= 1))
+  ensures (otherSessionsWaiting(waiting, selectedWaiting) >= 0)
+  ensures (selectedWaiting ==> (otherSessionsWaiting(waiting, selectedWaiting) == (waiting - 1)))
+  ensures (!(selectedWaiting) ==> (otherSessionsWaiting(waiting, selectedWaiting) == waiting))
 {
 }
 

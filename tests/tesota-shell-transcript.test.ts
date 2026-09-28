@@ -1,7 +1,7 @@
-import { Markdown } from "@earendil-works/pi-tui";
+import { Markdown, stripTerminalSequences } from "@earendil-works/pi-tui";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { afterEach, expect, it, vi } from "vitest";
-import { Transcript } from "../src/tesota-shell-transcript.js";
+import { recordRows, Transcript } from "../src/tesota-shell-transcript.js";
 import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
 
 /**
@@ -51,4 +51,53 @@ it("shows a long notice's full text when toggled, and caches each state", () => 
   expect(notice.render(80)).toBe(collapsed);
   expect(transcript.toggleNotice()).toBe(true);
   expect(notice.render(80).join("\n")).toContain("d.ts");
+});
+
+it("sets a review apart from the agent's replies and wraps each line under its own text", () => {
+  initTheme("dark");
+  const transcript = new Transcript(tesotaShellTheme("tesota-dark"));
+  transcript.add({ kind: "review", title: "Review · 1 file",
+    text: "  edit   src/price.ts\n  ✗ high · src/price.ts:3 — Exactly one hundred dollars is discounted as well" });
+  const rows = transcript.container.render(40).map((row) => stripTerminalSequences(row).trimEnd());
+  expect(rows).toEqual([
+    " ┃ Review · 1 file",
+    " ┃   edit   src/price.ts",
+    " ┃   ✗ high · src/price.ts:3 — Exactly",
+    " ┃     one hundred dollars is discounted",
+    " ┃     as well",
+    " ┃ Alt+R shows or hides the full diff",
+    " ┃ and check output.",
+  ]);
+});
+
+it("shows a command's colored output as plain text", () => {
+  initTheme("dark");
+  const transcript = new Transcript(tesotaShellTheme("tesota-dark"));
+  transcript.activity({ type: "tool_started", call: "1", tool: "bash", subject: "bun test" });
+  transcript.activity({ type: "tool_finished", call: "1", failed: true, output: "\x1b[41m FAIL \x1b[49m a.test.ts" });
+  const screen = stripTerminalSequences(transcript.container.render(60).join("\n"));
+  expect(screen).toContain("└  FAIL  a.test.ts");
+  expect(screen).not.toContain("\u001b");
+});
+
+it("draws a review record's sections as headings, nesting kept on wrapped rows", () => {
+  const theme = tesotaShellTheme("tesota-dark");
+  const record = "Changes to what gets checked\n  modified tests/tesota-shell-terminal.test.ts (test)\n\nChecks\n" +
+    "  ✗ failed (exit 1): bun run check\n    Claim: `bun run check` exits with code 0 on this tree\n    │ AssertionError: expected 1 to be 2";
+  const rows = recordRows(record, 37, theme, true);
+  expect(rows.map((row) => stripTerminalSequences(row).trimEnd())).toEqual([
+    "Changes to what gets checked",
+    "  modified",
+    "  tests/tesota-shell-terminal.test.ts",
+    "  (test)",
+    "",
+    "Checks",
+    "  ✗ failed (exit 1): bun run check",
+    "    Claim: `bun run check` exits with",
+    "    code 0 on this tree",
+    "    │ AssertionError: expected 1 to",
+    "    │ be 2",
+  ]);
+  expect(rows[0]).toContain("\x1b[1m");
+  expect(rows[6]).toContain("\x1b[38;2;216;140;140m");
 });

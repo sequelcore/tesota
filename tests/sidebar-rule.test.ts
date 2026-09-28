@@ -2,7 +2,8 @@ import { stripTerminalSequences } from "@earendil-works/pi-tui";
 import { describe, expect, it } from "vitest";
 import { SessionRail } from "../src/tesota-shell-sidebar.js";
 import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
-import { animatedSidebarState, newestFirstSourceIndex, sidebarPresentation, sidebarSessionState,
+import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, sidebarPresentation,
+  sidebarSessionState, terminalTitleMark,
   type SidebarProgressPhase } from "../src/verification/sidebar-rule.js";
 
 describe("sidebar presentation", () => {
@@ -68,4 +69,24 @@ it("renders precise state labels and keeps the selected session inside an overla
   expect(all).toContain("! Needs decision");
   expect(all).toContain("! Unresolved");
   expect(stripTerminalSequences(rail.renderWindow(30, 4).join("\n"))).toContain("Oldest");
+});
+
+describe("terminal title", () => {
+  it("lets a session waiting on the operator anywhere outrank work anywhere, and both outrank the selected state", () => {
+    expect(terminalTitleMark(1, 3)).toBe("attention");
+    expect(terminalTitleMark(0, 1)).toBe("working");
+    expect(terminalTitleMark(0, 0)).toBe("selected");
+  });
+
+  it("counts only the other sessions that wait", () => {
+    expect(otherSessionsWaiting(2, true)).toBe(1);
+    expect(otherSessionsWaiting(2, false)).toBe(2);
+    expect(otherSessionsWaiting(1, true)).toBe(0);
+  });
+
+  it("treats exactly the states that cannot go on without the operator as waiting", () => {
+    expect(["unresolved", "needs_operator", "awaiting_command", "awaiting_decision", "working", "unread", "ended", "idle"]
+      .filter((state) => attentionSidebarState(state as Parameters<typeof attentionSidebarState>[0])))
+      .toEqual(["unresolved", "needs_operator", "awaiting_command", "awaiting_decision"]);
+  });
 });

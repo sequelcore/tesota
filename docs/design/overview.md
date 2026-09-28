@@ -175,7 +175,8 @@ routing and execution permissions live in code and in Tesota's own directory
 | `tesota-shell-command.ts`, `semaphore.ts` | Per-session composition of workspace, environment, agent, review and application, what a session holds and its release, and the bound on what runs at once |
 | `tesota-shell-terminal.ts`, `tesota-shell-sidebar.ts`, `tesota-shell-theme.ts`, `tesota-shell-inspection.ts`, `shell-progress.ts`, `verification/sidebar-rule.ts` | Terminal composition and input, session navigation and its proved state and responsive rules, themes, result panel and status |
 | `tesota-shell-diff.ts` | The result panel's diff view, from git's unified diff |
-| `tesota-shell-transcript.ts` | How a conversation looks, built on pi-tui components |
+| `tesota-shell-transcript.ts` | How a conversation and a review record look, built on pi-tui components |
+| `terminal-output.ts` | What a command's output reads as once drawn: no colors, cursor sequences or redrawn progress |
 | `shell-session-store.ts` | Saved sessions, approved checks, allowed network destinations and measured review costs per repository |
 | `workspace-checkout.ts`, `source-snapshot.ts`, `workspace.ts` | Independent clones, capturing uncommitted source changes, snapshots, updates and the request record |
 | `workspace-apply.ts`, `workspace-prune.ts` | Conflict-checked application and its journal; which workspaces `tesota prune` may remove |

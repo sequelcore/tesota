@@ -62,6 +62,42 @@ export function animatedSidebarState(state: SidebarSessionState): boolean {
     state === "applying";
 }
 
+/** States in which a session cannot go on without the operator. */
+//@ ensures \result === (state === "unresolved" || state === "needs_operator" || state === "awaiting_command" || state === "awaiting_decision")
+export function attentionSidebarState(state: SidebarSessionState): boolean {
+  return state === "unresolved" || state === "needs_operator" || state === "awaiting_command" ||
+    state === "awaiting_decision";
+}
+
+export type TerminalTitleMark = "attention" | "working" | "selected";
+
+/**
+ * The terminal title's mark speaks for every session, since a tab is seen
+ * from elsewhere: any session waiting on the operator outranks work in
+ * progress anywhere, and only when neither holds does the selected session's
+ * own state show.
+ */
+//@ ensures waiting > 0 ==> \result === "attention"
+//@ ensures waiting <= 0 && working > 0 ==> \result === "working"
+//@ ensures waiting <= 0 && working <= 0 ==> \result === "selected"
+export function terminalTitleMark(waiting: number, working: number): TerminalTitleMark {
+  if (waiting > 0) return "attention";
+  return working > 0 ? "working" : "selected";
+}
+
+/**
+ * How many sessions other than the selected one wait on the operator, which
+ * the title names so its mark is never taken for the selected session's.
+ */
+//@ requires waiting >= 0
+//@ requires !selectedWaiting || waiting >= 1
+//@ ensures \result >= 0
+//@ ensures selectedWaiting ==> \result === waiting - 1
+//@ ensures !selectedWaiting ==> \result === waiting
+export function otherSessionsWaiting(waiting: number, selectedWaiting: boolean): number {
+  return selectedWaiting ? waiting - 1 : waiting;
+}
+
 /** Map a newest-first visual position to the insertion-ordered session list; invalid positions have no index. */
 //@ ensures count <= 0 || visual < 0 || visual >= count ==> \result === -1
 //@ ensures count > 0 && visual >= 0 && visual < count ==> \result === count - visual - 1

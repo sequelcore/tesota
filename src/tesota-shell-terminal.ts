@@ -6,15 +6,15 @@ import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
 import { bold, colorText, mutedText, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
-import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
+import { recordRows, safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
 import { DiffView } from "./tesota-shell-diff.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
 import { ThemePicker } from "./tesota-shell-theme-picker.js";
 import { ChoicePicker, type ShellChoice } from "./tesota-shell-choice-picker.js";
-import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, type SidebarSession } from "./tesota-shell-sidebar.js";
+import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, sessionStateIcon, type SidebarSession } from "./tesota-shell-sidebar.js";
 import { planLines, type WorkPlan } from "./work-plan.js";
-import { animatedSidebarState, newestFirstSourceIndex, sidebarPresentation, sidebarSessionState,
-  type SidebarPreference, type SidebarPresentation, type SidebarSessionState } from "./verification/sidebar-rule.js";
+import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, sidebarPresentation,
+  sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarPresentation, type SidebarSessionState } from "./verification/sidebar-rule.js";
 
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
@@ -85,6 +85,10 @@ export interface TesotaShellTerminal {
 export interface ShellInspection {
   readonly title: string;
   readonly summary: string;
+  /**
+   * Sections under unindented headings; nested lines are indented and may
+   * start with a mark (✓ ✗ ⚠ ? ·) or, for command output, a │ gutter.
+   */
   readonly detail: string;
   /** The candidate's unified diff, drawn as a diff view below `detail`; absent from results recorded before it was kept apart. */
   readonly diff?: string | undefined;
@@ -273,15 +277,26 @@ function busy(progress: TesotaShellProgress | undefined): boolean {
   return progress !== undefined && animatedSidebarState(progress.phase);
 }
 
-/** The result panel: the record as text, then the candidate's diff as a diff view. */
+/** The result panel: a heading, the record under section headings, then the candidate's diff as a diff view. */
 class ResultPanel implements Component {
-  readonly text = new Text("", 1, 0);
   readonly diff: DiffView;
-  constructor(theme: TesotaShellTheme) { this.diff = new DiffView(theme); }
-  invalidate(): void { this.text.invalidate(); }
+  readonly #theme: TesotaShellTheme;
+  #heading = "";
+  #record = "";
+  #cached: { width: number; lines: string[] } | undefined;
+  constructor(theme: TesotaShellTheme) { this.#theme = theme; this.diff = new DiffView(theme); }
+  /** Show a styled heading and a record's plain text beneath it. */
+  show(heading: string, record = ""): void { this.#heading = heading; this.#record = record; this.#cached = undefined; }
+  invalidate(): void { this.#cached = undefined; }
   render(width: number): string[] {
+    if (this.#cached?.width !== width) {
+      const inner = Math.max(1, width - 2);
+      const lines = [...wrapTextWithAnsi(this.#heading, inner),
+        ...this.#record.length === 0 ? [] : recordRows(this.#record, inner, this.#theme, true)].map((row) => ` ${row}`);
+      this.#cached = { width, lines };
+    }
     const diff = this.diff.render(width);
-    return [...this.text.render(width), ...(diff.length === 0 ? [] : ["", ...diff])];
+    return [...this.#cached.lines, ...(diff.length === 0 ? [] : ["", ...diff])];
   }
 }
 
@@ -300,6 +315,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   /** The source repository's branch, where results are applied. */
   private branch: string | undefined;
   private frame = 0;
+  /** The title last written to the terminal. */
+  private windowTitle = "";
   private readonly sidebarHeader: SessionSidebarHeader;
   private readonly sidebar: SessionRail;
   private readonly sidebarScroll: ScrollView;
@@ -466,7 +483,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private updateResult(session: SessionView): void {
     const inspection = session.inspections[session.selectedInspection];
     if (inspection === undefined) {
-      this.result.text.setText(mutedText("No result yet. A review's full diff and check output appear here.", this.theme));
+      this.result.show(mutedText("No result yet. A review's full diff and check output appear here.", this.theme));
       this.result.diff.setDiff(undefined);
       return;
     }
@@ -476,8 +493,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         "An earlier result. A pending decision applies to the latest one.\n" : "";
     const position = session.inspections.length > 1 ?
       mutedText(` ${session.selectedInspection + 1} of ${session.inspections.length} · Alt+, Alt+.`, this.theme) : "";
-    this.result.text.setText(`${bold(colorText(safeTerminalText(inspection.title), this.theme.accent))}${position}\n` +
-      `${mutedText(note, this.theme)}\n${safeTerminalText(inspection.detail)}`);
+    this.result.show(`${bold(colorText(safeTerminalText(inspection.title), this.theme.accent))}${position}\n` +
+      `${mutedText(note, this.theme)}`, inspection.detail);
     this.result.diff.setDiff(inspection.diff);
   }
 
@@ -525,7 +542,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     // Pi's TUI asks terminals that speak the Kitty keyboard protocol to report releases too, and passes them to input
     // listeners; `matchesKey` matches a release as the key, so handling it would act twice per press.
     this.removeInputListener = this.tui.addInputListener((data) => isKeyRelease(data) ? undefined : this.handleKey(data));
-    this.tui.terminal.setTitle("Tesota");
     this.compose();
     // Restored sessions are added before start; newest-first order can put the initial selection below the viewport.
     this.revealSelectedSession();
@@ -716,6 +732,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.removeInputListener = undefined;
     for (const session of this.sessions.values()) this.cancelPrompt(session);
     this.tui.terminal.setProgress(false);
+    // A session's mark would go stale once the shell has exited.
+    this.tui.terminal.setTitle("Tesota");
+    this.windowTitle = "";
     this.tui.stop({ preserveScreen: true });
     const lastMessage = this.selected().transcript.lastMessage;
     if (lastMessage.length > 0) {
@@ -896,6 +915,29 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     } else text = mutedText("Ready", this.theme);
     this.status.setText(text, whole);
     this.tui.terminal.setProgress(!session.blocked && busy(progress?.value));
+    this.updateWindowTitle(session);
+  }
+
+  /**
+   * The terminal's title, which its tabs and task switcher show, seen from
+   * elsewhere: a mark for every session, with a session waiting on the
+   * operator first, then the selected session's name, and how many others
+   * wait so the mark is not taken for it. Written only when it changes.
+   */
+  private updateWindowTitle(session: SessionView): void {
+    if (!this.started) return;
+    const states = [...this.sessions.values()].map((entry) => this.sessionState(entry));
+    const waiting = states.filter(attentionSidebarState).length;
+    const own = this.sessionState(session);
+    const frame = SHELL_SPINNER_FRAMES[this.frame] ?? "";
+    const kind = terminalTitleMark(waiting, states.filter(animatedSidebarState).length);
+    const mark = kind === "attention" ? "!" : kind === "working" ? frame : sessionStateIcon(own, frame);
+    const others = otherSessionsWaiting(waiting, attentionSidebarState(own));
+    const title = `${mark} ${safeTerminalText(session.title.replace(/\s+/gu, " "))}` +
+      (others === 0 ? "" : ` · ${others} waiting`);
+    if (title === this.windowTitle) return;
+    this.windowTitle = title;
+    this.tui.terminal.setTitle(title);
   }
 
   private submit(answer: string): void {
