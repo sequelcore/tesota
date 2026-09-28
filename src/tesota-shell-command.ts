@@ -42,7 +42,8 @@ import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, type TesotaShellTerm
 import type { TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { UnsupportedSourceChange } from "./source-snapshot.js";
 import { Workspace, type WorkspaceSnapshot, type WorkspaceUpdate } from "./workspace.js";
-import { applyWorkspace, ApplyConflictError, ApplyUncertainError } from "./workspace-apply.js";
+import { applyWorkspace, ApplyConflictError, ApplyRecoveryError, ApplyRolledBackError, unfinishedApplications }
+  from "./workspace-apply.js";
 import { type BaseRuns, runChecks, suggestChecks } from "./workspace-checks.js";
 import { flagVerificationChanges } from "./verification-changes.js";
 import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
@@ -151,6 +152,19 @@ function describePreparation(steps: readonly PreparationStep[]): string | undefi
     `${done.length > 0 ? `\nCompleted:\n${done}` : ""}\n${failed.output.trim()}`;
 }
 
+
+/** A shell that stopped while applying leaves its application unfinished (decision 042); say so in the stopped sessions. */
+function noticeUnfinishedApplications(cwd: string, stopped: readonly string[],
+  surface: Pick<TesotaShellTerminal, "writeTo">): void {
+  if (stopped.length === 0) return;
+  void unfinishedApplications(cwd).catch(() => []).then((unfinished) => {
+    if (unfinished.length === 0) return;
+    for (const id of stopped) {
+      surface.writeTo(id, "An application to this repository did not finish. Run tesota recover to undo or " +
+        "finish it; nothing can be applied until then.", "warning");
+    }
+  });
+}
 
 function closeWarning(record: ShellSessionRecord, pending: number): string {
   if (record.blocked) {
@@ -386,6 +400,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       surface.writeTo(session.id, "This session stopped with unresolved effects. Check your repository and start a new session.", "warning");
     }
   }
+  noticeUnfinishedApplications(cwd, savedSessions.filter((session) => session.interrupted || session.blocked)
+    .map((session) => session.id), surface);
   const saved = (id: string): ReturnType<ShellSessionStore["list"]>[number] | undefined =>
     store.list().find((session) => session.id === id);
   const stateFor = (id: string): SessionState => {
@@ -1085,19 +1101,26 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       applying.add(id);
       const workspace = await workspaceFor(id);
       try {
-        const changes = await applyWorkspace(workspace, reviewed);
+        const applied = await applyWorkspace(workspace, reviewed);
         await journal(id, workspace, decisionEntry(reviewed.tree, "applied"));
         workspace.keepRequestsOpen(false);
         if (saved(id)?.plan !== undefined) showPlan(id, undefined);
-        return { status: "applied", changes };
+        return { status: "applied", changes: applied.changes, alsoChanged: applied.alsoChanged };
       } catch (error) {
         if (error instanceof ApplyConflictError) {
           await journal(id, workspace, decisionEntry(reviewed.tree, "application_conflict"));
           return { status: "conflict", reason: error.message, paths: error.paths };
         }
+        if (error instanceof ApplyRolledBackError) {
+          await journal(id, workspace, decisionEntry(reviewed.tree, "application_rolled_back"));
+          return { status: "conflict", reason: error.message, paths: error.paths, rolledBack: true };
+        }
         blockSession(id);
-        await journal(id, workspace, decisionEntry(reviewed.tree, "application_uncertain"));
-        return { status: "uncertain", applied: error instanceof ApplyUncertainError ? error.applied : [] };
+        await journal(id, workspace, decisionEntry(reviewed.tree, "application_recovery_required"));
+        // An error outside the application's own record leaves its state unknown, so every changed path is listed.
+        return error instanceof ApplyRecoveryError ? { status: "recovery_required", id: error.id, paths: error.paths }
+          : { status: "recovery_required", id: "", paths: reviewed.changes.map((change) => ({ path: change.path,
+            state: "unknown" as const })) };
       } finally { applying.delete(id); }
     }),
     reject: async () => {

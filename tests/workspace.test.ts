@@ -73,7 +73,7 @@ it("applies the reviewed content to the source and makes it the new base", async
   const { source, workspace } = await fixture();
   await changeEverything(workspace);
   const snapshot = workspace.snapshot();
-  await expect(applyWorkspace(workspace, snapshot)).resolves.toEqual(snapshot.changes);
+  await expect(applyWorkspace(workspace, snapshot)).resolves.toEqual({ changes: snapshot.changes, alsoChanged: [] });
   expect(await readFile(join(source, "src/price.ts"), "utf8")).toBe("export const price = 2;\n");
   expect(await readFile(join(source, "src/tax.ts"), "utf8")).toBe("export const tax = 0.2;\n");
   expect(existsSync(join(source, "src/old.ts"))).toBe(false);
@@ -97,6 +97,7 @@ it("refuses to overwrite files that changed in the source and writes nothing", a
 
 it("treats a CRLF checkout of the base content as unchanged and keeps its line endings", async () => {
   const { source, workspace } = await fixture();
+  git(source, ["config", "core.autocrlf", "true"]);
   await writeFile(join(source, "src/price.ts"), "export const price = 1;\r\n");
   await writeFile(join(workspace.checkout, "src/price.ts"), "export const price = 2;\n");
   await applyWorkspace(workspace, workspace.snapshot());

@@ -66,14 +66,84 @@ requests, never the agent's own account of them.
 
 ## Applying and rejecting
 
-Application writes exactly the reviewed tree. For each changed file the source
-must still hold the base content (a CRLF checkout of that content counts as
-unchanged and keeps its line endings); an added file must not exist yet. If
-any file conflicts, nothing is written. Writes are journaled in the
-workspace's `applications.jsonl`; a failure after the first write is reported
-as uncertain and blocks the session, keeping its workspace as evidence. After
-a successful application, the workspace records the applied tree as its new
-base. Rejecting returns the workspace to its base.
+Decision 042. Application writes exactly the reviewed tree, and only onto the
+source it was checked against (`src/workspace-apply.ts`, with its proved rules
+in `src/verification/application-rule.ts`).
+
+**Admission.** Nothing is written unless three things hold, in this order:
+
+1. No earlier application to the same source is unfinished.
+2. The review still describes the workspace's exact tree and base.
+3. The whole source, captured as when the workspace takes its changes, still
+   equals what the workspace last took from it.
+
+An edit anywhere in the source, even to a file the result does not touch,
+refuses the application and names the changed files. The next request brings
+them into the workspace, and the result is checked and reviewed again, so what
+is applied is always what was checked. Each file must also still hold its
+base content, and an added file must not exist yet. A CRLF checkout of the
+base content counts as unchanged and keeps its line endings.
+
+**A copy first.** Before the source changes, every original and every
+reviewed file is copied, synced, into a store of its own,
+`~/.tesota/applications/<id>/`, beside the workspaces. The store also holds a
+manifest and a journal, so it outlives the session.
+
+**Moving aside, never replacing.** Each changed or deleted file is renamed to
+a hold beside it. This is atomic, and keeps whatever was there. The held
+bytes are then compared with the original. A file that differs, such as an
+edit made a moment before, is put back untouched and application stops. New
+content is written and synced to a temporary file, then hard-linked to its
+name. The link fails if the name exists, so a file some program creates
+meanwhile is never replaced. A volume without hard links creates the file
+exclusively instead. A file another program holds open, such as a document
+in Office on Windows, cannot be moved aside, and stops application before
+that file changes.
+
+**Outcome.** Every file is read back. The application counts as:
+
+- **applied** only when every file holds its reviewed content;
+- **not applied** only when no file keeps an effect of it;
+- **recovery required** in any other case, never reported as either of the
+  first two.
+
+A stop after the first write undoes what was written. Each original is put
+back only where the journal records a write by Tesota and the path still
+holds exactly what Tesota wrote, by the same move-aside step, so an edit
+someone made in the meantime is never replaced. Equal content alone is not
+Tesota's write: a file someone else created with the reviewed content, at a
+path Tesota never wrote, stays. The journal records each step as intended
+before it starts, and done or untouched after. After an interruption, an
+intended step counts as Tesota's write only when the file at the path is the
+very file it installed, shown by the temporary Tesota keeps linked to it
+until the step is journaled, or when the step removed the path. Otherwise
+whose file is there is unknown: it is left in place and the application
+stays unfinished (proved). A path application never wrote counts as
+unaffected, whatever someone put there.
+
+**Recovery.** A partial effect Tesota cannot undo, or one left by a process
+that ended mid-application, is recorded as recovery required. It blocks the
+session and every later application to that source. `tesota recover` lists
+what each path holds and settles the application in one of three ways:
+
+- `undo` puts the originals back;
+- `finish` writes the reviewed files;
+- `resolved` records the operator's statement that they settled it
+  themselves. This is their acceptance, not check evidence.
+
+Undo and finish follow the same rules as application, and put back a file a
+crash left moved aside. A path someone else changed is never touched. Before
+writing anything, recovery checks again that every recorded path and created
+directory resolves inside the source; if one now leads elsewhere, for
+example through a link or junction put in its place, nothing is written and
+the application stays unfinished.
+Finished applications are removed from the store after 30 days; unfinished
+ones stay.
+
+After a successful application, the workspace records the applied tree as
+its new base. Source files outside the result that changed while it ran are
+named, and the next request brings them in. Rejecting returns the workspace
+to its base.
 
 ## Lifetime
 
@@ -91,5 +161,9 @@ serialized.
   remotes, and a sandbox can mount the workspace alone.
 - **Uncommitted changes included:** the agent works on what the operator
   sees, not on a stale commit, without Tesota writing to the source.
-- **Conflict-checked, all-or-nothing application:** the operator's own edits
-  are never overwritten, and a partial application is never silent.
+- **Whole-source admission, a copy first, and nothing ever replaced by
+  accident:** what is applied is exactly what was checked; the operator's own
+  edits are never overwritten, even one made during application; and a
+  partial effect is undone or recorded as recovery required, never silent.
+  The [application landscape](../research/application-landscape.md) compares
+  other harnesses and the incidents behind these choices.

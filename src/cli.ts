@@ -12,6 +12,7 @@ Usage: tesota [--help | -h | help]
        tesota models [<route>]
        tesota roles [<role> [<route:model|default|off>]]
        tesota prune [--force]
+       tesota recover [undo|finish|resolved [<id>]]
        tesota setup
        tesota sandbox [use [<auto|native|docker|host>] | clean]
 
@@ -121,6 +122,10 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   } else if (plan.remove.length > 0) {
     process.stdout.write("Nothing was removed. Run tesota prune --force to remove the listed workspaces.\n");
   }
+} else if (args[0] === "recover") {
+  const { realpathSync } = await import("node:fs");
+  const { runRecoverCommand } = await import("./recover-command.js");
+  process.exitCode = await runRecoverCommand(args.slice(1), realpathSync(process.cwd()), (text) => { process.stdout.write(text); });
 } else if (args[0] === "sandbox") {
   const { runSandboxCommand } = await import("./sandbox-command.js");
   let sandboxArgs = args.slice(1);
