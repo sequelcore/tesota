@@ -11,3 +11,5 @@ lemma acceptsShellTheme_ensures(value: string)
   ensures (acceptsShellTheme(value) <==> (((((((value == "tesota-dark") || (value == "tesota-light")) || (value == "vesper")) || (value == "sequel")) || (value == "automata")) || (value == "phosphor")) || (value == "terminal")))
 {
 }
+
+const TESOTA_SHELL_THEME_NAMES: seq<string> := ["tesota-dark", "tesota-light", "vesper", "sequel", "automata", "phosphor", "terminal"]

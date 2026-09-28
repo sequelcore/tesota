@@ -23,7 +23,7 @@ it("warns when a judge uses the author's model, and notes when it is from the sa
   const operator = judgeWarnings(choices({ agent: "claude-code:opus", reviewer: "codex:gpt-6-astra",
     refuter: "codex:gpt-6-sol", validator: "codex:gpt-6-luna" }));
   expect(operator).toEqual([{ level: "same_lab", judge: "refuter", author: "reviewer",
-    text: "the refuter tests the reviewer's findings, and both are OpenAI models" }]);
+    text: "a second check tests the review's reported problems, and both are OpenAI models" }]);
 });
 
 it("checks the advisor against the roles that judge work it shaped, and skips roles that are off", () => {

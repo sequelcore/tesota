@@ -1,5 +1,5 @@
 import type { Finding, Obligation, ReviewReport } from "./review.js";
-import { obligationOutcome } from "./verification/obligation-outcome.js";
+import { actionOfCheck, actionOfFinding, actionOfObligation } from "./review-action.js";
 import { type CheckResult, testList } from "./workspace-checks.js";
 
 /** Rounds in which Tesota sends problems back to the working agent before the operator decides (decision 015). */
@@ -14,35 +14,18 @@ export interface CorrectionRound {
   readonly obligations: readonly Obligation[];
 }
 
-/** Whether an obligation did not hold (`obligationOutcome`): a gap the refuter confirmed. */
-export function notHeld(obligation: Obligation): boolean {
-  return obligationOutcome(obligation.status, obligation.standing ?? "untested") === "not_held";
-}
-
 /**
- * A failed or timed-out check goes back when the candidate caused it: a
- * command only when it passes on the base (decision 039) or some test in its
- * reports fails only with the changes (decision 040), and Oxlint and
- * LemmaScript, which judge only the candidate's changed files, always.
- */
-function sentBack(check: CheckResult): boolean {
-  if (check.outcome !== "failed" && check.outcome !== "timed_out") return false;
-  return check.verifier !== "command" || check.base?.origin === "introduced";
-}
-
-/**
- * Failed or timed-out checks the candidate caused, fixable findings the candidate introduced
- * that survived refutation, and obligations that did not hold, go back to the agent. Findings for the operator,
- * problems that were already there or whose cause is unknown, check failures the base shares or that could not
- * be compared with it, incomplete reviews and checks that could not run or changed files stay with the
- * operator: the agent cannot or should not settle them.
+ * What goes back to the agent: every check, finding and obligation whose
+ * action is the agent's (decision 041). The rest is the operator's or context:
+ * a repeat, a problem that was already there, an unclear cause, a trade-off, a
+ * check that could not run, and an unfinished review, which the agent cannot
+ * or should not settle.
  */
 export function correctionFor(checks: readonly CheckResult[], reviews: readonly ReviewReport[]): CorrectionRound | undefined {
-  const failedChecks = checks.filter(sentBack);
-  const findings = reviews.flatMap((report) => report.status === "completed"
-    ? report.findings.filter((finding) => finding.disposition === "fixable" && finding.origin === "introduced" &&
-      finding.standing === "confirmed" && finding.duplicateOf === undefined) : []);
-  const obligations = reviews.flatMap((report) => report.status === "completed" ? (report.obligations ?? []).filter(notHeld) : []);
+  const failedChecks = checks.filter((check) => actionOfCheck(check) === "agent");
+  const completed = reviews.flatMap((report) => report.status === "completed" ? [report] : []);
+  const findings = completed.flatMap((report) => report.findings.filter((finding) => actionOfFinding(finding) === "agent"));
+  const obligations = completed.flatMap((report) => (report.obligations ?? []).filter((item) => actionOfObligation(item) === "agent"));
   return failedChecks.length === 0 && findings.length === 0 && obligations.length === 0 ? undefined
     : { failedChecks, findings, obligations };
 }

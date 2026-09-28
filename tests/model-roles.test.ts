@@ -116,7 +116,7 @@ it("lists each role with who pays for it and the model's list price, and sets on
   output = "";
   expect(runRolesCommand([], write, offered, path)).toBe(0);
   expect(output).toContain("Same model judging its own output");
-  expect(output).toContain("the refuter tests the reviewer's findings, and both use claude-code:opus");
+  expect(output).toContain("a second check tests the review's reported problems, and both use claude-code:opus");
   output = "";
   expect(runRolesCommand(["advisor", "claude-code:opus"], write, offered, path)).toBe(0);
   expect(output).toContain("The advisor now uses claude-code:opus.\n");

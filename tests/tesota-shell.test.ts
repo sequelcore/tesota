@@ -169,7 +169,7 @@ it("sends fixable findings back with the unchanged requests, then asks the opera
   const approved = [{ command: "bun run check", reports: [] }];
   expect(fixture.dependencies.review).toHaveBeenNthCalledWith(1, approved);
   expect(fixture.dependencies.review).toHaveBeenNthCalledWith(2, approved, { previousTree: "1".repeat(40), sentBack: [fixable] });
-  expect(fixture.text()).toContain("Correction round 1 of 2: sending 1 problem back to the agent.");
+  expect(fixture.text()).toContain("Sending 1 item back to the agent to fix (attempt 1 of 2).");
   expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);
 });
 
@@ -206,7 +206,7 @@ it("skips the decision when a correction is stopped, keeping the changes", async
     work: vi.fn(async (): Promise<WorkResult> => ++calls === 1 ? { status: "completed", changes: [change] } : { status: "cancelled" }),
   });
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
-  expect(fixture.text()).toContain("The correction was stopped. The changes stay in the workspace");
+  expect(fixture.text()).toContain("The agent's fix was stopped. The changes stay in the workspace");
   expect(fixture.progress.map((event) => event.phase)).not.toContain("awaiting_decision");
   expect(fixture.dependencies.apply).not.toHaveBeenCalled();
 });
@@ -238,7 +238,7 @@ it("sends a request a reply only claimed back to the agent, and reviews the file
   expect(work).toHaveBeenCalledTimes(2);
   expect(work.mock.calls[1]?.[1]).toBe("tesota");
   expect(String(work.mock.calls[1]?.[0])).toContain("- Request 1 is not done: farewell() exists");
-  expect(fixture.text()).toContain("Correction round 1 of 2: sending 1 problem back to the agent.");
+  expect(fixture.text()).toContain("Sending 1 item back to the agent to fix (attempt 1 of 2).");
   // Files now exist, so the correction faces the full review and the operator's decision.
   expect(fixture.dependencies.review).toHaveBeenCalledTimes(1);
   expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);

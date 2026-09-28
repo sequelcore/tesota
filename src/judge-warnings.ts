@@ -74,11 +74,11 @@ function lab(choice: string): string | undefined {
 /** Each role that judges another's output, and what it judges. */
 const judgements: readonly Readonly<{ author: ModelRole; judge: ModelRole; what: string }>[] = [
   { author: "agent", judge: "reviewer", what: "the reviewer judges the agent's work" },
-  { author: "agent", judge: "validator", what: "the validator judges the agent's fixes" },
-  { author: "agent", judge: "refuter", what: "the refuter decides whether defects in the agent's work are real" },
+  { author: "agent", judge: "validator", what: "a check confirms the agent's fixes" },
+  { author: "agent", judge: "refuter", what: "a second check tests reported problems in the agent's work" },
   { author: "advisor", judge: "reviewer", what: "the reviewer judges work the advisor's guidance shaped" },
-  { author: "advisor", judge: "validator", what: "the validator judges fixes the advisor's guidance shaped" },
-  { author: "reviewer", judge: "refuter", what: "the refuter tests the reviewer's findings" },
+  { author: "advisor", judge: "validator", what: "a check confirms fixes shaped by the advisor's guidance" },
+  { author: "reviewer", judge: "refuter", what: "a second check tests the review's reported problems" },
 ];
 
 export interface JudgeWarning {
