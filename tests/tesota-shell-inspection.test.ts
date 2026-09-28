@@ -42,8 +42,9 @@ it("shows each finding once, marks the operator's calls, and never shows an unfi
   ] });
   expect(review.summary).toContain("  ✗ high · src/price.ts:3 — Exactly $100 is discounted\n" +
     "  ⚠ needs you · Rounding is unspecified\n  ✗ Second reviewer did not finish: the review was stopped");
-  expect(review.detail).toContain("Review\n  Tesota reviewer\n  The boundary is wrong.\n\n  high, fixable: src/price.ts:3 — " +
-    "Exactly $100 is discounted\n  The request says over $100");
+  expect(review.detail).toContain("Review\n  Tesota reviewer\n    The boundary is wrong.\n\n    ✗ high, fixable: src/price.ts:3 — " +
+    "Exactly $100 is discounted\n      The request says over $100");
+  expect(review.detail).toContain("  ✗ Second reviewer did not finish (the review was stopped)");
   const clean = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
     { reviewer: "Tesota reviewer", tree, status: "completed", summary: "Fine.", findings: [] }] });
   expect(clean.summary).toContain("  ✓ Tesota reviewer: no problems introduced");
@@ -55,7 +56,7 @@ it("shows each finding once, marks the operator's calls, and never shows an unfi
         refutation: "Line 4 already handles it" }] }] });
   expect(tested.summary).toContain("  ✗ high · Real\n  ? unsettled · high · Unclear\n  · 1 finding was refuted; see the result panel");
   expect(tested.summary).not.toContain("Wrong");
-  expect(tested.detail).toContain("Wrong [refuted]\n  r\n  Refuter: Line 4 already handles it");
+  expect(tested.detail).toContain("    · high, fixable: Wrong [refuted]\n      r\n      Refuter: Line 4 already handles it");
   const deep = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [],
     depth: { depth: "deep", reasons: ["changes existing tests (src/price.test.ts)", "changes 500 lines"] } });
   expect(deep.summary).toContain("  · deep review: changes existing tests (src/price.test.ts); changes 500 lines");
@@ -80,5 +81,13 @@ it("shows a finding whose cause Tesota could not establish as the operator's cal
         statement: "Tax ignores refunds", reason: "r", standing: "confirmed" }] }] });
   expect(review.summary).toContain("  ⚠ cause unclear · high · src/tax.ts:9 — Tax ignores refunds");
   expect(review.summary).not.toContain("no problems introduced");
-  expect(review.detail).toContain(`cause unclear: src/tax.ts:9 — Tax ignores refunds [confirmed]\n  r\n  Origin: ${note}`);
+  expect(review.detail).toContain(`    ⚠ cause unclear: src/tax.ts:9 — Tax ignores refunds [confirmed]\n      r\n      Origin: ${note}`);
+});
+
+it("nests a check's claim, limits and output under it, with the output behind a gutter", () => {
+  const failed = { ...check, outcome: "failed" as const, exitCode: 1, output: "\n FAIL tests/a.test.ts\n\n expected 1\n" };
+  const review = inspectReview({ snapshot, checks: [check, failed], requests: [], flags: [], reviews: [] });
+  expect(review.detail).toContain("Checks\n  ✓ passed (exit 0): bun run check\n    Claim: exits 0\n    Limits: only what it tests\n\n" +
+    "  ✗ failed (exit 1): bun run check\n    Claim: exits 0\n    Limits: only what it tests\n" +
+    "    │  FAIL tests/a.test.ts\n    │ \n    │  expected 1\n\nReview");
 });

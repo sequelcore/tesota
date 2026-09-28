@@ -212,10 +212,11 @@ content. The first time in a repository it suggests commands from it (for
 example `bun run check`); press Enter to accept, type your own separated by
 `;`, or type `none`. Tesota remembers the choice for that repository.
 
-The conversation shows a review once: each changed file and each check with
-✓ or ✗. Changes to what checks the result, such as an edited test, lint or
-type configuration, CI workflow, package scripts or a formal specification,
-are marked ⚠: they can be a legitimate fix or a way to make checks pass, and
+The conversation shows a review once, set apart from the agent's replies by a
+rule down its left side: each changed file and each check with ✓ or ✗.
+Changes to what checks the result, such as an edited test, lint or type
+configuration, CI workflow, package scripts or a formal specification, are
+marked ⚠: they can be a legitimate fix or a way to make checks pass, and
 only you can tell which. The result panel starts with your requests behind
 the changes, word for word, since everything else is measured against them.
 
@@ -276,9 +277,12 @@ two rounds, fewer if a round changes nothing. Each round shows its own review, a
 does Tesota ask for your decision. What only you can decide never goes back
 to the agent. The full record and the diff open beside it on a wide terminal;
 `Alt+R` shows or hides them, in place of the conversation on a narrow one. The
-diff lists the changed files with their added and removed lines, then shows
-each change with line numbers, added and removed lines tinted green and red,
-and code highlighted by language.
+record groups your requests, the files, the checks and the review under
+headings; each check's claim, limits and output sit beneath it, the output
+behind a `│` and without its colors. The diff lists the changed files with
+their added and removed lines, then shows each change with line numbers,
+added and removed lines tinted green and red, and code highlighted by
+language.
 The prompt stays visible in either view.
 Then choose:
 

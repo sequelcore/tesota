@@ -21,10 +21,13 @@ export interface ReviewRecord {
   readonly measurement?: ReviewMeasurement;
 }
 
+/** A check with its claim and limits beneath it, and its output behind a gutter so it never reads as part of the record. */
 function checkDetail(check: CheckResult): string {
   const exit = check.exitCode === null ? "" : ` (exit ${check.exitCode})`;
-  const output = check.output.trim().length === 0 ? "" : `\n${check.output.trimEnd()}`;
-  return `${check.outcome.replace("_", " ")}${exit}: ${check.command}\n  Claim: ${check.claim}\n  Limits: ${check.limits}${output}`;
+  const output = check.output.trim().length === 0 ? "" :
+    `\n${check.output.replace(/^\n+/u, "").trimEnd().split("\n").map((line) => `    │ ${line}`).join("\n")}`;
+  return `  ${check.outcome === "passed" ? "✓" : "✗"} ${check.outcome.replace("_", " ")}${exit}: ${check.command}` +
+    `\n    Claim: ${check.claim}\n    Limits: ${check.limits}${output}`;
 }
 
 const verbs: Readonly<Record<WorkspaceSnapshot["changes"][number]["status"], string>> =
@@ -99,21 +102,33 @@ const outcomeMarks: Readonly<Record<ObligationOutcome, string>> = { held: "✓",
 function obligationDetail(obligation: Obligation): string {
   const outcome = outcomeOf(obligation);
   const what = obligation.source === "request" ? `Request ${obligation.index}` : `Plan step ${obligation.index}`;
-  return `  ${outcomeMarks[outcome]} ${what}: ${obligation.obligation} (${outcome.replace("_", " ")}: ${obligation.evidence})` +
-    (obligation.refutation === undefined ? "" : `\n    Refuter: ${obligation.refutation}`);
+  return `    ${outcomeMarks[outcome]} ${what}: ${obligation.obligation} (${outcome.replace("_", " ")}: ${obligation.evidence})` +
+    (obligation.refutation === undefined ? "" : `\n      Refuter: ${obligation.refutation}`);
 }
 
+/** The summary's mark for a finding, with a refuted finding set back as context. */
+function findingMark(finding: Finding): string {
+  if (finding.standing === "refuted" || finding.origin === "preexisting") return "·";
+  if (finding.standing === "unsettled") return "?";
+  return finding.origin === "introduced" && finding.disposition === "fixable" ? "✗" : "⚠";
+}
+
+function findingDetail(finding: Finding): string {
+  const what = finding.origin === "preexisting" ? "already there" : finding.origin === "unknown" ? "cause unclear" :
+    finding.disposition === "operator" ? "needs you" : `${finding.severity}, fixable`;
+  return `\n\n    ${findingMark(finding)} ${what}: ${location(finding)}${finding.statement}` +
+    `${finding.standing === undefined ? "" : ` [${finding.standing}]`}\n      ${finding.reason}` +
+    (finding.originNote === undefined ? "" : `\n      Origin: ${finding.originNote}`) +
+    (finding.refutation === undefined ? "" : `\n      Refuter: ${finding.refutation}`) +
+    (finding.duplicateOf === undefined ? "" : `\n      Same problem as ${finding.duplicateOf}`);
+}
+
+/** One reviewer: its name, then its summary and each finding and obligation nested under it. */
 function reviewDetail(report: ReviewReport): string {
-  if (report.status === "incomplete") return `  ${report.reviewer}: did not finish (${report.reason})`;
-  return `  ${report.reviewer}\n  ${report.summary}` + report.findings.map((finding) =>
-    `\n\n  ${finding.origin === "preexisting" ? "already there" : finding.origin === "unknown" ? "cause unclear" :
-      finding.disposition === "operator" ? "needs you" : `${finding.severity}, fixable`}: ` +
-    `${location(finding)}${finding.statement}${finding.standing === undefined ? "" : ` [${finding.standing}]`}\n  ${finding.reason}` +
-    (finding.originNote === undefined ? "" : `\n  Origin: ${finding.originNote}`) +
-    (finding.refutation === undefined ? "" : `\n  Refuter: ${finding.refutation}`) +
-    (finding.duplicateOf === undefined ? "" : `\n  Same problem as ${finding.duplicateOf}`)).join("") +
+  if (report.status === "incomplete") return `  ✗ ${report.reviewer} did not finish (${report.reason})`;
+  return `  ${report.reviewer}\n    ${report.summary}` + report.findings.map(findingDetail).join("") +
     (report.obligations === undefined || report.obligations.length === 0 ? ""
-      : `\n\n  What the result must hold\n${report.obligations.map(obligationDetail).join("\n")}`);
+      : `\n\n    What the result must hold\n${report.obligations.map(obligationDetail).join("\n")}`);
 }
 
 /**

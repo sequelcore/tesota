@@ -2,6 +2,7 @@ import { highlightCode } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Markdown, Spacer, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component,
   type MarkdownTheme } from "@earendil-works/pi-tui";
 import type { AgentActivity, AgentChange } from "./integrations/model-session-contract.js";
+import { terminalOutputText } from "./terminal-output.js";
 import { backgroundText, bold, colorText, mutedText, type TesotaShellTheme } from "./tesota-shell-theme.js";
 
 export type NoticeTone = "info" | "warning" | "success";
@@ -114,7 +115,7 @@ class ToolBlock implements Component {
       return lines;
     }
     if (this.tool !== "bash" && this.#state !== "failed") return lines;
-    const output = safeTerminalText(this.#output.trimEnd()).split(/\r?\n/u).filter((line) => line.length > 0);
+    const output = safeTerminalText(terminalOutputText(this.#output.trimEnd())).split("\n").filter((line) => line.length > 0);
     const shown = output.slice(-outputTail);
     if (output.length > shown.length) lines.push(truncateToWidth(mutedText(`   └ … ${output.length - shown.length} earlier lines`, this.theme), width));
     for (const [index, line] of shown.entries()) {
@@ -125,11 +126,68 @@ class ToolBlock implements Component {
   }
 }
 
-function reviewLine(line: string, theme: TesotaShellTheme): string {
-  if (/^\s*✓/u.test(line)) return colorText(line, theme.success);
-  if (/^\s*✗/u.test(line)) return colorText(line, theme.error);
-  if (/^\s*⚠/u.test(line)) return colorText(line, theme.warning);
-  return line;
+/** The part of a record line that its wrapped rows continue under: the indent, then a mark, the output gutter or a list number. */
+const recordLead = /^ *(?:[✓✗⚠?·│] |\d+\. )?/u;
+const recordLabel = /^(?:Claim|Limits|Origin|Refuter):/u;
+
+/**
+ * Style one record line by its shape: an unindented line is a section heading
+ * in the result panel and a note in the conversation, a mark gives its color,
+ * command output and settled context recede, and field labels are muted.
+ */
+function paintRecordLine(lead: string, body: string, theme: TesotaShellTheme, headings: boolean): readonly [string, string] {
+  const all = (paint: (text: string) => string): readonly [string, string] => [paint(lead), paint(body)];
+  if (lead.length === 0) return body.length === 0 ? ["", ""] : all(headings ? (text) => bold(colorText(text, theme.accent))
+    : (text) => mutedText(text, theme));
+  switch (lead.trim()[0]) {
+    case "✓": return all((text) => colorText(text, theme.success));
+    case "✗": return all((text) => colorText(text, theme.error));
+    case "⚠": case "?": return all((text) => colorText(text, theme.warning));
+    case "·": case "│": return all((text) => mutedText(text, theme));
+  }
+  const label = recordLabel.exec(body)?.[0];
+  return label === undefined ? [lead, body] : [lead, mutedText(label, theme) + body.slice(label.length)];
+}
+
+/**
+ * A review record's text as rows of at most `width` columns, each wrapped row
+ * continuing under its line's text so nesting stays visible in a narrow
+ * panel. With `headings`, unindented lines are drawn as section headings.
+ */
+export function recordRows(text: string, width: number, theme: TesotaShellTheme, headings: boolean): string[] {
+  return safeTerminalText(text).split("\n").flatMap((line) => {
+    const lead = recordLead.exec(line)?.[0] ?? "";
+    const [paintedLead, body] = paintRecordLine(lead, line.slice(lead.length), theme, headings);
+    const indent = visibleWidth(lead);
+    if (width - indent < 16) return wrapTextWithAnsi(paintedLead + body, Math.max(1, width));
+    // Command output keeps its gutter on every row, so a long output line never reads as part of the record.
+    const continuation = lead.includes("│") ? paintedLead : " ".repeat(indent);
+    return wrapTextWithAnsi(body, width - indent).map((row, index) => (index === 0 ? paintedLead : continuation) + row);
+  });
+}
+
+/**
+ * A review in the conversation: a colored rule down its left side sets it
+ * apart from the agent's replies, which are Markdown with headings of their own.
+ */
+class ReviewBlock implements Component {
+  readonly #title: string;
+  readonly #text: string;
+  readonly #theme: TesotaShellTheme;
+  #cached: { width: number; lines: string[] } | undefined;
+  constructor(title: string, text: string, theme: TesotaShellTheme) { this.#title = title; this.#text = text; this.#theme = theme; }
+  invalidate(): void { this.#cached = undefined; }
+  render(width: number): string[] {
+    if (this.#cached?.width === width) return this.#cached.lines;
+    const theme = this.#theme;
+    const rule = ` ${colorText("┃", theme.accent)} `;
+    const inner = Math.max(1, width - visibleWidth(rule));
+    const lines = [...wrapTextWithAnsi(bold(colorText(safeTerminalText(this.#title), theme.accent)), inner),
+      ...recordRows(`${this.#text}\nAlt+R shows or hides the full diff and check output.`, inner, theme, false)]
+      .map((row) => rule + row);
+    this.#cached = { width, lines };
+    return lines;
+  }
 }
 
 /** Keep routine multi-line notices readable without losing their recorded detail. */
@@ -270,11 +328,7 @@ export class Transcript {
         block.finish(entry.failed, "", entry.change);
         return block;
       }
-      case "review": {
-        const body = safeTerminalText(entry.text).split("\n").map((line) => reviewLine(line, theme)).join("\n");
-        return new Text(`${bold(colorText(safeTerminalText(entry.title), theme.accent))}\n${body}\n` +
-          mutedText("Alt+R shows or hides the full diff and check output.", theme), 1, 0);
-      }
+      case "review": return new ReviewBlock(entry.title, entry.text, theme);
     }
   }
 
