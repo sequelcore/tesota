@@ -4,11 +4,13 @@ import { Editor, HStack, ScrollView, Text, VStack, isKeyRelease, matchesKey, tru
   type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
-import { bold, colorText, mutedText, selectedRow, tesotaShellTheme, type TesotaShellTheme,
+import { bold, colorText, mutedText, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
 import { DiffView } from "./tesota-shell-diff.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
+import { ThemePicker } from "./tesota-shell-theme-picker.js";
+import { ChoicePicker, type ShellChoice } from "./tesota-shell-choice-picker.js";
 import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, type SidebarSession } from "./tesota-shell-sidebar.js";
 import { planLines, type WorkPlan } from "./work-plan.js";
 import { animatedSidebarState, newestFirstSourceIndex, sidebarPresentation, sidebarSessionState,
@@ -25,15 +27,16 @@ export interface TesotaShellTerminalOptions {
   /** `/model`, with its argument when one was given. */
   readonly onModel?: (sessionId: string, argument: string | undefined) => void;
   /** The models the `/model` picker offers a session's agent; without it, `/model` alone asks the shell to list them. */
-  /** The picker's choices for a prefix: `/model ` for the session's agent, `/models ` for a role, `/models <role> ` for its model. */
+  /** The picker's choices for a prefix: `/model ` for the session's agent, `/roles ` for a role, `/roles <role> ` for its model. */
   readonly modelPicker?: (sessionId: string, prefix: string) => ModelPickerData | undefined;
-  /** `/models <role> <choice>`: the model a role uses in every session, as `tesota models` sets it. */
+  /** `/roles <role> <choice>`: the model a role uses in every session, as `tesota roles` sets it. */
   readonly onRoleModel?: (sessionId: string, args: readonly string[]) => void;
   /** `/rename <name>` names the session; `/rename` alone asks for a title from its requests (decision 036). */
   readonly onRename?: (sessionId: string, name: string | undefined) => void;
   readonly onHandoff?: (sessionId: string) => void;
   /** `/sandbox`, with its argument when one was given (decision 030). */
   readonly onSandbox?: (sessionId: string, argument: string | undefined) => void;
+  readonly sandboxPicker?: (sessionId: string) => { title: string; entries: readonly ShellChoice[] };
   readonly onQuit?: () => void;
   readonly onEntry?: (sessionId: string, entry: TranscriptEntry) => void;
   readonly onInspection?: (sessionId: string, inspection: ShellInspection) => void;
@@ -127,11 +130,12 @@ const shellCommands = [
   { name: "close", description: "Close this session" },
   { name: "rename", description: "Name this session, or suggest a name" },
   { name: "model", description: "Show or switch the agent's model" },
-  { name: "models", description: "Choose each role's model" },
+  { name: "roles", description: "Choose each role's model" },
   { name: "handoff", description: "Start the agent's conversation afresh" },
   { name: "sandbox", description: "Show or switch where this session's commands run" },
   { name: "result", description: "Show or hide the review" },
   { name: "sidebar", description: "Show or hide sessions" },
+  { name: "themes", description: "Choose the shell's theme from a list" },
   { name: "details", description: "Expand or collapse a long notice" },
   { name: "help", description: "Show commands and shortcuts" },
   { name: "quit", description: "Close Tesota" },
@@ -244,16 +248,16 @@ class SessionHeading implements Component {
 
 /** Keep Pi's editing behavior and cursor handling while removing its visible frame. */
 class PromptEditor extends Editor {
-  readonly #accent: string | null;
+  readonly #theme: TesotaShellTheme;
   constructor(tui: ViewportTUI, theme: TesotaShellTheme) {
     super(tui, editorTheme(theme), { paddingX: 1 });
-    this.#accent = theme.accent;
+    this.#theme = theme;
   }
   protected override renderTopBorder(width: number): string { return " ".repeat(width); }
   protected override renderBottomBorder(width: number): string { return " ".repeat(width); }
   override render(width: number): string[] {
     const lines = super.render(width);
-    if (lines[1] !== undefined) lines[1] = colorText("›", this.#accent) + lines[1].slice(1);
+    if (lines[1] !== undefined) lines[1] = colorText("›", this.#theme.accent) + lines[1].slice(1);
     return lines;
   }
 }
@@ -309,6 +313,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly resultScroll: ScrollView;
   private readonly commandMenu: CommandMenu;
   private readonly modelPicker: ModelPicker;
+  private readonly themePicker: ThemePicker;
+  private readonly choicePicker: ChoicePicker;
   private readonly editor: Editor;
   private timer: ReturnType<typeof setInterval> | undefined;
   private removeInputListener: (() => void) | undefined;
@@ -321,7 +327,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.options = options;
     this.now = options.now ?? Date.now;
     this.interrupt = () => { (options.interrupt ?? ignoreInterrupt)(this.selectedId); };
-    this.theme = tesotaShellTheme(options.theme);
+    this.theme = { ...tesotaShellTheme(options.theme) };
     this.sidebarHeader = new SessionSidebarHeader(this.theme);
     this.sidebar = new SessionRail(this.theme);
     this.result = new ResultPanel(this.theme);
@@ -332,9 +338,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       sidebar: sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns),
     }));
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
-    initTheme(this.theme.name === "tesota-light" ? "light" : "dark");
+    initTheme(this.theme.appearance === "light" ? "light" : "dark");
     this.commandMenu = new CommandMenu(this.theme);
     this.modelPicker = new ModelPicker(this.theme);
+    this.themePicker = new ThemePicker(this.theme);
+    this.choicePicker = new ChoicePicker(this.theme);
     this.editor = new PromptEditor(this.tui, this.theme);
     this.editor.disableSubmit = true;
     this.editor.onChange = (value) => { this.updateCommandMenu(value); };
@@ -367,6 +375,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const atPrompt = session.pending !== undefined && session.prompt === "> ";
     this.commandMenu.update(value, atPrompt);
     this.modelPicker.update(value, atPrompt, (prefix) => this.options.modelPicker?.(this.selectedId, prefix));
+    this.themePicker.update(value, atPrompt);
+    this.choicePicker.update(value, atPrompt, (prefix) => prefix === "/sandbox "
+      ? this.options.sandboxPicker?.(this.selectedId)
+      : { title: "Long notices", entries: this.selected().transcript.noticePreviews.map((preview, index) => ({
+        value: String(index + 1), label: String(index + 1), detail: preview,
+      })) });
     this.tui.requestRender();
   }
 
@@ -393,7 +407,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       { component: selected.scroll, basis: 0, grow: 1, minSize: 1, visible: () => !resultInColumn() },
       { component: this.resultScroll, basis: 0, grow: 1, minSize: 1, visible: () => resultInColumn() },
       { component: new VStack([{ component: this.plan, basis: "auto", visible: () => this.plan.visible },
-        this.status, this.commandMenu, this.modelPicker, this.editor, this.footer]),
+        this.status, this.commandMenu, this.modelPicker, this.themePicker, this.choicePicker, this.editor, this.footer]),
         basis: "auto", shrink: 1, minSize: 3 },
     ], { gap: 1 });
     const sidebar = new VStack([
@@ -621,6 +635,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   private handleCommandMenuKey(data: string): { consume: true } | undefined {
+    const choice = this.handleChoicePickerKey(data);
+    if (choice !== undefined) return choice;
+    const theme = this.handleThemePickerKey(data);
+    if (theme !== undefined) return theme;
     const picker = this.handleModelPickerKey(data);
     if (picker !== undefined) return picker;
     if (this.commandMenu.visible) {
@@ -645,6 +663,36 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       }
     }
     return undefined;
+  }
+
+  private handleThemePickerKey(data: string): { consume: true } | undefined {
+    if (!this.themePicker.visible) return undefined;
+    if (matchesKey(data, "enter") || matchesKey(data, "tab")) {
+      const choice = this.themePicker.choice;
+      if (choice !== undefined) {
+        if (matchesKey(data, "enter")) this.submit(`/themes ${choice}`);
+        else this.editor.setText(`/themes ${choice}`);
+      }
+    } else if (matchesKey(data, "up") || matchesKey(data, "down") || matchesKey(data, "escape")) {
+      this.themePicker.handleInput(data);
+    } else return undefined;
+    this.tui.requestRender();
+    return { consume: true };
+  }
+
+  private handleChoicePickerKey(data: string): { consume: true } | undefined {
+    if (!this.choicePicker.visible) return undefined;
+    if (matchesKey(data, "enter") || matchesKey(data, "tab")) {
+      const [choice, prefix] = [this.choicePicker.choice, this.choicePicker.prefix];
+      if (choice !== undefined && prefix !== undefined) {
+        if (matchesKey(data, "enter")) this.submit(`${prefix}${choice}`);
+        else this.editor.setText(`${prefix}${choice}`);
+      }
+    } else if (matchesKey(data, "up") || matchesKey(data, "down") || matchesKey(data, "escape")) {
+      this.choicePicker.handleInput(data);
+    } else return undefined;
+    this.tui.requestRender();
+    return { consume: true };
   }
 
   private toggleLatestNotice(): void {
@@ -854,9 +902,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const session = this.selected();
     const pending = session.pending;
     if (pending === undefined) return;
-    const command = answer.trim().slice(1).split(/\s+/u)[0];
-    if (session.prompt === "> " && answer.trimStart().startsWith("/") &&
-      shellCommands.some((item) => item.name === command)) {
+    if (session.prompt === "> " && /^\/[a-z]+(?:\s|$)/u.test(answer.trimStart())) {
       session.draft = "";
       this.editor.setText("");
       this.runShellCommand(session, answer.trim());
@@ -883,15 +929,19 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     close: (session) => { this.options.onCloseSession?.(session.id); },
     rename: (session, args) => { this.options.onRename?.(session.id, args.length === 0 ? undefined : args.join(" ")); },
     model: (session, args) => { this.changeModel(session, args); },
-    models: (session, args) => { this.changeRoleModel(session, args); },
+    roles: (session, args) => { this.changeRoleModel(session, args); },
     handoff: (session) => { this.options.onHandoff?.(session.id); },
     sandbox: (session, args) => { this.changeSandbox(session, args); },
     result: () => { this.showResult = !this.showResult; this.compose(); },
     sidebar: () => { this.toggleSidebar(); },
+    themes: (session, args) => {
+      if (args.length === 0) this.editor.setText("/themes ");
+      else this.changeTheme(session, args);
+    },
     details: (session, args) => { this.toggleDetails(session, args); },
     help: (session) => {
-      this.writeTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /models [role] [route:model|default|off] " +
-        "/handoff /sandbox [where] /result /sidebar " +
+      this.writeTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
+        "/handoff /sandbox [where] /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
         "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +
@@ -916,21 +966,45 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     } else this.options.onModel?.(session.id, args[0]);
   }
 
+  private changeTheme(session: SessionView, args: readonly string[]): void {
+    const name = parseTesotaShellTheme(args[0] ?? "");
+    if (args.length !== 1 || name === undefined) {
+      this.writeTo(session.id, `Use /themes to choose, or /themes <${TESOTA_SHELL_THEME_NAMES.join("|")}>.`, "warning");
+      return;
+    }
+    Object.assign(this.theme, tesotaShellTheme(name));
+    initTheme(this.theme.appearance === "light" ? "light" : "dark");
+    for (const view of this.sessions.values()) view.scroll.invalidate();
+    this.result.diff.invalidate();
+    this.editor.invalidate();
+    this.compose();
+    this.writeTo(session.id, `Theme: ${name}.`);
+  }
+
   private changeSandbox(session: SessionView, args: readonly string[]): void {
     if (args.length > 1) this.writeTo(session.id, "Use /sandbox or /sandbox <auto|native|docker|host|default>.", "warning");
+    else if (args.length === 0 && this.options.sandboxPicker !== undefined && session.pending !== undefined) {
+      this.editor.setText("/sandbox ");
+      this.updateCommandMenu("/sandbox ");
+    }
     else this.options.onSandbox?.(session.id, args[0]);
   }
 
   private changeRoleModel(session: SessionView, args: readonly string[]): void {
     if (args.length < 2 && this.options.modelPicker !== undefined && session.pending !== undefined) {
-      // `/models` opens the role picker, and `/models <role>` that role's model picker.
-      const opened = args.length === 0 ? "/models " : `/models ${args[0]} `;
+      // `/roles` opens the role picker, and `/roles <role>` that role's model picker.
+      const opened = args.length === 0 ? "/roles " : `/roles ${args[0]} `;
       this.editor.setText(opened);
       this.updateCommandMenu(opened);
     } else this.options.onRoleModel?.(session.id, args);
   }
 
   private toggleDetails(session: SessionView, args: readonly string[]): void {
+    if (args.length === 0 && session.transcript.noticePreviews.length > 0 && session.pending !== undefined) {
+      this.editor.setText("/details ");
+      this.updateCommandMenu("/details ");
+      return;
+    }
     const number = args.length === 0 ? 1 : Number(args[0]);
     if (!Number.isSafeInteger(number) || number < 1 || args.length > 1 || !session.transcript.toggleNotice(number - 1)) {
       this.writeTo(session.id, "No long notice at that number. Use /details or /details 2.", "warning");

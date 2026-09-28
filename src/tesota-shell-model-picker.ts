@@ -7,9 +7,9 @@ import { formatTokens } from "./token-usage.js";
  * as in Claude Code and Codex, while `/model <route:model>` still works when
  * typed. Typing after `/model ` filters the list; left and right choose a
  * reasoning level for the highlighted model, as Claude Code's effort slider
- * does (decision 029); Enter switches. `/models` uses the same picker to
- * choose a role, then `/models <role> ` that role's model, which it keeps for
- * every session, as `tesota models` does.
+ * does (decision 029); Enter switches. `/roles` uses the same picker to
+ * choose a role, then `/roles <role> ` that role's model, which it keeps for
+ * every session, as `tesota roles` does.
  */
 
 export interface ModelPickerEntry {
@@ -34,14 +34,14 @@ export interface ModelPickerData {
 }
 
 /**
- * What the picker completes in the editor: `/model `, `/models ` for a role,
- * or `/models <role> ` for that role's model; undefined when it stays closed.
+ * What the picker completes in the editor: `/model `, `/roles ` for a role,
+ * or `/roles <role> ` for that role's model; undefined when it stays closed.
  */
 export function pickerPrefix(value: string): string | undefined {
   if (value.startsWith("/model ")) return "/model ";
-  const role = /^\/models [^\s]+ /u.exec(value);
+  const role = /^\/roles [^\s]+ /u.exec(value);
   if (role !== null) return role[0];
-  return value.startsWith("/models ") ? "/models " : undefined;
+  return value.startsWith("/roles ") ? "/roles " : undefined;
 }
 
 const maxRows = 8;

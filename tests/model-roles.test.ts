@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
-import { dataNotice, modelCost, offeredChoices, offeredModels, rolePicker, runModelsCommand, type OfferedModel } from "../src/models-command.js";
+import { dataNotice, modelCost, offeredChoices, offeredModels, rolePicker, runModelsCommand, runRolesCommand,
+  type OfferedModel } from "../src/models-command.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -95,38 +96,38 @@ it("lists each role with who pays for it and the model's list price, and sets on
   const path = file();
   let output = "";
   const write = (text: string): void => { output += text; };
-  expect(runModelsCommand(["reviewer", "claude-code:opus"], write, offered, path)).toBe(0);
+  expect(runRolesCommand(["reviewer", "claude-code:opus"], write, offered, path)).toBe(0);
   expect(output).toBe("The reviewer now uses claude-code:opus.\n");
   output = "";
-  expect(runModelsCommand(["refuter", "anthropic:claude-opus-5-5"], write, offered, path)).toBe(0);
-  expect(runModelsCommand(["validator", "claude-code:claude-opus-5-5"], write, offered, path)).toBe(0);
+  expect(runRolesCommand(["refuter", "anthropic:claude-opus-5-5"], write, offered, path)).toBe(0);
+  expect(runRolesCommand(["validator", "claude-code:claude-opus-5-5"], write, offered, path)).toBe(0);
   output = "";
-  expect(runModelsCommand([], write, offered, path)).toBe(0);
+  expect(runRolesCommand([], write, offered, path)).toBe(0);
   expect(output).toContain("  reviewer  claude-code:opus              your Claude Code sign-in");
   expect(output).toContain("  refuter   anthropic:claude-opus-5-5     your Anthropic API key, $4 in and $20 out per million tokens");
   expect(output).toContain("  agent     codex:gpt-6-luna              your ChatGPT plan's limits; list price $0.1 in and $0.5 out");
   expect(output).toContain("  validator claude-code:claude-opus-5-5   your Claude Code sign-in; list price $4 in and $20 out");
-  expect(output).toContain("  claude-code: opus");
+  expect(output).toContain("Use tesota models to see available models");
   expect(output).toContain("  advisor   off                           no advisor; choose a model to turn it on");
   output = "";
-  expect(runModelsCommand(["advisor", "off"], write, offered, path)).toBe(0);
+  expect(runRolesCommand(["advisor", "off"], write, offered, path)).toBe(0);
   expect(output).toBe("The advisor is off.\n");
   // Judges that share the author's model or lab are named, under the listing and after a choice.
   output = "";
-  expect(runModelsCommand([], write, offered, path)).toBe(0);
+  expect(runRolesCommand([], write, offered, path)).toBe(0);
   expect(output).toContain("Same model judging its own output");
   expect(output).toContain("the refuter tests the reviewer's findings, and both use claude-code:opus");
   output = "";
-  expect(runModelsCommand(["advisor", "claude-code:opus"], write, offered, path)).toBe(0);
+  expect(runRolesCommand(["advisor", "claude-code:opus"], write, offered, path)).toBe(0);
   expect(output).toContain("The advisor now uses claude-code:opus.\n");
   expect(output).toContain("the reviewer judges work the advisor's guidance shaped, and both use claude-code:opus");
   // A choice with a reasoning level is priced as its model.
-  expect(runModelsCommand(["validator", "codex:gpt-6-sol@high"], write, offered, path)).toBe(0);
+  expect(runRolesCommand(["validator", "codex:gpt-6-sol@high"], write, offered, path)).toBe(0);
   output = "";
-  expect(runModelsCommand([], write, offered, path)).toBe(0);
+  expect(runRolesCommand([], write, offered, path)).toBe(0);
   expect(output).toContain("  validator codex:gpt-6-sol@high          your ChatGPT plan's limits; list price $2 in and $10 out");
-  expect(runModelsCommand(["judge", "codex:gpt-6-sol"], write, offered, path)).toBe(2);
-  expect(runModelsCommand(["agent", "codex:gpt-9"], write, offered, path)).toBe(1);
+  expect(runRolesCommand(["judge", "codex:gpt-6-sol"], write, offered, path)).toBe(2);
+  expect(runRolesCommand(["agent", "codex:gpt-9"], write, offered, path)).toBe(1);
 });
 
 it("reads OpenRouter's vendor/model:variant ids only on OpenRouter, and OpenCode's ids on Zen and Go", () => {
@@ -167,28 +168,33 @@ it("offers the gateways' models, with who pays and what a free model's provider 
 
 it("lists a large route by count, and all of its models on request", () => {
   const writes: string[] = [];
-  expect(runModelsCommand([], (text) => { writes.push(text); }, offeredModels(), file())).toBe(0);
+  expect(runModelsCommand([], (text) => { writes.push(text); }, offeredModels())).toBe(0);
   expect(writes.join("")).toMatch(/openrouter: \d+ models, \d+ of them free; tesota models openrouter lists them/u);
   writes.length = 0;
-  expect(runModelsCommand(["openrouter"], (text) => { writes.push(text); }, offeredModels(), file())).toBe(0);
+  expect(runModelsCommand(["openrouter"], (text) => { writes.push(text); }, offeredModels())).toBe(0);
   expect(writes.join("")).toContain("qwen/qwen3.8-27b:free");
+  writes.length = 0;
+  expect(runModelsCommand(["reviewer", "codex:gpt-6-luna"], (text) => { writes.push(text); }, offered)).toBe(2);
+  expect(writes.join("")).toContain("Usage: tesota models [<");
 });
 
 it("lets only the triage role use a typed decision model, and says what TypeSafe receives", () => {
   const path = file();
   const writes: string[] = [];
-  expect(runModelsCommand(["reviewer", "typesafe:jev-1.13.0"], (text) => { writes.push(text); }, offered, path)).toBe(1);
+  expect(runRolesCommand(["reviewer", "typesafe:jev-1.13.0"], (text) => { writes.push(text); }, offered, path)).toBe(1);
   expect(writes.join("")).toContain("answers only the answer check's first pass");
   writes.length = 0;
-  expect(runModelsCommand(["triage", "typesafe:jev-1.13.0"], (text) => { writes.push(text); }, offered, path)).toBe(0);
+  expect(runRolesCommand(["triage", "typesafe:jev-1.13.0"], (text) => { writes.push(text); }, offered, path)).toBe(0);
   expect(writes.join("")).toContain("TypeSafe receives each such turn's requests and the agent's reply");
   expect(readModelChoices(path).triage).toBe("typesafe:jev-1.13.0");
   // An unpinned or unknown version is not offered: only a qualified one may skip a check.
   expect(() => chooseModel("triage", "typesafe:jev-latest", offeredChoices(offered, "triage"), path)).toThrow("not offered");
   writes.length = 0;
-  runModelsCommand([], (text) => { writes.push(text); }, offered, path);
+  runRolesCommand([], (text) => { writes.push(text); }, offered, path);
   expect(writes.join("")).toMatch(/triage +typesafe:jev-1\.13\.0 +your TypeSafe key/u);
-  expect(writes.join("")).toContain("typesafe, for triage only: jev-1.13.0");
+  writes.length = 0;
+  expect(runModelsCommand([], (text) => { writes.push(text); }, offered)).toBe(0);
+  expect(writes.join("")).toContain("typesafe, for triage only: typesafe:jev-1.13.0");
 });
 
 it("refuses a decision model saved by hand for any role but triage", () => {
@@ -197,17 +203,18 @@ it("refuses a decision model saved by hand for any role but triage", () => {
   expect(() => readModelChoices(path)).toThrow("not a valid model choice file");
 });
 
-it("offers /models a role, then that role's models with default and, when it can be off, off", () => {
+it("offers /roles a role, then that role's models with default and, when it can be off, off", () => {
   const path = file();
-  const roles = rolePicker("/models ", offered, path);
+  const roles = rolePicker("/roles ", offered, path);
   expect(roles?.completes).toBe(true);
   expect(roles?.entries.map((entry) => entry.id)).toEqual(["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage",
     "namer"]);
-  const triage = rolePicker("/models triage ", offered, path)?.entries.map((entry) => entry.id) ?? [];
+  const triage = rolePicker("/roles triage ", offered, path)?.entries.map((entry) => entry.id) ?? [];
   expect(triage[0]).toBe("typesafe:jev-1.13.0");
   expect(triage.slice(-2)).toEqual(["default", "off"]);
-  const reviewer = rolePicker("/models reviewer ", offered, path)?.entries.map((entry) => entry.id) ?? [];
+  const reviewer = rolePicker("/roles reviewer ", offered, path)?.entries.map((entry) => entry.id) ?? [];
   expect(reviewer).not.toContain("typesafe:jev-1.13.0");
   expect(reviewer).not.toContain("off");
-  expect(rolePicker("/models nobody ", offered, path)).toBeUndefined();
+  expect(rolePicker("/roles nobody ", offered, path)).toBeUndefined();
+  expect(rolePicker("/models ", offered, path)).toBeUndefined();
 });

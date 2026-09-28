@@ -6,7 +6,7 @@ import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go"
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import type { ModelPickerData } from "./tesota-shell-model-picker.js";
-import { chooseModel, DECISION_MODELS, isDecisionModel, isReasoningLevel, OPTIONAL_ROLES, type ReasoningLevel, ROLE_OFF, DEFAULT_MODEL, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES,
+import { chooseModel, DECISION_MODELS, isDecisionModel, isReasoningLevel, OPTIONAL_ROLES, type ReasoningLevel, ROLE_OFF, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES,
   MODEL_ROUTES, type ModelRole, type ModelRoute, parseModelChoice, readModelChoices, ROLE_DESCRIPTIONS, ROUTE_BILLING } from "./model-roles.js";
 
 /**
@@ -176,7 +176,7 @@ const offText: Partial<Record<string, string>> = { triage: "no first pass; every
   explorer: "no explorers; choose a model to turn them on",
   advisor: "no advisor; choose a model to turn it on" };
 
-function listing(offered: readonly OfferedModel[], path: string): string {
+function rolesListing(offered: readonly OfferedModel[], path: string): string {
   const choices = readModelChoices(path);
   const rows = MODEL_ROLES.map((role) => {
     const detail = choices[role] === ROLE_OFF ? offText[role] ?? "off" : isDecisionModel(choices[role]) ? DECISION_COST
@@ -185,23 +185,21 @@ function listing(offered: readonly OfferedModel[], path: string): string {
   });
   const warnings = describeJudgeWarnings(judgeWarnings(choices));
   return `Models by role (${path}):\n${rows.join("\n")}\n${warnings === "" ? "" : `\n${warnings}\n`}` +
-    `\nOffered, as route:model:\n${routeListing(offered)}\n  typesafe, for triage only: ${DECISION_MODELS.map((model) =>
-      model.slice(model.indexOf(":") + 1)).join(", ")}\n` +
-    "Add @low, @medium, @high, @xhigh or @max for a reasoning level the model accepts, such as codex:gpt-6-astra@high; " +
-    "without one, Pi's models reason at medium and Claude Code's at their default.\n" +
-    `Change one with tesota models <role> <route:model>; <role> default restores ${DEFAULT_MODEL}, ` +
-    "and turns explorers and the advisor off; tesota models triage off checks every answer in full.\n";
+    "\nChange one with tesota roles <role> <route:model>; default restores that role's built-in choice. " +
+    "tesota roles triage off checks every answer in full. " +
+    "Use tesota models to see available models and reasoning levels.\n";
 }
 
 /**
- * The `/models` picker's choices: at `/models ` each role with its model, and
- * at `/models <role> ` the models that role may use, with `default` and, for a
+ * The `/roles` picker's choices: at `/roles ` each role with its model, and
+ * at `/roles <role> ` the models that role may use, with `default` and, for a
  * role that can be off, `off`. The triage role's typed decision models come
  * first, since they answer its question faster than any session.
  */
 export function rolePicker(prefix: string, offered: readonly OfferedModel[], path: string = DEFAULT_MODELS_FILE): ModelPickerData | undefined {
+  if (!prefix.startsWith("/roles ")) return undefined;
   const choices = readModelChoices(path);
-  const role = prefix.slice("/models ".length).trim();
+  const role = prefix.slice("/roles ".length).trim();
   if (role === "") {
     return { title: "Role", completes: true, current: "",
       entries: MODEL_ROLES.map((name) => ({ id: name, detail: `${choices[name]} · ${ROLE_DESCRIPTIONS[name]}`, reasoning: [] })) };
@@ -216,19 +214,30 @@ export function rolePicker(prefix: string, offered: readonly OfferedModel[], pat
 }
 
 /**
- * `tesota models` lists each role's model, who pays for it and its list
- * price; `tesota models <role> <route:model>` chooses one.
+ * `tesota models` lists the catalog; `tesota models <route>` lists one route.
  */
 export function runModelsCommand(args: readonly string[], write: (text: string) => void,
-  offered: readonly OfferedModel[] = offeredModels(), path: string = DEFAULT_MODELS_FILE): number {
-  if (args.length === 0) { write(listing(offered, path)); return 0; }
-  const [role, model] = args;
-  if (args.length === 1 && (MODEL_ROUTES as readonly string[]).includes(role ?? "")) {
-    write(modelsOf(role as ModelRoute, offered));
+  offered: readonly OfferedModel[] = offeredModels()): number {
+  if (args.length === 0) {
+    write(`Available models, as route:model:\n${routeListing(offered)}\n  typesafe, for triage only: ${DECISION_MODELS.join(", ")}\n` +
+      "Use tesota models <route> for prices, or tesota roles to assign models.\n");
     return 0;
   }
+  if (args.length === 1 && (MODEL_ROUTES as readonly string[]).includes(args[0] ?? "")) {
+    write(modelsOf(args[0] as ModelRoute, offered));
+    return 0;
+  }
+  write(`Usage: tesota models [<${MODEL_ROUTES.join("|")}>]\n`);
+  return 2;
+}
+
+/** The model each Tesota role uses across sessions. */
+export function runRolesCommand(args: readonly string[], write: (text: string) => void,
+  offered: readonly OfferedModel[] = offeredModels(), path: string = DEFAULT_MODELS_FILE): number {
+  if (args.length === 0) { write(rolesListing(offered, path)); return 0; }
+  const [role, model] = args;
   if (args.length !== 2 || role === undefined || model === undefined || !isModelRole(role)) {
-    write(`Usage: tesota models [<route> | <${MODEL_ROLES.join("|")}> <route:model|default|off>]\n`);
+    write(`Usage: tesota roles [<${MODEL_ROLES.join("|")}> <route:model|default|off>]\n`);
     return 2;
   }
   try {

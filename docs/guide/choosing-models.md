@@ -44,26 +44,26 @@ models in Tesota's evaluations. For harder work give the agent
 Codex, so the model that reviews is not the one that wrote:
 
 ```
-tesota models agent claude-code:opus
-tesota models reviewer codex:gpt-6-astra
-tesota models refuter codex:gpt-6-sol
-tesota models validator codex:gpt-6-luna
+tesota roles agent claude-code:opus
+tesota roles reviewer codex:gpt-6-astra
+tesota roles refuter codex:gpt-6-sol
+tesota roles validator codex:gpt-6-luna
 ```
 
 In Tesota's evaluations this reviewer and refuter found every planted
 defect with no false positive, in about two minutes and 120k tokens per run
 of eight cases. This spends your Claude plan only on the agent. Opus writes more tokens than
 the other models, so watch your Claude usage the first days; if it runs low,
-`tesota models agent codex:gpt-6-sol` keeps you working and leaves review as
+`tesota roles agent codex:gpt-6-sol` keeps you working and leaves review as
 it is.
 
 **The same, lighter on the Claude plan.** Keep the agent on Codex and review
 with Claude, which also keeps the reviewer from another family:
 
 ```
-tesota models agent codex:gpt-6-sol
-tesota models reviewer claude-code:sonnet
-tesota models refuter codex:gpt-6-sol
+tesota roles agent codex:gpt-6-sol
+tesota roles reviewer claude-code:sonnet
+tesota roles refuter codex:gpt-6-sol
 ```
 
 **An Anthropic API key.** The same setups work with `anthropic:` models, such
@@ -75,12 +75,12 @@ every role off the default, which needs a ChatGPT plan, and keep the judges
 in another lab than the agent:
 
 ```
-tesota models agent openrouter:poolside/laguna-s-2.1:free
-tesota models reviewer openrouter:nvidia/nemotron-3-super-120b-a12b:free
-tesota models refuter openrouter:nvidia/nemotron-3-super-120b-a12b:free
-tesota models validator openrouter:nvidia/nemotron-3-super-120b-a12b:free
-tesota models triage openrouter:nvidia/nemotron-3-super-120b-a12b:free
-tesota models namer openrouter:nvidia/nemotron-3-super-120b-a12b:free
+tesota roles agent openrouter:poolside/laguna-s-2.1:free
+tesota roles reviewer openrouter:nvidia/nemotron-3-super-120b-a12b:free
+tesota roles refuter openrouter:nvidia/nemotron-3-super-120b-a12b:free
+tesota roles validator openrouter:nvidia/nemotron-3-super-120b-a12b:free
+tesota roles triage openrouter:nvidia/nemotron-3-super-120b-a12b:free
+tesota roles namer openrouter:nvidia/nemotron-3-super-120b-a12b:free
 ```
 
 On Tesota's review evaluation, Nemotron as reviewer and refuter found every
@@ -121,7 +121,7 @@ it:
 
 ```
 tesota auth login typesafe
-tesota models triage typesafe:jev-1.13.0
+tesota roles triage typesafe:jev-1.13.0
 ```
 
 TypeSafe receives the requests and the agent's reply of each turn that
@@ -129,8 +129,8 @@ changed no files; it says it does not train on them, and states no retention
 period. Without a key, or when TypeSafe does not answer, every such answer
 gets the full check. Only the `triage` role can use Jev.
 
-`tesota models` shows each role's model, who pays for it and the model's list
-price; `tesota models <role> default` restores Luna. In a session, `/models`
+`tesota roles` shows each role's model, who pays for it and the model's list
+price; `tesota roles <role> default` restores that role's built-in choice. In a session, `/roles`
 does the same: choose a role, then its model. The reviewer, refuter,
 validator and first pass use a new choice from their next check; the agent's
 applies to new sessions, and `/model` switches the current session's.
@@ -152,7 +152,7 @@ applies to new sessions, and `/model` switches the current session's.
   for a sweep on your own work. On Tesota's review cases Astra found the same
   defects at high as at medium, so the defaults stand until harder cases or
   real sessions show a gain.
-- **Keep judges off their author's model.** `tesota models` warns when a
+- **Keep judges off their author's model.** `tesota roles` warns when a
   role judges output from its own model, and notes when it is from the same
   lab. With two labs some pair shares one; prefer the refuter in the
   reviewer's lab rather than the agent's, so a bias keeps findings for you to

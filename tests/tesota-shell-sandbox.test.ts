@@ -91,7 +91,7 @@ function shell(dockerReady = true) {
     }
     return { commands: "sandbox", provider: native.provider };
   });
-  const created = createProcessTesotaShell("source", "tesota-dark", chosen);
+  const created = createProcessTesotaShell("source", "tesota-dark", chosen, "session");
   const notices = vi.spyOn(created.surface, "writeTo");
   const label = vi.spyOn(created.surface, "setSessionExecution");
   spies.push(notices, label);

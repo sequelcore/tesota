@@ -1,6 +1,8 @@
 import { HStack, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
 import { createTesotaShellTerminal } from "../src/tesota-shell-terminal.js";
+import { SessionRail } from "../src/tesota-shell-sidebar.js";
+import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
 import type { TranscriptEntry } from "../src/tesota-shell-transcript.js";
 
 class TestTerminal implements Terminal {
@@ -45,6 +47,94 @@ function visible(terminal: TestTerminal): string {
   return stripTerminalSequences(terminal.writes.join("\n"));
 }
 
+it("gives sidebar titles the space formerly used by position numbers", () => {
+  const rail = new SessionRail(tesotaShellTheme());
+  rail.setSessions([{ id: "current", title: "A descriptive session", state: "idle", selected: true }]);
+  const [heading, state] = rail.render(25).map(stripTerminalSequences);
+  expect(heading?.trimEnd()).toBe(" A descriptive session");
+  expect(state?.trimEnd()).toBe("  · Idle");
+  expect(heading).toHaveLength(25);
+  expect(state).toHaveLength(25);
+  expect(rail.rowFor("current")).toBe(0);
+});
+
+it("opens /themes, filters, navigates and switches without consuming the request", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 140;
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const answer = shell.ask("> ");
+  const screen = (): string => { terminal.writes.length = 0; tui.renderNow(true); return visible(terminal); };
+  terminal.send("/themes");
+  terminal.send("\r");
+  const choices = screen();
+  expect(choices).toContain("Theme: tesota-dark");
+  for (const name of ["tesota-light", "vesper", "sequel", "automata", "phosphor", "terminal"]) {
+    expect(choices).toContain(name);
+  }
+  terminal.send("\x1b[B");
+  terminal.send("\r");
+  expect(screen()).toContain("Theme: tesota-light.");
+  terminal.send("/themes ves");
+  const filtered = screen();
+  expect(filtered).toContain("charcoal and peach");
+  expect(filtered).not.toContain("parchment and ink");
+  terminal.send("\t");
+  terminal.send("\r");
+  expect(screen()).toContain("Theme: vesper.");
+  terminal.send("/themes automata");
+  terminal.send("\x1b");
+  expect(screen()).not.toContain("↑↓ choose");
+  terminal.send("\x03");
+  terminal.send("/themes");
+  terminal.send("\r");
+  expect(screen()).toContain("Theme: vesper");
+  terminal.send("\x1b");
+  terminal.send("\x03");
+  terminal.send("/themes nonexistent");
+  expect(screen()).toContain("No matching themes");
+  terminal.send("\r");
+  expect(screen()).toContain("No matching themes");
+  terminal.send("\x03");
+  terminal.send("continue");
+  terminal.send("\r");
+  await expect(answer).resolves.toBe("continue");
+  shell.stop();
+});
+
+it("switches themes in place across sessions without answering the pending prompt", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 140;
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.addSession("other", "Other", [{ kind: "notice", text: "Saved warning", tone: "warning" }]);
+  shell.start();
+  shell.write("Existing warning", "warning");
+  const answer = shell.ask("> ");
+  const send = (command: string): void => { terminal.send(command); terminal.send("\r"); tui.renderNow(true); };
+  send("/themes tesota-light");
+  expect(screenLine(terminal.writes.join(""), "Existing warning")).toContain("\x1b[38;2;110;96;44m");
+  shell.selectSession("other");
+  tui.renderNow(true);
+  expect(screenLine(terminal.writes.join(""), "Saved warning")).toContain("\x1b[38;2;110;96;44m");
+  shell.selectSession("default");
+  send("/themes invalid extra");
+  send("/themes terminal extra");
+  expect(visible(terminal)).toContain("Theme: tesota-light");
+  send("/themes terminal");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(terminal.writes.join("")).not.toContain("\x1b[38;2;");
+  send("/themes tesota-dark");
+  expect(screenLine(terminal.writes.join(""), "Existing warning")).toContain("\x1b[38;2;213;179;106m");
+  send("continue");
+  await expect(answer).resolves.toBe("continue");
+  shell.stop();
+});
+
 it("retains the last message when stopping before the scheduled render", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -76,12 +166,35 @@ it("collapses long repository notices and expands them without sending a prompt"
   terminal.send("/details");
   terminal.send("\r");
   tui.renderNow(true);
+  expect(visible(terminal)).toContain("Long notices");
+  terminal.send("\r");
+  tui.renderNow(true);
   expect(visible(terminal)).toContain("modified b.ts");
   expect(entries).toHaveLength(1);
   terminal.send("continue");
   terminal.send("\r");
   await expect(answer).resolves.toBe("continue");
   expect(entries.at(-1)).toEqual({ kind: "user", text: "continue" });
+  shell.stop();
+});
+
+it("lists multiple long notices newest first and opens the selected one", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 120;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  shell.write("First notice:\nfirst a\nfirst b\nfirst c\nfirst d");
+  shell.write("Second notice:\nsecond a\nsecond b\nsecond c\nsecond d");
+  shell.ask("> ").catch(() => undefined);
+  terminal.send("/details");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Second notice");
+  terminal.send("\x1b[B");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("first c");
   shell.stop();
 });
 
@@ -128,6 +241,33 @@ it("passes /model and /sandbox with their argument, and /handoff, to the shell",
   expect(onModel.mock.calls).toEqual([["default", "claude-code:opus"], ["default", undefined]]);
   expect(onHandoff).toHaveBeenCalledWith("default");
   expect(onSandbox.mock.calls).toEqual([["default", "docker"], ["default", undefined]]);
+  shell.stop();
+});
+
+it("chooses a session sandbox from a filtered list without sending a request", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onSandbox = vi.fn();
+  const sandboxPicker = () => ({ title: "Sandbox: default (auto)", entries: [
+    { value: "default", label: "default", detail: "Follow auto" },
+    { value: "native", label: "native", detail: "Native sandbox" },
+    { value: "docker", label: "docker", detail: "Docker Sandboxes" },
+  ] });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onSandbox, sandboxPicker });
+  shell.start();
+  const answer = shell.ask("> ");
+  terminal.send("/sandbox");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Sandbox: default (auto)");
+  terminal.send("dock");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Docker Sandboxes");
+  terminal.send("\r");
+  expect(onSandbox).toHaveBeenCalledWith("default", "docker");
+  terminal.send("continue");
+  terminal.send("\r");
+  await expect(answer).resolves.toBe("continue");
   shell.stop();
 });
 
@@ -188,14 +328,14 @@ it("renames a session with /rename, asks for a suggestion without a name, and sh
   shell.stop();
 });
 
-it("chooses a role's model with /models: a role, then its model, which Enter sets", () => {
+it("chooses a role's model with /roles: a role, then its model, which Enter sets", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const onRoleModel = vi.fn();
   const prefixes: string[] = [];
   const modelPicker = (_id: string, prefix: string) => {
     prefixes.push(prefix);
-    return prefix === "/models "
+    return prefix === "/roles "
       ? { title: "Role", completes: true, current: "", entries: [
         { id: "reviewer", detail: "codex:gpt-6-astra", reasoning: [] }, { id: "triage", detail: "codex:gpt-6-luna", reasoning: [] }] }
       : { title: "The triage's model, for every session", current: "codex:gpt-6-luna", entries: [
@@ -206,7 +346,7 @@ it("chooses a role's model with /models: a role, then its model, which Enter set
   shell.start();
   shell.ask("> ").catch(() => undefined);
   const screen = (): string => { terminal.writes.length = 0; tui.renderNow(true); return visible(terminal); };
-  terminal.send("/models");
+  terminal.send("/roles");
   terminal.send("\r");
   const roles = screen();
   expect(roles).toContain("Role · ↑↓ choose · Enter choose");
@@ -215,7 +355,7 @@ it("chooses a role's model with /models: a role, then its model, which Enter set
   terminal.send("\r");
   // Choosing a role runs nothing: it opens that role's models.
   expect(onRoleModel).not.toHaveBeenCalled();
-  expect(prefixes).toEqual(["/models ", "/models triage "]);
+  expect(prefixes).toEqual(["/roles ", "/roles triage "]);
   const models = screen();
   expect(models).toContain("The triage's model, for every session");
   expect(models).toMatch(/● codex:gpt-6-luna/u);
@@ -224,9 +364,25 @@ it("chooses a role's model with /models: a role, then its model, which Enter set
   expect(onRoleModel).toHaveBeenCalledWith("default", ["triage", "typesafe:jev-1.13.0"]);
   // Typed in full, it runs without the picker.
   shell.ask("> ").catch(() => undefined);
-  terminal.send("/models triage off");
+  terminal.send("/roles triage off");
   terminal.send("\r");
   expect(onRoleModel).toHaveBeenLastCalledWith("default", ["triage", "off"]);
+  shell.stop();
+});
+
+it("does not send a removed slash command to the agent", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const answer = shell.ask("> ");
+  terminal.send("/models");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Unknown command");
+  terminal.send("continue");
+  terminal.send("\r");
+  await expect(answer).resolves.toBe("continue");
   shell.stop();
 });
 
@@ -327,6 +483,7 @@ it("restores long notices collapsed with their full text available", async () =>
   terminal.writes.length = 0;
   terminal.send("/details");
   terminal.send("\r");
+  terminal.send("\r");
   tui.renderNow(true);
   expect(visible(terminal)).toContain("d.ts");
   terminal.send("okay");
@@ -422,7 +579,7 @@ it("keeps environment preparation visible at the first prompt until it finishes"
   shell.askIn("default", "> ").catch(() => undefined);
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Creating the sandbox");
-  expect(visible(terminal)).toContain("1 Session 1");
+  expect(visible(terminal)).toContain("Session 1");
   expect(visible(terminal)).toContain("Preparing");
   shell.reportFor("default", { phase: "working" });
   shell.clearProgressFor("default", "preparing");
@@ -649,7 +806,7 @@ it("keeps input and decisions attached to the selected session", async () => {
   shell.stop();
 });
 
-it("moves back as well as forward between sessions, and jumps to the number the rail shows", () => {
+it("moves back as well as forward between sessions, and jumps by newest-first position without a visible number", () => {
   const terminal = new TestTerminal();
   terminal.columns = 110;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -659,8 +816,9 @@ it("moves back as well as forward between sessions, and jumps to the number the 
   shell.addSession("third", "Session 3");
   shell.start();
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("1 Session 3");
-  expect(visible(terminal)).toContain("3 Session 1");
+  expect(visible(terminal)).toContain("Session 3");
+  expect(visible(terminal)).not.toContain("1 Session 3");
+  expect(visible(terminal)).not.toContain("3 Session 1");
   terminal.send("\x1bk"); // Alt+K follows the newest-first visual order.
   terminal.send("\x1b2"); // Alt+2
   terminal.send("\x1b9"); // No ninth session: nothing changes.
@@ -689,33 +847,33 @@ it("shows precise session needs inline and opens the rail as an overlay on narro
   shell.reportFor("other", { phase: "working" });
   shell.askIn("default", "Approve? [y/N] ").catch(() => undefined);
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("2 Session 1");
+  expect(visible(terminal)).toContain("Session 1");
   expect(visible(terminal)).toContain("Needs you");
-  expect(visible(terminal)).toContain("1 Session 2");
+  expect(visible(terminal)).toContain("Session 2");
   expect(visible(terminal)).toContain("Working");
   // The selected session is highlighted as a selected command is; a state that needs the operator is in the warning color.
   const raw = terminal.writes.join("");
   const selection = "\x1b[48;2;75;61;83m";
-  expect(screenLine(raw, "2 Session 1")).toContain(selection);
-  expect(screenLine(raw, "1 Session 2")).not.toContain(selection);
+  expect(screenLine(raw, "Session 1")).toContain(selection);
+  expect(screenLine(raw, "Session 2")).not.toContain(selection);
   expect(raw).toContain("\x1b[38;2;213;179;106m! Needs you");
   expect(raw).not.toContain("●");
 
   terminal.writes.length = 0;
   terminal.send("\x1bb"); // Alt+B hides the rail without changing the selected session.
   tui.renderNow(true);
-  expect(visible(terminal)).not.toContain("1 Session 2");
+  expect(visible(terminal)).not.toContain("Session 2");
   expect(visible(terminal)).toContain("tesota / Session 1");
 
   terminal.send("\x1bb");
   terminal.resizeTo(70, 24);
   terminal.writes.length = 0;
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("1 Session 2");
+  expect(visible(terminal)).toContain("Session 2");
   terminal.send("\x1bb");
   terminal.writes.length = 0;
   tui.renderNow(true);
-  expect(visible(terminal)).not.toContain("1 Session 2");
+  expect(visible(terminal)).not.toContain("Session 2");
   shell.stop();
 });
 
@@ -729,7 +887,7 @@ it("keeps Escape's stop behavior while the narrow sidebar overlay is open", () =
   shell.report({ phase: "working" });
   terminal.send("\x1bb");
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("1 Session 1");
+  expect(visible(terminal)).toContain("Session 1");
   terminal.send("\x1b");
   expect(interrupt).toHaveBeenCalledOnce();
   shell.stop();
@@ -744,7 +902,7 @@ it("keeps the selected session visible when the sidebar has more rows than the t
   for (let index = 2; index <= 9; index++) shell.addSession(`session-${index}`, `Session ${index}`);
   shell.start();
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("9 Session 1");
+  expect(visible(terminal)).toContain("Session 1");
   shell.stop();
 });
 
@@ -761,7 +919,7 @@ it("offers a view-only comparison while one session keeps input focus", async ()
   tui.renderNow(true);
   expect(visible(terminal)).toContain("Research · view only");
   expect(visible(terminal)).toContain("The other session found a source.");
-  expect(visible(terminal)).toContain("2 Session 1");
+  expect(visible(terminal)).toContain("Session 1");
   terminal.send("reply");
   terminal.send("\r");
   await expect(pending).resolves.toBe("reply");
