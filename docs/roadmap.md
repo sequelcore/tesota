@@ -147,9 +147,9 @@ Tesota with plain Pi on one model.
 
 ### 3. Daily use on a real project
 
-Use Tesota on SIACODE, then on Tesota's own changes, and fix what gets in the
-way. Explorers are revisited with evidence from long sessions, and reviewer
-and refuter models with the harder cases real work produces.
+Use Tesota on a private project, then on Tesota's own changes, and fix what
+gets in the way. Explorers are revisited with evidence from long sessions, and
+reviewer and refuter models with the harder cases real work produces.
 
 **Done when:** a normal week of real changes goes through Tesota, with
 verification, review, a correction round and the operator's decision on the
