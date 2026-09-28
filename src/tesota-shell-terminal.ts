@@ -11,10 +11,10 @@ import { DiffView } from "./tesota-shell-diff.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
 import { ThemePicker } from "./tesota-shell-theme-picker.js";
 import { ChoicePicker, type ShellChoice } from "./tesota-shell-choice-picker.js";
-import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, type SidebarSession } from "./tesota-shell-sidebar.js";
+import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, sessionStateIcon, type SidebarSession } from "./tesota-shell-sidebar.js";
 import { planLines, type WorkPlan } from "./work-plan.js";
-import { animatedSidebarState, newestFirstSourceIndex, sidebarPresentation, sidebarSessionState,
-  type SidebarPreference, type SidebarPresentation, type SidebarSessionState } from "./verification/sidebar-rule.js";
+import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, sidebarPresentation,
+  sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarPresentation, type SidebarSessionState } from "./verification/sidebar-rule.js";
 
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
@@ -315,6 +315,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   /** The source repository's branch, where results are applied. */
   private branch: string | undefined;
   private frame = 0;
+  /** The title last written to the terminal. */
+  private windowTitle = "";
   private readonly sidebarHeader: SessionSidebarHeader;
   private readonly sidebar: SessionRail;
   private readonly sidebarScroll: ScrollView;
@@ -540,7 +542,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     // Pi's TUI asks terminals that speak the Kitty keyboard protocol to report releases too, and passes them to input
     // listeners; `matchesKey` matches a release as the key, so handling it would act twice per press.
     this.removeInputListener = this.tui.addInputListener((data) => isKeyRelease(data) ? undefined : this.handleKey(data));
-    this.tui.terminal.setTitle("Tesota");
     this.compose();
     // Restored sessions are added before start; newest-first order can put the initial selection below the viewport.
     this.revealSelectedSession();
@@ -731,6 +732,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.removeInputListener = undefined;
     for (const session of this.sessions.values()) this.cancelPrompt(session);
     this.tui.terminal.setProgress(false);
+    // A session's mark would go stale once the shell has exited.
+    this.tui.terminal.setTitle("Tesota");
+    this.windowTitle = "";
     this.tui.stop({ preserveScreen: true });
     const lastMessage = this.selected().transcript.lastMessage;
     if (lastMessage.length > 0) {
@@ -911,6 +915,29 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     } else text = mutedText("Ready", this.theme);
     this.status.setText(text, whole);
     this.tui.terminal.setProgress(!session.blocked && busy(progress?.value));
+    this.updateWindowTitle(session);
+  }
+
+  /**
+   * The terminal's title, which its tabs and task switcher show, seen from
+   * elsewhere: a mark for every session, with a session waiting on the
+   * operator first, then the selected session's name, and how many others
+   * wait so the mark is not taken for it. Written only when it changes.
+   */
+  private updateWindowTitle(session: SessionView): void {
+    if (!this.started) return;
+    const states = [...this.sessions.values()].map((entry) => this.sessionState(entry));
+    const waiting = states.filter(attentionSidebarState).length;
+    const own = this.sessionState(session);
+    const frame = SHELL_SPINNER_FRAMES[this.frame] ?? "";
+    const kind = terminalTitleMark(waiting, states.filter(animatedSidebarState).length);
+    const mark = kind === "attention" ? "!" : kind === "working" ? frame : sessionStateIcon(own, frame);
+    const others = otherSessionsWaiting(waiting, attentionSidebarState(own));
+    const title = `${mark} ${safeTerminalText(session.title.replace(/\s+/gu, " "))}` +
+      (others === 0 ? "" : ` · ${others} waiting`);
+    if (title === this.windowTitle) return;
+    this.windowTitle = title;
+    this.tui.terminal.setTitle(title);
   }
 
   private submit(answer: string): void {

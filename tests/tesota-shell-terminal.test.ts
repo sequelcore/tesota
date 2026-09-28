@@ -1,5 +1,6 @@
 import { HStack, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
+import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
 import { createTesotaShellTerminal } from "../src/tesota-shell-terminal.js";
 import { SessionRail } from "../src/tesota-shell-sidebar.js";
 import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
@@ -28,7 +29,8 @@ class TestTerminal implements Terminal {
   clearLine(): void {}
   clearFromCursor(): void {}
   clearScreen(): void {}
-  setTitle(_title: string): void {}
+  readonly titles: string[] = [];
+  setTitle(title: string): void { this.titles.push(title); }
   setProgress(_active: boolean): void {}
   send(data: string): void { this.input?.(data); }
   resizeTo(columns: number, rows: number): void {
@@ -1119,5 +1121,56 @@ it("shows the selected session's plan above the prompt, and nothing once it is c
   terminal.writes.length = 0;
   tui.renderNow(true);
   expect(visible(terminal)).not.toContain("Plan ·");
+  shell.stop();
+});
+
+it("titles the terminal with the selected session's mark and name, and only when they change", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui,
+    initialSession: { id: "default", title: "Fix\u0007 the\nlogin", entries: [] } });
+  shell.start();
+  // A control character would end the title's escape sequence early; it is shown as text instead.
+  expect(terminal.titles).toEqual(["· Fix\\u0007 the login"]);
+  shell.setSessionTitle("default", "Budget totals");
+  shell.refreshElapsed();
+  expect(terminal.titles.at(-1)).toBe("· Budget totals");
+  shell.report({ phase: "working" });
+  expect(terminal.titles.at(-1)).toBe(`${SHELL_SPINNER_FRAMES[0]} Budget totals`);
+  shell.report({ phase: "awaiting_decision" });
+  expect(terminal.titles.at(-1)).toBe("! Budget totals");
+  const written = terminal.titles.length;
+  shell.refreshElapsed();
+  expect(terminal.titles).toHaveLength(written);
+  shell.addSession("second", "Second task");
+  shell.selectSession("second");
+  // The first session still awaits a decision in the background.
+  expect(terminal.titles.at(-1)).toBe("! Second task · 1 waiting");
+  shell.stop();
+  expect(terminal.titles.at(-1)).toBe("Tesota");
+});
+
+it("marks the title for a background session that waits, without taking the selected session's name", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui,
+    initialSession: { id: "default", title: "Budget totals", entries: [] } });
+  shell.start();
+  shell.addSession("second", "Login fix");
+  shell.addSession("third", "Docs pass");
+  shell.selectSession("default");
+  expect(terminal.titles.at(-1)).toBe("· Budget totals");
+  shell.reportFor("second", { phase: "working" });
+  expect(terminal.titles.at(-1)).toBe(`${SHELL_SPINNER_FRAMES[0]} Budget totals`);
+  shell.askIn("second", "Allow network access? [y/N] ").catch(() => undefined);
+  expect(terminal.titles.at(-1)).toBe("! Budget totals · 1 waiting");
+  shell.reportFor("third", { phase: "awaiting_decision" });
+  expect(terminal.titles.at(-1)).toBe("! Budget totals · 2 waiting");
+  shell.report({ phase: "awaiting_decision" });
+  expect(terminal.titles.at(-1)).toBe("! Budget totals · 2 waiting");
+  shell.selectSession("second");
+  expect(terminal.titles.at(-1)).toBe("! Login fix · 2 waiting");
+  shell.removeSession("second");
+  expect(terminal.titles.at(-1)).toMatch(/^! (Budget totals|Docs pass) · 1 waiting$/u);
   shell.stop();
 });

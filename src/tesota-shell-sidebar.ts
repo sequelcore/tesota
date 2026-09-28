@@ -1,5 +1,5 @@
 import { truncateToWidth, type Component } from "@earendil-works/pi-tui";
-import { animatedSidebarState, type SidebarSessionState } from "./verification/sidebar-rule.js";
+import { animatedSidebarState, attentionSidebarState, type SidebarSessionState } from "./verification/sidebar-rule.js";
 import { bold, colorText, mutedText, selectedRow, type TesotaShellTheme } from "./tesota-shell-theme.js";
 import { safeTerminalText } from "./tesota-shell-transcript.js";
 
@@ -82,15 +82,23 @@ export class SessionRail implements Component {
   }
 
   private presentation(state: SidebarSessionState): StatePresentation {
-    if (animatedSidebarState(state)) return { icon: this.#frame, label: activeLabel(state), color: this.#theme.accent };
-    if (state === "unresolved") return { icon: "!", label: "Unresolved", color: this.#theme.error };
-    if (state === "needs_operator") return { icon: "!", label: "Needs you", color: this.#theme.warning };
-    if (state === "awaiting_command") return { icon: "!", label: "Needs approval", color: this.#theme.warning };
-    if (state === "awaiting_decision") return { icon: "!", label: "Needs decision", color: this.#theme.warning };
-    if (state === "unread") return { icon: "•", label: "Unread", color: this.#theme.accent };
-    if (state === "ended") return { icon: "–", label: "Ended", color: this.#theme.muted, muted: true };
-    return { icon: "·", label: "Idle", color: this.#theme.muted, muted: true };
+    const icon = sessionStateIcon(state, this.#frame);
+    if (animatedSidebarState(state)) return { icon, label: activeLabel(state), color: this.#theme.accent };
+    if (state === "unresolved") return { icon, label: "Unresolved", color: this.#theme.error };
+    if (state === "needs_operator") return { icon, label: "Needs you", color: this.#theme.warning };
+    if (state === "awaiting_command") return { icon, label: "Needs approval", color: this.#theme.warning };
+    if (state === "awaiting_decision") return { icon, label: "Needs decision", color: this.#theme.warning };
+    if (state === "unread") return { icon, label: "Unread", color: this.#theme.accent };
+    if (state === "ended") return { icon, label: "Ended", color: this.#theme.muted, muted: true };
+    return { icon, label: "Idle", color: this.#theme.muted, muted: true };
   }
+}
+
+/** A session state's one-character mark, shared by the sidebar and the terminal's title: `frame` while it works. */
+export function sessionStateIcon(state: SidebarSessionState, frame: string): string {
+  if (animatedSidebarState(state)) return frame;
+  if (attentionSidebarState(state)) return "!";
+  return state === "unread" ? "•" : state === "ended" ? "–" : "·";
 }
 
 function activeLabel(state: SidebarSessionState): string {

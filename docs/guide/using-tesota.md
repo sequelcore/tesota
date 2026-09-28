@@ -317,7 +317,11 @@ keeps its precise state—such as `Running checks`, `Needs approval`,
 folding every phase into working. Executing phases have a spinner; waiting and
 terminal states stay still. The selected session is highlighted, operator
 attention is in the warning color, and unresolved effects are in the error
-color.
+color. The terminal's title, which its tabs show, names the selected session
+behind a mark for all of them: `!` while any session waits for you, a spinner
+while any works, otherwise the selected session's own mark. When the sessions
+waiting are others, the title counts them, as in `! Budget totals · 1 waiting`;
+the selection never changes on its own.
 
 The rail shows titles and states without position numbers; `Alt+1` to `Alt+9`
 remain optional shortcuts for the first nine sessions in newest-first order.
