@@ -5,6 +5,7 @@ import type { Finding, Obligation, ReviewReport } from "../src/review.js";
 import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
   type WorkResult } from "../src/tesota-shell.js";
 import type { WorkspaceChange } from "../src/workspace.js";
+import type { ApprovedCheck } from "../src/workspace-checks.js";
 
 const change: WorkspaceChange = { status: "modified", path: "src/price.ts" };
 const added: WorkspaceChange = { status: "added", path: "src/tax.ts" };
@@ -12,7 +13,7 @@ const added: WorkspaceChange = { status: "added", path: "src/tax.ts" };
 function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = {}) {
   const output: string[] = [];
   const progress: TesotaShellProgress[] = [];
-  let checks: readonly string[] | null = null;
+  let checks: readonly ApprovedCheck[] | null = null;
   const dependencies: TesotaShellDependencies = {
     write: (text) => { output.push(text); },
     ask: async () => answers.shift() ?? "",
@@ -20,10 +21,10 @@ function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = 
     work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [change, added] })),
     checks: () => checks,
     suggestChecks: () => ["bun run check"],
-    setChecks: vi.fn((commands: readonly string[]) => { checks = commands; }),
-    review: vi.fn(async (commands: readonly string[]) => ({ status: "ready" as const, tree: "b".repeat(40),
+    setChecks: vi.fn((approved: readonly ApprovedCheck[]) => { checks = approved; }),
+    review: vi.fn(async (approved: readonly ApprovedCheck[]) => ({ status: "ready" as const, tree: "b".repeat(40),
       changes: [change, added], reviews: [], requests: ["Fix the discount"],
-      checks: commands.map((command) => ({ verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree: "b".repeat(40), environment: "host",
+      checks: approved.map(({ command }) => ({ verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree: "b".repeat(40), environment: "host",
         guarantees: hostProvider.guarantees, outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" })) })),
     apply: vi.fn(async (): Promise<ApplyResult> => ({ status: "applied", changes: [change, added] })),
     reject: vi.fn(async () => {}),
@@ -61,8 +62,8 @@ it("chooses checks once, reviews the changes and applies them on request", async
   const fixture = shell(["Fix the discount", "", "a", "Add a tax helper", "a", ""]);
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
   expect(fixture.dependencies.setChecks).toHaveBeenCalledTimes(1);
-  expect(fixture.dependencies.setChecks).toHaveBeenCalledWith(["bun run check"]);
-  expect(fixture.dependencies.review).toHaveBeenCalledWith(["bun run check"]);
+  expect(fixture.dependencies.setChecks).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }]);
+  expect(fixture.dependencies.review).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }]);
   expect(fixture.dependencies.apply).toHaveBeenCalledTimes(2);
   // The review itself is presented once, by the review dependency; the loop only reports what was applied.
   expect(fixture.text()).not.toContain("Checks:");
@@ -72,13 +73,26 @@ it("chooses checks once, reviews the changes and applies them on request", async
 });
 
 it.each([
-  ["npm test; npm run lint", ["npm test", "npm run lint"]],
+  ["npm test; npm run lint", [{ command: "npm test", reports: [] }, { command: "npm run lint", reports: [] }]],
   ["none", []],
+  ["bun run check => test-reports/unit.xml, test-reports\\workspace.xml; bun run lint",
+    [{ command: "bun run check", reports: ["test-reports/unit.xml", "test-reports/workspace.xml"] },
+      { command: "bun run lint", reports: [] }]],
+  ["node -e \"[1].map((x) => x)\"", [{ command: "node -e \"[1].map((x) => x)\"", reports: [] }]],
 ] as const)("accepts replacement checks %j", async (answer, expected) => {
   const fixture = shell(["Fix it", answer, "k", ""]);
   await runTesotaShell(fixture.dependencies);
   expect(fixture.dependencies.setChecks).toHaveBeenCalledWith(expected);
   expect(fixture.dependencies.review).toHaveBeenCalledWith(expected);
+});
+
+it.each(["bun run test => ../outside.xml", "bun run test => C:\\reports\\unit.xml", "bun run test => .git/unit.xml",
+  "bun run test =>"])("asks again when a check's reports are not paths inside the repository: %j", async (answer) => {
+  const fixture = shell(["Fix it", answer, "bun run test => reports/unit.xml", "k", ""]);
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.setChecks).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.setChecks).toHaveBeenCalledWith([{ command: "bun run test", reports: ["reports/unit.xml"] }]);
+  expect(fixture.text()).toMatch(/report/u);
 });
 
 it("rejects changes without applying them", async () => {
@@ -133,10 +147,10 @@ const operatorCall: Finding = { severity: "medium", disposition: "operator", ori
 
 /** A review dependency that returns one prepared review per call, each for its own tree. */
 function reviews(...rounds: { tree: string; findings: readonly Finding[] }[]): TesotaShellDependencies["review"] {
-  return vi.fn(async (commands: readonly string[]): Promise<ReviewResult> => {
+  return vi.fn(async (approved: readonly ApprovedCheck[]): Promise<ReviewResult> => {
     const round = rounds.shift() ?? { tree: "z".repeat(40), findings: [] };
     return { status: "ready", tree: round.tree, changes: [change], requests: ["Charge over $100 less"],
-      checks: commands.map((command) => ({ verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree: round.tree, environment: "host", guarantees: hostProvider.guarantees,
+      checks: approved.map(({ command }) => ({ verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree: round.tree, environment: "host", guarantees: hostProvider.guarantees,
         outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" })),
       reviews: [{ reviewer: "Tesota reviewer", tree: round.tree, status: "completed", summary: "", findings: round.findings }] };
   });
@@ -152,8 +166,9 @@ it("sends fixable findings back with the unchanged requests, then asks the opera
   expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
   expect(fixture.dependencies.review).toHaveBeenCalledTimes(2);
   // The second review knows the result it corrects and what was sent back, so it can review only the correction.
-  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(1, ["bun run check"]);
-  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(2, ["bun run check"], { previousTree: "1".repeat(40), sentBack: [fixable] });
+  const approved = [{ command: "bun run check", reports: [] }];
+  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(1, approved);
+  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(2, approved, { previousTree: "1".repeat(40), sentBack: [fixable] });
   expect(fixture.text()).toContain("Correction round 1 of 2: sending 1 problem back to the agent.");
   expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);
 });

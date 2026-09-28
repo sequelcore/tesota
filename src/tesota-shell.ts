@@ -3,7 +3,7 @@ import type { Finding, ReviewReport } from "./review.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import type { NoticeTone } from "./tesota-shell-transcript.js";
 import type { WorkspaceChange } from "./workspace.js";
-import type { CheckResult } from "./workspace-checks.js";
+import { type ApprovedCheck, type CheckResult, parseApprovedCheck } from "./workspace-checks.js";
 
 export type WorkResult =
   | Readonly<{ status: "completed"; changes: readonly WorkspaceChange[] }>
@@ -57,16 +57,16 @@ export interface TesotaShellDependencies {
    */
   readonly assessAnswer?: () => Promise<AnswerResult>;
   /** Checks the operator approved earlier, or null when none were chosen yet. */
-  readonly checks: () => readonly string[] | null;
+  readonly checks: () => readonly ApprovedCheck[] | null;
   readonly suggestChecks: () => readonly string[];
-  readonly setChecks: (commands: readonly string[]) => void;
+  readonly setChecks: (checks: readonly ApprovedCheck[]) => void;
   /**
    * Snapshot the pending changes, run the approved checks on them and present
    * the review, once. After a correction round, `correction` names the result
    * sent back and what was sent, so only the correction is reviewed and the
    * sent-back findings are validated (decision 016).
    */
-  readonly review: (checks: readonly string[], correction?: CorrectionContext) => Promise<ReviewResult>;
+  readonly review: (checks: readonly ApprovedCheck[], correction?: CorrectionContext) => Promise<ReviewResult>;
   readonly apply: () => Promise<ApplyResult>;
   readonly reject: () => Promise<void>;
 }
@@ -79,20 +79,36 @@ function describeChanges(changes: readonly WorkspaceChange[]): string {
   return changes.map((change) => `  ${changeVerbs[change.status]} ${change.path}`).join("\n");
 }
 
-async function chooseChecks(dependencies: TesotaShellDependencies): Promise<readonly string[]> {
+/** The checks an answer names, or the reason one of them cannot be used. */
+function parseChecks(answer: string): readonly ApprovedCheck[] | string {
+  const checks: ApprovedCheck[] = [];
+  for (const text of answer.split(";").filter((part) => part.trim().length > 0)) {
+    const check = parseApprovedCheck(text);
+    if (typeof check === "string") return check;
+    checks.push(check);
+  }
+  return checks;
+}
+
+async function chooseChecks(dependencies: TesotaShellDependencies): Promise<readonly ApprovedCheck[]> {
   const existing = dependencies.checks();
   if (existing !== null) return existing;
   const suggested = dependencies.suggestChecks();
   dependencies.write(suggested.length === 0
     ? "No checks were found for this repository.\n"
     : `Suggested checks:\n${suggested.map((command) => `  ${command}`).join("\n")}\n`);
-  const answer = (await dependencies.ask(suggested.length === 0
-    ? "Commands to run after each change (separate with ;), or Enter for none: "
-    : "Enter to use these, type other commands (separate with ;), or 'none': ")).trim();
-  const chosen = answer.length === 0 ? suggested : answer.toLowerCase() === "none" ? [] :
-    answer.split(";").map((command) => command.trim()).filter((command) => command.length > 0);
-  dependencies.setChecks(chosen);
-  return chosen;
+  dependencies.write("To compare failures test by test with the repository as it was, follow a command with " +
+    "=> and the JUnit XML reports it writes, in paths Git ignores: bun run test => reports/unit.xml, reports/e2e.xml\n");
+  for (;;) {
+    const answer = (await dependencies.ask(suggested.length === 0
+      ? "Commands to run after each change (separate with ;), or Enter for none: "
+      : "Enter to use these, type other commands (separate with ;), or 'none': ")).trim();
+    const chosen = answer.length === 0 ? suggested.map((command) => ({ command, reports: [] }))
+      : answer.toLowerCase() === "none" ? [] : parseChecks(answer);
+    if (typeof chosen === "string") { dependencies.write(`${chosen}\n`, "warning"); continue; }
+    dependencies.setChecks(chosen);
+    return chosen;
+  }
 }
 
 type Decision = "apply" | "reject" | "keep";

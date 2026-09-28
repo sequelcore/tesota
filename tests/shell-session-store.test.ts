@@ -67,14 +67,17 @@ it("persists session workspaces, the repository's approved checks and engine ide
   const session = store.create();
   store.setWorkspace(session.id, join(root, "workspace"));
   expect(store.checks()).toBeNull();
-  store.setChecks(["bun run check"]);
+  expect(() => store.setChecks([{ command: "bun run test", reports: ["../outside.xml"] }])).toThrow();
+  store.setChecks([{ command: "bun run check", reports: ["test-reports/unit.xml", "test-reports/workspace.xml"] },
+    { command: "bun run lint", reports: [] }]);
   const previousEngine = session.engineId;
   const nextEngine = store.rotateEngine(session.id);
   expect(nextEngine).not.toBe(previousEngine);
   store.close();
   const reopened = openShellSessionStore(source, root);
   expect(reopened.list()[0]).toMatchObject({ workspace: join(root, "workspace"), engineId: nextEngine });
-  expect(reopened.checks()).toEqual(["bun run check"]);
+  expect(reopened.checks()).toEqual([{ command: "bun run check", reports: ["test-reports/unit.xml", "test-reports/workspace.xml"] },
+    { command: "bun run lint", reports: [] }]);
   reopened.close();
 });
 
@@ -132,9 +135,12 @@ it("discards an older snapshot version and starts with no sessions", () => {
   store.close();
   const file = readdirSync(root).find((name) => name.endsWith(".json"));
   if (file === undefined) throw new Error("Missing snapshot");
-  writeFileSync(join(root, file), JSON.stringify({ format: "tesota-shell-sessions", version: 5, source, sessions: [] }));
+  // Version 6 kept checks as bare commands, without their reports.
+  writeFileSync(join(root, file), JSON.stringify({ format: "tesota-shell-sessions", version: 6, source,
+    checks: ["bun run check"], network: [], reviews: [], sessions: [] }));
   const reopened = openShellSessionStore(source, root);
   expect(reopened.list()).toEqual([]);
+  expect(reopened.checks()).toBeNull();
   expect(readdirSync(root).filter((name) => name.includes(".bak"))).toEqual([]);
   reopened.close();
 });

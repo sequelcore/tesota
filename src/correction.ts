@@ -1,6 +1,6 @@
 import type { Finding, Obligation, ReviewReport } from "./review.js";
 import { obligationOutcome } from "./verification/obligation-outcome.js";
-import type { CheckResult } from "./workspace-checks.js";
+import { type CheckResult, testList } from "./workspace-checks.js";
 
 /** Rounds in which Tesota sends problems back to the working agent before the operator decides (decision 015). */
 export const MAX_CORRECTION_ROUNDS = 2;
@@ -21,7 +21,8 @@ export function notHeld(obligation: Obligation): boolean {
 
 /**
  * A failed or timed-out check goes back when the candidate caused it: a
- * command only when it passes on the base (decision 039), and Oxlint and
+ * command only when it passes on the base (decision 039) or some test in its
+ * reports fails only with the changes (decision 040), and Oxlint and
  * LemmaScript, which judge only the candidate's changed files, always.
  */
 function sentBack(check: CheckResult): boolean {
@@ -60,7 +61,10 @@ function checkProblem(check: CheckResult): string {
   const how = check.outcome === "timed_out" ? "ran past its time limit" : `failed${check.exitCode === null ? "" : ` (exit ${check.exitCode})`}`;
   const output = check.output.trim().length === 0 ? "" :
     `\n  Last output:\n${check.output.trimEnd().slice(-outputTail).replace(/^/gmu, "    ")}`;
-  return `- The check \`${check.command}\` ${how}.${output}`;
+  const tests = check.base?.introducedTests ?? [];
+  const introduced = tests.length === 0 ? "" :
+    `\n  It also fails without your changes; these tests fail only with them: ${testList(tests)}`;
+  return `- The check \`${check.command}\` ${how}.${introduced}${output}`;
 }
 
 function findingProblem(finding: Finding): string {

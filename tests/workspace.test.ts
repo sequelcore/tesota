@@ -7,7 +7,7 @@ import { afterEach, expect, it } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import { Workspace } from "../src/workspace.js";
 import { applyWorkspace, ApplyConflictError } from "../src/workspace-apply.js";
-import { runChecks, suggestChecks } from "../src/workspace-checks.js";
+import { type ApprovedCheck, runChecks, suggestChecks } from "../src/workspace-checks.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -28,10 +28,14 @@ async function fixture(): Promise<{ source: string; workspace: Workspace }> {
   git(source, ["init", "--quiet"]);
   await writeFile(join(source, "src/price.ts"), "export const price = 1;\n");
   await writeFile(join(source, "src/old.ts"), "export const old = true;\n");
-  await writeFile(join(source, ".gitignore"), "node_modules/\n");
+  await writeFile(join(source, ".gitignore"), "node_modules/\nreports/\n");
   git(source, ["add", "--all"]);
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
   return { source, workspace: await Workspace.create(source, join(root, "workspaces")) };
+}
+
+function plain(...commands: string[]): ApprovedCheck[] {
+  return commands.map((command) => ({ command, reports: [] }));
 }
 
 async function changeEverything(workspace: Workspace): Promise<void> {
@@ -155,12 +159,12 @@ it("binds check outcomes to the reviewed tree", async () => {
   const snapshot = workspace.snapshot();
   const signal = new AbortController().signal;
   const environment = await hostProvider.prepare(workspace.checkout);
-  const results = await runChecks(environment, workspace, snapshot, ["node -e \"process.exit(0)\"", "node -e \"process.exit(3)\""], signal);
+  const results = await runChecks(environment, workspace, snapshot, plain("node -e \"process.exit(0)\"", "node -e \"process.exit(3)\""), signal);
   expect(results.map((result) => [result.outcome, result.exitCode, result.tree, result.environment])).toEqual([
     ["passed", 0, snapshot.tree, "host"], ["failed", 3, snapshot.tree, "host"],
   ]);
   const changing = await runChecks(environment, workspace, snapshot,
-    ["node -e \"require('fs').writeFileSync('src/price.ts', 'formatted')\"", "node -e \"process.exit(0)\""], signal);
+    plain("node -e \"require('fs').writeFileSync('src/price.ts', 'formatted')\"", "node -e \"process.exit(0)\""), signal);
   expect(changing.map((result) => result.outcome)).toEqual(["changed_files"]);
 });
 
@@ -181,7 +185,7 @@ it("runs a failing check again on the base, and sends back only a failure the ca
     "fs.readFileSync('src/price.ts', 'utf8').includes('= 1;') && fs.existsSync('node_modules/dep.js') ? 0 : 1)\"";
   const broken = "node -e \"process.exit(4)\"";
   const baseRuns = new Map();
-  const results = await runChecks(counted, workspace, snapshot, [onBase, broken, "node -e \"process.exit(0)\""],
+  const results = await runChecks(counted, workspace, snapshot, plain(onBase, broken, "node -e \"process.exit(0)\""),
     new AbortController().signal, { baseRuns });
   expect(results.map((result) => [result.outcome, result.base])).toEqual([
     ["failed", { outcome: "passed", exitCode: 0, origin: "introduced" }],
@@ -194,7 +198,7 @@ it("runs a failing check again on the base, and sends back only a failure the ca
   expect(existsSync(join(workspace.checkout, "node_modules/dep.js"))).toBe(true);
   // A correction round on the same base does not pay for the base again.
   commands.length = 0;
-  await runChecks(counted, workspace, snapshot, [onBase, broken], new AbortController().signal, { baseRuns });
+  await runChecks(counted, workspace, snapshot, plain(onBase, broken), new AbortController().signal, { baseRuns });
   expect(commands).toEqual([onBase, broken]);
 });
 
@@ -204,10 +208,138 @@ it("leaves the cause unknown when the base run changes files, and removes what i
   const snapshot = workspace.snapshot();
   const environment = await hostProvider.prepare(workspace.checkout);
   const writes = "node -e \"const fs = require('fs'); if (fs.existsSync('src/old.ts')) fs.writeFileSync('stray.txt', 'x'); process.exit(1)\"";
-  const [result] = await runChecks(environment, workspace, snapshot, [writes], new AbortController().signal);
+  const [result] = await runChecks(environment, workspace, snapshot, plain(writes), new AbortController().signal);
   expect(result?.base).toEqual({ outcome: "changed_files", exitCode: 1, origin: "unknown" });
   expect(existsSync(join(workspace.checkout, "stray.txt"))).toBe(false);
   expect(workspace.snapshot().tree).toBe(snapshot.tree);
+});
+
+/**
+ * A test command that fails and writes JUnit reports under the ignored
+ * `reports/`, telling the candidate from the base by `src/tax.ts`: `loopback`
+ * fails on both, as servers a sandbox refuses do; in `tests` mode `price`
+ * fails only on the candidate and `tax` exists only there.
+ */
+const reporter = `const fs = require("fs");
+const mode = process.argv[2];
+const candidate = fs.existsSync("src/tax.ts");
+const failure = '<failure message="x &amp; y"><![CDATA[expected a < b]]></failure>';
+const xml = (cases) => '<?xml version="1.0"?><testsuites><testsuite name="suite">' + cases.map(([name, failed]) =>
+  '<testcase classname="suite" name="' + name + '">' + (failed ? failure : "") + "</testcase>").join("") + "</testsuite></testsuites>";
+fs.mkdirSync("reports", { recursive: true });
+if (mode === "tests") {
+  fs.writeFileSync("reports/a.xml", xml([["loopback", true]]));
+  fs.writeFileSync("reports/b.xml", xml(candidate ? [["price", true], ["tax", true]] : [["price", false]]));
+}
+if (mode === "same") fs.writeFileSync("reports/a.xml", xml([["loopback", true]]));
+if (mode === "partial") {
+  fs.writeFileSync("reports/a.xml", xml([["loopback", true]]));
+  if (candidate) fs.writeFileSync("reports/b.xml", xml([["tax", true]]));
+}
+if (mode === "partial-new") {
+  fs.writeFileSync("reports/a.xml", xml(candidate ? [["loopback", true], ["tax", true]] : [["loopback", true]]));
+  if (candidate) fs.writeFileSync("reports/b.xml", xml([["price", true]]));
+}
+if (mode === "base-only" && !candidate) fs.writeFileSync("reports/a.xml", xml([["loopback", true]]));
+process.exit(1);
+`;
+
+async function reportedFixture(): Promise<{ workspace: Workspace; snapshot: ReturnType<Workspace["snapshot"]>;
+  environment: Awaited<ReturnType<typeof hostProvider.prepare>>; run: (mode: string) => ApprovedCheck; commands: string[] }> {
+  const { workspace } = await fixture();
+  await mkdir(join(workspace.checkout, "node_modules"));
+  await writeFile(join(workspace.checkout, "node_modules/reporter.js"), reporter);
+  await changeEverything(workspace);
+  const snapshot = workspace.snapshot();
+  const prepared = await hostProvider.prepare(workspace.checkout);
+  const commands: string[] = [];
+  const environment = { ...prepared, run: (command: string, options: Parameters<typeof prepared.run>[1]) => {
+    commands.push(command);
+    return prepared.run(command, options);
+  } };
+  const run = (mode: string): ApprovedCheck => ({ command: `node node_modules/reporter.js ${mode}`,
+    reports: ["reports/a.xml", "reports/b.xml"] });
+  return { workspace, snapshot, environment, run, commands };
+}
+
+it("sends back a check that fails without the changes too when a test fails only with them", async () => {
+  const { workspace, snapshot, environment, run, commands } = await reportedFixture();
+  const baseRuns = new Map();
+  const [result] = await runChecks(environment, workspace, snapshot, [run("tests")], new AbortController().signal, { baseRuns });
+  // `price` passes on the base and `tax` has no result there; `loopback` fails on both.
+  expect(result?.base).toEqual({ outcome: "failed", exitCode: 1, origin: "introduced",
+    introducedTests: ["suite > price", "suite > tax"] });
+  // The base's reports are not left for the agent to read as its own.
+  expect(existsSync(join(workspace.checkout, "reports/a.xml"))).toBe(false);
+  expect(workspace.snapshot().tree).toBe(snapshot.tree);
+  // A correction round on the same base keeps the base's tests without running it again.
+  commands.length = 0;
+  const [again] = await runChecks(environment, workspace, snapshot, [run("tests")], new AbortController().signal, { baseRuns });
+  expect(commands).toEqual([run("tests").command]);
+  expect(again?.base).toEqual(result?.base);
+});
+
+it.each([
+  ["same", "the same tests fail without the changes"],
+  ["partial", "a report the base run did not write leaves its tests unread, not absent"],
+])("keeps a failure as already there in %s mode: %s", async (mode) => {
+  const { workspace, snapshot, environment, run } = await reportedFixture();
+  const [result] = await runChecks(environment, workspace, snapshot, [run(mode)], new AbortController().signal);
+  expect(result?.base).toEqual({ outcome: "failed", exitCode: 1, origin: "preexisting" });
+});
+
+it("sends back a new failing test from a report the base wrote, though the base did not write every report", async () => {
+  const { workspace, snapshot, environment, run } = await reportedFixture();
+  const [result] = await runChecks(environment, workspace, snapshot, [run("partial-new")], new AbortController().signal);
+  // `tax` is in a report the base wrote without it; `price` is in one the base did not write, so it stays unread.
+  expect(result?.base).toEqual({ outcome: "failed", exitCode: 1, origin: "introduced", introducedTests: ["suite > tax"] });
+});
+
+it("does not run a check whose report cannot be removed first, and goes on with the others", async () => {
+  const { workspace, snapshot, environment, run, commands } = await reportedFixture();
+  await mkdir(join(workspace.checkout, "reports/a.xml"), { recursive: true });
+  await writeFile(join(workspace.checkout, "reports/a.xml/stale.txt"), "x");
+  const results = await runChecks(environment, workspace, snapshot, [run("tests"), ...plain("node -e \"process.exit(0)\"")],
+    new AbortController().signal);
+  expect(results.map((result) => result.outcome)).toEqual(["not_started", "passed"]);
+  expect(results[0]?.output).toContain("reports/a.xml could not be removed");
+  expect(commands).toEqual(["node -e \"process.exit(0)\""]);
+});
+
+it("leaves the cause unknown when a report cannot be removed before the base run, and still reports every check", async () => {
+  const { workspace, snapshot, environment } = await reportedFixture();
+  // The candidate's run leaves a directory where its report should be, which outlasts the switch to the base.
+  const blocking = { command: "node -e \"require('fs').mkdirSync('reports/a.xml', { recursive: true }); process.exit(1)\"",
+    reports: ["reports/a.xml"] };
+  const results = await runChecks(environment, workspace, snapshot, [blocking, ...plain("node -e \"process.exit(0)\"")],
+    new AbortController().signal);
+  expect(results.map((result) => [result.outcome, result.base])).toEqual([
+    ["failed", { outcome: "not_started", exitCode: null, origin: "unknown" }],
+    ["passed", undefined],
+  ]);
+  expect(workspace.snapshot().tree).toBe(snapshot.tree);
+});
+
+it("reads only the reports a run wrote, never an earlier run's", async () => {
+  const { workspace, snapshot, environment, run } = await reportedFixture();
+  // An earlier run's report, in the ignored directory, that this candidate run does not replace.
+  await mkdir(join(workspace.checkout, "reports"));
+  await writeFile(join(workspace.checkout, "reports/a.xml"),
+    '<testsuites><testsuite name="suite"><testcase classname="suite" name="ghost"><error/></testcase></testsuite></testsuites>');
+  const [result] = await runChecks(environment, workspace, snapshot, [{ ...run("base-only"), reports: ["reports/a.xml"] }],
+    new AbortController().signal);
+  expect(result?.base).toEqual({ outcome: "failed", exitCode: 1, origin: "preexisting" });
+});
+
+it("does not run a check whose report Git would record as a change", async () => {
+  const { workspace, snapshot, environment, commands } = await reportedFixture();
+  const [result, next] = await runChecks(environment, workspace, snapshot,
+    [{ command: "node -e \"process.exit(0)\"", reports: ["out/unit.xml"] }, ...plain("node -e \"process.exit(0)\"")],
+    new AbortController().signal);
+  expect(result).toMatchObject({ outcome: "not_started", exitCode: null });
+  expect(result?.output).toContain("out/unit.xml");
+  expect(next?.outcome).toBe("passed");
+  expect(commands).toEqual(["node -e \"process.exit(0)\""]);
 });
 
 it("restores a candidate that a stopped run on the base left pinned", async () => {
