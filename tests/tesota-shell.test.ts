@@ -119,13 +119,33 @@ it("reports a conflict and continues without writing", async () => {
   expect(fixture.text()).toContain("Not applied: These files changed in your repository.\n  src/price.ts\nNothing was written.");
 });
 
-it("closes the session when application may have been partial", async () => {
+it("says when everything written was undone", async () => {
+  const fixture = shell(["Fix it", "", "a", ""], {
+    apply: async () => ({ status: "conflict", reason: "a file changed while applying", paths: ["src/price.ts"],
+      rolledBack: true }),
+  });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.text()).toContain("  src/price.ts\nYour repository holds its original files again. The changes stay");
+});
+
+it("names files outside the result that changed while it was applied", async () => {
+  const fixture = shell(["Fix it", "", "a", ""], {
+    apply: async () => ({ status: "applied", changes: [], alsoChanged: ["notes.md"] }),
+  });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.text()).toContain("also changed while it was applied; the next request brings them in:\n  notes.md\n");
+});
+
+it("closes the session and points to recovery when application stopped partway", async () => {
   const fixture = shell(["Fix it", "", "a", "More"], {
-    apply: async () => ({ status: "uncertain", applied: ["src/price.ts"] }),
+    apply: async () => ({ status: "recovery_required", id: "a1", paths: [{ path: "src/price.ts", state: "applied" },
+      { path: "src/tax.ts", state: "changed" }] }),
   });
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(1);
   expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
-  expect(fixture.text()).toContain("These files may have changed:\n  src/price.ts\n");
+  expect(fixture.text()).toContain("Recovery required: application stopped partway and could not be undone.\n" +
+    "  src/price.ts: applied\n  src/tax.ts: changed by someone else, not touched\n");
+  expect(fixture.text()).toContain("Run tesota recover in this repository");
 });
 
 it.each([

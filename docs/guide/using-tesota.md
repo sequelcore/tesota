@@ -297,9 +297,14 @@ language.
 The prompt stays visible in either view.
 Then choose:
 
-- **apply** writes the changes to your repository. A file is only written if
-  your copy still matches what the agent started from, so your own edits are
-  never overwritten. If any file conflicts, nothing is written.
+- **apply** writes the changes to your repository, only if nothing in it
+  changed since the result was checked. If you edited any file, even one the
+  changes do not touch, nothing is written; your next request brings your
+  edits in, and the result is checked again. Tesota keeps a copy of every file
+  it replaces, never overwrites a file someone changes meanwhile, and undoes
+  what it wrote if it has to stop. If it cannot undo everything, it says
+  "Recovery required", and `tesota recover` in that repository lists each
+  file and undoes or finishes the application.
 - **reject** discards the changes. Your repository is not touched.
 - **keep working** leaves the changes in the workspace so you can ask for more
   before deciding.
@@ -407,6 +412,9 @@ background colors; plain conversation text still uses the terminal's foreground.
   with their first request so unused sessions create no workspace. The status
   line shows preparation. Installed `node_modules` stay inside the sandbox,
   so your workspace folder shows it empty. Dev Container definitions are not read yet.
+- Copies of the files an application replaced stay in
+  `~/.tesota/applications/` for 30 days, or until an unfinished application
+  is settled with `tesota recover`.
 - Closing a session removes its workspace. `tesota prune` lists other
   workspaces it would remove, and `tesota prune --force` removes those that no
   session uses and that hold no unapplied changes.

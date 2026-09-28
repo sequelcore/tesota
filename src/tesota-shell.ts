@@ -3,6 +3,7 @@ import type { Finding, ReviewReport } from "./review.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import type { NoticeTone } from "./tesota-shell-transcript.js";
 import type { WorkspaceChange } from "./workspace.js";
+import type { ApplicationPathState } from "./workspace-apply.js";
 import { type ApprovedCheck, type CheckResult, parseApprovedCheck } from "./workspace-checks.js";
 
 export type WorkResult =
@@ -22,9 +23,12 @@ export type AnswerResult =
   | Readonly<{ status: "cancelled" }>;
 
 export type ApplyResult =
-  | Readonly<{ status: "applied"; changes: readonly WorkspaceChange[] }>
-  | Readonly<{ status: "conflict"; reason: string; paths: readonly string[] }>
-  | Readonly<{ status: "uncertain"; applied: readonly string[] }>;
+  /** `alsoChanged` names source files outside the result that changed while it was applied. */
+  | Readonly<{ status: "applied"; changes: readonly WorkspaceChange[]; alsoChanged?: readonly string[] }>
+  /** Nothing was written, or everything written was undone (`rolledBack`). */
+  | Readonly<{ status: "conflict"; reason: string; paths: readonly string[]; rolledBack?: boolean }>
+  /** A partial effect remains (decision 042); `tesota recover` undoes or finishes application `id`. */
+  | Readonly<{ status: "recovery_required"; id: string; paths: readonly ApplicationPathState[] }>;
 
 /** The result a correction round started from, and the findings it sent back. */
 export interface CorrectionContext {
@@ -186,17 +190,26 @@ async function reviewChanges(dependencies: TesotaShellDependencies,
   const applied = await dependencies.apply();
   if (applied.status === "applied") {
     dependencies.write(`Applied to your repository:\n${describeChanges(applied.changes)}\n`, "success");
+    const others = applied.alsoChanged ?? [];
+    if (others.length > 0) {
+      dependencies.write("These files in your repository also changed while it was applied; the next request " +
+        `brings them in:\n${others.map((path) => `  ${path}`).join("\n")}\n`, "warning");
+    }
     return true;
   }
   if (applied.status === "conflict") {
     dependencies.write(`Not applied: ${applied.reason}.\n` +
       (applied.paths.length > 0 ? `${applied.paths.map((path) => `  ${path}`).join("\n")}\n` : "") +
-      "Nothing was written. The changes stay in the workspace.\n", "warning");
+      `${applied.rolledBack === true ? "Your repository holds its original files again." : "Nothing was written."} ` +
+      "The changes stay in the workspace.\n", "warning");
     return true;
   }
-  dependencies.write("Application stopped partway. These files may have changed:\n" +
-    `${applied.applied.map((path) => `  ${path}`).join("\n") || "  (unknown)"}\n` +
-    "Check your repository before continuing. This session is closed.\n", "warning");
+  const states = { original: "original", applied: "applied", changed: "changed by someone else, not touched",
+    unknown: "not known" } as const;
+  dependencies.write("Recovery required: application stopped partway and could not be undone.\n" +
+    `${applied.paths.map((path) => `  ${path.path}: ${states[path.state]}`).join("\n")}\n` +
+    "Tesota kept a copy of every original. Run tesota recover in this repository to undo or finish it. " +
+    "This session is closed.\n", "warning");
   return false;
 }
 

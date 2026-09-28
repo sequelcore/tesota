@@ -18,7 +18,8 @@ import type { CheckResult } from "./workspace-checks.js";
 const journalFile = "assurance.jsonl";
 const outputTail = 2_000;
 
-export type AssuranceDecision = "applied" | "rejected" | "application_conflict" | "application_uncertain";
+export type AssuranceDecision = "applied" | "rejected" | "application_conflict" | "application_rolled_back" |
+  "application_recovery_required";
 
 export type AssuranceEntry =
   | Readonly<{ kind: "review"; at: string; base: string; tree: string; requests: readonly string[];

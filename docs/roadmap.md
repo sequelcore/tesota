@@ -106,11 +106,14 @@ project. They are listed here as they are chosen.
     [design](design/assurance.md#verifiers)): built 2026-09-28; a check may
     name its JUnit XML reports, and a test that fails only with the change, or
     that the change added, sends back a check the base fails too.
-  - **Safer application.** Stop when any source file changed since the base;
-    keep each replaced original; install without replacing; mark a partial
-    effect "recovery required". The
+  - **Safer application** (decision 042,
+    [design](design/workspace.md#applying-and-rejecting)): built 2026-09-28;
+    application stops when any source file changed since the base, keeps
+    each replaced original, installs without replacing, undoes what it wrote
+    on a stop, and marks a partial effect "recovery required" for
+    `tesota recover`. The
     [application landscape](research/application-landscape.md) compares
-    other harnesses and proposes a model for it.
+    other harnesses and the incidents behind it.
 
   Two measured runs on the branch are in [findings](findings.md).
 - **Proposal: out-of-scope work and overengineering.** Tesota flags changes to

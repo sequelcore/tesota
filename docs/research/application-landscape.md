@@ -119,11 +119,22 @@ recovery questions arise.
    stale write, OpenCode without Git, Gemini CLI's checkpointing silently
    failing outside a Git repository (issue #4115, *summary*).
 
-## A model for Tesota (proposed)
+## A model for Tesota
 
-This is a proposal to discuss, not a decision. Once agreed, it becomes a
-decision record and replaces "Applying and rejecting" in the
-[workspace design](../design/workspace.md#applying-and-rejecting).
+This model was proposed on 2026-09-28 and adopted the same day as decision
+042, with the recommended answers to its open questions. Strict whole-source
+admission, automatic rollback under I6, and 30 days' retention were chosen.
+The [workspace design](../design/workspace.md#applying-and-rejecting) owns
+the behavior as built. It differs from this proposal in four ways:
+
+- Temporary files are written at each step rather than all in the prepare
+  phase. The store's copies already make I1 hold before the first change.
+- There is no separate readiness condition for the store. Failing to fill it
+  is a stop with nothing written.
+- The outcome counts a path the application never touched as unaffected,
+  whatever someone else put there. Otherwise a file another program created
+  at an added path would read as a partial effect of Tesota's.
+- Recovery first puts back a file a crash left moved aside.
 
 ### Terms
 
@@ -162,16 +173,14 @@ decision record and replaces "Applying and rejecting" in the
 
 ### Admission
 
-A pure decision, to be specified with LemmaScript and proved like the rules in
-`src/verification/`:
+A pure decision, proved in `src/verification/application-rule.ts`:
 
-| Unfinished application for this source | Review still current (workspace tree = C, base = B) | Source equals B | Recovery store ready | Decision |
-| --- | --- | --- | --- | --- |
-| yes | any | any | any | `recover`: finish or undo that one first |
-| no | no | any | any | `stale_review`: review again |
-| no | yes | no | any | `refresh`: take the source's changes, then check and review again |
-| no | yes | yes | no | `not_ready`: nothing written; say why |
-| no | yes | yes | yes | `apply` |
+| Unfinished application for this source | Review still current (workspace tree = C, base = B) | Source equals B | Decision |
+| --- | --- | --- | --- |
+| yes | any | any | `recover`: finish or undo that one first |
+| no | no | any | `stale_review`: review again |
+| no | yes | no | `refresh`: take the source's changes, then check and review again |
+| no | yes | yes | `apply` |
 
 `refresh` is not a conflict. It runs `workspace.update()`, and new evidence is
 needed because the tree changed. When none of the changed source paths are in
@@ -246,20 +255,29 @@ possible under I6. That is the feature Codex users asked back for and OpenCode
 lacks outside Git. It is a separate capability to add later. This model only
 keeps what it will need.
 
-### Decisions to prove
+### Decisions proved
 
-Each is a pure function in `src/verification/` with `//@` specifications:
+Each is a pure function in `src/verification/application-rule.ts` with `//@`
+specifications, proved with Dafny:
 
 - `applicationAdmission`: the table above. `apply` only when every condition
   holds, and `recover` takes precedence over everything else.
-- `pathStep(action, observed)`: install, already done, or stop. It never
-  replaces or removes bytes whose hash is neither the before nor the after
-  hash (I2, I6).
-- `applicationOutcome(steps)`: `applied` only if every path is done and read
-  back; `not_applied` only if no path is left changed; otherwise
-  `recovery_required` (I4, I5).
+- `commitStep` and `restoreStep`: install, already done, or stop. Neither
+  replaces or removes bytes that are neither the original nor the reviewed
+  content (I2, I6).
+- `applicationOutcome`: `applied` only if every path holds its reviewed
+  content when read back; `not_applied` only if no path keeps an effect of
+  the application; otherwise `recovery_required` (I4, I5).
 
-### Tests the model calls for
+### Tests
+
+`tests/workspace-apply.test.ts` injects the faults below with a mocked
+`link` and `rename`. It covers a file created at an added path, a file held
+open, an operator edit made while the file is moved aside, a rollback that
+itself fails, a crash between moving a file aside and installing its
+replacement, and an edit outside the result during application. It also
+covers retention and `tesota recover`. The rest of this list remains to be
+covered:
 
 The tests inject a fault and a racing write at each point: before and after
 each temporary write, link, rename to the hold, comparison, copy to the
@@ -274,7 +292,10 @@ recovery store and journal sync. They also cover:
 Each must end in one of the three outcomes with I1 to I6 holding. This follows
 the fault-injection approach of decision 038.
 
-### Open questions
+### Questions as decided
+
+The recommended answer was taken for questions 1 to 3. Questions 4 and 5
+stand as stated.
 
 1. **Strict whole-tree admission (I3) or per-file admission as today.** Strict
    is the only rule that keeps "applied equals checked". Its cost is a

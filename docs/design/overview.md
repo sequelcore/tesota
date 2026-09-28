@@ -179,7 +179,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `terminal-output.ts` | What a command's output reads as once drawn: no colors, cursor sequences or redrawn progress |
 | `shell-session-store.ts` | Saved sessions, approved checks, allowed network destinations and measured review costs per repository |
 | `workspace-checkout.ts`, `source-snapshot.ts`, `workspace.ts` | Independent clones, capturing uncommitted source changes, snapshots, updates and the request record |
-| `workspace-apply.ts`, `workspace-prune.ts` | Conflict-checked application and its journal; which workspaces `tesota prune` may remove |
+| `workspace-apply.ts`, `verification/application-rule.ts`, `recover-command.ts`, `workspace-prune.ts` | Application with its store, journal and proved admission and outcome rules, and `tesota recover`; which workspaces `tesota prune` may remove |
 | `repository-git.ts`, `windows-system.ts` | Git without ambient config, hooks or network; Windows' own programs, never found through PATH |
 | `execution-environment.ts`, `execution-providers.ts` | The provider-neutral execution interface, choosing a mode and provider, `tesota setup` |
 | `host-environment.ts`, `docker-sandboxes-environment.ts`, `docker-sandboxes-kit.ts`, `toolchain.ts` | The two providers, the cached sandbox image, and reading a repository's pinned runtimes |

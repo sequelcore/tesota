@@ -3,7 +3,7 @@ import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
 import { isGitObjectId, runRepositoryGit as git } from "./repository-git.js";
-import { SourceSnapshot } from "./source-snapshot.js";
+import { SourceSnapshot, UnsupportedSourceChange } from "./source-snapshot.js";
 import { commitAll, createWorkspaceCheckout, type SourceOptions, DEFAULT_WORKSPACES_ROOT, inspectWorkspaceCheckout,
   sourceSnapshotDirectory, writeSourceChanges, type WorkspaceCheckout } from "./workspace-checkout.js";
 
@@ -156,6 +156,21 @@ export class Workspace {
     if (this.#base === previous) return { status: "current" };
     return { status: "updated", changes: parseChanges(git(this.checkout, ["diff", "--no-renames", "--name-status", "-z",
       previous, this.#base, "--"])) };
+  }
+
+  /**
+   * The paths where the source now differs from what the workspace last took
+   * from it (decision 042); `paths` is undefined when that
+   * cannot be told, such as before the first record or across a changed
+   * symbolic link, and nothing counts as unchanged then.
+   */
+  async sourceChanges(): Promise<{ readonly paths: readonly string[] | undefined }> {
+    const recorded = await this.#source.recorded();
+    const tree = this.#source.capture();
+    if (recorded === null) return { paths: undefined };
+    if (recorded === tree) return { paths: [] };
+    try { return { paths: this.#source.changes(recorded, tree).map((change) => change.path) }; }
+    catch (error) { if (error instanceof UnsupportedSourceChange) return { paths: undefined }; throw error; }
   }
 
   /**
