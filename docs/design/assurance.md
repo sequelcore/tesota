@@ -205,8 +205,9 @@ test of the code the change touched, edge cases included, a comment, and an
 update a requested change forces on its callers are never extras. The
 refuter confirms such a finding when the change is there and no request needs
 it, and refutes it when one does or when it is one of those. This
-is measured on `live:review --set=all`: before it, neither of two reviewer
-setups marked either planted extra (issue #165).
+is decision 043, measured on `live:review --set=all`: before it, neither of
+two reviewer setups marked either planted extra; with it, one setup marked
+both in two runs with no false positive in any case (issue #165).
 
 **A turn that changes no files is checked too.** Otherwise a reply could
 stand in for requested code: asked to add a helper, an agent can answer that

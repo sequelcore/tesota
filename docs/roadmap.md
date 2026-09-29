@@ -148,10 +148,11 @@ project. They are listed here as they are chosen.
      leading with the result.
   3. The other direction in review: each change no request or claimed step
      needs is reported for the operator's call, refuted like any finding,
-     never sent back, since an extra may be welcome. Built 2026-09-29 as the
-     simplest form, instructions to the main reviewer and the refuter rather
-     than a new kind of obligation; adopted only once `--set=all` meets the
-     registered thresholds.
+     never sent back, since an extra may be welcome. Built and adopted
+     2026-09-29 (decision 043) as the simplest form, instructions to the
+     main reviewer and the refuter rather than a new kind of obligation: it
+     met every registered threshold in two runs, after edge-case tests had
+     first been called extras.
   4. A deterministic hint: changed files that no request or plan step names,
      shown for attention only, since legitimate changes often touch them.
 
