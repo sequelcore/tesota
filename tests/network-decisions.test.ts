@@ -29,8 +29,8 @@ function environment(refused: readonly string[]): { environment: ExecutionEnviro
   return { allow, environment: {
     provider: "fake", preparation: [],
     guarantees: { filesystem: "workspace", network: "allowlist", secrets: "none", resources: "bounded" },
-    network: { blockedSince: async () => refused, allow },
-    run: async () => ({ outcome: "exited", exitCode: 7 }),
+    network: { allow },
+    run: async () => ({ outcome: "exited", exitCode: 7, refused }),
     dispose: async () => {},
   } };
 }

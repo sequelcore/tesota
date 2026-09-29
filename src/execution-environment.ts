@@ -26,6 +26,12 @@ export interface RunResult {
   readonly outcome: RunOutcome;
   /** Present only when the command exited. */
   readonly exitCode: number | null;
+  /**
+   * Destinations, as `host:port`, that the environment's allowlisted network
+   * refused while the command ran, by the environment's own clock, for the
+   * operator's question; absent where the network is not an allowlist.
+   */
+  readonly refused?: readonly string[];
 }
 
 export interface RunOptions {
@@ -47,12 +53,11 @@ export interface PreparationStep {
 }
 
 /**
- * What an allowlisted network refused, and a way to open more of it. A
- * destination is `host:port`, as the environment's proxy reports it.
+ * A way to open more of an allowlisted network; what it refused comes back
+ * with each command (`RunResult.refused`). A destination is `host:port`, as
+ * the environment's proxy reports it.
  */
 export interface NetworkControl {
-  /** Destinations refused at or after this time. */
-  blockedSince(time: Date): Promise<readonly string[]>;
   /** Allow these destinations in this environment until it is released. */
   allow(destinations: readonly string[]): Promise<void>;
 }

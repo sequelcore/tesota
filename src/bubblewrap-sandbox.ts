@@ -205,37 +205,38 @@ export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command:
     "--chdir", cwd, "--info-fd", "3", "--", layout.runtime, layout.relay, layout.socket, String(SANDBOX_PROXY_PORT), command];
 }
 
-/** What the host asks: run a command, stop one, open the network to destinations, or report what it refused. */
+/** What the host asks: run a command, stop one, or open the network to destinations. */
 export type HostMessage =
   | Readonly<{ type: "run"; id: string; command: string; cwd: string; env: Readonly<Record<string, string>>; timeoutSeconds?: number | undefined }>
   | Readonly<{ type: "stop"; id: string }>
-  | Readonly<{ type: "allow"; destinations: readonly string[] }>
-  | Readonly<{ type: "blocked"; id: string; since: number }>;
+  | Readonly<{ type: "allow"; destinations: readonly string[] }>;
 
 const hostMessage: z.ZodType<HostMessage> = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("run"), id: z.string(), command: z.string(), cwd: z.string(),
     env: z.record(z.string(), z.string()), timeoutSeconds: z.number().positive().optional() }),
   z.strictObject({ type: z.literal("stop"), id: z.string() }),
   z.strictObject({ type: z.literal("allow"), destinations: z.array(z.string()) }),
-  z.strictObject({ type: z.literal("blocked"), id: z.string(), since: z.number() }),
 ]);
 
-/** What this side answers: ready or failed once, then commands' output and ends, and refused destinations. */
+/**
+ * What this side answers: ready or failed once, then commands' output and
+ * ends, each end with what the proxy refused while that command ran, by this
+ * side's own clock, so no two clocks are compared.
+ */
 export const sandboxMessage: z.ZodType<SandboxMessage> = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("ready"), workspace: z.string() }),
   z.strictObject({ type: z.literal("failed"), message: z.string() }),
   z.strictObject({ type: z.literal("output"), id: z.string(), data: z.string() }),
   z.strictObject({ type: z.literal("ended"), id: z.string(),
-    outcome: z.enum(["exited", "timed_out", "cancelled", "not_started", "unconfirmed"]), exitCode: z.number().nullable() }),
-  z.strictObject({ type: z.literal("blocked"), id: z.string(), destinations: z.array(z.string()) }),
+    outcome: z.enum(["exited", "timed_out", "cancelled", "not_started", "unconfirmed"]), exitCode: z.number().nullable(),
+    refused: z.array(z.string()) }),
   z.strictObject({ type: z.literal("checked"), problems: z.array(z.string()), settings: z.array(z.string()), versions: z.string() }),
 ]);
 export type SandboxMessage =
   | Readonly<{ type: "ready"; workspace: string }>
   | Readonly<{ type: "failed"; message: string }>
   | Readonly<{ type: "output"; id: string; data: string }>
-  | Readonly<{ type: "ended"; id: string; outcome: RunOutcome; exitCode: number | null }>
-  | Readonly<{ type: "blocked"; id: string; destinations: readonly string[] }>
+  | Readonly<{ type: "ended"; id: string; outcome: RunOutcome; exitCode: number | null; refused: readonly string[] }>
   | Readonly<{ type: "checked"; problems: readonly string[]; settings: readonly string[]; versions: string }>;
 
 /** How the host's paths become this side's: WSL's own translation of Windows paths, or the same path on Linux. */
@@ -303,18 +304,17 @@ class SandboxServer {
     switch (message.type) {
       case "run": this.#run(message); return;
       case "stop": this.#running.get(message.id)?.stop("cancelled"); return;
-      case "allow": await this.#proxy.allow(message.destinations); return;
-      case "blocked":
-        this.#send({ type: "blocked", id: message.id, destinations: await this.#proxy.blockedSince(new Date(message.since)) });
+      case "allow": await this.#proxy.allow(message.destinations);
     }
   }
 
   #run(message: Extract<HostMessage, { type: "run" }>): void {
     const cwd = resolve(this.#layout.workspace, message.cwd);
     if (!within(cwd, this.#layout.workspace)) {
-      this.#send({ type: "ended", id: message.id, outcome: "not_started", exitCode: null });
+      this.#send({ type: "ended", id: message.id, outcome: "not_started", exitCode: null, refused: [] });
       return;
     }
+    const started = new Date();
     const child = spawn(this.#bubblewrap, bubblewrapArguments(this.#layout, cwd, message.command),
       { env: commandVariables(this.#layout, this.#path, message.env), stdio: ["ignore", "pipe", "pipe", "pipe"] });
     let info = "";
@@ -329,8 +329,11 @@ class SandboxServer {
       const finish = (outcome: RunOutcome, exitCode: number | null): void => {
         clearTimeout(timer);
         this.#running.delete(message.id);
-        this.#send({ type: "ended", id: message.id, outcome, exitCode });
-        settle();
+        // The proxy records a refusal before its client sees it, so every refusal this command caused is in by now.
+        void this.#proxy.blockedSince(started).then((refused) => {
+          this.#send({ type: "ended", id: message.id, outcome, exitCode, refused });
+          settle();
+        });
       };
       child.once("error", () => { finish("not_started", null); });
       child.once("close", (code, signal) => {

@@ -107,7 +107,10 @@ what is missing.
 ## Network
 
 When an agent command is refused a destination, the sandbox's proxy log names
-it as an exact `host:port`, and after the command the operator is asked
+it as an exact `host:port`. The environment returns the destinations its
+network refused while each command ran with the command's result, measured by
+its own clock, never compared with the host's: WSL's clock, for one, can run
+a fraction of a second behind Windows'. After the command the operator is asked
 whether to allow it for the session, for the repository, or not at all. The
 agent is told the answer and whether to rerun the command. Repository choices
 are stored with the approved checks and applied to each new sandbox.

@@ -101,11 +101,9 @@ function confine<P extends TSchema, D, S>(root: string, tool: ToolDefinition<P, 
  * so the agent reruns the command instead.
  */
 async function answerRefusedNetwork(environment: ExecutionEnvironment,
-  decide: NonNullable<CodingSessionOptions["decideNetwork"]>, since: Date, onData: (data: Buffer) => void): Promise<void> {
+  decide: NonNullable<CodingSessionOptions["decideNetwork"]>, refused: readonly string[], onData: (data: Buffer) => void): Promise<void> {
   const network = environment.network;
-  if (network === undefined) return;
-  const refused = await network.blockedSince(since);
-  if (refused.length === 0) return;
+  if (network === undefined || refused.length === 0) return;
   const list = refused.join(", ");
   if (await decide(refused) === "deny") {
     onData(Buffer.from(`\nTesota: the sandbox refused network access to ${list}, and the user declined to allow it. ` +
@@ -136,12 +134,11 @@ export function environmentBash(environment: ExecutionEnvironment,
         }
         if (answer === "always") alwaysAllowed = true;
       }
-      const started = new Date();
       const result = await environment.run(command, { cwd, onOutput: options.onData,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ...(options.timeout === undefined ? {} : { timeoutSeconds: options.timeout }) });
       if (decideNetwork !== undefined && (result.outcome === "exited" || result.outcome === "timed_out")) {
-        await answerRefusedNetwork(environment, decideNetwork, started, options.onData);
+        await answerRefusedNetwork(environment, decideNetwork, result.refused ?? [], options.onData);
       }
       if (result.outcome === "cancelled") throw new Error("aborted");
       if (result.outcome === "timed_out") throw new Error(`timeout:${options.timeout ?? 0}`);

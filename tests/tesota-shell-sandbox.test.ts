@@ -79,7 +79,7 @@ function provider(name: string) {
   return { environment, provider: prepared };
 }
 
-function shell(dockerReady = true) {
+function shell(dockerReady = true, wslReady = { now: true }) {
   const wsl = provider("wsl");
   const docker = provider("docker-sandboxes");
   const host = provider("host");
@@ -90,7 +90,9 @@ function shell(dockerReady = true) {
         : { commands: "host", provider: host.provider, missing: [{ provider: "docker-sandboxes",
           readiness: { ready: false, steps: [{ description: "Install Docker Sandboxes" }] } }] };
     }
-    return { commands: "sandbox", provider: wsl.provider };
+    return wslReady.now ? { commands: "sandbox", provider: wsl.provider }
+      : { commands: "host", provider: host.provider, missing: [{ provider: "wsl",
+        readiness: { ready: false, steps: [{ description: "bubblewrap (bwrap) is not installed" }] } }] };
   });
   const created = createProcessTesotaShell("source", "tesota-dark", chosen, "session");
   const notices = vi.spyOn(created.surface, "writeTo");
@@ -140,5 +142,19 @@ it("keeps the session's sandbox when the chosen one is not ready, and refuses an
   expect(said()).toContain("Use /sandbox or /sandbox <auto|wsl|docker|host|default>.");
   await created.sessionSandbox?.change("session", "wsl");
   expect(said()).toContain("already run in the WSL sandbox");
+  created.dispose?.();
+});
+
+it("checks a sandbox again when the operator names it, so one that stopped being ready is not reused", async () => {
+  const wslReady = { now: true };
+  const { created, said } = shell(true, wslReady);
+  await created.session("session").work("Add a retry limit.");
+  await created.sessionSandbox?.change("session", "host");
+  expect(record.sandbox).toBe("host");
+  wslReady.now = false;
+  await created.sessionSandbox?.change("session", "wsl");
+  expect(said()).toContain("The WSL sandbox is not ready here: bubblewrap (bwrap) is not installed");
+  expect(said()).toContain("Commands in this session still run");
+  expect(record.sandbox).toBe("host");
   created.dispose?.();
 });

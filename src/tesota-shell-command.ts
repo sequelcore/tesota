@@ -248,10 +248,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   chooseExecution: (preference: SandboxPreference) => Promise<SessionExecution> =
     (preference) => chooseSessionExecution(providersFor(preference)),
   resumeSessionId?: string): TesotaShellCommandDependencies {
-  // Each choice is made once per shell: the first on a machine qualifies the sandbox, which takes some seconds.
+  // Sessions share one choice per shell, since readiness takes some seconds; qualification is kept on disk. The
+  // operator naming a sandbox with /sandbox checks again, so a sandbox that stopped being ready since is not reused.
   const executionChoices = new Map<SandboxPreference, Promise<SessionExecution>>();
-  const executionFor = (preference: SandboxPreference): Promise<SessionExecution> => {
-    let choice = executionChoices.get(preference);
+  const executionFor = (preference: SandboxPreference, checkAgain = false): Promise<SessionExecution> => {
+    let choice = checkAgain ? undefined : executionChoices.get(preference);
     if (choice === undefined) {
       choice = chooseExecution(preference);
       choice.catch(() => { executionChoices.delete(preference); });
@@ -810,7 +811,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const switchSandbox = async (id: string, preference: SandboxPreference, followDefault: boolean): Promise<void> => {
     surface.reportFor(id, { phase: "preparing", activity: "Choosing where commands run" });
     let next: SessionExecution;
-    try { next = await executionFor(preference); } finally { surface.clearProgressFor(id, "preparing"); }
+    try { next = await executionFor(preference, true); } finally { surface.clearProgressFor(id, "preparing"); }
     const state = stateFor(id);
     const current = state.execution;
     // A sandbox named outright, never auto or this computer, is used only when it is ready here.

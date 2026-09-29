@@ -82,7 +82,7 @@ class Connection {
         this.#ended = true;
         opened({ type: "failed", message: this.#errors.trim() || "The sandbox's process ended before it was ready" });
         // A command whose process is gone cannot be confirmed stopped.
-        for (const [id, listener] of this.#listeners) listener({ type: "ended", id, outcome: "unconfirmed", exitCode: null });
+        for (const [id, listener] of this.#listeners) listener({ type: "ended", id, outcome: "unconfirmed", exitCode: null, refused: [] });
         settle();
       };
       child.once("error", (error) => { this.#errors = error.message; end(); });
@@ -96,7 +96,7 @@ class Connection {
 
   /** Answers to one id; once the process has ended, the only answer is that nothing can be confirmed. */
   listen(id: string, listener: (message: SandboxMessage) => void): () => void {
-    if (this.#ended) queueMicrotask(() => { listener({ type: "ended", id, outcome: "unconfirmed", exitCode: null }); });
+    if (this.#ended) queueMicrotask(() => { listener({ type: "ended", id, outcome: "unconfirmed", exitCode: null, refused: [] }); });
     else this.#listeners.set(id, listener);
     return () => { this.#listeners.delete(id); };
   }
@@ -112,15 +112,6 @@ class Connection {
 
 function sandboxNetwork(connection: Connection): NetworkControl {
   return {
-    blockedSince: (time) => new Promise((settle, fail) => {
-      const id = randomUUID();
-      const stop = connection.listen(id, (message) => {
-        stop();
-        if (message.type === "blocked") settle(message.destinations);
-        else fail(new Error("The sandbox's network log is unavailable"));
-      });
-      connection.send({ type: "blocked", id, since: time.getTime() });
-    }),
     allow: async (destinations) => {
       if (!destinations.every(isNetworkDestination)) throw new Error("Only host:port destinations can be allowed");
       connection.send({ type: "allow", destinations });
@@ -140,7 +131,7 @@ function runIn(connection: Connection, workspace: string, command: string, optio
       if (message.type !== "ended") return;
       stop();
       options.signal?.removeEventListener("abort", abort);
-      settle({ outcome: message.outcome, exitCode: message.exitCode });
+      settle({ outcome: message.outcome, exitCode: message.exitCode, refused: message.refused });
     });
     options.signal?.addEventListener("abort", abort, { once: true });
     connection.send({ type: "run", id, command, cwd: within.split(sep).join("/"), env: { ...options.env },
