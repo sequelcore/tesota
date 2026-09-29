@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import { claudeCodeStatus } from "../src/auth.js";
+import { claudeCodeSignIn } from "../src/auth.js";
 import { ClaudeCodeSession, claudeCodeTurn, onlyTesotaTools, resultUsage, toolShape } from "../src/integrations/claude-code-session.js";
 import { totalTokens } from "../src/token-usage.js";
 import type { AgentActivity } from "../src/integrations/model-session-contract.js";
@@ -131,7 +131,9 @@ it("stops when the turn is cancelled, and fails when Claude Code cannot start", 
 });
 
 it("reports Claude Code's sign-in without any credential", () => {
-  expect(claudeCodeStatus(JSON.stringify({ loggedIn: true, authMethod: "claude.ai", apiProvider: "firstParty" })))
-    .toBe("Claude Code: signed in (claude.ai). Tesota does not hold this login.");
-  expect(claudeCodeStatus(JSON.stringify({ loggedIn: false }))).toContain("signed out");
+  expect(claudeCodeSignIn(JSON.stringify({ loggedIn: true, authMethod: "claude.ai", apiProvider: "firstParty" })))
+    .toBe("signed in with claude.ai (your own Claude Code)");
+  expect(claudeCodeSignIn(JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }), "claude-2")).toBe("signed in with claude.ai");
+  expect(claudeCodeSignIn(JSON.stringify({ loggedIn: false }), "claude-2")).toBe("signed out: tesota auth login claude-2");
+  expect(claudeCodeSignIn("not json")).toBe("status unavailable");
 });

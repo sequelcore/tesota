@@ -8,6 +8,7 @@ import { TesotaCredentials } from "../src/integrations/tesota-credentials.js";
 import { judgeWarnings } from "../src/judge-warnings.js";
 import { addRoute, type AddedRoute, type ModelChoice, parseModelChoice, readAddedRoutes, readModelChoices, removeRoute }
   from "../src/model-roles.js";
+import { statusTable } from "../src/auth.js";
 import { modelCost, offeredModels, routeListing } from "../src/models-command.js";
 
 /**
@@ -95,4 +96,16 @@ it("names the route in a failed request, so the operator knows which account's p
   reply = { status: "completed", reply: "ok" };
   expect(await named.run("x", new AbortController().signal)).toEqual({ status: "completed", reply: "ok" });
   expect(named.usable).toBe(true);
+});
+
+it("shows every route's sign-in as one table, with the roles that use it, and says once what a sign-in does not show", () => {
+  const table = statusTable([{ route: "codex", kind: "Codex", signIn: "signed in" },
+    { route: "codex-free1", kind: "Codex", signIn: "signed out: tesota auth login codex-free1" },
+    { route: "claude-code", kind: "Claude Code", signIn: "signed in with claude.ai (your own Claude Code)" }],
+  (route) => route === "codex" ? ["reviewer", "refuter"] : []);
+  const lines = table.split("\n");
+  expect(lines[0]).toMatch(/^Route {8}Kind {9}Sign-in {42}Used by$/u);
+  expect(lines[1]).toMatch(/^codex {6}.*signed in {40}reviewer, refuter$/u);
+  expect(lines[2]).toMatch(/^codex-free1 {2}Codex .*signed out: tesota auth login codex-free1 +—$/u);
+  expect(table.match(/checked when a role first uses them/gu)).toHaveLength(1);
 });

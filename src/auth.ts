@@ -8,8 +8,8 @@ import { browserSignInAuth, deviceCodeAuth, deviceCodeTerminalRenderer, loginToC
   type LoginResult } from "./integrations/codex-login.js";
 import { claudeCodeRouteDirectory } from "./integrations/model-session.js";
 import { TesotaCredentials } from "./integrations/tesota-credentials.js";
-import { ACCOUNT_KINDS, type AddedRoute, addRoute, MODEL_ROLES, parseModelChoice, readAddedRoutes, readModelChoices, removeRoute,
-  type RouteKind } from "./model-roles.js";
+import { ACCOUNT_KINDS, type AddedRoute, addRoute, isDecisionModel, MODEL_ROLES, parseModelChoice, readAddedRoutes, readModelChoices,
+  removeRoute, type RouteKind } from "./model-roles.js";
 import { windowsSystemProgram } from "./windows-system.js";
 
 /**
@@ -53,13 +53,14 @@ export function claudeCodeExecutable(): string {
   return executable;
 }
 
-/** What Claude Code says about its own sign-in, without any credential in it. */
-export function claudeCodeStatus(output: string): string {
-  const value: unknown = JSON.parse(output);
-  if (typeof value !== "object" || value === null) return "Claude Code: status unavailable.";
-  if (Reflect.get(value, "loggedIn") !== true) return "Claude Code: signed out. Run tesota auth login claude-code.";
+/** What Claude Code says about a route's sign-in, without any credential in it. */
+export function claudeCodeSignIn(output: string, route: string = "claude-code"): string {
+  let value: unknown;
+  try { value = JSON.parse(output); } catch { value = undefined; }
+  if (typeof value !== "object" || value === null) return "status unavailable";
+  if (Reflect.get(value, "loggedIn") !== true) return `signed out: tesota auth login ${route}`;
   const method = Reflect.get(value, "authMethod");
-  return `Claude Code: signed in${typeof method === "string" ? ` (${method})` : ""}. Tesota does not hold this login.`;
+  return `signed in${typeof method === "string" ? ` with ${method}` : ""}${route === "claude-code" ? " (your own Claude Code)" : ""}`;
 }
 
 /**
@@ -116,12 +117,6 @@ function openInBrowser(url: string): void {
 
 async function codex(action: string, credentials: TesotaCredentials, route: string = "codex"): Promise<number> {
   const label = route === "codex" ? "Codex" : `Codex (${route})`;
-  if (action === "status") {
-    console.log(await credentials.read("openai-codex") !== undefined
-      ? `${label}: saved login available. Model access is checked when used.`
-      : `${label}: logged out. Run tesota auth login ${route}.`);
-    return 0;
-  }
   if (action === "logout") {
     const models = createModels({ credentials });
     models.setProvider(openaiCodexProvider());
@@ -145,14 +140,7 @@ async function codex(action: string, credentials: TesotaCredentials, route: stri
 }
 
 async function pastedKey(route: KeyRouteName, action: string, credentials: TesotaCredentials): Promise<number> {
-  const { label, provider, variable, source } = keyRoutes[route];
-  if (action === "status") {
-    const saved = await credentials.read(provider);
-    const ambient = (process.env[variable] ?? "").length > 0;
-    console.log(saved !== undefined ? `${label}: saved ${saved.type === "oauth" ? "key from your sign-in" : "key"} available.` : ambient
-      ? `${label}: ${variable} is set; no key saved.` : `${label}: no key. Run tesota auth login ${route}.`);
-    return 0;
-  }
+  const { label, provider, source } = keyRoutes[route];
   if (action === "logout") {
     await credentials.delete(provider);
     console.log(`${label}: saved key removed.`);
@@ -203,14 +191,6 @@ async function claudeCode(action: string, route: string = "claude-code"): Promis
   const directory = claudeCodeRouteDirectory(route);
   if (added) mkdirSync(directory, { recursive: true, mode: 0o700 });
   const env = added ? { ...process.env, CLAUDE_CONFIG_DIR: directory } : process.env;
-  if (action === "status") {
-    const result = spawnSync(executable, ["auth", "status"], { encoding: "utf8", windowsHide: true, timeout: 30_000, env });
-    const label = added ? `Claude Code (${route})` : "Claude Code";
-    if (result.status !== 0) { console.log(`${label}: status unavailable.`); return 1; }
-    console.log(claudeCodeStatus(result.stdout).replace(/^Claude Code/u, label).replace("tesota auth login claude-code",
-      `tesota auth login ${route}`));
-    return 0;
-  }
   // Anthropic's own sign-in and sign-out, in the operator's terminal; nothing passes through Tesota.
   return new Promise((settle) => {
     const child = spawn(executable, ["auth", action], { stdio: "inherit", env });
@@ -234,6 +214,7 @@ async function addedRoute(action: string, route: AddedRoute): Promise<number> {
       return 1;
     }
   }
+  if (action === "status") return statusOf([route.name], new TesotaCredentials());
   const code = route.kind === "codex" ? await codex(action, TesotaCredentials.forRoute(route.name, "openai-codex"), route.name)
     : await claudeCode(action, route.name);
   if (action === "logout" && code === 0) {
@@ -243,12 +224,74 @@ async function addedRoute(action: string, route: AddedRoute): Promise<number> {
   return code;
 }
 
-/** Every route's sign-in: each kind's default route, then the routes the operator added. */
-async function statusOfAll(credentials: TesotaCredentials): Promise<number> {
-  for (const route of routes) {
-    await runAuthCommand("status", route, credentials);
+/** One route's line in `tesota auth status`. */
+export interface RouteStatus {
+  readonly route: string;
+  readonly kind: string;
+  readonly signIn: string;
+}
+
+const kindLabels: Readonly<Record<string, string>> = { codex: "Codex", "claude-code": "Claude Code", anthropic: "Anthropic API",
+  openrouter: "OpenRouter", opencode: "OpenCode", typesafe: "TypeSafe" };
+
+/** A key route's sign-in: a saved key, one from the environment, or none. */
+async function keySignIn(route: KeyRouteName, credentials: TesotaCredentials): Promise<string> {
+  const { provider, variable } = keyRoutes[route];
+  const saved = await credentials.read(provider);
+  if (saved !== undefined) return `key saved${saved.type === "oauth" ? " from your sign-in" : ""}${route === "opencode" ? ", for Zen and Go" : ""}`;
+  return (process.env[variable] ?? "").length > 0 ? `key from ${variable}` : `no key: tesota auth login ${route}`;
+}
+
+/** A route's sign-in, as its status line shows it. */
+async function signInOf(route: string, kind: string, credentials: TesotaCredentials): Promise<string> {
+  if (kind === "codex") {
+    const store = route === "codex" ? credentials : TesotaCredentials.forRoute(route, "openai-codex");
+    return await store.read("openai-codex") !== undefined ? "signed in" : `signed out: tesota auth login ${route}`;
   }
-  for (const route of readAddedRoutes()) await addedRoute("status", route);
+  if (kind === "claude-code") {
+    const env = route === "claude-code" ? process.env : { ...process.env, CLAUDE_CONFIG_DIR: claudeCodeRouteDirectory(route) };
+    const result = spawnSync(claudeCodeExecutable(), ["auth", "status"], { encoding: "utf8", windowsHide: true, timeout: 30_000, env });
+    return result.status === 0 ? claudeCodeSignIn(result.stdout, route) : "status unavailable";
+  }
+  return keySignIn(kind as KeyRouteName, credentials);
+}
+
+/**
+ * The status table: each route, its kind, its sign-in and the roles that use
+ * it, then what a sign-in does not show. A plan's models are known only when
+ * a role uses them, so the table never claims one.
+ */
+export function statusTable(rows: readonly RouteStatus[], usedBy: (route: string) => readonly string[]): string {
+  const width = (pick: (row: RouteStatus) => string, heading: string): number =>
+    Math.max(heading.length, ...rows.map((row) => pick(row).length)) + 2;
+  const [route, kind, signIn] = [width((row) => row.route, "Route"), width((row) => row.kind, "Kind"),
+    width((row) => row.signIn, "Sign-in")];
+  const line = (a: string, b: string, c: string, d: string): string => `${a.padEnd(route)}${b.padEnd(kind)}${c.padEnd(signIn)}${d}`.trimEnd();
+  return [line("Route", "Kind", "Sign-in", "Used by"),
+    ...rows.map((row) => line(row.route, row.kind, row.signIn, usedBy(row.route).join(", ") || "—")), "",
+    "A plan's models are checked when a role first uses them. Claude Code keeps its own sign-ins; Tesota keeps the rest in " +
+    "~/.tesota/auth.", ""].join("\n");
+}
+
+/** The roles using each route; the triage role's typed decision model counts for TypeSafe, OpenCode Go's for OpenCode. */
+function usedByRoute(added: readonly AddedRoute[]): (route: string) => string[] {
+  const choices = readModelChoices();
+  return (route) => MODEL_ROLES.filter((role) => {
+    const choice = choices[role];
+    if (isDecisionModel(choice)) return route === "typesafe";
+    const parsed = parseModelChoice(choice, added)?.route;
+    return parsed === route || route === "opencode" && parsed === "opencode-go";
+  });
+}
+
+/** The status of these routes, every route when none is named, as one table. */
+async function statusOf(names: readonly string[], credentials: TesotaCredentials): Promise<number> {
+  const added = readAddedRoutes();
+  const rows = await Promise.all(names.map(async (route): Promise<RouteStatus> => {
+    const kind = added.find((entry) => entry.name === route)?.kind ?? route;
+    return { route, kind: kindLabels[kind] ?? kind, signIn: await signInOf(route, kind, credentials) };
+  }));
+  process.stdout.write(statusTable(rows, usedByRoute(added)));
   return 0;
 }
 
@@ -278,7 +321,15 @@ export async function addAccount(kind: string, name: string): Promise<number> {
 
 export async function runAuthCommand(action: string, route?: string,
   credentials: TesotaCredentials = new TesotaCredentials()): Promise<number> {
-  if (action === "status" && route === undefined) return statusOfAll(credentials);
+  if (action === "status" && route === undefined) {
+    // Each kind's default route, followed by the routes added for it.
+    const added = readAddedRoutes();
+    const names = routes.flatMap((kind) => [kind, ...added.filter((entry) => entry.kind === kind).map((entry) => entry.name)]);
+    try { return await statusOf(names, credentials); } catch {
+      console.error("The routes' status could not be read. Credentials were not printed. Check private storage and retry.");
+      return 1;
+    }
+  }
   const chosen = route ?? "codex";
   const added = readAddedRoutes().find((entry) => entry.name === chosen);
   if (["login", "status", "logout"].includes(action) && added !== undefined) {
@@ -291,6 +342,7 @@ export async function runAuthCommand(action: string, route?: string,
     console.error(`Usage: tesota auth <login|status|logout> [${routes.join("|")}|<added route>] [--as <name>]`);
     return 2;
   }
+  if (action === "status") return statusOf([chosen], credentials);
   try {
     switch (chosen as AuthRoute) {
       case "codex": return await codex(action, credentials);
