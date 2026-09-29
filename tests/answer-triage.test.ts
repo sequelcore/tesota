@@ -34,7 +34,7 @@ afterEach(() => {
   session.turn = { status: "completed", reply: "" };
 });
 
-const access = { target: { engine: "claude-code" as const, model: "haiku" } };
+const access = { target: { engine: "claude-code" as const, route: "claude-code", model: "haiku" } };
 
 it("skips the full check only when the first pass decided that nothing is checkable", () => {
   expect(runsAnswerCheck(true, false)).toBe(false);

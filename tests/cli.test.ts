@@ -40,7 +40,8 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota [--theme <tesota-dark|tesota-light|vesper|sequel|automata|phosphor|terminal>]\n" +
     "       tesota resume [<session-id>] [--theme <tesota-dark|tesota-light|vesper|sequel|automata|phosphor|terminal>]\n" +
     "       tesota verify <file.ts|file.js>\n" +
-    "       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe]\n" +
+    "       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]\n" +
+    "       tesota auth login <codex|claude-code> --as <name>\n" +
     "       tesota models [<route>]\n" +
     "       tesota roles [<role> [<route:model|default|off>]]\n" +
     "       tesota prune [--force]\n" +

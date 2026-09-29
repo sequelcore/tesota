@@ -39,7 +39,7 @@ afterEach(() => {
   session.turn = { status: "completed", reply: "" };
 });
 
-const access = { target: { engine: "claude-code" as const, model: "haiku" } };
+const access = { target: { engine: "claude-code" as const, route: "claude-code", model: "haiku" } };
 
 it("names a session from its first request's first line, shortened at a word", () => {
   expect(seedTitle("Add a farewell() helper to src/greet.ts")).toBe("Add a farewell() helper to src/greet.ts");

@@ -39,6 +39,8 @@ export interface ClaudeCodeSessionOptions {
    * agent; read-only roles keep none.
    */
   readonly conversationId?: string;
+  /** Claude Code's configuration folder, where an added route's account is signed in (decision 050); the operator's own when absent. */
+  readonly configDirectory?: string;
 }
 
 /**
@@ -261,7 +263,8 @@ export class ClaudeCodeSession {
         // Every call goes through one gate: Tesota's tools are allowed there, and nothing else is.
         canUseTool: onlyTesotaTools, settingSources: [], strictMcpConfig: true, skills: [],
         hooks: { PostToolBatch: [{ hooks: [this.#afterBatch] }] }, abortController: abort,
-        env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "tesota", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
+        env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "tesota", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+          ...this.#options.configDirectory === undefined ? {} : { CLAUDE_CONFIG_DIR: this.#options.configDirectory } },
         ...this.#conversation(),
       } })) {
         this.#observe(message);

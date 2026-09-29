@@ -12,15 +12,81 @@ import * as z from "zod";
  */
 
 /**
- * How Tesota reaches a model: `codex` through Pi and the operator's ChatGPT
+ * The kinds of route, how Tesota reaches a model: `codex` through Pi and the operator's ChatGPT
  * plan, `anthropic` through Pi and an Anthropic API key, `claude-code`
  * through the operator's own Claude Code, which signs in by itself, and
  * through Pi the gateways of decision 031: `openrouter` with an OpenRouter
  * key, and OpenCode's `opencode` (Zen, pay as you go) and `opencode-go` (a
  * subscription) with one OpenCode key.
  */
-export const MODEL_ROUTES = ["codex", "anthropic", "claude-code", "openrouter", "opencode", "opencode-go"] as const;
-export type ModelRoute = typeof MODEL_ROUTES[number];
+export const ROUTE_KINDS = ["codex", "anthropic", "claude-code", "openrouter", "opencode", "opencode-go"] as const;
+export type RouteKind = typeof ROUTE_KINDS[number];
+
+/**
+ * A route is a kind of route and one account behind it (decision 050). Each
+ * kind's own name is its default route; the operator adds routes of a kind
+ * under names of their own, one account each, such as `codex-work` for a
+ * second ChatGPT account. The kind decides the engine, the models, who pays
+ * and each model's lab; the route decides only the account. Accounts can be
+ * added for the kinds signed in to a plan, whose accounts people hold several
+ * of.
+ */
+export const ACCOUNT_KINDS: readonly RouteKind[] = ["codex", "claude-code"];
+
+export interface AddedRoute {
+  readonly name: string;
+  readonly kind: RouteKind;
+}
+
+export const DEFAULT_ROUTES_FILE: string = join(homedir(), ".tesota", "routes.json");
+/** A route's own name: lower-case words joined by hyphens, never a kind's name, `typesafe` or `off`. */
+const ROUTE_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
+const addedRouteSchema = z.strictObject({ name: z.string().max(40).regex(ROUTE_NAME)
+  .refine((name) => !(ROUTE_KINDS as readonly string[]).includes(name) && !["typesafe", "off"].includes(name), "a reserved name"),
+kind: z.enum(ROUTE_KINDS).refine((kind) => ACCOUNT_KINDS.includes(kind), "a kind without accounts") });
+const routesSchema = z.strictObject({ routes: z.array(addedRouteSchema).max(50) });
+
+/** The routes the operator added; none when there is no file. */
+export function readAddedRoutes(path: string = DEFAULT_ROUTES_FILE): AddedRoute[] {
+  if (!existsSync(path)) return [];
+  const parsed = routesSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+  if (!parsed.success) throw new Error(`${path} is not a valid route file; fix or delete it`);
+  return parsed.data.routes;
+}
+
+function writeAddedRoutes(routes: readonly AddedRoute[], path: string): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, `${JSON.stringify(routesSchema.parse({ routes }), null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    renameSync(temporary, path);
+  } finally { if (existsSync(temporary)) unlinkSync(temporary); }
+}
+
+/** Add a route of a kind under a new name; the file is replaced whole. */
+export function addRoute(name: string, kind: RouteKind, path: string = DEFAULT_ROUTES_FILE): AddedRoute[] {
+  const routes = readAddedRoutes(path);
+  if (routes.some((route) => route.name === name)) throw new Error(`${name} is already a route`);
+  const added = addedRouteSchema.safeParse({ name, kind });
+  if (!added.success) {
+    throw new Error(ACCOUNT_KINDS.includes(kind) ? `${name} cannot name a route: use lower-case words joined by hyphens, ` +
+      "and not a route kind's name" : `${kind} has one account; other accounts are added for ${ACCOUNT_KINDS.join(" and ")}`);
+  }
+  writeAddedRoutes([...routes, added.data], path);
+  return readAddedRoutes(path);
+}
+
+/** Remove an added route; the file is replaced whole. */
+export function removeRoute(name: string, path: string = DEFAULT_ROUTES_FILE): AddedRoute[] {
+  writeAddedRoutes(readAddedRoutes(path).filter((route) => route.name !== name), path);
+  return readAddedRoutes(path);
+}
+
+/** A route's kind: a kind's own name is its default route; an added route has the kind it was added with. */
+export function routeKindOf(name: string, added: readonly AddedRoute[]): RouteKind | undefined {
+  if ((ROUTE_KINDS as readonly string[]).includes(name)) return name as RouteKind;
+  return added.find((route) => route.name === name)?.kind;
+}
 
 /**
  * Who pays for a route's model calls, and whether they are billed per token.
@@ -28,7 +94,7 @@ export type ModelRoute = typeof MODEL_ROUTES[number];
  * whatever it is signed in with, usually a Claude plan, which Tesota does not
  * see.
  */
-export const ROUTE_BILLING: Readonly<Record<ModelRoute, Readonly<{ payer: string; metered: boolean }>>> = {
+export const ROUTE_BILLING: Readonly<Record<RouteKind, Readonly<{ payer: string; metered: boolean }>>> = {
   codex: { payer: "your ChatGPT plan's limits", metered: false },
   anthropic: { payer: "your Anthropic API key", metered: true },
   "claude-code": { payer: "your Claude Code sign-in", metered: false },
@@ -39,7 +105,7 @@ export const ROUTE_BILLING: Readonly<Record<ModelRoute, Readonly<{ payer: string
 
 /** The engine that runs a route's models: Pi, or Claude Code through the Claude Agent SDK. */
 export type ModelEngine = "pi" | "claude-code";
-export const ROUTE_ENGINE: Readonly<Record<ModelRoute, ModelEngine>> = { codex: "pi", anthropic: "pi", "claude-code": "claude-code",
+export const ROUTE_ENGINE: Readonly<Record<RouteKind, ModelEngine>> = { codex: "pi", anthropic: "pi", "claude-code": "claude-code",
   openrouter: "pi", opencode: "pi", "opencode-go": "pi" };
 
 /**
@@ -55,7 +121,10 @@ export function isReasoningLevel(value: string): value is ReasoningLevel {
 
 /** A role's model as `route:model`, with an optional `@level`; without one, the engine's default applies. */
 export interface ModelChoice {
-  readonly route: ModelRoute;
+  /** The route's name, which decides the account. */
+  readonly route: string;
+  /** Its kind, which decides the engine, the models, who pays and the lab. */
+  readonly kind: RouteKind;
   readonly model: string;
   readonly reasoning?: ReasoningLevel;
 }
@@ -68,16 +137,20 @@ export interface ModelChoice {
 const plainModel = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u;
 const openRouterModel = /^~?[A-Za-z0-9][A-Za-z0-9._-]{0,49}(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,99})?(?::[A-Za-z0-9][A-Za-z0-9._-]{0,29})?$/u;
 
-/** Read `route:model` or `route:model@level`; undefined for anything else, including `off`. */
-export function parseModelChoice(value: string): ModelChoice | undefined {
+/**
+ * Read `route:model` or `route:model@level`, where the route is a kind's own
+ * name or one the operator added; undefined for anything else, including `off`.
+ */
+export function parseModelChoice(value: string, added: readonly AddedRoute[] = readAddedRoutes()): ModelChoice | undefined {
   const separator = value.indexOf(":");
   if (separator <= 0) return undefined;
   const route = value.slice(0, separator);
   const [model = "", level, ...rest] = value.slice(separator + 1).split("@");
-  if (!(MODEL_ROUTES as readonly string[]).includes(route)) return undefined;
-  if (!(route === "openrouter" ? openRouterModel : plainModel).test(model)) return undefined;
+  const kind = routeKindOf(route, added);
+  if (kind === undefined) return undefined;
+  if (!(kind === "openrouter" ? openRouterModel : plainModel).test(model)) return undefined;
   if (rest.length > 0 || level !== undefined && !isReasoningLevel(level)) return undefined;
-  return { route: route as ModelRoute, model, ...(level === undefined ? {} : { reasoning: level as ReasoningLevel }) };
+  return { route, kind, model, ...(level === undefined ? {} : { reasoning: level as ReasoningLevel }) };
 }
 /**
  * A typed decision model, which answers a fixed question with a probability

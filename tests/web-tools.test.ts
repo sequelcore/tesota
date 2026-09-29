@@ -98,7 +98,7 @@ it("gives web search and reading to the agent and explorers, and never to a revi
   const { createPiReviewer } = await import("../src/integrations/pi-reviewer.js");
   const { refuteFindings } = await import("../src/integrations/pi-refuter.js");
   const { validateFixes } = await import("../src/integrations/pi-fix-validator.js");
-  const target = { engine: "claude-code" as const, model: "test" };
+  const target = { engine: "claude-code" as const, route: "claude-code", model: "test" };
   const input = { checkout: root, requests: ["r"], checks: [], flags: [],
     snapshot: { base: "b", tree: "t", changes: [{ status: "modified" as const, path: "a.ts" }], diff: "" } };
   const finding = { severity: "high" as const, disposition: "fixable" as const, origin: "introduced" as const, statement: "s", reason: "r" };
@@ -113,7 +113,7 @@ it("gives web search and reading to the agent and explorers, and never to a revi
 it("reads a page in a session with no tools, the page fenced as data, and counts the reader's tokens", async () => {
   started.reply = "The page says: \"Install with bun add x.\"";
   const usage: number[] = [];
-  const result = await askPageReader({ target: { engine: "claude-code", model: "test" }, onUsage: (entry) => { usage.push(entry.input); } },
+  const result = await askPageReader({ target: { engine: "claude-code", route: "claude-code", model: "test" }, onUsage: (entry) => { usage.push(entry.input); } },
     page, "How is x installed?", new AbortController().signal);
   expect(result).toEqual({ status: "answered", answer: started.reply });
   expect(started.tools).toEqual([[]]);

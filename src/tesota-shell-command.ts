@@ -9,7 +9,7 @@ import { chooseSessionExecution, packageCacheDirectory, providersFor, readSandbo
   SANDBOX_NAMES, SANDBOX_PREFERENCES, type SandboxPreference, type SessionExecution } from "./execution-providers.js";
 import { hostProvider } from "./host-environment.js";
 import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
-import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
+import { type ModelAccess, type ModelTarget, openModelTarget, sameAccount, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
 import { isDecisionModel, ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
 import { type WorkPlan, withReview } from "./work-plan.js";
@@ -758,7 +758,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         surface.writeTo(id, `${choice} is not offered. /model lists the models.`, "warning");
         return;
       }
-      switch (modelSwitch(choice === current, ROUTE_ENGINE[from.route] === ROUTE_ENGINE[to.route])) {
+      // Another account needs its own runtime or process, so only a switch within one account continues in place (decision 050).
+      switch (modelSwitch(choice === current, ROUTE_ENGINE[from.kind] === ROUTE_ENGINE[to.kind] && sameAccount(from, to))) {
         case "unchanged": surface.writeTo(id, `The agent already uses ${current}.`); return;
         case "in_place": {
           try {

@@ -7,7 +7,8 @@ import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import type { ModelPickerData } from "./tesota-shell-model-picker.js";
 import { chooseModel, DECISION_MODELS, isDecisionModel, isReasoningLevel, OPTIONAL_ROLES, type ReasoningLevel, ROLE_OFF, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES,
-  MODEL_ROUTES, type ModelRole, type ModelRoute, parseModelChoice, readModelChoices, ROLE_DESCRIPTIONS, ROUTE_BILLING } from "./model-roles.js";
+  type AddedRoute, ROUTE_KINDS, type ModelRole, type RouteKind, parseModelChoice, readAddedRoutes, readModelChoices, ROLE_DESCRIPTIONS,
+  ROUTE_BILLING } from "./model-roles.js";
 
 /**
  * A model a route offers, as `route:model`, with the catalogue's list price
@@ -17,7 +18,9 @@ import { chooseModel, DECISION_MODELS, isDecisionModel, isReasoningLevel, OPTION
  */
 export interface OfferedModel {
   readonly id: string;
-  readonly route: ModelRoute;
+  /** The route's name: a kind's own, or one the operator added for another account (decision 050). */
+  readonly route: string;
+  readonly kind: RouteKind;
   readonly name: string;
   readonly listPrice?: { readonly input: number; readonly output: number };
   /** The reasoning levels the model accepts on its route (decision 029); empty when it takes none. */
@@ -44,9 +47,9 @@ function isOpenRouterRouter(model: string): boolean {
 export function dataNotice(choice: string): string | undefined {
   const parsed = parseModelChoice(choice);
   if (parsed === undefined) return undefined;
-  const { route, model } = parsed;
-  const free = route === "openrouter" && (model.endsWith(":free") || model === "openrouter/free");
-  const contributor = (route === "opencode" || route === "opencode-go") && model.includes("-contributor");
+  const { kind, model } = parsed;
+  const free = kind === "openrouter" && (model.endsWith(":free") || model === "openrouter/free");
+  const contributor = (kind === "opencode" || kind === "opencode-go") && model.includes("-contributor");
   if (!free && !contributor) return undefined;
   return "its provider may keep your prompts and code, and use them to train models";
 }
@@ -100,62 +103,72 @@ function newestOf(family: string, models: readonly Model<Api>[]): Model<Api> | u
 const claudeCodeAliases = ["opus", "sonnet", "fable", "haiku"] as const;
 
 /** A gateway model at no price: free, unless it is a router whose price is the model it picks. */
-function gatewayModel(route: ModelRoute, model: Model<Api>): OfferedModel {
-  const offered: OfferedModel = { id: `${route}:${model.id}`, route, name: model.name, reasoning: levels(model) };
+function gatewayModel(route: RouteKind, model: Model<Api>): OfferedModel {
+  const offered: OfferedModel = { id: `${route}:${model.id}`, route, kind: route, name: model.name, reasoning: levels(model) };
   if (route === "openrouter" && isOpenRouterRouter(model.id)) return offered;
   const listPrice = { input: model.cost.input, output: model.cost.output };
   return listPrice.input === 0 && listPrice.output === 0 ? { ...offered, listPrice, free: true } : { ...offered, listPrice };
 }
 
-/** Every route's models, from Pi's catalogues and Claude Code's aliases; no login is needed to list them. */
-export function offeredModels(): OfferedModel[] {
+/**
+ * Every route's models, from Pi's catalogues and Claude Code's aliases; no
+ * login is needed to list them. An added route offers its kind's models
+ * under its own name.
+ */
+export function offeredModels(added: readonly AddedRoute[] = readAddedRoutes()): OfferedModel[] {
   const models = createModels();
   for (const provider of [openaiCodexProvider(), anthropicProvider(), openrouterProvider(), opencodeProvider(), opencodeGoProvider()]) {
     models.setProvider(provider);
   }
-  const priced = (route: ModelRoute, provider: string, accepted: (model: Model<Api>) => ReasoningLevel[]): OfferedModel[] =>
-    models.getModels(provider).map((model) => ({ id: `${route}:${model.id}`, route, name: model.name,
+  const priced = (route: RouteKind, provider: string, accepted: (model: Model<Api>) => ReasoningLevel[]): OfferedModel[] =>
+    models.getModels(provider).map((model) => ({ id: `${route}:${model.id}`, route, kind: route, name: model.name,
       listPrice: { input: model.cost.input, output: model.cost.output }, reasoning: accepted(model) }));
   // OpenRouter's `:batch` variants answer within a day through its Batch API, too late for any role. Zen's free
   // models answer only OpenCode's own client: any other gets 403 "OpenCode's free tier can only be used from within
   // OpenCode" (observed 2026-09-26; not in Zen's documentation).
-  const gateway = (route: ModelRoute, provider: string): OfferedModel[] => models.getModels(provider)
+  const gateway = (route: RouteKind, provider: string): OfferedModel[] => models.getModels(provider)
     .filter((model) => !model.id.endsWith(":batch")).map((model) => gatewayModel(route, model))
     .filter((model) => !(route === "opencode" && model.free === true));
   const claude = models.getModels("anthropic");
   const aliases = claudeCodeAliases.map((alias): OfferedModel => {
     const newest = newestOf(alias, claude);
-    return { id: `claude-code:${alias}`, route: "claude-code", name: `Claude Code's ${alias}`,
+    return { id: `claude-code:${alias}`, route: "claude-code", kind: "claude-code", name: `Claude Code's ${alias}`,
       reasoning: newest === undefined ? [] : effortLevels(newest) };
   });
-  return [...priced("codex", "openai-codex", levels), ...priced("anthropic", "anthropic", levels), ...aliases,
+  const kinds = [...priced("codex", "openai-codex", levels), ...priced("anthropic", "anthropic", levels), ...aliases,
     ...priced("claude-code", "anthropic", effortLevels), ...gateway("openrouter", "openrouter"), ...gateway("opencode", "opencode"),
     ...gateway("opencode-go", "opencode-go")];
+  const accounts = added.flatMap((route) => kinds.filter((model) => model.route === route.kind)
+    .map((model) => ({ ...model, id: `${route.name}:${model.id.slice(route.kind.length + 1)}`, route: route.name })));
+  return [...kinds, ...accounts];
 }
 
-const gatewayNames: Partial<Record<ModelRoute, string>> = { openrouter: "OpenRouter", opencode: "OpenCode Zen", "opencode-go": "OpenCode Go" };
+const gatewayNames: Partial<Record<RouteKind, string>> = { openrouter: "OpenRouter", opencode: "OpenCode Zen", "opencode-go": "OpenCode Go" };
 
 /** Who pays for a model, and its list price: what an API key is billed, or on a plan a way to compare models. */
 export function modelCost(model: OfferedModel | undefined): string {
   if (model === undefined) return "not offered";
-  const billing = ROUTE_BILLING[model.route];
+  const billing = ROUTE_BILLING[model.kind];
+  // An added route is paid by its own account, named after the route.
+  const payer = model.route === model.kind ? billing.payer : `${billing.payer} (${model.route})`;
   if (model.free === true) {
     const notice = dataNotice(model.id);
-    return `free on ${gatewayNames[model.route] ?? model.route}${notice === undefined ? "" : `; ${notice}`}`;
+    return `free on ${gatewayNames[model.kind] ?? model.kind}${notice === undefined ? "" : `; ${notice}`}`;
   }
   if (model.listPrice === undefined) {
-    return model.route === "openrouter" ? `${billing.payer}; the price is the model it picks` : billing.payer;
+    return model.kind === "openrouter" ? `${payer}; the price is the model it picks` : payer;
   }
   const price = `$${model.listPrice.input} in and $${model.listPrice.output} out`;
-  return billing.metered ? `${billing.payer}, ${price} per million tokens` : `${billing.payer}; list price ${price}`;
+  return billing.metered ? `${payer}, ${price} per million tokens` : `${payer}; list price ${price}`;
 }
 
 /** A route with more models than this is listed by count; `tesota models <route>` lists them. */
 const LISTED_AT_MOST = 40;
 
-/** Each route's offered models, one line per route. */
+/** Each route's offered models, one line per route: the kinds', then the added routes'. */
 export function routeListing(offered: readonly OfferedModel[]): string {
-  return MODEL_ROUTES.map((route) => {
+  const routes = [...new Set([...ROUTE_KINDS, ...offered.map((model) => model.route)])];
+  return routes.map((route) => {
     const models = offered.filter((model) => model.route === route);
     if (models.length > LISTED_AT_MOST) {
       const free = models.filter((model) => model.free === true).length;
@@ -166,7 +179,7 @@ export function routeListing(offered: readonly OfferedModel[]): string {
 }
 
 /** One route's models, each with who pays for it and its price. */
-function modelsOf(route: ModelRoute, offered: readonly OfferedModel[]): string {
+function modelsOf(route: string, offered: readonly OfferedModel[]): string {
   return `${route}:\n${offered.filter((model) => model.route === route)
     .map((model) => `  ${model.id.slice(route.length + 1).padEnd(44)}${modelCost(model)}`).join("\n")}\n`;
 }
@@ -223,11 +236,11 @@ export function runModelsCommand(args: readonly string[], write: (text: string) 
       "Use tesota models <route> for prices, or tesota roles to assign models.\n");
     return 0;
   }
-  if (args.length === 1 && (MODEL_ROUTES as readonly string[]).includes(args[0] ?? "")) {
-    write(modelsOf(args[0] as ModelRoute, offered));
+  if (args.length === 1 && offered.some((model) => model.route === args[0])) {
+    write(modelsOf(args[0] ?? "", offered));
     return 0;
   }
-  write(`Usage: tesota models [<${MODEL_ROUTES.join("|")}>]\n`);
+  write(`Usage: tesota models [<${ROUTE_KINDS.join("|")}>]\n`);
   return 2;
 }
 

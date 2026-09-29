@@ -68,8 +68,26 @@ function readErrorCode(error: unknown): string | undefined {
 /** Pi owns OAuth and API-key use. This store owns each provider's private persistence and mutation lock. */
 export class TesotaCredentials implements CredentialStore {
   private readonly directory: string;
+  private readonly files: Readonly<Record<string, string>>;
   private prepared: Promise<void> | undefined;
-  constructor(directory: string = join(homedir(), ".tesota", "auth")) { this.directory = directory; }
+  /**
+   * `files` names the file a provider's credential is kept in, for a route
+   * the operator added (decision 050): its own account, beside the default
+   * route's.
+   */
+  constructor(directory: string = join(homedir(), ".tesota", "auth"), files: Readonly<Record<string, string>> = {}) {
+    this.directory = directory;
+    this.files = files;
+  }
+
+  /** The credential store of an added route of a Pi kind: the kind's provider kept in the route's own file. */
+  static forRoute(route: string, provider: string, directory?: string): TesotaCredentials {
+    return new TesotaCredentials(directory, { [provider]: route });
+  }
+
+  private fileOf(id: ProviderId): string {
+    return this.files[id] ?? providers[id].file;
+  }
 
   private checkProvider(id: string): ProviderId {
     if (!isProvider(id)) throw new Error("Unsupported credential provider");
@@ -111,7 +129,7 @@ export class TesotaCredentials implements CredentialStore {
   }
 
   private async load(id: ProviderId): Promise<Credential | undefined> {
-    const path = join(this.directory, `${providers[id].file}.json`);
+    const path = join(this.directory, `${this.fileOf(id)}.json`);
     try {
       const info = await lstat(path);
       if (!info.isFile() || info.isSymbolicLink() || info.size > maxBytes) throw new Error("Invalid credential file");
@@ -158,7 +176,7 @@ export class TesotaCredentials implements CredentialStore {
 
   private async locked<T>(id: ProviderId, operation: () => Promise<T>, options?: AuthOperationOptions): Promise<T> {
     await this.ensurePrivate();
-    const name = `${providers[id].file}.lock`;
+    const name = `${this.fileOf(id)}.lock`;
     const lock = join(this.directory, name);
     const deadline = Date.now() + 10_000;
     let handle;
@@ -191,7 +209,7 @@ export class TesotaCredentials implements CredentialStore {
         const file = await open(temporary, "wx", 0o600);
         try { await file.writeFile(bytes); await file.sync(); } finally { await file.close(); }
         options?.signal?.throwIfAborted();
-        await rename(temporary, join(this.directory, `${providers[provider].file}.json`));
+        await rename(temporary, join(this.directory, `${this.fileOf(provider)}.json`));
       } finally { await rm(temporary, { force: true }); }
       return next;
     }, options);
@@ -199,6 +217,6 @@ export class TesotaCredentials implements CredentialStore {
 
   async delete(id: string, options?: AuthOperationOptions): Promise<void> {
     const provider = this.checkProvider(id);
-    await this.locked(provider, async () => { await rm(join(this.directory, `${providers[provider].file}.json`), { force: true }); }, options);
+    await this.locked(provider, async () => { await rm(join(this.directory, `${this.fileOf(provider)}.json`), { force: true }); }, options);
   }
 }

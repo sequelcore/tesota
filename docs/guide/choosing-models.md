@@ -33,6 +33,21 @@ plan's limits. The route decides who pays:
 | `opencode` | Your OpenCode Zen balance, per token |
 | `opencode-go` | Your OpenCode Go subscription, against its limits |
 
+If you have more than one ChatGPT or Claude account, add each extra one as
+a route of its own and give it to the roles that should use it:
+
+```text
+tesota auth login codex --as codex-work
+tesota roles validator codex-work:gpt-6-luna
+tesota auth status
+```
+
+An added route offers the same models as `codex` or `claude-code`, paid by
+its own account. For Claude Code, Tesota shows Claude Code's own sign-in
+in that account's folder. A failed request names the route, so when a plan
+lapses you know which account to renew. `tesota auth logout codex-work`
+removes the route once no role uses it.
+
 ## Setups
 
 **Only a ChatGPT plan.** Keep the defaults: every role on `codex:gpt-6-luna`,
