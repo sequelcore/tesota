@@ -95,6 +95,8 @@ export interface PrepareOptions {
   readonly onProgress?: (text: string) => void;
   /** The repository's package cache, shared by its sessions (decision 030); a provider's own when absent. */
   readonly cacheDirectory?: string;
+  /** Destinations the operator allowed for the repository, as `host:port`, open from the start, setup included. */
+  readonly allowed?: readonly string[];
   /**
    * Stops preparing: the provider releases what it had acquired and rejects.
    * A provider stops at the next point it can; an environment it finishes

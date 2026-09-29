@@ -22,7 +22,7 @@ afterAll(async () => { await rm(workspace, { recursive: true, force: true }); })
 /** A stand-in that answers `ready`, then runs each `run` message's command as its output, echoing its cwd. */
 const standIn = (behavior: string): Launch => () => spawn(process.execPath, ["-e", `
 const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
-send({ type: "ready", workspace: "/mnt/c/workspace", toolchains: "/home/tesota/.local/state/tesota/toolchains/k" });
+send({ type: "ready", workspace: "/mnt/c/workspace", home: "/home/tesota", toolchains: "/home/tesota/.local/state/tesota/toolchains/k" });
 require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
   const message = JSON.parse(line);
   ${behavior}

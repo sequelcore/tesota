@@ -53,7 +53,14 @@ export interface SystemFolder {
 /** Everything one command's sandbox is made of, as paths inside WSL. */
 export interface SandboxLayout {
   readonly workspace: string;
+  /** The session's own home, on WSL's disk. */
   readonly home: string;
+  /**
+   * Where that home appears to commands: the account's own home, so a program
+   * that asks the system for it, as Java does, finds the same folder as
+   * `HOME`, and Maven's settings and downloads persist.
+   */
+  readonly account: string;
   readonly temp: string;
   readonly cache: string;
   /** The repository's installed tools, on WSL's own disk: writable during setup, read-only to every other command. */
@@ -187,7 +194,7 @@ export function commandVariables(layout: SandboxLayout, path: string, given: Rea
   const proxy = `http://127.0.0.1:${SANDBOX_PROXY_PORT}`;
   // Servers a command starts on its own loopback are its own; nothing else answers there.
   const local = "localhost,127.0.0.1,::1";
-  return { PATH: path, HOME: layout.home, TMPDIR: "/tmp", LANG: "C.UTF-8",
+  return { PATH: path, HOME: layout.account, TMPDIR: "/tmp", LANG: "C.UTF-8",
     HTTP_PROXY: proxy, HTTPS_PROXY: proxy, http_proxy: proxy, https_proxy: proxy, NO_PROXY: local, no_proxy: local,
     npm_config_cache: join(layout.cache, "npm"), BUN_INSTALL_CACHE_DIR: join(layout.cache, "bun"), ...given };
 }
@@ -203,10 +210,11 @@ export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command:
   const system = layout.system.flatMap((folder) => folder.link === undefined ? ["--ro-bind", folder.path, folder.path]
     : ["--symlink", folder.link, folder.path]);
   const modules = layout.modules === undefined ? [] : ["--bind", layout.modules, join(layout.workspace, "node_modules")];
-  return ["--unshare-all", "--die-with-parent", "--new-session", ...system,
+  // The home comes before what lies inside the account's home, such as tool folders and Tesota's own state, which overlay it.
+  return ["--unshare-all", "--die-with-parent", "--new-session", ...system, "--bind", layout.home, layout.account,
     ...layout.tools.flatMap((folder) => ["--ro-bind-try", folder, folder]),
     "--proc", "/proc", "--dev", "/dev", "--bind", layout.temp, "/tmp",
-    "--bind", layout.home, layout.home, "--bind", layout.cache, layout.cache,
+    "--bind", layout.cache, layout.cache,
     phase === "setup" ? "--bind" : "--ro-bind", layout.toolchains, layout.toolchains,
     "--bind", layout.workspace, layout.workspace, ...modules,
     "--ro-bind", layout.relay, layout.relay, "--bind", layout.socket, layout.socket,
@@ -247,7 +255,7 @@ const hostMessage: z.ZodType<HostMessage> = z.discriminatedUnion("type", [
  * it starts, then the steps it took, or why commands can no longer run.
  */
 export const sandboxMessage: z.ZodType<SandboxMessage> = z.discriminatedUnion("type", [
-  z.strictObject({ type: z.literal("ready"), workspace: z.string(), toolchains: z.string() }),
+  z.strictObject({ type: z.literal("ready"), workspace: z.string(), home: z.string(), toolchains: z.string() }),
   z.strictObject({ type: z.literal("failed"), message: z.string() }),
   z.strictObject({ type: z.literal("output"), id: z.string(), data: z.string() }),
   z.strictObject({ type: z.literal("ended"), id: z.string(),
@@ -259,7 +267,7 @@ export const sandboxMessage: z.ZodType<SandboxMessage> = z.discriminatedUnion("t
   z.strictObject({ type: z.literal("checked"), problems: z.array(z.string()), settings: z.array(z.string()), versions: z.string() }),
 ]);
 export type SandboxMessage =
-  | Readonly<{ type: "ready"; workspace: string; toolchains: string }>
+  | Readonly<{ type: "ready"; workspace: string; home: string; toolchains: string }>
   | Readonly<{ type: "failed"; message: string }>
   | Readonly<{ type: "output"; id: string; data: string }>
   | Readonly<{ type: "ended"; id: string; outcome: RunOutcome; exitCode: number | null; refused: readonly string[] }>
@@ -545,7 +553,7 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   const workspace = translate(options.workspace, options.paths);
   const cache = options.cache === undefined ? undefined : translate(options.cache, options.paths);
   const state = stateFolder(workspace);
-  const layout: SandboxLayout = { workspace, home: join(state, "home"), temp: join(state, "tmp"),
+  const layout: SandboxLayout = { workspace, home: join(state, "home"), account: homedir(), temp: join(state, "tmp"),
     cache: cache ?? join(state, "cache"), toolchains: toolchainFolder(cache ?? workspace),
     ...existsSync(join(workspace, "package.json")) ? { modules: join(state, "node_modules") } : {},
     relay: join(state, "relay.cjs"), socket: join(state, "proxy.sock"), runtime: process.execPath,
@@ -560,7 +568,7 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   const proxy = await EgressProxy.start({ allowed: PACKAGE_REGISTRY_HOSTS.map((host) => `${host}:443`), socket: layout.socket });
   const server = new SandboxServer({ layout, path: commandPath(process.env["PATH"] ?? "", layout.tools), bubblewrap, proxy,
     record: join(state, "setup.json"), send });
-  send({ type: "ready", workspace, toolchains: layout.toolchains });
+  send({ type: "ready", workspace, home: layout.account, toolchains: layout.toolchains });
   for await (const line of createInterface({ input })) {
     let parsed: ReturnType<typeof hostMessage.safeParse> | undefined;
     try { parsed = hostMessage.safeParse(JSON.parse(line)); } catch { parsed = undefined; }

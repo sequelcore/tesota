@@ -362,6 +362,8 @@ export const dockerSandboxesProvider: ExecutionProvider = {
         dependencies ? [`${DEPENDENCIES_ARGUMENT}=${sandboxPath(resolve(workspace))}/node_modules`] : []);
     }
     options.signal?.throwIfAborted();
+    const allowed = [...plan.registries.map((host) => `${host}:443`), ...options.allowed ?? []];
+    if (allowed.length > 0) await sandboxNetwork(sbx, name).allow(allowed);
     const prepared = await prepareToolchain(sbx, name, resolve(workspace), plan, onProgress);
     options.signal?.throwIfAborted();
     return sandboxEnvironment(sbx, name, resolve(workspace), prepared);
