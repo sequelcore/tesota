@@ -106,6 +106,7 @@ const cases: unknown[] = [];
 const plantedResults: string[] = [];
 const raw: CaseScore[] = [];
 const refuted: CaseScore[] = [];
+const notMeasured: { name: string; reason: string }[] = [];
 try {
   for (const testCase of selected) {
     const source = join(root, testCase.name.replaceAll(" ", "-"));
@@ -137,10 +138,14 @@ try {
       ...(deep ? applicableLenses(workspace.checkout).map((lens) => createPiReviewer({ ...ai.reviewer, lens })) : [])]
       .map((reviewer) => reviewer.review(input, signal))), snapshot);
     const reviewed = Date.now();
-    // A run where no reviewer finished measures the environment, not the review: stop instead of recording zeros.
+    // A case where no reviewer finished measures the environment, not the review: record it as not measured, never
+    // as zeros, and go on, so one failed case does not lose the others.
     const failed = reviews.find((report) => report.status === "incomplete");
     if (failed !== undefined && reviews.every((report) => report.status === "incomplete")) {
-      throw new Error(`Every reviewer failed on "${testCase.name}", so nothing was measured: ${failed.reason}`);
+      notMeasured.push({ name: testCase.name, reason: failed.reason });
+      cases.push({ name: testCase.name, notMeasured: failed.reason });
+      console.log(`${testCase.name}: not measured, every reviewer failed: ${failed.reason}`);
+      continue;
     }
     const tested = await refuteFindings(ai.refuter, input, reviews, signal);
     const done = Date.now();
@@ -168,9 +173,10 @@ try {
 } finally { rmSync(root, { recursive: true, force: true }); }
 const record = { at: new Date().toISOString(), models: modelIds, depthMode, set: setArgument, raw: totals(raw), refuted: totals(refuted),
   plantedFalseClaims: { total: plantedResults.length, refuted: plantedResults.filter((result) => result === "refuted").length,
-    confirmed: plantedResults.filter((result) => result === "confirmed").length }, cases };
+    confirmed: plantedResults.filter((result) => result === "confirmed").length }, notMeasured, cases };
 mkdirSync(join("live-runs", "review"), { recursive: true });
 const file = join("live-runs", "review", `${record.at.replaceAll(":", "-")}.json`);
 writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
 console.log(`raw ${JSON.stringify(record.raw)}\nrefuted ${JSON.stringify(record.refuted)}\n` +
-  `planted false claims ${JSON.stringify(record.plantedFalseClaims)}\nrecorded ${file}`);
+  `planted false claims ${JSON.stringify(record.plantedFalseClaims)}\n` +
+  (notMeasured.length === 0 ? "" : `not measured: ${notMeasured.map((entry) => entry.name).join(", ")}\n`) + `recorded ${file}`);

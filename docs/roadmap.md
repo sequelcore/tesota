@@ -139,7 +139,10 @@ project. They are listed here as they are chosen.
      (over-abstention), an unfixed control, and about 15 requests measured in
      words of the final reply, median and 90th percentile. Adopted when
      correct abstention rises, partly fixed resolution does not fall, median
-     words fall and no obligation is lost. The agent runner is next.
+     words fall and no obligation is lost. Measured 2026-09-28 on two
+     setups through OpenRouter ([findings](findings.md)): neither marked
+     either extra, so today's reviewer does not flag work beyond the
+     request and step 3 has its evidence. The agent runner is next.
   2. A short block in the working agent's prompt, measured on those cases:
      "nothing to change" framed as success, one sentence on scope, and
      leading with the result.
