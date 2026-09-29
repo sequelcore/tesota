@@ -116,7 +116,7 @@ try {
     write(source, { ...testCase.base, "package.json": JSON.stringify({ type: "module" }) });
     git(["add", "-A"]);
     git(["commit", "-q", "-m", "base"]);
-    const workspace = await Workspace.create(source, join(root, "workspaces"));
+    const workspace = await Workspace.create(source, join(root, "workspaces"), { sourcesRoot: join(dirname(join(root, "workspaces")), "sources") });
     await workspace.recordRequest(testCase.request);
     write(workspace.checkout, testCase.candidate);
     const snapshot = workspace.snapshot();

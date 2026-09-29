@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { openShellSessionStore } from "../src/shell-session-store.js";
+import { openShadow, shadowDirectory } from "../src/source-shadow.js";
 import { Workspace } from "../src/workspace.js";
 import { formatPrunePlan, planWorkspacePrune, removeWorkspaces } from "../src/workspace-prune.js";
 
@@ -31,9 +32,9 @@ async function fixture() {
 
 it("removes only unused and unreadable workspaces", async () => {
   const { source, workspaces, stores } = await fixture();
-  const used = await Workspace.create(source, workspaces);
-  const pending = await Workspace.create(source, workspaces);
-  const unused = await Workspace.create(source, workspaces);
+  const used = await Workspace.create(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
+  const pending = await Workspace.create(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
+  const unused = await Workspace.create(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   await writeFile(join(pending.checkout, "b.txt"), "unapplied\n");
   const store = openShellSessionStore(source, stores);
   store.setWorkspace(store.create().id, used.directory);
@@ -41,7 +42,7 @@ it("removes only unused and unreadable workspaces", async () => {
   const unreadable = join(workspaces, "00000000-0000-4000-8000-000000000000");
   await mkdir(unreadable);
 
-  const plan = await planWorkspacePrune(workspaces, stores);
+  const plan = await planWorkspacePrune(workspaces, stores, join(dirname(workspaces), "sources"));
   expect(new Map(plan.remove.map((entry) => [entry.directory, entry.reason]))).toEqual(new Map([
     [unreadable, "unreadable"], [unused.directory, "unused"],
   ]));
@@ -57,11 +58,34 @@ it("removes only unused and unreadable workspaces", async () => {
 
 it("keeps every workspace of a repository whose shell is open", async () => {
   const { source, workspaces, stores } = await fixture();
-  const unused = await Workspace.create(source, workspaces);
+  const unused = await Workspace.create(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   const store = openShellSessionStore(source, stores);
   try {
-    const plan = await planWorkspacePrune(workspaces, stores);
+    const plan = await planWorkspacePrune(workspaces, stores, join(dirname(workspaces), "sources"));
     expect(plan.remove).toEqual([]);
     expect(plan.keep).toEqual([{ directory: unused.directory, reason: "shell_open" }]);
   } finally { store.close(); }
+});
+
+it("removes shadow repositories whose source no longer exists, unless a kept workspace was cloned from one", async () => {
+  const { root, source, workspaces, stores } = await fixture();
+  const sources = join(root, "sources");
+  const used = await Workspace.create(source, workspaces, { sourcesRoot: sources });
+  const store = openShellSessionStore(source, stores);
+  store.setWorkspace(store.create().id, used.directory);
+  store.close();
+  const usedShadow = shadowDirectory(await realpath(source), sources);
+  const gone = join(root, "gone");
+  await mkdir(gone);
+  await writeFile(join(gone, "notes.txt"), "notes\n");
+  const { shadow } = await openShadow(gone, "folder", sources);
+  await rm(gone, { recursive: true });
+  await rm(source, { recursive: true });
+
+  const plan = await planWorkspacePrune(workspaces, stores, sources);
+  expect(plan.shadows).toEqual([{ directory: shadow, reason: "source_gone" }]);
+  expect(formatPrunePlan(plan)).toContain(`remove  ${shadow}  (shadow repository; its source no longer exists)`);
+  await removeWorkspaces(plan);
+  expect(existsSync(shadow)).toBe(false);
+  expect(existsSync(usedShadow)).toBe(true);
 });

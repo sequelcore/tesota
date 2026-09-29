@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { Workspace } from "../src/workspace.js";
 import { applyWorkspace } from "../src/workspace-apply.js";
@@ -29,7 +29,7 @@ async function fixture(): Promise<{ source: string; workspace: Workspace }> {
   await writeFile(join(source, "b.txt"), "b\n");
   git(source, ["add", "--all"]);
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
-  return { source, workspace: await Workspace.create(source, join(root, "workspaces")) };
+  return { source, workspace: await Workspace.create(source, join(root, "workspaces"), { sourcesRoot: join(dirname(join(root, "workspaces")), "sources") }) };
 }
 
 const read = (path: string): Promise<string> => readFile(path, "utf8");

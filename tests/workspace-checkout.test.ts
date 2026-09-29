@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import * as childProcess from "node:child_process";
 import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 import { createWorkspaceCheckout, inspectWorkspaceCheckout } from "../src/workspace-checkout.js";
 
@@ -67,7 +67,7 @@ it("includes uncommitted work without changing the source's index, refs, config 
   const beforeIndex = await readFile(join(source, ".git/index"));
   const beforeConfig = await readFile(join(source, ".git/config"));
   const beforeObjects = git(source, ["count-objects", "-v"]);
-  const created = await createWorkspaceCheckout(source, workspaces);
+  const created = await createWorkspaceCheckout(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   expect(created.baseline).toBe(baseline);
   expect(created.head).not.toBe(baseline);
   expect(created.included).toEqual([{ status: "modified", path: "source.ts" }, { status: "added", path: "untracked.txt" }]);
@@ -93,14 +93,14 @@ it("sees line endings as the operator's Git does and captures deletions", async 
   git(source, ["config", "core.autocrlf", "true"]);
   await writeFile(join(source, "source.ts"), "export const value = 1;\r\n");
   await rm(join(source, ".gitignore"));
-  const created = await createWorkspaceCheckout(source, workspaces);
+  const created = await createWorkspaceCheckout(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   expect(created.included).toEqual([{ status: "deleted", path: ".gitignore" }]);
   expect(await readdir(created.checkout)).not.toContain(".gitignore");
 });
 
 it("starts at the committed baseline when the source is clean", async () => {
   const { source, workspaces, baseline } = await fixture();
-  const created = await createWorkspaceCheckout(source, workspaces);
+  const created = await createWorkspaceCheckout(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   expect(created).toMatchObject({ baseline, head: baseline, included: [] });
 });
 
@@ -109,17 +109,17 @@ it("accepts a source worktree without changing its shared worktree registry", as
   const worktree = join(root, "worktree");
   git(source, ["worktree", "add", "--detach", worktree, "HEAD"]);
   const before = git(source, ["worktree", "list", "--porcelain"]);
-  const created = await createWorkspaceCheckout(worktree, workspaces);
+  const created = await createWorkspaceCheckout(worktree, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   expect((await inspectWorkspaceCheckout(created.directory)).head).toBe(created.baseline);
   expect(git(source, ["worktree", "list", "--porcelain"])).toBe(before);
 });
 
 it("rejects overlapping storage and redirected ancestors before allocating state", async () => {
   const { root, source } = await fixture();
-  await expect(createWorkspaceCheckout(source, join(source, "workspaces"))).rejects.toThrow("separate");
+  await expect(createWorkspaceCheckout(source, join(source, "workspaces"), { sourcesRoot: join(dirname(join(source, "workspaces")), "sources") })).rejects.toThrow("separate");
   const redirect = join(root, "redirect");
   await symlink(source, redirect, "junction");
-  await expect(createWorkspaceCheckout(source, join(redirect, "new-state"))).rejects.toThrow("redirected");
+  await expect(createWorkspaceCheckout(source, join(redirect, "new-state"), { sourcesRoot: join(dirname(join(redirect, "new-state")), "sources") })).rejects.toThrow("redirected");
   expect(await readdir(source)).not.toContain("new-state");
   await rm(redirect);
 });
@@ -130,7 +130,7 @@ it("checks tracked symbolic links out as plain files holding the link text", asy
   git(source, ["update-index", "--add", "--cacheinfo", "120000," + blob + ",link"]);
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Link"]);
   git(source, ["checkout", "--", "link"]);
-  const created = await createWorkspaceCheckout(source, workspaces);
+  const created = await createWorkspaceCheckout(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   expect(created.included).toEqual([]);
   expect(await readFile(join(created.checkout, "link"), "utf8")).toBe("../outside\n");
   expect(git(created.checkout, ["ls-files", "-s", "link"])).toMatch(/^120000 /u);
@@ -140,7 +140,7 @@ it("rejects an empty commit before allocating a workspace", async () => {
   const { source, workspaces } = await fixture();
   git(source, ["rm", "--quiet", "-r", "--", "."]);
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Empty"]);
-  await expect(createWorkspaceCheckout(source, workspaces)).rejects.toThrow("Workspaces require a commit");
+  await expect(createWorkspaceCheckout(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") })).rejects.toThrow("Workspaces require a commit");
   await expect(readdir(workspaces)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
@@ -153,14 +153,14 @@ it("ignores global checkout filters and ambient Git directory selection", async 
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Filter declaration"]);
   vi.stubEnv("GIT_CONFIG_GLOBAL", config);
   vi.stubEnv("GIT_DIR", join(root, "nonexistent"));
-  const created = await createWorkspaceCheckout(source, workspaces);
+  const created = await createWorkspaceCheckout(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   await expect(inspectWorkspaceCheckout(created.directory)).resolves.toMatchObject({ head: created.baseline });
   expect(await readFile(join(created.checkout, "source.ts"), "utf8")).toBe("export const value = 1;\n");
 });
 
 it("rejects remotes, redirected worktree config and incomplete or oversized records", async () => {
   const { source, workspaces } = await fixture();
-  const created = await createWorkspaceCheckout(source, workspaces);
+  const created = await createWorkspaceCheckout(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   const path = join(created.directory, "checkout.json");
   const record = JSON.parse(await readFile(path, "utf8"));
   git(created.checkout, ["remote", "add", "external", "https://example.invalid/repo"]);
@@ -177,7 +177,7 @@ it("rejects remotes, redirected worktree config and incomplete or oversized reco
 
 it("rejects a recorded source that overlaps workspace storage", async () => {
   const { source, workspaces } = await fixture();
-  const created = await createWorkspaceCheckout(source, workspaces);
+  const created = await createWorkspaceCheckout(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   const path = join(created.directory, "checkout.json");
   const record = JSON.parse(await readFile(path, "utf8"));
   await writeFile(path, JSON.stringify({ ...record, source: workspaces }));
@@ -193,7 +193,7 @@ it("retains failed creation explicitly and never treats the source as a workspac
     }
     return Reflect.apply(originalChild.spawnSync, originalChild, args);
   });
-  await expect(createWorkspaceCheckout(source, workspaces)).rejects.toThrow("incomplete state retained");
+  await expect(createWorkspaceCheckout(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") })).rejects.toThrow("incomplete state retained");
   const directories = await readdir(workspaces);
   expect(directories).toHaveLength(1);
   const name = directories[0];
@@ -208,11 +208,11 @@ it("retains failed creation explicitly and never treats the source as a workspac
 
 it("rejects every malformed or extra metadata field", async () => {
   const { source, workspaces } = await fixture();
-  const created = await createWorkspaceCheckout(source, workspaces);
+  const created = await createWorkspaceCheckout(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   const path = join(created.directory, "checkout.json");
   const record = JSON.parse(await readFile(path, "utf8"));
   const mutations = [
-    { version: 99 }, { source: "relative" }, { baseline: "--option" }, { sourceDirty: "false" },
+    { version: 99 }, { version: 1 }, { shadow: undefined }, { source: "relative" }, { baseline: "--option" }, { sourceDirty: "false" },
     { authority: "accepted" }, { state: "accepted" },
   ];
   for (const mutation of mutations) {

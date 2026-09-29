@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import { Workspace } from "../src/workspace.js";
@@ -31,7 +31,7 @@ async function fixture(): Promise<{ source: string; workspace: Workspace }> {
   await writeFile(join(source, ".gitignore"), "node_modules/\nreports/\n");
   git(source, ["add", "--all"]);
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
-  return { source, workspace: await Workspace.create(source, join(root, "workspaces")) };
+  return { source, workspace: await Workspace.create(source, join(root, "workspaces"), { sourcesRoot: join(dirname(join(root, "workspaces")), "sources") }) };
 }
 
 function plain(...commands: string[]): ApprovedCheck[] {
@@ -115,7 +115,7 @@ it("builds on uncommitted work and applies only the agent's changes", async () =
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
   await writeFile(join(source, "src/price.ts"), "export const price = 5;\n");
   await writeFile(join(source, "notes.md"), "operator notes\n");
-  const workspace = await Workspace.create(source, join(root, "workspaces"));
+  const workspace = await Workspace.create(source, join(root, "workspaces"), { sourcesRoot: join(dirname(join(root, "workspaces")), "sources") });
   expect(workspace.included).toEqual([{ status: "added", path: "notes.md" }, { status: "modified", path: "src/price.ts" }]);
   expect(workspace.snapshot().changes).toEqual([]);
   await writeFile(join(workspace.checkout, "src/price.ts"), "export const price = 6;\n");
@@ -138,7 +138,7 @@ it("refuses to change a symbolic link and writes nothing", async () => {
     git(source, ["add", "link"]);
   }
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Link"]);
-  const workspace = await Workspace.create(source, join(initial.directory, "..", "more"));
+  const workspace = await Workspace.create(source, join(initial.directory, "..", "more"), { sourcesRoot: join(dirname(join(initial.directory, "..", "more")), "sources") });
   await writeFile(join(workspace.checkout, "link"), "../../elsewhere");
   await writeFile(join(workspace.checkout, "src/tax.ts"), "export const tax = 0.2;\n");
   const failure = applyWorkspace(workspace, workspace.snapshot());

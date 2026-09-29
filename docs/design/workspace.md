@@ -4,42 +4,61 @@ The agent never works in the operator's repository. Each shell session owns a
 **workspace**: an independent clone under `~/.tesota/workspaces/`, whose
 changes reach the repository only when the operator applies a reviewed result.
 
+## The shadow repository
+
+Every source, a Git repository or a plain folder, is recorded in one
+**shadow repository**: a bare repository in `~/.tesota/sources/`, named by
+the source's path, compared without case only on Windows and macOS, whose
+work tree is the source, the pattern people use to
+version the dotfiles in their home directory (`src/source-shadow.ts`). It is
+never inside the source and never the operator's own `.git`; the operator's
+repository is only read. The source's `.gitignore` files and, for a
+repository, its `.git/info/exclude` apply as they do to the operator's Git.
+The lock files Office and LibreOffice keep while a document is open, and the
+files Windows and macOS leave in folders, are excluded from every source.
+
+The shadow's `HEAD` is what later edits are measured against. For a
+repository it is the operator's committed `HEAD`, fetched read-only into the
+shadow whenever it moves; for a folder, or a repository without a commit, it
+is the source as Tesota first found it. Every other edit, the person's or an
+applied result, is to it what uncommitted changes are to a repository. A
+superseded `HEAD` stays in the shadow's reflog for seven days; Git's own
+cleanup, run at most once a day when the shadow is opened, then removes it,
+as OpenCode prunes its snapshots after seven days.
+
+Before Tesota first records a folder, `tesota` says how many files it holds
+and how large they are, and that nothing in it changes until a reviewed
+result is applied, and asks once: a folder has no `.gitignore` saying what is
+its work. A repository is recorded without asking, as every local harness
+snapshots one; when it holds untracked, non-ignored files over 2 MB, which
+every capture reads, the session names them and suggests `.gitignore`. The
+home directory and a drive or file system root are refused: they hold far more
+than one piece of work, credentials included. For the same reason a
+directory is worked on as a repository only when its repository's top level
+is neither of them: a home directory kept in Git, as dotfiles often are,
+would otherwise make any folder inside it stand for the whole home, and such
+a directory is worked on as a folder. File contents up to 512 MB are read
+when the source changes, so a scanned PDF or a large spreadsheet can be
+brought into the copy.
+
+Each Git worktree of a repository has a shadow of its own, holding the same
+committed files again. Hermes moved from one shadow per directory to a
+single shared store for this reason; Tesota waits for real use with several
+worktrees before sharing one.
+
 ## Creating a workspace
 
-A workspace is a clone of the source repository's committed `HEAD`, without
-its remotes, hooks or configuration. The source's uncommitted, non-ignored
-changes are captured through a private index and object directory kept in the
-workspace, so nothing is written to the source, and added as one commit. That
-commit is the **base**: later diffs show only the agent's work. Ignored files,
-such as `.env` or `node_modules`, are not copied.
+A workspace is a clone of the shadow repository's `HEAD`, without its
+remotes, hooks or configuration. The source's changes since it, a
+repository's uncommitted, non-ignored changes, are captured through the
+shadow with a private index and object directory kept in the workspace, so
+nothing is written to the source, and added as one commit. That commit is
+the **base**: later diffs show only the agent's work. Ignored files, such as
+`.env` or `node_modules`, are not copied.
 
 Line endings follow the operator's `core.autocrlf` setting. Symbolic links are
 checked out as plain files holding the link text (`core.symlinks=false`) and
 submodules stay uninitialized; application refuses changes to either.
-
-## A folder as the source
-
-A directory that is not in a Git repository is worked on as a
-**folder**, after the person agrees once: `tesota` says how many files it
-holds and how large they are, and that nothing in it changes until a
-reviewed result is applied. Tesota then keeps a private Git view of the
-folder in `~/.tesota/folders/`, named by the folder's path, never inside the
-folder: a bare repository whose work tree is the folder, the pattern people
-use to version the dotfiles in their home directory. Its one commit holds
-the folder as Tesota first found it, and every later edit, the person's or
-an applied result, is to it what uncommitted changes are to a repository,
-so creating the copy, keeping it current and applying work the same way
-(`src/folder-source.ts`). The lock files Office and LibreOffice keep while a
-document is open, and the files Windows and macOS leave in folders, are not
-copied.
-
-The home directory and a drive or file system root are refused as folders:
-they hold far more than one piece of work, credentials included. For the
-same reason a directory is worked on as a repository only when its
-repository's top level is neither of them: a home directory kept in Git, as
-dotfiles often are, would otherwise make any folder inside it stand for the
-whole home. File contents up to 512 MB are read when the source changes, so
-a scanned PDF or a large spreadsheet can be brought into the copy.
 
 ## Keeping it current
 
@@ -151,8 +170,9 @@ The agent keeps its conversation across requests, so "keep working" builds on
 pending changes. Closing a session removes its workspace, transcript and
 record, after a second confirmation when changes are unapplied. `tesota prune`
 lists other workspaces no session uses and that hold no unapplied changes, and
-`tesota prune --force` removes them. Applications from different sessions are
-serialized.
+`tesota prune --force` removes them, with every shadow repository whose
+source no longer exists and that no kept workspace was cloned from.
+Applications from different sessions are serialized.
 
 ## Why
 
@@ -168,8 +188,9 @@ serialized.
 
 ## Proposed: working in the source
 
-**Status: proposed, not built; its open questions decided on 2026-09-29.**
-Everything above describes the current design.
+**Status: proposed; its open questions decided on 2026-09-29. The first
+step, one shadow repository for every source, is built and described
+above.** Everything above describes the current design.
 
 **Why change it.** A workspace per session makes each session a small cloud
 environment: a clone, a sandbox of its own and its own dependencies. On
@@ -199,8 +220,8 @@ copy: a clone needs Git, and a folder has none. No local harness draws it.
   The sandbox may write the source and nothing else, as Codex's
   workspace-write and Claude Code's sandbox allow, with `.git` read-only
   inside it, so hooks and history cannot change.
-- **One shadow repository per source.** The mechanism that serves folders
-  today serves every source: a Git directory under `~/.tesota` whose work
+- **One shadow repository per source** (built). The mechanism that served
+  folders serves every source: a Git directory under `~/.tesota` whose work
   tree is the source, never the operator's own `.git`, honoring the source's
   `.gitignore` where it has one. The refusal of home directories and drive
   roots, the size warning and the excluded lock files apply to every source.

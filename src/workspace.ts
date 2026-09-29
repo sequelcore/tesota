@@ -63,7 +63,7 @@ const requestSchema = z.strictObject({ text: z.string().max(1_000_000), at: z.is
 export class Workspace {
   readonly directory: string;
   readonly checkout: string;
-  /** The repository this workspace was cloned from and applies back to. */
+  /** The source this workspace was cloned from, through its shadow repository, and applies back to. */
   readonly source: string;
   /** Uncommitted source changes included when the workspace was created; empty when reopened. */
   readonly included: readonly Pick<WorkspaceChange, "status" | "path">[];
@@ -91,7 +91,7 @@ export class Workspace {
 
   private static async from(checkout: WorkspaceCheckout): Promise<Workspace> {
     const workspace = new Workspace(checkout, await SourceSnapshot.open(checkout.source, sourceSnapshotDirectory(checkout.directory),
-      checkout.tracking));
+      checkout.shadow));
     // A run on the base that Tesota could not finish, such as one a crash interrupted, leaves the candidate pinned.
     const pinned = workspace.#pinnedCandidate();
     if (pinned !== undefined) workspace.#restoreCandidate(pinned);

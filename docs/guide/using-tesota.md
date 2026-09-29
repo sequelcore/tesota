@@ -114,11 +114,14 @@ cd my-project
 tesota
 ```
 
+Tesota keeps its own record of your repository or folder in
+`~/.tesota/sources` and never adds anything to the directory or to your
+repository's `.git`; nothing in it changes until you apply a reviewed result.
 In a folder that is not a Git repository, Tesota first asks whether to work
-on it, saying how many files it holds. It keeps its own record of the
-folder in `~/.tesota/folders` and never adds anything to the folder itself;
-nothing in the folder changes until you apply a reviewed result. Your home
-directory as a whole, and the root of a drive, are refused.
+on it, saying how many files it holds. In a repository it asks nothing, but
+names untracked files over 2 MB that are not in `.gitignore`, since it reads
+them before every request. Your home directory as a whole, and the root of a
+drive, are refused.
 
 Then ask for what you need:
 
@@ -469,5 +472,6 @@ background colors; plain conversation text still uses the terminal's foreground.
   `~/.tesota/applications/` for 30 days, or until an unfinished application
   is settled with `tesota recover`.
 - Closing a session removes its workspace. `tesota prune` lists other
-  workspaces it would remove, and `tesota prune --force` removes those that no
-  session uses and that hold no unapplied changes.
+  workspaces it would remove, those that no session uses and that hold no
+  unapplied changes, and Tesota's records of directories that no longer
+  exist; `tesota prune --force` removes them.

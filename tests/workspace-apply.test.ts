@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { link, mkdir, mkdtemp, readdir, readFile, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { runRecoverCommand } from "../src/recover-command.js";
 import { Workspace } from "../src/workspace.js";
@@ -42,7 +42,7 @@ async function fixture(): Promise<{ source: string; workspace: Workspace; applic
   await writeFile(join(source, "notes.md"), "notes\n");
   git(source, ["add", "--all"]);
   git(source, ["commit", "--quiet", "--no-gpg-sign", "-m", "Fixture"]);
-  const workspace = await Workspace.create(source, join(root, "workspaces"));
+  const workspace = await Workspace.create(source, join(root, "workspaces"), { sourcesRoot: join(dirname(join(root, "workspaces")), "sources") });
   await writeFile(join(workspace.checkout, "src/price.ts"), "export const price = 2;\n");
   await writeFile(join(workspace.checkout, "src/tax.ts"), "export const tax = 0.2;\n");
   await rm(join(workspace.checkout, "src/old.ts"));

@@ -3,22 +3,23 @@ import { lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from "no
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import * as z from "zod";
-import { DEFAULT_FOLDERS_ROOT, isGitRepository, openFolder } from "./folder-source.js";
 import { isGitObjectId, runRepositoryGit as git } from "./repository-git.js";
+import { DEFAULT_SOURCES_ROOT, isGitRepository, openShadow, sourceRoot, type SourceKind } from "./source-shadow.js";
 import { SourceSnapshot, UnsupportedSourceChange, type SourceChange } from "./source-snapshot.js";
 
 const checkoutRecordSchema = z.strictObject({
   format: z.literal("tesota-workspace-checkout"),
-  version: z.literal(1),
+  /** Version 1 records, from before every source had a shadow repository, are refused. */
+  version: z.literal(2),
   source: z.string().refine(isAbsolute),
   baseline: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/),
   state: z.enum(["preparing", "ready", "failed"]),
-  /** A folder's private repository when the source is a plain folder (decision 032). */
-  tracking: z.string().refine(isAbsolute).optional(),
+  /** The source's shadow repository, which the workspace was cloned from. */
+  shadow: z.string().refine(isAbsolute),
 });
 type CheckoutRecord = z.infer<typeof checkoutRecordSchema>;
 
-/** A verified, independent clone and the repository it came from. */
+/** A verified, independent clone of a source's shadow repository, and the source it came from. */
 export interface WorkspaceCheckout {
   readonly directory: string;
   readonly checkout: string;
@@ -27,8 +28,8 @@ export interface WorkspaceCheckout {
   readonly head: string;
   /** Uncommitted source changes the workspace started with, committed on top of the baseline. */
   readonly included: readonly { readonly status: SourceChange["status"]; readonly path: string }[];
-  /** A folder's private repository when the source is a plain folder (decision 032); absent for a repository. */
-  readonly tracking?: string;
+  /** The source's shadow repository, which the workspace was cloned from and captures the source through. */
+  readonly shadow: string;
 }
 
 export const DEFAULT_WORKSPACES_ROOT: string = join(homedir(), ".tesota", "workspaces");
@@ -154,57 +155,40 @@ export function commitAll(checkout: string, message: string): string {
 /** Where a workspace keeps its private snapshot of the source. */
 export function sourceSnapshotDirectory(directory: string): string { return join(directory, "source-snapshot"); }
 
-/** Whether the source is a Git repository or a plain folder (decision 032). */
-export type SourceKind = "repository" | "folder";
-
-/** Where a folder's private repository lives, and what the source is when the caller has decided; otherwise it is detected. */
+/** Where shadow repositories live, and what the source is when the caller has decided; otherwise it is detected. */
 export interface SourceOptions {
-  readonly foldersRoot?: string;
+  readonly sourcesRoot?: string;
   readonly kind?: SourceKind;
 }
 
-/** The source's identity: a Git repository's top level and HEAD, or a folder and its private repository's commit. */
-async function sourceIdentity(sourceDirectory: string, foldersRoot: string, kind: SourceKind | undefined):
-  Promise<{ source: string; baseline: string; tracking?: string }> {
-  if (kind === "folder" || kind === undefined && !isGitRepository(sourceDirectory)) {
-    const { folder, tracking, head } = await openFolder(sourceDirectory, foldersRoot);
-    return { source: folder, baseline: head, tracking };
-  }
-  const identity = git(resolve(sourceDirectory), ["rev-parse", "--show-toplevel", "HEAD^{commit}"])
-    .trimEnd().split(/\r?\n/u);
-  const [topLevel, baseline] = identity;
-  if (identity.length !== 2 || topLevel === undefined || baseline === undefined || !isGitObjectId(baseline)) {
-    throw new Error("Invalid source identity");
-  }
-  return { source: await realpath(topLevel), baseline };
-}
-
 /**
- * Clone the source's committed HEAD without its refs, remotes, config or hooks,
- * then add its uncommitted, non-ignored changes as one commit on top. A plain
- * folder is cloned from its private repository (decision 032).
+ * Clone the shadow repository's HEAD without its refs, remotes, config or
+ * hooks, then add the source's changes since it, uncommitted ones for a
+ * repository, as one commit on top. The operator's own repository is only
+ * read, never cloned.
  */
 export async function createWorkspaceCheckout(sourceDirectory: string,
   workspacesRoot: string = DEFAULT_WORKSPACES_ROOT, options: SourceOptions = {}): Promise<WorkspaceCheckout> {
-  const { source, baseline, tracking } = await sourceIdentity(sourceDirectory, options.foldersRoot ?? DEFAULT_FOLDERS_ROOT,
-    options.kind);
-  validateTree(tracking ?? source, baseline);
+  const kind = options.kind ?? (isGitRepository(sourceDirectory) ? "repository" : "folder");
+  const source = await sourceRoot(sourceDirectory, kind);
   const requestedRoot = resolve(workspacesRoot);
-  if (contains(source, requestedRoot) || contains(requestedRoot, source)) {
+  const requestedSources = resolve(options.sourcesRoot ?? DEFAULT_SOURCES_ROOT);
+  if ([requestedRoot, requestedSources].some((storage) => contains(source, storage) || contains(storage, source))) {
     throw new Error("Workspace storage must be separate from the source repository");
   }
+  const { shadow, head: baseline } = await openShadow(source, kind, await prepareRoot(requestedSources));
+  validateTree(shadow, baseline);
   const root = await prepareRoot(requestedRoot);
   const directory = join(root, randomUUID());
   await mkdir(directory, { mode: 0o700 });
-  const record: CheckoutRecord = { format: "tesota-workspace-checkout", version: 1, source, baseline, state: "preparing",
-    ...tracking === undefined ? {} : { tracking } };
+  const record: CheckoutRecord = { format: "tesota-workspace-checkout", version: 2, source, baseline, state: "preparing", shadow };
   await saveRecord(directory, record);
   try {
     const template = join(directory, "empty-template");
     await mkdir(template);
     const checkout = join(directory, "repo");
     git(directory, ["clone", "--no-local", "--no-hardlinks", "--no-checkout", "--no-tags", "--depth", "1",
-      "--single-branch", "--config", "core.symlinks=false", `--template=${template}`, "--", tracking ?? source, checkout]);
+      "--single-branch", "--config", "core.symlinks=false", `--template=${template}`, "--", shadow, checkout]);
     validateTree(checkout, baseline);
     git(checkout, ["checkout", "--detach", baseline, "--"]);
     git(checkout, ["remote", "remove", "origin"]);
@@ -212,7 +196,7 @@ export async function createWorkspaceCheckout(sourceDirectory: string,
     if (cloned.head !== baseline || git(checkout, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).length !== 0) {
       throw new Error("Workspace checkout mismatch");
     }
-    const snapshot = await SourceSnapshot.open(source, sourceSnapshotDirectory(directory), tracking);
+    const snapshot = await SourceSnapshot.open(source, sourceSnapshotDirectory(directory), shadow);
     const tree = snapshot.capture();
     const included = snapshot.changes(baseline, tree);
     await writeSourceChanges(cloned.checkout, included);
@@ -220,8 +204,7 @@ export async function createWorkspaceCheckout(sourceDirectory: string,
     await snapshot.record(tree);
     await saveRecord(directory, { ...record, state: "ready" });
     return { directory, checkout: cloned.checkout, source, baseline, head,
-      included: included.map((change) => ({ status: change.status, path: change.path })),
-      ...tracking === undefined ? {} : { tracking } };
+      included: included.map((change) => ({ status: change.status, path: change.path })), shadow };
   } catch (error) {
     await saveRecord(directory, { ...record, state: "failed" }).catch(() => {});
     if (error instanceof UnsupportedSourceChange) throw error;
@@ -231,7 +214,7 @@ export async function createWorkspaceCheckout(sourceDirectory: string,
 
 /** A directory under the workspaces root, described by its record when it has a readable one. */
 export type WorkspaceEntry =
-  | Readonly<{ kind: "workspace"; directory: string; state: "preparing" | "ready" | "failed"; source: string }>
+  | Readonly<{ kind: "workspace"; directory: string; state: "preparing" | "ready" | "failed"; source: string; shadow: string }>
   | Readonly<{ kind: "unreadable"; directory: string }>;
 
 const workspaceNamePattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
@@ -251,7 +234,7 @@ export async function listWorkspaceCheckouts(root: string = DEFAULT_WORKSPACES_R
     if (!workspaceNamePattern.test(name)) continue;
     try {
       const record = await readRecord(directory);
-      entries.push({ kind: "workspace", directory, state: record.state, source: record.source });
+      entries.push({ kind: "workspace", directory, state: record.state, source: record.source, shadow: record.shadow });
     } catch { entries.push({ kind: "unreadable", directory }); }
   }
   return entries;
@@ -266,6 +249,5 @@ export async function inspectWorkspaceCheckout(path: string): Promise<WorkspaceC
   const root = dirname(directory);
   if (contains(record.source, root) || contains(root, record.source) ||
       contains(record.source, checkout) || contains(checkout, record.source)) throw new Error("Workspace overlaps source");
-  return { directory, checkout, source: record.source, baseline: record.baseline, head, included: [],
-    ...record.tracking === undefined ? {} : { tracking: record.tracking } };
+  return { directory, checkout, source: record.source, baseline: record.baseline, head, included: [], shadow: record.shadow };
 }

@@ -20,7 +20,7 @@ import { type ModelAccess, type ModelTarget, openModelTarget, sameAccount, start
 import { accountRoute, MODEL_ROLES, ROLE_OFF, type ModelRole, parseModelChoice, readAddedRoutes, readModelChoices,
   ROUTE_ENGINE } from "./model-roles.js";
 import { type WorkPlan, withReview } from "./work-plan.js";
-import { isGitRepository } from "./folder-source.js";
+import { isGitRepository, largeUntrackedFiles, largeUntrackedWarning } from "./source-shadow.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, rolePicker, routeListing,
   runRolesCommand } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
@@ -444,7 +444,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     store.setPlan(id, plan);
     surface.setSessionPlan(id, plan);
   };
-  /** Whether the shell works on a Git repository or a plain folder, decided once (decision 032). */
+  /** Whether the shell works on a Git repository or a plain folder, decided once. */
   const sourceKind = isGitRepository(cwd) ? "repository" as const : "folder" as const;
   /** The source repository's branch; a plain folder has none. */
   const sourceBranch = (): string | undefined => sourceKind === "repository" ? currentBranch(cwd) : undefined;
@@ -482,6 +482,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         surface.writeTo(id, `The workspace includes your ${workspace.included.length} uncommitted ` +
           `${workspace.included.length === 1 ? "change" : "changes"}. Later edits in your repository are not visible to the agent.`);
       }
+      // A repository is recorded without asking, so large untracked files, read before every request, are named instead.
+      const large = sourceKind === "repository" ? largeUntrackedWarning(await largeUntrackedFiles(workspace.source)) : undefined;
+      if (large !== undefined) surface.writeTo(id, large, "warning");
       return workspace;
     })();
     return remember(pending, () => state.workspace, (value) => { state.workspace = value; });

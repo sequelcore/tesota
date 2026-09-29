@@ -44,12 +44,15 @@ function repositoryGitArguments(args: readonly string[]): string[] {
     "-c", "core.autocrlf=false", ...args];
 }
 
-/** Reject repository-local Git programs before any operation that may inspect working-tree bytes. */
-export function assertNoRepositoryGitPrograms(cwd: string): void {
+/**
+ * Reject repository-local Git programs before any operation that may inspect
+ * working-tree bytes; `extra` selects the Git directory those operations use.
+ */
+export function assertNoRepositoryGitPrograms(cwd: string, extra: RepositoryGitEnvironment = {}): void {
   const source = resolve(cwd);
   const result = spawnSync("git", ["-C", source, ...repositoryGitArguments(["config", "--includes", "--null",
     "--name-only", "--get-regexp", "^(filter\\..*\\.(clean|process)|diff\\.(external|.*\\.(command|textconv)))$"])], {
-    cwd: gitExecutionDirectory(source), env: repositoryGitEnvironment(source), windowsHide: true, shell: false,
+    cwd: gitExecutionDirectory(source), env: { ...repositoryGitEnvironment(source), ...extra }, windowsHide: true, shell: false,
     encoding: "utf8", timeout: gitTimeoutMs, maxBuffer: gitLimit,
   });
   if (result.error !== undefined || result.signal !== null || result.status !== 1 || result.stdout.length !== 0) {
