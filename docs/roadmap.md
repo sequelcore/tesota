@@ -9,9 +9,9 @@ record why.
 Tesota is pre-release. A terminal shell runs a Pi coding agent in a separate
 workspace per session and names each session after its work. Commands run
 without asking in the native sandbox on Windows 11 24H2 and later, and with
-the operator's approval on the host otherwise; Docker Sandboxes' microVM does
-not run commands without asking while its network allowlist is reviewed
-(decision 044). Each result is checked by the operator's commands, Oxlint and
+the operator's approval on the host otherwise. While Docker Sandboxes'
+network allowlist is reviewed (decision 044), choosing it runs commands on
+the host with approval, not in its microVM. Each result is checked by the operator's commands, Oxlint and
 LemmaScript on the exact tree, reviewed by read-only reviewers whose findings
 face a refuter and an origin check, and corrected by the agent at most twice
 before the operator applies, rejects or keeps working; the answer check's
