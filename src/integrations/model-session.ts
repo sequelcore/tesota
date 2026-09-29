@@ -1,8 +1,9 @@
 import { createRequire } from "node:module";
-import { arch, platform, release } from "node:os";
+import { arch, homedir, platform, release } from "node:os";
+import { join } from "node:path";
 import { ModelRuntime, type SessionManager, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { type ModelRoute, parseModelChoice, type ReasoningLevel } from "../model-roles.js";
+import { type ModelChoice, parseModelChoice, type ReasoningLevel, type RouteKind } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ClaudeCodeSession } from "./claude-code-session.js";
 import { TesotaCredentials } from "./tesota-credentials.js";
@@ -22,16 +23,32 @@ import { type CodingSessionOptions, CodingSession, type WorkingAgentOptions, wor
  * its model's default.
  */
 export type ModelTarget =
-  | Readonly<{ engine: "pi"; modelRuntime: ModelRuntime; model: Model<Api>; reasoning?: ReasoningLevel }>
-  | Readonly<{ engine: "claude-code"; model: string; reasoning?: ReasoningLevel }>;
+  | Readonly<{ engine: "pi"; route: string; modelRuntime: ModelRuntime; model: Model<Api>; reasoning?: ReasoningLevel }>
+  | Readonly<{ engine: "claude-code"; route: string; model: string; reasoning?: ReasoningLevel;
+    /** Claude Code's configuration folder for an added route, where that account is signed in; the operator's own otherwise. */
+    configDirectory?: string }>;
+
+/** Where an added `claude-code` route's account is signed in (decision 050): a configuration folder of its own. */
+export function claudeCodeRouteDirectory(route: string): string {
+  return join(homedir(), ".tesota", "claude-code", route);
+}
+
+/** Whether two choices use the same account: the same route, or two kinds' default routes, which share Tesota's own sign-ins. */
+export function sameAccount(from: ModelChoice, to: ModelChoice): boolean {
+  return from.route === to.route || from.route === from.kind && to.route === to.kind;
+}
 
 function reasoningOf(target: ModelTarget): { reasoning?: ReasoningLevel } {
   return target.reasoning === undefined ? {} : { reasoning: target.reasoning };
 }
 
-/** Pi's provider for each route it serves. */
+function configOf(target: Extract<ModelTarget, { engine: "claude-code" }>): { configDirectory?: string } {
+  return target.configDirectory === undefined ? {} : { configDirectory: target.configDirectory };
+}
+
+/** Pi's provider for each kind of route it serves. */
 const piProviders = { codex: "openai-codex", anthropic: "anthropic", openrouter: "openrouter", opencode: "opencode",
-  "opencode-go": "opencode-go" } as const satisfies Partial<Record<ModelRoute, string>>;
+  "opencode-go": "opencode-go" } as const satisfies Partial<Record<RouteKind, string>>;
 
 /** How Tesota names itself to a gateway, as OpenCode Go asks of every client: its own name and version, and the system. */
 export function tesotaUserAgent(): string {
@@ -47,30 +64,57 @@ export function tesotaUserAgent(): string {
  * Tesota. OpenRouter is sent no app attribution, which would list Tesota
  * publicly in its rankings.
  */
-function identityHeaders(route: ModelRoute): Record<string, string> | undefined {
+function identityHeaders(route: RouteKind): Record<string, string> | undefined {
   if (route === "openrouter") return { "User-Agent": tesotaUserAgent() };
   if (route === "opencode" || route === "opencode-go") return { "User-Agent": tesotaUserAgent(), "x-opencode-client": "tesota" };
   return undefined;
 }
 
 /**
- * The engine and model for a `route:model` choice. Pi's routes read Tesota's
- * own credentials: Codex's OAuth login or an Anthropic API key. The
- * `claude-code` route needs nothing from Tesota; Claude Code signs in itself.
+ * The engine and model for a `route:model` choice. The kind decides the
+ * engine and the model; the route decides the account (decision 050). Pi's
+ * routes read Tesota's own credentials, an added route's from its own file.
+ * The `claude-code` route needs nothing from Tesota; Claude Code signs in
+ * itself, an added route in its own configuration folder.
  */
 export async function openModelTarget(choice: string, signal?: AbortSignal,
   credentials: TesotaCredentials = new TesotaCredentials()): Promise<ModelTarget> {
   const parsed = parseModelChoice(choice);
   if (parsed === undefined) throw new Error(`${choice} is not a route:model choice. Check tesota models.`);
   const reasoning = parsed.reasoning === undefined ? {} : { reasoning: parsed.reasoning };
-  if (parsed.route === "claude-code") return { engine: "claude-code", model: parsed.model, ...reasoning };
-  const modelRuntime = await ModelRuntime.create({ credentials, refreshOnCreate: false, allowModelNetwork: false,
-    ...(signal === undefined ? {} : { signal }) });
-  const model = modelRuntime.getModel(piProviders[parsed.route], parsed.model);
+  const added = parsed.route !== parsed.kind;
+  if (parsed.kind === "claude-code") {
+    return { engine: "claude-code", route: parsed.route, model: parsed.model, ...reasoning,
+      ...added ? { configDirectory: claudeCodeRouteDirectory(parsed.route) } : {} };
+  }
+  const provider = piProviders[parsed.kind];
+  const modelRuntime = await ModelRuntime.create({ credentials: added ? TesotaCredentials.forRoute(parsed.route, provider) : credentials,
+    refreshOnCreate: false, allowModelNetwork: false, ...(signal === undefined ? {} : { signal }) });
+  const model = modelRuntime.getModel(provider, parsed.model);
   if (model === undefined) throw new Error(`${choice} is unavailable. Check tesota models and tesota auth status.`);
-  const identity = identityHeaders(parsed.route);
-  return { engine: "pi", modelRuntime, model: identity === undefined ? model : { ...model, headers: { ...model.headers, ...identity } },
-    ...reasoning };
+  const identity = identityHeaders(parsed.kind);
+  return { engine: "pi", route: parsed.route, modelRuntime,
+    model: identity === undefined ? model : { ...model, headers: { ...model.headers, ...identity } }, ...reasoning };
+}
+
+/**
+ * A session whose failed requests name their route, so the operator knows
+ * which account's plan refused or ran out, as a lapsed ChatGPT plan did on
+ * 2026-09-29 with nothing saying which account it was.
+ */
+export function namingRoute<T extends ModelSession>(route: string, session: T): T {
+  return new Proxy(session, {
+    get(target, property) {
+      if (property === "run") {
+        return async (request: string, signal: AbortSignal) => {
+          const turn = await target.run(request, signal);
+          return turn.status === "failed" ? { ...turn, reason: `${route}: ${turn.reason}` } : turn;
+        };
+      }
+      const value: unknown = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }
 
 /** The model a role uses, and where its token usage is counted. */
@@ -97,11 +141,12 @@ function usage(access: ModelAccess): { onUsage?: (usage: TokenUsage) => void } {
 export async function startModelSession(access: ModelAccess, options: RoleSessionOptions): Promise<ModelSession> {
   const { target } = access;
   if (target.engine === "pi") {
-    return CodingSession.start({ ...options, modelRuntime: target.modelRuntime, model: target.model, ...reasoningOf(target),
-      ...usage(access) });
+    return namingRoute(target.route, await CodingSession.start({ ...options, modelRuntime: target.modelRuntime, model: target.model,
+      ...reasoningOf(target), ...usage(access) }));
   }
   const { sessionManager: _unused, ...claude } = options;
-  return ClaudeCodeSession.start({ ...claude, model: target.model, ...reasoningOf(target), ...usage(access) });
+  return namingRoute(target.route, await ClaudeCodeSession.start({ ...claude, model: target.model, ...reasoningOf(target),
+    ...configOf(target), ...usage(access) }));
 }
 
 /** How the working agent's conversation is kept on each engine. */
@@ -133,11 +178,11 @@ export async function startWorkingAgent(access: ModelAccess, options: WorkingAge
   Pick<CodingSessionOptions, "onActivity">, conversation: WorkingAgentConversation): Promise<WorkingAgent> {
   const { target } = access;
   if (target.engine === "pi") {
-    return CodingSession.create({ ...options, modelRuntime: target.modelRuntime, model: target.model, ...reasoningOf(target),
-      ...usage(access),
-      ...(conversation.sessionManager === undefined ? {} : { sessionManager: conversation.sessionManager }) });
+    return namingRoute(target.route, await CodingSession.create({ ...options, modelRuntime: target.modelRuntime, model: target.model,
+      ...reasoningOf(target), ...usage(access),
+      ...(conversation.sessionManager === undefined ? {} : { sessionManager: conversation.sessionManager }) }));
   }
-  return ClaudeCodeSession.start({ cwd: options.cwd, model: target.model, ...reasoningOf(target), ...workingAgentSetup(options),
-    ...usage(access),
-    ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }), conversationId: conversation.conversationId });
+  return namingRoute(target.route, await ClaudeCodeSession.start({ cwd: options.cwd, model: target.model, ...reasoningOf(target),
+    ...configOf(target), ...workingAgentSetup(options), ...usage(access),
+    ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }), conversationId: conversation.conversationId }));
 }

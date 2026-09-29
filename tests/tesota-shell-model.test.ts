@@ -60,7 +60,7 @@ beforeEach(() => {
     requests: async () => ["Add a retry limit."], recordRequest: vi.fn(async () => {}) } as unknown as Workspace;
   agents = [];
   mocks.openModelTarget.mockImplementation(async (choice: string) => choice.startsWith("claude-code:")
-    ? { engine: "claude-code", model: choice.slice("claude-code:".length) } : { engine: "pi", model: { id: choice } });
+    ? { engine: "claude-code", route: "claude-code", model: choice.slice("claude-code:".length) } : { engine: "pi", model: { id: choice } });
   mocks.startWorkingAgent.mockImplementation(async () => {
     const entry = { run: vi.fn(async () => ({ status: "completed" as const, reply: "ok" })), switchModel: vi.fn(async () => {}),
       dispose: vi.fn(), conversation: vi.fn(async () => [{ role: "user", text: "Add a retry limit." }]),
@@ -125,7 +125,7 @@ it("starts a new conversation on another engine, says so, and sends the brief wi
   expect(record.retiredEngineIds).toEqual(["11111111-1111-4111-8111-111111111111"]);
   expect(said()).toContain("will not have this conversation");
   await created.session("session").work("Now log each retry.");
-  expect(mocks.startWorkingAgent).toHaveBeenLastCalledWith({ target: { engine: "claude-code", model: "opus" } },
+  expect(mocks.startWorkingAgent).toHaveBeenLastCalledWith({ target: { engine: "claude-code", route: "claude-code", model: "opus" } },
     expect.anything(), expect.objectContaining({ conversationId: record.engineId }));
   const prompt = String(agents[1]?.run.mock.calls[0]?.[0]);
   expect(prompt).toContain("Tesota handoff (not written by the user)");
@@ -173,7 +173,7 @@ it("gives the agent an advisor only when the role is on, reading the agent's con
   mocks.consultAdvisor.mockResolvedValue({ status: "answered", answer: "Check the caller." });
   expect(await advisor?.consult("Where should the counter live?", new AbortController().signal))
     .toMatchObject({ result: { status: "answered", answer: "Check the caller." } });
-  expect(mocks.consultAdvisor).toHaveBeenCalledWith(expect.objectContaining({ target: { engine: "claude-code", model: "opus" } }),
+  expect(mocks.consultAdvisor).toHaveBeenCalledWith(expect.objectContaining({ target: { engine: "claude-code", route: "claude-code", model: "opus" } }),
     [{ role: "user", text: "Add a retry limit." }], "Where should the counter live?", expect.any(AbortSignal));
   on.created.dispose?.();
 });

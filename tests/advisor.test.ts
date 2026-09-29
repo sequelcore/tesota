@@ -66,7 +66,7 @@ it("keeps the first request and the newest entries when the conversation is too 
 
 it("asks the advisor in a session with no tools, the conversation fenced as data, and counts its tokens", async () => {
   const usage: number[] = [];
-  const result = await consultAdvisor({ target: { engine: "claude-code", model: "opus" }, onUsage: (entry) => { usage.push(entry.input); } },
+  const result = await consultAdvisor({ target: { engine: "claude-code", route: "claude-code", model: "opus" }, onUsage: (entry) => { usage.push(entry.input); } },
     conversation, "Should the counter live in the caller?", new AbortController().signal);
   expect(result).toEqual({ status: "answered", answer: "Check the caller first." });
   expect(session.tools).toEqual([[]]);
@@ -75,7 +75,7 @@ it("asks the advisor in a session with no tools, the conversation fenced as data
   expect(session.requests[0]).toContain("The agent asks: Should the counter live in the caller?");
   expect(usage).toEqual([20_000]);
   session.turn = { status: "failed", reason: "overloaded" };
-  expect(await consultAdvisor({ target: { engine: "claude-code", model: "opus" } }, conversation, undefined,
+  expect(await consultAdvisor({ target: { engine: "claude-code", route: "claude-code", model: "opus" } }, conversation, undefined,
     new AbortController().signal)).toEqual({ status: "unfinished", reason: "the model request failed: overloaded" });
   expect(session.requests[1]).toContain("The agent asks for your guidance at this point.");
 });

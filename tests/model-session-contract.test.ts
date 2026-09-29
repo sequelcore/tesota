@@ -167,7 +167,7 @@ function piHarness(): EngineHarness {
     other: () => {
       const model = runtime?.getModel(faux.provider.id, "other");
       if (runtime === undefined || model === undefined) throw new Error("The other model is missing");
-      return { engine: "pi", modelRuntime: runtime, model, reasoning: "high" };
+      return { engine: "pi", route: "codex", modelRuntime: runtime, model, reasoning: "high" };
     },
     lastCall: () => last,
     async start(root, tools, observed, conversation) {
@@ -190,7 +190,7 @@ function claudeCodeHarness(): EngineHarness {
     engine: "Claude Code",
     script(steps) { sdk.steps = [...steps]; },
     modelCalls: () => sdk.calls,
-    other: () => ({ engine: "claude-code", model: "other", reasoning: "high" }),
+    other: () => ({ engine: "claude-code", route: "claude-code", model: "other", reasoning: "high" }),
     lastCall: () => sdk.last === undefined ? undefined
       : { model: sdk.last.model ?? "", continued: sdk.last.resume !== undefined, reasoning: sdk.last.effort },
     start: (root, tools, observed, conversation) => ClaudeCodeSession.start({ cwd: root, model: "test", systemPrompt: "You test.", tools,

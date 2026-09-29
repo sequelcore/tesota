@@ -8,7 +8,8 @@ Usage: tesota [--help | -h | help]
        tesota [--theme <${TESOTA_SHELL_THEME_NAMES.join("|")}>]
        tesota resume [<session-id>] [--theme <${TESOTA_SHELL_THEME_NAMES.join("|")}>]
        tesota verify <file.ts|file.js>
-       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe]
+       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]
+       tesota auth login <codex|claude-code> --as <name>
        tesota models [<route>]
        tesota roles [<role> [<route:model|default|off>]]
        tesota prune [--force]
@@ -79,6 +80,11 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   }
 } else if (args.length === 0 || (args.length === 1 && ["--help", "-h", "help"].includes(args[0] ?? ""))) {
   process.stdout.write(help);
+} else if (args.length === 5 && args[0] === "auth" && args[1] === "login" && args[3] === "--as" && args[2] !== undefined &&
+  args[4] !== undefined) {
+  // Another account of a kind, as a route of its own (decision 050).
+  const { addAccount } = await import("./auth.js");
+  process.exit(await addAccount(args[2], args[4]));
 } else if ((args.length === 2 || args.length === 3) && args[0] === "auth" && args[1] !== undefined) {
   const { AUTH_ROUTES, runAuthCommand } = await import("./auth.js");
   let route = args[2];

@@ -15,19 +15,19 @@ function file(): string {
 }
 const all = ["low", "medium", "high", "xhigh", "max"] as const;
 const offered: OfferedModel[] = [
-  { id: "codex:gpt-6-luna", route: "codex", name: "Luna", listPrice: { input: 0.1, output: 0.5 }, reasoning: all },
-  { id: "codex:gpt-6-sol", route: "codex", name: "Sol", listPrice: { input: 2, output: 10 }, reasoning: all },
-  { id: "anthropic:claude-opus-5-5", route: "anthropic", name: "Opus 5.5", listPrice: { input: 4, output: 20 }, reasoning: all },
-  { id: "claude-code:opus", route: "claude-code", name: "Claude Code's opus", reasoning: all },
-  { id: "claude-code:claude-opus-5-5", route: "claude-code", name: "Opus 5.5", listPrice: { input: 4, output: 20 }, reasoning: all },
-  { id: "claude-code:haiku", route: "claude-code", name: "Claude Code's haiku", reasoning: [] },
+  { id: "codex:gpt-6-luna", route: "codex", kind: "codex", name: "Luna", listPrice: { input: 0.1, output: 0.5 }, reasoning: all },
+  { id: "codex:gpt-6-sol", route: "codex", kind: "codex", name: "Sol", listPrice: { input: 2, output: 10 }, reasoning: all },
+  { id: "anthropic:claude-opus-5-5", route: "anthropic", kind: "anthropic", name: "Opus 5.5", listPrice: { input: 4, output: 20 }, reasoning: all },
+  { id: "claude-code:opus", route: "claude-code", kind: "claude-code", name: "Claude Code's opus", reasoning: all },
+  { id: "claude-code:claude-opus-5-5", route: "claude-code", kind: "claude-code", name: "Opus 5.5", listPrice: { input: 4, output: 20 }, reasoning: all },
+  { id: "claude-code:haiku", route: "claude-code", kind: "claude-code", name: "Claude Code's haiku", reasoning: [] },
 ];
 const ids = offeredChoices(offered);
 
 it("reads route:model and nothing else", () => {
-  expect(parseModelChoice("codex:gpt-6-luna")).toEqual({ route: "codex", model: "gpt-6-luna" });
-  expect(parseModelChoice("claude-code:opus")).toEqual({ route: "claude-code", model: "opus" });
-  expect(parseModelChoice("anthropic:claude-opus-5-5")).toEqual({ route: "anthropic", model: "claude-opus-5-5" });
+  expect(parseModelChoice("codex:gpt-6-luna")).toEqual({ route: "codex", kind: "codex", model: "gpt-6-luna" });
+  expect(parseModelChoice("claude-code:opus")).toEqual({ route: "claude-code", kind: "claude-code", model: "opus" });
+  expect(parseModelChoice("anthropic:claude-opus-5-5")).toEqual({ route: "anthropic", kind: "anthropic", model: "claude-opus-5-5" });
   for (const value of ["gpt-6-luna", "off", "openai:gpt-6", "codex:", ":opus", "codex:bad model", "codex:a/b",
     "codex:gpt-6-astra@turbo", "codex:gpt-6-astra@", "codex:@high"]) {
     expect(parseModelChoice(value)).toBeUndefined();
@@ -35,8 +35,8 @@ it("reads route:model and nothing else", () => {
 });
 
 it("reads a reasoning level after the model, and offers only the levels each model supports", () => {
-  expect(parseModelChoice("codex:gpt-6-astra@xhigh")).toEqual({ route: "codex", model: "gpt-6-astra", reasoning: "xhigh" });
-  expect(parseModelChoice("claude-code:opus@max")).toEqual({ route: "claude-code", model: "opus", reasoning: "max" });
+  expect(parseModelChoice("codex:gpt-6-astra@xhigh")).toEqual({ route: "codex", kind: "codex", model: "gpt-6-astra", reasoning: "xhigh" });
+  expect(parseModelChoice("claude-code:opus@max")).toEqual({ route: "claude-code", kind: "claude-code", model: "opus", reasoning: "max" });
   expect(ids).toContain("codex:gpt-6-sol@high");
   expect(ids).not.toContain("claude-code:haiku@high");
   const path = file();
@@ -131,12 +131,12 @@ it("lists each role with who pays for it and the model's list price, and sets on
 });
 
 it("reads OpenRouter's vendor/model:variant ids only on OpenRouter, and OpenCode's ids on Zen and Go", () => {
-  expect(parseModelChoice("openrouter:qwen/qwen3.8-27b:free")).toEqual({ route: "openrouter", model: "qwen/qwen3.8-27b:free" });
+  expect(parseModelChoice("openrouter:qwen/qwen3.8-27b:free")).toEqual({ route: "openrouter", kind: "openrouter", model: "qwen/qwen3.8-27b:free" });
   expect(parseModelChoice("openrouter:anthropic/claude-opus-5.5@high"))
-    .toEqual({ route: "openrouter", model: "anthropic/claude-opus-5.5", reasoning: "high" });
-  expect(parseModelChoice("openrouter:auto")).toEqual({ route: "openrouter", model: "auto" });
-  expect(parseModelChoice("opencode:big-pickle")).toEqual({ route: "opencode", model: "big-pickle" });
-  expect(parseModelChoice("opencode-go:glm-5.3@max")).toEqual({ route: "opencode-go", model: "glm-5.3", reasoning: "max" });
+    .toEqual({ route: "openrouter", kind: "openrouter", model: "anthropic/claude-opus-5.5", reasoning: "high" });
+  expect(parseModelChoice("openrouter:auto")).toEqual({ route: "openrouter", kind: "openrouter", model: "auto" });
+  expect(parseModelChoice("opencode:big-pickle")).toEqual({ route: "opencode", kind: "opencode", model: "big-pickle" });
+  expect(parseModelChoice("opencode-go:glm-5.3@max")).toEqual({ route: "opencode-go", kind: "opencode-go", model: "glm-5.3", reasoning: "max" });
   for (const value of ["openrouter:a//b", "openrouter:/b", "openrouter:a/b/c", "openrouter:a/b:", "opencode:a/b",
     "opencode-go:x:free", "codex:a:free"]) {
     expect(parseModelChoice(value)).toBeUndefined();

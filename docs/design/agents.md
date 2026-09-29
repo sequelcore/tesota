@@ -241,7 +241,26 @@ role can use any route. Evidence is in the
 | `opencode-go` | Pi | The same OpenCode key | The operator's OpenCode Go subscription, against its limits |
 
 Who pays is the route's (`ROUTE_BILLING`); a model's list price is the
-catalogue's. A list price is what an API key is billed, and on a plan only a
+catalogue's.
+
+**Several accounts** (decision 050). The table's routes are each a *kind's*
+default route. A route is a kind and one account behind it: the kind
+decides the engine, the models, who pays and each model's lab; the route
+decides only the account. The operator adds routes of the `codex` and
+`claude-code` kinds, the ones signed in to a plan, under names of their
+own (`tesota auth login codex --as codex-work`, kept in
+`~/.tesota/routes.json`), and gives a role one with the usual choice,
+`codex-work:gpt-6-luna@low`, as t3code runs Codex and Claude as separate
+instances. An added Codex route keeps its login in a file of its own
+beside the default route's; an added Claude Code route has its own
+configuration folder (`CLAUDE_CONFIG_DIR`), where the operator signs in
+with Claude Code itself, so Tesota still holds no Claude login. Routes of
+one kind are one lab to the judge warnings, and one model on two of them
+is one model. A failed request names its route, since a lapsed plan fails
+with only the model's refusal, as on 2026-09-29. `/model` continues in
+place only on one account: another route's account needs its own runtime
+or Claude Code process, so it starts a new conversation with the brief. A
+route that a role uses is not removed until the roles choose another. A list price is what an API key is billed, and on a plan only a
 way to compare models, so `tesota models` shows both separately.
 
 **Tesota never handles Claude subscription credentials.** On the

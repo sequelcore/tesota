@@ -1,4 +1,5 @@
-import { type ModelChoices, type ModelRole, type ModelRoute, parseModelChoice, ROLE_OFF } from "./model-roles.js";
+import { type AddedRoute, type ModelChoices, type ModelRole, parseModelChoice, readAddedRoutes, ROLE_OFF,
+  type RouteKind } from "./model-roles.js";
 import { type JudgeIndependence, judgeIndependence } from "./verification/judge-independence.js";
 
 /**
@@ -9,7 +10,7 @@ import { type JudgeIndependence, judgeIndependence } from "./verification/judge-
  */
 
 /** The lab behind every model of a route that serves one lab's models. */
-const routeLab: Readonly<Partial<Record<ModelRoute, string>>> = { codex: "OpenAI", anthropic: "Anthropic", "claude-code": "Anthropic" };
+const routeLab: Readonly<Partial<Record<RouteKind, string>>> = { codex: "OpenAI", anthropic: "Anthropic", "claude-code": "Anthropic" };
 /** The lab behind an OpenRouter vendor, as OpenRouter names it in `vendor/model`. */
 const vendorLab: Readonly<Record<string, string>> = { openai: "OpenAI", anthropic: "Anthropic", google: "Google", "x-ai": "xAI",
   "z-ai": "Z.ai", moonshotai: "Moonshot AI", qwen: "Alibaba", deepseek: "DeepSeek", minimax: "MiniMax", xiaomi: "Xiaomi",
@@ -37,18 +38,19 @@ function isAlias(model: string): boolean {
  * as the other routes' dashes (`claude-opus-5.5` is `claude-opus-5-5`). A
  * router, a stealth model or an unknown vendor has no known lab.
  */
-function identity(choice: string): { lab: string; model: string } | undefined {
-  const parsed = parseModelChoice(choice);
+function identity(choice: string, added: readonly AddedRoute[]): { lab: string; model: string } | undefined {
+  const parsed = parseModelChoice(choice, added);
   if (parsed === undefined) return undefined;
-  const { route } = parsed;
+  // Routes of one kind reach the same models from the same labs, whichever account pays (decision 050).
+  const { kind } = parsed;
   let model = parsed.model;
-  let lab = routeLab[route];
-  if (route === "openrouter") {
+  let lab = routeLab[kind];
+  if (kind === "openrouter") {
     const [vendor = "", name] = model.replace(/^~/u, "").replace(/:[^/]*$/u, "").split("/");
     if (name === undefined) return undefined;
     lab = vendorLab[vendor];
     model = name;
-  } else if (route === "opencode" || route === "opencode-go") {
+  } else if (kind === "opencode" || kind === "opencode-go") {
     lab = familyLab[model.split(/[-.\d]/u)[0] ?? ""];
   }
   return lab === undefined ? undefined : { lab, model: model.replaceAll(".", "-") };
@@ -59,16 +61,16 @@ function identity(choice: string): { lab: string; model: string } | undefined {
  * on any route, or an alias and a model of its family, which the alias may
  * currently resolve to.
  */
-export function sameModel(first: string, second: string): boolean {
-  const a = identity(first);
-  const b = identity(second);
+export function sameModel(first: string, second: string, added: readonly AddedRoute[] = readAddedRoutes()): boolean {
+  const a = identity(first, added);
+  const b = identity(second, added);
   if (a === undefined || b === undefined || a.lab !== b.lab) return false;
   if (a.model === b.model) return true;
   return (isAlias(a.model) || isAlias(b.model)) && claudeFamily(a.model) !== undefined && claudeFamily(a.model) === claudeFamily(b.model);
 }
 
-function lab(choice: string): string | undefined {
-  return identity(choice)?.lab;
+function lab(choice: string, added: readonly AddedRoute[]): string | undefined {
+  return identity(choice, added)?.lab;
 }
 
 /** Each role that judges another's output, and what it judges. */
@@ -89,12 +91,12 @@ export interface JudgeWarning {
 }
 
 /** Every judging pair whose models are the same, or from the same lab; roles that are off are skipped. */
-export function judgeWarnings(choices: ModelChoices): JudgeWarning[] {
+export function judgeWarnings(choices: ModelChoices, added: readonly AddedRoute[] = readAddedRoutes()): JudgeWarning[] {
   return judgements.flatMap(({ author, judge, what }): JudgeWarning[] => {
     const [a, b] = [choices[author], choices[judge]];
     if (a === ROLE_OFF || b === ROLE_OFF) return [];
-    const labA = lab(a);
-    const level = judgeIndependence(sameModel(a, b), labA !== undefined && labA === lab(b));
+    const labA = lab(a, added);
+    const level = judgeIndependence(sameModel(a, b, added), labA !== undefined && labA === lab(b, added));
     if (level === "independent") return [];
     return [{ level, author, judge, text: level === "same_model" ? `${what}, and both use ${a}` : `${what}, and both are ${labA} models` }];
   });
