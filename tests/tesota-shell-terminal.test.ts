@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
 import type { AccountsSource } from "../src/tesota-shell-accounts.js";
 import { createTesotaShellTerminal } from "../src/tesota-shell-terminal.js";
+import { BackdropTui } from "../src/tesota-shell-tui.js";
 import { SessionRail } from "../src/tesota-shell-sidebar.js";
 import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
 import type { TranscriptEntry } from "../src/tesota-shell-transcript.js";
@@ -1180,7 +1181,7 @@ it("opens the Accounts panel over the session: its tabs, keys that never reach t
   const terminal = new TestTerminal();
   terminal.columns = 120;
   terminal.rows = 30;
-  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const tui = new BackdropTui(terminal, false, undefined, { mouse: false });
   const reads = { usage: 0, signIns: 0 };
   const accounts: AccountsSource = {
     readUsage: async (update) => {
@@ -1210,6 +1211,7 @@ it("opens the Accounts panel over the session: its tabs, keys that never reach t
   terminal.send("\r");
   const usage = await screen();
   expect(usage).toContain("Accounts");
+  expect(screenLine(terminal.writes.join(""), "Session 1")).toContain("[2m");
   expect(usage).toMatch(/1 Usage {3}2 Sign-ins {3}3 Roles/u);
   expect(usage).toMatch(/codex {2}Codex plus {2}week {4}████░░░░░░░░░░░░░░░░ {2}20%/u);
   expect(usage).toContain("read just now");
@@ -1240,5 +1242,7 @@ it("opens the Accounts panel over the session: its tabs, keys that never reach t
   expect(await screen()).toContain("1 Usage");
   terminal.send("\x1b");
   expect(await screen()).not.toContain("1 Usage");
+  // The layout beneath is faint only while the panel is open.
+  expect(screenLine(terminal.writes.join(""), "Session 1")).not.toContain("[2m");
   shell.stop();
 });

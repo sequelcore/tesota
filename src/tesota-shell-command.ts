@@ -3,7 +3,7 @@ import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
+import { ProcessTerminal } from "@earendil-works/pi-tui";
 import { confinesCommands, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
 import { chooseSessionExecution, packageCacheDirectory, providersFor, readSandboxPreference, releaseWorkspace,
   SANDBOX_NAMES, SANDBOX_PREFERENCES, type SandboxPreference, type SessionExecution } from "./execution-providers.js";
@@ -12,6 +12,7 @@ import { pendingUsage, readUsage, type RouteUsage } from "./account-usage.js";
 import { allRoutes, routeStatuses, usedByRoute } from "./auth.js";
 import { usageSources } from "./integrations/usage-sources.js";
 import type { AccountsSource } from "./tesota-shell-accounts.js";
+import { BackdropTui } from "./tesota-shell-tui.js";
 import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, sameAccount, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
@@ -330,7 +331,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const closeWarnings = new Map<string, number>();
   /** Sessions writing to the source repository; they cannot be closed until it settles. */
   const applying = new Set<string>();
-  const tui = new TuiAltScreen(new ProcessTerminal(), false, undefined, { mouse: true });
+  const tui = new BackdropTui(new ProcessTerminal(), false, undefined, { mouse: true });
   const interrupt = (sessionId: string): void => { activeOperations.get(sessionId)?.abort(); };
   const runOperation = async <T>(sessionId: string, operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     if (activeOperations.has(sessionId)) throw new Error("Tesota Shell session operation already active");

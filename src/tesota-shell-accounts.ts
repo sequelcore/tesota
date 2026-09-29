@@ -1,10 +1,14 @@
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
 import { bar, span, USAGE_SOURCES_NOTE, usageLines, type RouteUsage, type UsagePaint } from "./account-usage.js";
 import { type RouteStatus, SIGN_IN_NOTE, statusLines, type StatusPaint } from "./auth.js";
-import { bold, colorText, mutedText, selectedRow, type TesotaShellTheme } from "./tesota-shell-theme.js";
+import { bold, colorText, mutedText, selectedRow, surfaceText, type TesotaShellTheme } from "./tesota-shell-theme.js";
 import { meterTone } from "./verification/usage-meter-rule.js";
 
 export const ACCOUNTS_TABS = ["usage", "sign-ins", "roles"] as const;
+
+/** The share of the terminal the panel may take across and down, so the layout beneath still shows around it. */
+export const ACCOUNTS_PANEL_WIDTH = 0.88;
+export const ACCOUNTS_PANEL_HEIGHT = 0.85;
 export type AccountsTab = typeof ACCOUNTS_TABS[number];
 
 const tabLabels: Readonly<Record<AccountsTab, string>> = { usage: "Usage", "sign-ins": "Sign-ins", roles: "Roles" };
@@ -137,11 +141,13 @@ export class AccountsPanel implements Component {
     const more = body.length > offset + bodyRows ? `  ↓ ${body.length - offset - bodyRows} more` : "";
     const lines = [this.#tabRow(inner), "", ...shown, ...Array.from({ length: bodyRows - shown.length }, () => ""), "",
       mutedText(truncateToWidth(`${this.#hint()}${more}`, inner), this.#theme)];
-    return [this.#edge("╭", "╮", width, " Accounts "), ...lines.map((line) => this.#side(line, inner)), this.#edge("╰", "╯", width)];
+    // Every line, the frame included, lies on the panel's own surface, so it reads as above the layout, not part of it.
+    return [this.#edge("╭", "╮", width, " Accounts "), ...lines.map((line) => this.#side(line, inner)), this.#edge("╰", "╯", width)]
+      .map((line) => surfaceText(line, this.#theme.panelBackground));
   }
 
-  /** The most rows the body may have: the panel is at most nine tenths of the terminal. */
-  #bodyRows(): number { return Math.max(3, Math.floor(this.#rows() * 0.9) - CHROME_ROWS); }
+  /** The most rows the body may have: the panel leaves the layout showing around it, as `ACCOUNTS_PANEL_HEIGHT` says. */
+  #bodyRows(): number { return Math.max(3, Math.floor(this.#rows() * ACCOUNTS_PANEL_HEIGHT) - CHROME_ROWS); }
 
   #frame(text: string): string { return mutedText(text, this.#theme); }
 

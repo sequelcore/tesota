@@ -4,14 +4,16 @@ import { Editor, HStack, ScrollView, Text, VStack, isKeyRelease, matchesKey, tru
   type Component, type EditorTheme, type OverlayHandle, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
-import { bold, colorText, mutedText, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
+import { bold, colorText, fadedText, mutedText, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { recordRows, safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
 import { DiffView } from "./tesota-shell-diff.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
 import { ThemePicker } from "./tesota-shell-theme-picker.js";
 import { ChoicePicker, type ShellChoice } from "./tesota-shell-choice-picker.js";
-import { ACCOUNTS_TABS, AccountsPanel, type AccountsSource, type AccountsTab } from "./tesota-shell-accounts.js";
+import type { Backdrop } from "./tesota-shell-tui.js";
+import { ACCOUNTS_PANEL_HEIGHT, ACCOUNTS_PANEL_WIDTH, ACCOUNTS_TABS, AccountsPanel, type AccountsSource, type AccountsTab }
+  from "./tesota-shell-accounts.js";
 import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, sessionStateIcon, type SidebarSession } from "./tesota-shell-sidebar.js";
 import { planLines, type WorkPlan } from "./work-plan.js";
 import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, sidebarPresentation,
@@ -19,7 +21,8 @@ import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, ot
 
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
-  readonly tui: ViewportTUI;
+  /** The shell's TUI; one with a backdrop fades the layout beneath an open panel. */
+  readonly tui: ViewportTUI & Partial<Backdrop>;
   readonly now?: () => number;
   readonly interrupt?: (sessionId: string) => void;
   readonly theme?: TesotaShellThemeName;
@@ -306,7 +309,7 @@ class ResultPanel implements Component {
 }
 
 class PersistentTesotaShellTerminal implements TesotaShellTerminal {
-  private readonly tui: ViewportTUI;
+  private readonly tui: ViewportTUI & Partial<Backdrop>;
   private readonly now: () => number;
   private readonly interrupt: () => void;
   private readonly options: TesotaShellTerminalOptions;
@@ -381,7 +384,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.tui.showOverlay(
       new SessionSidebarOverlay(this.sidebarHeader, this.sidebar, () => this.tui.terminal.rows),
       { width: sidebarWidth, maxHeight: "100%", anchor: "top-right", nonCapturing: true,
-        visible: (width) => sidebarPresentation(this.sidebarPreference, width) === "overlay" },
+        // Hidden under an open panel: overlays are drawn after the backdrop fades the layout, so it would stay bright.
+        visible: (width) => sidebarPresentation(this.sidebarPreference, width) === "overlay" && this.accountsOverlay === undefined },
     );
     this.compose();
   }
@@ -738,7 +742,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (source === undefined) { this.writeTo(session.id, "Accounts are not available in this shell.", "warning"); return; }
     this.accountsPanel.show(tab);
     if (this.accountsOverlay === undefined) {
-      this.accountsOverlay = this.tui.showOverlay(this.accountsPanel, { width: "96%", minWidth: 40, maxHeight: "90%", nonCapturing: true });
+      // Over the whole layout, sidebar included: accounts belong to no one session. A margin shows the layout still beneath.
+      this.accountsOverlay = this.tui.showOverlay(this.accountsPanel, { width: `${ACCOUNTS_PANEL_WIDTH * 100}%`, minWidth: 40,
+        maxHeight: `${ACCOUNTS_PANEL_HEIGHT * 100}%`, nonCapturing: true });
+      this.tui.setBackdrop?.((line) => fadedText(line, this.theme));
     }
     this.readAccounts(source);
     this.tui.requestRender();
@@ -762,6 +769,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private closeAccounts(): void {
     this.accountsOverlay?.hide();
     this.accountsOverlay = undefined;
+    this.tui.setBackdrop?.(undefined);
     this.tui.requestRender();
   }
 

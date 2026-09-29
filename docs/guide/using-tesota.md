@@ -224,9 +224,9 @@ example `/roles triage typesafe:jev-1.13.0` or `/roles advisor off`.
 
 ## Accounts
 
-`/accounts`, or `Alt+A`, opens the Accounts panel over the session, which
-keeps working beneath it; nothing in the panel is written to the
-conversation. It has three tabs, switched with `←→`, `Tab` or `1`–`3`:
+`/accounts`, or `Alt+A`, opens the Accounts panel over the whole shell,
+which fades behind it while the sessions keep working; nothing in the panel
+is written to the conversation. It has three tabs, switched with `←→`, `Tab` or `1`–`3`:
 
 - **Usage**, which `/usage` opens directly: how much each account has left
   and when it resets, as `tesota usage` shows it

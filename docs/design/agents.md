@@ -283,8 +283,14 @@ key Tesota holds, so they say where to look. No key or token is shown or
 saved.
 
 The Accounts panel (`/accounts`, `/usage`, `Alt+A`) is a framed overlay
-with three tabs, as Claude Code keeps `/status`, `/config` and `/usage` in one
-settings dialog: Usage, the same table as `tesota usage`; Sign-ins, the
+over the whole layout, sidebar included, since accounts belong to no one
+session, with a margin that leaves the layout showing beneath. It lies on
+its theme's panel surface, a second neutral layer raised from the
+terminal's, and while it is open the layout beneath is faded, its styles
+removed and its text faint, as a web page dims behind a dialog; the shell's
+TUI fades those lines before pi-tui draws the overlays over them. It has three
+tabs, as Claude Code keeps `/status`, `/config` and `/usage` in one settings
+dialog: Usage, the same table as `tesota usage`; Sign-ins, the
 table of `tesota auth status`; and Roles, each role's model, its account and
 that account's least-left window, where `Enter` opens the role's model
 picker. Usage is state, not conversation, so nothing in the panel enters
