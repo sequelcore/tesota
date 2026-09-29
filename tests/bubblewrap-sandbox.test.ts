@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { bubblewrapArguments, commandPath, commandVariables, installedToolFolders, type SandboxLayout, settingsWritten, toolFolders,
-  windowsDrives, windowsMounts } from "../src/bubblewrap-sandbox.js";
+import { bubblewrapArguments, commandPath, commandVariables, installedToolFolders, releaseRepository, type SandboxLayout, settingsWritten,
+  toolFolders, windowsDrives, windowsMounts } from "../src/bubblewrap-sandbox.js";
 import { distributionSetupScript, listedDistributions } from "../src/wsl-environment.js";
 
 /**
@@ -123,4 +123,10 @@ it("sets up Tesota's distribution with its pinned runtimes through the hash-chec
   // Windows' drives are owned by Tesota's user, whom Git trusts and who may change permissions there.
   expect(script).toContain(`'[automount]\\noptions = "uid=%s,gid=%s"\\n[user]\\ndefault=%s\\n[interop]\\nenabled=false\\nappendWindowsPath=false\\n' ` +
     `"$(id -u tesota)" "$(id -g tesota)" tesota > /etc/wsl.conf`);
+});
+
+it("refuses a repository's key that could name a folder outside the repositories' own", async () => {
+  for (const key of ["..", "../sandboxes", "A".repeat(64), "a".repeat(63), `${"a".repeat(64)}/..`]) {
+    await expect(releaseRepository(key)).rejects.toThrow("A repository's key must be a SHA-256 in hexadecimal");
+  }
 });

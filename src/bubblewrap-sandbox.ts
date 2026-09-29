@@ -288,18 +288,27 @@ function tesotaState(): string {
 
 const digest = (path: string): string => createHash("sha256").update(path).digest("hex").slice(0, 16);
 
-/** A workspace's own folders on WSL's disk: its home, temporary folder, `node_modules`, setup record and the proxy's socket. */
+/**
+ * A workspace's own folders on WSL's disk: its home, temporary folder,
+ * `node_modules`, setup record and the proxy's socket, and its package caches
+ * and installed tools when no repository is named.
+ */
 function stateFolder(workspace: string): string {
   return join(tesotaState(), "sandboxes", digest(workspace));
 }
 
+/** A repository's key as the host sends it, a SHA-256 in hex, so it names one folder and nothing outside it. */
+const REPOSITORY_KEY = /^[0-9a-f]{64}$/u;
+
 /**
- * The tools setup installed for one repository, keyed by its package cache,
- * so its sessions share them and no other repository's setup can change them;
- * a workspace without that cache has its own.
+ * What one repository's sessions share on WSL's own disk, where Bun links
+ * `node_modules` from the cache instead of copying each file through the
+ * Windows drive: its package caches and the tools setup installed, so no other
+ * repository's setup can change them.
  */
-function toolchainFolder(owner: string): string {
-  return join(tesotaState(), "toolchains", digest(owner));
+function repositoryFolder(repository: string): string {
+  if (!REPOSITORY_KEY.test(repository)) throw new Error("A repository's key must be a SHA-256 in hexadecimal");
+  return join(tesotaState(), "repositories", repository);
 }
 
 /** The folders a tool-folder stage printed that lie inside the repository's toolchain folder, in order, once each. */
@@ -537,7 +546,8 @@ function toolsOnThisMachine(): string[] {
 
 export interface ServeOptions {
   readonly workspace: string;
-  readonly cache?: string;
+  /** The repository's key, whose sessions share its package caches and installed tools. */
+  readonly repository?: string;
   readonly paths: PathTranslation;
 }
 
@@ -551,10 +561,10 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   const bubblewrap = locate("bwrap");
   if (bubblewrap === undefined) { send({ type: "failed", message: "bubblewrap (bwrap) is not installed" }); return; }
   const workspace = translate(options.workspace, options.paths);
-  const cache = options.cache === undefined ? undefined : translate(options.cache, options.paths);
   const state = stateFolder(workspace);
+  const shared = options.repository === undefined ? state : repositoryFolder(options.repository);
   const layout: SandboxLayout = { workspace, home: join(state, "home"), account: homedir(), temp: join(state, "tmp"),
-    cache: cache ?? join(state, "cache"), toolchains: toolchainFolder(cache ?? workspace),
+    cache: join(shared, "cache"), toolchains: join(shared, "toolchains"),
     ...existsSync(join(workspace, "package.json")) ? { modules: join(state, "node_modules") } : {},
     relay: join(state, "relay.cjs"), socket: join(state, "proxy.sock"), runtime: process.execPath,
     system: systemFolders(), tools: toolsOnThisMachine() };
@@ -577,16 +587,14 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   await server.close();
 }
 
-/** Remove what a workspace's sandbox kept on WSL's disk, and the tools it installed when it had no repository's cache. */
+/** Remove what a workspace's sandbox kept on WSL's disk. */
 export async function releaseState(workspace: string, paths: PathTranslation): Promise<void> {
-  const translated = translate(workspace, paths);
-  await rm(stateFolder(translated), { recursive: true, force: true });
-  await rm(toolchainFolder(translated), { recursive: true, force: true });
+  await rm(stateFolder(translate(workspace, paths)), { recursive: true, force: true });
 }
 
-/** Remove the tools setup installed for the repository whose package cache this is. */
-export async function releaseToolchains(cache: string, paths: PathTranslation): Promise<void> {
-  await rm(toolchainFolder(translate(cache, paths)), { recursive: true, force: true });
+/** Remove a repository's package caches and the tools setup installed for it. */
+export async function releaseRepository(repository: string): Promise<void> {
+  await rm(repositoryFolder(repository), { recursive: true, force: true });
 }
 
 /**

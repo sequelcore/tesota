@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -10,7 +10,7 @@ import { runSandboxCommand } from "../src/sandbox-command.js";
 /**
  * `tesota sandbox` (decision 030): what each sandbox proved on this computer,
  * which one new sessions use, the operator's choice, and a repository's
- * package cache.
+ * package caches.
  */
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -29,7 +29,7 @@ function setup() {
   const root = mkdtempSync(join(tmpdir(), "tesota-sandbox-command-"));
   roots.push(root);
   let output = "";
-  const dependencies = { preferencePath: join(root, "sandbox.json"), cacheDirectory: join(root, "cache", "repo"),
+  const dependencies = { preferencePath: join(root, "sandbox.json"), repository: "a".repeat(64),
     providers: (preference: string) => preference === "wsl" ? [wsl] : preference === "docker" ? [docker] : preference === "host" ? [] : [wsl, docker],
     candidates: [wsl, docker], trust: async (candidate: ExecutionProvider) => candidate === wsl ? qualified : undefined };
   return { root, dependencies, write: (text: string) => { output += text; }, output: () => output };
@@ -64,17 +64,11 @@ it("keeps the operator's choice for new sessions, and refuses what is not a choi
   expect(output()).toContain("host     in use: this computer, always available; asks before each command");
 });
 
-it("removes this repository's package cache and the tools sandboxes installed for it, and says when there is no cache", async () => {
+it("has every sandbox remove what it keeps for this repository, named by the repository's key", async () => {
   const { dependencies, write, output } = setup();
   const released: string[] = [];
-  const keeping = { ...wsl, releaseRepository: async (cache: string) => { released.push(cache); } };
-  const cleaning = { ...dependencies, candidates: [keeping, docker] };
-  mkdirSync(dependencies.cacheDirectory, { recursive: true });
-  writeFileSync(join(dependencies.cacheDirectory, "package.tgz"), "x");
-  expect(await runSandboxCommand(["clean"], write, cleaning)).toBe(0);
-  expect(existsSync(dependencies.cacheDirectory)).toBe(false);
-  expect(output()).toContain("Removed this repository's package cache and the tools sandboxes installed for it.");
-  expect(await runSandboxCommand(["clean"], write, cleaning)).toBe(0);
-  expect(output()).toContain("This repository has no package cache; removed any tools sandboxes installed for it.");
-  expect(released).toEqual([dependencies.cacheDirectory, dependencies.cacheDirectory]);
+  const keeping = { ...wsl, releaseRepository: async (repository: string) => { released.push(repository); } };
+  expect(await runSandboxCommand(["clean"], write, { ...dependencies, candidates: [keeping, docker] })).toBe(0);
+  expect(released).toEqual([dependencies.repository]);
+  expect(output()).toContain("Removed this repository's package caches and the tools sandboxes installed for it.");
 });

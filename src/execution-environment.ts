@@ -93,8 +93,12 @@ export interface ExecutionEnvironment {
 
 export interface PrepareOptions {
   readonly onProgress?: (text: string) => void;
-  /** The repository's package cache, shared by its sessions (decision 030); a provider's own when absent. */
-  readonly cacheDirectory?: string;
+  /**
+   * The repository's key (`repositoryKey`), under which a provider keeps what
+   * the repository's sessions share, such as its package caches (decision
+   * 030), on the provider's own disk; the workspace's own when absent.
+   */
+  readonly repository?: string;
   /** Destinations the operator allowed for the repository, as `host:port`, open from the start, setup included. */
   readonly allowed?: readonly string[];
   /**
@@ -144,8 +148,8 @@ export interface ExecutionProvider {
   fingerprint?(): Promise<string>;
   /** Remove anything the provider keeps for a workspace that is being deleted. */
   release(workspace: string): Promise<void>;
-  /** Remove what the provider keeps for a repository, such as the tools its setup installed, named by the repository's package cache. */
-  releaseRepository?(cacheDirectory: string): Promise<void>;
+  /** Remove what the provider keeps for a repository, such as its package caches and the tools its setup installed, named by its key. */
+  releaseRepository?(repository: string): Promise<void>;
 }
 
 /** Commands run in a sandbox, without asking, only where files and network are both confined. */
