@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { controlsFor, runControls, writeSetupProbe } from "../src/execution-controls.js";
 import type { ExecutionEnvironment } from "../src/execution-environment.js";
+import { repositoryKey } from "../src/execution-providers.js";
 import { qualifyProvider } from "../src/execution-qualification.js";
 import { bubblewrapEnvironment, type Launch, WSL_GUARANTEES, wslProvider } from "../src/wsl-environment.js";
 
@@ -156,6 +157,36 @@ it.runIf(live)("runs a repository's pinned Node, its mise file's tools and its s
     expect(readFileSync(join(repository, "setup-runs.txt"), "utf8")).toBe("ran\n");
   } finally { if (windows) await wslProvider.release(repository); }
 }, 600_000);
+
+it.runIf(live)("keeps a repository's package cache on the sandbox's own disk, shared by the repository's workspaces", async () => {
+  const key = repositoryKey(join(root, "shared-cache"));
+  const workspaces = [join(root, "shared-first"), join(root, "shared-second")];
+  const inside = async (workspacePath: string, command: string): Promise<string> => {
+    const environment = windows ? await wslProvider.prepare(workspacePath, { repository: key })
+      : await bubblewrapEnvironment(direct, workspacePath, { repository: key });
+    try {
+      let output = "";
+      const result = await environment.run(command, { cwd: workspacePath, onOutput: (chunk) => { output += chunk.toString(); } });
+      expect(result.exitCode).toBe(0);
+      return output.trim();
+    } finally { await environment.dispose(); }
+  };
+  try {
+    for (const path of workspaces) {
+      await mkdir(path);
+      await writeFile(join(path, "package.json"), JSON.stringify({ name: "shared", private: true, dependencies: { "is-number": "7.0.0" } }));
+    }
+    // Bun copies each file through the Windows drive when its cache lies there, which made one install take minutes.
+    expect(await inside(workspaces[0] ?? "", "bun install >/dev/null && stat -f -c %T \"$BUN_INSTALL_CACHE_DIR\""))
+      .not.toMatch(/^(9p|v9fs|drvfs|virtiofs)$/u);
+    expect(await inside(workspaces[1] ?? "", "ls \"$BUN_INSTALL_CACHE_DIR\"")).toMatch(/^is-number@7\.0\.0/mu);
+  } finally {
+    if (windows) {
+      for (const path of workspaces) await wslProvider.release(path);
+      await wslProvider.releaseRepository?.(key);
+    }
+  }
+}, 300_000);
 
 it.runIf(live)("installs the languages a repository's own files show, and their registries answer through the proxy", async () => {
   const projects: Record<string, { files: Record<string, string>; command: string; expected: RegExp }> = {

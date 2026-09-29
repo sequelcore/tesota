@@ -189,7 +189,7 @@ export async function bubblewrapEnvironment(launch: Launch, workspace: string, o
   options.signal?.throwIfAborted();
   const root = resolve(workspace);
   const connection = new Connection(launch(["serve", "--workspace", root,
-    ...options.cacheDirectory === undefined ? [] : ["--cache", options.cacheDirectory]]));
+    ...options.repository === undefined ? [] : ["--repository", options.repository]]));
   const stop = (): void => { void connection.close(); };
   options.signal?.addEventListener("abort", stop, { once: true });
   try {
@@ -329,5 +329,5 @@ export const wslProvider: ExecutionProvider = {
     return `windows ${release()}; ${(await checkDistribution(wslLaunch))?.versions ?? "unknown"}`;
   },
   release: (workspace) => releaseInDistribution(["--workspace", resolve(workspace)]),
-  releaseRepository: (cacheDirectory) => releaseInDistribution(["--cache", resolve(cacheDirectory)]),
+  releaseRepository: (repository) => releaseInDistribution(["--repository", repository]),
 };
