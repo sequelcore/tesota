@@ -18,9 +18,14 @@ import { hasNodeModules, miseFilesInstallScript, miseInstallScript, needsDownloa
  * is mounted, egress goes through the host proxy under a deny-all policy with
  * per-sandbox allow rules, and CPU and memory are capped. These guarantees were
  * observed on 2026-09-26 (decision 014); the live qualification suite reruns them.
+ * The network is not declared an allowlist while `network_direct` sees a TCP
+ * connection that ignores the proxy open (decision 044): Docker documents a
+ * transparent proxy that allows a connection only when a rule matches, but
+ * not what a refused connection receives, so the control cannot tell the
+ * proxy from the destination. Until that is shown, its commands ask first.
  */
 const guarantees: EnvironmentGuarantees = Object.freeze({
-  filesystem: "workspace", network: "allowlist", secrets: "none", resources: "bounded",
+  filesystem: "workspace", network: "open", secrets: "none", resources: "bounded",
 });
 
 const commandTimeoutMs = 120_000;

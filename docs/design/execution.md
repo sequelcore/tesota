@@ -51,7 +51,7 @@ tell a sandbox from none.
 | Provider | Guarantees |
 | --- | --- |
 | `host` | host filesystem, open network, no secrets, unbounded |
-| `docker-sandboxes` | workspace filesystem, allowlist network, no secrets, bounded |
+| `docker-sandboxes` | workspace filesystem, open network while its allowlist is reviewed (decision 044), no secrets, bounded |
 | `mxc` | the [native sandbox](#native-sandbox): workspace filesystem, allowlist network, no secrets, unbounded |
 | `wsl` | the [WSL sandbox](#wsl-sandbox), a candidate: workspace filesystem, allowlist network, no secrets, unbounded |
 
@@ -66,6 +66,17 @@ the opt-in live suite (`TESOTA_LIVE_SANDBOX=1`) checks that neither the
 `agent` user nor root can reach the host outside the workspace or pass the
 network allowlist. The sandbox is created per workspace and removed when the
 session closes or the workspace is pruned.
+
+Its network is declared `open` for now (decision 044). With the corrected
+`network_direct`, a client that ignored the proxy opened a TCP connection.
+Docker documents a transparent proxy that allows a TCP connection only when a
+policy rule matches the destination, but not what a refused connection
+receives first, so the control cannot tell the proxy from the destination.
+Until a controlled server shows whether anything reaches it, Docker
+Sandboxes is not a place where commands run without asking; there is no
+Docker with approval either, so its sessions run on this computer and ask.
+`tesota sandbox`, `tesota setup` and `/sandbox` say why a ready provider is
+not used when it does not confine files or network.
 
 Every check runs with a 15-minute limit, and only the end of its output is
 kept.
@@ -430,7 +441,9 @@ that does not ask for them sends setup back to its script, and one that asks
 for them while interop is still on or a drive, such as `/mnt/c`, is still
 another user's is applied by restarting the distribution
 (`wsl.exe --terminate tesota`). Only Windows' drives count, as WSL tells them
-from its other shares, such as its GPU drivers, which stay root's.
+from its other shares, such as its GPU drivers, which stay root's
+(`distributionStep`, `settingsAsked` and `countsAsDrive` in
+`src/verification/wsl-settings-rule.ts`, proved).
 Tesota starts `wsl.exe` from the Windows system directory, never by name, and
 its process as that user, never root, with Node from the Windows drive's
 copy of Tesota. Keeping a distribution of its own leaves the operator's

@@ -131,12 +131,13 @@ function executionPlace(execution: SessionExecution): string {
   return `in ${SANDBOX_NAMES[execution.provider.name]?.described ?? execution.provider.name}`;
 }
 
-/** Why a named sandbox is not in use here: its missing steps, or the controls that failed on this computer. */
+/** Why a named sandbox is not in use here: its missing steps, the controls that failed on this computer, or what it does not confine. */
 function unavailableReason(execution: SessionExecution): string {
   if (execution.commands === "sandbox") return "";
   return execution.missing.flatMap((entry) => {
     const failed = entry.qualification?.results.filter((result) => !result.passed) ?? [];
     if (failed.length > 0) return failed.map((result) => `its controls failed on this computer (${result.detail})`);
+    if (entry.unconfined !== undefined) return [`it is ready, but ${entry.unconfined}`];
     return entry.readiness.ready ? [] : entry.readiness.steps.map((step) => step.description);
   }).join("; ");
 }

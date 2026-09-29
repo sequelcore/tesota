@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import * as z from "zod";
 import { dockerSandboxesProvider } from "./docker-sandboxes-environment.js";
-import type { ExecutionProvider, ProviderReadiness, SetupAction, SetupStep } from "./execution-environment.js";
+import type { EnvironmentGuarantees, ExecutionProvider, ProviderReadiness, SetupAction, SetupStep } from "./execution-environment.js";
 import { QualificationStore, type QualificationRecord, qualifyProvider } from "./execution-qualification.js";
 import { hostProvider } from "./host-environment.js";
 import { mxcProvider } from "./mxc-environment.js";
@@ -77,7 +77,16 @@ const allProviders: readonly ExecutionProvider[] = [mxcProvider, wslProvider, do
 export type SessionExecution =
   | Readonly<{ commands: "sandbox"; provider: ExecutionProvider }>
   | Readonly<{ commands: "host"; provider: ExecutionProvider; missing: readonly Readonly<{ provider: string;
-      readiness: ProviderReadiness; qualification?: QualificationRecord }>[] }>;
+      readiness: ProviderReadiness; qualification?: QualificationRecord; unconfined?: string }>[] }>;
+
+/** What a ready provider does not confine, so its commands would still ask first; undefined when it confines both. */
+export function unconfinedBy(guarantees: EnvironmentGuarantees): string | undefined {
+  const files = guarantees.filesystem !== "workspace";
+  const network = guarantees.network !== "allowlist";
+  if (files && network) return "it confines neither files to the workspace nor the network to an allowlist";
+  if (files) return "it does not confine files to the workspace";
+  return network ? "it does not confine the network to an allowlist" : undefined;
+}
 
 /** A provider's qualification on this machine, or undefined when it has none to run. */
 export type Trust = (provider: ExecutionProvider) => Promise<QualificationRecord | undefined>;
@@ -107,14 +116,16 @@ export async function qualifyOnThisMachine(provider: ExecutionProvider, onProgre
  */
 export async function chooseSessionExecution(candidates: readonly ExecutionProvider[] = providersFor(readSandboxPreference()),
   fallback: ExecutionProvider = hostProvider, trust: Trust = (provider) => qualifyOnThisMachine(provider)): Promise<SessionExecution> {
-  const missing: { provider: string; readiness: ProviderReadiness; qualification?: QualificationRecord }[] = [];
+  const missing: { provider: string; readiness: ProviderReadiness; qualification?: QualificationRecord; unconfined?: string }[] = [];
   for (const provider of candidates) {
     const readiness = await provider.readiness().catch((): ProviderReadiness => ({ ready: false,
       steps: [{ description: "The provider could not report whether it is ready" }] }));
     const qualification = readiness.ready ? await trust(provider).catch((): QualificationRecord | undefined => undefined) : undefined;
     const guarantees = qualification?.guarantees ?? provider.guarantees;
     if (runsWithoutAsking(readiness.ready, guarantees.filesystem, guarantees.network)) return { commands: "sandbox", provider };
-    missing.push({ provider: provider.name, readiness, ...qualification === undefined ? {} : { qualification } });
+    const unconfined = readiness.ready ? unconfinedBy(guarantees) : undefined;
+    missing.push({ provider: provider.name, readiness, ...qualification === undefined ? {} : { qualification },
+      ...unconfined === undefined ? {} : { unconfined } });
   }
   return { commands: "host", provider: fallback, missing };
 }
@@ -195,6 +206,7 @@ export function formatSetup(execution: SessionExecution): string {
       lines.push(`${entry.provider}:`, ...failed.map((result) => `  - Its controls failed on this computer: ${result.detail}`));
       continue;
     }
+    if (entry.unconfined !== undefined) lines.push(`${entry.provider}:`, `  - Ready, but ${entry.unconfined}`);
     if (entry.readiness.ready) continue;
     lines.push(`${entry.provider}:`);
     for (const step of entry.readiness.steps) {

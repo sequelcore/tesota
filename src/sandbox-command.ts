@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import type { ExecutionProvider, ProviderReadiness } from "./execution-environment.js";
+import type { EnvironmentGuarantees, ExecutionProvider, ProviderReadiness } from "./execution-environment.js";
 import type { QualificationRecord } from "./execution-qualification.js";
 import { chooseSandboxPreference, chooseSessionExecution, DEFAULT_SANDBOX_FILE, packageCacheDirectory, providersFor,
   qualifyOnThisMachine, readSandboxPreference, SANDBOX_NAMES, SANDBOX_PREFERENCES, type SandboxPreference,
-  type Trust } from "./execution-providers.js";
+  type Trust, unconfinedBy } from "./execution-providers.js";
 import { dockerSandboxesProvider } from "./docker-sandboxes-environment.js";
 import { hostProvider } from "./host-environment.js";
 import { mxcProvider } from "./mxc-environment.js";
@@ -38,15 +38,16 @@ const described: Readonly<Record<SandboxPreference, string>> = {
 const usage = `Usage: tesota sandbox [use <${SANDBOX_PREFERENCES.join("|")}> | clean]\n`;
 const hostLine = "this computer, always available; asks before each command";
 
-function status(readiness: ProviderReadiness, qualification: QualificationRecord | undefined): string {
+function status(readiness: ProviderReadiness, qualification: QualificationRecord | undefined, declared: EnvironmentGuarantees): string {
   if (!readiness.ready) {
     return `not ready: ${readiness.steps.map((step) => `${step.description}${step.command === undefined ? "" : ` (${step.command})`}`).join("; ")}`;
   }
-  if (qualification === undefined) return "ready";
+  const unconfined = unconfinedBy(qualification?.guarantees ?? declared);
+  if (qualification === undefined) return unconfined === undefined ? "ready" : `ready, but ${unconfined}; commands ask first`;
   const failed = qualification.results.filter((result) => !result.passed);
   const day = qualification.at.slice(0, 10);
-  return failed.length === 0 ? `ready; every control passed on this computer on ${day}`
-    : `ready, but its controls failed on this computer on ${day}: ${failed.map((result) => result.detail).join("; ")}`;
+  return failed.length === 0 ? `ready; every control passed on this computer on ${day}${unconfined === undefined ? ""
+    : `, but ${unconfined}; commands ask first`}` : `ready, but its controls failed on this computer on ${day}: ${failed.map((result) => result.detail).join("; ")}`;
 }
 
 async function listing(dependencies: SandboxCommandDependencies): Promise<string> {
@@ -58,7 +59,7 @@ async function listing(dependencies: SandboxCommandDependencies): Promise<string
       steps: [{ description: "It could not report whether it is ready" }] }));
     const qualification = readiness.ready ? await dependencies.trust(provider).catch(() => undefined) : undefined;
     const inUse = chosen.provider === provider ? "in use: " : "";
-    rows.push(`  ${(SANDBOX_NAMES[provider.name]?.choice ?? provider.name).padEnd(9)}${inUse}${status(readiness, qualification)}`);
+    rows.push(`  ${(SANDBOX_NAMES[provider.name]?.choice ?? provider.name).padEnd(9)}${inUse}${status(readiness, qualification, provider.guarantees)}`);
   }
   rows.push(`  ${"host".padEnd(9)}${chosen.commands === "host" ? "in use: " : ""}${hostLine}`);
   return `Where commands run (${preference}: ${described[preference]}):\n${rows.join("\n")}\n` +
