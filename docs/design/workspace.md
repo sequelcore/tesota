@@ -19,7 +19,7 @@ submodules stay uninitialized; application refuses changes to either.
 
 ## A folder as the source
 
-Decision 032. A directory that is not in a Git repository is worked on as a
+A directory that is not in a Git repository is worked on as a
 **folder**, after the person agrees once: `tesota` says how many files it
 holds and how large they are, and that nothing in it changes until a
 reviewed result is applied. Tesota then keeps a private Git view of the
@@ -66,7 +66,7 @@ requests, never the agent's own account of them.
 
 ## Applying and rejecting
 
-Decision 042. Application writes exactly the reviewed tree, and only onto the
+Application writes exactly the reviewed tree, and only onto the
 source it was checked against (`src/workspace-apply.ts`, with its proved rules
 in `src/verification/application-rule.ts`).
 
@@ -165,5 +165,3 @@ serialized.
   accident:** what is applied is exactly what was checked; the operator's own
   edits are never overwritten, even one made during application; and a
   partial effect is undone or recorded as recovery required, never silent.
-  The [application landscape](../research/application-landscape.md) compares
-  other harnesses and the incidents behind these choices.

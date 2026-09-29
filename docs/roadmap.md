@@ -1,262 +1,83 @@
 # Roadmap
 
-This page owns product status and priority. The [design](design/overview.md)
-describes how each built capability works, and the [decisions](decisions.md)
-record why.
+This page owns current status and priorities. The [design](design/overview.md)
+describes built behavior; the [guide](guide/using-tesota.md) explains how to use
+it. Earlier proposals and evaluations remain in Git history.
 
 ## Status
 
-Tesota is pre-release. A terminal shell runs a Pi coding agent in a separate
-workspace per session and names each session after its work. Commands run
-without asking in the WSL sandbox on Windows, and with the operator's
-approval on the host otherwise. While Docker Sandboxes'
-network allowlist is reviewed (decision 044), choosing it runs commands on
-the host with approval, not in its microVM. Each result is checked by the operator's commands, Oxlint and
-LemmaScript on the exact tree, reviewed by read-only reviewers whose findings
-face a refuter and an origin check, and corrected by the agent at most twice
-before the operator applies, rejects or keeps working; the answer check's
-first pass, on turns that change no files, can use TypeSafe's Jev with the
-operator's own key. Each role can use its own model, through the operator's
-ChatGPT plan, an Anthropic API key, the operator's own Claude Code,
-OpenRouter or OpenCode, and the agent can ask read-only explorers and consult
-an advisor, both off by default.
-
-The complete loop has run on throwaway and evaluation repositories; daily use
-on a real project has not started.
-
-## Built
-
-| Capability | Built | Design |
-| --- | --- | --- |
-| Workspaces with uncommitted changes, updates from the source, guarded application, pruning | 2026-09-25 | [Workspace](design/workspace.md) |
-| Execution environments, Docker Sandboxes, commands in a sandbox or on this computer, network questions, sandbox preparation and `tesota setup` | 2026-09-25 | [Execution](design/execution.md) |
-| Request record, flags, verifiers with claims, reviewer and lenses, ClaimCheck, refuter, origin check, correction loop with fix validation, assurance journal, forecast, `live:review` | 2026-09-25 | [Assurance](design/assurance.md) |
-| Explorers, models by role, `tesota roles`, `tesota models`, `live:delegation` | 2026-09-25 | [Agents](design/agents.md) |
-| Claude through an Anthropic API key or the operator's Claude Code | 2026-09-25 | [Agents](design/agents.md#model-routes) |
-| OpenRouter, OpenCode Zen and OpenCode Go as routes, with OpenRouter's browser sign-in | 2026-09-26 | [Agents](design/agents.md#model-routes) |
-| One model-session contract for every engine, with shared and live suites, time limits and token kinds | 2026-09-26 | [Agents](design/agents.md#the-engine-contract) |
-| Responsive newest-first session navigation with precise lifecycle states and a narrow-terminal overlay | 2026-09-26 | [Sessions](design/sessions.md#the-shell) |
+Tesota is an unpublished, pre-release terminal coding agent. It works in a
+separate workspace per session, runs checks and review on the resulting tree,
+and lets the operator apply or reject the change. On Windows, commands can run
+in a qualified WSL sandbox; otherwise host commands ask for approval. The
+complete loop has run on throwaway and evaluation repositories. Daily use on a
+real project has not started. See the [user guide](guide/using-tesota.md) for
+the workflow and limits.
 
 ## Next
 
-### 1. Features before daily use
+### 1. Prepare the release and exercise the current workflow
 
-The operator is adding further Tesota features before using it on a real
-project. They are listed here as they are chosen.
+- Finish release identity: clear the name, domain and social handles; create
+  the palo fierro mark and terminal startup screen. Public app listing on
+  OpenRouter follows launch preparation. [Overview](design/overview.md#name-and-identity)
+- Use the WSL sandbox as the default on a real project, including its toolchain
+  preparation and the option to approve one command on the host. Correct the
+  obstacles real use reveals. [Execution](design/execution.md)
+- Evaluate scope behavior on cases that tempt the agent to make unrelated
+  changes. The reviewer's extra-work check is built, but
+  the working agent's prompt has no measured scope intervention yet. Register
+  the cases before changing it; use `live:agent` and record the result with
+  the change. [Issue #165](https://github.com/sequelcore/tesota/issues/165)
+- Exercise model routes that have not completed a live request. OpenCode Zen
+  restricts its free models to its own client, and OpenCode Go requires an
+  active subscription. Do not present either route as live-qualified until it
+  passes the opt-in live contract suite. [Model routes](design/agents.md#model-routes)
 
-- **Web access** for the agent and explorers (decision 024,
-  [design](design/agents.md#web-access)): built 2026-09-26, so Tesota can
-  research what the features after it need.
-- **Switching the agent's model in a session, and handing off** to a fresh
-  conversation (decision 026,
-  [design](design/agents.md#changing-the-agents-model)): built 2026-09-26.
-- **An advisor** the agent consults at hard decisions (decision 027,
-  [design](design/agents.md#the-advisor)): built 2026-09-26, off by default.
-- **Reasoning levels per role** (decision 029,
-  [design](design/agents.md#reasoning-levels)): built 2026-09-26.
-- **A sandbox without Docker** (decisions 030, 043, 047 and 048,
-  [design](design/execution.md#wsl-sandbox)): commands confined without a
-  question per command, qualified on each machine. First built on Microsoft
-  MXC, 2026-09-27; a WSL sandbox built 2026-09-28 replaced it as Windows'
-  only sandbox, 2026-09-29, after it failed 1 of Tesota's tests where MXC
-  failed 44, in half the time. A repository's pinned runtimes, mise files
-  and setup script run inside it since 2026-09-29, with the toolchain hosts
-  open only during setup. One command at a time runs on this computer with
-  the operator's approval or a narrow saved rule, which replaced "always this
-  session", and Java, Go, Rust, Python, Ruby and .NET are found from their
-  project files without declaring them, since 2026-09-29 (decision 049).
-  Next: real use as the default. Linux and macOS
-  are paused until real use gives feedback.
-- **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
-  built 2026-09-26; OpenRouter's contract suite passes live on a free model.
-  OpenCode refuses Zen's free models to clients other than its own, and Go
-  answers only a key whose workspace has an active Go subscription, so
-  neither OpenCode route has run a request yet; the routes' models are
-  unmeasured as Tesota's roles, apart from Nemotron as a free judge.
-- **Work beyond code** (decision 012's direction): a first real user works in
-  public administration, with documents, spreadsheets, presentations and
-  research, and the operator also uses agents for answers and actions on
-  live systems. The [general work landscape](research/general-work-landscape.md)
-  gathers how other agents serve that work, and decision 032 plans it
-  ([design](design/work.md)): changes, answers and actions as kinds of
-  result, folders as workspaces, and gates of stated strength that people
-  can define. Folders and documents come first, then answers, then actions;
-  her first real tasks decide the order within each. A plain folder as a
-  workspace was built 2026-09-27
-  ([design](design/workspace.md#a-folder-as-the-source)); documents and
-  gates are next.
-- **The agent's plan** (decision 033, [design](design/agents.md#the-plan)):
-  built 2026-09-26, shown above the prompt as the agent's account.
-- **Obligations** (decision 034, [design](design/assurance.md#obligations)):
-  built 2026-09-26; the reviewer checks what each request asks for and each
-  plan step the agent marked done, the refuter tests each gap, and confirmed
-  gaps go to correction; turns that change no files are checked the same
-  way. Steps confirmed by gates come with gates.
-- **Jev for the answer check's first pass** (decision 035,
-  [design](design/assurance.md#obligations)): built 2026-09-27; the `triage`
-  role may use TypeSafe's Jev with the operator's own key, pinned to
-  `typesafe:jev-1.13.0`, and skips a turn only below a 0.2 probability of
-  being checkable. An error, a refusal, no key or no answer within ten
-  seconds decide nothing, so the full check runs.
-- **Session names** (decision 036, [design](design/sessions.md#the-shell)):
-  built 2026-09-27; the shortened first request names a session at once,
-  then the `namer` role writes a short title in the background, and
-  `/rename` sets or suggests a name. The operator's name always wins.
-- **Ideas to bring from `feat/evidence-attribution`**, a branch from
-  2026-09-25 left unmerged, about 130 commits behind `dev`, whose decisions
-  022 and 023 collide with `dev`'s. Each is to be rebuilt on `dev` with its
-  tests, not merged:
-  - **Failed checks compared with the base** (decision 039,
-    [design](design/assurance.md#verifiers)): built 2026-09-28; a failed
-    check runs again on the base, only a failure the change caused goes back
-    to the agent, and a correction round keeps the base.
-  - **Failed checks compared test by test** (decision 040,
-    [design](design/assurance.md#verifiers)): built 2026-09-28; a check may
-    name its JUnit XML reports, and a test that fails only with the change, or
-    that the change added, sends back a check the base fails too.
-  - **Safer application** (decision 042,
-    [design](design/workspace.md#applying-and-rejecting)): built 2026-09-28;
-    application stops when any source file changed since the base, keeps
-    each replaced original, installs without replacing, undoes what it wrote
-    on a stop, and marks a partial effect "recovery required" for
-    `tesota recover`. The
-    [application landscape](research/application-landscape.md) compares
-    other harnesses and the incidents behind it.
+### 2. Extend the kinds of work
 
-  Two measured runs on the branch are in [findings](findings.md).
-- **Work beyond the request, and answers longer than needed** (issue #165,
-  with the evidence and a recommendation). Tesota flags changes to what gets
-  checked, deepens review for large or sensitive changes, and asks the
-  reviewer to mark work beyond what was asked as the operator's call; but
-  nothing measures whether that marking works, obligations catch only missing
-  work, and the working agent's prompt says nothing about scope, abstaining
-  or length. Other harnesses steer these with instructions and enforce only
-  machine-checkable boundaries; no study found shows that plan approval, a
-  file or line budget, or a prompted "simplify" pass helps, and trimming
-  patches by prompt lost resolved tasks (RECAP). Framing "nothing to change"
-  as success cut unneeded changes sharply (FixedBench). In order, each step
-  only if the one before shows the need:
-  1. Registered cases, before any run. For review, `live:review --set=scope`
-     (built 2026-09-28): an out-of-scope refactor and an unrequested
-     abstraction that the review should mark `operator`, a quick hack that
-     passes the checks, a minimal control and a large but necessary one.
-     Adopted when every extra is marked `operator` in 2 of 2 runs, neither
-     control draws a finding, and the eight core cases lose nothing. For the
-     working agent, paired runs before and after a prompt change, two each:
-     an already fixed request (no change, with evidence), a partly fixed one
-     (over-abstention), an unfixed control, and about 15 requests measured in
-     words of the final reply, median and 90th percentile. Adopted when
-     correct abstention rises, partly fixed resolution does not fall, median
-     words fall and no obligation is lost. Measured 2026-09-28 on two
-     setups through OpenRouter ([findings](findings.md)): neither marked
-     either extra, so today's reviewer does not flag work beyond the
-     request and step 3 has its evidence. The agent's cases run with
-     `live:agent` (built 2026-09-29).
-  2. A short block in the working agent's prompt, measured on those cases:
-     "nothing to change" framed as success, one sentence on scope, and
-     leading with the result. The baseline (2026-09-29) left every fix case
-     right, a ceiling, so only the sentence on leading with the answer was
-     tried; it cut the median reply from 37 to 30 words with every fact and
-     fix kept, and is adopted (decision 046). "Nothing to change" waits for
-     harder already fixed cases. The scope sentence cannot be measured yet:
-     `live:agent` has no case that tempts the agent beyond the request, such
-     as a fix next to code that invites a refactor, so that case comes first.
-  3. The other direction in review: each change no request or claimed step
-     needs is reported for the operator's call, refuted like any finding,
-     never sent back, since an extra may be welcome. Built and adopted
-     2026-09-29 (decision 045) as the simplest form, instructions to the
-     main reviewer and the refuter rather than a new kind of obligation: it
-     met every registered threshold in two runs, after edge-case tests had
-     first been called extras.
-  4. A deterministic hint: changed files that no request or plan step names,
-     shown for attention only, since legitimate changes often touch them. Not
-     built; step 3 already marks extras, so it waits until real use shows
-     review missing them.
+The current loop handles file changes. A plain folder can already be a source;
+documents, user-defined gates, source-checked answers and approved actions
+are planned in that order, with real users' tasks deciding the detail. Do not
+describe these planned results as release features.
 
-  Deferred until daily use shows drift: a frame of files each plan step
-  declares, a `scope` role, plan approval (decision 025 has no plan modes),
-  an automatic "simplify" correction and native verbosity settings. Today
-  scope is caught after the work, in review, not prevented during it. The
-  frame is the preventive step, and its design is in the
-  [recommendation on issue #165](https://github.com/sequelcore/tesota/issues/165#issuecomment-5873316043):
-  an optional list of files per plan step, an extension that must give a
-  reason, files changed by commands compared after each one, and a proved
-  rule that files no step names are unchanged, checked on the final tree.
+### 3. Measure against public benchmarks
 
-### 2. Measurement on public benchmarks
+Score at least two reviewer setups on SWE-PRBench's 100-pull-request split
+with its official judge, before and after refutation, and record the results
+with the evaluation change. `live:prbench` and the scorer are built; scores are
+not yet recorded here. Then compare the whole loop against plain Pi on one
+model through Terminal-Bench and Harbor. That comparison needs a noninteractive
+way to run Tesota. [Evaluation method](development.md#evaluations)
 
-Measure Tesota against benchmarks it did not write
-([research](research/evaluation-landscape.md), decision 023). First
-SWE-PRBench for review: `live:prbench` and the official scorer are built;
-the 100-PR split is scored with the official judge, before and after
-refutation, for the default reviewer and the operator's chosen one. Then
-Terminal-Bench through Harbor for the whole loop against plain Pi on the same
-model, which needs Tesota to run without its interactive shell, work the
-session service also needs.
+### 4. Use Tesota daily
 
-**Done when:** SWE-PRBench scores for at least two reviewer setups are
-recorded in findings with the official judge, and Terminal-Bench compares
-Tesota with plain Pi on one model.
+Use it on a private project and then on Tesota's own changes. Revisit explorer
+and reviewer choices with evidence from those sessions. A normal week of real
+changes should include checks, review, correction where needed, and the
+operator's decision on the complete result. Passing checks and a clean review
+remain separate from human acceptance.
 
-### 3. Daily use on a real project
+### 5. Keep sessions after the terminal closes
 
-Use Tesota on a private project, then on Tesota's own changes, and fix what
-gets in the way. Explorers are revisited with evidence from long sessions, and
-reviewer and refuter models with the harder cases real work produces.
-
-**Done when:** a normal week of real changes goes through Tesota, with
-verification, review, a correction round and the operator's decision on the
-whole record.
-
-### 4. Session service and remote access
-
-The [session service](design/sessions.md#planned-a-session-service): sessions
-outlive the terminal, and the operator reaches them over SSH on a tailnet.
-Building it waits for step 3.
-
-The service owns every session's resources for several clients, which
-decides what it runs on. Before building it, the session lifecycle is built
-twice, on Effect v4's scopes and structured concurrency and on the platform's
-own primitives that Tesota uses today (decision 038), and measured against
-the same fault-injection tests with criteria registered first: exact outcome
-classification and nothing left open for every failure or stop injected at
-each acquisition step, then code size, the time and first-pass correctness of
-a change made by the operator and by a coding agent, and readability for a
-contributor who does not know Effect
-([Effect runtime landscape](research/effect-runtime-landscape.md)). Effect is
-adopted only if it wins on that evidence and 4.0 is stable by then.
-
-**Done when:** over SSH from another device on the tailnet, the operator
-attaches to running sessions, answers a pending question, disconnects
-mid-work, and finds the work finished on reconnecting.
+The proposed session service would let clients attach to long-lived sessions
+over local IPC and reach them remotely through SSH on a tailnet. It waits for
+daily use. Before choosing an orchestration runtime, compare Effect v4 and
+the current platform primitives
+against the same registered fault-injection cases; adopt Effect only if it wins
+on observed outcomes and is stable.
 
 ## Later
 
-- Read `.devcontainer/devcontainer.json` as a toolchain definition, so
-  repositories that already describe their environment need nothing
-  Tesota-specific.
-- A non-TypeScript repository and another platform.
-- More execution providers once they pass the same live controls: remote
-  machines.
-- A relay that offers Jev to users without their own TypeSafe key, once
-  there are real users and TypeSafe agrees (decision 035).
-- A review queue and notifications across sessions.
-- Workflow profiles that choose verifiers, reviewers and rounds per
-  repository, once two real alternatives exist.
-- Web evidence in review, once real use shows reviews missing errors that
-  only current documentation would catch: reviewers read only
-  operator-pinned documentation sites, through an explorer, and every page
-  they cite is saved with the review, so the refuter checks a web-based
-  finding against the same saved pages and the review stays reproducible.
-  Builds on web access (decision 024).
-- A Java backend in the monorepo of a first user will need Java checks in the
-  sandbox, per-part checks and nested instructions.
-
-## Stopped
-
-- **Gentle AI's review as a further reviewer**, 2026-09-25, before any code:
-  its RDD is a complete assurance transaction, with its own consent, refuter,
-  correction and authority, rather than a reviewer that returns findings, so
-  integrating it would nest a second assurance loop inside Tesota's. Its ideas
-  are adopted in the [assurance design](design/assurance.md). Details are in
-  the [review landscape](research/agent-review-landscape.md#spike-result-2026-09-25).
+- Read `.devcontainer/devcontainer.json` as a repository toolchain definition.
+- Exercise a non-TypeScript repository and another operating system.
+- Add remote execution providers only after they pass the same live controls.
+- Consider a Jev relay only with real users and TypeSafe's agreement.
+- Add a review queue, cross-session notifications, or workflow profiles when
+  actual use establishes their need.
+- Add pinned web evidence to review only if real reviews miss errors that
+  require current documentation.
+- Add executable probes for findings the refuter cannot settle if evaluations
+  show those findings in practice.
+- Evaluate document gates and nested instructions with the first user's Java
+  backend and document tasks.

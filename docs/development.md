@@ -61,13 +61,13 @@ ignored `live-runs/` directory.
 
 Run the relevant evaluation before and after a change to a reviewer, the
 refuter, origin checking, explorers, their prompts or a role's model, and
-record the result in [findings](findings.md); a change that lowers precision
+record the result with the change; a change that lowers precision
 or adds cost without a gain is not adopted. `live:review`'s eight candidates
 were written with Tesota's prompts and every model finds their defects, so
 they check Tesota's machinery, not which model or prompt reviews better; that
 is SWE-PRBench's job.
 
-**SWE-PRBench** ([research](research/evaluation-landscape.md)) scores
+**SWE-PRBench** scores
 Tesota's review against human reviewers' comments on 100 real pull requests
 with the benchmark's own code, pinned at pipeline v0.4.1 (commit `379f0bf`).
 Set it up once under the ignored `live-runs/swe-prbench/`:
@@ -109,17 +109,6 @@ Changes to verification rules, evidence formats, permissions or acceptance
 criteria need rationale and checks at the affected boundary. A change must not
 appear successful because it removed the condition that detected a failure.
 
-## Reusing Kiln
-
-Kiln is a reference, not a base. Study its regression oracles and failure
-cases first, then its invariants; reuse a code fragment only when a matched
-comparison shows it costs less than a Tesota-native version, and a whole
-module only with an independently buildable boundary and a current Tesota
-consumer. Reused code records its source commit and path, adaptations,
-attribution and license obligations, and gets its own Tesota test. Kiln's
-roadmap and private state are not Tesota's. See the
-[Kiln reference](research/kiln.md).
-
 ## Branches
 
 `main` is the stable default branch and `dev` the protected integration
@@ -128,8 +117,7 @@ pull request; integrated increments move from `dev` to `main` through a pull
 request with a merge commit. A hotfix starts from `main` and is merged back
 into `dev` promptly. Both branches require the Ubuntu and Windows checks, an
 up-to-date pull request and resolved conversations, and forbid force pushes
-and deletion. The protected tag `kiln-legacy-2026-09` holds Kiln's final
-development state; historical Kiln inspection uses it, never `dev`.
+and deletion.
 
 ## Documentation
 
@@ -142,20 +130,16 @@ evidence matters, then mechanism, and never claims more than was exercised.
 | --- | --- |
 | Orientation | [README](../README.md) |
 | The user workflow | [Using Tesota](guide/using-tesota.md), [authentication](guide/authentication.md), [choosing models](guide/choosing-models.md) |
-| Current design and its rationale | [Design](design/overview.md) |
-| Consequential decisions, in order | [Decisions](decisions.md) |
+| Built behavior and its rationale | [Design](design/overview.md); planned sections are labelled |
 | Status and priorities | [Roadmap](roadmap.md) |
-| What experiments and evaluations established | [Findings](findings.md) |
-| Dated research that informed decisions | [Research](research/) |
 | Build, test and contribution practice | This page |
 | Agent working instructions | [AGENTS.md](../AGENTS.md) |
 
-A consequential decision gets an entry in the decision log and its substance
-in the design document it changes; design documents describe what is built,
-and mark what is planned. Record a live observation as a short entry in
-findings: what was tried, the outcome and the lesson. Research pages are dated
-evidence and are not kept current; do not add protocols, transcripts or
-machine evidence to the repository.
+Put the current rule in its owning design page and mark proposals explicitly.
+The roadmap contains only current status and unfinished priorities. Record
+evaluation results with the change that used them; Git retains the earlier
+proposals and observations. Do not add protocols, transcripts or machine
+evidence to the repository.
 
 Keep credentials, conversation exports, scratch notes and session bookkeeping
 outside tracked documentation, and do not use Kiln's private state namespace.

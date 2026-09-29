@@ -1,11 +1,10 @@
 # Overview
 
-**Tesota is an open-source, verification-first agent for work that carries
-its evidence.** You
-describe what you need, a coding agent does it in a separate copy of your
-repository, and you review the exact changes and what the checks establish
-before anything reaches your files. The [roadmap](../roadmap.md) owns status
-and priorities; this page and its siblings describe the design as it is.
+**Tesota is an open-source coding agent that checks and reviews changes before
+you apply them.** It works in a separate copy of your project. You inspect
+the exact changes, check results and review before anything reaches your files.
+The [roadmap](../roadmap.md) owns status and priorities; this page and its
+siblings describe what is built unless a section explicitly says planned.
 
 | Design | Covers |
 | --- | --- |
@@ -13,8 +12,7 @@ and priorities; this page and its siblings describe the design as it is.
 | [Execution](execution.md) | Where commands run, a sandbox or this computer, when the operator is asked, and network |
 | [Assurance](assurance.md) | Checks, verifiers, review, refutation, correction, the journal and the forecast |
 | [Agents](agents.md) | The working agent, explorers, the advisor and the model for each role |
-| [Sessions](sessions.md) | The shell, saved sessions, and the planned session service |
-| [Work and results](work.md) | Planned: changes, answers and actions as results, folders, gates and documents |
+| [Sessions](sessions.md) | The shell and saved sessions |
 
 ## Principles
 
@@ -56,10 +54,8 @@ and OpenCode's Zen and Go through Pi with their keys
 Every role runs through one session interface over the two engines; adding a
 route means re-exercising the roles on it.
 
-Pi was chosen over extracting Kiln's authentication and provider code because
-Pi already supplies the login, token refresh and agent mechanics, and keeping
-Pi types inside adapters contains a future replacement. Revisit that only if
-a concrete unsupported behavior blocks the product.
+Pi supplies the login, token refresh and agent mechanics. Pi types stay inside
+adapters so a concrete unsupported behavior can be addressed at that boundary.
 
 ## Direction
 
@@ -80,10 +76,6 @@ presents a passing check as proof that a change does what was asked.
 
 ## Name and identity
 
-Decisions 006 and 010; the original records, with the positioning review
-behind them, are in Git at the commit the [decision log](../decisions.md)
-names.
-
 **The name.** Tesota takes its name from *Olneya tesota*, the desert
 ironwood, *palo fierro* in Spanish, a tree of the Sonoran Desert
 ([Arizona-Sonora Desert Museum](https://www.desertmuseum.org/programs/ifnm_ironwoodtree.php)).
@@ -96,34 +88,23 @@ For the project, the name suggests **a durable foundation that supports
 growth**. That is its intended meaning, not a literal translation, a
 dependability claim or an architecture term.
 
-**Why a new name.** Tesota replaced Kiln (decision 001). Kiln was meant to
-support its own development, but its scope and infrastructure grew faster
-than an everyday workflow reliable enough to depend on, and adding
-capabilities did not close that gap. Tesota reverses the order: a small loop
-that works end to end comes first, and a capability is added when a real use
-needs it and kept when evidence shows it helps. The name records that
-choice, the foundation before the growth it is meant to carry. Kiln's code,
-tests and lessons remain in the repository's history as a reference, not as
-a base or a roadmap ([Kiln reference](../research/kiln.md)).
+**What Tesota is called.** For the release, call it an **open-source coding
+agent** and explain its distinguishing workflow directly:
 
-**What Tesota is called.** The category is **verification-first agent**, and
-the description:
+> Tesota checks and reviews changes before you apply them. It works in a
+> separate copy of your repository and shows the diff, checks and independent
+> review so you can decide what reaches your files.
 
-> Tesota is an open-source, verification-first agent designed to carry work
-> from intent to an inspectable result, with evidence bound to what it
-> actually produced.
-
-The primary line is **Work that carries its evidence.** Where the context is
-explicitly software, **verification-first coding agent** and **Build the
-change. Keep the evidence.** are its translations. Software development is
-the first proving ground, not the permanent category: public text says so,
-and separates the long-term direction from what the pre-release does today.
+The terminal's optional short line is **Changes stay separate until you apply
+them.** It describes the current workflow; it is not a slogan or a claim that
+passing checks prove correctness. Work beyond code remains a direction, not a
+release claim.
 
 **Names of the parts.**
 
 | Name | What it is |
 | --- | --- |
-| **Tesota** | The product and the agent |
+| **Tesota** | The product and the coding agent |
 | `tesota` | The package and the command |
 | **Tesota Shell** | The terminal the command opens ([sessions](sessions.md)) |
 | Pi | The agent engine, not Tesota's identity |
@@ -136,25 +117,6 @@ reliable, autonomous and production-ready are used only where the evidence
 supports that exact wording. Tesota does not claim that other agents lack
 tests, approvals, sandboxes or review; it claims that the path from work to
 evidence to the operator's decision is what it is organized around.
-
-**Positions rejected.**
-
-| Position | Why not |
-| --- | --- |
-| The safest agent | An absolute comparison no evidence supports |
-| A general-purpose agent today | Coding is what it does now; general work is the direction |
-| A coding-only agent | Needlessly closes the direction |
-| A universal agent framework | Promises breadth of infrastructure instead of one coherent experience |
-| An AI verifier | Too narrow: Tesota does the work as well as checking it |
-| A model-agnostic agent | Tesota reaches many models, but its promise is the evidence, not the breadth |
-| An autonomous team | Not built, and against one operator with one writing agent |
-| A wrapper around Pi or Claude Code | They are engines inside a lifecycle Tesota owns |
-
-**Before a public launch.** The name needs trademark, domain and
-social-handle clearance, which has not been done; a web search is not legal
-clearance. Visual identity is open. Tesota also stays out of OpenRouter's
-public app directory until then, which keeps some free models from it
-([agents](agents.md#model-routes)); listing it is part of the launch.
 
 ## Trust
 

@@ -1,9 +1,9 @@
 # Contributing to Tesota
 
-Tesota is an early-stage, verification-first agent. Software development is its
-first proving ground. Contributions are welcome when they advance a demonstrated
-user need without weakening command approval, review of the exact changes,
-evidence integrity or human acceptance.
+Tesota is a pre-release coding agent that checks and reviews changes before
+the operator applies them. Contributions are welcome when they advance a
+demonstrated user need without weakening command approval, review of the exact
+changes, evidence integrity or human acceptance.
 
 ## Before changing code
 
@@ -11,10 +11,6 @@ Read the [design](docs/design/overview.md),
 [roadmap](docs/roadmap.md) and [development guide](docs/development.md). For a
 substantial new capability, open a focused discussion or issue first so its user,
 owner, effect boundary and qualification evidence are explicit.
-
-Kiln is a historical reference, not an inherited roadmap. Follow
-[reusing Kiln](docs/development.md#reusing-kiln) when adapting its code, tests
-or contracts.
 
 ## Development setup
 
@@ -51,19 +47,7 @@ files or retained live-run artifacts.
 
 ## Branch workflow
 
-`main` is the stable default branch and `dev` is the protected integration
-branch. Start ordinary `feature/*`, `fix/*` and documentation branches from
-`dev`, then open a pull request back to `dev`. Both protected branches require
-the repository checks to pass; direct pushes, force pushes and deletion are not
-part of the normal workflow.
-
-Promote an integrated increment with a pull request from `dev` to `main` and a
-merge commit so the long-lived branch ancestry remains explicit. A production
-hotfix starts from `main`, returns to `main` through a pull request, and is then
-merged back into `dev` promptly. Delete short-lived branches after merge.
-
-The protected [`kiln-legacy-2026-09`](https://github.com/sequelcore/tesota/tree/kiln-legacy-2026-09)
-tag, not `dev`, is the canonical final Kiln development reference.
+Start from `dev` and follow the [branch rules](docs/development.md#branches).
 
 ## Pull requests
 

@@ -1,8 +1,6 @@
 # Agents
 
 Tesota runs several model sessions for one request, each in a fixed role.
-Evidence for the choices below is in the
-[delegation landscape](../research/agent-delegation-landscape.md).
 
 ## The working agent
 
@@ -18,12 +16,9 @@ session closes.
 The agent is told not to commit, push or change Git history, and to end each
 turn with what it changed and what the operator should verify. It is told to
 lead with the answer or the result in as few sentences as it needs, without
-restating the question (decision 046). It is the only agent that writes.
+restating the question. It is the only agent that writes.
 
 ### Changing the agent's model
-
-Decision 026; evidence in the
-[model switch landscape](../research/model-switch-landscape.md).
 
 - **A session keeps its agent's model.** The first time its agent starts,
   the session records the model it runs on, from `tesota roles agent`;
@@ -67,7 +62,7 @@ Decision 026; evidence in the
 
 ### The plan
 
-Decision 033. For a request of three or more steps, the agent keeps a
+For a request of three or more steps, the agent keeps a
 **plan** with the `plan` tool (`src/integrations/plan-tool.ts`), as Claude
 Code, Codex (`update_plan`) and OpenCode (`todowrite`) do: it sends every
 step each time, each `pending`, `in_progress`, `done` or `blocked`, and may
@@ -89,10 +84,10 @@ consistent, which Pi's author gives as the reason Pi has no to-do list at
 all.
 
 The review checks each step the agent marked done against the result, with
-the request obligations (decision 034,
-[assurance](assurance.md#obligations)), and the plan then shows what it found
+the request obligations ([assurance](assurance.md#obligations)), and the plan
+then shows what it found
 of each: "held in review", "not held in review" or "review uncertain".
-Planned: a step whose check is a gate (decision 032) shows "verified" when
+Planned: a step whose check is a gate shows "verified" when
 that gate passes on the result.
 
 ## Explorers
@@ -121,15 +116,11 @@ answer. On Pi's routes each explorer's conversation is saved in the
 workspace's `explorers` directory, where the agent cannot reach it; Claude
 Code keeps no conversation for a read-only role.
 
-**Explorers are off by default.** On six questions about this repository,
-asked twice with and without explorers, both stated all 52 expected facts;
-explorers used 2.4 times the tokens and 2.7 times the time. That set does not
-measure long sessions whose context fills, which is where explorers are meant
-to help. `bun run live:delegation` repeats the comparison.
+**Explorers are off by default.** `bun run live:delegation` compares their
+effect on accuracy, time and tokens before the default changes.
 
 ## The advisor
 
-Decision 027; evidence in the [advisor landscape](../research/advisor-landscape.md).
 The advisor is a stronger model the working agent consults at hard decisions,
 off until the operator chooses a model for it (`tesota roles advisor
 <route:model>`), like explorers.
@@ -172,8 +163,8 @@ off until the operator chooses a model for it (`tesota roles advisor
 | `reviewer` | The reviewer, its lenses and ClaimCheck |
 | `refuter` | The refuter |
 | `validator` | The fix validator |
-| `triage` | The answer check's first pass (decision 034); it may also use Jev, a typed decision model (decision 035), and `off` sends every answer to the full check |
-| `namer` | Writes a short title for each new session from its first request (decision 036); `codex:gpt-6-luna@low` by default, and `off` keeps the request as the name |
+| `triage` | The answer check's first pass; it may also use Jev, a typed decision model, and `off` sends every answer to the full check |
+| `namer` | Writes a short title for each new session from its first request; `codex:gpt-6-luna@low` by default, and `off` keeps the request as the name |
 
 Each role uses the model the operator chose in `~/.tesota/models.json`,
 written as `route:model`, and `codex:gpt-6-luna`, the cheapest on the Codex
@@ -182,15 +173,11 @@ model, who pays for it and the model's list price, and
 `tesota roles <role> <route:model>` sets one from the models
 the route offers, or `default` to clear it. An unreadable file is an error,
 not a silent fallback. A role reads its model when it starts work, and review
-measurements record the models so forecasts compare like with like. What the
-labs, benchmarks and practitioners say about choosing them is in the
-[models by role landscape](../research/model-roles-landscape.md).
+measurements record the models so forecasts compare like with like.
 
 ### Reasoning levels
 
-Decision 029; evidence in the
-[reasoning levels landscape](../research/reasoning-levels-landscape.md). A
-choice may end in a reasoning level, `route:model@level` with `low`,
+A choice may end in a reasoning level, `route:model@level` with `low`,
 `medium`, `high`, `xhigh` or `max`, the levels both engines share: Pi's
 thinking level and Claude Code's effort. `tesota roles` and `/model` accept
 only a level the model takes on its route, from Pi's catalogue; through
@@ -206,13 +193,12 @@ measurement yet shows a better level for any role.
 
 ### Judges and their authors
 
-Decision 028. Several roles judge another's output: the reviewer, the
+Several roles judge another's output: the reviewer, the
 validator and the refuter judge the agent's work, the reviewer and validator
 also judge work the advisor's guidance shaped, and the refuter tests the
 reviewer's findings. Evaluators favor their own output even on objective code
-criteria, and their own family less strongly (the
-[models by role landscape](../research/model-roles-landscape.md#the-reviewer)
-has the studies). `tesota roles` lists every such pair that shares a model,
+criteria, and their own family less strongly. `tesota roles` lists every such
+pair that shares a model,
 as a warning, or a lab, as a note, and a choice or a `/model` switch that
 creates one says so (`src/judge-warnings.ts`; the levels are
 `judgeIndependence` in `src/verification/judge-independence.ts`, proved by
@@ -227,9 +213,7 @@ dismissing real defects.
 ## Model routes
 
 A **route** is how Tesota reaches a model and whose account pays for it. Every
-role can use any route. Evidence is in the
-[Claude access landscape](../research/claude-access-landscape.md) and the
-[model access landscape](../research/model-access-landscape.md).
+role can use any route.
 
 | Route | Engine | Signed in by | Paid through |
 | --- | --- | --- | --- |
@@ -243,7 +227,7 @@ role can use any route. Evidence is in the
 Who pays is the route's (`ROUTE_BILLING`); a model's list price is the
 catalogue's.
 
-**Several accounts** (decision 050). The table's routes are each a *kind's*
+**Several accounts**. The table's routes are each a *kind's*
 default route. A route is a kind and one account behind it: the kind
 decides the engine, the models, who pays and each model's lab; the route
 decides only the account. The operator adds routes of the `codex` and
@@ -262,7 +246,7 @@ place only on one account: another route's account needs its own runtime
 or Claude Code process, so it starts a new conversation with the brief. A
 route that a role uses is not removed until the roles choose another.
 
-**What each account has left** (decision 051). `tesota usage` and the
+**What each account has left**. `tesota usage` and the
 shell's Accounts panel ask each route's provider, only when run or opened,
 and show a meter per window or credit: the share left in 20 segments, as
 Codex's `/status` draws it, and when it resets. Codex's windows come from `wham/usage`, the private
@@ -312,7 +296,7 @@ credential store accepts nothing but an API key for `anthropic`, so Pi's own
 claude.ai login, which presents itself as Claude Code, cannot be used through
 Tesota.
 
-**The gateways** (decision 031) serve many labs' models through Pi's own
+**The gateways** serve many labs' models through Pi's own
 providers. OpenRouter names a model `vendor/model`, with a `:variant` such
 as `:free` (`openrouter:qwen/qwen3.8-27b:free`); only that route accepts the
 slash and the variant. Tesota names itself to them, not Pi: OpenCode asks
@@ -348,7 +332,7 @@ one, with `tesota roles` or `/model`, warns and never refuses, as for
 judges. Paid models on these gateways keep nothing or 30 days by their
 stated policies.
 
-A judge's lab (decision 028) is the route's on `codex`, `anthropic` and
+A judge's lab is the route's on `codex`, `anthropic` and
 `claude-code`, OpenRouter's vendor, and the family an OpenCode model's id
 starts with. The same model on another route is the same model
 (`openrouter:anthropic/claude-opus-5.5` is `anthropic:claude-opus-5-5`); a
@@ -357,7 +341,7 @@ warning claims it independent or not.
 
 ### The engine contract
 
-**Every engine holds a role to one contract** (decision 022), owned by
+**Every engine holds a role to one contract**, owned by
 `src/integrations/model-session-contract.ts`. Each clause is checked against
 both engines by `tests/model-session-contract.test.ts`, Pi on its scripted
 faux model and Claude Code through a double of its SDK, and against the real
@@ -406,10 +390,8 @@ exercised live.
 
 ## Web access
 
-Decision 024; evidence in the
-[web access landscape](../research/web-access-landscape.md). The agent and
-explorers can search the web and read pages; reviewers, the refuter and the
-fix validator stay offline, because a page could steer the step that decides
+The agent and explorers can search the web and read pages; reviewers, the
+refuter and the fix validator stay offline, because a page could steer the step that decides
 what reaches the operator, a finding based on a page cannot be checked
 against the code, and a review must give the same verdict on the same
 candidate later.
@@ -422,7 +404,7 @@ candidate later.
   that answer, never the page. An explorer has `web_fetch`, which returns the
   page's text to itself, since an explorer cannot write or run commands. Page
   text therefore reaches only sessions that cannot act. The tools are
-  Tesota's own, so every engine has the same ones (decision 022).
+  Tesota's own, so every engine has the same ones.
 - **Search** (`src/web-search.ts`) sits behind one seam, first implemented
   for a SearXNG instance the operator runs, named in `~/.tesota/web.json`;
   without it, or with an unreadable file, search reports
@@ -457,36 +439,3 @@ candidate later.
 Pages that block automated requests, such as npm's, and pages that build
 their text with JavaScript give little or nothing; both engines' live runs
 met them.
-
-## Why
-
-- **One writer.** Parallel writers fail in every report reviewed: each agent
-  makes decisions the others do not know about. Cognition, which argued
-  against multi-agent systems in 2025, still keeps writes single-threaded in
-  2026 while using separate agents to review and advise.
-- **Explorers for context, not more hands.** A fresh context helps
-  token-heavy reading; Anthropic measured multi-agent research at about 15
-  times the tokens of chat and notes that coding splits into parallel work
-  less than research does.
-- **Visible and bounded explorers.** Pi's author left sub-agents out of Pi
-  because they are invisible and pass context poorly; users of the tools that
-  have them ask mostly for visible cost, permissions that never hang, limits
-  on depth and fan-out, and timeouts.
-- **No shell for explorers.** A command would need the operator's approval
-  from inside another agent's turn, which other harnesses found deadlocks or
-  hangs.
-- **A model per role, chosen by the operator.** Roles need different
-  strengths, a refuter on a different model is less likely to share the
-  reviewer's blind spots, and the operator bears the cost. Public model
-  rankings measure other tasks in other harnesses, so a model is compared with
-  `bun run live:review` before it is adopted for a role.
-- **Claude through Claude Code, not through its credentials.** Anthropic
-  permits a person's subscription in the unmodified Claude Code, including
-  when another program runs it, and forbids third parties from collecting or
-  relaying subscription tokens. Pi's and Hermes' subscription routes do the
-  latter by presenting themselves as Claude Code; Gentle AI and Zed run Claude
-  Code instead. The API route is permitted without conditions.
-- **Tesota's tools inside Claude Code.** Giving a Claude Code session
-  Tesota's tools rather than its own keeps one set of confinement, execution
-  and approval rules for every engine, and keeps the operator's personal
-  Claude Code setup out of Tesota's reviews.

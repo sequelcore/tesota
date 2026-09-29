@@ -3,8 +3,7 @@
 Every command a session runs, the agent's shell commands and the approved
 checks, goes through an **execution environment**. The environment decides
 what a command can reach; the session's **mode** decides whether it runs
-without asking. Evidence for the choices below is in the
-[execution landscape](../research/agent-execution-landscape.md).
+without asking.
 
 ## The interface
 
@@ -51,7 +50,7 @@ tell a sandbox from none.
 | Provider | Guarantees |
 | --- | --- |
 | `host` | host filesystem, open network, no secrets, unbounded |
-| `docker-sandboxes` | workspace filesystem, open network while its allowlist is reviewed (decision 044), no secrets, bounded |
+| `docker-sandboxes` | workspace filesystem, open network while its allowlist is reviewed, no secrets, bounded |
 | `wsl` | the [WSL sandbox](#wsl-sandbox), Windows' default: workspace filesystem, allowlist network, no secrets, unbounded |
 
 The `docker-sandboxes` provider runs each workspace's commands in a Docker
@@ -66,7 +65,7 @@ the opt-in live suite (`TESOTA_LIVE_SANDBOX=1`) checks that neither the
 network allowlist. The sandbox is created per workspace and removed when the
 session closes or the workspace is pruned.
 
-Its network is declared `open` for now (decision 044). With the corrected
+Its network is declared `open` for now. With the corrected
 `network_direct`, a client that ignored the proxy opened a TCP connection.
 Docker documents a transparent proxy that allows a TCP connection only when a
 policy rule matches the destination, but not what a refused connection
@@ -83,19 +82,19 @@ kept.
 
 ## Where commands run
 
-Decision 025. Tesota has no permission modes to switch. Three things that
+Tesota has no permission modes to switch. Three things that
 other harnesses fold into their modes are separate here:
 
 | | Rule |
 | --- | --- |
-| **Where commands run** | In a **sandbox** when a provider is ready and its `workspace` filesystem and `allowlist` network hold on this machine, and on **this computer** (the host) otherwise. The operator's choice (`tesota sandbox`, decision 030) orders the sandboxes; nothing switches it during a session |
+| **Where commands run** | In a **sandbox** when a provider is ready and its `workspace` filesystem and `allowlist` network hold on this machine, and on **this computer** (the host) otherwise. The operator's `tesota sandbox` choice orders the sandboxes; nothing switches it during a session |
 | **When the operator is asked** | Follows from where commands run and is not a setting: on this computer every command asks (yes, always for commands beginning the same way in this repository, or no) unless a rule the operator saved allows it; in the sandbox commands run without asking, a destination the network refused asks, and so does one command the agent asks to run on this computer |
 | **Where edits land** | Always the session's own copy of the repository; nothing reaches the repository until the operator applies a result after its checks and review |
 
 On this computer an approved command runs with the operator's permissions,
 files, network and credentials; it works on any machine with no setup.
 
-**One command on this computer** (decision 049). A sandbox holds none of the
+**One command on this computer**. A sandbox holds none of the
 operator's own programs and logins, where Claude Code and Codex read the
 host's, so in a sandboxed session the agent may ask to run one command here
 with `run_on_computer`, giving its reason, as Codex's escalation and Claude
@@ -115,9 +114,8 @@ extension or version (`beginsWith`, `coveredPart`, `runsWithoutAsking` and
 the agent's suggested rule when it may be saved and begins the command,
 otherwise the command's leading names, up to three; "always" means that
 rule, never every later command, as it did before. No setting stops the
-questions: users approve 93% of prompts, and Anthropic's classifier missed
-17% of real overeager actions, while a sandbox removed 84% of prompts
-([execution landscape](../research/agent-execution-landscape.md#local-harnesses-tools-and-leaving-the-sandbox)).
+questions. The sandbox and saved rules reduce repeated approvals without
+giving the agent authority to choose where a command runs.
 
 The
 line beside the prompt names where commands run, `sandbox` or `this computer
@@ -161,7 +159,7 @@ installs what `mise.toml` or `.tool-versions` declare. Then it runs
 install (`bun install --frozen-lockfile` or `npm ci`).
 
 Only during this phase may the sandbox also reach the hosts toolchains
-download from (decision 048), as Codex cloud, Claude Code on the web and
+download from, as Codex cloud, Claude Code on the web and
 GitHub's Copilot agent open the network for setup and restrict it for the
 agent. In Docker Sandboxes, Tesota removes those rules and reads the
 sandbox's rule list back before the agent runs, and deletes the sandbox if it
@@ -181,45 +179,11 @@ Sandboxes stops between steps, since a step already running in `sbx` runs to
 its own time limit, and the sandbox it keeps by name is removed with its
 workspace.
 
-## Why
-
-- **Approval and isolation are separate settings**, as in Codex and Claude
-  Code; per-command approval alone defeats unattended and parallel work.
-- **The agent loop and its credentials stay outside the boundary; commands
-  go inside**, as in Codex's exec server and OpenHands.
-- **Pluggable environments**, as every surveyed harness that isolates keeps
-  them; vendor names stay inside provider adapters.
-- **Linux's isolation inside WSL2 on Windows** (decision 047): Windows'
-  native options need elevated setup and dedicated identities (Codex) or a
-  preview that is not yet a security boundary (MXC), and make ordinary
-  toolchains behave differently; Claude Code's sandbox does not run on
-  native Windows, and Cursor runs its Linux sandbox inside WSL2.
-- **This computer when there is no sandbox:** requiring isolation before
-  first use would add friction to work that asking before each command
-  already covers.
-- **No permission modes.** Codex separates the sandbox, what is technically
-  possible, from the approval policy, when a person is asked, and presents
-  combinations as presets; Claude Code's permission modes set only when it
-  asks, and reserve running without asking for isolated containers and VMs.
-  Tesota keeps the one setting that protects the operator, where commands
-  run, and derives when it asks from it, so there is no mode to set wrong.
-  Its private copy is what other harnesses' read-only or plan modes provide:
-  a phase in which nothing can be written to the repository, which in Tesota
-  lasts until the operator applies. A plan is asked for in the request.
-
 ## WSL sandbox
 
-Decisions 030, 043 and 047; evidence in the
-[native sandbox landscape](../research/native-sandbox-landscape.md) and its
-[WSL2 section](../research/native-sandbox-landscape.md#wsl2-as-the-windows-backend-2026-09-28).
 On Windows, commands run confined without asking in a Linux sandbox inside
-WSL2, as Cursor runs its own there, with Linux's isolation as Codex and
-Anthropic's Sandbox Runtime use it: bubblewrap namespaces and a network whose
-only exit is Tesota's proxy. It replaced a native Windows sandbox on
-Microsoft's MXC (decision 047), which worked only through accommodations that
-were Tesota's to keep and failed 44 of Tesota's own tests for reasons only an
-unreleased Windows feature removes. Linux and macOS come later, for a real
-consumer, under the same controls.
+WSL2: bubblewrap namespaces and a network whose only exit is Tesota's proxy.
+Linux and macOS come later, for a real consumer, under the same controls.
 
 **Threat model.** It confines the agent's mistakes, such as deleting or
 overwriting the operator's files, and what prompt injection would try:
@@ -236,9 +200,9 @@ guarantee, Tesota's own controls pass on the operator's machine: a write
 outside the workspace, a read of the operator's credentials, of what lies
 beside the workspace and of the host's variables, a package script from the
 workspace's root, a refused destination through the proxy and one reached
-directly, a toolchain host that setup reached and a command after it cannot
-(decision 048), and stopping a command and its children. The check runs
-once in a scratch workspace (`src/execution-qualification.ts`); its result is saved in
+directly, a toolchain host that setup reached and a command after it cannot,
+and stopping a command and its children. The check runs once in a scratch
+workspace (`src/execution-qualification.ts`); its result is saved in
 `~/.tesota/qualification.json` and repeated when the Windows build, WSL's
 kernel, bubblewrap, Node or the controls change, and a result that withdrew
 a claim is tried again after a day, since a missing network can fail it once.
@@ -314,7 +278,7 @@ ends every other process in its namespace before that one ends, detached and
 `setsid` ones included. The sandbox reports the first process's id, and a
 stop is confirmed only once it is gone.
 
-**Preparing** (decision 048). The WSL process starts and its proxy listens;
+**Preparing**. The WSL process starts and its proxy listens;
 the host then sends one setup message, with the stages, their variables, the
 destinations setup may reach and a fingerprint of all of it, and the process
 runs it before the agent's first command. Runtimes the repository pins that
@@ -330,8 +294,8 @@ first on `PATH`, ahead of Tesota's runtimes, for the stages after it and the
 agent's commands, so `node` is the version `.nvmrc` pins. Then
 `.tesota/setup.sh`, or the lockfile install, runs with them.
 
-**Languages found without declaring them** (decision 049,
-`src/languages.ts`). The plan also reads the files each language's projects
+**Languages found without declaring them** (`src/languages.ts`). The plan also
+reads the files each language's projects
 already have at the repository's root, so a repository that declares nothing
 gets its language, as it would on the operator's own machine:
 
@@ -411,12 +375,6 @@ direct connection is blocked, connected or indeterminate
 command reads (`readsToolFolder`), and the distribution's settings and drives
 (`distributionStep`, `settingsAsked`, `countsAsDrive`).
 
-**Measured on Windows** (one run each, caches not controlled; decision 047):
-the first preparation with dependencies took 17.4 s, a later one 3.65 s,
-hidden by preparing at session open; Tesota's own check ran its first test
-group in 112 s with 616 of 617 tests passing, where the MXC sandbox took
-241 s and failed 44.
-
 **Known limits.** The workspace stays on the Windows drive, where WSL reads
 and writes through a network filesystem slower than its own disk;
 `node_modules` avoids it. Installing WSL needs an administrator prompt and a
@@ -427,34 +385,11 @@ not mise's shims, so the `[env]` settings of a repository's mise file do not
 apply to them. Setup opens every toolchain host to whatever setup runs, the
 repository's own script included, as the other harnesses' setup phases do.
 
-**Rejected.** MXC's `processcontainer` (decision 047): PowerShell instead of
-the shell used elsewhere, a drive per workspace, dependencies installed
-outside the sandbox, a filtered `PATH`, Git's TLS backend switched, loopback
-servers refused, and 44 of Tesota's tests failing until Windows releases
-`enumeratePaths`; Microsoft does not yet call any MXC profile a security
-boundary. MXC's WSL container backend: it has no proxy and rejects per-host
-egress rules. Proxy variables without a network namespace: they confine only
-programs that honor them. Bubblewrap's usual `--ro-bind / /`: in WSL, `/`
-holds the operator's Windows drives. Tesota's own AppContainer or Seatbelt
-code: security-critical work that others maintain. One toolchain folder for
-every repository (decision 048): one repository's setup could change the
-tools another's commands run. Setup's hosts opened and later removed as
-ordinary allowances: closing would depend on removing each, where the proxy
-now keeps them apart and a proved rule shuts them all at once. Mise per
-repository: its binary is 145 MB, so the distribution carries one.
+## Remaining work
 
-## Planned
-
-Decision 049; evidence in the
-[execution landscape](../research/agent-execution-landscape.md#local-harnesses-tools-and-leaving-the-sandbox).
-Three things vary independently: the **toolchain** a sandbox holds, the
-**placement** of one command (the sandbox or this computer), and the
-**authority** behind that placement. A command runs on this computer only when
-the operator allowed that command, or a rule the operator made matches it;
-nothing the model or the repository says creates that authority. Both
-parts are built: one command on this computer
-([where commands run](#where-commands-run)) and languages found without
-declaring them ([WSL sandbox](#wsl-sandbox)).
+One command on this computer
+([where commands run](#where-commands-run)) and languages found from project
+files ([WSL sandbox](#wsl-sandbox)) are built.
 
 - Placeholder secrets: a repository declares a secret by name and host, and
   the sandbox sees only a placeholder that the proxy replaces.
