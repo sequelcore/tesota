@@ -168,8 +168,8 @@ serialized.
 
 ## Proposed: working in the source
 
-**Status: proposed, not built.** Everything above describes the current
-design.
+**Status: proposed, not built; its open questions decided on 2026-09-29.**
+Everything above describes the current design.
 
 **Why change it.** A workspace per session makes each session a small cloud
 environment: a clone, a sandbox of its own and its own dependencies. On
@@ -222,27 +222,43 @@ copy: a clone needs Git, and a folder has none. No local harness draws it.
   command costs nothing, and a new session installs nothing that is already
   there.
 - **Isolation on request.** A second session that should work on the same
-  source in parallel gets an isolated workspace: the current design, kept for
-  that case. One session at a time writes to a source in place.
+  source in parallel, or any session that asks, gets an isolated workspace:
+  the current design, kept for that case. One session at a time writes to a
+  source in place.
 - **Base checks on demand.** A failed check is compared with the tree before
   the turn, [test by test](assurance.md#verifiers), in a temporary checkout
   from the shadow repository, made only when a check fails.
 
-**What it changes.**
+**Decided** (the operator, 2026-09-29):
 
-- The promise moves from "reviewed before the operator applies or rejects
-  it" to "reviewed before the operator keeps or reverts it". Unreviewed work
-  is in the source between the turn and the decision.
-- The agent can read the source's ignored files, `.env` included, as in the
-  other local harnesses. Anthropic's sandbox runtime allows reads by default
-  and denies the paths its settings list, such as `**/.env`; Tesota's sandbox
-  should hide such files the same way, and which patterns is open.
-- An edit the operator makes during a turn counts as the turn's. Tesota
-  names the files that changed outside the agent's own file tools, but a
-  command's writes and the operator's cannot be told apart.
-- Creating workspaces, the rebase before each request, and application with
-  its whole-source admission leave the default path; the isolated workspace
-  keeps them.
+- **Keep or revert, isolation on request.** The promise moves from
+  "reviewed before the operator applies or rejects it" to "reviewed before
+  the operator keeps or reverts it": unreviewed work is in the source between
+  the turn and the decision. Any session may instead choose an isolated
+  workspace, which keeps the current promise, and Tesota states its cost
+  before creating it, such as the dependencies it installs, their size and
+  the time to prepare, and shows what each isolated session holds on disk.
+- **Secret files hidden by default.** In place, the agent could read the
+  source's ignored files. The sandbox hides a default list, such as `.env`,
+  `.env.*`, private keys and package registry credentials, and a repository
+  may allow a listed file its checks need, stored with its approved checks.
+  Gemini CLI hides `.env` and `.env.*` in every sandbox by default
+  (`SECRET_FILES` in its `sandboxManager.ts`); Claude Code has no built-in
+  list and hides only what its settings deny, or masks a file behind a
+  placeholder its proxy replaces on the way out, which Tesota's egress proxy
+  could do later. A command run on the operator's computer sees every file.
+- **Edits during a turn warned, and protected from revert.** An edit the
+  operator makes during a turn counts as the turn's, since a command's
+  writes and the operator's cannot be told apart. After the turn, Tesota
+  names the files that changed outside the agent's own file tools, and
+  reverting asks before it touches one of them. OpenCode and Gemini CLI count
+  such edits silently, and Claude Code's checkpoints miss them; the closest
+  guard elsewhere is Claude Code's edit tool refusing a file changed since it
+  was read.
+
+Creating workspaces, the rebase before each request, and application with
+its whole-source admission leave the default path; the isolated workspace
+keeps them.
 
 **Order.** Unify the shadow repository for repositories and folders; work in
 the source with turn snapshots, keep and revert; share dependencies per
@@ -252,5 +268,6 @@ what only the default path used.
 Sources: [Claude Code checkpointing](https://code.claude.com/docs/en/checkpointing),
 [Claude Code worktrees](https://code.claude.com/docs/en/worktrees),
 [Codex cloud environments](https://learn.chatgpt.com/docs/environments/cloud-environment),
-Gemini CLI's `packages/core/src/services/gitService.ts` and OpenCode's
-`packages/opencode/src/snapshot/index.ts`.
+[Claude Code sandboxing](https://code.claude.com/docs/en/sandboxing),
+Gemini CLI's `packages/core/src/services/gitService.ts` and
+`sandboxManager.ts`, and OpenCode's `packages/opencode/src/snapshot/index.ts`.
