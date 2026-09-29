@@ -146,9 +146,12 @@ project. They are listed here as they are chosen.
   2. A short block in the working agent's prompt, measured on those cases:
      "nothing to change" framed as success, one sentence on scope, and
      leading with the result.
-  3. Obligations in both directions: "the result does nothing beyond the
-     requests", judged and refuted like the other gaps, shown to the operator
-     and never sent back automatically, since an extra may be welcome.
+  3. The other direction in review: each change no request or claimed step
+     needs is reported for the operator's call, refuted like any finding,
+     never sent back, since an extra may be welcome. Built 2026-09-29 as the
+     simplest form, instructions to the main reviewer and the refuter rather
+     than a new kind of obligation; adopted only once `--set=all` meets the
+     registered thresholds.
   4. A deterministic hint: changed files that no request or plan step names,
      shown for attention only, since legitimate changes often touch them.
 
