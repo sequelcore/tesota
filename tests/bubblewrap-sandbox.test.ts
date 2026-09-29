@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { bubblewrapArguments, commandPath, commandVariables, type SandboxLayout, toolFolders, windowsMounts }
-  from "../src/bubblewrap-sandbox.js";
+import { bubblewrapArguments, commandPath, commandVariables, type SandboxLayout, settingsWritten, toolFolders, windowsDrives,
+  windowsMounts } from "../src/bubblewrap-sandbox.js";
 import { distributionSetupScript, listedDistributions } from "../src/wsl-environment.js";
 
 /**
@@ -15,14 +15,33 @@ const layout: SandboxLayout = { workspace: "/mnt/c/Users/op/.tesota/workspaces/a
   relay: "/home/tesota/.local/state/s/relay.cjs", socket: "/home/tesota/.local/state/s/proxy.sock", runtime: "/usr/local/bin/node",
   system: [{ path: "/usr" }, { path: "/bin", link: "usr/bin" }, { path: "/etc" }], tools: ["/opt/node"] };
 
-it("reads Windows' drives from the mount table", () => {
-  const mountinfo = [
-    "22 1 8:32 / / rw,relatime - ext4 /dev/sdc rw",
-    "85 22 0:65 / /mnt/c rw,noatime - 9p drvfs rw,aname=drvfs;path=C:\\",
-    "86 22 0:66 / /mnt/d rw,noatime - virtiofs drvfsD rw",
-    "90 22 0:70 / /mnt/wsl rw,relatime - tmpfs none rw",
-  ].join("\n");
-  expect(windowsMounts(mountinfo)).toEqual(["/mnt/c", "/mnt/d"]);
+// WSL 2's own mount table: drives as 9p shares of drvfs, and GPU drivers shared from Windows too.
+const mountinfo = [
+  "22 1 8:32 / / rw,relatime - ext4 /dev/sdc rw",
+  "85 22 0:65 / /mnt/c rw,noatime - 9p C:\\134 rw,dirsync,aname=drvfs;path=C:\\134;uid=1000;gid=1000;symlinkroot=/mnt/,mmap,trans=fd",
+  "86 22 0:66 / /mnt/d rw,noatime - 9p D:\\134 rw,dirsync,aname=drvfs;path=D:\\;uid=1000;gid=1000,mmap,trans=fd",
+  "87 22 0:67 / /usr/lib/wsl/drivers ro,nosuid,nodev,noatime - 9p drivers ro,dirsync,aname=drivers;fmask=222;dmask=222,mmap",
+  "88 22 0:68 / /mnt/share rw,noatime - 9p drvfs rw,aname=drvfs;path=C:\\134Users\\134op;uid=0,mmap",
+  "89 22 0:69 / /mnt/e rw,noatime - virtiofs drvfsaE rw",
+  "90 22 0:70 / /mnt/wsl rw,relatime - tmpfs none rw",
+].join("\n");
+
+it("tells every filesystem WSL shares from Windows, and among them the drives themselves", () => {
+  expect(windowsMounts(mountinfo)).toEqual(["/mnt/c", "/mnt/d", "/usr/lib/wsl/drivers", "/mnt/share", "/mnt/e"]);
+  // Only drives hold workspaces, so only their owner matters; the drivers stay root's.
+  expect(windowsDrives(mountinfo)).toEqual(["/mnt/c", "/mnt/d"]);
+  expect(windowsDrives("91 22 0:71 / /mnt/f rw - drvfs F: rw,uid=1000")).toEqual(["/mnt/f"]);
+});
+
+it("reads whether WSL's configuration asks for interop off and drives owned by this user", () => {
+  const written = '[automount]\noptions = "uid=1000,gid=1000"\n[user]\ndefault=tesota\n[interop]\nenabled=false\nappendWindowsPath=false\n';
+  expect(settingsWritten(written, 1000, 1000)).toBe(true);
+  expect(settingsWritten(written.replaceAll("\n", "\r\n"), 1000, 1000)).toBe(true);
+  expect(settingsWritten(written, 1001, 1000)).toBe(false);
+  expect(settingsWritten(written.replace("enabled=false", "enabled=true"), 1000, 1000)).toBe(false);
+  expect(settingsWritten("[interop]\nenabled=false\n", 1000, 1000)).toBe(false);
+  expect(settingsWritten("# [interop]\n[automount]\noptions=uid=1000,gid=1000 # mine\n[interop]\nEnabled = false", 1000, 1000)).toBe(true);
+  expect(settingsWritten("", 1000, 1000)).toBe(false);
 });
 
 it("lets a command read tool installations from PATH, never the operator's home, the root or Windows' programs", () => {

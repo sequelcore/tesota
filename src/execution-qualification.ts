@@ -19,8 +19,12 @@ import { qualifiedFilesystem, qualifiedNetwork } from "./verification/sandbox-qu
  * after a day, since a missing network can fail it once.
  */
 
-/** Raised when a control changes, so every machine qualifies again. */
-export const CONTROLS_VERSION = 2;
+/**
+ * Raised when a control changes, so every machine qualifies again; a test
+ * fails when the controls change without it. 3: `network_direct` judges a
+ * connection as blocked, connected or indeterminate.
+ */
+export const CONTROLS_VERSION = 3;
 const FAILED_RETRY_MS = 24 * 60 * 60 * 1_000;
 export const DEFAULT_QUALIFICATION_FILE: string = join(homedir(), ".tesota", "qualification.json");
 

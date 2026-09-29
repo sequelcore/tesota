@@ -99,14 +99,59 @@ export function systemFolders(): SystemFolder[] {
   });
 }
 
-/** Mount points of Windows' drives, from `/proc/self/mountinfo`. */
-export function windowsMounts(mountinfo: string): string[] {
+/** One line of `/proc/self/mountinfo`: where it is mounted, the filesystem, its source and its superblock options. */
+function mounts(mountinfo: string): { mountPoint: string; type: string; source: string; options: string }[] {
   return mountinfo.split("\n").flatMap((line) => {
     const [before, after] = line.split(" - ");
     const mountPoint = before?.split(" ")[4];
-    const type = after?.split(" ")[0];
-    return mountPoint !== undefined && type !== undefined && WINDOWS_FILESYSTEMS.has(type) ? [mountPoint] : [];
+    const [type, source, options] = after?.split(" ") ?? [];
+    return mountPoint === undefined || type === undefined ? [] : [{ mountPoint, type, source: source ?? "", options: options ?? "" }];
   });
+}
+
+/**
+ * Mount points of every filesystem WSL shares from Windows, drives and
+ * others such as its GPU drivers, which a command's tool folders never
+ * include.
+ */
+export function windowsMounts(mountinfo: string): string[] {
+  return mounts(mountinfo).filter((mount) => WINDOWS_FILESYSTEMS.has(mount.type)).map((mount) => mount.mountPoint);
+}
+
+/** A drive's root as WSL names a mount's source: `C:`, `C:\`, `C:/` or `C:\134`, the escaped backslash of mount tables. */
+const DRIVE_ROOT = /^[A-Za-z]:(?:\\134|\\|\/)?$/u;
+
+/**
+ * Mount points of Windows' drives themselves, which hold workspaces, as WSL
+ * tells them apart: a 9p share of `drvfs` whose path is a drive's root, or a
+ * `drvfs` mount of one.
+ */
+export function windowsDrives(mountinfo: string): string[] {
+  return mounts(mountinfo).filter((mount) => {
+    if (mount.type === "drvfs") return DRIVE_ROOT.test(mount.source);
+    if (mount.type !== "9p") return false;
+    const share = mount.options.split(",").find((option) => option.startsWith("aname=drvfs;"));
+    const path = share?.split(";").find((part) => part.startsWith("path="))?.slice("path=".length);
+    return path !== undefined && DRIVE_ROOT.test(path);
+  }).map((mount) => mount.mountPoint);
+}
+
+/**
+ * Whether WSL's configuration asks for what the sandbox needs at the
+ * distribution's next start: interop off, and Windows' drives owned by this
+ * user and group.
+ */
+export function settingsWritten(configuration: string, uid: number, gid: number): boolean {
+  const values = new Map<string, string>();
+  let section = "";
+  for (const line of configuration.split(/\r?\n/u).map((text) => text.replace(/#.*$/u, "").trim())) {
+    const header = /^\[(.+)\]$/u.exec(line);
+    if (header !== null) { section = (header[1] ?? "").trim().toLowerCase(); continue; }
+    const separator = line.indexOf("=");
+    if (separator > 0) values.set(`${section}.${line.slice(0, separator).trim().toLowerCase()}`, line.slice(separator + 1).trim().replace(/^"(.*)"$/u, "$1"));
+  }
+  const options = (values.get("automount.options") ?? "").split(",").map((option) => option.trim());
+  return values.get("interop.enabled")?.toLowerCase() === "false" && options.includes(`uid=${uid}`) && options.includes(`gid=${gid}`);
 }
 
 /**
@@ -370,12 +415,14 @@ export async function releaseState(workspace: string, paths: PathTranslation): P
 
 /**
  * What stands between this machine and a working sandbox. Problems are what
- * setup installs: bubblewrap missing or unable to create its namespaces.
- * Settings are what WSL applies only when the distribution starts again:
- * interop still able to start Windows programs, and Windows' drives owned by
- * another user, which Git refuses as dubious ownership and where only the
- * owner may change permissions. The versions are what qualification depends
- * on.
+ * setup fixes: bubblewrap missing or unable to create its namespaces, and in
+ * WSL a configuration that does not ask for interop off and Windows' drives
+ * owned by this user. Settings are what that configuration asks for but WSL
+ * applies only when the distribution starts again: interop still able to
+ * start Windows programs, and a drive owned by another user, which Git refuses
+ * as dubious ownership and where only the owner may change permissions. So a
+ * restart is offered only for what a restart can apply. The versions are what
+ * qualification depends on.
  */
 export function check(paths: PathTranslation): Readonly<{ problems: string[]; settings: string[]; versions: string }> {
   const problems: string[] = [];
@@ -391,11 +438,16 @@ export function check(paths: PathTranslation): Readonly<{ problems: string[]; se
     if (trial.status !== 0) problems.push(`bubblewrap cannot create its namespaces here: ${trial.stderr.trim().slice(-300)}`);
   }
   if (paths === "wsl") {
-    if (existsSync("/proc/sys/fs/binfmt_misc/WSLInterop")) settings.push("Windows interop is on in this distribution");
-    const user = process.getuid?.();
-    for (const mount of windowsMounts(readFileSync("/proc/self/mountinfo", "utf8"))) {
-      const owner = statSync(mount).uid;
-      if (owner !== user) settings.push(`${mount} is owned by user ${owner}, not by this user (${user ?? "unknown"})`);
+    const [uid, gid] = [process.getuid?.() ?? -1, process.getgid?.() ?? -1];
+    const configuration = existsSync("/etc/wsl.conf") ? readFileSync("/etc/wsl.conf", "utf8") : "";
+    if (!settingsWritten(configuration, uid, gid)) {
+      problems.push("/etc/wsl.conf does not turn interop off and give Windows' drives to this user");
+    } else {
+      if (existsSync("/proc/sys/fs/binfmt_misc/WSLInterop")) settings.push("Windows interop is still on");
+      for (const drive of windowsDrives(readFileSync("/proc/self/mountinfo", "utf8"))) {
+        const owner = statSync(drive).uid;
+        if (owner !== uid) settings.push(`${drive} is still owned by user ${owner}, not by this user (${uid})`);
+      }
     }
   }
   return { problems, settings, versions: `${version}; linux ${release()}; node ${process.version}` };

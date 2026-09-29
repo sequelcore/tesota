@@ -425,8 +425,12 @@ that user. A distribution created without its first-run setup has root as its
 default user, and WSL mounts Windows' drives as their default user's, so Git
 refused the workspace as dubious ownership and `chmod` failed during
 `git init`. WSL applies these settings only when the distribution starts
-again, so the next step restarts it (`wsl.exe --terminate tesota`) while the
-sandbox's check still finds interop on or a drive owned by another user.
+again. The sandbox's check therefore tells two cases apart: a configuration
+that does not ask for them sends setup back to its script, and one that asks
+for them while interop is still on or a drive, such as `/mnt/c`, is still
+another user's is applied by restarting the distribution
+(`wsl.exe --terminate tesota`). Only Windows' drives count, as WSL tells them
+from its other shares, such as its GPU drivers, which stay root's.
 Tesota starts `wsl.exe` from the Windows system directory, never by name, and
 its process as that user, never root, with Node from the Windows drive's
 copy of Tesota. Keeping a distribution of its own leaves the operator's
