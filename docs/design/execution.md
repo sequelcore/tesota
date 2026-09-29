@@ -89,11 +89,37 @@ other harnesses fold into their modes are separate here:
 | | Rule |
 | --- | --- |
 | **Where commands run** | In a **sandbox** when a provider is ready and its `workspace` filesystem and `allowlist` network hold on this machine, and on **this computer** (the host) otherwise. The operator's choice (`tesota sandbox`, decision 030) orders the sandboxes; nothing switches it during a session |
-| **When the operator is asked** | Follows from where commands run and is not a setting: on this computer every command asks (yes, always for this session, or no); in the sandbox commands run without asking, and a destination the network refused asks |
+| **When the operator is asked** | Follows from where commands run and is not a setting: on this computer every command asks (yes, always for commands beginning the same way in this repository, or no) unless a rule the operator saved allows it; in the sandbox commands run without asking, a destination the network refused asks, and so does one command the agent asks to run on this computer |
 | **Where edits land** | Always the session's own copy of the repository; nothing reaches the repository until the operator applies a result after its checks and review |
 
 On this computer an approved command runs with the operator's permissions,
-files, network and credentials; it works on any machine with no setup. The
+files, network and credentials; it works on any machine with no setup.
+
+**One command on this computer** (decision 049). A sandbox holds none of the
+operator's own programs and logins, where Claude Code and Codex read the
+host's, so in a sandboxed session the agent may ask to run one command here
+with `run_on_computer`, giving its reason, as Codex's escalation and Claude
+Code's retry outside the sandbox do. It runs as Pi's bash in the session's
+copy of the repository, with the operator's environment. The operator is
+asked, as for any command on this computer, unless a saved rule allows it.
+A rule is a command's leading words, such as `gh pr`, saved for the
+repository with its approved checks and network (`src/command-rules.ts`).
+A command runs without asking only when it reads as plain words joined by
+`&&`, `||`, `;` or `|`, never with redirection, expansions, globs, `~`, an
+assignment or a lone `&`, and some rule begins every part of it; a rule
+has two words or more and never starts with a shell, an interpreter, a
+package runner, a command that runs another (`env`, `sudo`, `xargs`, `ssh`)
+or a deleting one, compared by the program's name without folder,
+extension or version (`beginsWith`, `coveredPart`, `runsWithoutAsking` and
+`savableRule` in `src/verification/command-rule.ts`, proved). Tesota offers
+the agent's suggested rule when it may be saved and begins the command,
+otherwise the command's leading names, up to three; "always" means that
+rule, never every later command, as it did before. No setting stops the
+questions: users approve 93% of prompts, and Anthropic's classifier missed
+17% of real overeager actions, while a sandbox removed 84% of prompts
+([execution landscape](../research/agent-execution-landscape.md#local-harnesses-tools-and-leaving-the-sandbox)).
+
+The
 line beside the prompt names where commands run, `sandbox` or `this computer
 · asks first`, followed by the selected agent model; the code's `host` is
 shown as "this computer". `tesota setup` prepares
@@ -390,21 +416,9 @@ Three things vary independently: the **toolchain** a sandbox holds, the
 **placement** of one command (the sandbox or this computer), and the
 **authority** behind that placement. A command runs on this computer only when
 the operator allowed that command, or a rule the operator made matches it;
-nothing the model or the repository says creates that authority.
+nothing the model or the repository says creates that authority. One
+command on this computer is built ([where commands run](#where-commands-run)).
 
-- **One command on this computer.** In a sandboxed session, the agent may ask
-  to run one command on this computer, with its reason, as Codex's
-  escalation and Claude Code's retry outside the sandbox do. The operator
-  answers once, always for commands beginning the same way in this
-  repository, or no. The command runs in the session's copy with the
-  operator's own environment, tools and logins. A saved rule matches a
-  command's leading words, such as `gh pr`, checked for each part of a
-  command joined by `&&`, `||`, `;` or `|`, and never matches a command with
-  redirection, substitution, variables or wildcards; a rule can never be an
-  interpreter or shell alone (`python`, `bash`, `node`) nor a deleting command
-  (`rm`). The match is a proved rule. The same rules replace today's
-  "always this session" on this computer, which allows every later command,
-  not the one asked about.
 - **What a repository needs, found without declaring it.** The plan of
   decision 048 also reads the files each language's projects already have:
   Python (`pyproject.toml`, `requirements.txt`), Java (`pom.xml`,

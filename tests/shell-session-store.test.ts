@@ -115,6 +115,31 @@ it("persists network destinations allowed for the repository and refuses anythin
   reopened.close();
 });
 
+it("persists rules for commands on this computer, once each, refusing any rule that may not be saved (decision 049)", () => {
+  const { root, source } = fixture();
+  const store = openShellSessionStore(source, root);
+  const session = store.create();
+  expect(store.commandRules()).toEqual([]);
+  store.saveCommandRule(["gh", "pr"]);
+  store.saveCommandRule(["gh", "pr"]);
+  expect(() => { store.saveCommandRule(["bash", "-c"]); }).toThrow();
+  expect(() => { store.saveCommandRule(["gh"]); }).toThrow();
+  store.close();
+  const reopened = openShellSessionStore(source, root);
+  expect(reopened.commandRules()).toEqual([["gh", "pr"]]);
+  reopened.close();
+  // A file written before rules existed still opens, with its sessions and no rules.
+  const [file] = readdirSync(root).filter((name) => name.endsWith(".json"));
+  const path = join(root, file ?? "");
+  const saved: Record<string, unknown> = JSON.parse(readFileSync(path, "utf8"));
+  delete saved["commandRules"];
+  writeFileSync(path, JSON.stringify(saved));
+  const earlier = openShellSessionStore(source, root);
+  expect(earlier.commandRules()).toEqual([]);
+  expect(earlier.list().map((entry) => entry.id)).toEqual([session.id]);
+  earlier.close();
+});
+
 it("keeps the newest measured reviews", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);

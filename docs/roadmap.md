@@ -61,12 +61,12 @@ project. They are listed here as they are chosen.
   only sandbox, 2026-09-29, after it failed 1 of Tesota's tests where MXC
   failed 44, in half the time. A repository's pinned runtimes, mise files
   and setup script run inside it since 2026-09-29, with the toolchain hosts
-  open only during setup. Next (decision 049): one command at a time on this
-  computer with the operator's approval or a narrow saved rule, replacing
-  "always this session" ([#173](https://github.com/sequelcore/tesota/issues/173)),
-  then each common language found from its project files without declaring
-  it ([#174](https://github.com/sequelcore/tesota/issues/174)); and real use
-  as the default. Linux and macOS
+  open only during setup. One command at a time runs on this computer with
+  the operator's approval or a narrow saved rule, which replaced "always this
+  session", since 2026-09-29 (decision 049). Next: each common language
+  found from its project files without declaring it
+  ([#174](https://github.com/sequelcore/tesota/issues/174)), and real use as
+  the default. Linux and macOS
   are paused until real use gives feedback.
 - **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
   built 2026-09-26; OpenRouter's contract suite passes live on a free model.

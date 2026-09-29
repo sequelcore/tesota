@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { runTesotaShellCommand, type SessionWork, type WorkspaceCallbacks } from "../src/tesota-shell-command.js";
+import { commandQuestion, parseApproval, runTesotaShellCommand, type SessionWork, type WorkspaceCallbacks } from "../src/tesota-shell-command.js";
 import type { WorkResult } from "../src/tesota-shell.js";
 import type { TesotaShellTerminal } from "../src/tesota-shell-terminal.js";
 
@@ -134,4 +134,15 @@ it("stops a closed session's runner without writing to it", async () => {
   await expect(running).resolves.toBe(0);
   expect(ended).toEqual([]);
   expect(written.filter((entry) => entry.startsWith("default:"))).toEqual([]);
+});
+
+it("asks about a command on this computer with where it runs, why, and the rule it may save, and saves one only when offered", () => {
+  expect(commandQuestion({ command: "gh pr list", reason: "Only your gh is signed in.", rule: ["gh", "pr"] }))
+    .toBe("Run `gh pr list` on this computer, outside the sandbox? Only your gh is signed in. [y]es, [a]lways `gh pr …` in this repository, [n]o: ");
+  expect(commandQuestion({ command: "ls -la" })).toBe("Run `ls -la`? [y]es, [n]o: ");
+  expect(parseApproval("y", false)).toBe("once");
+  expect(parseApproval(" A ", true)).toBe("rule");
+  // "Always" without a rule offered no longer allows everything that follows.
+  expect(parseApproval("a", false)).toBe("deny");
+  expect(parseApproval("", true)).toBe("deny");
 });

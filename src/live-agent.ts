@@ -52,7 +52,7 @@ async function ask(directory: string, request: string): Promise<Turn> {
   const commands: string[] = [];
   const session = await startWorkingAgent({ target, onUsage: (usage: TokenUsage) => { tokens += totalTokens(usage); } },
     { cwd: directory, environment: await hostProvider.prepare(directory), sandboxed: false,
-      approveCommand: async (command) => { commands.push(command); return allowedCommand(command) ? "once" : "deny"; } },
+      approveCommand: async ({ command }) => { commands.push(command); return allowedCommand(command) ? "once" : "deny"; } },
     { conversationId: randomUUID() });
   const started = Date.now();
   try {

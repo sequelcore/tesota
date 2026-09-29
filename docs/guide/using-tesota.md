@@ -170,11 +170,23 @@ continue with your newer version. On this computer, Tesota asks before
 any shell command runs:
 
 ```text
-Run `bun install`? [y]es, [a]lways this session, [n]o:
+Run `gh pr list`? [y]es, [a]lways `gh pr …` in this repository, [n]o:
 ```
 
 Approved commands run with your permissions, files, network and credentials.
-They are not sandboxed. `Esc` or `Ctrl+C` stops the current request; changes
+They are not sandboxed. "Always" saves that rule for the repository: later
+commands beginning with `gh pr` run without asking, and every other command
+still asks. Tesota offers a rule only for plain commands, and never one that
+starts with a shell, an interpreter such as `python` or `node`, a command
+that runs another, such as `sudo` or `ssh`, or `rm`.
+
+In the sandbox, your own programs and logins, such as `gh`, `aws` or
+`docker`, are not there. When the agent needs one, it asks to run that
+command on this computer instead, with its reason:
+
+```text
+Run `gh pr list` on this computer, outside the sandbox? Only your gh is signed in. [y]es, [a]lways `gh pr …` in this repository, [n]o:
+``` `Esc` or `Ctrl+C` stops the current request; changes
 made so far stay in the workspace.
 
 The conversation shows your messages on a tinted background, the agent's
