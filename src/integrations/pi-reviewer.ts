@@ -102,8 +102,8 @@ const obligationGuidance = " Also list obligations: for each of the user's reque
   "in the diff, whether a request or a claimed plan step needs it. Report each change none of them needs, such as a " +
   "refactor of unrelated code or an abstraction, option or helper beyond what the requests call for, as one " +
   "`operator` finding naming the change, since an extra may be welcome; report it as `fixable` only when it breaks " +
-  "what was asked. Tests for the requested behavior and the updates a requested change forces on its callers are " +
-  "needed, not extras.";
+  "what was asked. A test of the code the change touched, edge cases included, a comment, and an update a " +
+  "requested change forces on its callers are never extras.";
 
 /**
  * The main reviewer when a turn changed no files (decision 034): only

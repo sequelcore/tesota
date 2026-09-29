@@ -51,7 +51,8 @@ function refuterPrompt(root: string): string {
     "- refuted: the code, the requests or the checks show it is not a problem, it was already handled, it rests " +
     "on an assumption the requests do not state, or it is speculation about code nobody showed is affected.\n" +
     "A finding marked as the operator's call may report work beyond the requests rather than a defect: confirm it " +
-    "when the change is there and no request needs it, and refute it when a request does need it.\n" +
+    "when the change is there and no request needs it, and refute it when a request does need it or when it is a test " +
+    "of the code the change touched, a comment or an update a requested change forces on its callers.\n" +
     "- undetermined: you cannot establish either with the evidence available.\n" +
     "Do not confirm a finding because it sounds plausible or because a reviewer was confident. Correct code is " +
     "often judged non-conformant by mistake, so look for the evidence that it is correct first. Several reviewers " +

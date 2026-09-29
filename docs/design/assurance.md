@@ -200,10 +200,11 @@ nobody asked for. So the main reviewer also checks each change in the diff
 against the requests and claimed steps, and reports a change none of them
 needs, such as a refactor of unrelated code or an unrequested abstraction,
 as a finding for the operator's call, never sent back, since an extra may be
-welcome; only an extra that breaks what was asked is a fixable defect. Tests
-for the requested behavior and updates a requested change forces on its
-callers are needed, not extras. The refuter confirms such a finding when the
-change is there and no request needs it, and refutes it when one does. This
+welcome; only an extra that breaks what was asked is a fixable defect. A
+test of the code the change touched, edge cases included, a comment, and an
+update a requested change forces on its callers are never extras. The
+refuter confirms such a finding when the change is there and no request needs
+it, and refutes it when one does or when it is one of those. This
 is measured on `live:review --set=all`: before it, neither of two reviewer
 setups marked either planted extra (issue #165).
 
