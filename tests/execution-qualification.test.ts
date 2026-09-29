@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -5,7 +7,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { ControlResult } from "../src/execution-controls.js";
 import type { EnvironmentGuarantees, ExecutionProvider } from "../src/execution-environment.js";
-import { QualificationStore, qualifiedGuarantees, qualifyProvider } from "../src/execution-qualification.js";
+import { CONTROLS_VERSION, QualificationStore, qualifiedGuarantees, qualifyProvider } from "../src/execution-qualification.js";
 import { hostProvider } from "../src/host-environment.js";
 
 /**
@@ -35,11 +37,15 @@ const result = (control: ControlResult["control"], passed: boolean): ControlResu
 const processes = ["workspace_read_write", "package_script", "cancel_children", "time_limit"] as const;
 
 it("keeps a claim only when the controls behind it, and every environment's own, passed", () => {
-  const all = [...processes, "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "registry_reachable"] as const;
+  const all = [...processes, "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "network_direct",
+    "registry_reachable"] as const;
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, true)))).toEqual(sandbox);
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "outside_read"))))
     .toEqual({ ...sandbox, filesystem: "host" });
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "registry_reachable"))))
+    .toEqual({ ...sandbox, network: "open" });
+  // A proxy that refuses what is not allowed confines nothing when a client can go around it.
+  expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "network_direct"))))
     .toEqual({ ...sandbox, network: "open" });
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "time_limit"))))
     .toEqual({ ...sandbox, filesystem: "host", network: "open" });
@@ -73,4 +79,20 @@ it("keeps a result while the machine is unchanged, and tries a failed one again 
   expect(store.read("empty", "build 26200")).toBeUndefined();
   expect(store.read("mxc", "build 26200")).toEqual(passed);
   expect(new QualificationStore(join(root, "qualification.json"), () => now).read("mxc", "build 26200")).toEqual(passed);
+});
+
+it("qualifies every machine again when a control changes", () => {
+  const controls = ["src/execution-controls.ts", "src/verification/direct-connection-rule.ts"]
+    .map((file) => readFileSync(file, "utf8").replaceAll("\r\n", "\n")).join("");
+  // When the controls change, raise CONTROLS_VERSION so saved results are not trusted, then record their new hash here.
+  expect({ version: CONTROLS_VERSION, controls: createHash("sha256").update(controls).digest("hex") })
+    .toEqual({ version: 3, controls: "d0811d5214c6f03109bd3ab760c96589b9eec3480939440c253fa160cfc9422f" });
+});
+
+it("does not trust a result the earlier controls produced", () => {
+  const path = join(root, "earlier.json");
+  const record = { provider: "mxc", fingerprint: "build 26200", at: new Date().toISOString(), guarantees: sandbox,
+    results: [result("network_direct", true)] };
+  writeFileSync(path, JSON.stringify({ version: CONTROLS_VERSION - 1, records: [record] }));
+  expect(new QualificationStore(path).read("mxc", "build 26200")).toBeUndefined();
 });

@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
+import { connect as connectTcp } from "node:net";
 import { dirname, join, relative, sep } from "node:path";
 import type { CommandShell, EnvironmentGuarantees, ExecutionEnvironment, RunOptions, RunResult } from "./execution-environment.js";
+import { directConnection } from "./verification/direct-connection-rule.js";
 
 /**
  * The controls an execution environment must pass before its guarantees are
@@ -11,11 +14,12 @@ import type { CommandShell, EnvironmentGuarantees, ExecutionEnvironment, RunOpti
  * small probe run inside the environment and judged from the host. File and
  * process probes are JavaScript for the environment's runtime, so no shell's
  * syntax is assumed; network probes use `curl`, which honors a sandbox's
- * proxy, where JavaScript's `fetch` ignores proxy variables.
+ * proxy, where JavaScript's `fetch` ignores proxy variables, and one probe
+ * ignores the proxy on purpose: setting proxy variables confines nothing.
  */
 
 export type ControlName = "workspace_read_write" | "cancel_children" | "time_limit" | "package_script" | "outside_read" |
-  "outside_write" | "beside_read" | "host_variables" | "network_refused" | "registry_reachable";
+  "outside_write" | "beside_read" | "host_variables" | "network_refused" | "network_direct" | "registry_reachable";
 
 /** Where the controls run: a workspace to probe from, a directory outside it, and what to probe with. */
 export interface ControlSite {
@@ -48,8 +52,12 @@ export const PROCESS_CONTROLS: readonly ControlName[] = ["workspace_read_write",
  * reach, and what lies beside the workspace, such as Tesota's records of it.
  */
 export const FILESYSTEM_CONTROLS: readonly ControlName[] = ["outside_read", "outside_write", "beside_read", "host_variables"];
-/** An `allowlist` network refuses what is not allowed and still reaches package registries. */
-export const NETWORK_CONTROLS: readonly ControlName[] = ["network_refused", "registry_reachable"];
+/**
+ * An `allowlist` network refuses what is not allowed, even to a client that
+ * ignores the proxy and connects to the destination's address itself, and
+ * still reaches package registries.
+ */
+export const NETWORK_CONTROLS: readonly ControlName[] = ["network_refused", "network_direct", "registry_reachable"];
 
 /** The controls a provider's claimed guarantees call for. */
 export function controlsFor(guarantees: EnvironmentGuarantees): ControlName[] {
@@ -246,6 +254,55 @@ async function networkRefused(probe: Probe): Promise<ControlResult> {
     : `a destination that is not allowed answered ${code}` };
 }
 
+/** Errors with which a connection is refused on the way out, rather than by a program that received it. */
+const REFUSALS = new Set(["ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH", "ENETDOWN", "ETIMEDOUT", "EACCES", "EPERM"]);
+const DIRECT_TIMEOUT_MS = 10_000;
+
+/** Whether this computer opens a TCP connection to the address itself. */
+function connectsFromHost(address: string, port: number): Promise<boolean> {
+  return new Promise((settle) => {
+    const socket = connectTcp({ host: address, port, timeout: DIRECT_TIMEOUT_MS });
+    const end = (connected: boolean): void => { socket.destroy(); settle(connected); };
+    socket.once("connect", () => { end(true); });
+    socket.once("timeout", () => { end(false); });
+    socket.once("error", () => { end(false); });
+  });
+}
+
+/**
+ * Open a TCP connection to the refused destination's address directly, as a
+ * program that ignores proxy variables or opens its own sockets would, and
+ * judge it with `directConnection` (proved): a connection that opened fails
+ * the control whatever happened after, and a refusal passes only when this
+ * computer connected to the same address itself. The address is resolved on
+ * the host, so a sandbox without a resolver cannot pass by failing to look the
+ * name up.
+ */
+async function networkDirect(probe: Probe): Promise<ControlResult> {
+  const url = new URL(probe.site.refusedUrl);
+  const host = url.hostname.replace(/^\[(.*)\]$/u, "$1");
+  const address = await lookup(host).then((found) => found.address, () => undefined);
+  if (address === undefined) return { control: "network_direct", passed: false, detail: `${host} could not be resolved on this computer` };
+  const port = url.port === "" ? url.protocol === "https:" ? 443 : 80 : Number(url.port);
+  const run = await script(probe, "const [, , host, port] = process.argv;\n" +
+    `const socket = require('node:net').connect({ host, port: Number(port), timeout: ${DIRECT_TIMEOUT_MS} });\n` +
+    "const report = (text) => { process.stdout.write(`tesota-direct ${text}\\n`); socket.destroy(); };\n" +
+    "socket.once('connect', () => { report('connected'); });\n" +
+    "socket.once('timeout', () => { report('refused ETIMEDOUT'); });\n" +
+    "socket.once('error', (error) => { report(`refused ${error.code ?? 'unknown'}`); });\n", [address, String(port)]);
+  const connectedInside = /^tesota-direct connected$/mu.test(run.output);
+  const refusal = /^tesota-direct refused (\S+)$/mu.exec(run.output)?.[1];
+  const refusedInside = refusal !== undefined && REFUSALS.has(refusal);
+  const connectedFromHost = !connectedInside && refusedInside && await connectsFromHost(address, port);
+  const verdict = directConnection(connectedInside, refusedInside, connectedFromHost);
+  const target = `${host} (${address}:${port})`;
+  const detail = verdict === "connected" ? `a client ignoring the proxy connected to ${target} directly`
+    : verdict === "blocked" ? `a client ignoring the proxy could not connect to ${target} (${refusal ?? ""}), which this computer reaches`
+    : !refusedInside ? `a client ignoring the proxy gave no result for ${target} (${run.output.trim().slice(-200) || `outcome ${run.outcome}`})`
+    : `${target} refused a client ignoring the proxy (${refusal ?? ""}), but this computer cannot connect to it either, so nothing was shown`;
+  return { control: "network_direct", passed: verdict === "blocked", detail };
+}
+
 async function registryReachable(probe: Probe): Promise<ControlResult> {
   const code = await status(probe, probe.site.registryUrl);
   const passed = code.startsWith("2");
@@ -255,7 +312,7 @@ async function registryReachable(probe: Probe): Promise<ControlResult> {
 const controls: Readonly<Record<ControlName, (probe: Probe) => Promise<ControlResult>>> = {
   workspace_read_write: workspaceReadWrite, package_script: packageScript, cancel_children: cancelChildren, time_limit: timeLimit,
   outside_read: outsideRead, outside_write: outsideWrite, beside_read: besideRead, host_variables: hostVariables,
-  network_refused: networkRefused, registry_reachable: registryReachable,
+  network_refused: networkRefused, network_direct: networkDirect, registry_reachable: registryReachable,
 };
 
 /** Run the named controls one after another in an environment, stopping early only when the caller cancels. */

@@ -1024,7 +1024,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   private changeSandbox(session: SessionView, args: readonly string[]): void {
-    if (args.length > 1) this.writeTo(session.id, "Use /sandbox or /sandbox <auto|native|docker|host|default>.", "warning");
+    if (args.length > 1) this.writeTo(session.id, "Use /sandbox or /sandbox <auto|native|wsl|docker|host|default>.", "warning");
     else if (args.length === 0 && this.options.sandboxPicker !== undefined && session.pending !== undefined) {
       this.editor.setText("/sandbox ");
       this.updateCommandMenu("/sandbox ");

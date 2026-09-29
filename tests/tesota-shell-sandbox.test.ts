@@ -107,7 +107,7 @@ it("switches one session's sandbox, and its agent restarts with the same convers
   expect(label).toHaveBeenLastCalledWith("session", "sandbox · native");
   await created.sessionSandbox?.change("session", undefined);
   expect(said()).toContain("Commands in this session run in the native sandbox");
-  expect(said()).toContain("/sandbox <auto|native|docker|host>");
+  expect(said()).toContain("/sandbox <auto|native|wsl|docker|host>");
   await created.sessionSandbox?.change("session", "docker");
   expect(native.environment.dispose).toHaveBeenCalled();
   expect(agents[0]?.dispose).toHaveBeenCalled();
@@ -137,7 +137,7 @@ it("keeps the session's sandbox when the chosen one is not ready, and refuses an
   expect(native.environment.dispose).not.toHaveBeenCalled();
   expect(record.sandbox).toBeUndefined();
   await created.sessionSandbox?.change("session", "vm");
-  expect(said()).toContain("Use /sandbox or /sandbox <auto|native|docker|host|default>.");
+  expect(said()).toContain("Use /sandbox or /sandbox <auto|native|wsl|docker|host|default>.");
   await created.sessionSandbox?.change("session", "native");
   expect(said()).toContain("already run in the native sandbox");
   created.dispose?.();

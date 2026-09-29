@@ -18,7 +18,7 @@ session closes.
 The agent is told not to commit, push or change Git history, and to end each
 turn with what it changed and what the operator should verify. It is told to
 lead with the answer or the result in as few sentences as it needs, without
-restating the question (decision 044). It is the only agent that writes.
+restating the question (decision 046). It is the only agent that writes.
 
 ### Changing the agent's model
 

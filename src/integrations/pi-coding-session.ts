@@ -171,7 +171,9 @@ function commandGuidance(sandboxed: boolean, environment: ExecutionEnvironment):
       "another host, the user is asked whether to allow it and you are told the answer. "
     : "Every shell command asks the user for approval first; prefer the file tools for reading and editing, " +
       "and run commands when they are worth an approval, such as installing dependencies or running tests. ";
-  return environment.shell === "powershell" ? where + powershellGuidance(environment.commandRoot) : where;
+  if (environment.shell === "powershell") return where + powershellGuidance(environment.commandRoot);
+  return environment.commandRoot === undefined ? where
+    : `${where}In commands the workspace is ${environment.commandRoot}; the file tools keep its real path. `;
 }
 
 /** The native Windows sandbox's shell (decision 030): PowerShell on a drive of the workspace's own, with a retry outside. */
