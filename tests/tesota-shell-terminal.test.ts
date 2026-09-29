@@ -51,6 +51,49 @@ function visible(terminal: TestTerminal): string {
   return stripTerminalSequences(terminal.writes.join("\n"));
 }
 
+it("shows the opening only for a newly created session and keeps it out of the saved conversation", () => {
+  const freshTerminal = new TestTerminal();
+  freshTerminal.columns = 100;
+  freshTerminal.rows = 40;
+  const freshTui = new TuiAltScreen(freshTerminal, false, undefined, { mouse: false });
+  const onEntry = vi.fn();
+  const fresh = createTesotaShellTerminal({ cwd: "work/tesota", tui: freshTui, onEntry });
+  fresh.start();
+  freshTui.renderNow(true);
+  expect(visible(freshTerminal)).toContain("Changes stay separate until you apply them.");
+  expect(onEntry).not.toHaveBeenCalled();
+  fresh.stop();
+
+  const savedTerminal = new TestTerminal();
+  savedTerminal.columns = 100;
+  savedTerminal.rows = 40;
+  const savedTui = new TuiAltScreen(savedTerminal, false, undefined, { mouse: false });
+  const saved = createTesotaShellTerminal({ cwd: "work/tesota", tui: savedTui,
+    initialSession: { id: "saved", title: "Saved", entries: [], fresh: false } });
+  saved.start();
+  savedTui.renderNow(true);
+  expect(visible(savedTerminal)).not.toContain("Changes stay separate until you apply them.");
+  saved.stop();
+});
+
+it("redraws the tree as the shell timer advances", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 100;
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  try {
+    shell.start();
+    tui.renderNow(true);
+    expect(visible(terminal)).not.toContain("\\|/");
+    terminal.writes.length = 0;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(visible(terminal)).toContain("\\|/");
+  } finally {
+    shell.stop();
+  }
+});
+
 it("gives sidebar titles the space formerly used by position numbers", () => {
   const rail = new SessionRail(tesotaShellTheme());
   rail.setSessions([{ id: "current", title: "A descriptive session", state: "idle", selected: true }]);

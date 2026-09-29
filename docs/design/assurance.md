@@ -3,9 +3,7 @@
 A passing check shows that code meets its tests, not that the tests say what
 the operator asked; an agent can also edit a test until it passes. Tesota
 therefore surrounds each result with verification, review and a bounded
-correction loop before the operator decides. Evidence for the choices below
-is in the [review landscape](../research/agent-review-landscape.md), and
-measurements are in [findings](../findings.md).
+correction loop before the operator decides.
 
 ## Four roles
 
@@ -59,7 +57,7 @@ the report would change the reviewed files, and is reported as not started. A ch
 the candidate must be reviewed again. The working agent may run the same tools
 while it works; those runs are feedback, not evidence.
 
-**A failing check runs again on the base** (decision 039), as a commit queue
+**A failing check runs again on the base**, as a commit queue
 retries a failure without the patch: Chromium's CQ fails a change only for
 tests that fail with it and pass without it. When a check command fails or
 times out on the candidate, Tesota runs it again, in the same environment, on
@@ -77,7 +75,7 @@ A session keeps each base run by command, reports, base and environment, so
 correction rounds on the same base do not repeat it; a base run costs one more
 run of the command, only when it fails.
 
-**A check with reports is compared test by test** (decision 040). Tesota
+**A check with reports is compared test by test**. Tesota
 removes the check's reports before each run, on the candidate and on the base,
 since ignored files outlast the switch to the base, and after a failed run
 reads and merges them (`src/test-report.ts`): a test is failed when it has a
@@ -172,10 +170,10 @@ findings are counted, with the refuter's evidence in the result panel.
 
 ### Obligations
 
-Decision 034. A defect has a changed line to point at; missing work has
+A defect has a changed line to point at; missing work has
 none. So the main reviewer also lists **obligations**: for each operator
 request, the concrete things it asks for, and for each step of the agent's
-plan (decision 033) that the agent marked done, whether it really happened.
+plan that the agent marked done, whether it really happened.
 It judges each against the whole result, unchanged files included, as
 `met`, `partial`, `unmet` or `uncertain`, with the evidence. A plan step is
 the agent's claim, given to the reviewer as a claim to check, never as an
@@ -204,10 +202,7 @@ welcome; only an extra that breaks what was asked is a fixable defect. A
 test of the code the change touched, edge cases included, a comment, and an
 update a requested change forces on its callers are never extras. The
 refuter confirms such a finding when the change is there and no request needs
-it, and refutes it when one does or when it is one of those. This
-is decision 045, measured on `live:review --set=all`: before it, neither of
-two reviewer setups marked either planted extra; with it, one setup marked
-both in two runs with no false positive in any case (issue #165).
+it, and refutes it when one does or when it is one of those.
 
 **A turn that changes no files is checked too.** Otherwise a reply could
 stand in for requested code: asked to add a helper, an agent can answer that
@@ -232,7 +227,7 @@ or never decided runs it (`runsAnswerCheck` in
 The first pass takes about two seconds; the full check is one reviewer
 session, and the refuter's when there are gaps. This is the discretionary
 review triage issue #124 asked a consumer for. The `triage` role may instead
-use Jev, the typed decision model that issue proposes (decision 035):
+use Jev, the typed decision model that issue proposes:
 `typesafe:jev-1.13.0`, with the operator's TypeSafe key, answers the same
 question with a probability in about a tenth of a second
 (`src/integrations/jev-triage.ts`). It skips a turn only below 0.2, the
@@ -241,13 +236,12 @@ and a refusal, an error, a missing key or no answer within ten seconds
 decide nothing, so the same proved rule runs the full check. The version is
 pinned: a newer one is offered only once it has been measured on those
 cases. TypeSafe receives the turn's requests and reply, and says it does not
-train on them. The idea comes from the unmerged branch
-`feat/evidence-attribution`, rebuilt here.
+train on them.
 
 ## Correction
 
 Each check, finding and assessed request or plan step has one **who acts**
-decision (decision 041), owned by `src/verification/review-action-rule.ts` and
+decision, owned by `src/verification/review-action-rule.ts` and
 proved with LemmaScript. `src/review-action.ts` translates the full review
 record into that decision. Correction sends only `agent` items back; the
 conversation groups items as **For the agent to fix**, **Needs you** and **For
@@ -266,7 +260,7 @@ a round leaves the tree unchanged. Operator findings, unknown origins, check
 failures the base shares or that could not be compared with it, incomplete
 reviews and checks that could not run never go back to the agent.
 
-**The base stays fixed through the rounds** (decision 039). A correction turn
+**The base stays fixed through the rounds**. A correction turn
 does not bring the operator's newer repository state into the workspace, so
 the correction's diff holds only the agent's work; with an update in between,
 the operator's own edits would read as the agent's correction. That state
@@ -312,31 +306,4 @@ reviewers. Review quality is measured on **SWE-PRBench**: 100 real pull
 requests whose ground truth is their human reviewers' comments. Tesota's
 reviewers and refuter answer each one from the benchmark's official context,
 and the benchmark's own parser, judge, scorer and report score the answers
-unchanged, before and after refutation
-([research](../research/evaluation-landscape.md)).
-
-## Why
-
-- **Tesota orchestrates, not an agent:** an orchestrating agent could skip
-  the steps that produce evidence, and a working agent that invoked its own
-  reviewer would choose when and how it is reviewed.
-- **Read-only reviewers without the agent's reasoning:** a reviewer that
-  could edit could change what it reviews, and one that shares the agent's
-  reasoning shares its blind spots. Each role can use its own model
-  ([agents](agents.md)), which widens independence beyond a fresh context.
-- **Only introduced defects are sent back**, as in Codex's review rubric,
-  Anthropic's code-review plugin and Gentle AI: a correction round should not
-  change code the operator did not ask to change.
-- **A finding is a hypothesis until something tries to break it:** Anthropic
-  validates each issue, Gentle AI refutes before admission, and
-  Refute-or-Promote showed model agreement endorsing a bug that one test
-  disproved.
-- **No mandatory up-front specification:** the request record and review
-  cover the same risk with less ceremony.
-
-## Planned
-
-- Executable probes for findings the refuter cannot settle, if evaluations
-  show unsettled findings in practice.
-- Workflow profiles that choose verifiers, reviewers and loop limits per
-  repository, once two real alternatives exist.
+unchanged, before and after refutation.

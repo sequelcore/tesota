@@ -358,7 +358,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     try { surface.setSessionModel(id, agentChoice(id)); } catch { /* the agent reports an unreadable choice when it opens */ }
   };
   const surface = createTesotaShellTerminal({ cwd, tui, interrupt, theme,
-    initialSession: firstDisplayed, onEntry: (id, entry) => { store.append(id, entry); },
+    initialSession: { ...firstDisplayed, fresh: freshSessions.has(firstDisplayed.id) },
+    onEntry: (id, entry) => { store.append(id, entry); },
     onInspection: (id, inspection) => { store.inspect(id, inspection); },
     onNewSession: () => {
       const session = store.create();
@@ -419,7 +420,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onSessionChange: (id) => { workspaceCallbacks?.selectSession(id); },
     onQuit: () => { workspaceCallbacks?.quit(); } });
   for (const session of savedSessions.slice(1)) surface.addSession(session.id, session.title,
-    session.entries, session.inspections);
+    session.entries, session.inspections, false);
   if (resumed === undefined && savedSessions.length > 0) surface.addSession(initial.id, initial.title);
   surface.selectSession(initial.id);
   if (resumed === undefined) showAgentModel(initial.id);

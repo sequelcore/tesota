@@ -18,6 +18,15 @@ identity joins that heading when the sidebar is absent. Execution location and
 the selected model stay beside the prompt ([using Tesota](../guide/using-tesota.md)
 lists the keys).
 
+A fresh session opens with an ephemeral palo fierro welcome in the conversation:
+name and package version, working directory, a short statement of the apply
+boundary, then the ASCII tree. The tree grows through five fixed-size frames;
+smaller terminals animate a compact tree or symbol.
+`TESOTA_REDUCED_MOTION=1` shows the final frame immediately. The
+welcome is presentation only: it is not a conversation entry or saved session
+state, and restored sessions do not show it again. `tesota-shell-welcome.ts`
+owns the artwork, tones and responsive rendering.
+
 `tesota-shell-theme.ts` owns the terminal palettes, and
 `tesota-shell-theme-picker.ts` uses pi-tui's `SelectList` for `/themes`.
 Switching mutates a shell-local palette shared by its components and rebuilds
@@ -32,7 +41,7 @@ LemmaScript specifications proved by Dafny. Rendering belongs to
 `tesota-shell-sidebar.ts`; terminal composition and input remain in
 `tesota-shell-terminal.ts`.
 
-A session is **named** after its work (decision 036), as Codex, Claude Code
+A session is **named** after its work, as Codex, Claude Code
 and OpenCode name theirs. It starts as "Session N"; the operator's first
 request, shortened to its first line, names it at once; and in the
 background one short session writes a title of three to seven words from
@@ -73,7 +82,7 @@ and asks the operator's questions.
 
 A session acquires its workspace, then its execution environment, then its
 working agent with its explorers and advisor, each the first time it is
-needed, and keeps them until it ends (decision 038). Preparation starts when
+needed, and keeps them until it ends. Preparation starts when
 the session opens and runs in the background. Closing the session, switching
 its sandbox and quitting all end what it holds the same way: a preparation
 still under way is stopped, the agent ends, and the environment is released,
@@ -92,12 +101,9 @@ both limits are one semaphore (`src/semaphore.ts`), which grants places in
 the order they were asked for and drops a waiter whose work was stopped.
 
 This is built on the platform's own promises, abort signals and
-`AsyncDisposableStack`. Effect v4's scopes and structured concurrency were
-evaluated for it and not adopted for now: they would replace this plumbing
-but not the outcomes Tesota keeps distinct, such as a stop an engine did not
-confirm, and v4 was still a release candidate. The choice is taken again, by
-a matched comparison, before the session service below is built
-([Effect runtime landscape](../research/effect-runtime-landscape.md)).
+`AsyncDisposableStack`. A stop an engine did not confirm stays unconfirmed.
+The [roadmap](../roadmap.md) records the comparison required before a session
+service is built.
 
 ## What is saved
 
@@ -111,57 +117,3 @@ destinations allowed for every session, and the measured costs of recent
 reviews. After a restart, sessions and their workspaces and conversations are
 restored; a session interrupted mid-request is marked so. Command approvals
 and check results are never saved: they belong to one session's run.
-
-## Planned: a session service
-
-Today a session lives inside the terminal process that opened it: closing the
-terminal, or losing a remote desktop connection, ends the work's host. The
-adopted design, not yet built, separates the two. Evidence is in the
-[remote access landscape](../research/agent-remote-landscape.md).
-
-- **One long-lived service per operator account** owns every session: records,
-  workspaces, environments, agent and reviewer sessions, and the journal. It
-  holds each repository's lock, so any number of terminals can attach, and it
-  runs as the operator, never elevated.
-- **Clients speak JSON-RPC 2.0 over local IPC only:** a named pipe on Windows,
-  a Unix domain socket elsewhere, and no network port. A client first presents
-  a secret the service writes to a file only the operator's account can read,
-  because a Windows named pipe's default access also lets other accounts
-  connect. The protocol mirrors the operator's actions, and the service
-  notifies clients of activity, reviews and questions.
-- **Questions are session state.** A command approval, a network decision,
-  the check choice or apply and reject is stored with its session until
-  answered; any attached client may answer, the first answer wins, and a
-  session with no client waits. Clients rebuild their view from the service on
-  attach.
-- **The service starts outside any terminal or SSH session.** On Windows a
-  per-user Scheduled Task starts it at logon and on demand, because a process
-  started inside a Windows SSH session is killed when the session closes.
-  `tesota service start`, `stop` and `status` print one JSON object each;
-  stopping waits for running work to reach a safe point.
-- **Remote access is SSH into the PC over a tailnet:** Windows' own OpenSSH
-  Server with key authentication only, its firewall rule limited to the
-  tailnet, then `tesota`, which attaches like any local terminal. Tailscale's
-  own SSH server does not run on Windows. Nothing new listens on the network;
-  `tesota setup` would guide these steps.
-
-It is done when, from another device on the tailnet, the operator connects
-over SSH, sees the sessions that kept running, answers a pending question,
-disconnects mid-work, and finds the work finished on reconnecting.
-
-### Why this shape
-
-- **The terminal becomes a client of a long-lived process**, as in Codex's
-  app-server daemon, opencode, t3code and herdr.
-- **Nothing listens on a public port:** Codex and Claude Code use local
-  sockets or outbound connections, and a network listener with pairing adds an
-  authentication surface before SSH access is even in use.
-- **Pending questions outlive the connection**, as Claude Code queues
-  permission prompts until a client is back.
-- **Tesota's own protocol rather than ACP:** the Agent Client Protocol assumes
-  one editor that starts the agent and holds its only session; Tesota's
-  sessions outlive every client. An ACP adapter for editors may sit on top.
-
-Later, not now: a web or mobile client served only inside the tailnet with
-one-time pairing tokens, as t3code does, and an outbound relay like Claude
-Code Remote Control.
