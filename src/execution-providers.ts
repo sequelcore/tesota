@@ -13,7 +13,7 @@ import { windowsPowerShell } from "./windows-system.js";
 import { wslProvider } from "./wsl-environment.js";
 
 /**
- * Where the operator wants commands to run (decisions 030 and 045): `auto`
+ * Where the operator wants commands to run (decisions 030 and 047): `auto`
  * prefers the WSL sandbox, then Docker Sandboxes, then this computer; the
  * others name one sandbox, or this computer, which asks before each command.
  */

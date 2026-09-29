@@ -98,7 +98,12 @@ const obligationGuidance = " Also list obligations: for each of the user's reque
   "for, and for each plan step the agent marked done, whether that step really happened. Judge each against the " +
   "whole result, reading unchanged files too, as met, partial, unmet or uncertain, with the evidence. A plan step " +
   "is the agent's claim, not evidence: check it in the code. An obligation is not a finding: it has no origin, and " +
-  "missing work belongs here even when no changed line shows it.";
+  "missing work belongs here even when no changed line shows it. Then check the other direction: for each change " +
+  "in the diff, whether a request or a claimed plan step needs it. Report each change none of them needs, such as a " +
+  "refactor of unrelated code or an abstraction, option or helper beyond what the requests call for, as one " +
+  "`operator` finding naming the change, since an extra may be welcome; report it as `fixable` only when it breaks " +
+  "what was asked. A test of the code the change touched, edge cases included, a comment, and an update a " +
+  "requested change forces on its callers are never extras.";
 
 /**
  * The main reviewer when a turn changed no files (decision 034): only

@@ -10,7 +10,7 @@ import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.j
 import { attributeOrigins } from "./finding-origin.js";
 import { reviewDepth } from "./review-depth.js";
 import type { ReviewReport } from "./review.js";
-import { EVALUATION_CASES, scoreCase, type CaseScore, type EvaluationCase } from "./review-evaluation.js";
+import { EVALUATION_CASES, SCOPE_CASES, scoreCase, type CaseScore, type EvaluationCase } from "./review-evaluation.js";
 import { validateFixes } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput } from "./review.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
@@ -35,7 +35,8 @@ function totals(scores: readonly CaseScore[]): Record<string, number> {
   const sum = (key: keyof Omit<CaseScore, "name">): number => scores.reduce((total, score) => total + score[key], 0);
   return { found: sum("found"), seeded: sum("seeded"), falsePositives: sum("falsePositives"),
     unsettled: sum("unsettled"), refuted: sum("refuted"), duplicates: sum("duplicates"), shown: sum("shown"),
-    unknownOrigin: sum("unknownOrigin"), defectsUnknown: sum("defectsUnknown") };
+    unknownOrigin: sum("unknownOrigin"), defectsUnknown: sum("defectsUnknown"), extras: sum("extras"),
+    extrasMarked: sum("extrasMarked"), extrasSentBack: sum("extrasSentBack") };
 }
 
 /**
@@ -86,6 +87,12 @@ const depthArgument = process.argv.find((argument) => argument.startsWith("--dep
 if (!["computed", "standard", "deep"].includes(depthArgument)) throw new Error("Use --depth=computed, standard or deep.");
 const depthMode = depthArgument as "computed" | "standard" | "deep";
 const skipCorrections = process.argv.includes("--skip-corrections");
+// --set=core (default) runs the eight core cases, scope the work-beyond-the-request cases (issue #165), all both.
+const setArgument = process.argv.find((argument) => argument.startsWith("--set="))?.slice("--set=".length) ?? "core";
+const sets: Record<string, readonly EvaluationCase[]> = { core: EVALUATION_CASES, scope: SCOPE_CASES,
+  all: [...EVALUATION_CASES, ...SCOPE_CASES] };
+const selected = sets[setArgument];
+if (selected === undefined) throw new Error("Use --set=core, scope or all.");
 
 // --model-reviewer=, --model-refuter= and --model-validator= compare route:model choices; otherwise the operator's apply.
 const chosen = readModelChoices();
@@ -99,8 +106,9 @@ const cases: unknown[] = [];
 const plantedResults: string[] = [];
 const raw: CaseScore[] = [];
 const refuted: CaseScore[] = [];
+const notMeasured: { name: string; reason: string }[] = [];
 try {
-  for (const testCase of EVALUATION_CASES) {
+  for (const testCase of selected) {
     const source = join(root, testCase.name.replaceAll(" ", "-"));
     mkdirSync(source, { recursive: true });
     const git = (args: string[]): void => { spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: source }); };
@@ -130,10 +138,14 @@ try {
       ...(deep ? applicableLenses(workspace.checkout).map((lens) => createPiReviewer({ ...ai.reviewer, lens })) : [])]
       .map((reviewer) => reviewer.review(input, signal))), snapshot);
     const reviewed = Date.now();
-    // A run where no reviewer finished measures the environment, not the review: stop instead of recording zeros.
+    // A case where no reviewer finished measures the environment, not the review: record it as not measured, never
+    // as zeros, and go on, so one failed case does not lose the others.
     const failed = reviews.find((report) => report.status === "incomplete");
     if (failed !== undefined && reviews.every((report) => report.status === "incomplete")) {
-      throw new Error(`Every reviewer failed on "${testCase.name}", so nothing was measured: ${failed.reason}`);
+      notMeasured.push({ name: testCase.name, reason: failed.reason });
+      cases.push({ name: testCase.name, notMeasured: failed.reason });
+      console.log(`${testCase.name}: not measured, every reviewer failed: ${failed.reason}`);
+      continue;
     }
     const tested = await refuteFindings(ai.refuter, input, reviews, signal);
     const done = Date.now();
@@ -159,11 +171,12 @@ try {
       (planted === undefined ? "" : ` | planted false claim: ${planted}`));
   }
 } finally { rmSync(root, { recursive: true, force: true }); }
-const record = { at: new Date().toISOString(), models: modelIds, depthMode, raw: totals(raw), refuted: totals(refuted),
+const record = { at: new Date().toISOString(), models: modelIds, depthMode, set: setArgument, raw: totals(raw), refuted: totals(refuted),
   plantedFalseClaims: { total: plantedResults.length, refuted: plantedResults.filter((result) => result === "refuted").length,
-    confirmed: plantedResults.filter((result) => result === "confirmed").length }, cases };
+    confirmed: plantedResults.filter((result) => result === "confirmed").length }, notMeasured, cases };
 mkdirSync(join("live-runs", "review"), { recursive: true });
 const file = join("live-runs", "review", `${record.at.replaceAll(":", "-")}.json`);
 writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
 console.log(`raw ${JSON.stringify(record.raw)}\nrefuted ${JSON.stringify(record.refuted)}\n` +
-  `planted false claims ${JSON.stringify(record.plantedFalseClaims)}\nrecorded ${file}`);
+  `planted false claims ${JSON.stringify(record.plantedFalseClaims)}\n` +
+  (notMeasured.length === 0 ? "" : `not measured: ${notMeasured.map((entry) => entry.name).join(", ")}\n`) + `recorded ${file}`);

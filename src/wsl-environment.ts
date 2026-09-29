@@ -14,7 +14,7 @@ import { distributionStep } from "./verification/wsl-settings-rule.js";
 import { windowsSystemProgram } from "./windows-system.js";
 
 /**
- * The WSL sandbox, Windows' sandbox (decisions 043 and 045). Tesota keeps a
+ * The WSL sandbox, Windows' sandbox (decisions 043 and 047). Tesota keeps a
  * WSL distribution of its own, with its own user and Windows interop off, and
  * starts one process in it per prepared environment (`bubblewrap-sandbox.ts`),
  * which runs each command in a bubblewrap sandbox and hosts the egress proxy.

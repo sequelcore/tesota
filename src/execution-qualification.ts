@@ -23,7 +23,7 @@ import { qualifiedFilesystem, qualifiedNetwork } from "./verification/sandbox-qu
  * Raised when a control changes, so every machine qualifies again; a test
  * fails when the controls change without it. 3: `network_direct` judges a
  * connection as blocked, connected or indeterminate. 4: probes are written for
- * a POSIX shell only, since no sandbox runs PowerShell (decision 045).
+ * a POSIX shell only, since no sandbox runs PowerShell (decision 047).
  */
 export const CONTROLS_VERSION = 4;
 const FAILED_RETRY_MS = 24 * 60 * 60 * 1_000;

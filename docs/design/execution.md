@@ -160,7 +160,7 @@ workspace.
   go inside**, as in Codex's exec server and OpenHands.
 - **Pluggable environments**, as every surveyed harness that isolates keeps
   them; vendor names stay inside provider adapters.
-- **Linux's isolation inside WSL2 on Windows** (decision 045): Windows'
+- **Linux's isolation inside WSL2 on Windows** (decision 047): Windows'
   native options need elevated setup and dedicated identities (Codex) or a
   preview that is not yet a security boundary (MXC), and make ordinary
   toolchains behave differently; Claude Code's sandbox does not run on
@@ -180,14 +180,14 @@ workspace.
 
 ## WSL sandbox
 
-Decisions 030, 043 and 045; evidence in the
+Decisions 030, 043 and 047; evidence in the
 [native sandbox landscape](../research/native-sandbox-landscape.md) and its
 [WSL2 section](../research/native-sandbox-landscape.md#wsl2-as-the-windows-backend-2026-09-28).
 On Windows, commands run confined without asking in a Linux sandbox inside
 WSL2, as Cursor runs its own there, with Linux's isolation as Codex and
 Anthropic's Sandbox Runtime use it: bubblewrap namespaces and a network whose
 only exit is Tesota's proxy. It replaced a native Windows sandbox on
-Microsoft's MXC (decision 045), which worked only through accommodations that
+Microsoft's MXC (decision 047), which worked only through accommodations that
 were Tesota's to keep and failed 44 of Tesota's own tests for reasons only an
 unreleased Windows feature removes. Linux and macOS come later, for a real
 consumer, under the same controls.
@@ -323,7 +323,7 @@ blocked, connected or indeterminate (`directConnection`). The tool folders a
 command reads (`readsToolFolder`), and the distribution's settings and drives
 (`distributionStep`, `settingsAsked`, `countsAsDrive`).
 
-**Measured on Windows** (one run each, caches not controlled; decision 045):
+**Measured on Windows** (one run each, caches not controlled; decision 047):
 the first preparation with dependencies took 17.4 s, a later one 3.65 s,
 hidden by preparing at session open; Tesota's own check ran its first test
 group in 112 s with 616 of 617 tests passing, where the MXC sandbox took
@@ -336,7 +336,7 @@ restart once. Resources are unbounded per command; WSL's virtual machine is
 bounded as a whole. A command's output names paths under `/mnt`; the file
 tools keep the real ones.
 
-**Rejected.** MXC's `processcontainer` (decision 045): PowerShell instead of
+**Rejected.** MXC's `processcontainer` (decision 047): PowerShell instead of
 the shell used elsewhere, a drive per workspace, dependencies installed
 outside the sandbox, a filtered `PATH`, Git's TLS backend switched, loopback
 servers refused, and 44 of Tesota's tests failing until Windows releases
