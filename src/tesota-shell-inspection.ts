@@ -1,3 +1,4 @@
+import type { TriageDecision } from "./integrations/answer-triage.js";
 import type { Finding, Obligation, ReviewReport } from "./review.js";
 import { actionOfCheck, actionOfFinding, actionOfObligation } from "./review-action.js";
 import { type ObligationOutcome, obligationOutcome } from "./verification/obligation-outcome.js";
@@ -194,15 +195,23 @@ function requestedDetail(requests: readonly string[]): string {
  * The check of a turn that changed no files (decision 034): how each request
  * held against the repository and the agent's reply; there is nothing to apply.
  */
-export function inspectAnswer(requests: readonly string[], reviews: readonly ReviewReport[]): ShellInspection {
+export function inspectAnswer(requests: readonly string[], reviews: readonly ReviewReport[],
+  triage?: Readonly<{ model: string; decision: TriageDecision }>): ShellInspection {
   const groups: Groups = { agent: [], operator: [], context: [] };
   addReviews(groups, reviews, false);
   return {
     title: "Answer check",
     summary: [...grouped(groups), ...progressLines(reviews),
       "No files changed. The reviewer checked your requests against the repository and the agent's reply."].join("\n"),
-    detail: `${requestedDetail(requests)}\n\nReview\n${reviews.map(reviewDetail).join("\n\n") || "  None"}`,
+    detail: `${requestedDetail(requests)}${triage === undefined ? "" : `\n\n${firstPassDetail(triage.model, triage.decision)}`}` +
+      `\n\nReview\n${reviews.map(reviewDetail).join("\n\n") || "  None"}`,
   };
+}
+
+/** Why the full check ran: the first pass found something checkable, or decided nothing. */
+function firstPassDetail(model: string, decision: TriageDecision): string {
+  const outcome = decision.decided ? "found something to check" : "decided nothing, so the full check ran";
+  return `First pass\n  ${model} ${outcome}: ${decision.reason}`;
 }
 
 const verbs: Readonly<Record<WorkspaceSnapshot["changes"][number]["status"], string>> =

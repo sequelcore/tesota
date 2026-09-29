@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
-import type { ReviewReport } from "./review.js";
+import type { TriageDecision } from "./integrations/answer-triage.js";
+import type { ReviewReport, ToolCallRecord } from "./review.js";
 import type { DepthDecision } from "./review-depth.js";
 import type { ReviewMeasurement } from "./review-forecast.js";
 import type { VerificationChange } from "./verification-changes.js";
@@ -12,11 +13,13 @@ import type { CheckResult } from "./workspace-checks.js";
 /**
  * The workspace's assurance journal (decision 015): one line per reviewed
  * candidate, with what was asked, what each verifier claimed and observed,
- * what each reviewer found, and the operator's decision. It sits beside the
+ * what each reviewer found, and the operator's decision, and one per answer
+ * check's first pass. It sits beside the
  * checkout, out of the agent's reach, and is only ever appended to.
  */
 const journalFile = "assurance.jsonl";
 const outputTail = 2_000;
+const subjectLimit = 300;
 
 export type AssuranceDecision = "applied" | "rejected" | "application_conflict" | "application_rolled_back" |
   "application_recovery_required";
@@ -27,7 +30,10 @@ export type AssuranceEntry =
         "exitCode" | "output" | "base">>[];
       flags: readonly VerificationChange[]; reviews: readonly ReviewReport[]; depth?: DepthDecision;
       measurement?: ReviewMeasurement }>
-  | Readonly<{ kind: "decision"; at: string; tree: string; decision: AssuranceDecision }>;
+  | Readonly<{ kind: "decision"; at: string; tree: string; decision: AssuranceDecision }>
+  | Readonly<{ kind: "triage"; at: string; tree: string; requests: readonly string[]; model: string;
+      decided: boolean; checkable: boolean; probability?: number; reason: string; runsCheck: boolean;
+      toolCalls: readonly ToolCallRecord[] }>;
 
 export function reviewEntry(snapshot: WorkspaceSnapshot, requests: readonly string[], checks: readonly CheckResult[],
   flags: readonly VerificationChange[], reviews: readonly ReviewReport[], depth?: DepthDecision,
@@ -41,6 +47,18 @@ export function reviewEntry(snapshot: WorkspaceSnapshot, requests: readonly stri
 
 export function decisionEntry(tree: string, decision: AssuranceDecision): AssuranceEntry {
   return { kind: "decision", at: new Date().toISOString(), tree, decision };
+}
+
+/**
+ * The answer check's first pass on a turn that changed no files, whether or
+ * not the full check then ran, with the turn's tool calls, so every decision,
+ * a skip included, can be measured against what the turn held.
+ */
+export function triageEntry(tree: string, requests: readonly string[], model: string, decision: TriageDecision,
+  runsCheck: boolean, toolCalls: readonly ToolCallRecord[]): AssuranceEntry {
+  return { kind: "triage", at: new Date().toISOString(), tree, requests, model, decided: decision.decided,
+    checkable: decision.checkable, ...(decision.probability === undefined ? {} : { probability: decision.probability }),
+    reason: decision.reason, runsCheck, toolCalls: toolCalls.map((call) => ({ ...call, subject: call.subject.slice(0, subjectLimit) })) };
 }
 
 export async function appendAssurance(workspaceDirectory: string, entry: AssuranceEntry): Promise<void> {
@@ -59,6 +77,7 @@ const journaledReport = z.discriminatedUnion("status", [
 const journaledEntry = z.discriminatedUnion("kind", [
   z.looseObject({ kind: z.literal("review"), tree: z.string(), reviews: z.array(journaledReport) }),
   z.looseObject({ kind: z.literal("decision"), tree: z.string(), decision: z.string() }),
+  z.looseObject({ kind: z.literal("triage") }),
 ]);
 
 /**

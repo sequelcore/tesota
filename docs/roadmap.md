@@ -34,6 +34,12 @@ the workflow and limits.
   the working agent's prompt has no measured scope intervention yet. Register
   the cases before changing it; use `live:agent` and record the result with
   the change. [Issue #165](https://github.com/sequelcore/tesota/issues/165)
+- Route the answer check by what a turn holds. Jev's first pass already
+  decides the request's kind from the requests alone; add journaled real turns
+  to `live:answer`'s cases, then send each part to the cheapest check that
+  settles it. A cheaper reviewer tier needs escalation that never trusts its
+  clean verdicts, and a measured saving.
+  [Assurance](design/assurance.md#planned-routing-the-answer-check)
 - Exercise model routes that have not completed a live request. OpenCode Zen
   restricts its free models to its own client, and OpenCode Go requires an
   active subscription. Do not present either route as live-qualified until it

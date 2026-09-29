@@ -2,7 +2,8 @@ import { expect, it } from "vitest";
 import { correctionFor, correctionPrompt } from "../src/correction.js";
 import { applyRefutation, refutationMessage } from "../src/integrations/pi-refuter.js";
 import { missingAssessments, reviewMessage } from "../src/integrations/pi-reviewer.js";
-import type { Obligation, ReviewInput, ReviewReport } from "../src/review.js";
+import type { Obligation, ReviewInput, ReviewReport, ToolCallRecord } from "../src/review.js";
+import { recordCall } from "../src/tesota-shell-command.js";
 import { inspectAnswer, inspectReview } from "../src/tesota-shell-inspection.js";
 import { obligationOutcome } from "../src/verification/obligation-outcome.js";
 import { planLines, withReview } from "../src/work-plan.js";
@@ -108,4 +109,36 @@ it("gives the reviewer the agent's reply as an untrusted answer when no files ch
   expect(inspection.summary).toContain("For the agent to fix\n  ✗ Request 1 is not done: farewell() exists");
   expect(inspection.summary).toContain("Your requests: 1 of 2 done, 1 not done");
   expect(inspection.detail).toContain("  ✗ Request 1: farewell() exists (not done: evidence for farewell() exists)");
+  expect(inspection.detail).not.toContain("First pass");
+  const screened = inspectAnswer(answer.requests, [report],
+    { model: "typesafe:jev-1.13.0", decision: { decided: true, checkable: true, probability: 0.75, reason: "Jev: 0.75 checkable" } });
+  expect(screened.detail).toContain("First pass\n  typesafe:jev-1.13.0 found something to check: Jev: 0.75 checkable\n\nReview");
+  expect(inspectAnswer(answer.requests, [report], { model: "off", decision: { decided: false, checkable: true,
+    reason: "the first pass is off" } }).detail).toContain("off decided nothing, so the full check ran: the first pass is off");
+});
+
+it("holds the reply's claims about the agent's own actions to Tesota's record of the turn's tool calls", () => {
+  const input: ReviewInput = { checkout: ".", requests: ["Run the tests"], snapshot: { base: "t", tree: "t", changes: [], diff: "" },
+    checks: [], flags: [], response: "I ran the tests; they pass.",
+    toolCalls: [{ tool: "read", subject: "src/a.ts", outcome: "succeeded" }, { tool: "bash", subject: "bun test", outcome: "failed" },
+      { tool: "bash", subject: "bun run lint", outcome: "unfinished" }] };
+  expect(reviewMessage(input)).toContain("Tool calls in the agent's latest turn, recorded by Tesota:\n- read src/a.ts\n" +
+    "- bash bun test (failed)\n- bash bun run lint (unfinished)");
+  expect(reviewMessage({ ...input, toolCalls: [] })).toContain("recorded by Tesota:\n- none");
+  const many = Array.from({ length: 205 }, (_, index) => ({ tool: "read", subject: `f${index}.ts`, outcome: "succeeded" as const }));
+  const message = reviewMessage({ ...input, toolCalls: many });
+  expect(message).toContain("[5 earlier calls are not shown.]\n- read f5.ts");
+  expect(message).not.toContain("- read f4.ts\n");
+});
+
+it("records a turn's tool calls as they start and finish, and leaves one that never finished unfinished", () => {
+  const calls = new Map<string, ToolCallRecord>();
+  recordCall(calls, { type: "tool_started", call: "1", tool: "bash", subject: "bun test" });
+  recordCall(calls, { type: "tool_started", call: "2", tool: "read", subject: "a.ts" });
+  recordCall(calls, { type: "tool_started", call: "3", tool: "bash", subject: "sleep 99" });
+  recordCall(calls, { type: "tool_finished", call: "1", failed: true, output: "1 failed" });
+  recordCall(calls, { type: "tool_finished", call: "2", failed: false, output: "" });
+  recordCall(calls, { type: "tool_finished", call: "unknown", failed: false, output: "" });
+  expect([...calls.values()]).toEqual([{ tool: "bash", subject: "bun test", outcome: "failed" },
+    { tool: "read", subject: "a.ts", outcome: "succeeded" }, { tool: "bash", subject: "sleep 99", outcome: "unfinished" }]);
 });

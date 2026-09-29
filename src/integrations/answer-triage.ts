@@ -19,6 +19,8 @@ export interface TriageDecision {
   /** Whether the first pass reached a decision at all. */
   readonly decided: boolean;
   readonly checkable: boolean;
+  /** A typed decision model's probability that the turn is checkable; a model session gives none. */
+  readonly probability?: number;
   readonly reason: string;
 }
 
