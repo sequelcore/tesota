@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { controlsFor, runControls } from "../src/execution-controls.js";
+import { controlsFor, runControls, writeSetupProbe } from "../src/execution-controls.js";
 import type { ExecutionEnvironment } from "../src/execution-environment.js";
 import { qualifyProvider } from "../src/execution-qualification.js";
 import { bubblewrapEnvironment, type Launch, WSL_GUARANTEES, wslProvider } from "../src/wsl-environment.js";
@@ -12,8 +12,9 @@ import { bubblewrapEnvironment, type Launch, WSL_GUARANTEES, wslProvider } from 
 /**
  * The WSL sandbox (decision 043) against the execution controls every
  * provider must pass, then the network's report and allowance, loopback
- * servers, cancellation of a process tree, Windows programs and the time a
- * command takes. On Windows it runs the whole provider in Tesota's WSL
+ * servers, cancellation of a process tree, Windows programs, the time a
+ * command takes, and a repository's pinned runtime, mise file and setup
+ * script (decision 048). On Windows it runs the whole provider in Tesota's WSL
  * distribution; on Linux, the same sandbox process started directly, which is
  * everything but `wsl.exe` and path translation. It needs bubblewrap, and
  * runs only with TESOTA_LIVE_WSL=1.
@@ -43,6 +44,7 @@ beforeAll(async () => {
   workspace = join(root, "workspace");
   await mkdir(workspace);
   await mkdir(join(root, "outside"));
+  await writeSetupProbe(workspace, "https://github.com/");
   if (windows) expect(await wslProvider.readiness()).toEqual({ ready: true });
   sandbox = windows ? await wslProvider.prepare(workspace) : await bubblewrapEnvironment(direct, workspace);
 }, 300_000);
@@ -57,7 +59,8 @@ afterAll(async () => {
 it.runIf(live)("passes every control its guarantees call for, including a client that ignores the proxy", async () => {
   if (sandbox === undefined) throw new Error("Sandbox unavailable");
   const results = await runControls(sandbox, controlsFor(WSL_GUARANTEES), { workspace, outside: join(root, "outside"),
-    runtime: "node", refusedUrl: "https://example.com/", registryUrl: "https://registry.npmjs.org/" }, new AbortController().signal);
+    runtime: "node", refusedUrl: "https://example.com/", registryUrl: "https://registry.npmjs.org/", setupUrl: "https://github.com/" },
+  new AbortController().signal);
   expect(results.filter((result) => !result.passed)).toEqual([]);
   expect(results.map((result) => result.control)).toEqual(controlsFor(WSL_GUARANTEES));
 }, 300_000);
@@ -120,6 +123,39 @@ it.runIf(live)("works with Git, npm and Bun's scripts", async () => {
   expect(npm.exitCode).toBe(0);
   expect(npm.output).toContain("true");
 }, 300_000);
+
+it.runIf(live)("runs a repository's pinned Node, its mise file's tools and its setup script, once, and keeps the tools read-only", async () => {
+  const repository = join(root, "pinned");
+  await mkdir(join(repository, ".tesota"), { recursive: true });
+  await writeFile(join(repository, ".nvmrc"), "20\n");
+  await writeFile(join(repository, "mise.toml"), "[tools]\njq = \"1.7.1\"\n");
+  await writeFile(join(repository, ".tesota", "setup.sh"), "node --version > setup-node.txt\necho ran >> setup-runs.txt\n");
+  const prepare = (): Promise<ExecutionEnvironment> => windows ? wslProvider.prepare(repository) : bubblewrapEnvironment(direct, repository);
+  const inside = async (environment: ExecutionEnvironment, command: string): Promise<string> => {
+    let output = "";
+    await environment.run(command, { cwd: repository, onOutput: (chunk) => { output += chunk.toString(); } });
+    return output.trim();
+  };
+  try {
+    const first = await prepare();
+    try {
+      expect(first.preparation.filter((step) => step.outcome !== "done")).toEqual([]);
+      expect(first.preparation.map((step) => step.description)).toEqual(["Install node 20 and the tools in mise.toml",
+        "Find the installed tools", "Run .tesota/setup.sh"]);
+      expect(await inside(first, "node --version")).toMatch(/^v20\./u);
+      expect(await inside(first, "jq --version")).toBe("jq-1.7.1");
+      // Setup ran with the pinned Node already first on PATH.
+      expect(readFileSync(join(repository, "setup-node.txt"), "utf8")).toMatch(/^v20\./u);
+      expect(await inside(first, "touch \"$(dirname \"$(command -v node)\")/tesota-probe\" 2>/dev/null && echo wrote || echo refused")).toBe("refused");
+    } finally { await first.dispose(); }
+    const second = await prepare();
+    try {
+      expect(second.preparation).toEqual([]);
+      expect(await inside(second, "node --version")).toMatch(/^v20\./u);
+    } finally { await second.dispose(); }
+    expect(readFileSync(join(repository, "setup-runs.txt"), "utf8")).toBe("ran\n");
+  } finally { if (windows) await wslProvider.release(repository); }
+}, 600_000);
 
 it.runIf(live)("starts a command quickly", async () => {
   const timings: number[] = [];

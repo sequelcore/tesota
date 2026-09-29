@@ -64,13 +64,17 @@ it("keeps the operator's choice for new sessions, and refuses what is not a choi
   expect(output()).toContain("host     in use: this computer, always available; asks before each command");
 });
 
-it("removes this repository's package cache, and says when there is none", async () => {
+it("removes this repository's package cache and the tools sandboxes installed for it, and says when there is no cache", async () => {
   const { dependencies, write, output } = setup();
+  const released: string[] = [];
+  const keeping = { ...wsl, releaseRepository: async (cache: string) => { released.push(cache); } };
+  const cleaning = { ...dependencies, candidates: [keeping, docker] };
   mkdirSync(dependencies.cacheDirectory, { recursive: true });
   writeFileSync(join(dependencies.cacheDirectory, "package.tgz"), "x");
-  expect(await runSandboxCommand(["clean"], write, dependencies)).toBe(0);
+  expect(await runSandboxCommand(["clean"], write, cleaning)).toBe(0);
   expect(existsSync(dependencies.cacheDirectory)).toBe(false);
-  expect(output()).toContain("Removed this repository's package cache.");
-  expect(await runSandboxCommand(["clean"], write, dependencies)).toBe(0);
-  expect(output()).toContain("This repository has no package cache.");
+  expect(output()).toContain("Removed this repository's package cache and the tools sandboxes installed for it.");
+  expect(await runSandboxCommand(["clean"], write, cleaning)).toBe(0);
+  expect(output()).toContain("This repository has no package cache; removed any tools sandboxes installed for it.");
+  expect(released).toEqual([dependencies.cacheDirectory, dependencies.cacheDirectory]);
 });

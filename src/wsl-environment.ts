@@ -1,5 +1,5 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { release } from "node:os";
 import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -9,7 +9,8 @@ import { type HostMessage, type SandboxMessage, sandboxMessage } from "./bubblew
 import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionProvider, isNetworkDestination,
   type NetworkControl, type PrepareOptions, type PreparationStep, type ProviderReadiness, type RunOptions, type RunResult,
   type SetupStep } from "./execution-environment.js";
-import { miseInstallScript, planToolchain } from "./toolchain.js";
+import { miseInstallScript, type MiseUse, missingRuntimes, needsDownloadHosts, planToolchain, setupStages,
+  TOOLCHAIN_HOSTS } from "./toolchain.js";
 import { distributionStep } from "./verification/wsl-settings-rule.js";
 import { windowsSystemProgram } from "./windows-system.js";
 
@@ -19,8 +20,9 @@ import { windowsSystemProgram } from "./windows-system.js";
  * starts one process in it per prepared environment (`bubblewrap-sandbox.ts`),
  * which runs each command in a bubblewrap sandbox and hosts the egress proxy.
  * Commands run in a POSIX shell, and see the workspace at its path under
- * `/mnt`. WSL itself is not the boundary: bubblewrap's namespaces are, inside
- * WSL's virtual machine.
+ * `/mnt`, with the runtimes the repository pins and the tools its setup
+ * installs (decision 048). WSL itself is not the boundary: bubblewrap's
+ * namespaces are, inside WSL's virtual machine.
  */
 
 export const WSL_GUARANTEES: EnvironmentGuarantees = { filesystem: "workspace", network: "allowlist", secrets: "none", resources: "unbounded" };
@@ -41,9 +43,12 @@ function wslProgram(): string {
   return windowsSystemProgram("wsl.exe");
 }
 
-/** Where the distribution's setup puts Tesota's pinned runtimes, as the Docker Sandboxes kit does. */
+/**
+ * Where the distribution's setup puts Tesota's pinned runtimes, as the Docker
+ * Sandboxes kit does, and the pinned mise that installs a repository's tools.
+ */
 const RUNTIMES = ["node", "bun"] as const;
-const RUNTIMES_PATH = RUNTIMES.map((tool) => `/opt/tesota/${tool}/bin`).join(":");
+const RUNTIMES_PATH = [...RUNTIMES, "mise"].map((tool) => `/opt/tesota/${tool}/bin`).join(":");
 
 /** The sandbox's process inside Tesota's distribution, run by Tesota's pinned Node from Tesota's own files on the Windows drive. */
 const wslLaunch: Launch = (args) => spawn(wslProgram(), ["--distribution", WSL_DISTRIBUTION, "--user", WSL_USER, "--cd", "~",
@@ -140,43 +145,44 @@ function runIn(connection: Connection, workspace: string, command: string, optio
 }
 
 /**
- * Install the repository's dependencies from its lockfile, inside the sandbox,
- * so they are Linux's and land on WSL's own disk. A marker in the sandbox's
- * home skips an install nothing changed. Mise's files and `.tesota/setup.sh`
- * download toolchains from hosts beyond the registries, which this sandbox
- * does not open yet, so they are reported and not run.
+ * Set the repository up inside the sandbox, as its `setup` message asks the
+ * sandbox's process to (decision 048): the runtimes it pins that Tesota's own
+ * are not, through the distribution's mise, into the repository's toolchain
+ * folder; what its mise files declare; its setup script; then its lockfile
+ * install, each after the one before succeeds. The toolchain hosts are open
+ * only while stages that download from them run, and the process confirms
+ * them closed. It skips a setup that already succeeded in this workspace.
  */
-async function prepareDependencies(connection: Connection, workspace: string, options: PrepareOptions):
-  Promise<PreparationStep[]> {
+function setUp(connection: Connection, workspace: string, ready: Extract<SandboxMessage, { type: "ready" }>,
+  options: PrepareOptions): Promise<PreparationStep[]> {
   const plan = planToolchain(workspace);
-  const steps: PreparationStep[] = [];
-  const downloads = [...plan.miseFiles, ...plan.setupScript === null ? [] : [plan.setupScript]];
-  if (downloads.length > 0) {
-    steps.push({ description: `Set up ${downloads.join(" and ")}`, outcome: "failed",
-      output: "The WSL sandbox does not open the toolchain downloads these need yet." });
-  }
-  if (plan.dependencies === null) return steps;
-  const marker = `"$HOME/.tesota-setup"`;
-  const run = async (command: string): Promise<{ result: RunResult; output: string }> => {
-    let output = "";
-    const result = await runIn(connection, workspace, command, { cwd: workspace, timeoutSeconds: SETUP_STEP_MS / 1_000,
-      onOutput: (chunk) => { output = `${output}${chunk.toString("utf8")}`.slice(-OUTPUT_TAIL); },
-      ...options.signal === undefined ? {} : { signal: options.signal } });
-    return { result, output };
-  };
-  if ((await run(`cat ${marker} 2>/dev/null || true`)).output.trim() === plan.fingerprint) return steps;
-  options.onProgress?.(`Preparing the sandbox: installing dependencies (${plan.dependencies})`);
-  const installed = await run(plan.dependencies);
-  const done = installed.result.outcome === "exited" && installed.result.exitCode === 0;
-  steps.push({ description: `Install dependencies (${plan.dependencies})`, outcome: done ? "done" : "failed", output: done ? "" : installed.output });
-  if (done) await run(`echo ${plan.fingerprint} > ${marker}`);
-  return steps;
+  const mise: MiseUse = { install: false, runtimes: missingRuntimes(plan.tools, pinnedRuntimes()), reach: "folders" };
+  const stages = setupStages(plan, mise);
+  if (stages.length === 0) return Promise.resolve([]);
+  const destinations = needsDownloadHosts(plan, mise) ? TOOLCHAIN_HOSTS.map((host) => `${host}:443`) : [];
+  const env = { MISE_DATA_DIR: ready.toolchains, MISE_YES: "1", MISE_HIDE_UPDATE_WARNING: "1",
+    MISE_TRUSTED_CONFIG_PATHS: ready.workspace };
+  const fingerprint = createHash("sha256").update(JSON.stringify({ plan: plan.fingerprint, stages, destinations, env })).digest("hex");
+  const id = randomUUID();
+  return new Promise((settle, fail) => {
+    const stop = connection.listen(id, (message) => {
+      if (message.type === "stage") options.onProgress?.(`Preparing the sandbox: ${message.description}`);
+      if (message.type !== "prepared" && message.type !== "ended") return;
+      stop();
+      if (message.type === "ended") fail(new Error("The WSL sandbox's process ended during setup"));
+      else if (message.error !== undefined) fail(new Error(`The WSL sandbox stopped: ${message.error}`));
+      else settle([...message.steps]);
+    });
+    connection.send({ type: "setup", id, fingerprint, destinations, env, timeoutSeconds: SETUP_STEP_MS / 1_000,
+      stages: stages.map((stage) => ({ description: stage.description, script: stage.script,
+        ...stage.toolFolders === true ? { toolFolders: true } : {} })) });
+  });
 }
 
 /**
  * Start a workspace's sandbox process with `launch`, wait until it is ready,
- * and install the workspace's dependencies in it. Stopping the preparation
- * ends the process, which stops what it runs and closes its proxy.
+ * and set the repository up in it. Stopping the preparation ends the
+ * process, which stops what it runs and closes its proxy.
  */
 export async function bubblewrapEnvironment(launch: Launch, workspace: string, options: PrepareOptions = {}): Promise<ExecutionEnvironment> {
   options.signal?.throwIfAborted();
@@ -189,7 +195,7 @@ export async function bubblewrapEnvironment(launch: Launch, workspace: string, o
     const first = await connection.first;
     if (first.type !== "ready") throw new Error(`The WSL sandbox could not start: ${first.type === "failed" ? first.message : first.type}`);
     options.signal?.throwIfAborted();
-    const preparation = await prepareDependencies(connection, root, options);
+    const preparation = await setUp(connection, root, first, options);
     options.signal?.throwIfAborted();
     return { provider: "wsl", ...first.workspace === root ? {} : { commandRoot: first.workspace },
       guarantees: WSL_GUARANTEES, preparation,
@@ -243,18 +249,19 @@ function pinnedRuntimes(): { node: string; bun: string } {
 
 /**
  * Root's script that makes Tesota's distribution a sandbox host: bubblewrap
- * and Git from the distribution, Node and Bun at Tesota's pinned versions
- * under `/opt/tesota` through the pinned, hash-checked mise, a user of its
- * own, and WSL's settings for the next start: interop off, and Windows'
- * drives owned by that user, since a distribution created without its
- * first-run setup mounts them as root's.
+ * and Git from the distribution, the pinned, hash-checked mise and, through
+ * it, Node and Bun at Tesota's pinned versions, all under `/opt/tesota`, a
+ * user of its own, and WSL's settings for the next start: interop off, and
+ * Windows' drives owned by that user, since a distribution created without
+ * its first-run setup mounts them as root's.
  */
 export function distributionSetupScript(): string {
   const versions = pinnedRuntimes();
   const mise = "\"$HOME/.local/bin/mise\"";
   return ["set -eu", "export DEBIAN_FRONTEND=noninteractive",
     "apt-get update -q", "apt-get install -y -q --no-install-recommends bubblewrap git curl ca-certificates xz-utils unzip",
-    miseInstallScript(), "export MISE_DATA_DIR=/tmp/tesota-mise MISE_YES=1", "mkdir -p /opt/tesota",
+    miseInstallScript(), "export MISE_DATA_DIR=/tmp/tesota-mise MISE_YES=1", "mkdir -p /opt/tesota/mise/bin",
+    "install -m 0755 \"$HOME/.local/bin/mise\" /opt/tesota/mise/bin/mise",
     ...RUNTIMES.flatMap((tool) => [`${mise} install ${tool}@${versions[tool]}`,
       `rm -rf /opt/tesota/${tool}`, `cp -a "$(${mise} where ${tool}@${versions[tool]})" /opt/tesota/${tool}`]),
     "rm -rf /tmp/tesota-mise",
@@ -284,13 +291,21 @@ async function readinessSteps(launch: Launch): Promise<SetupStep[]> {
     const args = ["--distribution", WSL_DISTRIBUTION, "--user", "root", "--exec", "sh", "-c",
       `echo ${Buffer.from(distributionSetupScript(), "utf8").toString("base64")} | base64 -d | sh`];
     const problems = checked?.problems.join("; ") ?? "Node.js cannot run there yet";
-    return [{ description: `Set up Tesota's WSL distribution: bubblewrap, Git, Node.js, Bun, its own user and settings (${problems})`,
+    return [{ description: `Set up Tesota's WSL distribution: bubblewrap, Git, mise, Node.js, Bun, its own user and settings (${problems})`,
       command: `"${wsl}" ${args.slice(0, 7).join(" ")} "<setup script>"`, action: { kind: "process", program: wsl, args } }];
   }
   if (step === "ready") return [];
   const args = ["--terminate", WSL_DISTRIBUTION];
   return [{ description: `Restart Tesota's WSL distribution so its settings apply (${checked.settings.join("; ")})`,
     command: `"${wsl}" ${args.join(" ")}`, action: { kind: "process", program: wsl, args } }];
+}
+
+/** Have the sandbox's process remove what a workspace or a repository kept on WSL's disk. */
+async function releaseInDistribution(target: readonly string[]): Promise<void> {
+  if (process.platform !== "win32") return;
+  const child = wslLaunch(["release", ...target]);
+  child.stdin.end();
+  await new Promise<void>((settle) => { child.once("error", () => { settle(); }); child.once("close", () => { settle(); }); });
 }
 
 export const wslProvider: ExecutionProvider = {
@@ -306,10 +321,6 @@ export const wslProvider: ExecutionProvider = {
   async fingerprint(): Promise<string> {
     return `windows ${release()}; ${(await checkDistribution(wslLaunch))?.versions ?? "unknown"}`;
   },
-  async release(workspace) {
-    if (process.platform !== "win32") return;
-    const child = wslLaunch(["release", "--workspace", resolve(workspace)]);
-    child.stdin.end();
-    await new Promise<void>((settle) => { child.once("error", () => { settle(); }); child.once("close", () => { settle(); }); });
-  },
+  release: (workspace) => releaseInDistribution(["--workspace", resolve(workspace)]),
+  releaseRepository: (cacheDirectory) => releaseInDistribution(["--cache", resolve(cacheDirectory)]),
 };

@@ -1,14 +1,16 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { constants, homedir, release } from "node:os";
 import { posix } from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import * as z from "zod";
 import { EgressProxy } from "./egress-proxy.js";
-import { PACKAGE_REGISTRY_HOSTS, type RunOutcome } from "./execution-environment.js";
+import { PACKAGE_REGISTRY_HOSTS, type PreparationStep, type RunOutcome } from "./execution-environment.js";
+import { MISE_RELEASE } from "./toolchain.js";
+import type { NetworkPhase } from "./verification/setup-network-rule.js";
 import { readsToolFolder } from "./verification/tool-folder-rule.js";
 import { countsAsDrive, settingsAsked } from "./verification/wsl-settings-rule.js";
 
@@ -27,8 +29,10 @@ const { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } = p
  * the one path out, so a program that ignores proxy variables reaches nothing,
  * as Codex's and Anthropic's Linux sandboxes do. WSL's interop, which starts
  * Windows programs, answers on a socket under `/run/WSL`, which no command
- * sees. The host talks to this process in JSON lines over its standard input
- * and output.
+ * sees. Before the agent's first command, setup may install the repository's
+ * tools into its toolchain folder, the only time that folder is writable and
+ * the proxy permits setup's destinations (decision 048). The host talks to
+ * this process in JSON lines over its standard input and output.
  */
 
 /** Where the relay listens inside each command's network namespace, and so where its proxy variables point. */
@@ -52,6 +56,8 @@ export interface SandboxLayout {
   readonly home: string;
   readonly temp: string;
   readonly cache: string;
+  /** The repository's installed tools, on WSL's own disk: writable during setup, read-only to every other command. */
+  readonly toolchains: string;
   /** A folder on WSL's own disk mounted as the workspace's `node_modules`, for a JavaScript package. */
   readonly modules?: string;
   readonly relay: string;
@@ -189,10 +195,11 @@ export function commandVariables(layout: SandboxLayout, path: string, given: Rea
 /**
  * bubblewrap's arguments for one command: new user, process, network, IPC,
  * UTS and cgroup namespaces; the system and tool folders read-only; the
- * workspace and the session's folders writable; nothing else. `--info-fd 3`
- * reports the sandbox's first process, whose end ends every process in it.
+ * workspace and the session's folders writable; the repository's toolchain
+ * folder writable only in setup; nothing else. `--info-fd 3` reports the
+ * sandbox's first process, whose end ends every process in it.
  */
-export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command: string): string[] {
+export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command: string, phase: NetworkPhase): string[] {
   const system = layout.system.flatMap((folder) => folder.link === undefined ? ["--ro-bind", folder.path, folder.path]
     : ["--symlink", folder.link, folder.path]);
   const modules = layout.modules === undefined ? [] : ["--bind", layout.modules, join(layout.workspace, "node_modules")];
@@ -200,43 +207,64 @@ export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command:
     ...layout.tools.flatMap((folder) => ["--ro-bind-try", folder, folder]),
     "--proc", "/proc", "--dev", "/dev", "--bind", layout.temp, "/tmp",
     "--bind", layout.home, layout.home, "--bind", layout.cache, layout.cache,
+    phase === "setup" ? "--bind" : "--ro-bind", layout.toolchains, layout.toolchains,
     "--bind", layout.workspace, layout.workspace, ...modules,
     "--ro-bind", layout.relay, layout.relay, "--bind", layout.socket, layout.socket,
     "--chdir", cwd, "--info-fd", "3", "--", layout.runtime, layout.relay, layout.socket, String(SANDBOX_PROXY_PORT), command];
 }
 
-/** What the host asks: run a command, stop one, or open the network to destinations. */
+/** One setup stage: its shell script, and whether its output names the installed tools' folders. */
+export type SetupStageMessage = Readonly<{ description: string; script: string; toolFolders?: boolean | undefined }>;
+
+/**
+ * What the host asks: run a command, stop one, open the network to
+ * destinations, or set up the environment before its first command: the
+ * stages in order with the variables they need, the destinations open during
+ * them, and a fingerprint of all of it, which skips a setup that already
+ * succeeded here.
+ */
 export type HostMessage =
   | Readonly<{ type: "run"; id: string; command: string; cwd: string; env: Readonly<Record<string, string>>; timeoutSeconds?: number | undefined }>
   | Readonly<{ type: "stop"; id: string }>
-  | Readonly<{ type: "allow"; destinations: readonly string[] }>;
+  | Readonly<{ type: "allow"; destinations: readonly string[] }>
+  | Readonly<{ type: "setup"; id: string; fingerprint: string; destinations: readonly string[]; env: Readonly<Record<string, string>>;
+    stages: readonly SetupStageMessage[]; timeoutSeconds: number }>;
 
 const hostMessage: z.ZodType<HostMessage> = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("run"), id: z.string(), command: z.string(), cwd: z.string(),
     env: z.record(z.string(), z.string()), timeoutSeconds: z.number().positive().optional() }),
   z.strictObject({ type: z.literal("stop"), id: z.string() }),
   z.strictObject({ type: z.literal("allow"), destinations: z.array(z.string()) }),
+  z.strictObject({ type: z.literal("setup"), id: z.string(), fingerprint: z.string(), destinations: z.array(z.string()),
+    env: z.record(z.string(), z.string()), stages: z.array(z.strictObject({ description: z.string(), script: z.string(),
+      toolFolders: z.boolean().optional() })), timeoutSeconds: z.number().positive() }),
 ]);
 
 /**
  * What this side answers: ready or failed once, then commands' output and
  * ends, each end with what the proxy refused while that command ran, by this
- * side's own clock, so no two clocks are compared.
+ * side's own clock, so no two clocks are compared; for setup, each stage as
+ * it starts, then the steps it took, or why commands can no longer run.
  */
 export const sandboxMessage: z.ZodType<SandboxMessage> = z.discriminatedUnion("type", [
-  z.strictObject({ type: z.literal("ready"), workspace: z.string() }),
+  z.strictObject({ type: z.literal("ready"), workspace: z.string(), toolchains: z.string() }),
   z.strictObject({ type: z.literal("failed"), message: z.string() }),
   z.strictObject({ type: z.literal("output"), id: z.string(), data: z.string() }),
   z.strictObject({ type: z.literal("ended"), id: z.string(),
     outcome: z.enum(["exited", "timed_out", "cancelled", "not_started", "unconfirmed"]), exitCode: z.number().nullable(),
     refused: z.array(z.string()) }),
+  z.strictObject({ type: z.literal("stage"), id: z.string(), description: z.string() }),
+  z.strictObject({ type: z.literal("prepared"), id: z.string(), steps: z.array(z.strictObject({ description: z.string(),
+    outcome: z.enum(["done", "failed"]), output: z.string() })), error: z.string().optional() }),
   z.strictObject({ type: z.literal("checked"), problems: z.array(z.string()), settings: z.array(z.string()), versions: z.string() }),
 ]);
 export type SandboxMessage =
-  | Readonly<{ type: "ready"; workspace: string }>
+  | Readonly<{ type: "ready"; workspace: string; toolchains: string }>
   | Readonly<{ type: "failed"; message: string }>
   | Readonly<{ type: "output"; id: string; data: string }>
   | Readonly<{ type: "ended"; id: string; outcome: RunOutcome; exitCode: number | null; refused: readonly string[] }>
+  | Readonly<{ type: "stage"; id: string; description: string }>
+  | Readonly<{ type: "prepared"; id: string; steps: readonly PreparationStep[]; error?: string | undefined }>
   | Readonly<{ type: "checked"; problems: readonly string[]; settings: readonly string[]; versions: string }>;
 
 /** How the host's paths become this side's: WSL's own translation of Windows paths, or the same path on Linux. */
@@ -246,10 +274,40 @@ function translate(path: string, paths: PathTranslation): string {
   return paths === "wsl" ? execFileSync("wslpath", ["-a", "-u", path], { encoding: "utf8" }).trim() : resolve(path);
 }
 
-/** A workspace's own folders on WSL's disk: its home, temporary folder, `node_modules` and the proxy's socket. */
+function tesotaState(): string {
+  return join(process.env["XDG_STATE_HOME"] ?? join(homedir(), ".local", "state"), "tesota");
+}
+
+const digest = (path: string): string => createHash("sha256").update(path).digest("hex").slice(0, 16);
+
+/** A workspace's own folders on WSL's disk: its home, temporary folder, `node_modules`, setup record and the proxy's socket. */
 function stateFolder(workspace: string): string {
-  const base = process.env["XDG_STATE_HOME"] ?? join(homedir(), ".local", "state");
-  return join(base, "tesota", "sandboxes", createHash("sha256").update(workspace).digest("hex").slice(0, 16));
+  return join(tesotaState(), "sandboxes", digest(workspace));
+}
+
+/**
+ * The tools setup installed for one repository, keyed by its package cache,
+ * so its sessions share them and no other repository's setup can change them;
+ * a workspace without that cache has its own.
+ */
+function toolchainFolder(owner: string): string {
+  return join(tesotaState(), "toolchains", digest(owner));
+}
+
+/** The folders a tool-folder stage printed that lie inside the repository's toolchain folder, in order, once each. */
+export function installedToolFolders(output: string, toolchains: string): string[] {
+  return [...new Set(output.split(/\r?\n/u).map((line) => line.trim()).filter((line) => isAbsolute(line))
+    .map((line) => normalize(line).replace(/(.)\/+$/u, "$1")).filter((folder) => folder !== toolchains && within(folder, toolchains)))];
+}
+
+const setupRecord = z.strictObject({ fingerprint: z.string(), toolFolders: z.array(z.string()) });
+
+/** The setup that last succeeded in a workspace's sandbox, kept beside its home where no command sees it. */
+async function recordedSetup(path: string): Promise<z.infer<typeof setupRecord> | undefined> {
+  try {
+    const parsed = setupRecord.safeParse(JSON.parse(await readFile(path, "utf8")));
+    return parsed.success ? parsed.data : undefined;
+  } catch { return undefined; }
 }
 
 const STOP_CONFIRM_MS = 5_000;
@@ -284,54 +342,150 @@ interface Running {
   readonly done: Promise<void>;
 }
 
-class SandboxServer {
-  readonly #layout: SandboxLayout;
-  readonly #path: string;
-  readonly #bubblewrap: string;
-  readonly #proxy: EgressProxy;
-  readonly #send: (message: SandboxMessage) => void;
-  readonly #running = new Map<string, Running>();
+/** A command to run in its own sandbox, from a folder relative to the workspace, in setup or for the agent. */
+interface Execution {
+  readonly command: string;
+  readonly cwd: string;
+  readonly env: Readonly<Record<string, string>>;
+  readonly timeoutSeconds?: number | undefined;
+  readonly phase: NetworkPhase;
+}
 
-  constructor(layout: SandboxLayout, path: string, bubblewrap: string, proxy: EgressProxy, send: (message: SandboxMessage) => void) {
-    this.#layout = layout;
-    this.#path = path;
-    this.#bubblewrap = bubblewrap;
-    this.#proxy = proxy;
-    this.#send = send;
+interface Ended {
+  readonly outcome: RunOutcome;
+  readonly exitCode: number | null;
+  readonly refused: readonly string[];
+}
+
+const OUTPUT_TAIL = 4 * 1024;
+const TOOL_FOLDERS_OUTPUT = 64 * 1024;
+
+interface ServerParts {
+  readonly layout: SandboxLayout;
+  /** The `PATH` entries every command can reach, after the installed tools' folders. */
+  readonly path: string;
+  readonly bubblewrap: string;
+  readonly proxy: EgressProxy;
+  /** Where the setup that last succeeded is recorded, outside every command's sandbox. */
+  readonly record: string;
+  readonly send: (message: SandboxMessage) => void;
+}
+
+class SandboxServer {
+  readonly #parts: ServerParts;
+  readonly #running = new Map<string, Running>();
+  /** Folders of the tools setup installed, first on `PATH` for every later command. */
+  #toolFolders: readonly string[] = [];
+  #settingUp = false;
+  /** Why commands no longer run: setup could not confirm its destinations closed. */
+  #unusable: string | undefined;
+  #closing = false;
+
+  constructor(parts: ServerParts) {
+    this.#parts = parts;
   }
 
   async handle(message: HostMessage): Promise<void> {
     switch (message.type) {
       case "run": this.#run(message); return;
       case "stop": this.#running.get(message.id)?.stop("cancelled"); return;
-      case "allow": await this.#proxy.allow(message.destinations);
+      case "allow": await this.#parts.proxy.allow(message.destinations); return;
+      case "setup": await this.#setup(message);
     }
   }
 
   #run(message: Extract<HostMessage, { type: "run" }>): void {
-    const cwd = resolve(this.#layout.workspace, message.cwd);
-    if (!within(cwd, this.#layout.workspace)) {
-      this.#send({ type: "ended", id: message.id, outcome: "not_started", exitCode: null, refused: [] });
+    const { id } = message;
+    // The agent's commands never share setup's network or its writable toolchain folder.
+    const ended: Promise<Ended> = this.#settingUp || this.#unusable !== undefined
+      ? Promise.resolve({ outcome: "not_started", exitCode: null, refused: [] })
+      : this.#execute(id, { ...message, phase: "agent" }, (chunk) => {
+        this.#parts.send({ type: "output", id, data: chunk.toString("base64") });
+      });
+    void ended.then((end) => { this.#parts.send({ type: "ended", id, ...end }); });
+  }
+
+  /**
+   * Set up the environment unless its record shows this setup already
+   * succeeded here: the stages run in order, stopping at the first that
+   * fails, while the proxy also permits setup's destinations, which it
+   * confirms closed afterwards. If it cannot, no command runs again. No
+   * agent command starts until setup ends.
+   */
+  async #setup(message: Extract<HostMessage, { type: "setup" }>): Promise<void> {
+    const reply = (steps: readonly PreparationStep[], error?: string): void => {
+      this.#parts.send({ type: "prepared", id: message.id, steps, ...error === undefined ? {} : { error } });
+    };
+    if (this.#settingUp || this.#running.size > 0 || this.#unusable !== undefined) {
+      reply([], "Setup runs only while no command runs");
       return;
     }
+    this.#settingUp = true;
+    try {
+      const recorded = await recordedSetup(this.#parts.record);
+      if (recorded?.fingerprint === message.fingerprint && recorded.toolFolders.every((folder) => existsSync(folder))) {
+        this.#toolFolders = recorded.toolFolders;
+        reply([]);
+        return;
+      }
+      const steps = await this.#parts.proxy.during(message.destinations, () => this.#stages(message));
+      if (steps.every((step) => step.outcome === "done")) {
+        await writeFile(this.#parts.record, JSON.stringify({ fingerprint: message.fingerprint, toolFolders: this.#toolFolders }), "utf8")
+          .catch(() => undefined);
+      }
+      reply(steps);
+    } catch (error) {
+      this.#unusable = error instanceof Error ? error.message : String(error);
+      reply([], this.#unusable);
+    } finally { this.#settingUp = false; }
+  }
+
+  async #stages(message: Extract<HostMessage, { type: "setup" }>): Promise<PreparationStep[]> {
+    const steps: PreparationStep[] = [];
+    for (const stage of message.stages) {
+      if (this.#closing) break;
+      this.#parts.send({ type: "stage", id: message.id, description: stage.description });
+      let [tail, printed] = ["", ""];
+      const end = await this.#execute(randomUUID(), { command: stage.script, cwd: ".", env: message.env,
+        timeoutSeconds: message.timeoutSeconds, phase: "setup" }, (chunk, stream) => {
+        const text = chunk.toString("utf8");
+        tail = `${tail}${text}`.slice(-OUTPUT_TAIL);
+        if (stream === "stdout" && stage.toolFolders === true) printed = `${printed}${text}`.slice(0, TOOL_FOLDERS_OUTPUT);
+      });
+      const done = end.outcome === "exited" && end.exitCode === 0;
+      if (done && stage.toolFolders === true) this.#toolFolders = installedToolFolders(printed, this.#parts.layout.toolchains);
+      const refused = end.refused.length === 0 ? [] : [`The network refused ${end.refused.join(", ")}.`];
+      steps.push({ description: stage.description, outcome: done ? "done" : "failed",
+        output: done ? "" : [tail.trimEnd(), ...refused].join("\n").slice(-OUTPUT_TAIL) });
+      if (!done) break;
+    }
+    return steps;
+  }
+
+  #execute(id: string, execution: Execution, output: (chunk: Buffer, stream: "stdout" | "stderr") => void): Promise<Ended> {
+    const { layout, bubblewrap, proxy } = this.#parts;
+    const cwd = resolve(layout.workspace, execution.cwd);
+    if (!within(cwd, layout.workspace)) return Promise.resolve({ outcome: "not_started", exitCode: null, refused: [] });
     const started = new Date();
-    const child = spawn(this.#bubblewrap, bubblewrapArguments(this.#layout, cwd, message.command),
-      { env: commandVariables(this.#layout, this.#path, message.env), stdio: ["ignore", "pipe", "pipe", "pipe"] });
+    const path = [...this.#toolFolders, this.#parts.path].filter((entry) => entry.length > 0).join(delimiter);
+    const child = spawn(bubblewrap, bubblewrapArguments(layout, cwd, execution.command, execution.phase),
+      { env: commandVariables(layout, path, execution.env), stdio: ["ignore", "pipe", "pipe", "pipe"] });
     let info = "";
     child.stdio[3]?.on("data", (chunk: Buffer) => { info += chunk.toString("utf8"); });
-    const output = (chunk: Buffer): void => { this.#send({ type: "output", id: message.id, data: chunk.toString("base64") }); };
-    child.stdout?.on("data", output);
-    child.stderr?.on("data", output);
+    child.stdout?.on("data", (chunk: Buffer) => { output(chunk, "stdout"); });
+    child.stderr?.on("data", (chunk: Buffer) => { output(chunk, "stderr"); });
     let stopping: "cancelled" | "timed_out" | undefined;
-    const timer = message.timeoutSeconds === undefined ? undefined
-      : setTimeout(() => { running.stop("timed_out"); }, message.timeoutSeconds * 1_000);
+    const timer = execution.timeoutSeconds === undefined ? undefined
+      : setTimeout(() => { running.stop("timed_out"); }, execution.timeoutSeconds * 1_000);
+    let ended: (end: Ended) => void = () => undefined;
+    const result = new Promise<Ended>((settle) => { ended = settle; });
     const done = new Promise<void>((settle) => {
       const finish = (outcome: RunOutcome, exitCode: number | null): void => {
         clearTimeout(timer);
-        this.#running.delete(message.id);
+        this.#running.delete(id);
         // The proxy records a refusal before its client sees it, so every refusal this command caused is in by now.
-        void this.#proxy.blockedSince(started).then((refused) => {
-          this.#send({ type: "ended", id: message.id, outcome, exitCode, refused });
+        void proxy.blockedSince(started).then((refused) => {
+          ended({ outcome, exitCode, refused });
           settle();
         });
       };
@@ -343,22 +497,24 @@ class SandboxServer {
       });
     });
     const running: Running = { child, done, stop: (reason) => { if (stopping !== undefined) return; stopping = reason; child.kill("SIGKILL"); } };
-    this.#running.set(message.id, running);
+    this.#running.set(id, running);
+    return result;
   }
 
-  /** Stop every command, confirm each has ended, and close the proxy. */
+  /** Stop every command, setup's included, confirm each has ended, and close the proxy. */
   async close(): Promise<void> {
+    this.#closing = true;
     const running = [...this.#running.values()];
     for (const command of running) command.stop("cancelled");
     await Promise.all(running.map((command) => command.done));
-    await this.#proxy.close();
+    await this.#parts.proxy.close();
   }
 }
 
-/** bubblewrap on `PATH`, outside any folder a repository controls. */
-function locateBubblewrap(): string | undefined {
+/** A program on `PATH`, outside any folder a repository controls. */
+function locate(program: string): string | undefined {
   for (const folder of (process.env["PATH"] ?? "").split(delimiter).filter((entry) => isAbsolute(entry))) {
-    const candidate = join(folder, "bwrap");
+    const candidate = join(folder, program);
     if (existsSync(candidate)) return candidate;
   }
   return undefined;
@@ -384,16 +540,17 @@ export interface ServeOptions {
  */
 export async function serve(options: ServeOptions, input: Readable, output: Writable): Promise<void> {
   const send = (message: SandboxMessage): void => { output.write(`${JSON.stringify(message)}\n`); };
-  const bubblewrap = locateBubblewrap();
+  const bubblewrap = locate("bwrap");
   if (bubblewrap === undefined) { send({ type: "failed", message: "bubblewrap (bwrap) is not installed" }); return; }
   const workspace = translate(options.workspace, options.paths);
+  const cache = options.cache === undefined ? undefined : translate(options.cache, options.paths);
   const state = stateFolder(workspace);
   const layout: SandboxLayout = { workspace, home: join(state, "home"), temp: join(state, "tmp"),
-    cache: options.cache === undefined ? join(state, "cache") : translate(options.cache, options.paths),
+    cache: cache ?? join(state, "cache"), toolchains: toolchainFolder(cache ?? workspace),
     ...existsSync(join(workspace, "package.json")) ? { modules: join(state, "node_modules") } : {},
     relay: join(state, "relay.cjs"), socket: join(state, "proxy.sock"), runtime: process.execPath,
     system: systemFolders(), tools: toolsOnThisMachine() };
-  for (const folder of [layout.home, layout.temp, join(layout.cache, "npm"), join(layout.cache, "bun"), layout.modules]) {
+  for (const folder of [layout.home, layout.temp, join(layout.cache, "npm"), join(layout.cache, "bun"), layout.toolchains, layout.modules]) {
     if (folder !== undefined) await mkdir(folder, { recursive: true });
   }
   // The mount point for the workspace's own node_modules, as Docker Sandboxes makes it.
@@ -401,8 +558,9 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   await writeFile(layout.relay, RELAY_SOURCE, "utf8");
   await rm(layout.socket, { force: true });
   const proxy = await EgressProxy.start({ allowed: PACKAGE_REGISTRY_HOSTS.map((host) => `${host}:443`), socket: layout.socket });
-  const server = new SandboxServer(layout, commandPath(process.env["PATH"] ?? "", layout.tools), bubblewrap, proxy, send);
-  send({ type: "ready", workspace });
+  const server = new SandboxServer({ layout, path: commandPath(process.env["PATH"] ?? "", layout.tools), bubblewrap, proxy,
+    record: join(state, "setup.json"), send });
+  send({ type: "ready", workspace, toolchains: layout.toolchains });
   for await (const line of createInterface({ input })) {
     let parsed: ReturnType<typeof hostMessage.safeParse> | undefined;
     try { parsed = hostMessage.safeParse(JSON.parse(line)); } catch { parsed = undefined; }
@@ -411,14 +569,22 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   await server.close();
 }
 
-/** Remove what a workspace's sandbox kept on WSL's disk. */
+/** Remove what a workspace's sandbox kept on WSL's disk, and the tools it installed when it had no repository's cache. */
 export async function releaseState(workspace: string, paths: PathTranslation): Promise<void> {
-  await rm(stateFolder(translate(workspace, paths)), { recursive: true, force: true });
+  const translated = translate(workspace, paths);
+  await rm(stateFolder(translated), { recursive: true, force: true });
+  await rm(toolchainFolder(translated), { recursive: true, force: true });
+}
+
+/** Remove the tools setup installed for the repository whose package cache this is. */
+export async function releaseToolchains(cache: string, paths: PathTranslation): Promise<void> {
+  await rm(toolchainFolder(translate(cache, paths)), { recursive: true, force: true });
 }
 
 /**
  * What stands between this machine and a working sandbox. Problems are what
- * setup fixes: bubblewrap missing or unable to create its namespaces, and in
+ * setup fixes: bubblewrap missing or unable to create its namespaces, the
+ * pinned mise missing, and in
  * WSL a configuration that does not ask for interop off and Windows' drives
  * owned by this user. Settings are what that configuration asks for but WSL
  * applies only when the distribution starts again: interop still able to
@@ -430,7 +596,7 @@ export async function releaseState(workspace: string, paths: PathTranslation): P
 export function check(paths: PathTranslation): Readonly<{ problems: string[]; settings: string[]; versions: string }> {
   const problems: string[] = [];
   const settings: string[] = [];
-  const bubblewrap = locateBubblewrap();
+  const bubblewrap = locate("bwrap");
   const version = bubblewrap === undefined ? "none" : spawnSync(bubblewrap, ["--version"], { encoding: "utf8" }).stdout.trim();
   if (bubblewrap === undefined) problems.push("bubblewrap (bwrap) is not installed");
   else {
@@ -440,6 +606,11 @@ export function check(paths: PathTranslation): Readonly<{ problems: string[]; se
       { encoding: "utf8", env: {} });
     if (trial.status !== 0) problems.push(`bubblewrap cannot create its namespaces here: ${trial.stderr.trim().slice(-300)}`);
   }
+  // Setup installs a repository's tools with the pinned mise the distribution carries.
+  const mise = locate("mise");
+  const miseVersion = mise === undefined ? "" : spawnSync(mise, ["--version"],
+    { encoding: "utf8", env: { ...process.env, MISE_HIDE_UPDATE_WARNING: "1" } }).stdout.trim().split(/\s+/u)[0] ?? "";
+  if (`v${miseVersion}` !== MISE_RELEASE.version) problems.push(`mise ${MISE_RELEASE.version} is not installed`);
   if (paths === "wsl") {
     const [uid, gid] = [process.getuid?.() ?? -1, process.getgid?.() ?? -1];
     const configuration = existsSync("/etc/wsl.conf") ? readFileSync("/etc/wsl.conf", "utf8") : "";

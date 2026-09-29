@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { bubblewrapArguments, commandPath, commandVariables, type SandboxLayout, settingsWritten, toolFolders, windowsDrives,
-  windowsMounts } from "../src/bubblewrap-sandbox.js";
+import { bubblewrapArguments, commandPath, commandVariables, installedToolFolders, type SandboxLayout, settingsWritten, toolFolders,
+  windowsDrives, windowsMounts } from "../src/bubblewrap-sandbox.js";
 import { distributionSetupScript, listedDistributions } from "../src/wsl-environment.js";
 
 /**
@@ -11,7 +11,8 @@ import { distributionSetupScript, listedDistributions } from "../src/wsl-environ
  */
 
 const layout: SandboxLayout = { workspace: "/mnt/c/Users/op/.tesota/workspaces/abc/repo", home: "/home/tesota/.local/state/s/home",
-  temp: "/home/tesota/.local/state/s/tmp", cache: "/mnt/c/Users/op/.tesota/cache/k", modules: "/home/tesota/.local/state/s/node_modules",
+  temp: "/home/tesota/.local/state/s/tmp", cache: "/mnt/c/Users/op/.tesota/cache/k",
+  toolchains: "/home/tesota/.local/state/tesota/toolchains/k", modules: "/home/tesota/.local/state/s/node_modules",
   relay: "/home/tesota/.local/state/s/relay.cjs", socket: "/home/tesota/.local/state/s/proxy.sock", runtime: "/usr/local/bin/node",
   system: [{ path: "/usr" }, { path: "/bin", link: "usr/bin" }, { path: "/etc" }], tools: ["/opt/node"] };
 
@@ -64,7 +65,7 @@ it("gives a command its own home, temporary folder, caches and proxy, and what i
 });
 
 it("builds a sandbox of new namespaces that mounts only the system, tools, workspace and the session's own folders", () => {
-  const args = bubblewrapArguments(layout, `${layout.workspace}/src`, "npm test");
+  const args = bubblewrapArguments(layout, `${layout.workspace}/src`, "npm test", "agent");
   expect(args.slice(0, 3)).toEqual(["--unshare-all", "--die-with-parent", "--new-session"]);
   expect(args).not.toContain("--share-net");
   const mounts = args.flatMap((arg, index) => ["--bind", "--ro-bind", "--ro-bind-try", "--symlink"].includes(arg)
@@ -72,7 +73,7 @@ it("builds a sandbox of new namespaces that mounts only the system, tools, works
   expect(mounts).toEqual([
     "--ro-bind /usr /usr", "--symlink usr/bin /bin", "--ro-bind /etc /etc", "--ro-bind-try /opt/node /opt/node",
     `--bind ${layout.temp} /tmp`, `--bind ${layout.home} ${layout.home}`, `--bind ${layout.cache} ${layout.cache}`,
-    `--bind ${layout.workspace} ${layout.workspace}`, `--bind ${layout.modules ?? ""} ${layout.workspace}/node_modules`,
+    `--ro-bind ${layout.toolchains} ${layout.toolchains}`, `--bind ${layout.workspace} ${layout.workspace}`, `--bind ${layout.modules ?? ""} ${layout.workspace}/node_modules`,
     `--ro-bind ${layout.relay} ${layout.relay}`, `--bind ${layout.socket} ${layout.socket}`]);
   expect(args.slice(-10)).toEqual(["--chdir", `${layout.workspace}/src`, "--info-fd", "3", "--",
     "/usr/local/bin/node", layout.relay, layout.socket, "3128", "npm test"]);
@@ -80,7 +81,25 @@ it("builds a sandbox of new namespaces that mounts only the system, tools, works
 
 it("keeps node_modules in the workspace when the workspace is no JavaScript package", () => {
   const { modules: _modules, ...plain } = layout;
-  expect(bubblewrapArguments(plain, layout.workspace, "true").join(" ")).not.toContain("node_modules");
+  expect(bubblewrapArguments(plain, layout.workspace, "true", "agent").join(" ")).not.toContain("node_modules");
+});
+
+it("lets only setup write the repository's toolchain folder; every other command reads it", () => {
+  const mount = (phase: "setup" | "agent"): string | undefined => {
+    const args = bubblewrapArguments(layout, layout.workspace, "true", phase);
+    const index = args.indexOf(layout.toolchains);
+    return args[index - 1];
+  };
+  expect(mount("setup")).toBe("--bind");
+  expect(mount("agent")).toBe("--ro-bind");
+});
+
+it("puts on PATH only the installed tools' folders inside the repository's toolchain folder", () => {
+  const printed = [`${layout.toolchains}/installs/node/20/bin`, `${layout.toolchains}/installs/jq/1.7.1/`, "",
+    `${layout.toolchains}/installs/node/20/bin`, `${layout.toolchains}/../escape/bin`, layout.toolchains,
+    "/usr/local/bin", `${layout.workspace}/bin`, "relative/bin", "  mise WARN something"].join("\n");
+  expect(installedToolFolders(printed, layout.toolchains)).toEqual([`${layout.toolchains}/installs/node/20/bin`,
+    `${layout.toolchains}/installs/jq/1.7.1`]);
 });
 
 it("reads the distributions wsl.exe lists in UTF-16", () => {
@@ -93,6 +112,8 @@ it("sets up Tesota's distribution with its pinned runtimes through the hash-chec
   expect(script).toMatch(/^set -eu\n/u);
   expect(script).toContain("apt-get install -y -q --no-install-recommends bubblewrap git curl");
   expect(script).toContain("sha256sum -c -");
+  // The checked mise stays in the distribution, where setup installs each repository's tools with it.
+  expect(script.indexOf('install -m 0755 "$HOME/.local/bin/mise" /opt/tesota/mise/bin/mise')).toBeGreaterThan(script.indexOf("sha256sum -c -"));
   expect(script).toMatch(/mise" install node@\d+\.\d+\.\d+\n.*\ncp -a "\$\(.*mise" where node@\d+\.\d+\.\d+\)" \/opt\/tesota\/node\n/u);
   expect(script).toMatch(/mise" install bun@\d+\.\d+\.\d+\n/u);
   expect(script).toContain("useradd --create-home --shell /bin/bash tesota");

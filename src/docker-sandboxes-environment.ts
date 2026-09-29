@@ -10,8 +10,8 @@ import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionPr
   type NetworkControl, PACKAGE_REGISTRY_HOSTS, type PrepareOptions, type PreparationStep, type ProviderReadiness, type RunOptions,
   type RunResult, type SetupStep } from "./execution-environment.js";
 import { DEPENDENCIES_ARGUMENT, KIT_RUNTIMES, kitRuntimes, writeToolchainKit } from "./docker-sandboxes-kit.js";
-import { hasNodeModules, miseFilesInstallScript, miseInstallScript, needsDownloadHosts, needsSetup, planToolchain,
-  TOOLCHAIN_HOSTS, type ToolchainPlan } from "./toolchain.js";
+import { hasNodeModules, type MiseUse, needsDownloadHosts, needsSetup, planToolchain, setupStages, TOOLCHAIN_HOSTS,
+  type ToolchainPlan } from "./toolchain.js";
 
 /**
  * Commands run in a Docker Sandboxes microVM per workspace. Only the workspace
@@ -228,22 +228,14 @@ async function closeToolchainHosts(sbx: string, name: string): Promise<boolean> 
   return TOOLCHAIN_HOSTS.every((host) => !resources.has(host));
 }
 
-function setupStages(plan: ToolchainPlan): { description: string; script: string }[] {
-  const stages: { description: string; script: string }[] = [];
-  if (plan.miseFiles.length > 0) {
-    stages.push({ description: "Install mise", script: miseInstallScript() });
-    stages.push({ description: `Install the tools in ${plan.miseFiles.join(" and ")}`, script: miseFilesInstallScript() });
-  }
-  if (plan.setupScript !== null) stages.push({ description: `Run ${plan.setupScript}`, script: `sh ${plan.setupScript}` });
-  if (plan.dependencies !== null) stages.push({ description: `Install dependencies (${plan.dependencies})`, script: plan.dependencies });
-  return stages;
-}
+/** The kit carries the pinned runtimes, so setup installs mise itself, for mise's own files, reached through its shims. */
+const MISE: MiseUse = { install: true, runtimes: {}, reach: "shims" };
 
 /** Run each setup stage in order, stopping at the first failure as other agents' setup steps do. */
 async function runSetupStages(sbx: string, name: string, cwd: string, plan: ToolchainPlan,
   variables: Readonly<Record<string, string>>, onProgress: (text: string) => void): Promise<PreparationStep[]> {
   const steps: PreparationStep[] = [];
-  for (const stage of setupStages(plan)) {
+  for (const stage of setupStages(plan, MISE)) {
     onProgress(`Preparing the sandbox: ${stage.description}`);
     const result = await execScript(sbx, name, cwd, stage.script, variables, setupStepMs);
     const done = result.status === 0;
@@ -257,7 +249,7 @@ async function runSetupStages(sbx: string, name: string, cwd: string, plan: Tool
 /** Run the stages, opening the toolchain hosts only when they are needed and confirming they close. */
 async function runSetup(sbx: string, name: string, cwd: string, plan: ToolchainPlan,
   variables: Readonly<Record<string, string>>, onProgress: (text: string) => void): Promise<PreparationStep[]> {
-  if (!needsDownloadHosts(plan)) return runSetupStages(sbx, name, cwd, plan, variables, onProgress);
+  if (!needsDownloadHosts(plan, MISE)) return runSetupStages(sbx, name, cwd, plan, variables, onProgress);
   if ((await invoke(sbx, ["policy", "allow", "network", "--sandbox", name, TOOLCHAIN_HOSTS.join(",")])).status !== 0) {
     throw new Error("The setup network rules could not be added");
   }

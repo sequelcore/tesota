@@ -182,9 +182,9 @@ routing and execution permissions live in code and in Tesota's own directory
 | `workspace-apply.ts`, `verification/application-rule.ts`, `recover-command.ts`, `workspace-prune.ts` | Application with its store, journal and proved admission and outcome rules, and `tesota recover`; which workspaces `tesota prune` may remove |
 | `repository-git.ts`, `windows-system.ts` | Git without ambient config, hooks or network; Windows' own programs, never found through PATH |
 | `execution-environment.ts`, `execution-providers.ts` | The provider-neutral execution interface, choosing a mode and provider, `tesota setup` |
-| `host-environment.ts`, `docker-sandboxes-environment.ts`, `docker-sandboxes-kit.ts`, `toolchain.ts` | The two providers, the cached sandbox image, and reading a repository's pinned runtimes |
+| `host-environment.ts`, `docker-sandboxes-environment.ts`, `docker-sandboxes-kit.ts`, `toolchain.ts` | The two providers, the cached sandbox image, and a repository's setup: the runtimes it pins and the stages every sandbox runs |
 | `execution-controls.ts` | The controls every provider must pass, for the live suites and qualification |
-| `wsl-environment.ts`, `bubblewrap-sandbox.ts`, `bubblewrap-sandbox-server.ts`, `egress-proxy.ts` | The WSL sandbox: its provider on Windows, its bubblewrap process inside WSL, and the allowlist proxy its commands reach the network through |
+| `wsl-environment.ts`, `bubblewrap-sandbox.ts`, `bubblewrap-sandbox-server.ts`, `egress-proxy.ts`, `verification/setup-network-rule.ts` | The WSL sandbox: its provider on Windows, its bubblewrap process inside WSL, and the allowlist proxy its commands reach the network through, with its proved setup phase |
 | `execution-qualification.ts`, `sandbox-command.ts`, `verification/sandbox-qualification.ts` | Qualification on the operator's machine, `tesota sandbox`, and their proved rules |
 | `workspace-checks.ts`, `verification/oxlint*.ts`, `verification/lemmascript-verifier.ts` | Verifier results with claim and limits: approved commands, Oxlint, LemmaScript with Dafny |
 | `test-report.ts`, `verification/check-origin-rule.ts` | Reading a check's JUnit XML reports, and the proved rule for whose failure a check or test is |

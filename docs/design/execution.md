@@ -124,30 +124,33 @@ is a host operation after review.
 ## Preparing a sandbox
 
 Preparation starts when a session opens, so it usually finishes while the
-operator types; the first request waits for it otherwise. The WSL sandbox
-runs only the lockfile install, with Tesota's own Node and Bun
-([WSL sandbox](#wsl-sandbox)). In Docker Sandboxes, Tesota reads the
-runtimes the repository pins (`package.json` `packageManager` and `engines`,
-`.nvmrc`, `.node-version`, `.bun-version`, `.python-version`) and installs
-them with mise, whose pinned binary is checked against a known SHA-256; mise
-also installs what `mise.toml` or `.tool-versions` declare. Then it runs
+operator types; the first request waits for it otherwise. Both sandboxes set
+a repository up from one plan and in the same stages (`src/toolchain.ts`),
+always inside the sandbox, never on this computer. Tesota reads the runtimes
+the repository pins (`package.json` `packageManager` and `engines`, `.nvmrc`,
+`.node-version`, `.bun-version`, `.python-version`) and installs them with
+mise, whose pinned binary is checked against a known SHA-256; mise also
+installs what `mise.toml` or `.tool-versions` declare. Then it runs
 `.tesota/setup.sh` if the repository has one, or otherwise the lockfile
 install (`bun install --frozen-lockfile` or `npm ci`).
 
 Only during this phase may the sandbox also reach the hosts toolchains
-download from; Tesota removes those rules and reads the sandbox's rule list
-back before the agent runs, and deletes the sandbox if it cannot confirm they
-are gone. The pinned runtimes are baked into a sandbox kit that `sbx` builds
-once per set of versions and reuses for later sessions, and a JavaScript
-repository's `node_modules` lives on a volume on the sandbox's own disk
-rather than the slower workspace mount. A failed step stops setup but not the
-session, and the operator and agent are told what failed; a fingerprint of the
-setup inputs skips setup when nothing changed.
+download from (decision 048), as Codex cloud, Claude Code on the web and
+GitHub's Copilot agent open the network for setup and restrict it for the
+agent. In Docker Sandboxes, Tesota removes those rules and reads the
+sandbox's rule list back before the agent runs, and deletes the sandbox if it
+cannot confirm they are gone; the WSL sandbox's own proxy holds them for
+setup alone and confirms them closed ([WSL sandbox](#wsl-sandbox)). Docker
+bakes the pinned runtimes into a sandbox kit that `sbx` builds once per set
+of versions and reuses for later sessions, and a JavaScript repository's
+`node_modules` lives on the sandbox's own disk rather than the slower
+workspace mount, in both. A failed step stops setup but not the session, and
+the operator and agent are told what failed; a fingerprint of the setup
+inputs skips setup when nothing changed.
 
 Preparation stops when its session closes, switches sandbox or Tesota quits
 ([sessions](sessions.md#what-a-session-holds)). The WSL sandbox ends its
-process, which stops the dependency install under way and closes its proxy;
-Docker
+process, which stops the setup stage under way and closes its proxy; Docker
 Sandboxes stops between steps, since a step already running in `sbx` runs to
 its own time limit, and the sandbox it keeps by name is removed with its
 workspace.
@@ -207,8 +210,9 @@ guarantee, Tesota's own controls pass on the operator's machine: a write
 outside the workspace, a read of the operator's credentials, of what lies
 beside the workspace and of the host's variables, a package script from the
 workspace's root, a refused destination through the proxy and one reached
-directly, and stopping a command and its children. The check runs once in a
-scratch workspace (`src/execution-qualification.ts`); its result is saved in
+directly, a toolchain host that setup reached and a command after it cannot
+(decision 048), and stopping a command and its children. The check runs
+once in a scratch workspace (`src/execution-qualification.ts`); its result is saved in
 `~/.tesota/qualification.json` and repeated when the Windows build, WSL's
 kernel, bubblewrap, Node or the controls change, and a result that withdrew
 a claim is tried again after a day, since a missing network can fail it once.
@@ -219,14 +223,15 @@ that names WSL; `src/bubblewrap-sandbox.ts` is the process it starts inside
 WSL, one per prepared environment, and knows only Linux. They exchange JSON
 lines over `wsl.exe`'s standard input and output: run a command with its
 folder, variables and time limit, stop one, report what the proxy refused,
-allow destinations. When the process's input ends, it stops every command,
-confirms each has ended and closes its proxy.
+allow destinations, set the repository up. When the process's input ends,
+it stops every command, confirms each has ended and closes its proxy.
 
 **Tesota's own distribution.** `tesota setup` with `use wsl` installs WSL if
 it is missing, creates a distribution named `tesota` from Ubuntu 24.04, and
 runs one script in it as root: bubblewrap and Git from the distribution,
 Node and Bun at Tesota's own pinned versions under `/opt/tesota` through the
-pinned, hash-checked mise (as the Docker Sandboxes kit does), a user of its
+pinned, hash-checked mise (as the Docker Sandboxes kit does), which stays
+under `/opt/tesota/mise` to install repositories' tools, a user of its
 own, and `/etc/wsl.conf` with Windows interop off and Windows' drives owned by
 that user. A distribution created without its first-run setup has root as its
 default user, and WSL mounts Windows' drives as their default user's, so Git
@@ -280,14 +285,33 @@ ends every other process in its namespace before that one ends, detached and
 `setsid` ones included. The sandbox reports the first process's id, and a
 stop is confirmed only once it is gone.
 
-**Preparing.** The WSL process starts, the proxy listens, and the
-repository's lockfile install runs inside the sandbox through the proxy,
-with a fingerprint in the sandbox's home that skips an unchanged install.
-Mise's files and `.tesota/setup.sh` need toolchain downloads that the
-sandbox does not open yet, so they are reported as a failed step and not
-run, and runtime versions a repository pins are not installed: commands use
-Tesota's Node and Bun. Qualification depends on the Windows build and the
-versions of bubblewrap, WSL's kernel and Node.
+**Preparing** (decision 048). The WSL process starts and its proxy listens;
+the host then sends one setup message, with the stages, their variables, the
+destinations setup may reach and a fingerprint of all of it, and the process
+runs it before the agent's first command. Runtimes the repository pins that
+Tesota's own Node and Bun do not satisfy, and what its mise files declare,
+are installed by the distribution's pinned mise (`/opt/tesota/mise`) into the
+repository's **toolchain folder** on WSL's own disk. That folder is keyed by
+the repository's package cache, so the repository's sessions share it and no
+other repository's can change it, since setup runs the repository's own code
+with write access to it; it is writable to setup's stages alone and
+read-only to every other command. A last mise stage prints the installed
+tools' folders (`mise bin-paths`), and those inside the toolchain folder go
+first on `PATH`, ahead of Tesota's runtimes, for the stages after it and the
+agent's commands, so `node` is the version `.nvmrc` pins. Then
+`.tesota/setup.sh`, or the lockfile install, runs with them.
+
+While setup runs, the proxy also permits the toolchain hosts, and only then:
+it holds them apart from what is allowed, ends their tunnels when setup
+ends, refuses a connection that finishes opening after it, and reads each
+back through the proved rule (`permitted` in
+`src/verification/setup-network-rule.ts`). If one still passes, the process
+runs no further command and preparation fails. No agent command starts while
+setup runs. A record beside the sandbox's home, where no command sees it,
+skips a setup that already succeeded in that workspace; a new session's
+workspace runs setup again, with the tools already installed. Qualification
+depends on the Windows build and the versions of bubblewrap, WSL's kernel
+and Node.
 
 **Choice.** `tesota sandbox` shows each sandbox on this machine, what it
 proved here and which one is in use (`src/sandbox-command.ts`); `tesota
@@ -312,14 +336,17 @@ operator's own cache. npm verifies what it reads from its cache, but Bun
 installs by hard link, so a file in `node_modules` can be the cached file
 itself, and a script that changes it changes the cache; a repository's cache
 confines that to the same repository, the scope Codex cloud and GitHub
-Actions cache by. `tesota sandbox clean` removes a repository's caches.
+Actions cache by. `tesota sandbox clean` removes a repository's caches and
+the tools the WSL sandbox installed for it.
 
 **Proved rules.** Choosing a provider: commands run without asking only on a
 provider whose qualification on this machine proved both confined files and
 an allowlisted network (`runsWithoutAsking`). The proxy's admission: a
 destination passes only if it is allowed and resolves to public addresses,
-the rule `webAdmission` proves for web access. A direct connection is
-blocked, connected or indeterminate (`directConnection`). The tool folders a
+the rule `webAdmission` proves for web access. What it permits during and
+after setup: setup's destinations only while setup runs (`permitted`). A
+direct connection is blocked, connected or indeterminate
+(`directConnection`). The tool folders a
 command reads (`readsToolFolder`), and the distribution's settings and drives
 (`distributionStep`, `settingsAsked`, `countsAsDrive`).
 
@@ -334,7 +361,10 @@ and writes through a network filesystem slower than its own disk;
 `node_modules` avoids it. Installing WSL needs an administrator prompt and a
 restart once. Resources are unbounded per command; WSL's virtual machine is
 bounded as a whole. A command's output names paths under `/mnt`; the file
-tools keep the real ones.
+tools keep the real ones. Commands reach mise's tools through their folders,
+not mise's shims, so the `[env]` settings of a repository's mise file do not
+apply to them. Setup opens every toolchain host to whatever setup runs, the
+repository's own script included, as the other harnesses' setup phases do.
 
 **Rejected.** MXC's `processcontainer` (decision 047): PowerShell instead of
 the shell used elsewhere, a drive per workspace, dependencies installed
@@ -345,7 +375,12 @@ boundary. MXC's WSL container backend: it has no proxy and rejects per-host
 egress rules. Proxy variables without a network namespace: they confine only
 programs that honor them. Bubblewrap's usual `--ro-bind / /`: in WSL, `/`
 holds the operator's Windows drives. Tesota's own AppContainer or Seatbelt
-code: security-critical work that others maintain.
+code: security-critical work that others maintain. One toolchain folder for
+every repository (decision 048): one repository's setup could change the
+tools another's commands run. Setup's hosts opened and later removed as
+ordinary allowances: closing would depend on removing each, where the proxy
+now keeps them apart and a proved rule shuts them all at once. Mise per
+repository: its binary is 145 MB, so the distribution carries one.
 
 ## Planned
 

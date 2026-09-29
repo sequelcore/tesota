@@ -94,6 +94,48 @@ it("never reaches the operator's own network, even for an allowed name, and does
   expect(await started.blockedSince(before)).toEqual([]);
 });
 
+/** A tunnel through the proxy left open, and when it closes. */
+async function openTunnel(path: string, destination: string): Promise<{ closed: Promise<void> }> {
+  const socket: Socket = connectTcp(path);
+  const closed = new Promise<void>((settle) => { socket.on("close", () => { settle(); }); });
+  await new Promise<void>((established) => {
+    socket.on("data", (chunk) => { if (chunk.toString().startsWith("HTTP/1.1 200")) established(); });
+    socket.write(`CONNECT ${destination} HTTP/1.1\r\nHost: ${destination}\r\n\r\n`);
+  });
+  return { closed };
+}
+
+const connectTo = (socket: string, destination: string): Promise<string> =>
+  exchange(socket, `CONNECT ${destination} HTTP/1.1\r\nHost: ${destination}\r\n\r\n`, "x");
+
+it("permits setup's destinations only while setup runs, ends their tunnels after it, and keeps what is allowed on its own", async () => {
+  const { proxy: started, socket } = await proxy(["registry.example.com:443"]);
+  let tunnel: { closed: Promise<void> } | undefined;
+  const result = await started.during(["example.org:443", "registry.example.com:443"], async () => {
+    expect((await connectTo(socket, "example.org:443")).startsWith("HTTP/1.1 200")).toBe(true);
+    tunnel = await openTunnel(socket, "example.org:443");
+    return "installed";
+  });
+  expect(result).toBe("installed");
+  await tunnel?.closed;
+  const before = new Date(Date.now() - 1_000);
+  expect(await connectTo(socket, "example.org:443")).toMatch(/^HTTP\/1\.1 403/u);
+  expect(await started.blockedSince(before)).toEqual(["example.org:443"]);
+  expect((await connectTo(socket, "registry.example.com:443")).startsWith("HTTP/1.1 200")).toBe(true);
+});
+
+it("closes setup's destinations when setup fails, passing on its error, and runs one setup at a time", async () => {
+  const { proxy: started, socket } = await proxy([]);
+  await expect(started.during(["example.org:443"], async () => { throw new Error("a stage failed"); })).rejects.toThrow("a stage failed");
+  expect(await connectTo(socket, "example.org:443")).toMatch(/^HTTP\/1\.1 403/u);
+  let nested: Promise<unknown> = Promise.resolve();
+  await started.during([], async () => {
+    nested = started.during(["example.org:443"], async () => undefined);
+    await nested.catch(() => undefined);
+  });
+  await expect(nested).rejects.toThrow("Setup is already under way");
+});
+
 it("refuses plain HTTP requests and malformed destinations, recording only real destinations", async () => {
   const { proxy: started, socket } = await proxy([]);
   const before = new Date(Date.now() - 1_000);

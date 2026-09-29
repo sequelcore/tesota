@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { existsSync } from "node:fs";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { connect as connectTcp } from "node:net";
 import { dirname, join, relative, sep } from "node:path";
 import type { EnvironmentGuarantees, ExecutionEnvironment, RunOptions, RunResult } from "./execution-environment.js";
@@ -19,7 +19,8 @@ import { directConnection } from "./verification/direct-connection-rule.js";
  */
 
 export type ControlName = "workspace_read_write" | "cancel_children" | "time_limit" | "package_script" | "outside_read" |
-  "outside_write" | "beside_read" | "host_variables" | "network_refused" | "network_direct" | "registry_reachable";
+  "outside_write" | "beside_read" | "host_variables" | "network_refused" | "network_direct" | "registry_reachable" |
+  "setup_hosts_closed";
 
 /** Where the controls run: a workspace to probe from, a directory outside it, and what to probe with. */
 export interface ControlSite {
@@ -33,6 +34,8 @@ export interface ControlSite {
   readonly refusedUrl: string;
   /** A package registry a confined network still allows. */
   readonly registryUrl: string;
+  /** A host toolchains download from, which a confined network opens only while setup runs. */
+  readonly setupUrl: string;
 }
 
 export interface ControlResult {
@@ -54,10 +57,11 @@ export const PROCESS_CONTROLS: readonly ControlName[] = ["workspace_read_write",
 export const FILESYSTEM_CONTROLS: readonly ControlName[] = ["outside_read", "outside_write", "beside_read", "host_variables"];
 /**
  * An `allowlist` network refuses what is not allowed, even to a client that
- * ignores the proxy and connects to the destination's address itself, and
- * still reaches package registries.
+ * ignores the proxy and connects to the destination's address itself, still
+ * reaches package registries, and closes setup's download hosts once setup
+ * ends (decision 048).
  */
-export const NETWORK_CONTROLS: readonly ControlName[] = ["network_refused", "network_direct", "registry_reachable"];
+export const NETWORK_CONTROLS: readonly ControlName[] = ["network_refused", "network_direct", "registry_reachable", "setup_hosts_closed"];
 
 /** The controls a provider's claimed guarantees call for. */
 export function controlsFor(guarantees: EnvironmentGuarantees): ControlName[] {
@@ -294,6 +298,38 @@ async function networkDirect(probe: Probe): Promise<ControlResult> {
   return { control: "network_direct", passed: verdict === "blocked", detail };
 }
 
+/** Where the control workspace's setup script records what it reached. */
+const SETUP_EVIDENCE = ".tesota-control-setup.txt";
+
+/**
+ * Give a control workspace, before its environment is prepared, a setup
+ * script that fetches the setup URL and records the HTTP status it saw, so
+ * `setup_hosts_closed` finds setup's hosts opened and can show them closed.
+ */
+export async function writeSetupProbe(workspace: string, setupUrl: string): Promise<void> {
+  await mkdir(join(workspace, ".tesota"), { recursive: true });
+  await writeFile(join(workspace, ".tesota", "setup.sh"),
+    `curl -sS -m 15 -o /dev/null -w '%{http_code}' ${quote(setupUrl)} > ${SETUP_EVIDENCE}\n`, "utf8");
+}
+
+/**
+ * Setup's download hosts are open only while setup runs: the workspace's
+ * setup script reached the setup URL, and a command after it cannot. Without
+ * the first, nothing was opened, so nothing is shown closed.
+ */
+async function setupHostsClosed(probe: Probe): Promise<ControlResult> {
+  const evidence = join(probe.site.workspace, SETUP_EVIDENCE);
+  const during = existsSync(evidence) ? (await readFile(evidence, "utf8")).trim() || "000" : "no result";
+  await rm(evidence, { force: true });
+  const after = await status(probe, probe.site.setupUrl);
+  const [reached, closed] = [/^[23]/u.test(during), !/^[23]/u.test(after)];
+  const host = new URL(probe.site.setupUrl).host;
+  const detail = !reached ? `setup did not reach ${host} (${during}), so its closing was not shown`
+    : closed ? `setup reached ${host} (${during}) and a command after it was refused (${after})`
+    : `a command after setup reached ${host} (${after})`;
+  return { control: "setup_hosts_closed", passed: reached && closed, detail };
+}
+
 async function registryReachable(probe: Probe): Promise<ControlResult> {
   const code = await status(probe, probe.site.registryUrl);
   const passed = code.startsWith("2");
@@ -304,6 +340,7 @@ const controls: Readonly<Record<ControlName, (probe: Probe) => Promise<ControlRe
   workspace_read_write: workspaceReadWrite, package_script: packageScript, cancel_children: cancelChildren, time_limit: timeLimit,
   outside_read: outsideRead, outside_write: outsideWrite, beside_read: besideRead, host_variables: hostVariables,
   network_refused: networkRefused, network_direct: networkDirect, registry_reachable: registryReachable,
+  setup_hosts_closed: setupHostsClosed,
 };
 
 /** Run the named controls one after another in an environment, stopping early only when the caller cancels. */
