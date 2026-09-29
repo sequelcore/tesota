@@ -8,9 +8,10 @@ record why.
 
 Tesota is pre-release. A terminal shell runs a Pi coding agent in a separate
 workspace per session and names each session after its work. Commands run
-without asking in the native sandbox on Windows 11 24H2 and later or in a
-Docker Sandboxes microVM, and with the operator's approval on the host
-otherwise. Each result is checked by the operator's commands, Oxlint and
+without asking in the native sandbox on Windows 11 24H2 and later, and with
+the operator's approval on the host otherwise. While Docker Sandboxes'
+network allowlist is reviewed (decision 044), choosing it runs commands on
+the host with approval, not in its microVM. Each result is checked by the operator's commands, Oxlint and
 LemmaScript on the exact tree, reviewed by read-only reviewers whose findings
 face a refuter and an origin check, and corrected by the agent at most twice
 before the operator applies, rejects or keeps working; the answer check's
@@ -58,7 +59,14 @@ project. They are listed here as they are chosen.
   Docker, no administrator rights and no question per command, on Microsoft
   MXC and qualified on each machine; built on Windows 11 24H2 and later
   2026-09-27. Linux and macOS are paused, 2026-09-26, until real use gives
-  feedback.
+  feedback. Before MXC is extended, a WSL sandbox (decision 043,
+  [design](design/execution.md#wsl-sandbox)) competes for Windows' default:
+  built 2026-09-28 and chosen only by name; its Linux side passed every
+  control and Tesota's own check on Linux. A first Windows comparison found
+  three defects, fixed, and favored WSL in one uncontrolled run. Next: both
+  on one Windows machine again, with the corrected network control, the same
+  repositories, controlled caches and real work, then one default and the
+  other removed.
 - **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
   built 2026-09-26; OpenRouter's contract suite passes live on a free model.
   OpenCode refuses Zen's free models to clients other than its own, and Go
@@ -183,8 +191,8 @@ mid-work, and finds the work finished on reconnecting.
   repositories that already describe their environment need nothing
   Tesota-specific.
 - A non-TypeScript repository and another platform.
-- More execution providers once they pass the same live controls: WSL2,
-  remote machines.
+- More execution providers once they pass the same live controls: remote
+  machines.
 - A relay that offers Jev to users without their own TypeSafe key, once
   there are real users and TypeSafe agrees (decision 035).
 - A review queue and notifications across sessions.

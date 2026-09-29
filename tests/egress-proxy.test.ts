@@ -1,4 +1,7 @@
+import { mkdtemp, rm } from "node:fs/promises";
 import { connect as connectTcp, createServer, type Server, type Socket } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { EgressProxy } from "../src/egress-proxy.js";
 
@@ -24,10 +27,10 @@ async function echoServer(): Promise<number> {
   return typeof address === "object" && address !== null ? address.port : 0;
 }
 
-async function proxy(allowed: readonly string[]) {
+async function proxy(allowed: readonly string[], socket?: string) {
   const echo = await echoServer();
   const connected: string[] = [];
-  const started = await EgressProxy.start({ allowed,
+  const started = await EgressProxy.start({ allowed, ...socket === undefined ? {} : { socket },
     resolve: async (host) => addresses[host] ?? [],
     connect: (address, port) => { connected.push(`${address}:${port}`); return connectTcp(echo, "127.0.0.1"); } });
   cleanup.push(() => started.close());
@@ -36,8 +39,7 @@ async function proxy(allowed: readonly string[]) {
 
 /** Send raw bytes to the proxy and collect what comes back until the reply is complete or the socket ends. */
 async function exchange(url: string, request: string, then?: string): Promise<string> {
-  const { port } = new URL(url);
-  const socket: Socket = connectTcp(Number(port), "127.0.0.1");
+  const socket: Socket = url.startsWith("http:") ? connectTcp(Number(new URL(url).port), "127.0.0.1") : connectTcp(url);
   let received = "";
   return new Promise((settle) => {
     socket.on("data", (chunk) => {
@@ -89,4 +91,15 @@ it("refuses plain HTTP requests and malformed destinations, recording only real 
   expect(await exchange(started.url, "GET http://example.org/ HTTP/1.1\r\nHost: example.org\r\n\r\n")).toMatch(/^HTTP\/1\.1 403/u);
   expect(await exchange(started.url, "CONNECT not a host HTTP/1.1\r\n\r\n")).toMatch(/^HTTP\/1\.1 400/u);
   expect(await started.blockedSince(before)).toEqual(["example.org:80"]);
+});
+
+// A Linux sandbox's network namespace reaches the proxy only through a socket bound into it (issue 163).
+it.skipIf(process.platform === "win32")("listens on a Unix socket, with the same admission", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "tesota-proxy-"));
+  cleanup.push(() => rm(folder, { recursive: true, force: true }));
+  const { proxy: started, connected } = await proxy(["registry.example.com:443"], join(folder, "proxy.sock"));
+  expect(started.url).toBe(join(folder, "proxy.sock"));
+  expect((await exchange(started.url, "CONNECT registry.example.com:443 HTTP/1.1\r\n\r\n", "ping"))).toMatch(/^HTTP\/1\.1 200[^]*ping/u);
+  expect(await exchange(started.url, "CONNECT example.org:443 HTTP/1.1\r\n\r\n")).toMatch(/^HTTP\/1\.1 403/u);
+  expect(connected).toEqual(["93.184.215.14:443"]);
 });

@@ -6,7 +6,7 @@ import { sandboxPath } from "../src/docker-sandboxes-environment.js";
 import { confinesCommands, type EnvironmentGuarantees, type ExecutionProvider, type ProviderReadiness,
   type SetupAction, type SetupStep } from "../src/execution-environment.js";
 import { chooseSandboxPreference, chooseSessionExecution, formatSetup, providersFor, readSandboxPreference, runSetup,
-  type SessionExecution, type SetupRunner } from "../src/execution-providers.js";
+  type SessionExecution, type SetupRunner, unconfinedBy } from "../src/execution-providers.js";
 import { hostProvider } from "../src/host-environment.js";
 
 const confined: EnvironmentGuarantees = { filesystem: "workspace", network: "allowlist", secrets: "none", resources: "bounded" };
@@ -42,7 +42,11 @@ it("falls back to the host, where commands ask first, and lists what is missing"
   expect(text).toContain("commands run on this computer and ask before each one");
   expect(text).toContain("vm:\n  - Turn on the hypervisor (administrator PowerShell, then restart)\n      enable it");
   expect(text).toContain("broken:\n  - The provider could not report whether it is ready");
-  expect(text).not.toContain("open:\n  -");
+  // A ready provider that does not confine says so, rather than vanishing from the list.
+  expect(text).toContain("open:\n  - Ready, but it does not confine the network to an allowlist");
+  expect(unconfinedBy(confined)).toBeUndefined();
+  expect(unconfinedBy({ ...confined, filesystem: "host", network: "open" }))
+    .toBe("it confines neither files to the workspace nor the network to an allowlist");
 });
 
 it("runs commands without asking only where this machine's qualification upheld the provider's claims", async () => {

@@ -44,13 +44,21 @@ it("lists what each sandbox proved on this computer, and which one new sessions 
   expect(output()).toContain("host     this computer, always available; asks before each command");
 });
 
+it("says why a ready sandbox that does not confine the network is not used", async () => {
+  const { dependencies, write, output } = setup();
+  const open = { ...provider("docker-sandboxes", { ready: true }), guarantees: { ...confined, network: "open" as const } };
+  expect(await runSandboxCommand([], write, { ...dependencies, candidates: [open], providers: () => [open] })).toBe(0);
+  expect(output()).toContain("docker   ready, but it does not confine the network to an allowlist; commands ask first");
+  expect(output()).toContain("host     in use: this computer");
+});
+
 it("keeps the operator's choice for new sessions, and refuses what is not a choice", async () => {
   const { dependencies, write, output } = setup();
   expect(await runSandboxCommand(["use", "docker"], write, dependencies)).toBe(0);
   expect(readSandboxPreference(dependencies.preferencePath)).toBe("docker");
   expect(output()).toContain("New sessions use Docker Sandboxes.");
   expect(await runSandboxCommand(["use", "vm"], write, dependencies)).toBe(2);
-  expect(output()).toContain("Usage: tesota sandbox [use <auto|native|docker|host> | clean]");
+  expect(output()).toContain("Usage: tesota sandbox [use <auto|native|wsl|docker|host> | clean]");
   await runSandboxCommand([], write, dependencies);
   // The chosen sandbox is not ready, so new sessions run on this computer and say so.
   expect(output()).toContain("host     in use: this computer, always available; asks before each command");

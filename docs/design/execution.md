@@ -35,7 +35,14 @@ provider (`src/execution-controls.ts`): each guarantee claimed selects its
 controls, every environment must also work in its workspace and stop what it
 runs, and each control is a small probe run inside and judged from the host.
 File and process probes are JavaScript, so no shell is assumed; network probes
-use `curl`, which honors a sandbox's proxy. Run against the host provider,
+use `curl`, which honors a sandbox's proxy, and one more opens a connection
+to a refused destination's address directly, ignoring the proxy, since proxy
+variables confine only programs that honor them. That control passes only
+when the connection is refused inside while this computer connects to the
+same address; a connection that opened fails it whatever happened after, and
+a result that shows neither is indeterminate and fails too
+(`directConnection` in `src/verification/direct-connection-rule.ts`,
+proved). Run against the host provider,
 which confines nothing, the confinement controls fail, which shows they can
 tell a sandbox from none.
 
@@ -44,7 +51,9 @@ tell a sandbox from none.
 | Provider | Guarantees |
 | --- | --- |
 | `host` | host filesystem, open network, no secrets, unbounded |
-| `docker-sandboxes` | workspace filesystem, allowlist network, no secrets, bounded |
+| `docker-sandboxes` | workspace filesystem, open network while its allowlist is reviewed (decision 044), no secrets, bounded |
+| `mxc` | the [native sandbox](#native-sandbox): workspace filesystem, allowlist network, no secrets, unbounded |
+| `wsl` | the [WSL sandbox](#wsl-sandbox), a candidate: workspace filesystem, allowlist network, no secrets, unbounded |
 
 The `docker-sandboxes` provider runs each workspace's commands in a Docker
 Sandboxes microVM that mounts only the workspace, sends egress through a
@@ -57,6 +66,18 @@ the opt-in live suite (`TESOTA_LIVE_SANDBOX=1`) checks that neither the
 `agent` user nor root can reach the host outside the workspace or pass the
 network allowlist. The sandbox is created per workspace and removed when the
 session closes or the workspace is pruned.
+
+Its network is declared `open` for now (decision 044). With the corrected
+`network_direct`, a client that ignored the proxy opened a TCP connection.
+Docker documents a transparent proxy that allows a TCP connection only when a
+policy rule matches the destination, but not what a refused connection
+receives first, so the control cannot tell the proxy from the destination.
+Until a controlled server shows whether anything reaches it
+([#166](https://github.com/sequelcore/tesota/issues/166)), Docker
+Sandboxes is not a place where commands run without asking; there is no
+Docker with approval either, so its sessions run on this computer and ask.
+`tesota sandbox`, `tesota setup` and `/sandbox` say why a ready provider is
+not used when it does not confine files or network.
 
 Every check runs with a 15-minute limit, and only the end of its output is
 kept.
@@ -292,7 +313,8 @@ unread.
 proved here and which one is in use (`src/sandbox-command.ts`); `tesota
 sandbox use auto`, the default, prefers the native sandbox, then Docker
 Sandboxes, then this computer, which asks before each command; `use native`,
-`use docker` or `use host` names one. The choice, kept in
+`use wsl`, `use docker` or `use host` names one; the WSL sandbox is used only
+when named. The choice, kept in
 `~/.tesota/sandbox.json`, applies to sessions opened afterwards. Inside a
 session, `/sandbox` shows where its commands run and `/sandbox <choice>`
 switches that session alone, so one repository that is not trusted can use
@@ -378,11 +400,112 @@ identity needs it in an AppContainer of its own, later. The SDK ships about
 for `processcontainer`, so the native provider declares `unbounded`
 resources. Windows 10 is not supported and keeps Docker Sandboxes or asking.
 
+## WSL sandbox
+
+Decision 043; evidence in the
+[native sandbox landscape](../research/native-sandbox-landscape.md#wsl2-as-the-windows-backend-2026-09-28).
+The native sandbox works, but only through accommodations that are Tesota's
+to keep: PowerShell instead of the shell used elsewhere, a drive per
+workspace, dependencies installed outside the sandbox, a filtered `PATH`,
+Git's TLS backend switched, and known limits that only an unreleased Windows
+feature removes. The WSL sandbox is the other candidate for Windows' default,
+built only far enough to be compared with it on the same machine, controls
+and repositories; Cursor runs its Linux sandbox inside WSL2 on Windows for
+the same reason. It is chosen only by name (`use wsl`, `/sandbox wsl`). The
+comparison decides which one Windows keeps, and the other is removed, with
+its tests, documentation and configuration value.
+
+**Threat model.** The native sandbox's, and the boundary is bubblewrap's
+Linux namespaces inside WSL's virtual machine, not WSL itself: WSL shares the
+operator's Windows drives with every process in it.
+
+**Components.** `src/wsl-environment.ts` is the provider, the only module
+that names WSL; `src/bubblewrap-sandbox.ts` is the process it starts inside
+WSL, one per prepared environment, and knows only Linux. They exchange JSON
+lines over `wsl.exe`'s standard input and output: run a command with its
+folder, variables and time limit, stop one, report what the proxy refused,
+allow destinations. When the process's input ends, it stops every command,
+confirms each has ended and closes its proxy.
+
+**Tesota's own distribution.** `tesota setup` with `use wsl` installs WSL if
+it is missing, creates a distribution named `tesota` from Ubuntu 24.04, and
+runs one script in it as root: bubblewrap and Git from the distribution,
+Node and Bun at Tesota's own pinned versions under `/opt/tesota` through the
+pinned, hash-checked mise (as the Docker Sandboxes kit does), a user of its
+own, and `/etc/wsl.conf` with Windows interop off and Windows' drives owned by
+that user. A distribution created without its first-run setup has root as its
+default user, and WSL mounts Windows' drives as their default user's, so Git
+refused the workspace as dubious ownership and `chmod` failed during
+`git init`. WSL applies these settings only when the distribution starts
+again. The sandbox's check therefore tells two cases apart: a configuration
+that does not ask for them sends setup back to its script, and one that asks
+for them while interop is still on or a drive, such as `/mnt/c`, is still
+another user's is applied by restarting the distribution
+(`wsl.exe --terminate tesota`). Only Windows' drives count, as WSL tells them
+from its other shares, such as its GPU drivers, which stay root's
+(`distributionStep`, `settingsAsked` and `countsAsDrive` in
+`src/verification/wsl-settings-rule.ts`, proved).
+Tesota starts `wsl.exe` from the Windows system directory, never by name, and
+its process as that user, never root, with Node from the Windows drive's
+copy of Tesota. Keeping a distribution of its own leaves the operator's
+distributions, their users and their interop setting alone.
+
+**One command.** Each command runs in its own bubblewrap sandbox with new
+user, process, network, IPC, UTS and cgroup namespaces, about 55 ms to start
+on Linux. Its root holds only `/usr` and `/etc` read-only, the system's
+links (`/bin` to `usr/bin`), the installations of the tools on `PATH`
+read-only, except the operator's home, a folder that holds it, and Windows'
+drives (`readsToolFolder` in `src/verification/tool-folder-rule.ts`,
+proved), and writable: the workspace at its path under `/mnt`, the session's
+own home, a temporary folder at `/tmp`, the repository's package cache and,
+for a JavaScript package, the workspace's `node_modules` on WSL's own disk, as
+Docker Sandboxes keeps it. Nothing else of WSL or Windows is in it. A command
+runs in `/bin/sh` and gets only its `PATH`, its home, the proxy and what it
+was given.
+
+**Network.** A command's network namespace has only a loopback interface.
+Tesota's egress proxy, the same one as the native sandbox's, runs in the
+WSL process and listens on a Unix socket bound into each sandbox, where a
+small relay started before the command passes loopback connections to it;
+the proxy variables name that relay. A program that ignores them, or opens
+its own sockets, has no route anywhere, which the `network_direct` control
+checks. Servers a command starts on its own loopback answer it, as they do
+on the host; the native sandbox refuses them. Proxy variables alone would
+confine nothing: MXC's own WSL container backend has no proxy and rejects
+per-host egress rules, and its bubblewrap backend shares the host's network.
+
+**Windows programs.** WSL's interop starts a Windows program from Linux
+through a socket under `/run/WSL`, whose interpreter the kernel opens once
+for every process; no sandbox mounts `/run`, and interop is off in Tesota's
+distribution besides. The live suite runs a copy of `whoami.exe` from the
+workspace and expects it to fail.
+
+**Stopping.** Stopping a command kills its bubblewrap process; the
+sandbox's first process dies with it (`--die-with-parent`), and the kernel
+ends every other process in its namespace before that one ends, detached and
+`setsid` ones included. The sandbox reports the first process's id, and a
+stop is confirmed only once it is gone.
+
+**Preparing.** The WSL process starts, the proxy listens, and the
+repository's lockfile install runs inside the sandbox through the proxy,
+with a fingerprint in the sandbox's home that skips an unchanged install.
+Mise's files and `.tesota/setup.sh` need toolchain downloads that the
+sandbox does not open yet, so they are reported as a failed step and not
+run, and runtime versions a repository pins are not installed: commands use
+Tesota's Node and Bun. Qualification depends on the Windows build and the
+versions of bubblewrap, WSL's kernel and Node.
+
+**Known limits, before measurement on Windows.** The workspace stays on the
+Windows drive, where WSL reads and writes through a network filesystem
+slower than its own disk; `node_modules` avoids it. Resources are unbounded
+per command; WSL's virtual machine is bounded as a whole. A command's
+output names paths under `/mnt`; the file tools keep the real ones.
+
 ## Planned
 
 - Placeholder secrets: a repository declares a secret by name and host, and
   the sandbox sees only a placeholder that the proxy replaces.
 - More providers behind the same interface once they pass the same controls:
-  WSL2 with bubblewrap, remote machines.
+  remote machines.
 - A configurable number of concurrent sessions, and retrying model rate-limit
   errors instead of failing a session.

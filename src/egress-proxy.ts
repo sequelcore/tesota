@@ -7,8 +7,9 @@ import { resolveHost } from "./web-fetch.js";
 import { webAdmission } from "./verification/web-admission.js";
 
 /**
- * The native sandbox's egress proxy (decision 030). A sandboxed command can
- * reach only this proxy, on the loopback address; the proxy opens an HTTPS
+ * The native sandboxes' egress proxy (decision 030). A sandboxed command can
+ * reach only this proxy, on the loopback address or, from a Linux network
+ * namespace, through a socket bound into it; the proxy opens an HTTPS
  * tunnel (`CONNECT`) to a destination only when it is allowed and every
  * address it resolves to is public, and connects to the address it checked,
  * so an allowed name cannot point inside the operator's network. The order is
@@ -24,6 +25,8 @@ export interface EgressProxyOptions {
   readonly resolve?: (host: string) => Promise<readonly string[]>;
   /** A connection to exactly this address; a TCP connection by default. */
   readonly connect?: (address: string, port: number) => Socket;
+  /** A Unix socket to listen on instead of a free loopback port. */
+  readonly socket?: string;
 }
 
 /** Refusals kept for the operator's question; older ones are dropped. */
@@ -54,7 +57,7 @@ export class EgressProxy implements NetworkControl {
   readonly #connect: (address: string, port: number) => Socket;
   readonly #refused: { at: number; destination: string }[] = [];
   readonly #tunnels = new Set<Duplex>();
-  #port = 0;
+  #url = "";
 
   private constructor(options: EgressProxyOptions) {
     this.#allowed = new Set(options.allowed.map((destination) => destination.toLowerCase()));
@@ -64,20 +67,21 @@ export class EgressProxy implements NetworkControl {
     this.#server.on("connect", (request: IncomingMessage, socket: Duplex, head: Buffer) => { void this.#tunnel(request, socket, head); });
   }
 
-  /** Listen on a free loopback port; only a sandbox given this address uses it. */
+  /** Listen on a free loopback port, or on the socket given; only a sandbox given this address uses it. */
   static async start(options: EgressProxyOptions): Promise<EgressProxy> {
     const proxy = new EgressProxy(options);
     await new Promise<void>((listening, failed) => {
       proxy.#server.once("error", failed);
-      proxy.#server.listen(0, "127.0.0.1", () => { listening(); });
+      if (options.socket === undefined) proxy.#server.listen(0, "127.0.0.1", () => { listening(); });
+      else proxy.#server.listen(options.socket, () => { listening(); });
     });
     const address = proxy.#server.address();
-    proxy.#port = typeof address === "object" && address !== null ? address.port : 0;
+    proxy.#url = typeof address === "string" ? address : `http://127.0.0.1:${address?.port ?? 0}`;
     return proxy;
   }
 
-  /** The proxy's address, as sandboxes are configured with it. */
-  get url(): string { return `http://127.0.0.1:${this.#port}`; }
+  /** The proxy's address, as sandboxes are configured with it: a loopback URL, or its socket's path. */
+  get url(): string { return this.#url; }
 
   async blockedSince(time: Date): Promise<readonly string[]> {
     return [...new Set(this.#refused.filter((refusal) => refusal.at >= time.getTime()).map((refusal) => refusal.destination))];
