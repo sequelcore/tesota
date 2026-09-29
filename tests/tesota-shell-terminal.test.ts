@@ -76,6 +76,24 @@ it("shows the opening only for a newly created session and keeps it out of the s
   saved.stop();
 });
 
+it("redraws the tree as the shell timer advances", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 100;
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  try {
+    shell.start();
+    tui.renderNow(true);
+    expect(visible(terminal)).not.toContain("\\|/");
+    terminal.writes.length = 0;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(visible(terminal)).toContain("\\|/");
+  } finally {
+    shell.stop();
+  }
+});
+
 it("gives sidebar titles the space formerly used by position numbers", () => {
   const rail = new SessionRail(tesotaShellTheme());
   rail.setSessions([{ id: "current", title: "A descriptive session", state: "idle", selected: true }]);

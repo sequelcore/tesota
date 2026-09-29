@@ -20,9 +20,9 @@ lists the keys).
 
 A fresh session opens with an ephemeral palo fierro welcome in the conversation:
 name and package version, working directory, a short statement of the apply
-boundary, then the ASCII tree. The tree grows through five fixed-size frames
-when the terminal is large enough. Smaller terminals use a compact tree or
-symbol; `TESOTA_REDUCED_MOTION=1` shows the final frame immediately. The
+boundary, then the ASCII tree. The tree grows through five fixed-size frames;
+smaller terminals animate a compact tree or symbol.
+`TESOTA_REDUCED_MOTION=1` shows the final frame immediately. The
 welcome is presentation only: it is not a conversation entry or saved session
 state, and restored sessions do not show it again. `tesota-shell-welcome.ts`
 owns the artwork, tones and responsive rendering.

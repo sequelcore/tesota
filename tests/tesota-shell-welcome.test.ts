@@ -52,6 +52,16 @@ it("grows through the five frames and settles on the complete tree", () => {
   }
 });
 
+it("animates the compact tree and narrow symbol too", () => {
+  const banner = new WelcomeBanner("work", tesotaShellTheme("terminal"), () => 40,
+    { colorMode: "plain" });
+  expect(banner.render(20)).not.toContain(TESOTA_LOGOS.compact[0]);
+  expect(banner.render(10)).not.toContain(TESOTA_LOGOS.symbol[0]);
+  for (let frame = 1; frame < 5; frame++) banner.advance();
+  expect(banner.render(20)).toContain(TESOTA_LOGOS.compact[0]);
+  expect(banner.render(10)).toContain(TESOTA_LOGOS.symbol[0]);
+});
+
 it("uses the corrected light shadow and 256-color fallbacks", () => {
   const dark = new WelcomeBanner("work", tesotaShellTheme("tesota-dark"), () => 40,
     { reducedMotion: true, colorMode: "ansi256" });

@@ -79,6 +79,24 @@ export const TESOTA_WELCOME_FRAMES: readonly (readonly string[])[] = [
   main.rows,
 ].map((rows) => rows.map((row) => row.padEnd(main.width, " ")));
 
+const compactWithoutSprout = compact.rows.map((row, index) =>
+  index === 4 ? row.slice(0, 15) : index === 5 ? row.slice(0, 13) : row);
+const compactFrames: readonly (readonly string[])[] = [
+  ["", "", "", "", "", compactWithoutSprout[5] ?? ""],
+  ["", "", "", ...compactWithoutSprout.slice(3)],
+  [compact.rows[0] ?? "", "", "", ...compactWithoutSprout.slice(3)],
+  compactWithoutSprout,
+  compact.rows,
+].map((rows) => rows.map((row) => row.padEnd(compact.width, " ")));
+
+const symbolFrames: readonly (readonly string[])[] = [
+  ["", "", symbol.rows[2] ?? ""],
+  ["", "  |", symbol.rows[2] ?? ""],
+  [symbol.rows[0] ?? "", "  |", symbol.rows[2] ?? ""],
+  symbol.rows,
+  symbol.rows,
+].map((rows) => rows.map((row) => row.padEnd(symbol.width, " ")));
+
 export const TESOTA_LOGOS: Readonly<Record<"main" | "compact" | "symbol", readonly string[]>> = Object.freeze({
   main: Object.freeze(main.rows.map((row) => row.padEnd(main.width, " "))),
   compact: Object.freeze(compact.rows.map((row) => row.padEnd(compact.width, " "))),
@@ -166,7 +184,8 @@ export class WelcomeBanner implements Component {
       truncateToWidth("Changes stay separate until you apply them.", width), ""];
     if (chosen !== undefined) {
       const rows = chosen === main ? TESOTA_WELCOME_FRAMES[this.#frame] ?? TESOTA_LOGOS.main :
-        chosen === compact ? TESOTA_LOGOS.compact : TESOTA_LOGOS.symbol;
+        chosen === compact ? compactFrames[this.#frame] ?? TESOTA_LOGOS.compact :
+          symbolFrames[this.#frame] ?? TESOTA_LOGOS.symbol;
       for (const [index, row] of rows.entries()) {
         const tones = chosen === main ? [...row].map((character, column) => {
           if (character === " ") return " ";

@@ -384,7 +384,7 @@ remain optional shortcuts for the first nine sessions in newest-first order.
 A new session shows Tesota's version, the working directory, and a palo fierro
 tree above the conversation. The tree draws in five steps when there is room;
 use `TESOTA_REDUCED_MOTION=1` to show it without animation. Narrow terminals
-show a smaller tree or symbol. This welcome does not become part of the saved
+animate a smaller tree or symbol. This welcome does not become part of the saved
 conversation and does not replay when you restore a session.
 
 The sidebar appears beside the conversation when there is room and hides

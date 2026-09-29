@@ -133,6 +133,7 @@ interface SessionView {
 }
 
 const spinnerMs = 120;
+const welcomeFrameTicks = 4;
 /** Below this width the result panel replaces the conversation instead of sitting beside it. */
 const resultBesideWidth = 120;
 const comparisonWidth = 160;
@@ -573,7 +574,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     let ticks = 0;
     this.timer = setInterval(() => {
       ticks += 1;
-      if (ticks % 2 === 0) {
+      if (ticks % welcomeFrameTicks === 0) {
         let changed = false;
         for (const session of this.sessions.values()) changed = session.welcome?.advance() === true || changed;
         if (changed) this.tui.requestRender();
