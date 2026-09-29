@@ -260,7 +260,49 @@ is one model. A failed request names its route, since a lapsed plan fails
 with only the model's refusal, as on 2026-09-29. `/model` continues in
 place only on one account: another route's account needs its own runtime
 or Claude Code process, so it starts a new conversation with the brief. A
-route that a role uses is not removed until the roles choose another. A list price is what an API key is billed, and on a plan only a
+route that a role uses is not removed until the roles choose another.
+
+**What each account has left** (decision 051). `tesota usage` and the
+shell's Accounts panel ask each route's provider, only when run or opened,
+and show a meter per window or credit: the share left in 20 segments, as
+Codex's `/status` draws it, and when it resets. Codex's windows come from `wham/usage`, the private
+endpoint Codex's own client reads, with the route's token, which Pi
+refreshes; Claude Code's from the Agent SDK's experimental usage report,
+read without sending a request and with Claude Code's ordinary traffic on,
+since a working session turns it off and the report then has no limits;
+OpenRouter's from the key's limit; OpenCode Go's from its usage endpoint.
+A window is labelled by its own length, so a free Codex account's 30-day
+window is not taken for a week. The segment count is proved
+(`src/verification/usage-meter-rule.ts`): a bar is empty only when nothing
+is left and full only when nothing is used. Each reading is saved in
+`~/.tesota/usage.json` with its time, and a failed read, often a usage
+endpoint limiting its own requests, shows the last one of the past hour with
+its age, as Claude Code's `/usage` does; after that the route is unknown.
+The Anthropic API route, OpenCode Zen and TypeSafe offer no source for the
+key Tesota holds, so they say where to look. No key or token is shown or
+saved.
+
+The Accounts panel (`/accounts`, `/usage`, `Alt+A`) is a framed overlay
+over the whole layout, sidebar included, since accounts belong to no one
+session, with a margin that leaves the layout showing beneath. It lies on
+its theme's panel surface, a second neutral layer raised from the
+terminal's, and while it is open the layout beneath is faded, its styles
+removed and its text faint, as a web page dims behind a dialog; the shell's
+TUI fades those lines before pi-tui draws the overlays over them. It has three
+tabs, as Claude Code keeps `/status`, `/config` and `/usage` in one settings
+dialog: Usage, the same table as `tesota usage`; Sign-ins, the
+table of `tesota auth status`; and Roles, each role's model, its account and
+that account's least-left window, where `Enter` opens the role's model
+picker. Usage is state, not conversation, so nothing in the panel enters
+the transcript, where it would go stale. The CLI and the panel draw from one
+renderer each, the panel adding the theme's colors: an account turns to the
+warning color at a quarter left and to the error color when nothing is
+(proved in the same rule file). The panel shows the saved readings at once,
+faded, and replaces each as it is read; it is as tall as its longest tab, so
+switching tabs never moves it, and notes wrap under their column rather
+than lose their links on a narrow terminal.
+
+A list price is what an API key is billed, and on a plan only a
 way to compare models, so `tesota models` shows both separately.
 
 **Tesota never handles Claude subscription credentials.** On the

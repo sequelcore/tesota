@@ -1,7 +1,9 @@
 import { HStack, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
 import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
+import type { AccountsSource } from "../src/tesota-shell-accounts.js";
 import { createTesotaShellTerminal } from "../src/tesota-shell-terminal.js";
+import { BackdropTui } from "../src/tesota-shell-tui.js";
 import { SessionRail } from "../src/tesota-shell-sidebar.js";
 import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
 import type { TranscriptEntry } from "../src/tesota-shell-transcript.js";
@@ -1172,5 +1174,75 @@ it("marks the title for a background session that waits, without taking the sele
   expect(terminal.titles.at(-1)).toBe("! Login fix · 2 waiting");
   shell.removeSession("second");
   expect(terminal.titles.at(-1)).toMatch(/^! (Budget totals|Docs pass) · 1 waiting$/u);
+  shell.stop();
+});
+
+it("opens the Accounts panel over the session: its tabs, keys that never reach the prompt, and a role's model through /roles", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 120;
+  terminal.rows = 30;
+  const tui = new BackdropTui(terminal, false, undefined, { mouse: false });
+  const reads = { usage: 0, signIns: 0 };
+  const accounts: AccountsSource = {
+    readUsage: async (update) => {
+      reads.usage += 1;
+      update([{ route: "codex", kind: "codex", state: "reading" }]);
+      update([{ route: "codex", kind: "codex", state: "read", reading: { plan: "plus", notes: [],
+        meters: [{ label: "week", left: 20 }] } }]);
+    },
+    readSignIns: async () => {
+      reads.signIns += 1;
+      return { rows: [{ route: "codex", kind: "Codex", signIn: "signed in" }], usedBy: () => ["reviewer"] };
+    },
+    roles: () => [{ role: "agent", choice: "claude-code:sonnet", route: "claude-code" }, { role: "reviewer", choice: "codex:gpt-6-astra",
+      route: "codex" }, { role: "advisor", choice: "off" }],
+  };
+  const modelPicker = () => ({ current: "codex:gpt-6-astra", entries: [{ id: "codex:gpt-6-sol", detail: "plan", reasoning: [] }] });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, accounts, modelPicker });
+  shell.start();
+  const answer = shell.ask("> ");
+  const screen = async (): Promise<string> => {
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    terminal.writes.length = 0;
+    tui.renderNow(true);
+    return visible(terminal);
+  };
+  terminal.send("/usage");
+  terminal.send("\r");
+  const usage = await screen();
+  expect(usage).toContain("Accounts");
+  expect(screenLine(terminal.writes.join(""), "Session 1")).toContain("[2m");
+  expect(usage).toMatch(/1 Usage {3}2 Sign-ins {3}3 Roles/u);
+  expect(usage).toMatch(/codex {2}Codex plus {2}week {4}████░░░░░░░░░░░░░░░░ {2}20%/u);
+  expect(usage).toContain("read just now");
+  // Typing while the panel is open reaches the panel, not the request.
+  terminal.send("x");
+  terminal.send("\t");
+  const signIns = await screen();
+  expect(signIns).toMatch(/codex {2}Codex {2}signed in {2}reviewer/u);
+  terminal.send("3");
+  terminal.send("\x1b[B");
+  expect(await screen()).toMatch(/› reviewer {2}codex:gpt-6-astra {3}codex {8}██░░░░░░░░ {2}20% {2}week/u);
+  terminal.send("r");
+  await screen();
+  expect(reads).toEqual({ usage: 2, signIns: 2 });
+  // Enter closes the panel and opens the role's model picker, as /roles reviewer does.
+  terminal.send("\r");
+  const picker = await screen();
+  expect(picker).not.toContain("1 Usage");
+  expect(picker).toContain("codex:gpt-6-sol");
+  terminal.send("\x1b");
+  terminal.send("\x1b");
+  await screen();
+  for (let key = 0; key < "/roles reviewer ".length; key += 1) terminal.send("\x7f");
+  terminal.send("done");
+  terminal.send("\r");
+  await expect(answer).resolves.toBe("done");
+  terminal.send("\x1ba");
+  expect(await screen()).toContain("1 Usage");
+  terminal.send("\x1b");
+  expect(await screen()).not.toContain("1 Usage");
+  // The layout beneath is faint only while the panel is open.
+  expect(screenLine(terminal.writes.join(""), "Session 1")).not.toContain("[2m");
   shell.stop();
 });

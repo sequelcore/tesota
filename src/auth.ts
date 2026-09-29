@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -8,8 +8,8 @@ import { browserSignInAuth, deviceCodeAuth, deviceCodeTerminalRenderer, loginToC
   type LoginResult } from "./integrations/codex-login.js";
 import { claudeCodeRouteDirectory } from "./integrations/model-session.js";
 import { TesotaCredentials } from "./integrations/tesota-credentials.js";
-import { ACCOUNT_KINDS, type AddedRoute, addRoute, isDecisionModel, MODEL_ROLES, parseModelChoice, readAddedRoutes, readModelChoices,
-  removeRoute, type RouteKind } from "./model-roles.js";
+import { ACCOUNT_KINDS, accountRoute, type AddedRoute, addRoute, MODEL_ROLES, parseModelChoice, readAddedRoutes, readModelChoices, removeRoute,
+  type RouteKind } from "./model-roles.js";
 import { windowsSystemProgram } from "./windows-system.js";
 
 /**
@@ -231,7 +231,8 @@ export interface RouteStatus {
   readonly signIn: string;
 }
 
-const kindLabels: Readonly<Record<string, string>> = { codex: "Codex", "claude-code": "Claude Code", anthropic: "Anthropic API",
+/** Each kind's name, as tables show it. */
+export const kindLabels: Readonly<Record<string, string>> = { codex: "Codex", "claude-code": "Claude Code", anthropic: "Anthropic API",
   openrouter: "OpenRouter", opencode: "OpenCode", typesafe: "TypeSafe" };
 
 /** A key route's sign-in: a saved key, one from the environment, or none. */
@@ -250,8 +251,11 @@ async function signInOf(route: string, kind: string, credentials: TesotaCredenti
   }
   if (kind === "claude-code") {
     const env = route === "claude-code" ? process.env : { ...process.env, CLAUDE_CONFIG_DIR: claudeCodeRouteDirectory(route) };
-    const result = spawnSync(claudeCodeExecutable(), ["auth", "status"], { encoding: "utf8", windowsHide: true, timeout: 30_000, env });
-    return result.status === 0 ? claudeCodeSignIn(result.stdout, route) : "status unavailable";
+    // Read without blocking, so the shell's Accounts panel keeps drawing while Claude Code answers.
+    return new Promise((resolve) => {
+      execFile(claudeCodeExecutable(), ["auth", "status"], { encoding: "utf8", windowsHide: true, timeout: 30_000, env },
+        (error, stdout) => { resolve(error === null ? claudeCodeSignIn(stdout, route) : "status unavailable"); });
+    });
   }
   return keySignIn(kind as KeyRouteName, credentials);
 }
@@ -262,36 +266,68 @@ async function signInOf(route: string, kind: string, credentials: TesotaCredenti
  * a role uses them, so the table never claims one.
  */
 export function statusTable(rows: readonly RouteStatus[], usedBy: (route: string) => readonly string[]): string {
+  return [...statusLines(rows, usedBy), "", SIGN_IN_NOTE, ""].join("\n");
+}
+
+/** What a sign-in does not show, said once under the table. */
+export const SIGN_IN_NOTE: string = "A plan's models are checked when a role first uses them. Claude Code keeps its own sign-ins; Tesota keeps " +
+  "the rest in ~/.tesota/auth.";
+
+/** How the sign-in table's text is styled: plain in the CLI, the theme's colors in the shell's Accounts panel. */
+export interface StatusPaint {
+  readonly muted: (text: string) => string;
+  readonly strong: (text: string) => string;
+  /** A route that needs the operator: signed out, or without a key. */
+  readonly attention: (text: string) => string;
+}
+
+const unstyled: StatusPaint = { muted: (text) => text, strong: (text) => text, attention: (text) => text };
+
+/** The sign-in table's lines: a heading, then each route, its kind, its sign-in and the roles that use it. */
+export function statusLines(rows: readonly RouteStatus[], usedBy: (route: string) => readonly string[],
+  paint: StatusPaint = unstyled): string[] {
   const width = (pick: (row: RouteStatus) => string, heading: string): number =>
     Math.max(heading.length, ...rows.map((row) => pick(row).length)) + 2;
   const [route, kind, signIn] = [width((row) => row.route, "Route"), width((row) => row.kind, "Kind"),
     width((row) => row.signIn, "Sign-in")];
-  const line = (a: string, b: string, c: string, d: string): string => `${a.padEnd(route)}${b.padEnd(kind)}${c.padEnd(signIn)}${d}`.trimEnd();
-  return [line("Route", "Kind", "Sign-in", "Used by"),
-    ...rows.map((row) => line(row.route, row.kind, row.signIn, usedBy(row.route).join(", ") || "—")), "",
-    "A plan's models are checked when a role first uses them. Claude Code keeps its own sign-ins; Tesota keeps the rest in " +
-    "~/.tesota/auth.", ""].join("\n");
+  // Each cell is padded before it is styled, so styles never shift the columns.
+  const cell = (text: string, size: number, style: (text: string) => string): string =>
+    `${style(text)}${" ".repeat(Math.max(0, size - text.length))}`;
+  const needsOperator = (text: string): boolean => /^(?:signed out|no key|status unavailable)/u.test(text);
+  return [paint.muted(`${"Route".padEnd(route)}${"Kind".padEnd(kind)}${"Sign-in".padEnd(signIn)}Used by`),
+    ...rows.map((row) => {
+      const roles = usedBy(row.route).join(", ");
+      return `${cell(row.route, route, paint.strong)}${cell(row.kind, kind, (text) => text)}${
+        cell(row.signIn, signIn, needsOperator(row.signIn) ? paint.attention : (text) => text)}${
+        roles.length > 0 ? roles : paint.muted("—")}`.trimEnd();
+    })];
 }
 
-/** The roles using each route; the triage role's typed decision model counts for TypeSafe, OpenCode Go's for OpenCode. */
-function usedByRoute(added: readonly AddedRoute[]): (route: string) => string[] {
+/** The roles whose account is each route. */
+export function usedByRoute(added: readonly AddedRoute[] = readAddedRoutes()): (route: string) => string[] {
   const choices = readModelChoices();
-  return (route) => MODEL_ROLES.filter((role) => {
-    const choice = choices[role];
-    if (isDecisionModel(choice)) return route === "typesafe";
-    const parsed = parseModelChoice(choice, added)?.route;
-    return parsed === route || route === "opencode" && parsed === "opencode-go";
-  });
+  return (route) => MODEL_ROLES.filter((role) => accountRoute(choices[role], added) === route);
+}
+
+/** Every route: each kind's default route, followed by the routes the operator added for it. */
+export function allRoutes(added: readonly AddedRoute[] = readAddedRoutes()): { route: string; kind: string }[] {
+  return routes.flatMap((kind) => [{ route: kind, kind },
+    ...added.filter((entry) => entry.kind === kind).map((entry) => ({ route: entry.name, kind }))]);
+}
+
+/** These routes' sign-ins, as `tesota auth status` and the shell's Accounts panel show them. */
+export async function routeStatuses(names: readonly string[], credentials: TesotaCredentials = new TesotaCredentials()):
+  Promise<RouteStatus[]> {
+  const added = readAddedRoutes();
+  return Promise.all(names.map(async (route): Promise<RouteStatus> => {
+    const kind = added.find((entry) => entry.name === route)?.kind ?? route;
+    return { route, kind: kindLabels[kind] ?? kind, signIn: await signInOf(route, kind, credentials) };
+  }));
 }
 
 /** The status of these routes, every route when none is named, as one table. */
 async function statusOf(names: readonly string[], credentials: TesotaCredentials): Promise<number> {
-  const added = readAddedRoutes();
-  const rows = await Promise.all(names.map(async (route): Promise<RouteStatus> => {
-    const kind = added.find((entry) => entry.name === route)?.kind ?? route;
-    return { route, kind: kindLabels[kind] ?? kind, signIn: await signInOf(route, kind, credentials) };
-  }));
-  process.stdout.write(statusTable(rows, usedByRoute(added)));
+  process.stdout.write(statusTable(await routeStatuses(names, credentials), usedByRoute()));
   return 0;
 }
 
@@ -322,10 +358,7 @@ export async function addAccount(kind: string, name: string): Promise<number> {
 export async function runAuthCommand(action: string, route?: string,
   credentials: TesotaCredentials = new TesotaCredentials()): Promise<number> {
   if (action === "status" && route === undefined) {
-    // Each kind's default route, followed by the routes added for it.
-    const added = readAddedRoutes();
-    const names = routes.flatMap((kind) => [kind, ...added.filter((entry) => entry.kind === kind).map((entry) => entry.name)]);
-    try { return await statusOf(names, credentials); } catch {
+    try { return await statusOf(allRoutes().map((entry) => entry.route), credentials); } catch {
       console.error("The routes' status could not be read. Credentials were not printed. Check private storage and retry.");
       return 1;
     }

@@ -38,6 +38,13 @@ it.each(TESOTA_SHELL_THEME_NAMES.filter((name) => name !== "terminal"))(
     for (const color of [theme.muted, theme.accent, theme.success, theme.warning, theme.error]) {
       expect(contrast(color ?? "", canvas), `${name}: ${color} on ${canvas}`).toBeGreaterThanOrEqual(4.5);
     }
+    // A panel's surface keeps every color of its text legible, stands apart from the canvas, and keeps a selected row visible.
+    const panel = theme.panelBackground ?? "";
+    for (const color of [theme.foreground, theme.muted, theme.accent, theme.warning, theme.error]) {
+      expect(contrast(color ?? "", panel), `${name}: ${color} on the panel's ${panel}`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrast(panel, canvas), `${name}: panel on canvas`).toBeGreaterThanOrEqual(1.1);
+    expect(contrast(theme.selectionBackground ?? "", panel), `${name}: selection on panel`).toBeGreaterThanOrEqual(1.2);
     expect(theme.accent).not.toBe(theme.success);
     expect(theme.accent).not.toBe(theme.warning);
     expect(selectedRow("selected", 20, theme)).toContain("\x1b[38;2;");
