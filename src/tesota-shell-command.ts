@@ -7,7 +7,8 @@ import { ProcessTerminal, TuiAltScreen } from "@earendil-works/pi-tui";
 import { confinesCommands, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
 import { chooseSessionExecution, packageCacheDirectory, providersFor, readSandboxPreference, releaseWorkspace,
   SANDBOX_NAMES, SANDBOX_PREFERENCES, type SandboxPreference, type SessionExecution } from "./execution-providers.js";
-import type { CommandApproval, NetworkDecision } from "./integrations/pi-coding-session.js";
+import { hostProvider } from "./host-environment.js";
+import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
 import { isDecisionModel, ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
@@ -176,10 +177,19 @@ function closeWarning(record: ShellSessionRecord, pending: number): string {
   return `This session has ${pending} unapplied ${noun}. Press Ctrl+W again to close it and discard ${pending === 1 ? "it" : "them"}.`;
 }
 
-function parseApproval(answer: string): CommandApproval {
+/** The question for a command on this computer: where it runs, why, and the rule the operator may save (decision 049). */
+export function commandQuestion(request: CommandRequest): string {
+  const where = request.reason === undefined ? `Run \`${request.command}\`?`
+    : `Run \`${request.command}\` on this computer, outside the sandbox? ${request.reason}`;
+  const rule = request.rule === undefined ? "" : `, [a]lways \`${request.rule.join(" ")} …\` in this repository`;
+  return `${where} [y]es${rule}, [n]o: `;
+}
+
+/** The operator's answer; "always" counts only when a rule was offered, and anything else declines. */
+export function parseApproval(answer: string, ruleOffered: boolean): CommandApproval {
   const value = answer.trim().toLowerCase();
   if (value === "y" || value === "yes") return "once";
-  if (value === "a" || value === "always") return "always";
+  if (ruleOffered && (value === "a" || value === "always")) return "rule";
   return "deny";
 }
 
@@ -660,11 +670,16 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const agent = await startWorkingAgent({ target }, { cwd: workspace.checkout, environment, web,
         ...(explorers === undefined ? {} : { explorers }), ...(advisor === undefined ? {} : { advisor }),
         sandboxed: confinesCommands(environment.guarantees),
-        approveCommand: async (command) => {
+        // A sandboxed agent may ask to run one command here, with the operator's own tools and logins (decision 049).
+        ...confinesCommands(environment.guarantees) ? { computer: await hostProvider.prepare(workspace.checkout) } : {},
+        commandRules: () => store.commandRules(),
+        approveCommand: async (request) => {
           surface.reportFor(id, { phase: "awaiting_command" });
-          const answer = await surface.askIn(id, `Run \`${command}\`? [y]es, [a]lways this session, [n]o: `);
+          const answer = await surface.askIn(id, commandQuestion(request));
           surface.reportFor(id, { phase: "working" });
-          return parseApproval(answer);
+          const approval = parseApproval(answer, request.rule !== undefined);
+          if (approval === "rule" && request.rule !== undefined) store.saveCommandRule(request.rule);
+          return approval;
         },
         decideNetwork: async (destinations) => {
           surface.reportFor(id, { phase: "awaiting_command" });

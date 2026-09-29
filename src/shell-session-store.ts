@@ -3,6 +3,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, 
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import * as z from "zod";
+import { canSaveRule, type CommandRule } from "./command-rules.js";
 import { isNetworkDestination } from "./execution-environment.js";
 import { SANDBOX_PREFERENCES, type SandboxPreference } from "./execution-providers.js";
 import { MAX_PLAN_STEPS, PLAN_STATUSES, type PlanStep } from "./work-plan.js";
@@ -58,12 +59,13 @@ const checkSchema: z.ZodType<{ command: string; reports: string[] }> = z.strictO
     .max(MAX_CHECK_REPORTS) });
 // Version 8 drops the native sandbox from a session's sandbox choice (decision 047).
 const snapshotVersion = 8;
-const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: typeof snapshotVersion; source: string;
-  checks: { command: string; reports: string[] }[] | null; network: string[]; reviews: ReviewMeasurement[];
-  sessions: z.infer<typeof sessionSchema>[] }> =
-    z.strictObject({ format: z.literal("tesota-shell-sessions"), version: z.literal(snapshotVersion),
+/** A saved rule for commands on this computer (decision 049), only one the operator may save. */
+const commandRuleSchema = z.array(z.string().min(1).max(100)).min(2).max(8).refine(canSaveRule, "not a rule that may be saved");
+const snapshotSchema = z.strictObject({ format: z.literal("tesota-shell-sessions"), version: z.literal(snapshotVersion),
       source: z.string(), checks: z.array(checkSchema).max(20).nullable(),
       network: z.array(z.string().refine(isNetworkDestination)).max(200),
+      // Absent from files written before rules existed, which stay valid.
+      commandRules: z.array(commandRuleSchema).max(100).default([]),
       reviews: z.array(measurementSchema).max(MEASUREMENTS_KEPT),
       sessions: z.array(sessionSchema) });
 export type ShellSessionRecord = z.infer<typeof sessionSchema>;
@@ -82,6 +84,9 @@ export interface ShellSessionStore {
   /** Network destinations the operator allowed for every session of this repository. */
   allowedNetwork(): readonly string[];
   allowNetwork(destinations: readonly string[]): void;
+  /** Rules the operator saved for this repository's commands on this computer (decision 049). */
+  commandRules(): readonly CommandRule[];
+  saveCommandRule(rule: CommandRule): void;
   /** This repository's measured review steps, newest last, from which reviews are forecast. */
   reviewMeasurements(): readonly ReviewMeasurement[];
   recordReviewMeasurement(measurement: ReviewMeasurement): void;
@@ -115,7 +120,7 @@ export interface ShellSessionStore {
 
 function readSnapshot(path: string, source: string): Snapshot {
   const empty: Snapshot = { format: "tesota-shell-sessions", version: snapshotVersion, source, checks: null,
-    network: [], reviews: [], sessions: [] };
+    network: [], commandRules: [], reviews: [], sessions: [] };
   if (!existsSync(path)) return empty;
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
   // Snapshots from earlier versions are discarded; the next save replaces the file.
@@ -196,6 +201,7 @@ export function openShellSessionStore(sourceDirectory: string,
     if (sessions.size !== snapshot.sessions.length) throw new Error("Duplicate saved Tesota session");
     let checks = snapshot.checks;
     let network = snapshot.network;
+    let commandRules: readonly CommandRule[] = snapshot.commandRules;
     let reviews: readonly ReviewMeasurement[] = snapshot.reviews;
     let closed = false;
     const save = (): void => {
@@ -203,7 +209,7 @@ export function openShellSessionStore(sourceDirectory: string,
       const temporary = `${path}.${randomUUID()}.tmp`;
       try {
         writeFileSync(temporary, JSON.stringify({ format: "tesota-shell-sessions", version: snapshotVersion,
-          source, checks, network, reviews, sessions: [...sessions.values()] }) + "\n", { encoding: "utf8", mode: 0o600 });
+          source, checks, network, commandRules, reviews, sessions: [...sessions.values()] }) + "\n", { encoding: "utf8", mode: 0o600 });
         renameSync(temporary, path);
       } finally { if (existsSync(temporary)) unlinkSync(temporary); }
     };
@@ -256,6 +262,14 @@ export function openShellSessionStore(sourceDirectory: string,
         network = [...new Set([...network, ...destinations.map((destination) => z.string()
           .refine(isNetworkDestination).parse(destination))])];
         try { save(); } catch (error) { network = previous; throw error; }
+      },
+      commandRules: () => commandRules,
+      saveCommandRule: (rule) => {
+        const saved = commandRuleSchema.parse([...rule]);
+        if (commandRules.some((existing) => existing.join("\0") === saved.join("\0"))) return;
+        const previous = commandRules;
+        commandRules = [...commandRules, saved];
+        try { save(); } catch (error) { commandRules = previous; throw error; }
       },
       reviewMeasurements: () => reviews,
       recordReviewMeasurement: (measurement) => {

@@ -5,7 +5,8 @@ import { type AgentSession, type AgentSessionEvent, type BashOperations, type Mo
   createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition,
   createWriteToolDefinition, DefaultResourceLoader, defineTool, SessionManager as PiSessionManager, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
+import { type Api, type Model, type TSchema, Type } from "@earendil-works/pi-ai";
+import { allowedByRules, type CommandRule, offeredRule } from "../command-rules.js";
 import { confinesCommands, type ExecutionEnvironment } from "../execution-environment.js";
 import type { ReasoningLevel } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
@@ -17,7 +18,17 @@ import { type WebAccess, webReadTool, webSearchTool } from "./web-tools.js";
 import type { ModelTarget } from "./model-session.js";
 import type { AgentActivity, AgentChange, ConversationEntry, TurnResult } from "./model-session-contract.js";
 
-export type CommandApproval = "once" | "always" | "deny";
+/** How the operator answered a command on this computer: this once, by saving the rule offered, or not at all. */
+export type CommandApproval = "once" | "rule" | "deny";
+
+/** A command on this computer, as the operator is asked about it (decision 049). */
+export interface CommandRequest {
+  readonly command: string;
+  /** Why the agent needs this computer for it, when it asked from a sandbox. */
+  readonly reason?: string;
+  /** The rule the operator may save so that commands beginning the same way run without asking; absent when none may be saved. */
+  readonly rule?: CommandRule;
+}
 /** How the operator answered a refused network destination: for this session, for the repository, or not at all. */
 export type NetworkDecision = "session" | "repository" | "deny";
 
@@ -33,7 +44,12 @@ export interface CodingSessionOptions {
   readonly environment: ExecutionEnvironment;
   /** Commands run in a sandbox without approval; only allowed for an environment that confines them. */
   readonly sandboxed: boolean;
-  readonly approveCommand: (command: string, signal: AbortSignal | undefined) => Promise<CommandApproval>;
+  /** Asked before a command runs on this computer, unless a saved rule allows it; the answer "rule" saves the rule offered. */
+  readonly approveCommand: (request: CommandRequest, signal: AbortSignal | undefined) => Promise<CommandApproval>;
+  /** The rules the operator saved for this repository; none when absent. */
+  readonly commandRules?: () => readonly CommandRule[];
+  /** This computer, where a sandboxed session's agent may ask to run one command (decision 049); absent where it may not. */
+  readonly computer?: ExecutionEnvironment;
   /** Asked after a command whose network access the environment refused. */
   readonly decideNetwork?: (destinations: readonly string[]) => Promise<NetworkDecision>;
   readonly onActivity?: (activity: AgentActivity) => void;
@@ -115,24 +131,38 @@ async function answerRefusedNetwork(environment: ExecutionEnvironment,
     "Run the command again if it needed that access.\n"));
 }
 
+/** Whether a command may run: true, or false after telling the agent why not. */
+export type CommandGate = (command: string, signal: AbortSignal | undefined) => Promise<boolean>;
+
 /**
- * Adapt Pi's shell tool to the session's execution environment. Pi passes the
- * host process environment with each command; it is dropped so no provider
- * receives host variables by default.
+ * Whether a command may run on this computer: a rule the operator saved for
+ * the repository allows it, or the operator does when asked, with the agent's
+ * reason and a rule to save when one may be (decision 049).
  */
-export function environmentBash(environment: ExecutionEnvironment,
-  approve: CodingSessionOptions["approveCommand"] | undefined,
+function computerGate(options: Pick<CodingSessionOptions, "approveCommand" | "commandRules">,
+  request?: { readonly reason: string; readonly rule?: CommandRule | undefined }): CommandGate {
+  return async (command, signal) => {
+    if (allowedByRules(command, options.commandRules?.() ?? [])) return true;
+    const rule = offeredRule(command, request?.rule);
+    const answer = await options.approveCommand({ command, ...request === undefined ? {} : { reason: request.reason },
+      ...rule === undefined ? {} : { rule } }, signal);
+    return answer !== "deny";
+  };
+}
+
+/**
+ * Adapt Pi's shell tool to an execution environment, behind `gate` when a
+ * command must be allowed first. Pi passes the host process environment with
+ * each command; it is dropped so no provider receives host variables by
+ * default.
+ */
+export function environmentBash(environment: ExecutionEnvironment, gate: CommandGate | undefined,
   decideNetwork?: CodingSessionOptions["decideNetwork"]): BashOperations {
-  let alwaysAllowed = approve === undefined;
   return {
     exec: async (command, cwd, options) => {
-      if (!alwaysAllowed && approve !== undefined) {
-        const answer = await approve(command, options.signal);
-        if (answer === "deny") {
-          options.onData(Buffer.from("The operator declined this command. Do not retry it; ask or choose another approach.\n"));
-          return { exitCode: 1 };
-        }
-        if (answer === "always") alwaysAllowed = true;
+      if (gate !== undefined && !await gate(command, options.signal)) {
+        options.onData(Buffer.from("The operator declined this command. Do not retry it; ask or choose another approach.\n"));
+        return { exitCode: 1 };
       }
       const result = await environment.run(command, { cwd, onOutput: options.onData,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -164,12 +194,18 @@ function commandGuidance(sandboxed: boolean, environment: ExecutionEnvironment):
   const where = sandboxed
     ? "Shell commands run without asking in an isolated sandbox that sees only this copy of the repository; " +
       "network access is limited to package registries and hosts the user allowed. When a command reaches " +
-      "another host, the user is asked whether to allow it and you are told the answer. "
+      "another host, the user is asked whether to allow it and you are told the answer. " + COMPUTER_GUIDANCE
     : "Every shell command asks the user for approval first; prefer the file tools for reading and editing, " +
       "and run commands when they are worth an approval, such as installing dependencies or running tests. ";
   return environment.commandRoot === undefined ? where
     : `${where}In commands the workspace is ${environment.commandRoot}; the file tools keep its real path. `;
 }
+
+/** When a sandboxed agent should ask for this computer (decision 049). */
+const COMPUTER_GUIDANCE = "Only when a command needs a program or login that exists on the user's computer and not in the " +
+  "sandbox, such as gh, aws or docker, run it with run_on_computer, saying why; the user is asked unless a rule they saved " +
+  "allows it. It runs in this copy of the repository with the user's own tools and credentials, so never use it to get " +
+  "around the sandbox, and suggest a rule only of a program and its subcommand, such as [\"gh\", \"pr\"]. ";
 
 /** When the agent should ask an explorer, and what an explorer's answer is worth (decision 019). */
 /** How the agent should use the web and what web content is worth (decision 024). */
@@ -217,16 +253,43 @@ function piEntries(message: AgentSession["messages"][number]): ConversationEntry
   }
 }
 
-/** The agent's shell: bash, in whichever environment its commands run. */
+/** The agent's shell: bash, in whichever environment its commands run; on this computer, only as the operator allows. */
 function shellTool(root: string, options: WorkingAgentOptions): ToolDefinition {
-  const operations = environmentBash(options.environment, options.sandboxed ? undefined : options.approveCommand, options.decideNetwork);
+  const operations = environmentBash(options.environment, options.sandboxed ? undefined : computerGate(options), options.decideNetwork);
   return defineTool(createBashToolDefinition(root, { operations, exposeSessionEnvironment: false }));
+}
+
+/**
+ * `run_on_computer` (decision 049): from a sandboxed session, one command on
+ * this computer, in the workspace, with the operator's environment, when a
+ * saved rule or the operator allows it. It is Pi's bash, so its output streams
+ * and is cut as the sandbox's is.
+ */
+function computerTool(root: string, computer: ExecutionEnvironment, options: WorkingAgentOptions): ToolDefinition {
+  return defineTool({
+    name: "run_on_computer", label: "Run on this computer",
+    description: "Run one shell command on the user's computer instead of the sandbox, in this copy of the repository, " +
+      "with the user's own programs and credentials. The user is asked, with your reason, unless a rule they saved allows it.",
+    parameters: Type.Object({
+      command: Type.String({ description: "The command, for the user's POSIX shell" }),
+      reason: Type.String({ description: "Why it needs the user's computer, as a short question to the user" }),
+      rule: Type.Optional(Type.Array(Type.String(), { description: "The leading words the user could allow for later " +
+        "commands, a program and its subcommand, such as [\"gh\", \"pr\"]" })),
+      timeout: Type.Optional(Type.Number({ description: "Seconds before the command is stopped" })),
+    }),
+    execute: (id, params, signal, onUpdate, context) => {
+      const gate = computerGate(options, { reason: params.reason, rule: params.rule });
+      const bash = createBashToolDefinition(root, { operations: environmentBash(computer, gate), exposeSessionEnvironment: false });
+      return bash.execute(id, { command: params.command, ...params.timeout === undefined ? {} : { timeout: params.timeout } },
+        signal, onUpdate, context);
+    },
+  });
 }
 
 /** The argument that identifies what a tool call acts on: its command, pattern or path. */
 export function toolSubject(name: string, args: unknown): string {
   if (typeof args !== "object" || args === null) return "";
-  const key = name === "bash" ? "command" : name === "grep" || name === "find" ? "pattern"
+  const key = name === "bash" || name === "run_on_computer" ? "command" : name === "grep" || name === "find" ? "pattern"
     : name === "explore" || name === "advisor" ? "question"
     : name === "web_search" ? "query" : name === "web_read" || name === "web_fetch" ? "url" : "path";
   const value: unknown = Reflect.get(args, key);
@@ -318,7 +381,7 @@ export interface SessionStartOptions {
 
 /** What decides the working agent's tools, whichever engine runs it. */
 export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "approveCommand" |
-  "decideNetwork" | "explorers" | "web" | "advisor" | "plan">;
+  "commandRules" | "computer" | "decideNetwork" | "explorers" | "web" | "advisor" | "plan">;
 
 /**
  * The working agent's system prompt and tools: every file tool confined to the
@@ -337,6 +400,7 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
     defineTool(confine(root, createEditToolDefinition(root), true)),
     defineTool(confine(root, createWriteToolDefinition(root), true)),
     shellTool(root, options),
+    ...(options.sandboxed && options.computer !== undefined ? [computerTool(root, options.computer, options)] : []),
     ...(options.explorers === undefined ? [] : [exploreTool(options.explorers)]),
     ...(options.web === undefined ? [] : [webSearchTool(options.web), webReadTool(options.web)]),
     ...(options.advisor === undefined ? [] : [advisorTool(options.advisor)]),
