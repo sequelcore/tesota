@@ -107,6 +107,79 @@ Sources: [Copilot environment](https://docs.github.com/en/copilot/how-tos/use-co
    about 12 hours, Claude Code cloud sessions start from a snapshot, and
    Copilot's coding agent reruns its setup steps for each task.
 
+## Local harnesses: tools, and leaving the sandbox
+
+Researched on 2026-09-29, for the question whether Tesota, a local harness
+whose sandbox is a separate Linux, should set environments up as cloud agents
+do. Sources: vendor documentation, the source of harnesses cloned under
+`Sequel/cloned` (Codex at `fdbce2080c`, 2026-09-27; OpenClaw at `866012f5be1`,
+2026-07-24; OpenCode at `b471c2b449`, 2026-09-26; Gemini CLI at `3818efb`,
+2026-07-24), and community reports. No study measuring toolchain provisioning
+was found.
+
+**Where a sandboxed command's tools come from.**
+
+| System | Tools a sandboxed command sees | Declared or installed by |
+| --- | --- | --- |
+| Claude Code, Bash sandbox | The host's: "read access to the entire computer, except certain denied directories" ([sandboxing](https://code.claude.com/docs/en/sandboxing)) | Nobody; what the user installed |
+| Codex CLI on Linux | The host's: bubblewrap mounts `/` read-only with writable roots (source, `linux-sandbox`) | Nobody |
+| Codex CLI on Windows | The host's, under a sandbox identity | Nobody |
+| Claude Code and Cursor on Windows | The user's own WSL distribution's ([Cursor](https://cursor.com/blog/agent-sandboxing), [Claude Code](https://code.claude.com/docs/en/sandbox-environments)) | What the user installed in WSL |
+| Gemini CLI, container sandbox | Its image's only; host tools are not visible | `.gemini/sandbox.Dockerfile`, built when `BUILD_SANDBOX=1` ([sandbox](https://geminicli.com/docs/cli/sandbox/)) |
+| OpenClaw, Docker sandbox | Its image's: `openclaw-sandbox:bookworm-slim`, which "does **not** include Node"; an optional common image adds Node 24, pnpm, Python and Git | A custom image, or `setupCommand`, run once when the container is created (`docs/gateway/sandboxing.md`) |
+| Cloud agents | A large image with many runtimes, plus a setup script ([above](#repository-toolchains-in-isolated-environments)) | The vendor's image; the repository's script |
+
+Harnesses that sandbox the host need no setup phase: the user's tools are
+there, read-only. Harnesses whose sandbox is a separate system (containers,
+WSL distributions, cloud VMs) must provision it: a bigger image, a user-built
+image or a setup command. None of the local ones detects a repository's
+languages and installs them.
+
+**The gap on Windows, reported.** A Cursor user found `mvn`, `node` and
+`java` "command not found" because the agent ran in WSL while the tools were
+installed on Windows; Cursor staff called it "a known bug… no ETA for a fix
+yet" on 2026-05-13, and only turning WSL off worked around it
+([forum](https://forum.cursor.com/t/agent-command-execution-uses-wsl-instead-of-the-windows-default-integrated-terminal-git-bash/160196)).
+Windows developers' tools are usually on Windows, where a Linux sandbox
+cannot run them.
+
+**Java through a proxy.** Java's HTTP client ignores `https_proxy`: the
+Gradle wrapper fails in Claude Code on the web, where curl succeeds, and the
+workaround is `JAVA_TOOL_OPTIONS` with `-Dhttps.proxyHost` and
+`-Dhttps.proxyPort` ([#16222](https://github.com/anthropics/claude-code/issues/16222),
+open since 2026-01-04; Maven, [#13372](https://github.com/anthropics/claude-code/issues/13372)).
+Codex users report Maven failing in its sandbox the same way
+([practitioner write-up](https://codex.danielvaughan.com/2026/03/30/codex-cli-java-spring-boot-teams/)).
+
+**Leaving the sandbox for one command.** Every harness with a sandbox has a
+way out, and all of them put a person or a standing rule behind it:
+
+| System | How a command leaves | Who authorizes | Standing permission |
+| --- | --- | --- | --- |
+| Claude Code | The model retries with `dangerouslyDisableSandbox` after a denial | The user, per command; `allowUnsandboxedCommands: false` removes the way out | `excludedCommands` always run outside |
+| Codex | The model asks with `sandbox_permissions: "require_escalated"` and a `justification`; it prefers `with_additional_permissions` (network or paths) inside the sandbox | The user, or an allow rule | Exec-policy `prefix_rule`s, suggested by the model, persisted when the user accepts; evaluated per shell segment, never for commands with redirection, substitution, variables or wildcards; the model is told not to request interpreter prefixes (`python3`) or any for `rm` (`prompts/templates/permissions/approval_policy/on_request.md`) |
+| Gemini CLI | A "Sandbox Expansion Request" when a command is denied or predicted to need more, such as `npm install` | The user, for that run | Extra mounts (`SANDBOX_MOUNTS`) |
+| OpenClaw | `exec` with `elevated: true`, or `/elevated on` | Approvals still apply; `/elevated full` skips them for the session | `tools.elevated.allowFrom` per sender |
+| OpenCode | No sandbox | `allow`, `ask`, `deny` per tool and per command pattern (`"git *": "allow"`) | The patterns |
+
+**Removing the question instead.** Codex's "full access" runs without a
+sandbox or questions; Claude Code's auto mode and Codex's guardian replace the
+user with a model that judges each action. Anthropic reports that users
+approve 93% of permission prompts, and that its classifier missed 17% of real
+overeager actions after its second stage
+([auto mode](https://www.anthropic.com/engineering/claude-code-auto-mode),
+2026-03-25); Anthropic says auto mode "is not a drop-in replacement for careful
+human review on high-stakes infrastructure". Sandboxing cut its permission
+prompts by 84% in internal use
+([sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing),
+2025-10-20). Secondary reports describe prompt injection defeating auto mode
+([CSA note](https://labs.cloudsecurityalliance.org/research/csa-research-note-claude-code-automode-prompt-injection-2026/));
+they were not verified against the original disclosure.
+
+**What follows.** Fewer questions come from a boundary, not from skipping
+them. What leaves the boundary is authorized per command, or by a narrow rule
+the user made, and never by a blanket "yes" or by the model itself.
+
 ## Native OS sandboxes on Windows
 
 Rechecked on 2026-09-25 because a local OS sandbox would start faster than a
