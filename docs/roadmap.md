@@ -142,7 +142,8 @@ project. They are listed here as they are chosen.
      words fall and no obligation is lost. Measured 2026-09-28 on two
      setups through OpenRouter ([findings](findings.md)): neither marked
      either extra, so today's reviewer does not flag work beyond the
-     request and step 3 has its evidence. The agent runner is next.
+     request and step 3 has its evidence. The agent's cases run with
+     `live:agent` (built 2026-09-29).
   2. A short block in the working agent's prompt, measured on those cases:
      "nothing to change" framed as success, one sentence on scope, and
      leading with the result.
