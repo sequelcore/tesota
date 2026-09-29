@@ -62,7 +62,7 @@ import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry, type Assur
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
 
-/** How long quitting waits for the sessions' environments to be released, such as the native sandbox's drive. */
+/** How long quitting waits for the sessions' environments to be released, such as the WSL sandbox's process and proxy. */
 const RELEASE_TIME_LIMIT_MS = 5_000;
 
 /** How many sessions' operations run at once; the rest wait their turn. */
@@ -125,7 +125,7 @@ function executionLabel(execution: SessionExecution): string {
   return `sandbox · ${SANDBOX_NAMES[execution.provider.name]?.label ?? execution.provider.name}`;
 }
 
-/** Where commands run, as a phrase: "in the native sandbox", or "on this computer" for the host. */
+/** Where commands run, as a phrase: "in the WSL sandbox", or "on this computer" for the host. */
 function executionPlace(execution: SessionExecution): string {
   if (execution.commands === "host") return "on this computer, which asks before each command";
   return `in ${SANDBOX_NAMES[execution.provider.name]?.described ?? execution.provider.name}`;
@@ -248,10 +248,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   chooseExecution: (preference: SandboxPreference) => Promise<SessionExecution> =
     (preference) => chooseSessionExecution(providersFor(preference)),
   resumeSessionId?: string): TesotaShellCommandDependencies {
-  // Each choice is made once per shell: the first on a machine qualifies the native sandbox, which takes some seconds.
+  // Sessions share one choice per shell, since readiness takes some seconds; qualification is kept on disk. The
+  // operator naming a sandbox with /sandbox checks again, so a sandbox that stopped being ready since is not reused.
   const executionChoices = new Map<SandboxPreference, Promise<SessionExecution>>();
-  const executionFor = (preference: SandboxPreference): Promise<SessionExecution> => {
-    let choice = executionChoices.get(preference);
+  const executionFor = (preference: SandboxPreference, checkAgain = false): Promise<SessionExecution> => {
+    let choice = checkAgain ? undefined : executionChoices.get(preference);
     if (choice === undefined) {
       choice = chooseExecution(preference);
       choice.catch(() => { executionChoices.delete(preference); });
@@ -334,7 +335,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       return { title: `Sandbox: ${own === undefined ? `default (${current})` : current}`, entries: [
         { value: "default", label: "default", detail: `Follow the choice for new sessions (${preference})` },
         ...SANDBOX_PREFERENCES.map((value) => ({ value, label: value,
-          detail: `${value === current ? "Current · " : ""}${value === "auto" ? "Native, then Docker, then this computer" :
+          detail: `${value === current ? "Current · " : ""}${value === "auto" ? "WSL, then Docker, then this computer" :
             value === "host" ? "This computer; asks before commands" :
               `${Object.values(SANDBOX_NAMES).find((entry) => entry.choice === value)?.described ?? value}; availability checked on selection`}` })),
       ] };
@@ -434,7 +435,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const preparation = new AbortController();
     state.preparation = preparation;
     const pending = (async () => {
-      // The first choice on a machine qualifies the native sandbox there, which takes some seconds.
+      // The first choice on a machine qualifies the sandbox there, which takes some seconds.
       surface.reportFor(id, { phase: "preparing", activity: "Choosing where commands run" });
       const [workspace, execution] = await Promise.all([workspaceFor(id), executionFor(sandboxPreference(id))]);
       state.execution = execution;
@@ -810,10 +811,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const switchSandbox = async (id: string, preference: SandboxPreference, followDefault: boolean): Promise<void> => {
     surface.reportFor(id, { phase: "preparing", activity: "Choosing where commands run" });
     let next: SessionExecution;
-    try { next = await executionFor(preference); } finally { surface.clearProgressFor(id, "preparing"); }
+    try { next = await executionFor(preference, true); } finally { surface.clearProgressFor(id, "preparing"); }
     const state = stateFor(id);
     const current = state.execution;
-    if ((preference === "native" || preference === "docker") && next.commands === "host") {
+    // A sandbox named outright, never auto or this computer, is used only when it is ready here.
+    if (preference !== "auto" && preference !== "host" && next.commands === "host") {
       const name = Object.values(SANDBOX_NAMES).find((entry) => entry.choice === preference)?.described ?? preference;
       surface.writeTo(id, `${name.charAt(0).toUpperCase()}${name.slice(1)} is not ready here: ${unavailableReason(next)}. ` +
         `Commands in this session still run ${current === undefined ? "where they did" : executionPlace(current)}. ` +

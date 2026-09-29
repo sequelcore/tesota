@@ -83,8 +83,9 @@ again, but only while nothing newer has taken its place: an environment
 prepared after a sandbox switch stays the session's even when the earlier
 preparation fails later. Closing also removes the session's workspace, unless
 the session holds unresolved effects, which keep it as evidence. Quitting
-waits for the releases up to five seconds; the native sandbox's drive leases
-cover one that does not finish ([execution](execution.md#native-sandbox)).
+waits for the releases up to five seconds; a WSL sandbox process whose
+input closes stops its commands and its proxy itself
+([execution](execution.md#wsl-sandbox)).
 
 At most two sessions work at once, and a turn runs at most three explorers;
 both limits are one semaphore (`src/semaphore.ts`), which grants places in

@@ -14,15 +14,13 @@ import { distributionStep } from "./verification/wsl-settings-rule.js";
 import { windowsSystemProgram } from "./windows-system.js";
 
 /**
- * The WSL sandbox (issue 163): the candidate to replace the native Windows
- * sandbox, qualified by the same controls. Tesota keeps a WSL distribution of
- * its own, with its own user and Windows interop off, and starts one process
- * in it per prepared environment (`bubblewrap-sandbox.ts`), which runs each
- * command in a bubblewrap sandbox and hosts the egress proxy. Commands run in
- * a POSIX shell, and see the workspace at its path under `/mnt`. WSL itself is
- * not the boundary: bubblewrap's namespaces are, inside WSL's virtual machine.
- * It is chosen only by name, `tesota sandbox use wsl`, until the comparison
- * with the native sandbox decides which one Windows keeps.
+ * The WSL sandbox, Windows' sandbox (decisions 043 and 047). Tesota keeps a
+ * WSL distribution of its own, with its own user and Windows interop off, and
+ * starts one process in it per prepared environment (`bubblewrap-sandbox.ts`),
+ * which runs each command in a bubblewrap sandbox and hosts the egress proxy.
+ * Commands run in a POSIX shell, and see the workspace at its path under
+ * `/mnt`. WSL itself is not the boundary: bubblewrap's namespaces are, inside
+ * WSL's virtual machine.
  */
 
 export const WSL_GUARANTEES: EnvironmentGuarantees = { filesystem: "workspace", network: "allowlist", secrets: "none", resources: "unbounded" };
@@ -84,7 +82,7 @@ class Connection {
         this.#ended = true;
         opened({ type: "failed", message: this.#errors.trim() || "The sandbox's process ended before it was ready" });
         // A command whose process is gone cannot be confirmed stopped.
-        for (const [id, listener] of this.#listeners) listener({ type: "ended", id, outcome: "unconfirmed", exitCode: null });
+        for (const [id, listener] of this.#listeners) listener({ type: "ended", id, outcome: "unconfirmed", exitCode: null, refused: [] });
         settle();
       };
       child.once("error", (error) => { this.#errors = error.message; end(); });
@@ -98,7 +96,7 @@ class Connection {
 
   /** Answers to one id; once the process has ended, the only answer is that nothing can be confirmed. */
   listen(id: string, listener: (message: SandboxMessage) => void): () => void {
-    if (this.#ended) queueMicrotask(() => { listener({ type: "ended", id, outcome: "unconfirmed", exitCode: null }); });
+    if (this.#ended) queueMicrotask(() => { listener({ type: "ended", id, outcome: "unconfirmed", exitCode: null, refused: [] }); });
     else this.#listeners.set(id, listener);
     return () => { this.#listeners.delete(id); };
   }
@@ -114,15 +112,6 @@ class Connection {
 
 function sandboxNetwork(connection: Connection): NetworkControl {
   return {
-    blockedSince: (time) => new Promise((settle, fail) => {
-      const id = randomUUID();
-      const stop = connection.listen(id, (message) => {
-        stop();
-        if (message.type === "blocked") settle(message.destinations);
-        else fail(new Error("The sandbox's network log is unavailable"));
-      });
-      connection.send({ type: "blocked", id, since: time.getTime() });
-    }),
     allow: async (destinations) => {
       if (!destinations.every(isNetworkDestination)) throw new Error("Only host:port destinations can be allowed");
       connection.send({ type: "allow", destinations });
@@ -142,7 +131,7 @@ function runIn(connection: Connection, workspace: string, command: string, optio
       if (message.type !== "ended") return;
       stop();
       options.signal?.removeEventListener("abort", abort);
-      settle({ outcome: message.outcome, exitCode: message.exitCode });
+      settle({ outcome: message.outcome, exitCode: message.exitCode, refused: message.refused });
     });
     options.signal?.addEventListener("abort", abort, { once: true });
     connection.send({ type: "run", id, command, cwd: within.split(sep).join("/"), env: { ...options.env },
@@ -202,7 +191,7 @@ export async function bubblewrapEnvironment(launch: Launch, workspace: string, o
     options.signal?.throwIfAborted();
     const preparation = await prepareDependencies(connection, root, options);
     options.signal?.throwIfAborted();
-    return { provider: "wsl", shell: "posix", ...first.workspace === root ? {} : { commandRoot: first.workspace },
+    return { provider: "wsl", ...first.workspace === root ? {} : { commandRoot: first.workspace },
       guarantees: WSL_GUARANTEES, preparation,
       network: sandboxNetwork(connection), run: (command, runOptions) => runIn(connection, root, command, runOptions),
       dispose: () => connection.close() };

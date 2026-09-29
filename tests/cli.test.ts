@@ -46,7 +46,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota prune [--force]\n" +
     "       tesota recover [undo|finish|resolved [<id>]]\n" +
     "       tesota setup\n" +
-    "       tesota sandbox [use [<auto|native|wsl|docker|host>] | clean]\n\n" +
+    "       tesota sandbox [use [<auto|wsl|docker|host>] | clean]\n\n" +
     "Starts a new coding session in the current repository. The agent works in a\n" +
     "separate copy; you review its changes and checks before anything is applied.\n",
   );

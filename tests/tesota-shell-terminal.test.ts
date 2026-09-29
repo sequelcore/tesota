@@ -252,7 +252,7 @@ it("chooses a session sandbox from a filtered list without sending a request", a
   const onSandbox = vi.fn();
   const sandboxPicker = () => ({ title: "Sandbox: default (auto)", entries: [
     { value: "default", label: "default", detail: "Follow auto" },
-    { value: "native", label: "native", detail: "Native sandbox" },
+    { value: "wsl", label: "wsl", detail: "WSL sandbox" },
     { value: "docker", label: "docker", detail: "Docker Sandboxes" },
   ] });
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onSandbox, sandboxPicker });

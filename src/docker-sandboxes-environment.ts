@@ -139,14 +139,16 @@ export function blockedDestinations(log: string, sandbox: string, since: Date): 
     Date.parse(entry.last_seen) >= since.getTime()).map((entry) => entry.host))];
 }
 
+/** What the sandbox's proxy refused since a command started, from its log. */
+async function refusedSince(sbx: string, name: string, started: Date): Promise<string[]> {
+  const log = await invoke(sbx, ["policy", "log", name, "--json"]);
+  if (log.status !== 0) throw new Error(`The sandbox's network log is unavailable: ${log.stderr.trim().slice(-300)}`);
+  // An entry can land in the log after the command that caused it ended, stamped slightly earlier.
+  return blockedDestinations(log.stdout, name, new Date(started.getTime() - logSlackMs));
+}
+
 function sandboxNetwork(sbx: string, name: string): NetworkControl {
   return {
-    async blockedSince(time) {
-      const log = await invoke(sbx, ["policy", "log", name, "--json"]);
-      if (log.status !== 0) throw new Error(`The sandbox's network log is unavailable: ${log.stderr.trim().slice(-300)}`);
-      // The proxy's clock and ours can differ by the time a log entry takes to land.
-      return blockedDestinations(log.stdout, name, new Date(time.getTime() - logSlackMs));
-    },
     async allow(destinations) {
       if (destinations.length === 0) return;
       if (!destinations.every(isNetworkDestination)) throw new Error("Only host:port destinations can be allowed");
@@ -159,7 +161,6 @@ function sandboxNetwork(sbx: string, name: string): NetworkControl {
 function sandboxEnvironment(sbx: string, name: string, workspace: string, prepared: PreparedToolchain): ExecutionEnvironment {
   return {
     provider: "docker-sandboxes",
-    shell: "posix",
     guarantees,
     preparation: prepared.steps,
     network: sandboxNetwork(sbx, name),
@@ -167,6 +168,7 @@ function sandboxEnvironment(sbx: string, name: string, workspace: string, prepar
       if (!contains(workspace, resolve(options.cwd))) return { outcome: "not_started", exitCode: null };
       if (options.signal?.aborted === true) return { outcome: "cancelled", exitCode: null };
       const tag = `TESOTA_RUN=${randomUUID()}`;
+      const started = new Date();
       const variables = variableFlags({ ...prepared.variables, ...options.env });
       const child = spawn(sbx, ["exec", "-w", sandboxPath(resolve(options.cwd)), "-e", tag, ...variables, name, "sh", "-c", command],
         { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
@@ -189,9 +191,12 @@ function sandboxEnvironment(sbx: string, name: string, workspace: string, prepar
       });
       if (timer !== undefined) clearTimeout(timer);
       options.signal?.removeEventListener("abort", abort);
+      if (stopping === "timed_out" && await stopped) {
+        return { outcome: "timed_out", exitCode: null, refused: await refusedSince(sbx, name, started) };
+      }
       if (stopping !== undefined) return { outcome: await stopped ? stopping : "unconfirmed", exitCode: null };
       if (exit === "error") return { outcome: "not_started", exitCode: null };
-      return { outcome: "exited", exitCode: exit ?? 1 };
+      return { outcome: "exited", exitCode: exit ?? 1, refused: await refusedSince(sbx, name, started) };
     },
     dispose: async () => {},
   };

@@ -56,8 +56,8 @@ const checkSchema: z.ZodType<{ command: string; reports: string[] }> = z.strictO
   command: z.string().min(1).max(1000),
   reports: z.array(z.string().refine((path) => normalizeReportPath(path) === path, "not a report path"))
     .max(MAX_CHECK_REPORTS) });
-// Version 7 names each check's JUnit XML reports (decision 040).
-const snapshotVersion = 7;
+// Version 8 drops the native sandbox from a session's sandbox choice (decision 047).
+const snapshotVersion = 8;
 const snapshotSchema: z.ZodType<{ format: "tesota-shell-sessions"; version: typeof snapshotVersion; source: string;
   checks: { command: string; reports: string[] }[] | null; network: string[]; reviews: ReviewMeasurement[];
   sessions: z.infer<typeof sessionSchema>[] }> =

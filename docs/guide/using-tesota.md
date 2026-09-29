@@ -78,22 +78,19 @@ npm's, and pages built with JavaScript give little text.
 Commands run in a **sandbox** when one is ready, and on **this computer**
 otherwise, where each one asks you first; the agent's edits always go to its
 own copy of your repository, never to the repository itself until you apply
-them. On Windows 11 24H2 or later, the **native sandbox** needs nothing
-installed: the first time, Tesota checks on your computer, for about 20
-seconds, that it keeps your files, credentials and network out of reach, and
-uses it only if every check passes. In it the agent's commands run in
-Windows PowerShell, and the workspace appears to them as a drive of its own,
-such as `T:\`; npm works, and a command the sandbox blocks, such as
-`bun install`, runs on your computer only if you approve it. `tesota sandbox`
-shows what each sandbox proved here and which one is in use; `tesota sandbox
-use docker` (or `native`, `host`, `auto`) chooses for new sessions. Inside a
-session, `/sandbox` opens a list including `default`, which follows the
-choice for new sessions; `/sandbox docker` switches that session alone,
-keeping its conversation. `tesota sandbox clean` removes this repository's package
-cache. `tesota sandbox use wsl` tries the WSL sandbox, which is being compared
-with the native one and has not yet been checked on Windows: `tesota setup`
-creates a WSL distribution of Tesota's own for it, and its commands run in a
-Linux shell that sees the workspace under `/mnt`. Docker
+them. On Windows, the **WSL sandbox** runs the agent's commands in a Linux
+shell inside WSL, in a distribution of Tesota's own, where they see only the
+workspace, under `/mnt`, and reach only package registries. Run `tesota
+setup` once to prepare it: it installs WSL if needed (an administrator prompt
+and a restart), creates the distribution and restarts it when its settings
+change. The first time, Tesota checks on your computer that the sandbox keeps
+your files, credentials and network out of reach, and uses it only if every
+check passes. `tesota sandbox` shows what each sandbox proved here and which
+one is in use; `tesota sandbox use docker` (or `wsl`, `host`, `auto`) chooses
+for new sessions. Inside a session, `/sandbox` opens a list including
+`default`, which follows the choice for new sessions; `/sandbox docker`
+switches that session alone, keeping its conversation. `tesota sandbox clean`
+removes this repository's package cache. Docker
 Sandboxes is the alternative on Windows 11, and the stronger wall for files,
 since it runs a virtual machine, but it is not used for now: a program that
 ignores its proxy could still open a connection, and Tesota has not yet shown

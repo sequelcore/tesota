@@ -45,19 +45,13 @@ it("chooses the controls a provider's claimed guarantees call for", () => {
     "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "network_direct", "registry_reachable"]);
 });
 
-it("writes each probe in the environment's own shell", async () => {
+it("writes each probe as quoted words for the environment's POSIX shell", async () => {
   const commands: string[] = [];
-  const powershell: ExecutionEnvironment = { provider: "fake", shell: "powershell", guarantees: sandbox, preparation: [],
+  const recording: ExecutionEnvironment = { provider: "fake", guarantees: sandbox, preparation: [],
     run: async (command) => { commands.push(command); return { outcome: "exited", exitCode: 0 }; }, dispose: async () => {} };
-  await runControls(powershell, ["outside_read", "network_refused"], site, new AbortController().signal);
-  // PowerShell runs a quoted program only through `&`, and its `curl` is an alias for Invoke-WebRequest.
-  expect(commands[0]).toMatch(/^& ".+" "\.tesota-control-[^"]+\.cjs" "\.\.\/outside\/\.tesota-control-[^"]+\.txt"$/u);
-  // Windows' own TLS checks revocation online, which a sandbox's allowlist does not reach; the control checks the network.
-  expect(commands[1]).toMatch(/^& "curl\.exe" "--ssl-no-revoke" "-sS"/u);
-  expect(hostProvider.guarantees.filesystem).toBe("host");
-  const host = await hostProvider.prepare(site.workspace);
-  expect(host.shell).toBe("posix");
-  await host.dispose();
+  await runControls(recording, ["outside_read", "network_refused"], site, new AbortController().signal);
+  expect(commands[0]).toMatch(/^".+" "\.tesota-control-[^"]+\.cjs" "\.\.\/outside\/\.tesota-control-[^"]+\.txt"$/u);
+  expect(commands[1]).toMatch(/^"curl" "-sS" "-m" "15"/u);
 });
 
 it("passes the host on what every environment must do, and fails it on every confinement it lacks", async () => {
@@ -84,7 +78,7 @@ async function silentServer(): Promise<{ url: string; received: () => string; cl
 
 /** An environment that answers every command with the probe's report, without running it. */
 function reporting(report: string): ExecutionEnvironment {
-  return { provider: "fake", shell: "posix", guarantees: sandbox, preparation: [], dispose: async () => {},
+  return { provider: "fake", guarantees: sandbox, preparation: [], dispose: async () => {},
     run: async (_command, options) => { options.onOutput(Buffer.from(`${report}\n`)); return { outcome: "exited", exitCode: 0 }; } };
 }
 

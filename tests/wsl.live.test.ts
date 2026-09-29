@@ -10,7 +10,7 @@ import { qualifyProvider } from "../src/execution-qualification.js";
 import { bubblewrapEnvironment, type Launch, WSL_GUARANTEES, wslProvider } from "../src/wsl-environment.js";
 
 /**
- * The WSL sandbox candidate (issue 163) against the execution controls every
+ * The WSL sandbox (decision 043) against the execution controls every
  * provider must pass, then the network's report and allowance, loopback
  * servers, cancellation of a process tree, Windows programs and the time a
  * command takes. On Windows it runs the whole provider in Tesota's WSL
@@ -27,7 +27,8 @@ let sandbox: ExecutionEnvironment | undefined;
 /** On Linux: the built sandbox process, run by this Node. */
 const direct: Launch = (args) => spawn(process.execPath, [resolve("dist", "bubblewrap-sandbox-server.js"), ...args]);
 
-async function run(command: string, signal?: AbortSignal): Promise<{ outcome: string; exitCode: number | null; output: string; ms: number }> {
+async function run(command: string, signal?: AbortSignal):
+  Promise<{ outcome: string; exitCode: number | null; refused?: readonly string[]; output: string; ms: number }> {
   if (sandbox === undefined) throw new Error("Sandbox unavailable");
   let output = "";
   const started = Date.now();
@@ -70,17 +71,18 @@ it.runIf(live && windows)("qualifies on this machine with every claim upheld, fr
   expect(record.results.every((result) => result.passed)).toBe(true);
 }, 600_000);
 
-it.runIf(live)("reports a refused destination and opens only what is allowed", async () => {
-  const started = new Date(Date.now() - 1_000);
-  const fetch = (url: string): Promise<{ output: string }> => run(`curl -sS -m 20 -o /dev/null -w '%{http_code}' ${url}`);
-  expect((await fetch("https://example.com/")).output).not.toMatch(/\b200\b/u);
-  expect(await sandbox?.network?.blockedSince(started)).toContain("example.com:443");
+it.runIf(live)("reports with each command what the network refused during it, and opens only what is allowed", async () => {
+  const fetch = (url: string): ReturnType<typeof run> => run(`curl -sS -m 20 -o /dev/null -w '%{http_code}' ${url}`);
+  const refused = await fetch("https://example.com/");
+  expect(refused.output).not.toMatch(/\b200\b/u);
+  // Measured by the sandbox's own clock, which on Windows is WSL's, not the host's.
+  expect(refused.refused).toContain("example.com:443");
   await sandbox?.network?.allow(["example.com:443"]);
   expect((await fetch("https://example.com/")).output).toMatch(/\b200\b/u);
   expect((await fetch("https://example.org/")).output).not.toMatch(/\b200\b/u);
 }, 120_000);
 
-it.runIf(live)("runs a server on its own loopback and connects to it, which the native sandbox refuses", async () => {
+it.runIf(live)("runs a server on its own loopback and connects to it", async () => {
   const server = "require('node:http').createServer((q, s) => s.end('loopback-ok')).listen(0, '127.0.0.1', function () { " +
     "require('node:http').get({ host: '127.0.0.1', port: this.address().port }, (r) => r.on('data', (d) => { " +
     "process.stdout.write(String(d)); process.exit(0); })); })";

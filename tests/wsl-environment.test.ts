@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { bubblewrapEnvironment, type Launch } from "../src/wsl-environment.js";
 
 /**
- * The host's side of the WSL sandbox (issue 163) against stand-in sandbox
+ * The host's side of the WSL sandbox (decision 043) against stand-in sandbox
  * processes that speak its messages without bubblewrap: what a failed start
  * reports, how a command's output and end come back, and what the host
  * concludes when the process is gone. The live suite, `TESOTA_LIVE_WSL=1`,
@@ -37,14 +37,14 @@ it("runs a command from its folder relative to the workspace, streams its output
   const environment = await bubblewrapEnvironment(standIn(`
   if (message.type === "run") {
     send({ type: "output", id: message.id, data: Buffer.from(message.cwd + ":" + message.command + ":" + message.env.GIVEN).toString("base64") });
-    send({ type: "ended", id: message.id, outcome: "exited", exitCode: 3 });
+    send({ type: "ended", id: message.id, outcome: "exited", exitCode: 3, refused: [] });
   }`), workspace);
   try {
     expect(environment.commandRoot).toBe("/mnt/c/workspace");
     let output = "";
     const result = await environment.run("make", { cwd: join(workspace, "src", "lib"), env: { GIVEN: "yes" },
       onOutput: (chunk) => { output += chunk.toString(); } });
-    expect(result).toEqual({ outcome: "exited", exitCode: 3 });
+    expect(result).toEqual({ outcome: "exited", exitCode: 3, refused: [] });
     expect(output).toBe("src/lib:make:yes");
     expect(await environment.run("make", { cwd: join(workspace, ".."), onOutput: () => undefined }))
       .toEqual({ outcome: "not_started", exitCode: null });
@@ -53,27 +53,28 @@ it("runs a command from its folder relative to the workspace, streams its output
 
 it("asks the sandbox to stop a cancelled command, and cannot confirm a command whose process is gone", async () => {
   const environment = await bubblewrapEnvironment(standIn(`
-  if (message.type === "stop") send({ type: "ended", id: message.id, outcome: "cancelled", exitCode: null });
+  if (message.type === "stop") send({ type: "ended", id: message.id, outcome: "cancelled", exitCode: null, refused: [] });
   if (message.type === "run" && message.command === "crash") process.exit(1);`), workspace);
   try {
     const cancellation = new AbortController();
     const running = environment.run("sleep", { cwd: workspace, signal: cancellation.signal, onOutput: () => undefined });
     cancellation.abort();
-    expect(await running).toEqual({ outcome: "cancelled", exitCode: null });
-    expect(await environment.run("crash", { cwd: workspace, onOutput: () => undefined })).toEqual({ outcome: "unconfirmed", exitCode: null });
-    expect(await environment.run("after", { cwd: workspace, onOutput: () => undefined })).toEqual({ outcome: "unconfirmed", exitCode: null });
+    expect(await running).toEqual({ outcome: "cancelled", exitCode: null, refused: [] });
+    expect(await environment.run("crash", { cwd: workspace, onOutput: () => undefined })).toEqual({ outcome: "unconfirmed", exitCode: null, refused: [] });
+    expect(await environment.run("after", { cwd: workspace, onOutput: () => undefined })).toEqual({ outcome: "unconfirmed", exitCode: null, refused: [] });
   } finally { await environment.dispose(); }
 });
 
-it("asks the sandbox's proxy what it refused and passes on what the operator allows", async () => {
+it("returns what the sandbox's proxy refused during each command, and passes on what the operator allows", async () => {
   const environment = await bubblewrapEnvironment(standIn(`
   if (message.type === "allow") globalThis.allowed = message.destinations;
-  if (message.type === "blocked") send({ type: "blocked", id: message.id, destinations: globalThis.allowed ?? ["example.com:443"] });`),
-  workspace);
+  if (message.type === "run") send({ type: "ended", id: message.id, outcome: "exited", exitCode: 7,
+    refused: globalThis.allowed === undefined ? ["example.com:443"] : [] });`), workspace);
   try {
-    expect(await environment.network?.blockedSince(new Date())).toEqual(["example.com:443"]);
-    await environment.network?.allow(["example.org:443"]);
-    expect(await environment.network?.blockedSince(new Date())).toEqual(["example.org:443"]);
+    expect(await environment.run("curl", { cwd: workspace, onOutput: () => undefined }))
+      .toEqual({ outcome: "exited", exitCode: 7, refused: ["example.com:443"] });
+    await environment.network?.allow(["example.com:443"]);
+    expect((await environment.run("curl", { cwd: workspace, onOutput: () => undefined })).refused).toEqual([]);
     await expect(environment.network?.allow(["not a destination"])).rejects.toThrow("Only host:port destinations can be allowed");
   } finally { await environment.dispose(); }
 });

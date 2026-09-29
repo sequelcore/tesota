@@ -8,29 +8,25 @@ import { dockerSandboxesProvider } from "./docker-sandboxes-environment.js";
 import type { EnvironmentGuarantees, ExecutionProvider, ProviderReadiness, SetupAction, SetupStep } from "./execution-environment.js";
 import { QualificationStore, type QualificationRecord, qualifyProvider } from "./execution-qualification.js";
 import { hostProvider } from "./host-environment.js";
-import { mxcProvider } from "./mxc-environment.js";
 import { runsWithoutAsking } from "./verification/sandbox-qualification.js";
 import { windowsPowerShell } from "./windows-system.js";
 import { wslProvider } from "./wsl-environment.js";
 
 /**
- * Where the operator wants commands to run (decision 030): `auto` prefers the
- * native sandbox, then Docker Sandboxes, then this computer; the others name
- * one sandbox, or this computer, which asks before each command. The WSL
- * sandbox, the candidate to replace the native one on Windows (issue 163), is
- * used only when named.
+ * Where the operator wants commands to run (decisions 030 and 047): `auto`
+ * prefers the WSL sandbox, then Docker Sandboxes, then this computer; the
+ * others name one sandbox, or this computer, which asks before each command.
  */
-export const SANDBOX_PREFERENCES = ["auto", "native", "wsl", "docker", "host"] as const;
+export const SANDBOX_PREFERENCES = ["auto", "wsl", "docker", "host"] as const;
 export type SandboxPreference = typeof SANDBOX_PREFERENCES[number];
 export const DEFAULT_SANDBOX_FILE: string = join(homedir(), ".tesota", "sandbox.json");
 
 const orders: Readonly<Record<SandboxPreference, readonly ExecutionProvider[]>> = {
-  auto: [mxcProvider, dockerSandboxesProvider], native: [mxcProvider], wsl: [wslProvider], docker: [dockerSandboxesProvider], host: [],
+  auto: [wslProvider, dockerSandboxesProvider], wsl: [wslProvider], docker: [dockerSandboxesProvider], host: [],
 };
 
 /** How the operator names each sandbox: the word they choose it by, the footer's label, and a description. */
 export const SANDBOX_NAMES: Readonly<Record<string, Readonly<{ choice: SandboxPreference; label: string; described: string }>>> = {
-  mxc: { choice: "native", label: "native", described: "the native sandbox" },
   wsl: { choice: "wsl", label: "WSL", described: "the WSL sandbox" },
   "docker-sandboxes": { choice: "docker", label: "Docker", described: "Docker Sandboxes" },
 };
@@ -67,7 +63,7 @@ export function packageCacheDirectory(repository: string): string {
   return join(homedir(), ".tesota", "cache", key);
 }
 
-const allProviders: readonly ExecutionProvider[] = [mxcProvider, wslProvider, dockerSandboxesProvider, hostProvider];
+const allProviders: readonly ExecutionProvider[] = [wslProvider, dockerSandboxesProvider, hostProvider];
 
 /**
  * Where a session's commands run (decisions 025 and 030): in a sandbox, where

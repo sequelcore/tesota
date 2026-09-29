@@ -1,7 +1,7 @@
 import { check, type PathTranslation, releaseState, serve } from "./bubblewrap-sandbox.js";
 
 /**
- * The WSL sandbox's process inside WSL (issue 163), which Tesota starts with
+ * The WSL sandbox's process inside WSL (decision 043), which Tesota starts with
  * one of three commands: `serve` a workspace until its input ends, `check`
  * what the sandbox still needs, or `release` what a workspace kept. `--wsl`
  * says the host's paths are Windows paths.
@@ -11,7 +11,7 @@ const option = (name: string): string | undefined => {
   const index = rest.indexOf(name);
   return index === -1 ? undefined : rest[index + 1];
 };
-const paths: PathTranslation = rest.includes("--wsl") ? "wsl" : "native";
+const paths: PathTranslation = rest.includes("--wsl") ? "wsl" : "linux";
 const workspace = option("--workspace");
 const cache = option("--cache");
 

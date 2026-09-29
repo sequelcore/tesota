@@ -27,10 +27,10 @@ it("reads refused destinations for one sandbox since a time from the policy log"
 function environment(refused: readonly string[]): { environment: ExecutionEnvironment; allow: NetworkControl["allow"] } {
   const allow = vi.fn(async () => {});
   return { allow, environment: {
-    provider: "fake", shell: "posix", preparation: [],
+    provider: "fake", preparation: [],
     guarantees: { filesystem: "workspace", network: "allowlist", secrets: "none", resources: "bounded" },
-    network: { blockedSince: async () => refused, allow },
-    run: async () => ({ outcome: "exited", exitCode: 7 }),
+    network: { allow },
+    run: async () => ({ outcome: "exited", exitCode: 7, refused }),
     dispose: async () => {},
   } };
 }

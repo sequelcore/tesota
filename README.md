@@ -46,8 +46,9 @@ cd my-project
 tesota
 ```
 
-The agent can read, edit, create and delete files in its copy. On Windows 11
-24H2 or later, its commands run on their own in Tesota's native sandbox, once
+The agent can read, edit, create and delete files in its copy. On Windows,
+its commands run on their own in Tesota's WSL sandbox, once `tesota setup`
+has prepared it (WSL needs an administrator prompt and a restart once) and
 Tesota has checked on your computer that the sandbox holds. Docker
 Sandboxes is not used for now, while its network allowlist is checked again:
 choosing it runs commands on your computer, outside any virtual machine,

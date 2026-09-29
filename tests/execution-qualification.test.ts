@@ -65,11 +65,11 @@ it("withdraws every claim from a provider that confines nothing, on this machine
 it("keeps a result while the machine is unchanged, and tries a failed one again after a day", () => {
   let now = Date.parse("2026-09-26T10:00:00Z");
   const store = new QualificationStore(join(root, "qualification.json"), () => now);
-  const passed = { provider: "mxc", fingerprint: "build 26200", at: new Date(now).toISOString(), guarantees: sandbox,
+  const passed = { provider: "wsl", fingerprint: "build 26200", at: new Date(now).toISOString(), guarantees: sandbox,
     results: [result("workspace_read_write", true)] };
   store.write(passed);
-  expect(store.read("mxc", "build 26200")).toEqual(passed);
-  expect(store.read("mxc", "build 26300")).toBeUndefined();
+  expect(store.read("wsl", "build 26200")).toEqual(passed);
+  expect(store.read("wsl", "build 26300")).toBeUndefined();
   store.write({ ...passed, provider: "other", guarantees: { ...sandbox, network: "open" }, results: [result("registry_reachable", false)] });
   // A result where no control ran proves nothing, so it is tried again too.
   store.write({ ...passed, provider: "empty", results: [] });
@@ -77,8 +77,8 @@ it("keeps a result while the machine is unchanged, and tries a failed one again 
   now += 25 * 60 * 60 * 1_000;
   expect(store.read("other", "build 26200")).toBeUndefined();
   expect(store.read("empty", "build 26200")).toBeUndefined();
-  expect(store.read("mxc", "build 26200")).toEqual(passed);
-  expect(new QualificationStore(join(root, "qualification.json"), () => now).read("mxc", "build 26200")).toEqual(passed);
+  expect(store.read("wsl", "build 26200")).toEqual(passed);
+  expect(new QualificationStore(join(root, "qualification.json"), () => now).read("wsl", "build 26200")).toEqual(passed);
 });
 
 it("qualifies every machine again when a control changes", () => {
@@ -86,13 +86,13 @@ it("qualifies every machine again when a control changes", () => {
     .map((file) => readFileSync(file, "utf8").replaceAll("\r\n", "\n")).join("");
   // When the controls change, raise CONTROLS_VERSION so saved results are not trusted, then record their new hash here.
   expect({ version: CONTROLS_VERSION, controls: createHash("sha256").update(controls).digest("hex") })
-    .toEqual({ version: 3, controls: "d0811d5214c6f03109bd3ab760c96589b9eec3480939440c253fa160cfc9422f" });
+    .toEqual({ version: 4, controls: "7ce1c8f96991ceedceac9923dfbbdff225176799a5a788b585bc5873deefa306" });
 });
 
 it("does not trust a result the earlier controls produced", () => {
   const path = join(root, "earlier.json");
-  const record = { provider: "mxc", fingerprint: "build 26200", at: new Date().toISOString(), guarantees: sandbox,
+  const record = { provider: "wsl", fingerprint: "build 26200", at: new Date().toISOString(), guarantees: sandbox,
     results: [result("network_direct", true)] };
   writeFileSync(path, JSON.stringify({ version: CONTROLS_VERSION - 1, records: [record] }));
-  expect(new QualificationStore(path).read("mxc", "build 26200")).toBeUndefined();
+  expect(new QualificationStore(path).read("wsl", "build 26200")).toBeUndefined();
 });

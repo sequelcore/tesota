@@ -89,10 +89,10 @@ afterEach(() => {
 
 /**
  * A provider whose preparation finishes only when the test says; one that
- * `stops` rejects as soon as its signal aborts, as the native sandbox does.
+ * `stops` rejects as soon as its signal aborts, as the WSL sandbox does.
  */
 function provider(name: string, stops: boolean) {
-  const environment = { provider: name, shell: "posix", guarantees: hostProvider.guarantees, preparation: [],
+  const environment = { provider: name, guarantees: hostProvider.guarantees, preparation: [],
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
   const signals: AbortSignal[] = [];
   let fail: (error: Error) => void = () => {};
@@ -107,12 +107,12 @@ function provider(name: string, stops: boolean) {
     provider: { ...hostProvider, name, prepare } satisfies ExecutionProvider };
 }
 
-function shell(native: ReturnType<typeof provider>) {
-  const docker = { environment: { provider: "docker-sandboxes", shell: "posix", guarantees: hostProvider.guarantees, preparation: [],
+function shell(wsl: ReturnType<typeof provider>) {
+  const docker = { environment: { provider: "docker-sandboxes", guarantees: hostProvider.guarantees, preparation: [],
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment };
   const dockerProvider: ExecutionProvider = { ...hostProvider, name: "docker-sandboxes", prepare: async () => docker.environment };
   const created = createProcessTesotaShell("source", "tesota-dark", async (preference: SandboxPreference): Promise<SessionExecution> =>
-    preference === "docker" ? { commands: "sandbox", provider: dockerProvider } : { commands: "sandbox", provider: native.provider }, "session");
+    preference === "docker" ? { commands: "sandbox", provider: dockerProvider } : { commands: "sandbox", provider: wsl.provider }, "session");
   const notices = vi.spyOn(created.surface, "writeTo");
   spies.push(notices);
   const said = (): string => notices.mock.calls.map((call) => call[1]).join("\n");
@@ -147,25 +147,25 @@ it("keeps a new session once it has a request", async () => {
 });
 
 it("stops a session's preparation when the shell quits, instead of waiting out the release limit", async () => {
-  const native = provider("mxc", true);
-  const { created, said } = shell(native);
+  const wsl = provider("wsl", true);
+  const { created, said } = shell(wsl);
   created.session("session").prepare?.();
-  await vi.waitFor(() => { expect(native.signals).toHaveLength(1); });
+  await vi.waitFor(() => { expect(wsl.signals).toHaveLength(1); });
   const started = Date.now();
   await created.dispose?.();
-  expect(native.signals[0]?.aborted).toBe(true);
+  expect(wsl.signals[0]?.aborted).toBe(true);
   expect(Date.now() - started).toBeLessThan(1_000);
   expect(said()).not.toContain("could not start");
 });
 
 it("stops a closed session's preparation and releases its workspace", async () => {
-  const native = provider("mxc", true);
-  const { created, said } = shell(native);
+  const wsl = provider("wsl", true);
+  const { created, said } = shell(wsl);
   created.session("session").prepare?.();
-  await vi.waitFor(() => { expect(native.signals).toHaveLength(1); });
+  await vi.waitFor(() => { expect(wsl.signals).toHaveLength(1); });
   mocks.terminal?.onCloseSession?.("session");
   await vi.waitFor(() => { expect(records.map((entry) => entry.id)).toEqual(["replacement"]); });
-  expect(native.signals[0]?.aborted).toBe(true);
+  expect(wsl.signals[0]?.aborted).toBe(true);
   expect(mocks.releaseWorkspace).toHaveBeenCalledWith(join(directory, "repo"));
   expect(said()).not.toContain("could not start");
   await created.dispose?.();
@@ -173,15 +173,15 @@ it("stops a closed session's preparation and releases its workspace", async () =
 
 it("keeps the environment prepared after a sandbox switch when the earlier preparation fails late", async () => {
   // This provider settles only when the test says, whatever its signal, as a provider does between steps.
-  const native = provider("mxc", false);
-  const { created, docker, said } = shell(native);
+  const wsl = provider("wsl", false);
+  const { created, docker, said } = shell(wsl);
   created.session("session").prepare?.();
-  await vi.waitFor(() => { expect(native.signals).toHaveLength(1); });
+  await vi.waitFor(() => { expect(wsl.signals).toHaveLength(1); });
   const switching = created.sessionSandbox?.change("session", "docker");
-  await vi.waitFor(() => { expect(native.signals[0]?.aborted).toBe(true); });
+  await vi.waitFor(() => { expect(wsl.signals[0]?.aborted).toBe(true); });
   // A request while the switch waits for the earlier preparation prepares the new sandbox.
   await expect(created.session("session").work("Add a retry limit.")).resolves.toMatchObject({ status: "completed" });
-  native.fail(new Error("the preparation was stopped"));
+  wsl.fail(new Error("the preparation was stopped"));
   await switching;
   await created.dispose?.();
   expect(docker.environment.dispose).toHaveBeenCalledTimes(1);

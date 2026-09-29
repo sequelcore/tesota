@@ -2,12 +2,11 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type AgentSession, type AgentSessionEvent, type BashOperations, type ModelRuntime, type SessionManager, type ToolDefinition,
   createAgentSession, createBashToolDefinition, createEditToolDefinition, createFindToolDefinition,
-  createGrepToolDefinition, createLsToolDefinition, createPowerShellToolDefinition, createReadToolDefinition,
+  createGrepToolDefinition, createLsToolDefinition, createReadToolDefinition,
   createWriteToolDefinition, DefaultResourceLoader, defineTool, SessionManager as PiSessionManager, SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { type Api, type Model, type TSchema, Type } from "@earendil-works/pi-ai";
+import type { Api, Model, TSchema } from "@earendil-works/pi-ai";
 import { confinesCommands, type ExecutionEnvironment } from "../execution-environment.js";
-import { hostProvider } from "../host-environment.js";
 import type { ReasoningLevel } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ADVISOR_GUIDANCE, type Advisor, advisorTool } from "./advisor.js";
@@ -102,11 +101,9 @@ function confine<P extends TSchema, D, S>(root: string, tool: ToolDefinition<P, 
  * so the agent reruns the command instead.
  */
 async function answerRefusedNetwork(environment: ExecutionEnvironment,
-  decide: NonNullable<CodingSessionOptions["decideNetwork"]>, since: Date, onData: (data: Buffer) => void): Promise<void> {
+  decide: NonNullable<CodingSessionOptions["decideNetwork"]>, refused: readonly string[], onData: (data: Buffer) => void): Promise<void> {
   const network = environment.network;
-  if (network === undefined) return;
-  const refused = await network.blockedSince(since);
-  if (refused.length === 0) return;
+  if (network === undefined || refused.length === 0) return;
   const list = refused.join(", ");
   if (await decide(refused) === "deny") {
     onData(Buffer.from(`\nTesota: the sandbox refused network access to ${list}, and the user declined to allow it. ` +
@@ -137,12 +134,11 @@ export function environmentBash(environment: ExecutionEnvironment,
         }
         if (answer === "always") alwaysAllowed = true;
       }
-      const started = new Date();
       const result = await environment.run(command, { cwd, onOutput: options.onData,
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ...(options.timeout === undefined ? {} : { timeoutSeconds: options.timeout }) });
       if (decideNetwork !== undefined && (result.outcome === "exited" || result.outcome === "timed_out")) {
-        await answerRefusedNetwork(environment, decideNetwork, started, options.onData);
+        await answerRefusedNetwork(environment, decideNetwork, result.refused ?? [], options.onData);
       }
       if (result.outcome === "cancelled") throw new Error("aborted");
       if (result.outcome === "timed_out") throw new Error(`timeout:${options.timeout ?? 0}`);
@@ -171,18 +167,8 @@ function commandGuidance(sandboxed: boolean, environment: ExecutionEnvironment):
       "another host, the user is asked whether to allow it and you are told the answer. "
     : "Every shell command asks the user for approval first; prefer the file tools for reading and editing, " +
       "and run commands when they are worth an approval, such as installing dependencies or running tests. ";
-  if (environment.shell === "powershell") return where + powershellGuidance(environment.commandRoot);
   return environment.commandRoot === undefined ? where
     : `${where}In commands the workspace is ${environment.commandRoot}; the file tools keep its real path. `;
-}
-
-/** The native Windows sandbox's shell (decision 030): PowerShell on a drive of the workspace's own, with a retry outside. */
-function powershellGuidance(commandRoot: string | undefined): string {
-  return "Shell commands go through the powershell tool: Windows PowerShell 5.1, not bash. Use its syntax: `;` between " +
-    "commands, `$env:NAME` for variables, `curl.exe` for curl. " +
-    `${commandRoot === undefined ? "" : `In commands the workspace is the drive ${commandRoot}; the file tools keep its real path. `}` +
-    "Install packages with npm; `bun install` cannot run in this sandbox. For a command the sandbox blocks and the task " +
-    "needs, set outside_sandbox: it then runs on the user's computer, in Git Bash, only after the user approves. ";
 }
 
 /** When the agent should ask an explorer, and what an explorer's answer is worth (decision 019). */
@@ -231,41 +217,16 @@ function piEntries(message: AgentSession["messages"][number]): ConversationEntry
   }
 }
 
-/**
- * The agent's shell: bash where commands run on this computer or in Docker
- * Sandboxes; in the native Windows sandbox, PowerShell, with a retry of one
- * command on this computer, in Git Bash, after the operator approves it
- * (decision 030).
- */
+/** The agent's shell: bash, in whichever environment its commands run. */
 function shellTool(root: string, options: WorkingAgentOptions): ToolDefinition {
   const operations = environmentBash(options.environment, options.sandboxed ? undefined : options.approveCommand, options.decideNetwork);
-  if (options.environment.shell !== "powershell") {
-    return defineTool(createBashToolDefinition(root, { operations, exposeSessionEnvironment: false }));
-  }
-  const inside = createPowerShellToolDefinition(root, { operations, exposeSessionEnvironment: false });
-  let host: Promise<ExecutionEnvironment> | undefined;
-  const onHost: ExecutionEnvironment = { provider: "host", shell: "posix", guarantees: hostProvider.guarantees, preparation: [],
-    run: async (command, runOptions) => (await (host ??= hostProvider.prepare(root))).run(command, runOptions),
-    dispose: async () => { await (await host)?.dispose(); } };
-  const outside = createBashToolDefinition(root, { operations: environmentBash(onHost, options.approveCommand),
-    exposeSessionEnvironment: false });
-  return defineTool({ ...inside,
-    description: `${inside.description} Set outside_sandbox to run a command the sandbox blocks on the user's computer ` +
-      "instead, in Git Bash, after the user approves it.",
-    parameters: Type.Object({ ...inside.parameters.properties,
-      outside_sandbox: Type.Optional(Type.Boolean({ description: "Run on the user's computer, in Git Bash, after they approve; " +
-        "only for a command the sandbox blocked that the task needs" })) }),
-    execute: (id, params, signal, onUpdate, context) => {
-      const { outside_sandbox: onComputer, ...command } = params;
-      return onComputer === true ? outside.execute(id, command, signal, onUpdate, context)
-        : inside.execute(id, command, signal, onUpdate, context);
-    } }) as unknown as ToolDefinition;
+  return defineTool(createBashToolDefinition(root, { operations, exposeSessionEnvironment: false }));
 }
 
 /** The argument that identifies what a tool call acts on: its command, pattern or path. */
 export function toolSubject(name: string, args: unknown): string {
   if (typeof args !== "object" || args === null) return "";
-  const key = name === "bash" || name === "powershell" ? "command" : name === "grep" || name === "find" ? "pattern"
+  const key = name === "bash" ? "command" : name === "grep" || name === "find" ? "pattern"
     : name === "explore" || name === "advisor" ? "question"
     : name === "web_search" ? "query" : name === "web_read" || name === "web_fetch" ? "url" : "path";
   const value: unknown = Reflect.get(args, key);
