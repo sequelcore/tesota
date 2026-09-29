@@ -63,14 +63,24 @@ export class SourceSnapshot {
     this.#env = env;
   }
 
-  static async open(source: string, stateDirectory: string, shadow: string): Promise<SourceSnapshot> {
-    const objects = join(stateDirectory, "objects");
-    await mkdir(objects, { recursive: true });
+  /**
+   * `objects` says where captured trees are written: a private directory in
+   * the state directory, borrowing the shadow's objects, for a workspace; the
+   * shadow itself for a session working in the source, whose turns' trees
+   * the shadow keeps.
+   */
+  static async open(source: string, stateDirectory: string, shadow: string, objects: "private" | "shadow" = "private"):
+    Promise<SourceSnapshot> {
+    await mkdir(stateDirectory, { recursive: true });
     const view = shadowEnvironment(source, shadow);
+    const index = { ...view, GIT_INDEX_FILE: join(stateDirectory, "index") };
+    if (objects === "shadow") return new SourceSnapshot(source, shadow, stateDirectory, index);
+    const own = join(stateDirectory, "objects");
+    await mkdir(own, { recursive: true });
     const shadowObjects = resolve(source, git(source, ["rev-parse", "--git-path", "objects"], view).trim());
     if (!isAbsolute(shadowObjects)) throw new Error("Invalid source object directory");
-    return new SourceSnapshot(source, shadow, stateDirectory, { ...view, GIT_INDEX_FILE: join(stateDirectory, "index"),
-      GIT_OBJECT_DIRECTORY: objects, GIT_ALTERNATE_OBJECT_DIRECTORIES: shadowObjects });
+    return new SourceSnapshot(source, shadow, stateDirectory, { ...index, GIT_OBJECT_DIRECTORY: own,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: shadowObjects });
   }
 
   /** Capture the working tree now and return its Git tree id. */

@@ -1,8 +1,5 @@
-import { existsSync, rmSync, writeFileSync } from "node:fs";
-import { appendFile, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import * as z from "zod";
 import { isGitObjectId, runRepositoryGit as git } from "./repository-git.js";
+import { RequestRecord } from "./request-record.js";
 import { SourceSnapshot, UnsupportedSourceChange } from "./source-snapshot.js";
 import { commitAll, createWorkspaceCheckout, type SourceOptions, DEFAULT_WORKSPACES_ROOT, inspectWorkspaceCheckout,
   sourceSnapshotDirectory, writeSourceChanges, type WorkspaceCheckout } from "./workspace-checkout.js";
@@ -31,7 +28,8 @@ export type WorkspaceUpdate =
 // A type change (T), such as a link replaced by a file, is a modification; application refuses it.
 const statusNames: Readonly<Record<string, WorkspaceChangeStatus>> = { A: "added", M: "modified", T: "modified", D: "deleted" };
 
-function parseChanges(value: string): WorkspaceChange[] {
+/** Git's `--name-status -z` report as changes. */
+export function parseChanges(value: string): WorkspaceChange[] {
   const fields = value.split("\0");
   fields.pop();
   if (fields.length % 2 !== 0) throw new Error("Invalid Git change report");
@@ -47,13 +45,8 @@ function parseChanges(value: string): WorkspaceChange[] {
 
 function nulSeparated(value: string): string[] { return value.split("\0").filter((entry) => entry.length > 0); }
 
-/** Kept beside the checkout, where neither the agent's file tools nor a sandbox reach. */
-const requestsFile = "requests.jsonl";
-/** Present while the pending requests' answer check left gaps (decision 034). */
-const openRequestsFile = "requests-open";
 /** Holds the candidate's tree while the checkout holds the base for a check (decision 039). */
 const pinnedCandidateRef = "refs/tesota/candidate";
-const requestSchema = z.strictObject({ text: z.string().max(1_000_000), at: z.iso.datetime() });
 
 /**
  * An independent checkout the agent may change freely. Its base commit is the
@@ -68,6 +61,7 @@ export class Workspace {
   /** Uncommitted source changes included when the workspace was created; empty when reopened. */
   readonly included: readonly Pick<WorkspaceChange, "status" | "path">[];
   readonly #source: SourceSnapshot;
+  readonly #requests: RequestRecord;
   #base: string;
 
   private constructor(checkout: WorkspaceCheckout, source: SourceSnapshot) {
@@ -75,6 +69,7 @@ export class Workspace {
     this.checkout = checkout.checkout;
     this.source = checkout.source;
     this.included = checkout.included;
+    this.#requests = new RequestRecord(checkout.directory);
     this.#source = source;
     this.#base = checkout.head;
   }
@@ -177,32 +172,17 @@ export class Workspace {
    * Record an operator request verbatim. The record holds the requests behind
    * the pending changes (decision 015): when nothing is pending, it starts over.
    */
-  async recordRequest(text: string): Promise<void> {
-    const line = `${JSON.stringify(requestSchema.parse({ text, at: new Date().toISOString() }))}\n`;
-    const path = join(this.directory, requestsFile);
-    if (this.snapshot().changes.length === 0 && !existsSync(join(this.directory, openRequestsFile))) {
-      await writeFile(path, line, { encoding: "utf8", mode: 0o600 });
-    } else await appendFile(path, line, "utf8");
-  }
+  recordRequest(text: string): Promise<void> { return this.#requests.record(text, this.snapshot().changes.length > 0); }
 
   /**
    * Keep the requests pending across turns that change nothing while their
    * answer check left something not held or uncertain (decision 034), so
    * "add farewell()" followed by "continue" is still checked as one request.
    */
-  keepRequestsOpen(open: boolean): void {
-    const path = join(this.directory, openRequestsFile);
-    if (open) writeFileSync(path, "", { mode: 0o600 });
-    else rmSync(path, { force: true });
-  }
+  keepRequestsOpen(open: boolean): void { this.#requests.keepOpen(open); }
 
   /** The operator's requests behind the pending changes, in order. */
-  async requests(): Promise<readonly string[]> {
-    const path = join(this.directory, requestsFile);
-    if (!existsSync(path)) return [];
-    return (await readFile(path, "utf8")).split("\n").filter((line) => line.length > 0)
-      .map((line) => requestSchema.parse(JSON.parse(line)).text);
-  }
+  requests(): Promise<readonly string[]> { return this.#requests.requests(); }
 
   /** The changes and diff between two trees or commits, such as one candidate and its correction. */
   compare(from: string, to: string): Pick<WorkspaceSnapshot, "changes" | "diff"> {

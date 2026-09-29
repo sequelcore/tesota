@@ -227,11 +227,14 @@ copy: a clone needs Git, and a folder has none. No local harness draws it.
   roots, the size warning and the excluded lock files apply to every source.
   It snapshots the whole tree, since the agent works mostly through
   commands, which file-level checkpoints miss.
-- **A turn is a pair of trees.** Tesota records the tree before and after
+- **A turn is a pair of trees** (built in `src/source-session.ts`, not yet
+  used by the shell). Tesota records the tree before and after
   each turn. Checks, review and correction refer to those tree ids, so
   evidence stays bound to exact content, and a correction round reviews only
   the tree the correction changed.
-- **Keep or revert.** The agent's changes are in the operator's files as
+- **Keep or revert** (built beside the turns; revert undoes the latest
+  undecided turn, and reverting again steps further back, as the operator
+  decided on 2026-09-29). The agent's changes are in the operator's files as
   soon as it makes them, as in every local harness. Review runs on the
   turn's changes, and the operator keeps or reverts them. Reverting restores
   a path only if it still holds exactly what the turn left there, through

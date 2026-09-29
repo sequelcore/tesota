@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, rm, rmdir, unlink } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
-import { runRepositoryGit as git, runRepositoryGitBytes as gitBytes } from "./repository-git.js";
+import { runRepositoryGit as git, runRepositoryGitBytes as gitBytes, type RepositoryGitEnvironment } from "./repository-git.js";
 import { applicationAdmission, applicationOutcome, commitStep, type JournalStep, type PathContent, restoreStep,
   type WriteEvidence, writeEvidence } from "./verification/application-rule.js";
 import type { Workspace, WorkspaceChange, WorkspaceSnapshot } from "./workspace.js";
@@ -64,6 +64,27 @@ export interface AppliedWork {
   readonly changes: readonly WorkspaceChange[];
   readonly alsoChanged: readonly string[];
 }
+
+/**
+ * Where a write's trees are read from: a workspace's checkout for an
+ * application, a source's shadow repository for a revert.
+ */
+export interface TreeReader {
+  /** The Git mode of a path in a tree, or an empty string when the path is absent. */
+  mode(tree: string, path: string): string;
+  blob(tree: string, path: string): Buffer;
+}
+
+/** Read trees from the Git directory `cwd` names, or the one `env` selects. */
+export function gitTreeReader(cwd: string, env: RepositoryGitEnvironment = {}): TreeReader {
+  return {
+    mode: (tree, path) => git(cwd, ["ls-tree", tree, "--", path], env).split(" ")[0] ?? "",
+    blob: (tree, path) => gitBytes(cwd, ["cat-file", "blob", `${tree}:${path}`], env),
+  };
+}
+
+/** Files to change from the tree `base` to the tree `tree`, as a snapshot describes them. */
+export type TreeChange = Pick<WorkspaceSnapshot, "base" | "tree" | "changes">;
 
 type LineEnding = "lf" | "crlf";
 
@@ -156,32 +177,27 @@ async function missingParents(path: string): Promise<{ existing: string; missing
   }
 }
 
-/** The Git mode of a path in a tree, or an empty string when the path is absent. */
-function treeMode(workspace: Workspace, tree: string, path: string): string {
-  return git(workspace.checkout, ["ls-tree", tree, "--", path]).split(" ")[0] ?? "";
-}
-
 /** One change's write, `conflict` when the source no longer holds its base, or undefined when it writes nothing. */
-async function planChange(workspace: Workspace, snapshot: WorkspaceSnapshot, source: string, change: WorkspaceChange):
+async function planChange(reader: TreeReader, snapshot: TreeChange, source: string, change: WorkspaceChange):
   Promise<{ write: PlannedWrite; directories: readonly string[] } | "conflict" | undefined> {
   if (!isRepositoryPath(change.path)) throw new ApplyConflictError("Unsupported path", [change.path]);
   const target = join(source, ...change.path.split("/"));
   const parents = await missingParents(target);
   if (!contains(source, parents.existing)) throw new ApplyConflictError("Path leaves the repository", [change.path]);
   // Decided from Git's record before the file is read, so a link is refused the same way on every platform.
-  const baseMode = treeMode(workspace, snapshot.base, change.path);
-  const newMode = treeMode(workspace, snapshot.tree, change.path);
+  const baseMode = reader.mode(snapshot.base, change.path);
+  const newMode = reader.mode(snapshot.tree, change.path);
   if (isUnchangeableMode(baseMode) || isUnchangeableMode(newMode)) {
     throw new ApplyConflictError("Symbolic links and submodules cannot be changed", [change.path]);
   }
   const existing = await readExisting(target);
-  const reviewed = change.status === "deleted" ? null : gitBytes(workspace.checkout, ["cat-file", "blob", `${snapshot.tree}:${change.path}`]);
+  const reviewed = change.status === "deleted" ? null : reader.blob(snapshot.tree, change.path);
   if (change.status === "added") {
     if (existing !== null) return "conflict";
     return { write: { change, target, before: null, after: reviewed, mode: newMode === "100755" ? 0o755 : 0o644 },
       directories: parents.missing.map((directory) => relative(source, directory)) };
   }
-  const base = gitBytes(workspace.checkout, ["cat-file", "blob", `${snapshot.base}:${change.path}`]);
+  const base = reader.blob(snapshot.base, change.path);
   const ending = existing === null ? null : sourceMatchesBase(existing.bytes, base);
   if (existing === null || ending === null) return "conflict";
   const after = reviewed === null ? null : ending === "crlf" && isText(reviewed) && !reviewed.includes("\r") ? toCrlf(reviewed) : reviewed;
@@ -190,22 +206,29 @@ async function planChange(workspace: Workspace, snapshot: WorkspaceSnapshot, sou
   return { write: { change, target, before: existing.bytes, after, mode: existing.mode }, directories: [] };
 }
 
-async function planWrites(workspace: Workspace, snapshot: WorkspaceSnapshot, source: string):
-  Promise<{ writes: PlannedWrite[]; directories: string[] }> {
+/**
+ * Every write the change needs, and the paths that no longer hold their base
+ * content. `conflicts` says whether such a path refuses the whole change or
+ * is left as it is while the others are written.
+ */
+async function planWrites(reader: TreeReader, snapshot: TreeChange, source: string, conflicts: "refuse" | "skip"):
+  Promise<{ writes: PlannedWrite[]; directories: string[]; skipped: string[] }> {
   const writes: PlannedWrite[] = [];
   const directories = new Set<string>();
-  const conflicts: string[] = [];
+  const skipped: string[] = [];
   for (const change of snapshot.changes) {
-    const planned = await planChange(workspace, snapshot, source, change);
-    if (planned === "conflict") conflicts.push(change.path);
+    const planned = await planChange(reader, snapshot, source, change);
+    if (planned === "conflict") skipped.push(change.path);
     else if (planned !== undefined) {
       writes.push(planned.write);
       for (const directory of planned.directories) directories.add(directory);
     }
   }
-  if (conflicts.length > 0) throw new ApplyConflictError("These files changed in your repository since the workspace was created", conflicts);
+  if (conflicts === "refuse" && skipped.length > 0) {
+    throw new ApplyConflictError("These files changed in your repository since the workspace was created", skipped);
+  }
   // Deepest first, so undoing removes a child before its parent.
-  return { writes, directories: [...directories].sort((left, right) => right.length - left.length) };
+  return { writes, directories: [...directories].sort((left, right) => right.length - left.length), skipped };
 }
 
 /** What `target` holds, judged against one write's original and reviewed content. */
@@ -631,11 +654,43 @@ export async function applyWorkspace(workspace: Workspace, snapshot: WorkspaceSn
   let planned: Awaited<ReturnType<typeof planWrites>>;
   try {
     await admit(workspace, snapshot, source, root);
-    planned = await planWrites(workspace, snapshot, source);
+    planned = await planWrites(gitTreeReader(workspace.checkout), snapshot, source, "refuse");
   } catch (error) {
     if (error instanceof ApplyConflictError) throw error;
     throw new ApplyConflictError(`Tesota could not read your repository (${error instanceof Error ? error.message : String(error)})`);
   }
+  await writePlanned(source, snapshot, planned, root);
+  workspace.settle(snapshot, "Tesota: applied reviewed changes");
+  // The next update records the source; these are only named, since it brings them in.
+  const applied = new Set(snapshot.changes.map((change) => change.path));
+  const after = await workspace.sourceChanges().catch(() => undefined);
+  return { changes: snapshot.changes, alsoChanged: after?.paths?.filter((path) => !applied.has(path)) ?? [] };
+}
+
+/**
+ * Write `change` into `source` as an application writes, but only where each
+ * path still holds its base content; the others are left exactly as they are
+ * and returned. A revert runs this way from a turn's tree back to the tree
+ * before it, so a file edited since the turn is never replaced. There is no
+ * whole-source admission: files outside the change are not its concern.
+ */
+export async function writeTreeWhereUnchanged(reader: TreeReader, change: TreeChange, sourceDirectory: string,
+  root: string = DEFAULT_APPLICATIONS_ROOT): Promise<{ readonly written: readonly string[]; readonly skipped: readonly string[] }> {
+  const source = await realpath(sourceDirectory);
+  const unfinished = await unfinishedApplications(source, root);
+  if (unfinished.length > 0) throw new ApplyConflictError("an earlier write to this source did not finish; run tesota recover");
+  let planned: Awaited<ReturnType<typeof planWrites>>;
+  try { planned = await planWrites(reader, change, source, "skip"); } catch (error) {
+    if (error instanceof ApplyConflictError) throw error;
+    throw new ApplyConflictError(`Tesota could not read your files (${error instanceof Error ? error.message : String(error)})`);
+  }
+  await writePlanned(source, change, planned, root);
+  return { written: planned.writes.map((write) => write.change.path), skipped: planned.skipped };
+}
+
+/** Keep a copy of every file first, then write, read back, and undo on a stop (decision 042). */
+async function writePlanned(source: string, snapshot: TreeChange, planned: Awaited<ReturnType<typeof planWrites>>,
+  root: string): Promise<void> {
   const { writes, directories } = planned;
   await mkdir(root, { recursive: true, mode: 0o700 });
   await pruneApplications(root, new Date()).catch(() => {});
@@ -648,9 +703,4 @@ export async function applyWorkspace(workspace: Workspace, snapshot: WorkspaceSn
     throw new ApplyConflictError(`Tesota could not keep a copy of your files first (${error instanceof Error ? error.message : String(error)})`);
   }
   try { await run({ directory: join(root, manifest.id), manifest, writes }, journal); } finally { await journal.close(); }
-  workspace.settle(snapshot, "Tesota: applied reviewed changes");
-  // The next update records the source; these are only named, since it brings them in.
-  const applied = new Set(snapshot.changes.map((change) => change.path));
-  const after = await workspace.sourceChanges().catch(() => undefined);
-  return { changes: snapshot.changes, alsoChanged: after?.paths?.filter((path) => !applied.has(path)) ?? [] };
 }
