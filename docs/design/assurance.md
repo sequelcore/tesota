@@ -228,15 +228,67 @@ The first pass takes about two seconds; the full check is one reviewer
 session, and the refuter's when there are gaps. This is the discretionary
 review triage issue #124 asked a consumer for. The `triage` role may instead
 use Jev, the typed decision model that issue proposes:
-`typesafe:jev-1.13.0`, with the operator's TypeSafe key, answers the same
-question with a probability in about a tenth of a second
-(`src/integrations/jev-triage.ts`). It skips a turn only below 0.2, the
-threshold registered with the first pass's cases before any model saw them,
-and a refusal, an error, a missing key or no answer within ten seconds
-decide nothing, so the same proved rule runs the full check. The version is
+`typesafe:jev-1.13.0`, with the operator's TypeSafe key, answers in about a
+tenth of a second (`src/integrations/jev-triage.ts`). It asks two questions
+in parallel: what the requests ask for, a change or run, information about
+the repository, or conversation, from the requests alone, so the agent's
+wording cannot talk a request out of its check; and whether the reply states
+something checkable. A turn is skipped only when both fall below 0.2, the
+threshold registered with the first pass's cases before any model saw them
+(`turnCheckable`, proved beside `runsAnswerCheck`). A refusal, an error, a
+missing key or no answer within ten seconds decide nothing, so the full
+check runs. The version is
 pinned: a newer one is offered only once it has been measured on those
 cases. TypeSafe receives the turn's requests and reply, and says it does not
 train on them.
+Every first pass is journaled, a skip included, with its model, decision,
+probability when the model gives one, whether the full check ran and the
+turn's tool calls; the result panel shows why a checked turn was checked.
+
+The answer reviewer and the refuter also receive Tesota's record of the
+latest turn's tool calls, each with its outcome: succeeded, failed or
+unfinished. A claim in the reply that the agent read, ran, checked or changed
+something holds only when that record shows it, since agents report work
+their own transcript shows they did not do
+([Smyth et al., 2026](https://arxiv.org/abs/2609.20812)).
+
+### Planned: routing the answer check
+
+The first pass answers one yes-or-no question for the whole turn, from the
+requests and the agent's reply. Two weaknesses follow. The reply sets the
+outcome: a greeting answered with a remark about modified files scored 0.75
+checkable, and the same greeting with a plain reply 0.09. Judges that read
+only an agent's final message also detect false completion claims poorly,
+at most AUROC 0.65 against 0.83 to 0.95 for detectors that read state
+([Advani, 2026](https://arxiv.org/abs/2606.09863)); action classifiers
+withhold the agent's own prose for that reason
+([Anthropic, 2026](https://www.anthropic.com/engineering/claude-code-auto-mode)).
+
+The planned first pass separates what a turn holds and sends each part to
+the cheapest check that can settle it:
+
+| Part | Evidence | Settled by |
+| --- | --- | --- |
+| A request to change or run something, or a follow-up to one | Repository and the turn's events | Full check: obligations and refuter |
+| A question about the repository | Repository | Reviewer |
+| A reply claim about the agent's own actions: read, ran, changed | The turn's tool calls | Reviewer given the record (built) |
+| A reply claim about the workspace | The workspace record | Comparison with the record, no model |
+| A reply claim about the repository | Repository | Reviewer |
+| A reply claim about runtime behavior | Session records or execution | Reviewer given those records, else reported unverified |
+| Conversation | None | Nothing |
+
+The request's kind is decided from the requests alone, as the Jev first
+pass now does; the reply's claims are extracted and classified separately, as in claim-level verification
+([Wei et al., 2024](https://arxiv.org/abs/2403.18802)). Claims in free prose,
+in any language, are not extracted by rules: the evidence is Tesota's own
+record, and the comparison is made by a model. A typed decision model
+can answer both as choice questions in one call. Routed parts share one
+reviewer call per turn, because a gate per part compounds false positives
+([Jotautaitė et al., 2026](https://arxiv.org/abs/2605.09684)). A step that
+fails or does not decide falls back to the full check, and
+`runsAnswerCheck` and its proof extend to each route. The router replaces the
+yes-or-no pass only if, on registered cases drawn from journaled turns, it
+skips nothing the current pass checks and costs less.
 
 ## Correction
 
@@ -271,7 +323,8 @@ arrives with the operator's next request, which starts a new cycle.
 Each workspace keeps an append-only **assurance journal**, `assurance.jsonl`
 beside the checkout: for every reviewed candidate, the requests, each
 verifier's claim and outcome, the flags, the depth, each reviewer's findings,
-what the review step cost, and the operator's decision.
+what the review step cost, and the operator's decision; for a turn that
+changed no files, the answer check's first pass.
 
 ## Forecast
 

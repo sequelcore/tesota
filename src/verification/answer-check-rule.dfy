@@ -9,3 +9,13 @@ lemma runsAnswerCheck_ensures(decided: bool, checkable: bool)
   ensures (runsAnswerCheck(decided, checkable) <==> !((decided && !(checkable))))
 {
 }
+
+function turnCheckable(requestsCheckable: bool, replyCheckable: bool): bool
+{
+  (requestsCheckable || replyCheckable)
+}
+
+lemma turnCheckable_ensures(requestsCheckable: bool, replyCheckable: bool)
+  ensures (turnCheckable(requestsCheckable, replyCheckable) <==> (requestsCheckable || replyCheckable))
+{
+}

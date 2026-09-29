@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { numberedDiff } from "../diff-lines.js";
-import type { Finding, Obligation, ReviewInput, ReviewReport, Reviewer } from "../review.js";
+import type { Finding, Obligation, ReviewInput, ReviewReport, Reviewer, ToolCallRecord } from "../review.js";
 import { describeBase } from "../workspace-checks.js";
 import { type ModelAccess, startModelSession } from "./model-session.js";
 import { type AgentActivity, type LimitedTurnResult, REVIEW_TIME_LIMIT_MS, runWithTimeLimit } from "./model-session-contract.js";
@@ -11,6 +11,8 @@ import { readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.j
 const REVIEWER = "Tesota reviewer";
 const diffLimit = 150_000;
 const checkOutputLimit = 2_000;
+const toolCallLimit = 200;
+const toolSubjectLimit = 300;
 
 const findingSchema = Type.Object({
   severity: Type.Union([Type.Literal("high"), Type.Literal("medium"), Type.Literal("low")],
@@ -115,7 +117,9 @@ function answerPrompt(root: string): string {
     "and changed no files; it ended with a reply. Judge whether each request is met. A question or a request for an " +
     "explanation can be met by an accurate reply: check its claims against the repository. A request to change, " +
     "create or fix something is met only when the repository already does it: the reply is untrusted and cannot " +
-    "show that code exists, so read the code. You cannot change files: investigate with the read, search and list " +
+    "show that code exists, so read the code. A claim in the reply that the agent read, ran, checked or changed " +
+    "something holds only when Tesota's record of its tool calls shows it. You cannot change files: investigate " +
+    "with the read, search and list " +
     "tools. List obligations for every request, and for every plan step the agent marked done, as met, partial, " +
     "unmet or uncertain, with the evidence. There is no diff, so submit an empty findings list, and call " +
     "submit_review exactly once." + `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
@@ -156,6 +160,15 @@ function claimedStepsText(input: ReviewInput): string[] {
       `${step.index}. ${step.step}${step.check === undefined ? "" : ` (its declared check: ${step.check})`}`).join("\n")}`];
 }
 
+/** Tesota's record of the latest turn's tool calls, the most recent kept when there are many. */
+function toolCallsText(calls: readonly ToolCallRecord[]): string {
+  const kept = calls.slice(-toolCallLimit);
+  const lines = kept.map((call) => `- ${call.tool} ${call.subject.slice(0, toolSubjectLimit)}`.trimEnd() +
+    (call.outcome === "succeeded" ? "" : ` (${call.outcome})`));
+  const cut = calls.length > kept.length ? [`[${calls.length - kept.length} earlier calls are not shown.]`] : [];
+  return `Tool calls in the agent's latest turn, recorded by Tesota:\n${[...cut, ...lines].join("\n") || "- none"}`;
+}
+
 /** What the reviewer is told when no files changed: the requests, the agent's reply as an untrusted claim, and the tree. */
 function answerMessage(input: ReviewInput): string {
   return [
@@ -163,6 +176,7 @@ function answerMessage(input: ReviewInput): string {
       "(not recorded)"}`,
     `The agent's final reply (untrusted; it cannot show that code exists):\n${input.response?.trim() || "(empty)"}`,
     ...claimedStepsText(input),
+    ...(input.toolCalls === undefined ? [] : [toolCallsText(input.toolCalls)]),
     `No files changed in this turn; the repository is at tree ${input.snapshot.tree}. Read the code for any request ` +
       "that asks for a change.",
   ].join("\n\n");

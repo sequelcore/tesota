@@ -1,13 +1,15 @@
 import type { DecisionModel } from "../model-roles.js";
+import { turnCheckable } from "../verification/answer-check-rule.js";
 import type { TriageDecision } from "./answer-triage.js";
 import { TesotaCredentials } from "./tesota-credentials.js";
 
 /**
  * The answer check's first pass on TypeSafe's Jev (decision 035), a typed
- * decision model that answers a yes-or-no question with a probability in
- * about a tenth of a second, where a model session takes about two. It is
- * sent the same requests and reply as a model session, and the question and
- * criteria that were measured on the first pass's registered cases.
+ * decision model that answers in about a tenth of a second, where a model
+ * session takes about two. It asks two questions in parallel: what the
+ * requests ask for, from the requests alone, so the agent's wording cannot
+ * talk a request out of its check; and whether the reply states anything
+ * checkable, from the requests and the reply.
  */
 
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
@@ -23,43 +25,78 @@ export const JEV_TIME_LIMIT_MS: number = 10_000;
  */
 export const JEV_SKIP_BELOW = 0.2;
 
-const question = {
-  type: "noul",
-  instructions: "Should an independent reviewer check this turn of a coding agent, in which the agent changed no files?",
+export type RequestKind = "change" | "repository" | "conversation";
+
+const requestQuestion = {
+  type: "choice",
+  instructions: "What do the user's requests to a coding agent working on their repository ask for?",
   criteria: {
-    true: "A request asks to create, change, fix, add, remove or run something, including a short follow-up such as " +
-      "'do it', 'continue' or 'also add the test' after such a request, or the reply states facts about the repository's " +
-      "code, files or behavior.",
-    false: "Only greetings, thanks, small talk, opinions, or questions that do not concern this repository.",
+    change: "To create, change, fix, add, remove or run something, including a short follow-up such as 'do it', " +
+      "'continue' or 'also add the test' after such a request.",
+    repository: "Information about the repository's code, files or behavior, or about the agent's work on it.",
+    conversation: "Only greetings, thanks, small talk, opinions, or questions that do not concern the repository.",
+  } satisfies Record<RequestKind, string>,
+};
+
+const claimsQuestion = {
+  type: "noul",
+  instructions: "Does the coding agent's reply state something that can be checked?",
+  criteria: {
+    true: "The reply states facts about the repository's code, files, behavior or pending changes, or says what the " +
+      "agent read, ran, checked or changed.",
+    false: "The reply only greets, thanks, asks what to do, or gives an opinion.",
   },
 };
 
-/** What Jev is asked: the question and, as named fields, the requests and the agent's reply. */
-export function jevRequest(model: DecisionModel, requests: readonly string[], reply: string): object {
-  return { model: model.slice(model.indexOf(":") + 1),
-    state: { user_requests: [...requests], agent_reply: reply.trim() || "(empty)" }, questions: { checkable: question } };
+/** What Jev is asked: the request's kind from the requests alone, and the reply's claims from both. */
+export function jevRequests(model: DecisionModel, requests: readonly string[], reply: string):
+  Readonly<{ request: object; claims: object }> {
+  const pinned = model.slice(model.indexOf(":") + 1);
+  return {
+    request: { model: pinned, state: { user_requests: [...requests] }, questions: { request: requestQuestion } },
+    claims: { model: pinned, state: { user_requests: [...requests], agent_reply: reply.trim() || "(empty)" },
+      questions: { claims: claimsQuestion } },
+  };
 }
 
-/** Jev's answer as a decision; anything but a probability between 0 and 1 is no decision. */
-export function jevDecision(body: unknown): TriageDecision {
-  const probability = typeof body === "object" && body !== null
-    ? Reflect.get(Reflect.get(Reflect.get(body, "answers") ?? {}, "checkable") ?? {}, "noul") : undefined;
-  if (typeof probability !== "number" || !Number.isFinite(probability) || probability < 0 || probability > 1) {
-    return { decided: false, checkable: true, reason: "Jev gave no probability" };
-  }
-  return { decided: true, checkable: probability >= JEV_SKIP_BELOW, reason: `Jev: ${probability.toFixed(2)} checkable` };
+const probabilityIn = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : undefined;
+const field = (value: unknown, ...path: string[]): unknown =>
+  path.reduce<unknown>((current, key) => typeof current === "object" && current !== null ? Reflect.get(current, key) : undefined, value);
+
+/**
+ * Jev's two answers as one decision (`turnCheckable`): the turn is skipped
+ * only when both the probability that the requests ask for more than
+ * conversation and the probability that the reply claims something fall
+ * below the threshold; the larger is kept as the turn's probability, and
+ * anything but probabilities between 0 and 1 is no decision.
+ */
+export function jevDecision(requestBody: unknown, claimsBody: unknown): TriageDecision {
+  const conversation = probabilityIn(field(requestBody, "answers", "request", "probabilities", "conversation"));
+  const claims = probabilityIn(field(claimsBody, "answers", "claims", "noul"));
+  if (conversation === undefined || claims === undefined) return { decided: false, checkable: true, reason: "Jev gave no probability" };
+  // Compared on the conversation side, so 1 - 0.8 rounding below 0.2 cannot skip a turn at the threshold.
+  const checkable = turnCheckable(conversation <= 1 - JEV_SKIP_BELOW, claims >= JEV_SKIP_BELOW);
+  return { decided: true, checkable, probability: Math.max(1 - conversation, claims),
+    reason: `Jev: requests ${(1 - conversation).toFixed(2)} beyond conversation, reply ${claims.toFixed(2)} checkable` };
 }
 
 export async function jevTriage(key: string, model: DecisionModel, requests: readonly string[], reply: string,
   signal: AbortSignal, timeLimitMs: number = JEV_TIME_LIMIT_MS, request: typeof fetch = fetch): Promise<TriageDecision> {
+  const bodies = jevRequests(model, requests, reply);
+  const limit = AbortSignal.any([signal, AbortSignal.timeout(timeLimitMs)]);
+  const ask = async (body: object): Promise<unknown> => {
+    const response = await request(ENDPOINT, { method: "POST", signal: limit,
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+    if (!response.ok) throw new Error(`Jev answered HTTP ${response.status}`);
+    return await response.json();
+  };
   try {
-    const response = await request(ENDPOINT, { method: "POST", signal: AbortSignal.any([signal, AbortSignal.timeout(timeLimitMs)]),
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify(jevRequest(model, requests, reply)) });
-    if (!response.ok) return { decided: false, checkable: true, reason: `Jev answered HTTP ${response.status}` };
-    return jevDecision(await response.json());
-  } catch {
-    return { decided: false, checkable: true, reason: "Jev could not be reached" };
+    const [requestBody, claimsBody] = await Promise.all([ask(bodies.request), ask(bodies.claims)]);
+    return jevDecision(requestBody, claimsBody);
+  } catch (error) {
+    const reason = error instanceof Error && error.message.startsWith("Jev answered") ? error.message : "Jev could not be reached";
+    return { decided: false, checkable: true, reason };
   }
 }
 
