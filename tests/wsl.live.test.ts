@@ -138,6 +138,23 @@ it.runIf(live)("keeps the workspace's Git data read-only and each hidden file un
   expect(existsSync(join(workspace, ".git", "hooks", "pre-commit"))).toBe(false);
 }, 120_000);
 
+it.runIf(live)("shows another folder at the workspace's path for one command, and leaves the workspace alone", async () => {
+  if (sandbox === undefined) throw new Error("Sandbox unavailable");
+  const other = join(root, "base-checkout");
+  await mkdir(other, { recursive: true });
+  await writeFile(join(other, "marker.txt"), "the base\n");
+  await writeFile(join(workspace, "marker.txt"), "the workspace\n");
+  let output = "";
+  const result = await sandbox.run("cat marker.txt; pwd; echo written > made-here.txt", { cwd: workspace, root: other,
+    onOutput: (chunk) => { output += chunk.toString(); } });
+  expect(result.exitCode).toBe(0);
+  expect(output).toContain("the base");
+  expect(output).not.toContain("the workspace");
+  expect(existsSync(join(other, "made-here.txt"))).toBe(true);
+  expect(existsSync(join(workspace, "made-here.txt"))).toBe(false);
+  expect((await run("cat marker.txt")).output).toContain("the workspace");
+}, 120_000);
+
 it.runIf(live)("runs a repository's pinned Node, its mise file's tools and its setup script, once, and keeps the tools read-only", async () => {
   const repository = join(root, "pinned");
   await mkdir(join(repository, ".tesota"), { recursive: true });

@@ -1,5 +1,6 @@
 import { isGitObjectId, runRepositoryGit as git } from "./repository-git.js";
 import { RequestRecord } from "./request-record.js";
+import type { BasePlace } from "./workspace-checks.js";
 import { SourceSnapshot, UnsupportedSourceChange } from "./source-snapshot.js";
 import { commitAll, createWorkspaceCheckout, type SourceOptions, DEFAULT_WORKSPACES_ROOT, inspectWorkspaceCheckout,
   sourceSnapshotDirectory, writeSourceChanges, type WorkspaceCheckout } from "./workspace-checkout.js";
@@ -94,6 +95,12 @@ export class Workspace {
   }
 
   get base(): string { return this.#base; }
+
+  /** A workspace switches its own checkout to the base for a check's base run. */
+  readonly basesInOtherFolder = false;
+
+  /** The tree the checkout holds now. */
+  currentTree(): string { return this.snapshot().tree; }
 
   /** Stage all work and describe it relative to the base. Ignored files are not work. */
   snapshot(): WorkspaceSnapshot {
@@ -205,16 +212,16 @@ export class Workspace {
    * `read-tree --reset -u` switches tracked files and leaves ignored ones, such
    * as installed dependencies, in place. A ref pins the candidate meanwhile, so
    * reopening the workspace restores it if Tesota stops before it could.
-   * `work` is given `intact`, which says whether the checkout still holds
-   * exactly the base.
+   * `work` is given the checkout as the base's place, with `intact`, which
+   * says whether it still holds exactly the base.
    */
-  async atBase<T>(snapshot: WorkspaceSnapshot, work: (intact: () => boolean) => Promise<T>): Promise<T> {
+  async atBase<T>(snapshot: WorkspaceSnapshot, work: (base: BasePlace) => Promise<T>): Promise<T> {
     if (snapshot.base !== this.#base || this.snapshot().tree !== snapshot.tree) throw new Error("Workspace changed");
     const baseTree = git(this.checkout, ["rev-parse", "--verify", `${this.#base}^{tree}`]).trim();
     git(this.checkout, ["update-ref", pinnedCandidateRef, snapshot.tree]);
     try {
       git(this.checkout, ["read-tree", "--reset", "-u", this.#base]);
-      return await work(() => this.snapshot().tree === baseTree);
+      return await work({ directory: this.checkout, intact: () => this.snapshot().tree === baseTree });
     } finally {
       this.#restoreCandidate(snapshot.tree);
     }

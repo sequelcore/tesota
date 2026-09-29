@@ -1,15 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, open, readFile, realpath, rename } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, realpath, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import * as z from "zod";
-import { isGitObjectId, runRepositoryGit as git } from "./repository-git.js";
+import { isGitObjectId, operatorLineEndingSetting, runRepositoryGit as git } from "./repository-git.js";
 import { RequestRecord } from "./request-record.js";
 import { DEFAULT_SOURCES_ROOT, isGitRepository, openShadow, shadowEnvironment, sourceRoot, type SourceKind }
   from "./source-shadow.js";
 import { SourceSnapshot } from "./source-snapshot.js";
 import { parseChanges, type WorkspaceChange, type WorkspaceSnapshot } from "./workspace.js";
 import { DEFAULT_APPLICATIONS_ROOT, gitTreeReader, writeTreeWhereUnchanged } from "./workspace-apply.js";
+import type { BasePlace, CheckTarget } from "./workspace-checks.js";
 
 /**
  * A session that works in the source itself (docs/design/workspace.md): no
@@ -49,6 +50,7 @@ export interface RevertedTurn {
 }
 
 const recordFile = "session.json";
+const commitIdentity = ["-c", "user.name=Tesota", "-c", "user.email=tesota@localhost", "-c", "commit.gpgsign=false"];
 
 async function saveRecord(directory: string, record: SessionRecord): Promise<void> {
   const temporary = join(directory, `${randomUUID()}.tmp`);
@@ -67,7 +69,7 @@ async function readRecord(directory: string): Promise<SessionRecord> {
   return parsed.data;
 }
 
-export class SourceSession {
+export class SourceSession implements CheckTarget {
   readonly directory: string;
   /** The source's own directory, where the agent and its commands work. */
   readonly checkout: string;
@@ -119,6 +121,46 @@ export class SourceSession {
 
   /** The source's tree now. */
   capture(): string { return this.#snapshot.capture(); }
+
+  /** The base of a check runs in a checkout of its own, never in the operator's files. */
+  readonly basesInOtherFolder = true;
+
+  currentTree(): string { return this.capture(); }
+
+  /**
+   * Run `work` with the snapshot's base in a checkout of its own, made from
+   * the shadow only when a check failed and removed afterwards, as a merge
+   * queue tests without the patch. It is a one-commit repository, as a
+   * workspace's clone is, with the operator's line endings, so a check that
+   * runs Git finds one. The source is never touched.
+   */
+  async atBase<T>(snapshot: WorkspaceSnapshot, work: (base: BasePlace) => Promise<T>): Promise<T> {
+    const ref = `refs/tesota/sessions/${this.#id}/checked`;
+    const directory = join(this.directory, "base");
+    const template = join(this.directory, "empty-template");
+    const endings = ["-c", `core.autocrlf=${operatorLineEndingSetting(this.source)}`, "-c", "core.symlinks=false"];
+    try {
+      const commit = git(this.shadow, [...commitIdentity, "commit-tree", snapshot.base, "-m", "Tesota: the tree before the turn"]).trim();
+      if (!isGitObjectId(commit)) throw new Error("Invalid base commit");
+      git(this.shadow, ["update-ref", ref, commit]);
+      await rm(directory, { recursive: true, force: true });
+      await mkdir(directory, { recursive: true });
+      await mkdir(template, { recursive: true });
+      git(directory, ["init", "--quiet", `--template=${template}`]);
+      git(directory, ["fetch", "--quiet", "--no-tags", "--depth", "1", "--", this.shadow, `+${ref}:refs/heads/base`]);
+      git(directory, [...endings, "checkout", "--quiet", "--detach", "refs/heads/base"]);
+      git(directory, ["config", "core.autocrlf", operatorLineEndingSetting(this.source)]);
+      git(directory, ["config", "core.symlinks", "false"]);
+      const intact = (): boolean => {
+        try { return git(directory, [...endings, "status", "--porcelain", "--untracked-files=all"]).length === 0; }
+        catch { return false; }
+      };
+      return await work({ directory, root: directory, intact });
+    } finally {
+      await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+      try { git(this.shadow, ["update-ref", "-d", ref]); } catch { /* never made */ }
+    }
+  }
 
   /** Record the source before a turn; a turn left begun, such as by a crash, keeps its earlier tree. */
   async beginTurn(): Promise<string> {

@@ -86,13 +86,21 @@ it("builds a sandbox of new namespaces that mounts only the system, tools, works
 it("mounts the workspace's Git data read-only and an empty file over each hidden file, after the workspace", () => {
   const git = `${layout.workspace}/.git`;
   const secret = `${layout.workspace}/api/.env`;
-  const args = bubblewrapArguments(layout, layout.workspace, "true", "agent", { readOnly: [git], hidden: [secret] });
-  const workspace = args.indexOf(layout.workspace);
+  const args = bubblewrapArguments(layout, layout.workspace, "true", "agent", { readOnly: [".git"], hidden: ["api/.env"] });
   expect(args.slice(args.indexOf(git) - 1, args.indexOf(git) + 2)).toEqual(["--ro-bind", git, git]);
   expect(args.slice(args.indexOf(secret) - 2, args.indexOf(secret) + 1)).toEqual(["--ro-bind", layout.mask, secret]);
   // A later mount covers an earlier one, so the guards follow the workspace and its node_modules.
   expect(args.indexOf(git)).toBeGreaterThan(args.indexOf(`${layout.workspace}/node_modules`));
-  expect(workspace).toBeGreaterThan(0);
+});
+
+it("shows another folder at the workspace's path, with the same node_modules and its own Git data read-only", () => {
+  const base = "/mnt/c/Users/op/.tesota/source-sessions/s/base";
+  const args = bubblewrapArguments(layout, layout.workspace, "true", "agent", { readOnly: [".git"], hidden: [] }, base);
+  const mounts = args.flatMap((arg, index) => ["--bind", "--ro-bind"].includes(arg) ? [`${arg} ${args[index + 1] ?? ""} ${args[index + 2] ?? ""}`] : []);
+  expect(mounts).toContain(`--bind ${base} ${layout.workspace}`);
+  expect(mounts).not.toContain(`--bind ${layout.workspace} ${layout.workspace}`);
+  expect(mounts).toContain(`--bind ${layout.modules ?? ""} ${layout.workspace}/node_modules`);
+  expect(mounts).toContain(`--ro-bind ${base}/.git ${layout.workspace}/.git`);
 });
 
 it.runIf(process.platform !== "win32")("guards only plain files inside the workspace, and its Git data when present", async () => {
@@ -104,7 +112,7 @@ it.runIf(process.platform !== "win32")("guards only plain files inside the works
     await writeFile(`${workspace}/.env`, "x");
     await symlink("/etc/passwd", `${workspace}/.npmrc`);
     expect(await guardedPaths(workspace, [".env", ".npmrc", "missing.key", "../outside.key", ""]))
-      .toEqual({ readOnly: [`${workspace}/.git`], hidden: [`${workspace}/.env`] });
+      .toEqual({ readOnly: [".git"], hidden: [".env"] });
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
 

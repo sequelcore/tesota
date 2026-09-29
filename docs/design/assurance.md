@@ -61,11 +61,19 @@ while it works; those runs are feedback, not evidence.
 retries a failure without the patch: Chromium's CQ fails a change only for
 tests that fail with it and pass without it. When a check command fails or
 times out on the candidate, Tesota runs it again, in the same environment, on
-the candidate's base: the workspace pins the candidate's tree to a ref,
+the candidate's base. A workspace pins the candidate's tree to a ref,
 switches the checkout's tracked files to the base with `git read-tree --reset
 -u`, which leaves ignored files such as installed dependencies in place, runs
 the command, and restores the candidate, removing anything the run added;
-reopening a workspace restores a candidate a stopped run left pinned. The
+reopening a workspace restores a candidate a stopped run left pinned. A
+session working in the source never touches the operator's files: it fetches
+the tree before the turn from the shadow repository into a one-commit
+checkout of its own, with the operator's line endings, and the WSL sandbox
+mounts that checkout at the source's path for the run, with the same
+`node_modules`, so the command sees the same paths (`RunOptions.root`); the
+checkout is removed afterwards. An environment that cannot show another
+folder there, a command on the operator's computer or Docker Sandboxes,
+leaves the base run not started and the origin `unknown`. The
 failure's origin is `introduced` when the base passes, `preexisting` when the
 base ends the same way, and `unknown` otherwise, as when the base run could
 not start, was stopped or changed files (`checkOrigin` in

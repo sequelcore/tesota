@@ -249,9 +249,9 @@ copy: a clone needs Git, and a folder has none. No local harness draws it.
   source in parallel, or any session that asks, gets an isolated workspace:
   the current design, kept for that case. One session at a time writes to a
   source in place.
-- **Base checks on demand.** A failed check is compared with the tree before
-  the turn, [test by test](assurance.md#verifiers), in a temporary checkout
-  from the shadow repository, made only when a check fails.
+- **Base checks on demand** (built). A failed check is compared with the tree
+  before the turn, [test by test](assurance.md#verifiers), in a temporary
+  checkout from the shadow repository, made only when a check fails.
 
 **Decided** (the operator, 2026-09-29):
 

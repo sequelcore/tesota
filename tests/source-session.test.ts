@@ -130,3 +130,33 @@ it("pins every tree it names in the shadow, and reopens with its undecided turns
   expect((await reopened.endTurn())?.before).toBe(started);
   expect(existsSync(join(source, ".git", "refs", "tesota"))).toBe(false);
 });
+
+it("runs a failing check again on the tree before the turn, in a checkout of its own, never in the source", async () => {
+  const { source, create } = await fixture();
+  const { hostProvider } = await import("../src/host-environment.js");
+  const { runChecks } = await import("../src/workspace-checks.js");
+  const host = await hostProvider.prepare(source);
+  const seen: string[] = [];
+  // An environment that shows another folder at the source's path, as the WSL sandbox mounts one.
+  const mounting = { ...host, runsInOtherFolders: true,
+    run: (command: string, options: Parameters<typeof host.run>[1]) => {
+      seen.push(options.root === undefined ? "source" : "base");
+      const { root, ...rest } = options;
+      return host.run(command, { ...rest, cwd: root ?? options.cwd });
+    } };
+  const session = await create();
+  await session.beginTurn();
+  await writeFile(join(source, "src", "price.ts"), "export const price = 2;\n");
+  await session.endTurn();
+  const check = { command: "node -e \"process.exit(require('fs').readFileSync('src/price.ts','utf8').includes('2') ? 1 : 0)\"",
+    reports: [] };
+  const [result] = await runChecks(mounting, session, session.snapshot(), [check], new AbortController().signal);
+  expect(result).toMatchObject({ outcome: "failed", base: { outcome: "passed", origin: "introduced" } });
+  expect(seen).toEqual(["source", "base"]);
+  expect(await readFile(join(source, "src", "price.ts"), "utf8")).toBe("export const price = 2;\n");
+  expect(existsSync(join(session.directory, "base"))).toBe(false);
+
+  // An environment that cannot leaves whose failure it is unknown, never guessed.
+  const [unknown] = await runChecks(host, session, session.snapshot(), [check], new AbortController().signal);
+  expect(unknown?.base).toMatchObject({ outcome: "not_started", origin: "unknown" });
+});

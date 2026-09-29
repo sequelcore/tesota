@@ -48,6 +48,14 @@ export interface RunOptions {
    * a command run on the operator's computer sees every file.
    */
   readonly hidden?: readonly string[];
+  /**
+   * Another folder on this computer that the command sees at the workspace's
+   * path instead of the workspace, with everything else the same, such as a
+   * checkout of the tree before a turn. Only an environment whose
+   * `runsInOtherFolders` is true accepts it; any other does not start the
+   * command.
+   */
+  readonly root?: string;
 }
 
 /** One step a provider took to prepare an environment, such as installing a runtime. */
@@ -88,6 +96,8 @@ export interface ExecutionEnvironment {
   readonly javascriptRuntime?: string;
   /** Where the workspace appears to commands, when not at its own path, such as under `/mnt` in the WSL sandbox. */
   readonly commandRoot?: string;
+  /** Whether a command can see another folder at the workspace's path (`RunOptions.root`). */
+  readonly runsInOtherFolders?: boolean;
   readonly guarantees: EnvironmentGuarantees;
   /** What preparing this environment ran now; empty when nothing was needed or it was already prepared. */
   readonly preparation: readonly PreparationStep[];

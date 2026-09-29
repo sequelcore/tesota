@@ -5,7 +5,31 @@ import { terminalOutputText } from "./terminal-output.js";
 import { clearTestReports, introducedTests, MAX_CHECK_REPORTS, normalizeReportPath, readTestResults,
   type TestResults } from "./test-report.js";
 import { type CheckOrigin, type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
-import type { Workspace, WorkspaceSnapshot } from "./workspace.js";
+import type { WorkspaceSnapshot } from "./workspace.js";
+
+/**
+ * Where a check's base run happens: `directory` holds the files and the
+ * reports it writes, `root` is set when that is not the checkout, and the
+ * environment must then show it at the checkout's path, and `intact` says
+ * whether it still holds exactly the base.
+ */
+export interface BasePlace {
+  readonly directory: string;
+  readonly root?: string;
+  intact(): boolean;
+}
+
+/** What checks run on: a workspace, or a session working in the source itself. */
+export interface CheckTarget {
+  readonly checkout: string;
+  /** Whether the base runs in a folder of its own, which only an environment that `runsInOtherFolders` can show. */
+  readonly basesInOtherFolder: boolean;
+  ignores(path: string): boolean;
+  /** The tree the checkout holds now. */
+  currentTree(): string;
+  /** Run `work` while the snapshot's base is in place, then put back what was there. */
+  atBase<T>(snapshot: WorkspaceSnapshot, work: (base: BasePlace) => Promise<T>): Promise<T>;
+}
 
 /** Which verifier produced a result (decision 015). */
 export type VerifierKind = "command" | "oxlint" | "lemmascript";
@@ -147,10 +171,19 @@ interface CommandRun {
   readonly output: string;
 }
 
-async function runCommand(environment: ExecutionEnvironment, workspace: Workspace, command: string, signal: AbortSignal,
+/** Where one run happens: the checkout's path commands see, and the folder standing in its place, if any. */
+interface RunPlace {
+  readonly checkout: string;
+  readonly directory: string;
+  readonly root?: string | undefined;
+  readonly hidden: readonly string[];
+}
+
+async function runCommand(environment: ExecutionEnvironment, place: RunPlace, command: string, signal: AbortSignal,
   timeoutSeconds: number, unchanged: () => boolean): Promise<CommandRun> {
   let output = "";
-  const run = await environment.run(command, { cwd: workspace.checkout, timeoutSeconds, signal,
+  const run = await environment.run(command, { cwd: place.checkout, timeoutSeconds, signal,
+    ...place.root === undefined ? {} : { root: place.root }, ...place.hidden.length === 0 ? {} : { hidden: place.hidden },
     onOutput: (chunk) => { output = (output + chunk.toString("utf8")).slice(-outputLimit); } });
   const outcome: CheckOutcome = run.outcome === "exited"
     ? !unchanged() ? "changed_files" : run.exitCode === 0 ? "passed" : "failed"
@@ -173,15 +206,15 @@ interface CandidateRun {
  * that cannot be removed could be read as this run's, so the check does not
  * start.
  */
-async function runReported(environment: ExecutionEnvironment, workspace: Workspace, check: ApprovedCheck,
+async function runReported(environment: ExecutionEnvironment, place: RunPlace, check: ApprovedCheck,
   signal: AbortSignal, timeoutSeconds: number, unchanged: () => boolean): Promise<CommandRun & { tests?: TestResults }> {
-  const kept = clearTestReports(workspace.checkout, check.reports);
+  const kept = clearTestReports(place.directory, check.reports);
   if (kept.length > 0) {
     return { outcome: "not_started", exitCode: null, output: `Not run: its report ${kept.join(", ")} could not be ` +
       "removed first, as a directory, a locked file or a path through a link cannot, so an earlier report could be read as this run's." };
   }
-  const run = await runCommand(environment, workspace, check.command, signal, timeoutSeconds, unchanged);
-  const tests = failing(run.outcome) ? readTestResults(workspace.checkout, check.reports) : undefined;
+  const run = await runCommand(environment, place, check.command, signal, timeoutSeconds, unchanged);
+  const tests = failing(run.outcome) ? readTestResults(place.directory, check.reports) : undefined;
   return tests === undefined ? run : { ...run, tests };
 }
 
@@ -191,17 +224,21 @@ async function runReported(environment: ExecutionEnvironment, workspace: Workspa
  * when the check names reports. The base is checked out only once, for all
  * of them, and only if a run is not known yet.
  */
-async function attributeFailures(environment: ExecutionEnvironment, workspace: Workspace, snapshot: WorkspaceSnapshot,
-  runs: readonly CandidateRun[], signal: AbortSignal, timeoutSeconds: number, baseRuns: BaseRuns): Promise<CheckResult[]> {
+async function attributeFailures(environment: ExecutionEnvironment, target: CheckTarget, snapshot: WorkspaceSnapshot,
+  runs: readonly CandidateRun[], signal: AbortSignal, timeoutSeconds: number, baseRuns: BaseRuns,
+  hidden: readonly string[]): Promise<CheckResult[]> {
   const key = (check: ApprovedCheck): string => JSON.stringify([environment.provider, snapshot.base, check.command, check.reports]);
   const missing = runs.filter((run) => failing(run.result.outcome) && !baseRuns.has(key(run.check)));
-  if (missing.length > 0 && !signal.aborted) {
-    await workspace.atBase(snapshot, async (intact) => {
+  // An environment that cannot show another folder at the checkout's path leaves the base unknown, never guessed.
+  const reachable = !target.basesInOtherFolder || environment.runsInOtherFolders === true;
+  if (missing.length > 0 && !signal.aborted && reachable) {
+    await target.atBase(snapshot, async (base) => {
+      const place: RunPlace = { checkout: target.checkout, directory: base.directory, root: base.root, hidden };
       for (const { check } of missing) {
         if (signal.aborted) return;
-        const run = await runReported(environment, workspace, check, signal, timeoutSeconds, intact);
+        const run = await runReported(environment, place, check, signal, timeoutSeconds, () => base.intact());
         // The base's reports would read as the candidate's to the agent; the next run removes any left.
-        clearTestReports(workspace.checkout, check.reports);
+        clearTestReports(base.directory, check.reports);
         // A cancelled or unconfirmed run says nothing about the base, so it is not remembered.
         if (run.outcome !== "cancelled" && run.outcome !== "unconfirmed") {
           baseRuns.set(key(check), { outcome: run.outcome, exitCode: run.exitCode, ...run.tests === undefined ? {} : { tests: run.tests } });
@@ -223,6 +260,8 @@ async function attributeFailures(environment: ExecutionEnvironment, workspace: W
 
 export interface CheckOptions {
   readonly timeoutSeconds?: number;
+  /** Files hidden from the check's commands, relative with forward slashes, as from the agent's. */
+  readonly hidden?: readonly string[];
   /** Base runs to reuse and extend; without it, each call runs the base afresh. */
   readonly baseRuns?: BaseRuns;
 }
@@ -236,27 +275,29 @@ export interface CheckOptions {
  * report Git does not ignore does not run, since writing the report would
  * change the reviewed files.
  */
-export async function runChecks(environment: ExecutionEnvironment, workspace: Workspace, snapshot: WorkspaceSnapshot,
+export async function runChecks(environment: ExecutionEnvironment, target: CheckTarget, snapshot: WorkspaceSnapshot,
   checks: readonly ApprovedCheck[], signal: AbortSignal, options: CheckOptions = {}): Promise<readonly CheckResult[]> {
   const timeoutSeconds = options.timeoutSeconds ?? defaultTimeoutSeconds;
+  const hidden = options.hidden ?? [];
+  const place: RunPlace = { checkout: target.checkout, directory: target.checkout, hidden };
   const runs: CandidateRun[] = [];
   for (const check of checks) {
     const { command } = check;
     const described = { verifier: "command" as const, command, claim: `\`${command}\` exits with code 0 on this tree`,
       limits: "Establishes only what the command itself tests.", tree: snapshot.tree, environment: environment.provider,
       guarantees: environment.guarantees };
-    const tracked = check.reports.filter((path) => !workspace.ignores(path));
+    const tracked = check.reports.filter((path) => !target.ignores(path));
     if (tracked.length > 0) {
       runs.push({ check, result: { ...described, outcome: "not_started", exitCode: null, durationMs: 0,
         output: `Not run: Git does not ignore its report ${tracked.join(", ")}, so writing it would change the reviewed files.` } });
       continue;
     }
     const started = Date.now();
-    const run = await runReported(environment, workspace, check, signal, timeoutSeconds,
-      () => workspace.snapshot().tree === snapshot.tree);
+    const run = await runReported(environment, place, check, signal, timeoutSeconds,
+      () => target.currentTree() === snapshot.tree);
     runs.push({ check, tests: run.tests, result: { ...described, outcome: run.outcome, exitCode: run.exitCode,
       durationMs: Date.now() - started, output: terminalOutputText(run.output) } });
     if (run.outcome === "cancelled" || run.outcome === "unconfirmed" || run.outcome === "changed_files") break;
   }
-  return attributeFailures(environment, workspace, snapshot, runs, signal, timeoutSeconds, options.baseRuns ?? new Map());
+  return attributeFailures(environment, target, snapshot, runs, signal, timeoutSeconds, options.baseRuns ?? new Map(), hidden);
 }

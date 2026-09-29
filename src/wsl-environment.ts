@@ -142,6 +142,7 @@ function runIn(connection: Connection, workspace: string, command: string, optio
     options.signal?.addEventListener("abort", abort, { once: true });
     connection.send({ type: "run", id, command, cwd: within.split(sep).join("/"), env: { ...options.env },
       ...options.hidden === undefined || options.hidden.length === 0 ? {} : { hidden: [...options.hidden] },
+      ...options.root === undefined ? {} : { root: resolve(options.root) },
       ...options.timeoutSeconds === undefined ? {} : { timeoutSeconds: options.timeoutSeconds } });
   });
 }
@@ -205,7 +206,7 @@ export async function bubblewrapEnvironment(launch: Launch, workspace: string, o
     options.signal?.throwIfAborted();
     const variables = languageVariables(plan.tools, first, "commands");
     return { provider: "wsl", ...first.workspace === root ? {} : { commandRoot: first.workspace },
-      guarantees: WSL_GUARANTEES, preparation,
+      guarantees: WSL_GUARANTEES, preparation, runsInOtherFolders: true,
       network: sandboxNetwork(connection),
       run: (command, runOptions) => runIn(connection, root, command, { ...runOptions, env: { ...variables, ...runOptions.env } }),
       dispose: () => connection.close() };
