@@ -73,6 +73,16 @@ export interface ClaimedStep {
   readonly check?: string | undefined;
 }
 
+/**
+ * A tool call of the agent's latest turn as Tesota recorded it, not as the
+ * agent reports it: evidence for what the agent read, ran or changed.
+ */
+export interface ToolCallRecord {
+  readonly tool: string;
+  readonly subject: string;
+  readonly outcome: "succeeded" | "failed" | "unfinished";
+}
+
 /** Everything a reviewer may see. The working agent's reasoning is deliberately absent. */
 export interface ReviewInput {
   /** The candidate's checkout, for read-only investigation. */
@@ -98,6 +108,12 @@ export interface ReviewInput {
    * which is untrusted and can never show that requested code exists.
    */
   readonly response?: string;
+  /**
+   * With `response`, the tool calls of the agent's latest turn, so a claim in
+   * the reply about reading, running or changing something is checked
+   * against what happened rather than the agent's account of it.
+   */
+  readonly toolCalls?: readonly ToolCallRecord[];
 }
 
 export type ReviewReport =

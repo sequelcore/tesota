@@ -14,9 +14,10 @@ import { usageSources } from "./integrations/usage-sources.js";
 import type { AccountsSource } from "./tesota-shell-accounts.js";
 import { BackdropTui } from "./tesota-shell-tui.js";
 import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
+import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, sameAccount, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
-import { accountRoute, isDecisionModel, MODEL_ROLES, ROLE_OFF, type ModelRole, parseModelChoice, readAddedRoutes, readModelChoices,
+import { accountRoute, MODEL_ROLES, ROLE_OFF, type ModelRole, parseModelChoice, readAddedRoutes, readModelChoices,
   ROUTE_ENGINE } from "./model-roles.js";
 import { type WorkPlan, withReview } from "./work-plan.js";
 import { isGitRepository } from "./folder-source.js";
@@ -39,10 +40,9 @@ import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore 
 import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
   type WorkResult } from "./tesota-shell.js";
 import { inspectAnswer, inspectReview } from "./tesota-shell-inspection.js";
-import { obligationOutcome } from "./verification/obligation-outcome.js";
 import { runsAnswerCheck } from "./verification/answer-check-rule.js";
-import { triageAnswer, type TriageDecision } from "./integrations/answer-triage.js";
-import { jevTriage, typesafeKey } from "./integrations/jev-triage.js";
+import type { TriageDecision } from "./integrations/answer-triage.js";
+import { answerHeld, firstPass, reviewAnswer } from "./answer-check.js";
 import { nameSession } from "./integrations/session-namer.js";
 import { cleanTitle, seedTitle } from "./session-title.js";
 import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
@@ -64,8 +64,9 @@ import { forecastLine, type ReviewMeasurement, type ReviewModels, type ReviewPla
 import { countsAsMeasurement } from "./verification/review-estimate.js";
 import { formatTokens, type TokenUsage, totalTokens } from "./token-usage.js";
 import { validateFixes, validationReport } from "./integrations/pi-fix-validator.js";
-import type { ReviewInput, ReviewReport, Reviewer } from "./review.js";
-import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry, type AssuranceEntry } from "./assurance-journal.js";
+import type { ReviewInput, ReviewReport, Reviewer, ToolCallRecord } from "./review.js";
+import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry, triageEntry, type AssuranceEntry }
+  from "./assurance-journal.js";
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
 
@@ -233,6 +234,14 @@ function isAbort(error: unknown): boolean {
 }
 
 /** One shell session's workspace, agent conversation and pending review. */
+/** Keeps a turn's tool call as Tesota saw it start and finish; a call that never finished stays unfinished. */
+export function recordCall(calls: Map<string, ToolCallRecord>, activity: AgentActivity): void {
+  if (activity.type === "tool_started") calls.set(activity.call, { tool: activity.tool, subject: activity.subject, outcome: "unfinished" });
+  if (activity.type !== "tool_finished") return;
+  const started = calls.get(activity.call);
+  if (started !== undefined) calls.set(activity.call, { ...started, outcome: activity.failed ? "failed" : "succeeded" });
+}
+
 class SessionState {
   workspace: Promise<Workspace> | undefined;
   environment: Promise<ExecutionEnvironment> | undefined;
@@ -257,6 +266,8 @@ class SessionState {
   note: string | undefined;
   /** The agent's last reply, which the answer check reads when a turn changes no files (decision 034). */
   lastReply: string | undefined;
+  /** The latest turn's tool calls by call id, as Tesota saw them, for the answer check to hold the reply to. */
+  readonly turnCalls: Map<string, ToolCallRecord> = new Map();
 }
 
 /**
@@ -535,19 +546,13 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     surface.setSessionTitle(id, seed);
     nameInBackground(id, [request], "generated");
   };
-  /**
-   * The answer check's first pass on the triage role's choice (decisions 034 and 035): a model session or a typed
-   * decision model. Off, or failing in any way, it decides nothing, and the full check runs.
-   */
-  const firstPass = async (requests: readonly string[], reply: string, signal: AbortSignal): Promise<TriageDecision> => {
-    const undecided = (reason: string): TriageDecision => ({ decided: false, checkable: true, reason });
-    try {
-      const choice = readModelChoices().triage;
-      if (choice === ROLE_OFF) return undecided("the first pass is off");
-      if (!isDecisionModel(choice)) return await triageAnswer({ target: await openModelTarget(choice, signal) }, requests, reply, signal);
-      const key = await typesafeKey();
-      return key === undefined ? undecided("no TypeSafe key") : await jevTriage(key, choice, requests, reply, signal);
-    } catch { return undecided("the first pass failed"); }
+  /** The first pass on the triage role's current choice, with the model it used. */
+  const firstPassNow = async (requests: readonly string[], reply: string, signal: AbortSignal):
+    Promise<Readonly<{ model: string; decision: TriageDecision }>> => {
+    let model = "unknown";
+    try { model = readModelChoices().triage; } catch { return { model, decision: { decided: false, checkable: true,
+      reason: "the first pass failed" } }; }
+    return { model, decision: await firstPass(model, requests, reply, signal) };
   };
   /** The model for one of the review step's sessions, counting its tokens toward the step. */
   const modelFor = async (run: ReviewRun, role: ModelRole): Promise<ModelAccess> =>
@@ -730,6 +735,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         onActivity: (activity) => {
           if (activity.type === "tool_started" && activity.tool === "plan") planCalls.add(activity.call);
           if ("call" in activity && planCalls.has(activity.call)) return;
+          recordCall(stateFor(id).turnCalls, activity);
           surface.showActivity(id, activity);
         } }, { sessionManager, conversationId: engineId });
       consulted = agent;
@@ -913,18 +919,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       }
     },
   };
-  /** The answer check's full review: the main reviewer, then the refuter on any gap; never throws. */
-  const reviewAnswer = async (id: string, input: ReviewInput, signal: AbortSignal): Promise<ReviewReport[]> => {
-    surface.reportFor(id, { phase: "reviewing", activity: "Checking the answer against your requests" });
+  /** The answer check's full review, showing its progress in the session. */
+  const reviewAnswerIn = async (id: string, input: ReviewInput, signal: AbortSignal): Promise<ReviewReport[]> => {
     try {
-      const reports = [await createPiReviewer({ target: await openModel(signal, "reviewer") }).review(input, signal)];
-      if (signal.aborted || !hasClaimsToTest(reports)) return reports;
-      surface.reportFor(id, { phase: "reviewing", activity: "Testing each gap" });
-      return await refuteFindings({ target: await openModel(signal, "refuter") }, input, reports, signal)
-        .catch(() => applyRefutation(reports, undefined));
-    } catch (error) {
-      return [{ reviewer: "Tesota reviewer", tree: input.snapshot.tree, status: "incomplete",
-        reason: error instanceof Error ? error.message : "the reviewer could not start" }];
+      return await reviewAnswer(async (role) => ({ target: await openModel(signal, role) }), input, signal,
+        (activity) => { surface.reportFor(id, { phase: "reviewing", activity }); });
     } finally { surface.clearProgressFor(id, "reviewing"); }
   };
   const blockSession = (id: string): void => { store.block(id); surface.blockSession(id); };
@@ -1050,6 +1049,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         state.note = undefined;
         state.explorers?.startTurn();
         state.advisor?.startTurn();
+        state.turnCalls.clear();
         const result = await coding.run(prompt, signal);
         if (result.status === "unsettled") { blockSession(id); return result; }
         if (result.status !== "completed") return result;
@@ -1125,25 +1125,26 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const claimedSteps = (plan ?? []).flatMap((step, index) => step.status === "done"
         ? [{ index: index + 1, step: step.step, ...step.check === undefined ? {} : { check: step.check } }] : []);
       const input = { checkout: workspace.checkout, requests, snapshot, checks: [], flags: [],
-        response: state.lastReply ?? "", ...(claimedSteps.length === 0 ? {} : { claimedSteps }) };
+        response: state.lastReply ?? "", toolCalls: [...state.turnCalls.values()],
+        ...(claimedSteps.length === 0 ? {} : { claimedSteps }) };
       // A cheap first pass spares the reviewer a turn with nothing to check (decision 034); off, every answer is checked.
       surface.reportFor(id, { phase: "reviewing", activity: "Deciding whether the answer needs checking" });
-      const triage = await firstPass(requests, state.lastReply ?? "", signal);
+      const triage = await firstPassNow(requests, state.lastReply ?? "", signal);
       if (signal.aborted) { surface.clearProgressFor(id, "reviewing"); return { status: "cancelled" }; }
-      if (!runsAnswerCheck(triage.decided, triage.checkable)) {
+      const runsCheck = runsAnswerCheck(triage.decision.decided, triage.decision.checkable);
+      await journal(id, workspace, triageEntry(snapshot.tree, requests, triage.model, triage.decision, runsCheck, input.toolCalls));
+      if (!runsCheck) {
         surface.clearProgressFor(id, "reviewing");
         workspace.keepRequestsOpen(false);
         return { status: "assessed", reviews: [], requests };
       }
-      const reports = await reviewAnswer(id, input, signal);
+      const reports = await reviewAnswerIn(id, input, signal);
       if (signal.aborted) return { status: "cancelled" };
       const main = reports.find((report) => report.status === "completed");
       // A request stays pending while its check left it not held or uncertain, or could not run.
-      const settled = main?.status === "completed" && (main.obligations ?? []).every((item) =>
-        obligationOutcome(item.status, item.standing ?? "untested") === "held");
-      workspace.keepRequestsOpen(!settled);
+      workspace.keepRequestsOpen(!answerHeld(reports));
       if (plan !== undefined && main?.status === "completed") showPlan(id, withReview(plan, main.obligations ?? []));
-      surface.inspectFor(id, inspectAnswer(requests, reports));
+      surface.inspectFor(id, inspectAnswer(requests, reports, triage));
       await journal(id, workspace, reviewEntry(snapshot, requests, [], [], reports));
       return { status: "assessed", reviews: reports, requests };
     }),

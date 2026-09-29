@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry } from "../src/assurance-journal.js";
+import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry, triageEntry } from "../src/assurance-journal.js";
 import { HANDOFF_REPLY_LIMIT, handoffBrief, hasHistory, openFindings } from "../src/handoff-brief.js";
 import type { Finding, ReviewReport } from "../src/review.js";
 
@@ -72,6 +72,9 @@ it("reads the last review of the pending changes from the journal, until the ope
   await appendAssurance(directory, reviewEntry(snapshot("2"), [], [], [], [report("2", "second")]));
   expect(await lastOpenReview(directory)).toEqual({ tree: "2", reviews: [expect.objectContaining({ status: "completed",
     findings: [expect.objectContaining({ statement: "second", path: "a.ts", line: 3, severity: "medium" })] })] });
+  await appendAssurance(directory, triageEntry("2", ["thanks"], "typesafe:jev-1.13.0",
+    { decided: true, checkable: false, probability: 0.05, reason: "Jev: 0.05 checkable" }, false, []));
+  expect((await lastOpenReview(directory))?.tree).toBe("2");
   await appendAssurance(directory, decisionEntry("2", "application_conflict"));
   expect((await lastOpenReview(directory))?.tree).toBe("2");
   await appendAssurance(directory, decisionEntry("2", "rejected"));

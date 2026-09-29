@@ -316,7 +316,8 @@ reports that gap.
 
 Each workspace keeps an assurance journal, `assurance.jsonl` beside its
 checkout: for every reviewed version, your requests, each verifier's claim and
-outcome, each reviewer's findings, and whether you applied or rejected it.
+outcome, each reviewer's findings, and whether you applied or rejected it;
+for an answer, whether the first pass sent it to the full check and why.
 
 When a check or review confirms a problem this change caused, Tesota sends it
 back to the agent, with your requests unchanged. It then runs every

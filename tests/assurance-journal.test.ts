@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { appendAssurance, decisionEntry, reviewEntry } from "../src/assurance-journal.js";
+import { appendAssurance, decisionEntry, reviewEntry, triageEntry } from "../src/assurance-journal.js";
 import { hostProvider } from "../src/host-environment.js";
 
 const roots: string[] = [];
@@ -38,4 +38,17 @@ it("records how deeply a candidate was reviewed and what the review took", () =>
   const measurement = { at: "2026-09-25T00:00:00.000Z", depth: "deep" as const, correction: false, durationMs: 42_000, tokens: 118_000 };
   expect(reviewEntry({ base: "b".repeat(40), tree, diff: "", changes: [] }, [], [], [], [], depth, measurement))
     .toMatchObject({ kind: "review", depth, measurement });
+});
+
+it("records every first pass of the answer check, a skip included, with the model and its probability", () => {
+  const tree = "t".repeat(40);
+  expect(triageEntry(tree, ["hi"], "typesafe:jev-1.13.0",
+    { decided: true, checkable: false, probability: 0.09, reason: "Jev: 0.09 checkable" }, false,
+    [{ tool: "bash", subject: `curl ${"x".repeat(400)}`, outcome: "failed" }])).toMatchObject({
+    kind: "triage", tree, requests: ["hi"], model: "typesafe:jev-1.13.0", decided: true, checkable: false, probability: 0.09,
+    reason: "Jev: 0.09 checkable", runsCheck: false,
+    toolCalls: [{ tool: "bash", subject: `curl ${"x".repeat(295)}`, outcome: "failed" }] });
+  const undecided = triageEntry(tree, ["hi"], "off", { decided: false, checkable: true, reason: "the first pass is off" }, true, []);
+  expect(undecided).toMatchObject({ kind: "triage", decided: false, runsCheck: true });
+  expect(undecided).not.toHaveProperty("probability");
 });
