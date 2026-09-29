@@ -72,7 +72,8 @@ Its network is declared `open` for now (decision 044). With the corrected
 Docker documents a transparent proxy that allows a TCP connection only when a
 policy rule matches the destination, but not what a refused connection
 receives first, so the control cannot tell the proxy from the destination.
-Until a controlled server shows whether anything reaches it, Docker
+Until a controlled server shows whether anything reaches it
+([#166](https://github.com/sequelcore/tesota/issues/166)), Docker
 Sandboxes is not a place where commands run without asking; there is no
 Docker with approval either, so its sessions run on this computer and ask.
 `tesota sandbox`, `tesota setup` and `/sandbox` say why a ready provider is
