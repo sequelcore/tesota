@@ -165,3 +165,92 @@ serialized.
   accident:** what is applied is exactly what was checked; the operator's own
   edits are never overwritten, even one made during application; and a
   partial effect is undone or recorded as recovery required, never silent.
+
+## Proposed: working in the source
+
+**Status: proposed, not built.** Everything above describes the current
+design.
+
+**Why change it.** A workspace per session makes each session a small cloud
+environment: a clone, a sandbox of its own and its own dependencies. On
+Tesota's repository in the WSL sandbox, a session that only answered a
+greeting kept a 3.5 MB clone and a 900 MB `node_modules`, and four such
+sessions held 3.6 GB (2026-09-29). Ignored files such as `.env` are missing
+from each clone, and keeping the clone current needs a rebase before every
+request and the application machinery above. Tesota is a local harness, and
+local harnesses do not work this way:
+
+| Harness | Where the agent works | How work is reviewed and undone |
+| --- | --- | --- |
+| Claude Code | the operator's directory | checkpoints of what its edit tools change, `/rewind`; commands' changes are not tracked; a Git worktree only with `--worktree` |
+| Codex CLI | the operator's directory, writable in its sandbox | the operator's own Git; outside a repository `codex exec` needs `--skip-git-repo-check` |
+| Gemini CLI | the operator's directory | a shadow Git repository whose work tree is the project, for a repository or a plain directory alike; `/restore`; off by default |
+| OpenCode | the operator's directory | a shadow Git repository in its data folder whose work tree is the project; revert per step; none outside a Git repository |
+| t3code, OpenCode | a worktree only when asked | a setup script only when the project declares one |
+
+Only cloud agents give each task an environment: Codex cloud runs setup once
+and resumes a cached container for up to 12 hours. The distinction Tesota
+draws between a repository and a folder exists only because a workspace is a
+copy: a clone needs Git, and a folder has none. No local harness draws it.
+
+**Design.**
+
+- **The source by default.** A session works in the operator's directory.
+  The sandbox may write the source and nothing else, as Codex's
+  workspace-write and Claude Code's sandbox allow, with `.git` read-only
+  inside it, so hooks and history cannot change.
+- **One shadow repository per source.** The mechanism that serves folders
+  today serves every source: a Git directory under `~/.tesota` whose work
+  tree is the source, never the operator's own `.git`, honoring the source's
+  `.gitignore` where it has one. The refusal of home directories and drive
+  roots, the size warning and the excluded lock files apply to every source.
+  It snapshots the whole tree, since the agent works mostly through
+  commands, which file-level checkpoints miss.
+- **A turn is a pair of trees.** Tesota records the tree before and after
+  each turn. Checks, review and correction refer to those tree ids, so
+  evidence stays bound to exact content, and a correction round reviews only
+  the tree the correction changed.
+- **Keep or revert.** The agent's changes are in the operator's files as
+  soon as it makes them, as in every local harness. Review runs on the
+  turn's changes, and the operator keeps or reverts them. Reverting restores
+  a path only if it still holds exactly what the turn left there, through
+  the move-aside, journal and recovery rules above run in the other
+  direction; a file edited since is never replaced.
+- **Dependencies once per repository.** The WSL sandbox mounts one Linux
+  `node_modules` per repository, on WSL's disk, over the source's
+  `node_modules`, which keeps its Windows binaries. A session that runs no
+  command costs nothing, and a new session installs nothing that is already
+  there.
+- **Isolation on request.** A second session that should work on the same
+  source in parallel gets an isolated workspace: the current design, kept for
+  that case. One session at a time writes to a source in place.
+- **Base checks on demand.** A failed check is compared with the tree before
+  the turn, [test by test](assurance.md#verifiers), in a temporary checkout
+  from the shadow repository, made only when a check fails.
+
+**What it changes.**
+
+- The promise moves from "reviewed before the operator applies or rejects
+  it" to "reviewed before the operator keeps or reverts it". Unreviewed work
+  is in the source between the turn and the decision.
+- The agent can read the source's ignored files, `.env` included, as in the
+  other local harnesses. Anthropic's sandbox runtime allows reads by default
+  and denies the paths its settings list, such as `**/.env`; Tesota's sandbox
+  should hide such files the same way, and which patterns is open.
+- An edit the operator makes during a turn counts as the turn's. Tesota
+  names the files that changed outside the agent's own file tools, but a
+  command's writes and the operator's cannot be told apart.
+- Creating workspaces, the rebase before each request, and application with
+  its whole-source admission leave the default path; the isolated workspace
+  keeps them.
+
+**Order.** Unify the shadow repository for repositories and folders; work in
+the source with turn snapshots, keep and revert; share dependencies per
+repository; keep the isolated workspace for parallel sessions; then remove
+what only the default path used.
+
+Sources: [Claude Code checkpointing](https://code.claude.com/docs/en/checkpointing),
+[Claude Code worktrees](https://code.claude.com/docs/en/worktrees),
+[Codex cloud environments](https://learn.chatgpt.com/docs/environments/cloud-environment),
+Gemini CLI's `packages/core/src/services/gitService.ts` and OpenCode's
+`packages/opencode/src/snapshot/index.ts`.

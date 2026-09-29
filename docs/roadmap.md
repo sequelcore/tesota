@@ -24,6 +24,11 @@ the workflow and limits.
 - Use the WSL sandbox as the default on a real project, including its toolchain
   preparation and the option to approve one command on the host. Correct the
   obstacles real use reveals. [Execution](design/execution.md)
+- Work in the operator's directory by default, as local harnesses do, with a
+  shadow repository for every source, turn snapshots, and keep or revert; keep
+  the isolated workspace for parallel sessions. A workspace per session costs
+  each session its own clone, sandbox and 900 MB of dependencies.
+  [Proposal](design/workspace.md#proposed-working-in-the-source)
 - Evaluate scope behavior on cases that tempt the agent to make unrelated
   changes. The reviewer's extra-work check is built, but
   the working agent's prompt has no measured scope intervention yet. Register
