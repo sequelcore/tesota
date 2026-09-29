@@ -222,6 +222,11 @@ session: the judges and the first pass use it from their next check, and
 the agent's role from the next new session. You can also type it, for
 example `/roles triage typesafe:jev-1.13.0` or `/roles advisor off`.
 
+`/usage` shows how much each account has left and when it resets, as
+`tesota usage` does ([authentication](authentication.md#how-much-each-account-has-left)),
+so you can see which account to give a role before it runs out; `/usage
+<route>` reads one.
+
 ## Review and apply
 
 When a request leaves changes, Tesota runs your checks on exactly that

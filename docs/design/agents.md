@@ -260,7 +260,29 @@ is one model. A failed request names its route, since a lapsed plan fails
 with only the model's refusal, as on 2026-09-29. `/model` continues in
 place only on one account: another route's account needs its own runtime
 or Claude Code process, so it starts a new conversation with the brief. A
-route that a role uses is not removed until the roles choose another. A list price is what an API key is billed, and on a plan only a
+route that a role uses is not removed until the roles choose another.
+
+**What each account has left** (decision 051). `tesota usage` and `/usage`
+ask each route's provider, only when run, and show a meter per window or
+credit: the share left in 20 segments, as Codex's `/status` draws it, and
+when it resets. Codex's windows come from `wham/usage`, the private
+endpoint Codex's own client reads, with the route's token, which Pi
+refreshes; Claude Code's from the Agent SDK's experimental usage report,
+read without sending a request and with Claude Code's ordinary traffic on,
+since a working session turns it off and the report then has no limits;
+OpenRouter's from the key's limit; OpenCode Go's from its usage endpoint.
+A window is labelled by its own length, so a free Codex account's 30-day
+window is not taken for a week. The segment count is proved
+(`src/verification/usage-meter-rule.ts`): a bar is empty only when nothing
+is left and full only when nothing is used. Each reading is saved in
+`~/.tesota/usage.json` with its time, and a failed read, often a usage
+endpoint limiting its own requests, shows the last one of the past hour with
+its age, as Claude Code's `/usage` does; after that the route is unknown.
+The Anthropic API route, OpenCode Zen and TypeSafe offer no source for the
+key Tesota holds, so they say where to look. No key or token is shown or
+saved.
+
+A list price is what an API key is billed, and on a plan only a
 way to compare models, so `tesota models` shows both separately.
 
 **Tesota never handles Claude subscription credentials.** On the

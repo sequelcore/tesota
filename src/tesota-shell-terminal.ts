@@ -36,6 +36,8 @@ export interface TesotaShellTerminalOptions {
   readonly onHandoff?: (sessionId: string) => void;
   /** `/sandbox`, with its argument when one was given (decision 030). */
   readonly onSandbox?: (sessionId: string, argument: string | undefined) => void;
+  /** `/usage`, with a route when one was given: how much each account has left (decision 051). */
+  readonly onUsage?: (sessionId: string, args: readonly string[]) => void;
   readonly sandboxPicker?: (sessionId: string) => { title: string; entries: readonly ShellChoice[] };
   readonly onQuit?: () => void;
   readonly onEntry?: (sessionId: string, entry: TranscriptEntry) => void;
@@ -137,6 +139,7 @@ const shellCommands = [
   { name: "roles", description: "Choose each role's model" },
   { name: "handoff", description: "Start the agent's conversation afresh" },
   { name: "sandbox", description: "Show or switch where this session's commands run" },
+  { name: "usage", description: "Show how much each account has left" },
   { name: "result", description: "Show or hide the review" },
   { name: "sidebar", description: "Show or hide sessions" },
   { name: "themes", description: "Choose the shell's theme from a list" },
@@ -974,6 +977,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     roles: (session, args) => { this.changeRoleModel(session, args); },
     handoff: (session) => { this.options.onHandoff?.(session.id); },
     sandbox: (session, args) => { this.changeSandbox(session, args); },
+    usage: (session, args) => { this.options.onUsage?.(session.id, args); },
     result: () => { this.showResult = !this.showResult; this.compose(); },
     sidebar: () => { this.toggleSidebar(); },
     themes: (session, args) => {
@@ -983,7 +987,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     details: (session, args) => { this.toggleDetails(session, args); },
     help: (session) => {
       this.writeTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
-        "/handoff /sandbox [where] /result /sidebar /themes [name] " +
+        "/handoff /sandbox [where] /usage [route] /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
         "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +

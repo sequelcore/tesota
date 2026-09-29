@@ -11,6 +11,7 @@ Usage: tesota [--help | -h | help]
        tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]
        tesota auth login <codex|claude-code> --as <name>
        tesota models [<route>]
+       tesota usage [<route>]
        tesota roles [<role> [<route:model|default|off>]]
        tesota prune [--force]
        tesota recover [undo|finish|resolved [<id>]]
@@ -101,6 +102,10 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
 } else if (args[0] === "models") {
   const { runModelsCommand } = await import("./models-command.js");
   process.exitCode = runModelsCommand(args.slice(1), (text) => { process.stdout.write(text); });
+} else if (args[0] === "usage") {
+  const { runUsageCommand } = await import("./account-usage.js");
+  const { usageSources } = await import("./integrations/usage-sources.js");
+  process.exitCode = await runUsageCommand(args.slice(1), (text) => { process.stdout.write(text); }, usageSources());
 } else if (args[0] === "roles") {
   const { offeredModels, rolePicker, runRolesCommand } = await import("./models-command.js");
   const { isModelRole } = await import("./model-roles.js");

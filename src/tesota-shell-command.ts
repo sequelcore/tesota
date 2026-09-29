@@ -8,6 +8,8 @@ import { confinesCommands, type ExecutionEnvironment, type PreparationStep } fro
 import { chooseSessionExecution, packageCacheDirectory, providersFor, readSandboxPreference, releaseWorkspace,
   SANDBOX_NAMES, SANDBOX_PREFERENCES, type SandboxPreference, type SessionExecution } from "./execution-providers.js";
 import { hostProvider } from "./host-environment.js";
+import { runUsageCommand } from "./account-usage.js";
+import { usageSources } from "./integrations/usage-sources.js";
 import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, sameAccount, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
@@ -338,6 +340,13 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onModel: (id, argument) => { void agentModel.change(id, argument); },
     onHandoff: (id) => { void agentModel.handOff(id); },
     onSandbox: (id, argument) => { void sessionSandbox.change(id, argument); },
+    onUsage: (id, args) => {
+      surface.writeTo(id, "Reading each account's usage.");
+      let text = "";
+      void runUsageCommand(args, (written) => { text += written; }, usageSources()).then((code) => {
+        surface.writeTo(id, text.trimEnd(), code === 0 ? undefined : "warning");
+      }, () => { surface.writeTo(id, "Usage could not be read. No key or token was shown.", "warning"); });
+    },
     sandboxPicker: (id) => {
       const own = saved(id)?.sandbox;
       const preference = readSandboxPreference();

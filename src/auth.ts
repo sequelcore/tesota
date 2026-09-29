@@ -231,7 +231,8 @@ export interface RouteStatus {
   readonly signIn: string;
 }
 
-const kindLabels: Readonly<Record<string, string>> = { codex: "Codex", "claude-code": "Claude Code", anthropic: "Anthropic API",
+/** Each kind's name, as tables show it. */
+export const kindLabels: Readonly<Record<string, string>> = { codex: "Codex", "claude-code": "Claude Code", anthropic: "Anthropic API",
   openrouter: "OpenRouter", opencode: "OpenCode", typesafe: "TypeSafe" };
 
 /** A key route's sign-in: a saved key, one from the environment, or none. */

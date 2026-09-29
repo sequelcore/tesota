@@ -13,7 +13,8 @@ each signed in its own way:
 | `typesafe`, for the `triage` role only | `tesota auth login typesafe`: your TypeSafe key, from [console.typesafe.ai](https://console.typesafe.ai) | Tesota, in `~/.tesota/auth/typesafe.json`; `TYPESAFE_API_KEY` also works |
 
 In an interactive terminal, `tesota auth login` and `tesota auth logout`
-offer a route selector. `tesota auth status` defaults to `codex`. For
+offer a route selector. `tesota auth status` shows every route in one table,
+or one route when you name it. For
 `claude-code`, status shows only whether Claude Code is signed in and how,
 and Tesota does not sign it out,
 because that would also sign out your own Claude Code; use `claude auth
@@ -25,6 +26,38 @@ Usage on the `claude-code` route draws on your Claude plan's limits, the same
 pool as your own Claude Code; the `anthropic` route is billed to the API key,
 `openrouter` to your OpenRouter credits, `opencode` to your Zen balance, and
 `opencode-go` counts against your Go subscription's limits.
+
+## How much each account has left
+
+`tesota usage` asks each provider how much every route has left and when it
+resets, and `/usage` shows the same inside a session; name a route to read
+only that one, as in `tesota usage codex-work`:
+
+```text
+codex  Codex · plus
+  5h         [████████████████████] 100% left · resets in 3h 7m
+  week       [█████████████░░░░░░░]  67% left · resets in 6d 1h
+
+claude-2  Claude Code · pro
+  5h         [████████████████████] 100% left
+  week       [░░░░░░░░░░░░░░░░░░░░]   0% left · resets in 1d 9h
+
+openrouter  OpenRouter
+  key limit  [████████████░░░░░░░░]  61% left · $2.45 of $4.00 left
+```
+
+A bar is the share **left**, empty only when nothing is. Windows are named by
+their length, so a free Codex account shows its 30-day window. An OpenRouter
+key with a limit shows what remains of it; one without a limit shows what it
+has used. OpenCode shows its Go subscription's windows. The Anthropic API
+route, OpenCode Zen and TypeSafe have no usage source for the key Tesota
+holds, so the table says where to look instead.
+
+Codex's usage comes from a private ChatGPT endpoint and Claude Code's from an
+experimental report, so either may stop working. When a read fails, the table
+shows that route's last reading from the past hour with its age; after an
+hour it says `unknown` with the reason. Readings are saved in
+`~/.tesota/usage.json` without any key or token.
 
 ## OpenRouter
 
