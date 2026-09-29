@@ -10,6 +10,7 @@ import * as z from "zod";
 import { EgressProxy } from "./egress-proxy.js";
 import { PACKAGE_REGISTRY_HOSTS, type RunOutcome } from "./execution-environment.js";
 import { readsToolFolder } from "./verification/tool-folder-rule.js";
+import { countsAsDrive, settingsAsked } from "./verification/wsl-settings-rule.js";
 
 // This side runs on Linux, so its paths follow Linux's rules wherever it is tested.
 const { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } = posix;
@@ -122,24 +123,23 @@ export function windowsMounts(mountinfo: string): string[] {
 const DRIVE_ROOT = /^[A-Za-z]:(?:\\134|\\|\/)?$/u;
 
 /**
- * Mount points of Windows' drives themselves, which hold workspaces, as WSL
- * tells them apart: a 9p share of `drvfs` whose path is a drive's root, or a
- * `drvfs` mount of one.
+ * Mount points of Windows' drives themselves, which hold workspaces, as
+ * `countsAsDrive` decides (proved): a `drvfs` mount of a drive's root, or a 9p
+ * share of `drvfs` whose path is one.
  */
 export function windowsDrives(mountinfo: string): string[] {
   return mounts(mountinfo).filter((mount) => {
-    if (mount.type === "drvfs") return DRIVE_ROOT.test(mount.source);
-    if (mount.type !== "9p") return false;
     const share = mount.options.split(",").find((option) => option.startsWith("aname=drvfs;"));
-    const path = share?.split(";").find((part) => part.startsWith("path="))?.slice("path=".length);
-    return path !== undefined && DRIVE_ROOT.test(path);
+    const root = mount.type === "drvfs" ? mount.source : share?.split(";").find((part) => part.startsWith("path="))?.slice("path=".length);
+    return countsAsDrive(mount.type === "drvfs" ? "drvfs" : mount.type === "9p" ? "plan9" : "other", share !== undefined,
+      root !== undefined && DRIVE_ROOT.test(root));
   }).map((mount) => mount.mountPoint);
 }
 
 /**
  * Whether WSL's configuration asks for what the sandbox needs at the
- * distribution's next start: interop off, and Windows' drives owned by this
- * user and group.
+ * distribution's next start, as `settingsAsked` decides (proved): interop off,
+ * and Windows' drives owned by this user and group.
  */
 export function settingsWritten(configuration: string, uid: number, gid: number): boolean {
   const values = new Map<string, string>();
@@ -151,7 +151,7 @@ export function settingsWritten(configuration: string, uid: number, gid: number)
     if (separator > 0) values.set(`${section}.${line.slice(0, separator).trim().toLowerCase()}`, line.slice(separator + 1).trim().replace(/^"(.*)"$/u, "$1"));
   }
   const options = (values.get("automount.options") ?? "").split(",").map((option) => option.trim());
-  return values.get("interop.enabled")?.toLowerCase() === "false" && options.includes(`uid=${uid}`) && options.includes(`gid=${gid}`);
+  return settingsAsked(values.get("interop.enabled")?.toLowerCase() === "false", options.includes(`uid=${uid}`), options.includes(`gid=${gid}`));
 }
 
 /**

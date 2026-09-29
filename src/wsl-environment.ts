@@ -10,6 +10,7 @@ import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionPr
   type NetworkControl, type PrepareOptions, type PreparationStep, type ProviderReadiness, type RunOptions, type RunResult,
   type SetupStep } from "./execution-environment.js";
 import { miseInstallScript, planToolchain } from "./toolchain.js";
+import { distributionStep } from "./verification/wsl-settings-rule.js";
 import { windowsSystemProgram } from "./windows-system.js";
 
 /**
@@ -287,7 +288,9 @@ async function readinessSteps(launch: Launch): Promise<SetupStep[]> {
       action: { kind: "process", program: wsl, args } }];
   }
   const checked = await checkDistribution(launch);
-  if (checked === undefined || checked.problems.length > 0) {
+  // Setup while anything it installs or writes is missing; a restart only for settings already written (proved).
+  const step = distributionStep(checked === undefined || checked.problems.length > 0, (checked?.settings.length ?? 0) > 0);
+  if (step === "setup" || checked === undefined) {
     // The script travels encoded, so no quoting between Windows and the distribution's shell can change it.
     const args = ["--distribution", WSL_DISTRIBUTION, "--user", "root", "--exec", "sh", "-c",
       `echo ${Buffer.from(distributionSetupScript(), "utf8").toString("base64")} | base64 -d | sh`];
@@ -295,7 +298,7 @@ async function readinessSteps(launch: Launch): Promise<SetupStep[]> {
     return [{ description: `Set up Tesota's WSL distribution: bubblewrap, Git, Node.js, Bun, its own user and settings (${problems})`,
       command: `"${wsl}" ${args.slice(0, 7).join(" ")} "<setup script>"`, action: { kind: "process", program: wsl, args } }];
   }
-  if (checked.settings.length === 0) return [];
+  if (step === "ready") return [];
   const args = ["--terminate", WSL_DISTRIBUTION];
   return [{ description: `Restart Tesota's WSL distribution so its settings apply (${checked.settings.join("; ")})`,
     command: `"${wsl}" ${args.join(" ")}`, action: { kind: "process", program: wsl, args } }];
