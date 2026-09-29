@@ -76,7 +76,8 @@ it("treats two routes of one kind as one lab, and the same model on both as the 
 });
 
 it("keeps an added route's login in a file of its own, beside the default route's", async () => {
-  const directory = folder();
+  // The store creates its folder itself, so it can confirm who owns it.
+  const directory = join(folder(), "auth");
   const credential = { type: "oauth" as const, access: "a", refresh: "r", expires: Date.now() + 60_000, accountId: "work" };
   await TesotaCredentials.forRoute("codex-work", "openai-codex", directory).modify("openai-codex", async () => credential);
   expect(existsSync(join(directory, "codex-work.json"))).toBe(true);
