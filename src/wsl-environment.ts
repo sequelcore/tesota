@@ -141,6 +141,7 @@ function runIn(connection: Connection, workspace: string, command: string, optio
     });
     options.signal?.addEventListener("abort", abort, { once: true });
     connection.send({ type: "run", id, command, cwd: within.split(sep).join("/"), env: { ...options.env },
+      ...options.hidden === undefined || options.hidden.length === 0 ? {} : { hidden: [...options.hidden] },
       ...options.timeoutSeconds === undefined ? {} : { timeoutSeconds: options.timeoutSeconds } });
   });
 }

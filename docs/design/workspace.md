@@ -219,7 +219,7 @@ copy: a clone needs Git, and a folder has none. No local harness draws it.
 - **The source by default.** A session works in the operator's directory.
   The sandbox may write the source and nothing else, as Codex's
   workspace-write and Claude Code's sandbox allow, with `.git` read-only
-  inside it, so hooks and history cannot change.
+  inside it, so hooks and history cannot change (built in the WSL sandbox).
 - **One shadow repository per source** (built). The mechanism that served
   folders serves every source: a Git directory under `~/.tesota` whose work
   tree is the source, never the operator's own `.git`, honoring the source's
@@ -259,8 +259,9 @@ copy: a clone needs Git, and a folder has none. No local harness draws it.
   workspace, which keeps the current promise, and Tesota states its cost
   before creating it, such as the dependencies it installs, their size and
   the time to prepare, and shows what each isolated session holds on disk.
-- **Secret files hidden by default.** In place, the agent could read the
-  source's ignored files. The sandbox hides a default list, such as `.env`,
+- **Secret files hidden by default** (built in the WSL sandbox and the
+  agent's file tools; see [execution](execution.md#wsl-sandbox)). In place,
+  the agent could read the source's ignored files. The sandbox hides a default list, such as `.env`,
   `.env.*`, private keys and package registry credentials, and a repository
   may allow a listed file its checks need, stored with its approved checks.
   Gemini CLI hides `.env` and `.env.*` in every sandbox by default

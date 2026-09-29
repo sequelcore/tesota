@@ -256,6 +256,23 @@ as Docker Sandboxes keeps it. Nothing else of WSL or Windows is in it. A command
 runs in `/bin/sh` and gets only its `PATH`, its home, the proxy and what it
 was given.
 
+**Guarded paths.** Inside the workspace, its `.git` is mounted read-only, so
+a command reads the repository's history but cannot change its hooks, refs
+or configuration, as Gemini CLI's sandbox protects `.git`. Files that may
+hold credentials are hidden: each one that exists when the command starts
+has an empty, read-only file mounted over it (`guardedPaths` in
+`src/bubblewrap-sandbox.ts`). They are environment files (`.env`, `.env.*`),
+private keys (`id_rsa` and its kin, `*.key`, `*.p12`, `*.pfx`) and package
+registry credentials (`.npmrc`, `.pypirc`, `.netrc`, `.yarnrc.yml`, and
+`credentials` in `.aws`, `.cargo` or `.gem`, `.docker/config.json`), found
+outside dependency and build folders; in a repository, only those its Git
+does not track, since a tracked file is shared work whose history is
+readable anyway (`src/secret-files.ts`). The agent's file tools refuse the
+same files and leave them out of grep's results. A command run on the
+operator's computer, which the operator approves one at a time, sees every
+file, and Docker Sandboxes hides none. Setup's stages see them too, so a
+private registry's credentials still reach the lockfile install.
+
 **Network.** A command's network namespace has only a loopback interface.
 Tesota's egress proxy runs in the WSL process and listens on a Unix socket bound into each sandbox, where a
 small relay started before the command passes loopback connections to it;

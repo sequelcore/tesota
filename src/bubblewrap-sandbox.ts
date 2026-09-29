@@ -1,7 +1,7 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { constants, homedir, release } from "node:os";
 import { posix } from "node:path";
 import { createInterface } from "node:readline";
@@ -69,6 +69,8 @@ export interface SandboxLayout {
   readonly modules?: string;
   readonly relay: string;
   readonly socket: string;
+  /** An empty file mounted read-only over each file hidden from commands. */
+  readonly mask: string;
   /** The JavaScript runtime that runs the relay, which lies inside a readable folder. */
   readonly runtime: string;
   readonly system: readonly SystemFolder[];
@@ -199,14 +201,41 @@ export function commandVariables(layout: SandboxLayout, path: string, given: Rea
     npm_config_cache: join(layout.cache, "npm"), BUN_INSTALL_CACHE_DIR: join(layout.cache, "bun"), ...given };
 }
 
+/** Paths inside the workspace a command may read but not change, and files it may not read at all. */
+export interface GuardedPaths {
+  readonly readOnly: readonly string[];
+  readonly hidden: readonly string[];
+}
+
+/**
+ * What to guard in the workspace for one command: its Git data read-only, so
+ * a command cannot change the repository's hooks or history, and each file
+ * hidden from the agent that exists as a plain file. `hidden` is relative
+ * with forward slashes; a path that leaves the workspace, or that is a link
+ * or folder, is not mounted over.
+ */
+export async function guardedPaths(workspace: string, hidden: readonly string[]): Promise<GuardedPaths> {
+  const git = join(workspace, ".git");
+  const readOnly = await lstat(git).then((metadata) => metadata.isSymbolicLink() ? [] : [git], () => []);
+  const files: string[] = [];
+  for (const path of hidden) {
+    const target = resolve(workspace, ...path.split("/"));
+    if (path.length === 0 || target === workspace || !within(target, workspace)) continue;
+    if ((await lstat(target).catch(() => undefined))?.isFile() === true) files.push(target);
+  }
+  return { readOnly, hidden: files };
+}
+
 /**
  * bubblewrap's arguments for one command: new user, process, network, IPC,
  * UTS and cgroup namespaces; the system and tool folders read-only; the
- * workspace and the session's folders writable; the repository's toolchain
- * folder writable only in setup; nothing else. `--info-fd 3` reports the
- * sandbox's first process, whose end ends every process in it.
+ * workspace and the session's folders writable, except the workspace's
+ * guarded paths; the repository's toolchain folder writable only in setup;
+ * nothing else. `--info-fd 3` reports the sandbox's first process, whose end
+ * ends every process in it.
  */
-export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command: string, phase: NetworkPhase): string[] {
+export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command: string, phase: NetworkPhase,
+  guarded: GuardedPaths = { readOnly: [], hidden: [] }): string[] {
   const system = layout.system.flatMap((folder) => folder.link === undefined ? ["--ro-bind", folder.path, folder.path]
     : ["--symlink", folder.link, folder.path]);
   const modules = layout.modules === undefined ? [] : ["--bind", layout.modules, join(layout.workspace, "node_modules")];
@@ -217,6 +246,8 @@ export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command:
     "--bind", layout.cache, layout.cache,
     phase === "setup" ? "--bind" : "--ro-bind", layout.toolchains, layout.toolchains,
     "--bind", layout.workspace, layout.workspace, ...modules,
+    ...guarded.readOnly.flatMap((path) => ["--ro-bind", path, path]),
+    ...guarded.hidden.flatMap((path) => ["--ro-bind", layout.mask, path]),
     "--ro-bind", layout.relay, layout.relay, "--bind", layout.socket, layout.socket,
     "--chdir", cwd, "--info-fd", "3", "--", layout.runtime, layout.relay, layout.socket, String(SANDBOX_PROXY_PORT), command];
 }
@@ -232,7 +263,8 @@ export type SetupStageMessage = Readonly<{ description: string; script: string; 
  * succeeded here.
  */
 export type HostMessage =
-  | Readonly<{ type: "run"; id: string; command: string; cwd: string; env: Readonly<Record<string, string>>; timeoutSeconds?: number | undefined }>
+  | Readonly<{ type: "run"; id: string; command: string; cwd: string; env: Readonly<Record<string, string>>; timeoutSeconds?: number | undefined;
+    hidden?: readonly string[] | undefined }>
   | Readonly<{ type: "stop"; id: string }>
   | Readonly<{ type: "allow"; destinations: readonly string[] }>
   | Readonly<{ type: "setup"; id: string; fingerprint: string; destinations: readonly string[]; env: Readonly<Record<string, string>>;
@@ -240,7 +272,7 @@ export type HostMessage =
 
 const hostMessage: z.ZodType<HostMessage> = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("run"), id: z.string(), command: z.string(), cwd: z.string(),
-    env: z.record(z.string(), z.string()), timeoutSeconds: z.number().positive().optional() }),
+    env: z.record(z.string(), z.string()), timeoutSeconds: z.number().positive().optional(), hidden: z.array(z.string()).optional() }),
   z.strictObject({ type: z.literal("stop"), id: z.string() }),
   z.strictObject({ type: z.literal("allow"), destinations: z.array(z.string()) }),
   z.strictObject({ type: z.literal("setup"), id: z.string(), fingerprint: z.string(), destinations: z.array(z.string()),
@@ -362,6 +394,8 @@ interface Running {
 /** A command to run in its own sandbox, from a folder relative to the workspace, in setup or for the agent. */
 interface Execution {
   readonly command: string;
+  /** Files hidden from the command, relative to the workspace with forward slashes. */
+  readonly hidden?: readonly string[] | undefined;
   readonly cwd: string;
   readonly env: Readonly<Record<string, string>>;
   readonly timeoutSeconds?: number | undefined;
@@ -479,13 +513,14 @@ class SandboxServer {
     return steps;
   }
 
-  #execute(id: string, execution: Execution, output: (chunk: Buffer, stream: "stdout" | "stderr") => void): Promise<Ended> {
+  async #execute(id: string, execution: Execution, output: (chunk: Buffer, stream: "stdout" | "stderr") => void): Promise<Ended> {
     const { layout, bubblewrap, proxy } = this.#parts;
     const cwd = resolve(layout.workspace, execution.cwd);
-    if (!within(cwd, layout.workspace)) return Promise.resolve({ outcome: "not_started", exitCode: null, refused: [] });
+    if (!within(cwd, layout.workspace)) return { outcome: "not_started", exitCode: null, refused: [] };
+    const guarded = await guardedPaths(layout.workspace, execution.hidden ?? []);
     const started = new Date();
     const path = [...this.#toolFolders, this.#parts.path].filter((entry) => entry.length > 0).join(delimiter);
-    const child = spawn(bubblewrap, bubblewrapArguments(layout, cwd, execution.command, execution.phase),
+    const child = spawn(bubblewrap, bubblewrapArguments(layout, cwd, execution.command, execution.phase, guarded),
       { env: commandVariables(layout, path, execution.env), stdio: ["ignore", "pipe", "pipe", "pipe"] });
     let info = "";
     child.stdio[3]?.on("data", (chunk: Buffer) => { info += chunk.toString("utf8"); });
@@ -566,7 +601,7 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   const layout: SandboxLayout = { workspace, home: join(state, "home"), account: homedir(), temp: join(state, "tmp"),
     cache: join(shared, "cache"), toolchains: join(shared, "toolchains"),
     ...existsSync(join(workspace, "package.json")) ? { modules: join(state, "node_modules") } : {},
-    relay: join(state, "relay.cjs"), socket: join(state, "proxy.sock"), runtime: process.execPath,
+    relay: join(state, "relay.cjs"), socket: join(state, "proxy.sock"), mask: join(state, "hidden"), runtime: process.execPath,
     system: systemFolders(), tools: toolsOnThisMachine() };
   for (const folder of [layout.home, layout.temp, join(layout.cache, "npm"), join(layout.cache, "bun"), layout.toolchains, layout.modules]) {
     if (folder !== undefined) await mkdir(folder, { recursive: true });
@@ -574,6 +609,9 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   // The mount point for the workspace's own node_modules, as Docker Sandboxes makes it.
   if (layout.modules !== undefined) await mkdir(join(workspace, "node_modules"), { recursive: true });
   await writeFile(layout.relay, RELAY_SOURCE, "utf8");
+  // Read-only, so an earlier start left one that cannot be written again.
+  await rm(layout.mask, { force: true });
+  await writeFile(layout.mask, "", { mode: 0o400 });
   await rm(layout.socket, { force: true });
   const proxy = await EgressProxy.start({ allowed: PACKAGE_REGISTRY_HOSTS.map((host) => `${host}:443`), socket: layout.socket });
   const server = new SandboxServer({ layout, path: commandPath(process.env["PATH"] ?? "", layout.tools), bubblewrap, proxy,

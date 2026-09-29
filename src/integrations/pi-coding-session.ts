@@ -9,6 +9,7 @@ import { type Api, type Model, type TSchema, Type } from "@earendil-works/pi-ai"
 import { allowedByRules, type CommandRule, offeredRule } from "../command-rules.js";
 import { confinesCommands, type ExecutionEnvironment } from "../execution-environment.js";
 import type { ReasoningLevel } from "../model-roles.js";
+import { hiddenFilesIn, isSecretPath } from "../secret-files.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ADVISOR_GUIDANCE, type Advisor, advisorTool } from "./advisor.js";
 import { PLAN_GUIDANCE, planTool } from "./plan-tool.js";
@@ -89,6 +90,39 @@ function existingRealpath(path: string): string {
   }
 }
 
+/** A path inside `root`, relative with forward slashes. */
+function within(root: string, path: string): string { return relative(root, path).split(sep).join("/"); }
+
+/** Refuse a file hidden from the agent, such as an ignored `.env`; its name alone is not hidden. */
+async function refuseHidden(root: string, actual: string): Promise<void> {
+  const path = within(root, actual);
+  if (isSecretPath(path) && (await hiddenFilesIn(root)).includes(path)) {
+    throw new Error(`${path} is hidden from the agent: it may hold credentials. Ask the operator if the work needs it.`);
+  }
+}
+
+/**
+ * Drop grep's lines from files hidden from the agent. Pi's grep prints each
+ * line as `path:line: text`, or `path-line- text` for context, with the path
+ * relative to the searched folder.
+ */
+async function withoutHidden<R>(root: string, searched: string, result: R): Promise<R> {
+  const hidden = await hiddenFilesIn(root);
+  if (hidden.length === 0 || typeof result !== "object" || result === null) return result;
+  const prefixes = hidden.map((path) => relative(searched, join(root, ...path.split("/"))).split(sep).join("/"))
+    .filter((path) => !path.startsWith(".."));
+  const content: unknown = Reflect.get(result, "content");
+  if (prefixes.length === 0 || !Array.isArray(content)) return result;
+  const filtered = content.map((part: unknown) => {
+    if (typeof part !== "object" || part === null || Reflect.get(part, "type") !== "text") return part;
+    const text: unknown = Reflect.get(part, "text");
+    if (typeof text !== "string") return part;
+    const lines = text.split("\n").filter((line) => !prefixes.some((prefix) => line.startsWith(`${prefix}:`) || line.startsWith(`${prefix}-`)));
+    return { ...part, text: lines.some((line) => line.trim().length > 0) ? lines.join("\n") : "No matches found" };
+  });
+  return { ...result, content: filtered };
+}
+
 /** Resolve a tool path the way Pi does and require it to stay inside the workspace. */
 export function confinedPath(root: string, path: string | undefined, write: boolean): string {
   const requested = (path ?? ".").replace(/^@/u, "");
@@ -101,12 +135,15 @@ export function confinedPath(root: string, path: string | undefined, write: bool
   return actual;
 }
 
+/** Confine a file tool to `root`, refusing files hidden from the agent; grep's output leaves them out. */
 function confine<P extends TSchema, D, S>(root: string, tool: ToolDefinition<P, D, S>,
   write: boolean): ToolDefinition<P, D, S> {
-  return { ...tool, execute: (id, params, signal, onUpdate, ctx) => {
+  return { ...tool, execute: async (id, params, signal, onUpdate, ctx) => {
     const path: unknown = typeof params === "object" && params !== null ? Reflect.get(params, "path") : undefined;
-    confinedPath(root, typeof path === "string" ? path : undefined, write);
-    return tool.execute(id, params, signal, onUpdate, ctx);
+    const actual = confinedPath(root, typeof path === "string" ? path : undefined, write);
+    await refuseHidden(root, actual);
+    const result = await tool.execute(id, params, signal, onUpdate, ctx);
+    return tool.name === "grep" ? withoutHidden(root, actual, result) : result;
   } };
 }
 
@@ -157,14 +194,16 @@ function computerGate(options: Pick<CodingSessionOptions, "approveCommand" | "co
  * default.
  */
 export function environmentBash(environment: ExecutionEnvironment, gate: CommandGate | undefined,
-  decideNetwork?: CodingSessionOptions["decideNetwork"]): BashOperations {
+  decideNetwork?: CodingSessionOptions["decideNetwork"], root?: string): BashOperations {
   return {
     exec: async (command, cwd, options) => {
       if (gate !== undefined && !await gate(command, options.signal)) {
         options.onData(Buffer.from("The operator declined this command. Do not retry it; ask or choose another approach.\n"));
         return { exitCode: 1 };
       }
-      const result = await environment.run(command, { cwd, onOutput: options.onData,
+      // Files hidden from the agent are hidden from its commands too, where the environment can hide them.
+      const hidden = root === undefined ? [] : await hiddenFilesIn(root);
+      const result = await environment.run(command, { cwd, onOutput: options.onData, ...hidden.length === 0 ? {} : { hidden },
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ...(options.timeout === undefined ? {} : { timeoutSeconds: options.timeout }) });
       if (decideNetwork !== undefined && (result.outcome === "exited" || result.outcome === "timed_out")) {
@@ -255,7 +294,8 @@ function piEntries(message: AgentSession["messages"][number]): ConversationEntry
 
 /** The agent's shell: bash, in whichever environment its commands run; on this computer, only as the operator allows. */
 function shellTool(root: string, options: WorkingAgentOptions): ToolDefinition {
-  const operations = environmentBash(options.environment, options.sandboxed ? undefined : computerGate(options), options.decideNetwork);
+  const operations = environmentBash(options.environment, options.sandboxed ? undefined : computerGate(options), options.decideNetwork,
+    root);
   return defineTool(createBashToolDefinition(root, { operations, exposeSessionEnvironment: false }));
 }
 

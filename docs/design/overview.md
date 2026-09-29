@@ -158,6 +158,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `review-depth.ts`, `review-forecast.ts`, `verification/review-estimate.ts` | Review depth, measured costs and the forecast, and its proved rules |
 | `correction.ts`, `assurance-journal.ts` | What goes back to the agent, and the per-workspace assurance journal |
 | `integrations/pi-coding-session.ts` | Pi sessions, confined tools, command approval, cancellation, activity and token counts |
+| `secret-files.ts` | Which files are hidden from the agent's tools and sandboxed commands |
 | `integrations/pi-explorer.ts`, `integrations/pi-explore.ts`, `verification/helper-answer.ts` | Read-only explorers, the `explore` tool, the page reader, and the proved rules for helpers' answers and allowances |
 | `integrations/advisor.ts`, `integrations/advisor-session.ts` | The advisor: the `advisor` tool, its allowance, the conversation it reads, and its session |
 | `model-roles.ts`, `models-command.ts`, `judge-warnings.ts`, `verification/judge-independence.ts` | The route and model for each role, `tesota roles`, the `tesota models` catalog, and warnings when a judge shares its author's model or lab |

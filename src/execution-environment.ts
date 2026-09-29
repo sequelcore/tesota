@@ -42,6 +42,12 @@ export interface RunOptions {
   readonly timeoutSeconds?: number;
   readonly signal?: AbortSignal;
   readonly onOutput: (chunk: Buffer) => void;
+  /**
+   * Files inside the workspace, relative with forward slashes, the command
+   * must not read or write, such as an ignored `.env`. A sandbox hides them;
+   * a command run on the operator's computer sees every file.
+   */
+  readonly hidden?: readonly string[];
 }
 
 /** One step a provider took to prepare an environment, such as installing a runtime. */

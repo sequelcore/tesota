@@ -29,13 +29,13 @@ let sandbox: ExecutionEnvironment | undefined;
 /** On Linux: the built sandbox process, run by this Node. */
 const direct: Launch = (args) => spawn(process.execPath, [resolve("dist", "bubblewrap-sandbox-server.js"), ...args]);
 
-async function run(command: string, signal?: AbortSignal):
+async function run(command: string, signal?: AbortSignal, hidden?: readonly string[]):
   Promise<{ outcome: string; exitCode: number | null; refused?: readonly string[]; output: string; ms: number }> {
   if (sandbox === undefined) throw new Error("Sandbox unavailable");
   let output = "";
   const started = Date.now();
   const result = await sandbox.run(command, { cwd: workspace, onOutput: (chunk) => { output += chunk.toString(); },
-    ...signal === undefined ? {} : { signal } });
+    ...signal === undefined ? {} : { signal }, ...hidden === undefined ? {} : { hidden } });
   return { ...result, output, ms: Date.now() - started };
 }
 
@@ -124,6 +124,19 @@ it.runIf(live)("works with Git, npm and Bun's scripts", async () => {
   expect(npm.exitCode).toBe(0);
   expect(npm.output).toContain("true");
 }, 300_000);
+
+it.runIf(live)("keeps the workspace's Git data read-only and each hidden file unreadable and unchanged", async () => {
+  if (!existsSync(join(workspace, ".git"))) expect((await run("git init -q")).exitCode).toBe(0);
+  await writeFile(join(workspace, ".env"), "TOKEN=secret-value\n");
+  const probe = await run("cat .env; echo; (echo changed > .env) 2>/dev/null; echo write=$?; " +
+    "(echo hook > .git/hooks/pre-commit) 2>/dev/null; echo hook=$?; git status --short >/dev/null && echo read-git", undefined, [".env"]);
+  expect(probe.output).not.toContain("secret-value");
+  expect(probe.output).toMatch(/write=[1-9]/u);
+  expect(probe.output).toMatch(/hook=[1-9]/u);
+  expect(probe.output).toContain("read-git");
+  expect(readFileSync(join(workspace, ".env"), "utf8")).toBe("TOKEN=secret-value\n");
+  expect(existsSync(join(workspace, ".git", "hooks", "pre-commit"))).toBe(false);
+}, 120_000);
 
 it.runIf(live)("runs a repository's pinned Node, its mise file's tools and its setup script, once, and keeps the tools read-only", async () => {
   const repository = join(root, "pinned");
