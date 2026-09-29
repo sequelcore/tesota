@@ -384,6 +384,39 @@ repository: its binary is 145 MB, so the distribution carries one.
 
 ## Planned
 
+Decision 049; evidence in the
+[execution landscape](../research/agent-execution-landscape.md#local-harnesses-tools-and-leaving-the-sandbox).
+Three things vary independently: the **toolchain** a sandbox holds, the
+**placement** of one command (the sandbox or this computer), and the
+**authority** behind that placement. A command runs on this computer only when
+the operator allowed that command, or a rule the operator made matches it;
+nothing the model or the repository says creates that authority.
+
+- **One command on this computer.** In a sandboxed session, the agent may ask
+  to run one command on this computer, with its reason, as Codex's
+  escalation and Claude Code's retry outside the sandbox do. The operator
+  answers once, always for commands beginning the same way in this
+  repository, or no. The command runs in the session's copy with the
+  operator's own environment, tools and logins. A saved rule matches a
+  command's leading words, such as `gh pr`, checked for each part of a
+  command joined by `&&`, `||`, `;` or `|`, and never matches a command with
+  redirection, substitution, variables or wildcards; a rule can never be an
+  interpreter or shell alone (`python`, `bash`, `node`) nor a deleting command
+  (`rm`). The match is a proved rule. The same rules replace today's
+  "always this session" on this computer, which allows every later command,
+  not the one asked about.
+- **What a repository needs, found without declaring it.** The plan of
+  decision 048 also reads the files each language's projects already have:
+  Python (`pyproject.toml`, `requirements.txt`), Java (`pom.xml`,
+  `build.gradle`, `.java-version`), Go (`go.mod`), Rust (`Cargo.toml`,
+  `rust-toolchain.toml`), Ruby (`Gemfile`, `.ruby-version`) and .NET
+  (`*.csproj`, `global.json`), installing the version a file names, or a
+  long-term-support release otherwise, through mise. Each language brings its
+  registry hosts (Maven Central and Gradle's, rubygems.org, nuget.org) and
+  any proxy setting it needs: Java ignores proxy variables, so it gets
+  `JAVA_TOOL_OPTIONS`. Mise's files and `.tesota/setup.sh` still override.
+  Destinations the operator allowed for the repository apply during setup
+  too.
 - Placeholder secrets: a repository declares a secret by name and host, and
   the sandbox sees only a placeholder that the proxy replaces.
 - More providers behind the same interface once they pass the same controls:
