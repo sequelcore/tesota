@@ -147,8 +147,10 @@ project. They are listed here as they are chosen.
   2. A short block in the working agent's prompt, measured on those cases:
      "nothing to change" framed as success, one sentence on scope, and
      leading with the result. The baseline (2026-09-29) left every fix case
-     right, a ceiling, so only the sentence on leading with the answer is
-     tried; the others wait for harder cases.
+     right, a ceiling, so only the sentence on leading with the answer was
+     tried; it cut the median reply from 37 to 30 words with every fact and
+     fix kept, and is adopted (decision 044). The others wait for harder
+     cases.
   3. The other direction in review: each change no request or claimed step
      needs is reported for the operator's call, refuted like any finding,
      never sent back, since an extra may be welcome. Built and adopted
