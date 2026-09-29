@@ -152,8 +152,10 @@ project. They are listed here as they are chosen.
      leading with the result. The baseline (2026-09-29) left every fix case
      right, a ceiling, so only the sentence on leading with the answer was
      tried; it cut the median reply from 37 to 30 words with every fact and
-     fix kept, and is adopted (decision 046). The others wait for harder
-     cases.
+     fix kept, and is adopted (decision 046). "Nothing to change" waits for
+     harder already fixed cases. The scope sentence cannot be measured yet:
+     `live:agent` has no case that tempts the agent beyond the request, such
+     as a fix next to code that invites a refactor, so that case comes first.
   3. The other direction in review: each change no request or claimed step
      needs is reported for the operator's call, refuted like any finding,
      never sent back, since an extra may be welcome. Built and adopted
@@ -162,11 +164,19 @@ project. They are listed here as they are chosen.
      met every registered threshold in two runs, after edge-case tests had
      first been called extras.
   4. A deterministic hint: changed files that no request or plan step names,
-     shown for attention only, since legitimate changes often touch them.
+     shown for attention only, since legitimate changes often touch them. Not
+     built; step 3 already marks extras, so it waits until real use shows
+     review missing them.
 
   Deferred until daily use shows drift: a frame of files each plan step
   declares, a `scope` role, plan approval (decision 025 has no plan modes),
-  an automatic "simplify" correction and native verbosity settings.
+  an automatic "simplify" correction and native verbosity settings. Today
+  scope is caught after the work, in review, not prevented during it. The
+  frame is the preventive step, and its design is in the
+  [recommendation on issue #165](https://github.com/sequelcore/tesota/issues/165#issuecomment-5873316043):
+  an optional list of files per plan step, an extension that must give a
+  reason, files changed by commands compared after each one, and a proved
+  rule that files no step names are unchanged, checked on the final tree.
 
 ### 2. Measurement on public benchmarks
 
