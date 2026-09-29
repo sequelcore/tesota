@@ -8,12 +8,15 @@ import { confinesCommands, type ExecutionEnvironment, type PreparationStep } fro
 import { chooseSessionExecution, packageCacheDirectory, providersFor, readSandboxPreference, releaseWorkspace,
   SANDBOX_NAMES, SANDBOX_PREFERENCES, type SandboxPreference, type SessionExecution } from "./execution-providers.js";
 import { hostProvider } from "./host-environment.js";
-import { runUsageCommand } from "./account-usage.js";
+import { pendingUsage, readUsage, type RouteUsage } from "./account-usage.js";
+import { allRoutes, routeStatuses, usedByRoute } from "./auth.js";
 import { usageSources } from "./integrations/usage-sources.js";
+import type { AccountsSource } from "./tesota-shell-accounts.js";
 import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, sameAccount, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
-import { isDecisionModel, ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
+import { accountRoute, isDecisionModel, MODEL_ROLES, ROLE_OFF, type ModelRole, parseModelChoice, readAddedRoutes, readModelChoices,
+  ROUTE_ENGINE } from "./model-roles.js";
 import { type WorkPlan, withReview } from "./work-plan.js";
 import { isGitRepository } from "./folder-source.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, rolePicker, routeListing,
@@ -255,6 +258,34 @@ class SessionState {
   lastReply: string | undefined;
 }
 
+/**
+ * The Accounts panel's content (decision 051): every route's usage, the
+ * saved readings at once and each fresh one as it arrives; the routes'
+ * sign-ins; and the route whose account each role draws on.
+ */
+function accountsSource(): AccountsSource {
+  return {
+    readUsage: async (update) => {
+      const routes = allRoutes();
+      let usage: RouteUsage[] = pendingUsage(routes);
+      update(usage);
+      await readUsage(routes, usageSources(), { onEach: (one) => {
+        usage = usage.map((entry) => entry.route === one.route ? one : entry);
+        update(usage);
+      } });
+    },
+    readSignIns: async () => ({ rows: await routeStatuses(allRoutes().map((entry) => entry.route)), usedBy: usedByRoute() }),
+    roles: () => {
+      const choices = readModelChoices();
+      const added = readAddedRoutes();
+      return MODEL_ROLES.map((role) => {
+        const route = accountRoute(choices[role], added);
+        return { role, choice: choices[role], ...route === undefined ? {} : { route } };
+      });
+    },
+  };
+}
+
 export function createProcessTesotaShell(cwd: string = process.cwd(),
   theme: TesotaShellThemeName = "tesota-dark",
   chooseExecution: (preference: SandboxPreference) => Promise<SessionExecution> =
@@ -340,13 +371,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onModel: (id, argument) => { void agentModel.change(id, argument); },
     onHandoff: (id) => { void agentModel.handOff(id); },
     onSandbox: (id, argument) => { void sessionSandbox.change(id, argument); },
-    onUsage: (id, args) => {
-      surface.writeTo(id, "Reading each account's usage.");
-      let text = "";
-      void runUsageCommand(args, (written) => { text += written; }, usageSources()).then((code) => {
-        surface.writeTo(id, text.trimEnd(), code === 0 ? undefined : "warning");
-      }, () => { surface.writeTo(id, "Usage could not be read. No key or token was shown.", "warning"); });
-    },
+    accounts: accountsSource(),
     sandboxPicker: (id) => {
       const own = saved(id)?.sandbox;
       const preference = readSandboxPreference();

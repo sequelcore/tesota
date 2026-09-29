@@ -222,10 +222,27 @@ session: the judges and the first pass use it from their next check, and
 the agent's role from the next new session. You can also type it, for
 example `/roles triage typesafe:jev-1.13.0` or `/roles advisor off`.
 
-`/usage` shows how much each account has left and when it resets, as
-`tesota usage` does ([authentication](authentication.md#how-much-each-account-has-left)),
-so you can see which account to give a role before it runs out; `/usage
-<route>` reads one.
+## Accounts
+
+`/accounts`, or `Alt+A`, opens the Accounts panel over the session, which
+keeps working beneath it; nothing in the panel is written to the
+conversation. It has three tabs, switched with `←→`, `Tab` or `1`–`3`:
+
+- **Usage**, which `/usage` opens directly: how much each account has left
+  and when it resets, as `tesota usage` shows it
+  ([authentication](authentication.md#how-much-each-account-has-left)). The
+  last readings show at once, faded, while each account is read again. A bar
+  turns to the warning color at a quarter left and to the error color when
+  nothing is.
+- **Sign-ins**: each route's sign-in and the roles that use it, as `tesota
+  auth status` shows it. Signing in stays in a terminal, with `tesota auth
+  login <route>`.
+- **Roles**: each role's model, the account it draws on, and that account's
+  least-left window. Choose a role with `↑↓` and press `Enter` to change its
+  model in the same list `/roles <role>` opens, so a role can move before its
+  account runs out.
+
+`r` reads everything again; `Esc` closes the panel.
 
 ## Review and apply
 

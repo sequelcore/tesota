@@ -1,9 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { AUTH_ROUTES, kindLabels } from "./auth.js";
-import { readAddedRoutes, type AddedRoute } from "./model-roles.js";
-import { creditPercent, filledSegments, remainingPercent } from "./verification/usage-meter-rule.js";
+import { allRoutes, kindLabels } from "./auth.js";
+import { creditPercent, filledSegments, type MeterTone, meterTone, remainingPercent } from "./verification/usage-meter-rule.js";
 
 /** One window or credit of an account: the whole percent left, when it resets, and the amounts behind a credit. */
 export interface UsageMeter {
@@ -29,7 +28,10 @@ export type RouteUsage =
   | { readonly route: string; readonly kind: string; readonly state: "read"; readonly reading: UsageReading }
   | { readonly route: string; readonly kind: string; readonly state: "last_known"; readonly reading: UsageReading;
     readonly readAt: number; readonly problem: string }
-  | { readonly route: string; readonly kind: string; readonly state: "unavailable"; readonly problem: string };
+  | { readonly route: string; readonly kind: string; readonly state: "unavailable"; readonly problem: string }
+  /** Being read, with the last reading of the past hour, if any, shown meanwhile. */
+  | { readonly route: string; readonly kind: string; readonly state: "reading";
+    readonly last?: { readonly reading: UsageReading; readonly readAt: number } };
 
 /** A provider's answer to a usage request. */
 export interface UsageResponse {
@@ -59,7 +61,6 @@ export const DEFAULT_USAGE_FILE: string = join(homedir(), ".tesota", "usage.json
 /** How long a reading stands in for a failed read, as Claude Code's last-known usage does. */
 export const LAST_KNOWN_MS: number = 60 * 60 * 1000;
 
-const BAR_SEGMENTS = 20;
 
 /** A named field of a JSON value, or undefined when the value is not an object. */
 const field = (value: unknown, name: string): unknown =>
@@ -230,15 +231,32 @@ function save(path: string, saved: SavedUsage): void {
 
 const failure = (error: unknown): string => error instanceof Error && error.message.length > 0 ? error.message : "usage read failed";
 
+/** Where readings are saved, the clock, and who hears of each route's reading as it arrives. */
+export interface UsageOptions {
+  readonly path?: string;
+  readonly now?: () => number;
+  readonly onEach?: (usage: RouteUsage) => void;
+}
+
+/** These routes as being read, each with its last reading of the past hour, so a panel has something to show at once. */
+export function pendingUsage(routes: readonly { readonly route: string; readonly kind: string }[],
+  { path = DEFAULT_USAGE_FILE, now = Date.now }: UsageOptions = {}): RouteUsage[] {
+  const saved = readSaved(path);
+  return routes.map(({ route, kind }) => {
+    const last = saved[route];
+    return last !== undefined && now() - last.readAt <= LAST_KNOWN_MS ? { route, kind, state: "reading", last } : { route, kind, state: "reading" };
+  });
+}
+
 /**
  * Read these routes' usage at once. Each reading is saved with its time; a
  * failed read shows the last reading of the past hour, or why there is none.
  */
 export async function readUsage(routes: readonly { readonly route: string; readonly kind: string }[], sources: UsageSources,
-  path: string = DEFAULT_USAGE_FILE, now: () => number = Date.now): Promise<RouteUsage[]> {
+  { path = DEFAULT_USAGE_FILE, now = Date.now, onEach }: UsageOptions = {}): Promise<RouteUsage[]> {
   const saved = readSaved(path);
   const fresh: Record<string, { readAt: number; reading: UsageReading }> = {};
-  const usage = await Promise.all(routes.map(async ({ route, kind }): Promise<RouteUsage> => {
+  const readOne = async (route: string, kind: string): Promise<RouteUsage> => {
     try {
       const outcome = await readRoute(route, kind, sources);
       if ("none" in outcome) return { route, kind, state: "unavailable", problem: outcome.none };
@@ -250,9 +268,14 @@ export async function readUsage(routes: readonly { readonly route: string; reado
         ? { route, kind, state: "last_known", reading: last.reading, readAt: last.readAt, problem: failure(error) }
         : { route, kind, state: "unavailable", problem: `unknown: ${failure(error)}` };
     }
+  };
+  const usage = await Promise.all(routes.map(async ({ route, kind }) => {
+    const one = await readOne(route, kind);
+    onEach?.(one);
+    return one;
   }));
   if (Object.keys(fresh).length > 0) {
-    try { save(path, { ...saved, ...fresh }); } catch { /* A reading that cannot be saved is still shown. */ }
+    try { save(path, { ...readSaved(path), ...fresh }); } catch { /* A reading that cannot be saved is still shown. */ }
   }
   return usage;
 }
@@ -266,53 +289,125 @@ export function span(ms: number): string {
   return `${minutes}m`;
 }
 
-/** A meter's bar, as Codex draws one: 20 segments of the share left. */
-export function bar(left: number): string {
-  const filled = filledSegments(left, BAR_SEGMENTS);
-  return `[${"█".repeat(filled)}${"░".repeat(BAR_SEGMENTS - filled)}]`;
+/** A meter's bar, as Codex draws one: segments of the share left, 20 unless the width asks for fewer. */
+export function bar(left: number, segments: number = 20): string {
+  const filled = filledSegments(left, segments);
+  return `${"█".repeat(filled)}${"░".repeat(segments - filled)}`;
+}
+
+/** How a table's text is styled: plain in the CLI, the theme's colors in the shell. */
+export interface UsagePaint {
+  readonly muted: (text: string) => string;
+  readonly strong: (text: string) => string;
+  readonly meter: (text: string, tone: MeterTone) => string;
+}
+
+const plain: UsagePaint = { muted: (text) => text, strong: (text) => text, meter: (text) => text };
+
+/** One cell: its text, measured unstyled, and how it is styled. */
+interface Cell {
+  readonly text: string;
+  readonly paint?: (text: string) => string;
+}
+
+/** A table row: cells in the route, account and window columns, then the meter and its details, or a note across them. */
+interface Row {
+  readonly cells: readonly Cell[];
+  readonly note?: Cell;
+}
+
+function meterRows(reading: UsageReading, now: number, segments: number, paint: UsagePaint, stale: boolean): Row[] {
+  const faded = (text: string): string => stale ? paint.muted(text) : text;
+  const rows: Row[] = reading.meters.map((meter) => {
+    const reset = meter.resetsAt === undefined ? undefined : meter.resetsAt > now ? `resets in ${span(meter.resetsAt - now)}` : "reset due";
+    const detail = [meter.amount, reset].filter((part) => part !== undefined).join(" · ");
+    const tone = meterTone(meter.left);
+    return { cells: [{ text: meter.label, paint: faded }, { text: `${bar(meter.left, segments)} ${String(meter.left).padStart(3)}%`,
+      paint: (text: string) => stale ? paint.muted(text) : paint.meter(text, tone) }, { text: detail, paint: paint.muted }] };
+  });
+  if (reading.meters.length === 0 && reading.notes.length === 0) rows.push({ cells: [], note: { text: "no limits reported", paint: paint.muted } });
+  for (const note of reading.notes) rows.push({ cells: [], note: { text: note, paint: faded } });
+  return rows;
+}
+
+/** Each route's rows: its meters, or why it has none, with the route and its account on the first. */
+function routeRows(entry: RouteUsage, now: number, segments: number, paint: UsagePaint): Row[] {
+  const kind = kindLabels[entry.kind] ?? entry.kind;
+  const reading = entry.state === "read" || entry.state === "last_known" ? entry.reading : entry.state === "reading" ? entry.last?.reading : undefined;
+  const account = reading?.plan === undefined ? kind : `${kind} ${reading.plan}`;
+  const rows = reading === undefined ? [] : meterRows(reading, now, segments, paint, entry.state === "reading");
+  if (entry.state === "unavailable") rows.push({ cells: [], note: { text: entry.problem, paint: paint.muted } });
+  if (entry.state === "last_known") {
+    rows.push({ cells: [], note: { text: `last known, ${span(now - entry.readAt)} ago: ${entry.problem}`, paint: paint.muted } });
+  }
+  // A saved reading shows faded while its route is read again; a route with none says it is being read.
+  if (entry.state === "reading" && entry.last === undefined) rows.push({ cells: [], note: { text: "reading…", paint: paint.muted } });
+  const [first, ...rest] = rows;
+  const lead: Cell[] = [{ text: entry.route, paint: paint.strong }, { text: account }];
+  return [{ ...first, cells: [...lead, ...first?.cells ?? []] },
+    ...rest.map((row) => ({ ...row, cells: [{ text: "" }, { text: "" }, ...row.cells] }))];
 }
 
 /**
- * The usage table: a block per route with its kind and plan, a line per
- * meter, and then what the readings rest on.
+ * The usage table: a row per meter under each route and its account, the
+ * share left as a bar, and the meter's reset or amount. The CLI and the
+ * shell's Accounts panel both draw it; the shell adds the theme's colors and
+ * fewer segments on a narrow terminal.
  */
-export function usageTable(usage: readonly RouteUsage[], now: number): string {
-  const labels = usage.flatMap((entry) => entry.state === "unavailable" ? [] : entry.reading.meters.map((meter) => meter.label.length));
-  const width = Math.max(0, ...labels) + 2;
-  const blocks = usage.map((entry) => {
-    const kind = kindLabels[entry.kind] ?? entry.kind;
-    const plan = entry.state !== "unavailable" && entry.reading.plan !== undefined ? ` · ${entry.reading.plan}` : "";
-    const lines = [`${entry.route}  ${kind}${plan}`];
-    if (entry.state === "unavailable") return [...lines, `  ${entry.problem}`];
-    if (entry.state === "last_known") lines.push(`  last known, ${span(now - entry.readAt)} ago: ${entry.problem}`);
-    for (const meter of entry.reading.meters) {
-      const reset = meter.resetsAt === undefined ? "" : meter.resetsAt > now ? ` · resets in ${span(meter.resetsAt - now)}` : " · reset due";
-      lines.push(`  ${meter.label.padEnd(width)}${bar(meter.left)} ${String(meter.left).padStart(3)}% left${
-        meter.amount === undefined ? "" : ` · ${meter.amount}`}${reset}`);
-    }
-    if (entry.reading.meters.length === 0 && entry.reading.notes.length === 0) lines.push("  no limits reported");
-    for (const note of entry.reading.notes) lines.push(`  ${note}`);
-    return lines;
+export function usageLines(usage: readonly RouteUsage[], now: number,
+  { segments = 20, paint = plain, width }: { segments?: number; paint?: UsagePaint; width?: number } = {}): string[] {
+  const heading: Row = { cells: ["Route", "Account", "Window", "Left", "Details"].map((text) => ({ text, paint: paint.muted })) };
+  const rows = [heading, ...usage.flatMap((entry) => routeRows(entry, now, segments, paint))];
+  // A note spans from the window column on, so only the route and account columns count its row.
+  const widths = [0, 1, 2, 3].map((column) => Math.max(0, ...rows.map((row) =>
+    row.note !== undefined && column >= 2 ? 0 : row.cells[column]?.text.length ?? 0)));
+  const styled = (cell: Cell, text: string): string => {
+    const content = text.trimEnd();
+    return `${cell.paint === undefined || content.length === 0 ? content : cell.paint(content)}${text.slice(content.length)}`;
+  };
+  return rows.flatMap((row) => {
+    const columns = row.note === undefined ? row.cells : [...row.cells.slice(0, 2), row.note];
+    const lead = columns.slice(0, -1).map((cell, column) => styled(cell, cell.text.padEnd((widths[column] ?? 0) + 2))).join("");
+    const indent = columns.slice(0, -1).reduce((sum, _, column) => sum + (widths[column] ?? 0) + 2, 0);
+    const last = columns.at(-1);
+    if (last === undefined) return [lead.trimEnd()];
+    // On a width, the last column wraps beneath itself, so a note keeps its link however narrow the table is.
+    return wrapWords(last.text, width === undefined ? Number.POSITIVE_INFINITY : Math.max(12, width - indent))
+      .map((part, index) => `${index === 0 ? lead : " ".repeat(indent)}${styled(last, part)}`.trimEnd());
   });
-  return [...blocks.flatMap((lines) => [...lines, ""]),
-    "Codex's usage comes from a private ChatGPT endpoint and Claude Code's from an experimental report; either may change.", ""].join("\n");
 }
 
-/** Each kind's default route, followed by the routes added for it, as `tesota auth status` lists them. */
-export function usageRoutes(added: readonly AddedRoute[] = readAddedRoutes()): { route: string; kind: string }[] {
-  return AUTH_ROUTES.flatMap((kind) => [{ route: kind, kind },
-    ...added.filter((entry) => entry.kind === kind).map((entry) => ({ route: entry.name, kind }))]);
+/** Text in lines of at most this width, broken between words, and within a word only when it alone is longer. */
+function wrapWords(text: string, width: number): string[] {
+  const lines: string[] = [];
+  let line = "";
+  for (const word of text.split(" ")) {
+    const joined = line.length === 0 ? word : `${line} ${word}`;
+    if (joined.length <= width) { line = joined; continue; }
+    if (line.length > 0) lines.push(line);
+    line = word;
+    while (line.length > width) { lines.push(line.slice(0, width)); line = line.slice(width); }
+  }
+  return [...lines, line];
 }
 
-/** `tesota usage [route]` and `/usage [route]`: every route's usage, or one route's. */
+/** What the readings rest on, said once under the table. */
+export const USAGE_SOURCES_NOTE: string = "Codex's usage comes from a private ChatGPT endpoint and Claude Code's from an experimental report; either may change.";
+
+/** `tesota usage`'s text: the table, then what it rests on. */
+export function usageTable(usage: readonly RouteUsage[], now: number): string {
+  return [...usageLines(usage, now), "", USAGE_SOURCES_NOTE, ""].join("\n");
+}
+
+/** `tesota usage [route]`: every route's usage, or one route's. */
 export async function runUsageCommand(args: readonly string[], write: (text: string) => void, sources: UsageSources,
-  path: string = DEFAULT_USAGE_FILE, now: () => number = Date.now): Promise<number> {
-  const all = usageRoutes();
+  options: UsageOptions = {}): Promise<number> {
+  const all = allRoutes();
   const chosen = args.length === 0 ? all : all.filter((entry) => entry.route === args[0]);
   if (args.length > 1 || chosen.length === 0) {
     write(`Usage: tesota usage [${all.map((entry) => entry.route).join("|")}]\n`);
     return 2;
   }
-  write(usageTable(await readUsage(chosen, sources, path, now), now()));
+  write(usageTable(await readUsage(chosen, sources, options), (options.now ?? Date.now)()));
   return 0;
 }

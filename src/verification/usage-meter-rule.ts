@@ -46,3 +46,17 @@ export function filledSegments(percent: number, segments: number): number {
   if (nearest > segments - 1) return segments - 1;
   return nearest;
 }
+
+export type MeterTone = "ok" | "low" | "out";
+
+/**
+ * How a meter is coloured: out when nothing is left, low at a quarter or
+ * less, so an account running short stands out in a table of many.
+ */
+//@ ensures \result === "out" <==> left <= 0
+//@ ensures \result === "low" <==> (0 < left && left <= 25)
+//@ ensures \result === "ok" <==> left > 25
+export function meterTone(left: number): MeterTone {
+  if (left <= 0) return "out";
+  return left <= 25 ? "low" : "ok";
+}

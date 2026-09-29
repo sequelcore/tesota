@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { Editor, HStack, ScrollView, Text, VStack, isKeyRelease, matchesKey, truncateToWidth, wrapTextWithAnsi,
-  type Component, type EditorTheme, type ViewportTUI } from "@earendil-works/pi-tui";
+  type Component, type EditorTheme, type OverlayHandle, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
 import { bold, colorText, mutedText, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
@@ -11,6 +11,7 @@ import { DiffView } from "./tesota-shell-diff.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
 import { ThemePicker } from "./tesota-shell-theme-picker.js";
 import { ChoicePicker, type ShellChoice } from "./tesota-shell-choice-picker.js";
+import { ACCOUNTS_TABS, AccountsPanel, type AccountsSource, type AccountsTab } from "./tesota-shell-accounts.js";
 import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, sessionStateIcon, type SidebarSession } from "./tesota-shell-sidebar.js";
 import { planLines, type WorkPlan } from "./work-plan.js";
 import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, sidebarPresentation,
@@ -36,8 +37,8 @@ export interface TesotaShellTerminalOptions {
   readonly onHandoff?: (sessionId: string) => void;
   /** `/sandbox`, with its argument when one was given (decision 030). */
   readonly onSandbox?: (sessionId: string, argument: string | undefined) => void;
-  /** `/usage`, with a route when one was given: how much each account has left (decision 051). */
-  readonly onUsage?: (sessionId: string, args: readonly string[]) => void;
+  /** What the Accounts panel shows: `/accounts`, `/usage` and Alt+A (decision 051). */
+  readonly accounts?: AccountsSource;
   readonly sandboxPicker?: (sessionId: string) => { title: string; entries: readonly ShellChoice[] };
   readonly onQuit?: () => void;
   readonly onEntry?: (sessionId: string, entry: TranscriptEntry) => void;
@@ -139,6 +140,7 @@ const shellCommands = [
   { name: "roles", description: "Choose each role's model" },
   { name: "handoff", description: "Start the agent's conversation afresh" },
   { name: "sandbox", description: "Show or switch where this session's commands run" },
+  { name: "accounts", description: "Show accounts: usage, sign-ins and each role's account" },
   { name: "usage", description: "Show how much each account has left" },
   { name: "result", description: "Show or hide the review" },
   { name: "sidebar", description: "Show or hide sessions" },
@@ -335,6 +337,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly modelPicker: ModelPicker;
   private readonly themePicker: ThemePicker;
   private readonly choicePicker: ChoicePicker;
+  private readonly accountsPanel: AccountsPanel;
+  /** The Accounts panel while it is open. */
+  private accountsOverlay: OverlayHandle | undefined;
+  /** Which read of the panel's content is current, so a slower earlier read never overwrites a later one. */
+  private accountsRead = 0;
   private readonly editor: Editor;
   private timer: ReturnType<typeof setInterval> | undefined;
   private removeInputListener: (() => void) | undefined;
@@ -363,6 +370,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.modelPicker = new ModelPicker(this.theme);
     this.themePicker = new ThemePicker(this.theme);
     this.choicePicker = new ChoicePicker(this.theme);
+    this.accountsPanel = new AccountsPanel(this.theme, () => this.tui.terminal.rows, this.now);
     this.editor = new PromptEditor(this.tui, this.theme);
     this.editor.disableSubmit = true;
     this.editor.onChange = (value) => { this.updateCommandMenu(value); };
@@ -564,6 +572,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   private handleKey(data: string): { consume: true } | undefined {
     if (matchesKey(data, "ctrl+c")) { this.stopOrQuit("Ctrl+C"); return { consume: true }; }
+    if (this.handleAccountsKey(data)) return { consume: true };
     const menuInput = this.handleCommandMenuKey(data);
     if (menuInput !== undefined) return menuInput;
     if (matchesKey(data, "escape") && this.stopWork()) return { consume: true };
@@ -571,16 +580,21 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (matchesKey(data, "ctrl+n")) { this.options.onNewSession?.(); return { consume: true }; }
     if (matchesKey(data, "ctrl+w")) { this.options.onCloseSession?.(this.selectedId); return { consume: true }; }
     if (this.handleSessionKey(data)) return { consume: true };
-    if (matchesKey(data, "alt+r")) { this.showResult = !this.showResult; this.compose(); return { consume: true }; }
-    if (matchesKey(data, "alt+b")) { this.toggleSidebar(); return { consume: true }; }
-    if (matchesKey(data, "alt+d")) { this.toggleLatestNotice(); return { consume: true }; }
-    if (matchesKey(data, "alt+,") || matchesKey(data, "alt+.")) {
-      this.moveInspection(matchesKey(data, "alt+,") ? -1 : 1);
-      return { consume: true };
-    }
-    if (matchesKey(data, "alt+s")) { this.split = !this.split; this.compose(); return { consume: true }; }
-    return undefined;
+    const view = this.viewKeys.find(([key]) => matchesKey(data, key));
+    if (view === undefined) return undefined;
+    view[1]();
+    return { consume: true };
   }
+
+  /** The keys that change what the shell shows beside the conversation. */
+  private readonly viewKeys: readonly (readonly [Parameters<typeof matchesKey>[1], () => void])[] = [
+    ["alt+r", () => { this.showResult = !this.showResult; this.compose(); }],
+    ["alt+b", () => { this.toggleSidebar(); }],
+    ["alt+d", () => { this.toggleLatestNotice(); }],
+    ["alt+,", () => { this.moveInspection(-1); }],
+    ["alt+.", () => { this.moveInspection(1); }],
+    ["alt+s", () => { this.split = !this.split; this.compose(); }],
+  ];
 
   private toggleSidebar(): void {
     const presentation = sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns);
@@ -714,6 +728,64 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     return { consume: true };
   }
 
+  /**
+   * Open the Accounts panel on a tab over the session, which keeps working
+   * beneath it, and read its content: the roles at once, the saved usage at
+   * once and then each fresh reading, and the sign-ins.
+   */
+  private openAccounts(session: SessionView, tab: AccountsTab): void {
+    const source = this.options.accounts;
+    if (source === undefined) { this.writeTo(session.id, "Accounts are not available in this shell.", "warning"); return; }
+    this.accountsPanel.show(tab);
+    if (this.accountsOverlay === undefined) {
+      this.accountsOverlay = this.tui.showOverlay(this.accountsPanel, { width: "96%", minWidth: 40, maxHeight: "90%", nonCapturing: true });
+    }
+    this.readAccounts(source);
+    this.tui.requestRender();
+  }
+
+  private readAccounts(source: AccountsSource): void {
+    const read = ++this.accountsRead;
+    const current = (): boolean => read === this.accountsRead && this.accountsOverlay !== undefined;
+    this.accountsPanel.setRoles(source.roles());
+    this.accountsPanel.setSignIns(undefined);
+    void source.readUsage((usage) => {
+      if (current()) { this.accountsPanel.setUsage(usage); this.tui.requestRender(); }
+    }).catch(() => undefined);
+    void source.readSignIns().then((signIns) => {
+      if (current()) { this.accountsPanel.setSignIns(signIns); this.tui.requestRender(); }
+    }, () => {
+      if (current()) { this.accountsPanel.setSignIns(undefined, true); this.tui.requestRender(); }
+    });
+  }
+
+  private closeAccounts(): void {
+    this.accountsOverlay?.hide();
+    this.accountsOverlay = undefined;
+    this.tui.requestRender();
+  }
+
+  /** The open Accounts panel takes every key but Ctrl+C, so nothing typed reaches the prompt beneath it; Alt+A opens it. */
+  private handleAccountsKey(data: string): boolean {
+    if (this.accountsOverlay === undefined) {
+      if (!matchesKey(data, "alt+a")) return false;
+      this.openAccounts(this.selected(), "usage");
+      return true;
+    }
+    const action = this.accountsPanel.handleKey(data);
+    if (action === "close" || matchesKey(data, "alt+a")) this.closeAccounts();
+    else if (action === "refresh" && this.options.accounts !== undefined) this.readAccounts(this.options.accounts);
+    else if (typeof action === "object") {
+      // The role's model is chosen in the same picker `/roles <role>` opens.
+      this.closeAccounts();
+      const opened = `/roles ${action.changeRole} `;
+      this.editor.setText(opened);
+      this.updateCommandMenu(opened);
+    }
+    this.tui.requestRender();
+    return true;
+  }
+
   private toggleLatestNotice(): void {
     if (this.selected().transcript.toggleNotice()) this.tui.requestRender();
   }
@@ -729,6 +801,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   stop(): void {
     if (!this.started) return;
     this.started = false;
+    this.closeAccounts();
     if (this.timer !== undefined) clearInterval(this.timer);
     this.timer = undefined;
     this.removeInputListener?.();
@@ -977,7 +1050,16 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     roles: (session, args) => { this.changeRoleModel(session, args); },
     handoff: (session) => { this.options.onHandoff?.(session.id); },
     sandbox: (session, args) => { this.changeSandbox(session, args); },
-    usage: (session, args) => { this.options.onUsage?.(session.id, args); },
+    accounts: (session, args) => {
+      const tab = args[0] ?? "usage";
+      if (args.length > 1 || !(ACCOUNTS_TABS as readonly string[]).includes(tab)) {
+        this.writeTo(session.id, `Use /accounts or /accounts <${ACCOUNTS_TABS.join("|")}>.`, "warning");
+      } else this.openAccounts(session, tab as AccountsTab);
+    },
+    usage: (session, args) => {
+      if (args.length > 0) this.writeTo(session.id, "Use /usage; it shows every account. tesota usage <route> reads one.", "warning");
+      else this.openAccounts(session, "usage");
+    },
     result: () => { this.showResult = !this.showResult; this.compose(); },
     sidebar: () => { this.toggleSidebar(); },
     themes: (session, args) => {
@@ -987,11 +1069,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     details: (session, args) => { this.toggleDetails(session, args); },
     help: (session) => {
       this.writeTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
-        "/handoff /sandbox [where] /usage [route] /result /sidebar /themes [name] " +
+        "/handoff /sandbox [where] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
         "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +
-        "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split");
+        "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split · Alt+A accounts");
     },
     quit: () => { this.options.onQuit?.(); },
   };

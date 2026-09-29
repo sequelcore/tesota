@@ -11,6 +11,8 @@ function JSFloorDiv(a: int, b: int): int
     else -((a - 1) / (-b)) - 1
 }
 
+datatype MeterTone = ok | low | out
+
 function remainingPercent(used: int): int
 {
   if (used <= 0) then
@@ -76,5 +78,23 @@ lemma filledSegments_ensures(percent: int, segments: int)
   ensures (filledSegments(percent, segments) <= segments)
   ensures ((filledSegments(percent, segments) == 0) <==> (percent <= 0))
   ensures ((filledSegments(percent, segments) == segments) <==> (percent >= 100))
+{
+}
+
+function meterTone(left: int): MeterTone
+{
+  if (left <= 0) then
+    MeterTone.out
+  else
+    if (left <= 25) then
+      MeterTone.low
+    else
+      MeterTone.ok
+}
+
+lemma meterTone_ensures(left: int)
+  ensures (meterTone(left).out? <==> (left <= 0))
+  ensures (meterTone(left).low? <==> ((0 < left) && (left <= 25)))
+  ensures (meterTone(left).ok? <==> (left > 25))
 {
 }

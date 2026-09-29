@@ -2,9 +2,9 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { bar, claudeCodeUsage, codexUsage, LAST_KNOWN_MS, openCodeGoUsage, openRouterUsage, readUsage, runUsageCommand, span,
-  usageTable, type UsageResponse, type UsageSources, windowLabel } from "../src/account-usage.js";
-import { creditPercent, filledSegments, remainingPercent } from "../src/verification/usage-meter-rule.js";
+import { bar, claudeCodeUsage, codexUsage, LAST_KNOWN_MS, openCodeGoUsage, openRouterUsage, pendingUsage, readUsage,
+  runUsageCommand, span, usageLines, usageTable, type UsageResponse, type UsageSources, windowLabel } from "../src/account-usage.js";
+import { creditPercent, filledSegments, meterTone, remainingPercent } from "../src/verification/usage-meter-rule.js";
 
 const now = Date.parse("2026-09-29T15:00:00Z");
 // A token shaped as Codex's, whose claims name its ChatGPT account.
@@ -74,8 +74,10 @@ it("keeps a bar empty only when nothing is left and full only when nothing is us
   expect(creditPercent(245, 400)).toBe(61);
   expect(creditPercent(399, 400)).toBe(99);
   expect([0, 1, 2, 50, 97, 99, 100].map((left) => filledSegments(left, 20))).toEqual([0, 1, 1, 10, 19, 19, 20]);
-  expect(bar(60)).toBe("[████████████░░░░░░░░]");
-  expect(bar(1)).toBe("[█░░░░░░░░░░░░░░░░░░░]");
+  expect(bar(60)).toBe("████████████░░░░░░░░");
+  expect(bar(1)).toBe("█░░░░░░░░░░░░░░░░░░░");
+  expect(bar(1, 10)).toBe("█░░░░░░░░░");
+  expect([0, 1, 25, 26, 100].map(meterTone)).toEqual(["out", "low", "low", "ok", "ok"]);
   expect([90_000, 3 * 3_600_000 + 420_000, 6 * 86_400_000 + 3_600_000].map(span)).toEqual(["2m", "3h 7m", "6d 1h"]);
 });
 
@@ -89,23 +91,35 @@ it("reads every route at once, sends each key only to its provider, and never sh
       "https://openrouter.ai/api/v1/key": { status: 200, body: { data: { usage: 1.55, limit: 4, limit_remaining: 2.45 } } },
       "https://opencode.ai/zen/go/v1/usage": { status: 403, body: { type: "error" } },
     }, { codex: codexToken, openrouter: "TEST_OPENROUTER_KEY", opencode: "TEST_OPENCODE_KEY" });
+    const arrived: string[] = [];
     const usage = await readUsage([{ route: "codex", kind: "codex" }, { route: "codex-free1", kind: "codex" },
       { route: "claude-2", kind: "claude-code" }, { route: "openrouter", kind: "openrouter" }, { route: "opencode", kind: "opencode" },
-      { route: "typesafe", kind: "typesafe" }], fake, path, () => now);
+      { route: "typesafe", kind: "typesafe" }], fake, { path, now: () => now, onEach: (one) => { arrived.push(one.route); } });
+    expect(arrived.sort()).toEqual(["claude-2", "codex", "codex-free1", "opencode", "openrouter", "typesafe"]);
     expect(requests.map((request) => [request.url, request.headers["Authorization"]])).toEqual([
       ["https://chatgpt.com/backend-api/wham/usage", `Bearer ${codexToken}`],
       ["https://openrouter.ai/api/v1/key", "Bearer TEST_OPENROUTER_KEY"],
       ["https://opencode.ai/zen/go/v1/usage", "Bearer TEST_OPENCODE_KEY"]]);
     expect(requests[0]?.headers["ChatGPT-Account-Id"]).toBe("account-1");
     const table = usageTable(usage, now);
-    expect(table.split("\n").slice(0, 3)).toEqual(["codex  Codex · plus",
-      "  5h         [████████████████████] 100% left · resets in 3h 7m",
-      "  week       [█████████████░░░░░░░]  67% left · resets in 6d 1h"]);
-    expect(table).toContain("codex-free1  Codex\n  signed out: tesota auth login codex-free1\n");
-    expect(table).toContain("claude-2  Claude Code · pro\n  week       [░░░░░░░░░░░░░░░░░░░░]   0% left\n");
-    expect(table).toContain("  key limit  [████████████░░░░░░░░]  61% left · $2.45 of $4.00 left\n");
-    expect(table).toContain("opencode  OpenCode\n  no OpenCode Go subscription\n  Zen's balance: see opencode.ai\n");
-    expect(table).toContain("typesafe  TypeSafe\n  no usage source: see console.typesafe.ai/settings/billing\n");
+    expect(table.split("\n")).toEqual([
+      "Route        Account          Window     Left                       Details",
+      "codex        Codex plus       5h         ████████████████████ 100%  resets in 3h 7m",
+      "                              week       █████████████░░░░░░░  67%  resets in 6d 1h",
+      "codex-free1  Codex            signed out: tesota auth login codex-free1",
+      "claude-2     Claude Code pro  week       ░░░░░░░░░░░░░░░░░░░░   0%",
+      "openrouter   OpenRouter       key limit  ████████████░░░░░░░░  61%  $2.45 of $4.00 left",
+      "opencode     OpenCode         no OpenCode Go subscription",
+      "                              Zen's balance: see opencode.ai",
+      "typesafe     TypeSafe         no usage source: see console.typesafe.ai/settings/billing",
+      "",
+      "Codex's usage comes from a private ChatGPT endpoint and Claude Code's from an experimental report; either may change.",
+      ""]);
+    // On a width, a note wraps beneath its own column, so its link is never cut.
+    expect(usageLines(usage.slice(-1), now, { width: 60 })).toEqual([
+      "Route     Account   Window  Left  Details",
+      "typesafe  TypeSafe  no usage source: see",
+      "                    console.typesafe.ai/settings/billing"]);
     const saved = await readFile(path, "utf8");
     expect(Object.keys(JSON.parse(saved) as object).sort()).toEqual(["claude-2", "codex", "opencode", "openrouter"]);
     expect(`${table}${saved}`).not.toMatch(/TEST_|account-1/u);
@@ -118,15 +132,21 @@ it("shows the last reading of the past hour with its age when a read fails, and 
   const route = [{ route: "claude-code", kind: "claude-code" }];
   const report = { subscription_type: "pro", rate_limits: { five_hour: { utilization: 69 } } };
   try {
-    await readUsage(route, sources({ "claude:default": { status: 200, body: report } }).fake, path, () => now);
+    expect(pendingUsage(route, { path, now: () => now })).toEqual([{ route: "claude-code", kind: "claude-code", state: "reading" }]);
+    await readUsage(route, sources({ "claude:default": { status: 200, body: report } }).fake, { path, now: () => now });
     const limited = sources({ "claude:default": { status: 200, body: { rate_limits: null } } }).fake;
     const later = now + 25 * 60_000;
-    const [known] = await readUsage(route, limited, path, () => later);
-    expect(usageTable(known === undefined ? [] : [known], later).split("\n").slice(0, 3)).toEqual(["claude-code  Claude Code · pro",
-      "  last known, 25m ago: Claude Code reports no plan limits for this sign-in; tesota auth status claude-code shows its sign-in",
-      "  5h  [██████░░░░░░░░░░░░░░]  31% left"]);
-    const [stale] = await readUsage(route, sources({ "claude:default": new Error("could not reach claude.ai") }).fake, path,
-      () => now + LAST_KNOWN_MS + 1);
+    // While a route is read again, its saved reading shows at once, faded, with no line of its own.
+    const [pending] = pendingUsage(route, { path, now: () => later });
+    expect(pending).toMatchObject({ state: "reading", last: { readAt: now } });
+    expect(usageLines(pending === undefined ? [] : [pending], later).slice(1)).toEqual(["claude-code  Claude Code pro  5h      ██████░░░░░░░░░░░░░░  31%"]);
+    const [known] = await readUsage(route, limited, { path, now: () => later });
+    expect(usageLines(known === undefined ? [] : [known], later).slice(1)).toEqual([
+      "claude-code  Claude Code pro  5h      ██████░░░░░░░░░░░░░░  31%",
+      "                              last known, 25m ago: Claude Code reports no plan limits for this sign-in; tesota auth status " +
+      "claude-code shows its sign-in"]);
+    const [stale] = await readUsage(route, sources({ "claude:default": new Error("could not reach claude.ai") }).fake,
+      { path, now: () => now + LAST_KNOWN_MS + 1 });
     expect(stale).toEqual({ route: "claude-code", kind: "claude-code", state: "unavailable", problem: "unknown: could not reach claude.ai" });
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
@@ -135,10 +155,10 @@ it("names a refused sign-in, and refuses a route it does not know", async () => 
   const folder = await mkdtemp(join(tmpdir(), "tesota-usage-"));
   try {
     const { fake } = sources({ "https://openrouter.ai/api/v1/key": { status: 401, body: undefined } }, { openrouter: "TEST_KEY" });
-    const [refused] = await readUsage([{ route: "openrouter", kind: "openrouter" }], fake, join(folder, "usage.json"), () => now);
+    const [refused] = await readUsage([{ route: "openrouter", kind: "openrouter" }], fake, { path: join(folder, "usage.json"), now: () => now });
     expect(refused).toMatchObject({ state: "unavailable", problem: "unknown: sign-in refused (HTTP 401): tesota auth login openrouter" });
     let written = "";
-    expect(await runUsageCommand(["no-such-route"], (text) => { written += text; }, fake, join(folder, "usage.json"))).toBe(2);
+    expect(await runUsageCommand(["no-such-route"], (text) => { written += text; }, fake, { path: join(folder, "usage.json") })).toBe(2);
     expect(written).toMatch(/^Usage: tesota usage \[codex\|/u);
   } finally { await rm(folder, { recursive: true, force: true }); }
 });

@@ -167,6 +167,17 @@ export function isDecisionModel(value: string): value is DecisionModel {
   return (DECISION_MODELS as readonly string[]).includes(value);
 }
 
+/**
+ * The route whose account a role's choice draws on: the route it names, the
+ * OpenCode route for an OpenCode Go model, since one key serves both, and
+ * TypeSafe for the triage role's decision model; undefined when the role is off.
+ */
+export function accountRoute(choice: string, added: readonly AddedRoute[] = readAddedRoutes()): string | undefined {
+  if (isDecisionModel(choice)) return "typesafe";
+  const route = parseModelChoice(choice, added)?.route;
+  return route === "opencode-go" ? "opencode" : route;
+}
+
 export const MODEL_ROLES = ["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage", "namer"] as const;
 export type ModelRole = typeof MODEL_ROLES[number];
 

@@ -30,20 +30,18 @@ pool as your own Claude Code; the `anthropic` route is billed to the API key,
 ## How much each account has left
 
 `tesota usage` asks each provider how much every route has left and when it
-resets, and `/usage` shows the same inside a session; name a route to read
-only that one, as in `tesota usage codex-work`:
+resets; name a route to read only that one, as in `tesota usage codex-work`.
+Inside a session, `/usage` opens the same table in the Accounts panel
+([using Tesota](using-tesota.md#accounts)).
 
 ```text
-codex  Codex · plus
-  5h         [████████████████████] 100% left · resets in 3h 7m
-  week       [█████████████░░░░░░░]  67% left · resets in 6d 1h
-
-claude-2  Claude Code · pro
-  5h         [████████████████████] 100% left
-  week       [░░░░░░░░░░░░░░░░░░░░]   0% left · resets in 1d 9h
-
-openrouter  OpenRouter
-  key limit  [████████████░░░░░░░░]  61% left · $2.45 of $4.00 left
+Route        Account          Window     Left                       Details
+codex        Codex plus       5h         ████████████████████ 100%  resets in 3h 7m
+                              week       █████████████░░░░░░░  67%  resets in 6d 1h
+claude-2     Claude Code pro  5h         ████████████████████ 100%
+                              week       ░░░░░░░░░░░░░░░░░░░░   0%  resets in 1d 9h
+openrouter   OpenRouter       key limit  ████████████░░░░░░░░  61%  $2.45 of $4.00 left
+typesafe     TypeSafe         no usage source: see console.typesafe.ai/settings/billing
 ```
 
 A bar is the share **left**, empty only when nothing is. Windows are named by

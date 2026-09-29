@@ -262,10 +262,10 @@ place only on one account: another route's account needs its own runtime
 or Claude Code process, so it starts a new conversation with the brief. A
 route that a role uses is not removed until the roles choose another.
 
-**What each account has left** (decision 051). `tesota usage` and `/usage`
-ask each route's provider, only when run, and show a meter per window or
-credit: the share left in 20 segments, as Codex's `/status` draws it, and
-when it resets. Codex's windows come from `wham/usage`, the private
+**What each account has left** (decision 051). `tesota usage` and the
+shell's Accounts panel ask each route's provider, only when run or opened,
+and show a meter per window or credit: the share left in 20 segments, as
+Codex's `/status` draws it, and when it resets. Codex's windows come from `wham/usage`, the private
 endpoint Codex's own client reads, with the route's token, which Pi
 refreshes; Claude Code's from the Agent SDK's experimental usage report,
 read without sending a request and with Claude Code's ordinary traffic on,
@@ -281,6 +281,20 @@ its age, as Claude Code's `/usage` does; after that the route is unknown.
 The Anthropic API route, OpenCode Zen and TypeSafe offer no source for the
 key Tesota holds, so they say where to look. No key or token is shown or
 saved.
+
+The Accounts panel (`/accounts`, `/usage`, `Alt+A`) is a framed overlay
+with three tabs, as Claude Code keeps `/status`, `/config` and `/usage` in one
+settings dialog: Usage, the same table as `tesota usage`; Sign-ins, the
+table of `tesota auth status`; and Roles, each role's model, its account and
+that account's least-left window, where `Enter` opens the role's model
+picker. Usage is state, not conversation, so nothing in the panel enters
+the transcript, where it would go stale. The CLI and the panel draw from one
+renderer each, the panel adding the theme's colors: an account turns to the
+warning color at a quarter left and to the error color when nothing is
+(proved in the same rule file). The panel shows the saved readings at once,
+faded, and replaces each as it is read; it is as tall as its longest tab, so
+switching tabs never moves it, and notes wrap under their column rather
+than lose their links on a narrow terminal.
 
 A list price is what an API key is billed, and on a plan only a
 way to compare models, so `tesota models` shows both separately.
