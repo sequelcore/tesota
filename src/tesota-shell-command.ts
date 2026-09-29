@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal } from "@earendil-works/pi-tui";
 import { confinesCommands, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
-import { chooseSessionExecution, packageCacheDirectory, providersFor, readSandboxPreference, releaseWorkspace,
+import { chooseSessionExecution, providersFor, readSandboxPreference, releaseWorkspace, repositoryKey,
   SANDBOX_NAMES, SANDBOX_PREFERENCES, type SandboxPreference, type SessionExecution } from "./execution-providers.js";
 import { hostProvider } from "./host-environment.js";
 import { pendingUsage, readUsage, type RouteUsage } from "./account-usage.js";
@@ -495,7 +495,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       try {
         environment = await execution.provider.prepare(workspace.checkout,
           { onProgress: (activity) => { surface.reportFor(id, { phase: "preparing", activity }); },
-            cacheDirectory: packageCacheDirectory(cwd), allowed: store.allowedNetwork(), signal: preparation.signal });
+            repository: repositoryKey(cwd), allowed: store.allowedNetwork(), signal: preparation.signal });
       } catch (error) {
         if (preparation.signal.aborted) throw new DOMException("preparation stopped", "AbortError");
         throw new Error(`The ${execution.provider.name} environment could not start` +

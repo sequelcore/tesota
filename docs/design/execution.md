@@ -250,9 +250,9 @@ proved), and writable: the workspace at its path under `/mnt`, the session's
 own home, mounted at the account's own home path so that programs asking the
 system for the home, as Java does, find the same folder as `HOME` (Maven
 otherwise misses its settings and loses its downloads after each command),
-a temporary folder at `/tmp`, the repository's package cache and,
-for a JavaScript package, the workspace's `node_modules` on WSL's own disk, as
-Docker Sandboxes keeps it. Nothing else of WSL or Windows is in it. A command
+a temporary folder at `/tmp`, and, on WSL's own disk, the repository's
+package caches and, for a JavaScript package, the workspace's `node_modules`,
+as Docker Sandboxes keeps it. Nothing else of WSL or Windows is in it. A command
 runs in `/bin/sh` and gets only its `PATH`, its home, the proxy and what it
 was given.
 
@@ -284,8 +284,10 @@ destinations setup may reach and a fingerprint of all of it, and the process
 runs it before the agent's first command. Runtimes the repository pins that
 Tesota's own Node and Bun do not satisfy, and what its mise files declare,
 are installed by the distribution's pinned mise (`/opt/tesota/mise`) into the
-repository's **toolchain folder** on WSL's own disk. That folder is keyed by
-the repository's package cache, so the repository's sessions share it and no
+repository's **toolchain folder** on WSL's own disk. That folder lies beside
+the repository's package caches, under the repository's key (`repositoryKey`
+in `src/execution-providers.ts`, a hash of its path whatever its case), so
+the repository's sessions share it and no
 other repository's can change it, since setup runs the repository's own code
 with write access to it; it is writable to setup's stages alone and
 read-only to every other command. A last mise stage prints the installed
@@ -356,13 +358,20 @@ sandboxes: each keeps `node_modules` on its own disk, so a command in one
 would not see what the other installed.
 
 **Package caches.** Each repository has its own npm and Bun cache, owned by
-Tesota under `~/.tesota`, shared by that repository's sessions, and never the
-operator's own cache. npm verifies what it reads from its cache, but Bun
-installs by hard link, so a file in `node_modules` can be the cached file
-itself, and a script that changes it changes the cache; a repository's cache
-confines that to the same repository, the scope Codex cloud and GitHub
-Actions cache by. `tesota sandbox clean` removes a repository's caches and
-the tools the WSL sandbox installed for it.
+Tesota, shared by that repository's sessions, and never the operator's own
+cache. The WSL sandbox keeps it on WSL's own disk with the repository's
+toolchain folder (`~/.local/state/tesota/repositories/<key>` in the
+distribution), since Microsoft advises keeping the files a Linux tool works
+on out of Windows' drives: with the cache on the Windows drive, Bun copied
+every file through WSL's network filesystem, and preparing a session on
+Tesota's own repository took 92 s. Its commands can write the cache, where a
+script could plant a package; a repository's cache confines that to the same
+repository, the scope Codex cloud and GitHub Actions cache by. The cache and
+`node_modules` are separate mounts in each command's sandbox, which Linux
+does not hard link across, so Bun falls back from its default hard links to
+copying each file into `node_modules`, and a change to a file there leaves
+the cache as it was. `tesota sandbox clean` removes a
+repository's caches and the tools the WSL sandbox installed for it.
 
 **Proved rules.** Choosing a provider: commands run without asking only on a
 provider whose qualification on this machine proved both confined files and
@@ -377,7 +386,7 @@ command reads (`readsToolFolder`), and the distribution's settings and drives
 
 **Known limits.** The workspace stays on the Windows drive, where WSL reads
 and writes through a network filesystem slower than its own disk;
-`node_modules` avoids it. Installing WSL needs an administrator prompt and a
+`node_modules` and the package caches avoid it. Installing WSL needs an administrator prompt and a
 restart once. Resources are unbounded per command; WSL's virtual machine is
 bounded as a whole. A command's output names paths under `/mnt`; the file
 tools keep the real ones. Commands reach mise's tools through their folders,

@@ -57,10 +57,13 @@ export function chooseSandboxPreference(preference: SandboxPreference, path: str
   } finally { if (existsSync(temporary)) unlinkSync(temporary); }
 }
 
-/** A repository's package cache, shared by its sessions and owned by Tesota, never the operator's own. */
-export function packageCacheDirectory(repository: string): string {
-  const key = createHash("sha256").update(resolve(repository).toLocaleLowerCase("en-US")).digest("hex");
-  return join(homedir(), ".tesota", "cache", key);
+/**
+ * The name a sandbox keeps a repository's own state under, such as its
+ * package caches and the tools its setup installed, shared by its sessions
+ * (decision 030): whatever the case of its path, as Windows finds it.
+ */
+export function repositoryKey(repository: string): string {
+  return createHash("sha256").update(resolve(repository).toLocaleLowerCase("en-US")).digest("hex");
 }
 
 const allProviders: readonly ExecutionProvider[] = [wslProvider, dockerSandboxesProvider, hostProvider];

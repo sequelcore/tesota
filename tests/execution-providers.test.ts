@@ -5,7 +5,7 @@ import { expect, it } from "vitest";
 import { sandboxPath } from "../src/docker-sandboxes-environment.js";
 import { confinesCommands, type EnvironmentGuarantees, type ExecutionProvider, type ProviderReadiness,
   type SetupAction, type SetupStep } from "../src/execution-environment.js";
-import { chooseSandboxPreference, chooseSessionExecution, formatSetup, providersFor, readSandboxPreference, runSetup,
+import { chooseSandboxPreference, chooseSessionExecution, formatSetup, providersFor, readSandboxPreference, repositoryKey, runSetup,
   type SessionExecution, type SetupRunner, unconfinedBy } from "../src/execution-providers.js";
 import { hostProvider } from "../src/host-environment.js";
 
@@ -147,4 +147,11 @@ it("only lists the steps when no one can confirm or the step has no action", asy
   const manual = setup([missing({ description: "Start the daemon", command: "sbx daemon start" })], [true]);
   expect(await runSetup(manual.runner)).toBe(1);
   expect(manual.ran).toEqual([]);
+});
+
+it("names a repository by one key whatever the case of its path, and other repositories by others", () => {
+  const key = repositoryKey(join(tmpdir(), "Project"));
+  expect(key).toMatch(/^[0-9a-f]{64}$/u);
+  expect(repositoryKey(join(tmpdir(), "project"))).toBe(key);
+  expect(repositoryKey(join(tmpdir(), "other"))).not.toBe(key);
 });

@@ -1,9 +1,7 @@
-import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
 import type { EnvironmentGuarantees, ExecutionProvider, ProviderReadiness } from "./execution-environment.js";
 import type { QualificationRecord } from "./execution-qualification.js";
-import { chooseSandboxPreference, chooseSessionExecution, DEFAULT_SANDBOX_FILE, packageCacheDirectory, providersFor,
-  qualifyOnThisMachine, readSandboxPreference, SANDBOX_NAMES, SANDBOX_PREFERENCES, type SandboxPreference,
+import { chooseSandboxPreference, chooseSessionExecution, DEFAULT_SANDBOX_FILE, providersFor,
+  qualifyOnThisMachine, readSandboxPreference, repositoryKey, SANDBOX_NAMES, SANDBOX_PREFERENCES, type SandboxPreference,
   type Trust, unconfinedBy } from "./execution-providers.js";
 import { dockerSandboxesProvider } from "./docker-sandboxes-environment.js";
 import { hostProvider } from "./host-environment.js";
@@ -12,13 +10,14 @@ import { wslProvider } from "./wsl-environment.js";
 /**
  * `tesota sandbox` (decision 030): each sandbox on this computer with what it
  * proved here, which one new sessions use, the operator's choice among them,
- * and clearing a repository's package cache and the tools sandboxes installed
+ * and clearing a repository's package caches and the tools sandboxes installed
  * for it.
  */
 
 export interface SandboxCommandDependencies {
   readonly preferencePath: string;
-  readonly cacheDirectory: string;
+  /** The repository's key (`repositoryKey`), under which sandboxes keep its package caches and tools. */
+  readonly repository: string;
   readonly providers: (preference: SandboxPreference) => readonly ExecutionProvider[];
   /** Every sandbox to list, whatever the choice. */
   readonly candidates: readonly ExecutionProvider[];
@@ -26,7 +25,7 @@ export interface SandboxCommandDependencies {
 }
 
 export function processSandboxDependencies(repository: string = process.cwd()): SandboxCommandDependencies {
-  return { preferencePath: DEFAULT_SANDBOX_FILE, cacheDirectory: packageCacheDirectory(repository), providers: providersFor,
+  return { preferencePath: DEFAULT_SANDBOX_FILE, repository: repositoryKey(repository), providers: providersFor,
     candidates: [wslProvider, dockerSandboxesProvider],
     trust: (provider) => qualifyOnThisMachine(provider, (text) => { process.stdout.write(`${text}...\n`); }) };
 }
@@ -64,18 +63,15 @@ async function listing(dependencies: SandboxCommandDependencies): Promise<string
   rows.push(`  ${"host".padEnd(9)}${chosen.commands === "host" ? "in use: " : ""}${hostLine}`);
   return `Where commands run (${preference}: ${described[preference]}):\n${rows.join("\n")}\n` +
     `Change it with tesota sandbox use <${SANDBOX_PREFERENCES.join("|")}>; it applies to new sessions. ` +
-    "tesota sandbox clean removes this repository's package cache and the tools sandboxes installed for it.\n";
+    "tesota sandbox clean removes this repository's package caches and the tools sandboxes installed for it.\n";
 }
 
 export async function runSandboxCommand(args: readonly string[], write: (text: string) => void,
   dependencies: SandboxCommandDependencies = processSandboxDependencies()): Promise<number> {
   if (args.length === 0) { write(await listing(dependencies)); return 0; }
   if (args.length === 1 && args[0] === "clean") {
-    const existed = existsSync(dependencies.cacheDirectory);
-    await rm(dependencies.cacheDirectory, { recursive: true, force: true, maxRetries: 3 });
-    for (const provider of dependencies.candidates) await provider.releaseRepository?.(dependencies.cacheDirectory);
-    write(existed ? "Removed this repository's package cache and the tools sandboxes installed for it.\n"
-      : "This repository has no package cache; removed any tools sandboxes installed for it.\n");
+    for (const provider of dependencies.candidates) await provider.releaseRepository?.(dependencies.repository);
+    write("Removed this repository's package caches and the tools sandboxes installed for it.\n");
     return 0;
   }
   const [verb, choice] = args;
