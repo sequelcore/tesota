@@ -26,7 +26,7 @@ it("brings the operator's newer repository state to their request, never to a co
     setWorkspace: (_id: string, directory: string) => { record.workspace = directory; },
     setAgentModel: () => {}, allowedNetwork: () => [], markActive: () => {}, close: () => {} } as unknown as ShellSessionStore;
   mocks.openStore.mockReturnValue(store);
-  const environment = { provider: "test", shell: "posix", guarantees: hostProvider.guarantees, preparation: [],
+  const environment = { provider: "test", guarantees: hostProvider.guarantees, preparation: [],
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
   const update = vi.fn(async () => ({ status: "updated" as const, changes: [{ status: "modified" as const, path: "src/cli.ts" }] }));
   const workspace = { directory: "workspace", checkout: "workspace/repo", included: [], update,
@@ -70,7 +70,7 @@ it.each([
   mocks.openStore.mockReturnValue(store);
   const preparation = [{ description: "Install dependencies", outcome,
     output: outcome === "failed" ? "install failed" : "" }] as PreparationStep[];
-  const environment = { provider: "test", shell: "posix", guarantees: hostProvider.guarantees, preparation,
+  const environment = { provider: "test", guarantees: hostProvider.guarantees, preparation,
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
   const recordRequest = vi.fn(async () => {});
   const workspace = { directory: "workspace", checkout: "workspace/repo", included: [],

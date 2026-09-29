@@ -33,9 +33,8 @@ two groups also writes a JUnit XML report to the ignored `test-reports/`
 approve `bun run check => test-reports/unit.xml, test-reports/workspace.xml`
 and compare its failures with the base test by test. The opt-in
 `TESOTA_LIVE_SANDBOX=1` suite exercises Docker Sandboxes' boundary live,
-`TESOTA_LIVE_MXC=1` exercises the native Windows sandbox on Windows 11 24H2 or
-later, `TESOTA_LIVE_WSL=1` the WSL sandbox on Windows, or its Linux side
-directly where bubblewrap runs, after `bun run build`, and
+`TESOTA_LIVE_WSL=1` the WSL sandbox on Windows, or its Linux side directly
+where bubblewrap runs, after `bun run build`, and
 `TESOTA_LIVE_WEB=1` reads a real page and checks that a public name resolving
 to this computer is refused; add `TESOTA_LIVE_WEB_SEARCH=1` to search through
 the SearXNG in `~/.tesota/web.json`.

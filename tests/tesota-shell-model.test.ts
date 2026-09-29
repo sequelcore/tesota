@@ -81,7 +81,7 @@ afterEach(() => {
 });
 
 function shell() {
-  const environment = { provider: "test", shell: "posix", guarantees: hostProvider.guarantees, preparation: [],
+  const environment = { provider: "test", guarantees: hostProvider.guarantees, preparation: [],
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
   const mode = { commands: "host", provider: { ...hostProvider, name: "test", prepare: async () => environment },
     missing: [] } satisfies SessionExecution;

@@ -22,7 +22,6 @@ function hostEnvironment(): ExecutionEnvironment {
   const shell = createLocalBashOperations();
   return {
     provider: "host",
-    shell: "posix",
     javascriptRuntime: process.execPath,
     guarantees,
     preparation: [],

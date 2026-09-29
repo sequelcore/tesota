@@ -14,15 +14,13 @@ import { distributionStep } from "./verification/wsl-settings-rule.js";
 import { windowsSystemProgram } from "./windows-system.js";
 
 /**
- * The WSL sandbox (issue 163): the candidate to replace the native Windows
- * sandbox, qualified by the same controls. Tesota keeps a WSL distribution of
- * its own, with its own user and Windows interop off, and starts one process
- * in it per prepared environment (`bubblewrap-sandbox.ts`), which runs each
- * command in a bubblewrap sandbox and hosts the egress proxy. Commands run in
- * a POSIX shell, and see the workspace at its path under `/mnt`. WSL itself is
- * not the boundary: bubblewrap's namespaces are, inside WSL's virtual machine.
- * It is chosen only by name, `tesota sandbox use wsl`, until the comparison
- * with the native sandbox decides which one Windows keeps.
+ * The WSL sandbox, Windows' sandbox (decisions 043 and 045). Tesota keeps a
+ * WSL distribution of its own, with its own user and Windows interop off, and
+ * starts one process in it per prepared environment (`bubblewrap-sandbox.ts`),
+ * which runs each command in a bubblewrap sandbox and hosts the egress proxy.
+ * Commands run in a POSIX shell, and see the workspace at its path under
+ * `/mnt`. WSL itself is not the boundary: bubblewrap's namespaces are, inside
+ * WSL's virtual machine.
  */
 
 export const WSL_GUARANTEES: EnvironmentGuarantees = { filesystem: "workspace", network: "allowlist", secrets: "none", resources: "unbounded" };
@@ -202,7 +200,7 @@ export async function bubblewrapEnvironment(launch: Launch, workspace: string, o
     options.signal?.throwIfAborted();
     const preparation = await prepareDependencies(connection, root, options);
     options.signal?.throwIfAborted();
-    return { provider: "wsl", shell: "posix", ...first.workspace === root ? {} : { commandRoot: first.workspace },
+    return { provider: "wsl", ...first.workspace === root ? {} : { commandRoot: first.workspace },
       guarantees: WSL_GUARANTEES, preparation,
       network: sandboxNetwork(connection), run: (command, runOptions) => runIn(connection, root, command, runOptions),
       dispose: () => connection.close() };

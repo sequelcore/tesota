@@ -7,7 +7,6 @@ import { chooseSandboxPreference, chooseSessionExecution, DEFAULT_SANDBOX_FILE, 
   type Trust, unconfinedBy } from "./execution-providers.js";
 import { dockerSandboxesProvider } from "./docker-sandboxes-environment.js";
 import { hostProvider } from "./host-environment.js";
-import { mxcProvider } from "./mxc-environment.js";
 import { wslProvider } from "./wsl-environment.js";
 
 /**
@@ -27,13 +26,13 @@ export interface SandboxCommandDependencies {
 
 export function processSandboxDependencies(repository: string = process.cwd()): SandboxCommandDependencies {
   return { preferencePath: DEFAULT_SANDBOX_FILE, cacheDirectory: packageCacheDirectory(repository), providers: providersFor,
-    candidates: [mxcProvider, wslProvider, dockerSandboxesProvider],
+    candidates: [wslProvider, dockerSandboxesProvider],
     trust: (provider) => qualifyOnThisMachine(provider, (text) => { process.stdout.write(`${text}...\n`); }) };
 }
 
 const described: Readonly<Record<SandboxPreference, string>> = {
-  auto: "the native sandbox, then Docker Sandboxes, then this computer", native: "the native sandbox",
-  wsl: "the WSL sandbox", docker: "Docker Sandboxes", host: "this computer, which asks before each command",
+  auto: "the WSL sandbox, then Docker Sandboxes, then this computer", wsl: "the WSL sandbox", docker: "Docker Sandboxes",
+  host: "this computer, which asks before each command",
 };
 const usage = `Usage: tesota sandbox [use <${SANDBOX_PREFERENCES.join("|")}> | clean]\n`;
 const hostLine = "this computer, always available; asks before each command";

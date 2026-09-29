@@ -16,7 +16,7 @@ import { countsAsDrive, settingsAsked } from "./verification/wsl-settings-rule.j
 const { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } = posix;
 
 /**
- * The Linux side of the WSL sandbox candidate (issue 163): one process per
+ * The Linux side of the WSL sandbox (decision 043): one process per
  * prepared environment, run by Tesota inside its WSL distribution, that runs
  * each command in its own bubblewrap sandbox and hosts the egress proxy. A
  * command sees a root of its own: the system's programs and configuration
@@ -239,7 +239,7 @@ export type SandboxMessage =
   | Readonly<{ type: "checked"; problems: readonly string[]; settings: readonly string[]; versions: string }>;
 
 /** How the host's paths become this side's: WSL's own translation of Windows paths, or the same path on Linux. */
-export type PathTranslation = "wsl" | "native";
+export type PathTranslation = "wsl" | "linux";
 
 function translate(path: string, paths: PathTranslation): string {
   return paths === "wsl" ? execFileSync("wslpath", ["-a", "-u", path], { encoding: "utf8" }).trim() : resolve(path);

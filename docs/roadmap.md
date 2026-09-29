@@ -8,8 +8,8 @@ record why.
 
 Tesota is pre-release. A terminal shell runs a Pi coding agent in a separate
 workspace per session and names each session after its work. Commands run
-without asking in the native sandbox on Windows 11 24H2 and later, and with
-the operator's approval on the host otherwise. While Docker Sandboxes'
+without asking in the WSL sandbox on Windows, and with the operator's
+approval on the host otherwise. While Docker Sandboxes'
 network allowlist is reviewed (decision 044), choosing it runs commands on
 the host with approval, not in its microVM. Each result is checked by the operator's commands, Oxlint and
 LemmaScript on the exact tree, reviewed by read-only reviewers whose findings
@@ -54,19 +54,14 @@ project. They are listed here as they are chosen.
   [design](design/agents.md#the-advisor)): built 2026-09-26, off by default.
 - **Reasoning levels per role** (decision 029,
   [design](design/agents.md#reasoning-levels)): built 2026-09-26.
-- **A native sandbox** (decision 030,
-  [design](design/execution.md#native-sandbox)): commands confined with no
-  Docker, no administrator rights and no question per command, on Microsoft
-  MXC and qualified on each machine; built on Windows 11 24H2 and later
-  2026-09-27. Linux and macOS are paused, 2026-09-26, until real use gives
-  feedback. Before MXC is extended, a WSL sandbox (decision 043,
-  [design](design/execution.md#wsl-sandbox)) competes for Windows' default:
-  built 2026-09-28 and chosen only by name; its Linux side passed every
-  control and Tesota's own check on Linux. A first Windows comparison found
-  three defects, fixed, and favored WSL in one uncontrolled run. Next: both
-  on one Windows machine again, with the corrected network control, the same
-  repositories, controlled caches and real work, then one default and the
-  other removed.
+- **A sandbox without Docker** (decisions 030, 043 and 045,
+  [design](design/execution.md#wsl-sandbox)): commands confined without a
+  question per command, qualified on each machine. First built on Microsoft
+  MXC, 2026-09-27; a WSL sandbox built 2026-09-28 replaced it as Windows'
+  only sandbox, 2026-09-29, after it failed 1 of Tesota's tests where MXC
+  failed 44, in half the time. Next: real use as the default, and a
+  repository's pinned runtimes and setup script inside it. Linux and macOS
+  are paused until real use gives feedback.
 - **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
   built 2026-09-26; OpenRouter's contract suite passes live on a free model.
   OpenCode refuses Zen's free models to clients other than its own, and Go

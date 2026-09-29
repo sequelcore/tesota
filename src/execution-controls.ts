@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { connect as connectTcp } from "node:net";
 import { dirname, join, relative, sep } from "node:path";
-import type { CommandShell, EnvironmentGuarantees, ExecutionEnvironment, RunOptions, RunResult } from "./execution-environment.js";
+import type { EnvironmentGuarantees, ExecutionEnvironment, RunOptions, RunResult } from "./execution-environment.js";
 import { directConnection } from "./verification/direct-connection-rule.js";
 
 /**
@@ -67,14 +67,9 @@ export function controlsFor(guarantees: EnvironmentGuarantees): ControlName[] {
 
 const quote = (value: string): string => `"${value}"`;
 
-/**
- * A program and its arguments as the environment's shell runs them: quoted
- * words in a POSIX shell, and in PowerShell after `&`, which a quoted program
- * needs, with `curl.exe`, since PowerShell's `curl` is Invoke-WebRequest.
- */
-function commandLine(shell: CommandShell, program: string, args: readonly string[]): string {
-  if (shell === "posix") return [program, ...args].map(quote).join(" ");
-  return `& ${[program === "curl" ? "curl.exe" : program, ...args].map(quote).join(" ")}`;
+/** A program and its arguments as quoted words for the environment's POSIX shell. */
+function commandLine(program: string, args: readonly string[]): string {
+  return [program, ...args].map(quote).join(" ");
 }
 
 /**
@@ -110,7 +105,7 @@ async function script(probe: Probe, source: string, args: readonly string[],
   const name = `.tesota-control-${randomUUID()}.cjs`;
   await writeFile(join(probe.site.workspace, name), source, "utf8");
   try {
-    return await inside(probe, commandLine(probe.environment.shell, probe.site.runtime, [name, ...args]), options);
+    return await inside(probe, commandLine(probe.site.runtime, [name, ...args]), options);
   } finally { await rm(join(probe.site.workspace, name), { force: true }); }
 }
 
@@ -156,7 +151,7 @@ async function packageScript(probe: Probe): Promise<ControlResult> {
   const token = randomUUID();
   await writeFile(manifest, JSON.stringify({ name: "tesota-control", private: true, scripts: { control: `echo ${token}` } }), "utf8");
   try {
-    const run = await inside(probe, commandLine(probe.environment.shell, "bun", ["run", "control"]));
+    const run = await inside(probe, commandLine("bun", ["run", "control"]));
     const passed = run.exitCode === 0 && run.output.includes(token);
     return { control: "package_script", passed, detail: passed ? "a package script ran from the workspace's root"
       : `exit ${run.exitCode}: ${run.output.trim().split(/\r?\n/u).at(-1) ?? ""}` };
@@ -238,11 +233,7 @@ async function timeLimit(probe: Probe): Promise<ControlResult> {
 async function status(probe: Probe, url: string): Promise<string> {
   const body = `.tesota-control-body-${randomUUID()}`;
   try {
-    // Windows' curl uses Windows' TLS, which checks revocation online on servers an allowlist does not reach;
-    // this control checks the network, so it leaves revocation out.
-    const revocation = probe.environment.shell === "powershell" ? ["--ssl-no-revoke"] : [];
-    const run = await inside(probe, commandLine(probe.environment.shell, "curl",
-      [...revocation, "-sS", "-m", "15", "-o", body, "-w", "%{http_code}", url]));
+    const run = await inside(probe, commandLine("curl", ["-sS", "-m", "15", "-o", body, "-w", "%{http_code}", url]));
     return /\b(\d{3})\s*$/u.exec(run.output.trim())?.[1] ?? "000";
   } finally { await rm(join(probe.site.workspace, body), { force: true }); }
 }

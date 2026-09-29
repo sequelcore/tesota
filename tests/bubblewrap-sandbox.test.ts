@@ -4,7 +4,7 @@ import { bubblewrapArguments, commandPath, commandVariables, type SandboxLayout,
 import { distributionSetupScript, listedDistributions } from "../src/wsl-environment.js";
 
 /**
- * What the WSL sandbox candidate (issue 163) builds for each command, without
+ * What the WSL sandbox (decision 043) builds for each command, without
  * running bubblewrap: which folders a command sees, which variables it gets,
  * and how Tesota reads WSL and sets up its distribution. The live suite,
  * `TESOTA_LIVE_WSL=1`, holds the result to the execution controls.

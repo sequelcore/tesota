@@ -62,13 +62,6 @@ export function isNetworkDestination(value: string): boolean {
   return /^(?:(?:[A-Za-z0-9-]+\.)*[A-Za-z0-9-]+|\[[0-9A-Fa-f:.]+\]):\d{1,5}$/u.test(value);
 }
 
-/**
- * The shell an environment runs commands in: a POSIX shell (bash or sh), or
- * Windows PowerShell where the native Windows sandbox cannot run Git Bash
- * (decision 030).
- */
-export type CommandShell = "posix" | "powershell";
-
 /** Package registries every sandbox reaches, over HTTPS, before the operator allows anything else. */
 export const PACKAGE_REGISTRY_HOSTS: readonly string[] = Object.freeze([
   "registry.npmjs.org", "registry.yarnpkg.com",
@@ -80,10 +73,9 @@ export const PACKAGE_REGISTRY_HOSTS: readonly string[] = Object.freeze([
 /** A prepared environment for one workspace. */
 export interface ExecutionEnvironment {
   readonly provider: string;
-  readonly shell: CommandShell;
   /** The program that runs JavaScript inside, for the execution controls' probes; `node` when absent. */
   readonly javascriptRuntime?: string;
-  /** Where the workspace appears to commands, when not at its own path, such as `T:\\` in the native Windows sandbox. */
+  /** Where the workspace appears to commands, when not at its own path, such as under `/mnt` in the WSL sandbox. */
   readonly commandRoot?: string;
   readonly guarantees: EnvironmentGuarantees;
   /** What preparing this environment ran now; empty when nothing was needed or it was already prepared. */

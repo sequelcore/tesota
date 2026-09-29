@@ -50,23 +50,23 @@ it("falls back to the host, where commands ask first, and lists what is missing"
 });
 
 it("runs commands without asking only where this machine's qualification upheld the provider's claims", async () => {
-  const native = provider("native", { ready: true });
+  const wsl = provider("wsl", { ready: true });
   const docker = provider("docker", { ready: true });
-  const withdrawn = { provider: "native", fingerprint: "x", at: "2026-09-26T00:00:00.000Z",
+  const withdrawn = { provider: "wsl", fingerprint: "x", at: "2026-09-26T00:00:00.000Z",
     guarantees: { ...confined, network: "open" as const }, results: [{ control: "registry_reachable" as const, passed: false,
       detail: "the package registry gave 000" }] };
-  const mode = await chooseSessionExecution([native, docker], hostProvider,
-    async (candidate) => candidate === native ? withdrawn : undefined);
+  const mode = await chooseSessionExecution([wsl, docker], hostProvider,
+    async (candidate) => candidate === wsl ? withdrawn : undefined);
   expect(mode).toEqual({ commands: "sandbox", provider: docker });
-  const fallback = await chooseSessionExecution([native], hostProvider, async () => withdrawn);
+  const fallback = await chooseSessionExecution([wsl], hostProvider, async () => withdrawn);
   expect(fallback.commands).toBe("host");
-  expect(formatSetup(fallback)).toContain("native:\n  - Its controls failed on this computer: the package registry gave 000");
+  expect(formatSetup(fallback)).toContain("wsl:\n  - Its controls failed on this computer: the package registry gave 000");
 });
 
-it("orders the providers by the operator's choice: native first, then Docker, or one of them, or none", () => {
+it("orders the providers by the operator's choice: WSL first, then Docker, or one of them, or none", () => {
   const names = (preference: Parameters<typeof providersFor>[0]): string[] => providersFor(preference).map((entry) => entry.name);
-  expect(names("auto")).toEqual(["mxc", "docker-sandboxes"]);
-  expect(names("native")).toEqual(["mxc"]);
+  expect(names("auto")).toEqual(["wsl", "docker-sandboxes"]);
+  expect(names("wsl")).toEqual(["wsl"]);
   expect(names("docker")).toEqual(["docker-sandboxes"]);
   expect(names("host")).toEqual([]);
 });

@@ -72,17 +72,17 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true });
 });
 
-function provider(name: string, shell: "posix" | "powershell") {
-  const environment = { provider: name, shell, guarantees: hostProvider.guarantees, preparation: [],
+function provider(name: string) {
+  const environment = { provider: name, guarantees: hostProvider.guarantees, preparation: [],
     run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
   const prepared: ExecutionProvider = { ...hostProvider, name, prepare: async () => environment };
   return { environment, provider: prepared };
 }
 
 function shell(dockerReady = true) {
-  const native = provider("mxc", "powershell");
-  const docker = provider("docker-sandboxes", "posix");
-  const host = provider("host", "posix");
+  const wsl = provider("wsl");
+  const docker = provider("docker-sandboxes");
+  const host = provider("host");
   const chosen = vi.fn(async (preference: SandboxPreference): Promise<SessionExecution> => {
     if (preference === "host") return { commands: "host", provider: host.provider, missing: [] };
     if (preference === "docker") {
@@ -90,26 +90,26 @@ function shell(dockerReady = true) {
         : { commands: "host", provider: host.provider, missing: [{ provider: "docker-sandboxes",
           readiness: { ready: false, steps: [{ description: "Install Docker Sandboxes" }] } }] };
     }
-    return { commands: "sandbox", provider: native.provider };
+    return { commands: "sandbox", provider: wsl.provider };
   });
   const created = createProcessTesotaShell("source", "tesota-dark", chosen, "session");
   const notices = vi.spyOn(created.surface, "writeTo");
   const label = vi.spyOn(created.surface, "setSessionExecution");
   spies.push(notices, label);
   const said = (): string => notices.mock.calls.map((call) => call[1]).join("\n");
-  return { created, chosen, native, docker, label, said };
+  return { created, chosen, wsl, docker, label, said };
 }
 
 it("switches one session's sandbox, and its agent restarts with the same conversation", async () => {
-  const { created, chosen, native, docker, label, said } = shell();
+  const { created, chosen, wsl, docker, label, said } = shell();
   await created.session("session").work("Add a retry limit.");
   expect(chosen).toHaveBeenLastCalledWith("auto");
-  expect(label).toHaveBeenLastCalledWith("session", "sandbox · native");
+  expect(label).toHaveBeenLastCalledWith("session", "sandbox · WSL");
   await created.sessionSandbox?.change("session", undefined);
-  expect(said()).toContain("Commands in this session run in the native sandbox");
-  expect(said()).toContain("/sandbox <auto|native|wsl|docker|host>");
+  expect(said()).toContain("Commands in this session run in the WSL sandbox");
+  expect(said()).toContain("/sandbox <auto|wsl|docker|host>");
   await created.sessionSandbox?.change("session", "docker");
-  expect(native.environment.dispose).toHaveBeenCalled();
+  expect(wsl.environment.dispose).toHaveBeenCalled();
   expect(agents[0]?.dispose).toHaveBeenCalled();
   expect(record.sandbox).toBe("docker");
   expect(label).toHaveBeenLastCalledWith("session", "sandbox · Docker");
@@ -129,16 +129,16 @@ it("switches one session's sandbox, and its agent restarts with the same convers
 });
 
 it("keeps the session's sandbox when the chosen one is not ready, and refuses an unknown one", async () => {
-  const { created, native, said } = shell(false);
+  const { created, wsl, said } = shell(false);
   await created.session("session").work("Add a retry limit.");
   await created.sessionSandbox?.change("session", "docker");
   expect(said()).toContain("Docker Sandboxes is not ready here: Install Docker Sandboxes");
-  expect(said()).toContain("still run in the native sandbox");
-  expect(native.environment.dispose).not.toHaveBeenCalled();
+  expect(said()).toContain("still run in the WSL sandbox");
+  expect(wsl.environment.dispose).not.toHaveBeenCalled();
   expect(record.sandbox).toBeUndefined();
   await created.sessionSandbox?.change("session", "vm");
-  expect(said()).toContain("Use /sandbox or /sandbox <auto|native|wsl|docker|host|default>.");
-  await created.sessionSandbox?.change("session", "native");
-  expect(said()).toContain("already run in the native sandbox");
+  expect(said()).toContain("Use /sandbox or /sandbox <auto|wsl|docker|host|default>.");
+  await created.sessionSandbox?.change("session", "wsl");
+  expect(said()).toContain("already run in the WSL sandbox");
   created.dispose?.();
 });

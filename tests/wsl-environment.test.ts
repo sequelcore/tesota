@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import { bubblewrapEnvironment, type Launch } from "../src/wsl-environment.js";
 
 /**
- * The host's side of the WSL sandbox (issue 163) against stand-in sandbox
+ * The host's side of the WSL sandbox (decision 043) against stand-in sandbox
  * processes that speak its messages without bubblewrap: what a failed start
  * reports, how a command's output and end come back, and what the host
  * concludes when the process is gone. The live suite, `TESOTA_LIVE_WSL=1`,

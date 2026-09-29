@@ -159,7 +159,6 @@ function sandboxNetwork(sbx: string, name: string): NetworkControl {
 function sandboxEnvironment(sbx: string, name: string, workspace: string, prepared: PreparedToolchain): ExecutionEnvironment {
   return {
     provider: "docker-sandboxes",
-    shell: "posix",
     guarantees,
     preparation: prepared.steps,
     network: sandboxNetwork(sbx, name),

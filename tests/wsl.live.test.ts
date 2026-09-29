@@ -10,7 +10,7 @@ import { qualifyProvider } from "../src/execution-qualification.js";
 import { bubblewrapEnvironment, type Launch, WSL_GUARANTEES, wslProvider } from "../src/wsl-environment.js";
 
 /**
- * The WSL sandbox candidate (issue 163) against the execution controls every
+ * The WSL sandbox (decision 043) against the execution controls every
  * provider must pass, then the network's report and allowance, loopback
  * servers, cancellation of a process tree, Windows programs and the time a
  * command takes. On Windows it runs the whole provider in Tesota's WSL
@@ -80,7 +80,7 @@ it.runIf(live)("reports a refused destination and opens only what is allowed", a
   expect((await fetch("https://example.org/")).output).not.toMatch(/\b200\b/u);
 }, 120_000);
 
-it.runIf(live)("runs a server on its own loopback and connects to it, which the native sandbox refuses", async () => {
+it.runIf(live)("runs a server on its own loopback and connects to it", async () => {
   const server = "require('node:http').createServer((q, s) => s.end('loopback-ok')).listen(0, '127.0.0.1', function () { " +
     "require('node:http').get({ host: '127.0.0.1', port: this.address().port }, (r) => r.on('data', (d) => { " +
     "process.stdout.write(String(d)); process.exit(0); })); })";
