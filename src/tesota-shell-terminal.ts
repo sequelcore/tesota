@@ -16,6 +16,7 @@ import { ACCOUNTS_PANEL_HEIGHT, ACCOUNTS_PANEL_WIDTH, ACCOUNTS_TABS, AccountsPan
   from "./tesota-shell-accounts.js";
 import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, sessionStateIcon, type SidebarSession } from "./tesota-shell-sidebar.js";
 import { planLines, type WorkPlan } from "./work-plan.js";
+import { WelcomeBanner } from "./tesota-shell-welcome.js";
 import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, sidebarPresentation,
   sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarPresentation, type SidebarSessionState } from "./verification/sidebar-rule.js";
 
@@ -49,6 +50,8 @@ export interface TesotaShellTerminalOptions {
   readonly onSessionChange?: (sessionId: string) => void;
   readonly initialSession?: { readonly id: string; readonly title: string;
     readonly entries: readonly TranscriptEntry[];
+    /** Show the ephemeral opening only when this session was just created. */
+    readonly fresh?: boolean;
     readonly inspections?: readonly ShellInspection[] };
 }
 
@@ -61,7 +64,7 @@ export interface TesotaShellTerminal {
   refreshElapsed(): void;
   inspect(inspection: ShellInspection): void;
   addSession(id: string, title: string, entries?: readonly TranscriptEntry[],
-    inspections?: readonly ShellInspection[]): void;
+    inspections?: readonly ShellInspection[], fresh?: boolean): void;
   selectSession(id: string): void;
   /** Add a Tesota notice to a session: muted by default, colored for a warning or success. */
   writeTo(id: string, text: string, tone?: NoticeTone): void;
@@ -109,6 +112,7 @@ interface SessionView {
   readonly id: string;
   title: string;
   readonly transcript: Transcript;
+  readonly welcome?: WelcomeBanner;
   readonly scroll: ScrollView;
   readonly inspections: ShellInspection[];
   readonly restoredInspectionCount: number;
@@ -380,7 +384,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.editor.onSubmit = (answer) => { this.submit(answer); };
     this.selectedId = options.initialSession?.id ?? "default";
     this.addSession(this.selectedId, options.initialSession?.title ?? "Session 1",
-      options.initialSession?.entries ?? [], options.initialSession?.inspections ?? []);
+      options.initialSession?.entries ?? [], options.initialSession?.inspections ?? [],
+      options.initialSession?.fresh ?? options.initialSession === undefined);
     this.tui.showOverlay(
       new SessionSidebarOverlay(this.sidebarHeader, this.sidebar, () => this.tui.terminal.rows),
       { width: sidebarWidth, maxHeight: "100%", anchor: "top-right", nonCapturing: true,
@@ -514,11 +519,15 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   addSession(id: string, title: string, entries: readonly TranscriptEntry[] = [],
-    inspections: readonly ShellInspection[] = []): void {
+    inspections: readonly ShellInspection[] = [], fresh = entries.length === 0): void {
     if (this.sessions.has(id)) throw new Error("Tesota session already exists");
     const transcript = new Transcript(this.theme);
+    const welcome = fresh && entries.length === 0 ? new WelcomeBanner(this.options.cwd, this.theme,
+      () => this.tui.terminal.rows, { reducedMotion: process.env["TESOTA_REDUCED_MOTION"] === "1" }) : undefined;
+    if (welcome !== undefined) transcript.container.addChild(welcome);
     for (const entry of entries) transcript.add(entry);
     this.sessions.set(id, { id, title, transcript,
+      ...welcome === undefined ? {} : { welcome },
       scroll: new ScrollView(transcript.container, { follow: "end", primary: true, scrollbar: "auto" }),
       inspections: [...inspections], restoredInspectionCount: inspections.length,
       selectedInspection: inspections.length - 1,
@@ -564,6 +573,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     let ticks = 0;
     this.timer = setInterval(() => {
       ticks += 1;
+      if (ticks % 2 === 0) {
+        let changed = false;
+        for (const session of this.sessions.values()) changed = session.welcome?.advance() === true || changed;
+        if (changed) this.tui.requestRender();
+      }
       const animate = [...this.sessions.values()].some((session) => animatedSidebarState(this.sessionState(session)));
       if (animate) {
         this.frame = (this.frame + 1) % SHELL_SPINNER_FRAMES.length;

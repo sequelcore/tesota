@@ -18,9 +18,9 @@ the workflow and limits.
 
 ### 1. Prepare the release and exercise the current workflow
 
-- Finish release identity: clear the name, domain and social handles; create
-  the palo fierro mark and terminal startup screen. Public app listing on
-  OpenRouter follows launch preparation. [Overview](design/overview.md#name-and-identity)
+- Finish release identity: clear the name, domain and social handles. Public
+  app listing on OpenRouter follows launch preparation.
+  [Overview](design/overview.md#name-and-identity)
 - Use the WSL sandbox as the default on a real project, including its toolchain
   preparation and the option to approve one command on the host. Correct the
   obstacles real use reveals. [Execution](design/execution.md)

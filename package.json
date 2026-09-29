@@ -2,7 +2,7 @@
   "name": "tesota",
   "version": "0.0.0",
   "private": true,
-  "description": "An open-source, verification-first agent for work that carries its evidence",
+  "description": "Open-source coding agent that checks and reviews changes before you apply them",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
