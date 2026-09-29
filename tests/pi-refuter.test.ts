@@ -45,6 +45,14 @@ it("shows the refuter each finding's claim, numbered, with the review input", ()
   expect(message).toContain("Findings to test, one verdict each:\n1. [high, introduced] at src/price.ts:3: A\n   Reviewer's reason: why A\n2.");
 });
 
+it("marks a finding left to the operator, which may report work beyond the requests rather than a defect", () => {
+  const input: ReviewInput = { checkout: "C:/work/repo", requests: ["Discount orders over $100"], checks: [], flags: [],
+    snapshot: { base: "b".repeat(40), tree, diff: "diff --git a/src/price.ts b/src/price.ts", changes: [{ status: "modified", path: "src/price.ts" }] } };
+  const message = refutationMessage(input, [{ reviewer: "Tesota reviewer", tree, status: "completed", summary: "",
+    findings: [{ ...finding("A refactor nobody asked for"), disposition: "operator" }] }]);
+  expect(message).toContain("1. [high, introduced, operator's call] at src/price.ts:3: A refactor nobody asked for");
+});
+
 it("merges a finding that repeats an earlier one, and ignores a duplicate that points forward", () => {
   const tested = applyRefutation(reports, [
     { id: 1, verdict: "confirmed", evidence: "price.ts:3" },

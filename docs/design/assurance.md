@@ -195,6 +195,20 @@ held; each claimed step in the plan beside the prompt shows "held in
 review", "not held in review" or "review uncertain", which is a judged
 check, never shown as verified.
 
+**The other direction.** Obligations catch work that is missing, not work
+nobody asked for. So the main reviewer also checks each change in the diff
+against the requests and claimed steps, and reports a change none of them
+needs, such as a refactor of unrelated code or an unrequested abstraction,
+as a finding for the operator's call, never sent back, since an extra may be
+welcome; only an extra that breaks what was asked is a fixable defect. A
+test of the code the change touched, edge cases included, a comment, and an
+update a requested change forces on its callers are never extras. The
+refuter confirms such a finding when the change is there and no request needs
+it, and refutes it when one does or when it is one of those. This
+is decision 045, measured on `live:review --set=all`: before it, neither of
+two reviewer setups marked either planted extra; with it, one setup marked
+both in two runs with no false positive in any case (issue #165).
+
 **A turn that changes no files is checked too.** Otherwise a reply could
 stand in for requested code: asked to add a helper, an agent can answer that
 it did. The main reviewer alone then judges the obligations against the
@@ -286,6 +300,11 @@ planted false claim on each correct candidate. It scores findings raw and
 after refutation, measures correction on known good and cosmetic fixes, and
 records time, tokens by kind and models. A change to a reviewer, the refuter, origin
 checking, a prompt or a role's model is measured before it is adopted.
+`--set=scope` runs five more: an out-of-scope refactor and an unrequested
+abstraction, which break nothing and should be marked as the operator's call
+rather than sent back; a quick hack that passes its checks; and a minimal and
+a large but necessary control that should draw nothing. They are kept apart
+so the eight cases' totals stay comparable.
 
 Those candidates were written with Tesota's own prompts, and every model
 measured finds their defects, so they guard the machinery rather than rank

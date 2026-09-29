@@ -205,7 +205,8 @@ function systemPrompt(root: string, sandboxed: boolean, environment: ExecutionEn
     (helpers.plan ? PLAN_GUIDANCE : "") + "Do not commit, push or change Git " +
     "history: when you finish, Tesota shows the user your changes, runs the repository's checks and lets " +
     "the user apply or reject them. End each turn with a short summary of what you changed and anything " +
-    "the user should verify. If a request needs no changes, just answer it." +
+    "the user should verify. If a request needs no changes, just answer it. Lead with the answer or the result, and " +
+    "use as few sentences as it needs: do not restate the question or repeat what the user can already see." +
     `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
 }
 

@@ -129,6 +129,12 @@ it("names each lens, tells it its focus, and offers the rules lens only where th
       expect(prompt).toContain(`This is a focused review: ${lens.focus} Other reviewers cover the rest: do not report a problem ` +
         "outside your focus, submit an empty list when you find none within it, and leave out obligations.");
       expect(prompt).toContain("Never log secrets.");
+      // Only the main reviewer checks the other direction: changes no request or claimed step needs (issue #165).
+      expect(prompt).not.toContain("check the other direction");
+      await createPiReviewer({ target: { engine: "pi", modelRuntime: {} as never, model: {} as never } })
+        .review({ ...input, checkout: root }, new AbortController().signal);
+      expect(prompt).toContain("Then check the other direction: for each change in the diff, whether a request or a " +
+        "claimed plan step needs it.");
     } finally { start.mockRestore(); }
   } finally { await rm(root, { recursive: true, force: true }); }
 });
