@@ -19,8 +19,8 @@ it("compiled login persists across processes, status is sanitized, and logout re
       env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"], TESOTA_TEST_AUTH_DIRECTORY: join(root, "auth") },
     });
     const operations: readonly (readonly [string, string])[] = [
-      ["login", "login saved"], ["status", "saved login available"],
-      ["login", "already logged in"], ["logout", "credentials removed"], ["status", "logged out"],
+      ["login", "login saved"], ["status", "signed in"],
+      ["login", "already logged in"], ["logout", "credentials removed"], ["status", "signed out: tesota auth login codex"],
     ];
     for (const [action, expected] of operations) {
       const result = invoke(action);
