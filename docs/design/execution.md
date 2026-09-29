@@ -283,7 +283,10 @@ links (`/bin` to `usr/bin`), the installations of the tools on `PATH`
 read-only, except the operator's home, a folder that holds it, and Windows'
 drives (`readsToolFolder` in `src/verification/tool-folder-rule.ts`,
 proved), and writable: the workspace at its path under `/mnt`, the session's
-own home, a temporary folder at `/tmp`, the repository's package cache and,
+own home, mounted at the account's own home path so that programs asking the
+system for the home, as Java does, find the same folder as `HOME` (Maven
+otherwise misses its settings and loses its downloads after each command),
+a temporary folder at `/tmp`, the repository's package cache and,
 for a JavaScript package, the workspace's `node_modules` on WSL's own disk, as
 Docker Sandboxes keeps it. Nothing else of WSL or Windows is in it. A command
 runs in `/bin/sh` and gets only its `PATH`, its home, the proxy and what it
@@ -326,6 +329,38 @@ tools' folders (`mise bin-paths`), and those inside the toolchain folder go
 first on `PATH`, ahead of Tesota's runtimes, for the stages after it and the
 agent's commands, so `node` is the version `.nvmrc` pins. Then
 `.tesota/setup.sh`, or the lockfile install, runs with them.
+
+**Languages found without declaring them** (decision 049,
+`src/languages.ts`). The plan also reads the files each language's projects
+already have at the repository's root, so a repository that declares nothing
+gets its language, as it would on the operator's own machine:
+
+| Language | Files | Version from | Otherwise | Registries |
+| --- | --- | --- | --- | --- |
+| Java | `pom.xml`, `build.gradle(.kts)`, `settings.gradle(.kts)`, `.java-version`, `.sdkmanrc` | Maven's release or `java.version`, Gradle's toolchain or compatibility, the version files | 21 | Maven Central, Gradle's |
+| Go | `go.mod` | its `toolchain`, else its `go` line | latest | Go's proxy |
+| Rust | `Cargo.toml`, `rust-toolchain(.toml)` | the toolchain file's channel | stable | crates.io |
+| Python | `pyproject.toml`, `requirements.txt`, `setup.py`, `setup.cfg`, `Pipfile`, `.python-version` | `.python-version`, `requires-python`, the Pipfile | 3.13 | PyPI |
+| Ruby | `Gemfile`, `.ruby-version` | the version file, the Gemfile's `ruby` | 3.4 | rubygems.org |
+| .NET | `*.csproj` and the like, `*.sln`, `global.json` | `global.json`'s SDK, the highest target framework | 10 | nuget.org |
+
+Fallbacks are fixed where new releases break older builds (Java's build
+tools lag its releases, Python's packages lag theirs, and Ruby 4.0 is a
+major release) and latest where the language keeps compatibility. A
+version enters a script only as digits and dots or a release channel.
+Java comes from Eclipse Temurin: mise's default, OpenJDK's own builds,
+installed 21.0.2 from January 2024. A Java repository without a Maven or
+Gradle wrapper gets Maven or Gradle too, and a stage writes Maven's
+`settings.xml` and Gradle's `gradle.properties` in the home with the
+sandbox's proxy, since Java ignores proxy variables (Claude Code issues
+13372 and 16222). Each language's tools get what they need: rustup's homes
+in the toolchain folder, gems in the home, since Ruby's own folder is
+read-only to commands, and NuGet's revocation checks offline and .NET's
+telemetry off, since both would reach hosts over plain HTTP. The
+languages' registries, and the destinations the operator allowed for the
+repository, are open from the start, setup included. Mise's files and
+`.tesota/setup.sh` still override, and only the root is read, so a
+monorepo's subprojects need them.
 
 While setup runs, the proxy also permits the toolchain hosts, and only then:
 it holds them apart from what is allowed, ends their tunnels when setup
@@ -416,21 +451,11 @@ Three things vary independently: the **toolchain** a sandbox holds, the
 **placement** of one command (the sandbox or this computer), and the
 **authority** behind that placement. A command runs on this computer only when
 the operator allowed that command, or a rule the operator made matches it;
-nothing the model or the repository says creates that authority. One
-command on this computer is built ([where commands run](#where-commands-run)).
+nothing the model or the repository says creates that authority. Both
+parts are built: one command on this computer
+([where commands run](#where-commands-run)) and languages found without
+declaring them ([WSL sandbox](#wsl-sandbox)).
 
-- **What a repository needs, found without declaring it.** The plan of
-  decision 048 also reads the files each language's projects already have:
-  Python (`pyproject.toml`, `requirements.txt`), Java (`pom.xml`,
-  `build.gradle`, `.java-version`), Go (`go.mod`), Rust (`Cargo.toml`,
-  `rust-toolchain.toml`), Ruby (`Gemfile`, `.ruby-version`) and .NET
-  (`*.csproj`, `global.json`), installing the version a file names, or a
-  long-term-support release otherwise, through mise. Each language brings its
-  registry hosts (Maven Central and Gradle's, rubygems.org, nuget.org) and
-  any proxy setting it needs: Java ignores proxy variables, so it gets
-  `JAVA_TOOL_OPTIONS`. Mise's files and `.tesota/setup.sh` still override.
-  Destinations the operator allowed for the repository apply during setup
-  too.
 - Placeholder secrets: a repository declares a secret by name and host, and
   the sandbox sees only a placeholder that the proxy replaces.
 - More providers behind the same interface once they pass the same controls:

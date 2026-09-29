@@ -459,7 +459,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       try {
         environment = await execution.provider.prepare(workspace.checkout,
           { onProgress: (activity) => { surface.reportFor(id, { phase: "preparing", activity }); },
-            cacheDirectory: packageCacheDirectory(cwd), signal: preparation.signal });
+            cacheDirectory: packageCacheDirectory(cwd), allowed: store.allowedNetwork(), signal: preparation.signal });
       } catch (error) {
         if (preparation.signal.aborted) throw new DOMException("preparation stopped", "AbortError");
         throw new Error(`The ${execution.provider.name} environment could not start` +
@@ -467,7 +467,6 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       } finally { surface.clearProgressFor(id, "preparing"); }
       const remembered = store.allowedNetwork();
       if (remembered.length > 0 && environment.network !== undefined) {
-        await environment.network.allow(remembered);
         surface.writeTo(id, `Also allowed for this repository: ${remembered.join(", ")}.`);
       }
       const summary = describePreparation(environment.preparation);

@@ -63,10 +63,9 @@ project. They are listed here as they are chosen.
   and setup script run inside it since 2026-09-29, with the toolchain hosts
   open only during setup. One command at a time runs on this computer with
   the operator's approval or a narrow saved rule, which replaced "always this
-  session", since 2026-09-29 (decision 049). Next: each common language
-  found from its project files without declaring it
-  ([#174](https://github.com/sequelcore/tesota/issues/174)), and real use as
-  the default. Linux and macOS
+  session", and Java, Go, Rust, Python, Ruby and .NET are found from their
+  project files without declaring them, since 2026-09-29 (decision 049).
+  Next: real use as the default. Linux and macOS
   are paused until real use gives feedback.
 - **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
   built 2026-09-26; OpenRouter's contract suite passes live on a free model.

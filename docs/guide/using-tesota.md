@@ -425,7 +425,11 @@ background colors; plain conversation text still uses the terminal's foreground.
   `mise.toml`), then your `.tesota/setup.sh` or the lockfile install, all run
   inside it; only then can it download from the hosts toolchains come from.
   In the WSL sandbox, the first session with a new runtime version downloads
-  it, and later sessions of the same repository reuse it. In Docker
+  it, and later sessions of the same repository reuse it. It also finds
+  Java, Go, Rust, Python, Ruby and .NET from the files their projects
+  already have (`pom.xml`, `go.mod`, `Cargo.toml`, `pyproject.toml`,
+  `Gemfile`, `*.csproj`), with the version they name, and reaches their
+  package registries; only files at the repository's root are read. In Docker
   Sandboxes, the first session with a new set of runtime versions builds them
   into a cached image, which can take a few minutes; later sessions reuse it
   and prepare in about half a minute. Restored sessions prepare when opened; new sessions prepare

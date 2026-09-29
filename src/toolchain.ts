@@ -1,17 +1,21 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { LANGUAGES, miseSpec, presentIn, rootEntries } from "./languages.js";
 
 /**
  * What a repository needs inside an isolated environment before the agent
- * starts: runtimes pinned by files it already commits, tools declared in
- * mise's own files, an optional `.tesota/setup.sh`, and its dependency install.
+ * starts: runtimes pinned by files it already commits, the languages its
+ * project files show (decision 049), tools declared in mise's own files, an
+ * optional `.tesota/setup.sh`, and its dependency install.
  */
 export interface ToolchainPlan {
-  /** Runtime versions Tesota found, such as `{ node: "24.15.0", bun: "1.4.2" }`. */
+  /** Runtime versions Tesota found, such as `{ node: "24.15.0", java: "21" }`. */
   readonly tools: Readonly<Record<string, string>>;
   /** Files the runtime versions were read from, for the operator and the agent. */
   readonly sources: readonly string[];
+  /** Registries the repository's languages download packages from, beyond every sandbox's own. */
+  readonly registries: readonly string[];
   /** `mise.toml` or `.tool-versions` files that mise installs itself inside the environment. */
   readonly miseFiles: readonly string[];
   readonly setupScript: string | null;
@@ -25,7 +29,9 @@ export interface ToolchainPlan {
 export const TOOLCHAIN_HOSTS: readonly string[] = Object.freeze([
   "github.com", "api.github.com", "codeload.github.com", "objects.githubusercontent.com",
   "release-assets.githubusercontent.com", "nodejs.org", "mise-versions.jdx.dev",
-  "go.dev", "dl.google.com", "static.rust-lang.org",
+  "go.dev", "dl.google.com", "static.rust-lang.org", "sh.rustup.rs", "dot.net", "tuf-repo-cdn.sigstore.dev",
+  "mise-java.jdx.dev", "archive.apache.org", "dlcdn.apache.org",
+  "builds.dotnet.microsoft.com", "dotnetcli.azureedge.net", "dotnetcli.blob.core.windows.net",
 ]);
 
 /** mise v2026.9.13 release binaries, checked against these hashes before use. */
@@ -73,7 +79,6 @@ function runtimeVersions(checkout: string, sources: string[]): Record<string, st
   };
   for (const file of [".node-version", ".nvmrc"]) take("node", pinnedVersion(readText(checkout, file)), file);
   take("bun", pinnedVersion(readText(checkout, ".bun-version")), ".bun-version");
-  take("python", pinnedVersion(readText(checkout, ".python-version")), ".python-version");
   const manifest = packageManifest(checkout);
   take("node", pinnedVersion(field(field(manifest, "engines"), "node")), "package.json engines.node");
   const manager = /^(bun)@(.+)$/u.exec(typeof manifest["packageManager"] === "string" ? manifest["packageManager"] : "");
@@ -99,16 +104,34 @@ function dependencyInstall(checkout: string): string | null {
   return found.manager === "bun" ? "bun install --frozen-lockfile" : "npm ci";
 }
 
+/**
+ * Add each language the root's files show, at the version they state or its
+ * fallback, with the build tools it needs and its registries.
+ */
+function languageTools(checkout: string, tools: Record<string, string>, sources: string[]): string[] {
+  const root = rootEntries(checkout);
+  const registries: string[] = [];
+  for (const language of LANGUAGES.filter((candidate) => presentIn(candidate, root) && !(candidate.tool in tools))) {
+    const stated = language.stated((path) => readText(checkout, path), root);
+    tools[language.tool] = stated?.version ?? language.fallback;
+    sources.push(stated?.source ?? `${language.tool} found, ${language.fallback} by default`);
+    for (const [tool, version] of Object.entries(language.buildTools?.(root) ?? {})) tools[tool] ??= version;
+    registries.push(...language.registries);
+  }
+  return [...new Set(registries)];
+}
+
 export function planToolchain(checkout: string): ToolchainPlan {
   const sources: string[] = [];
   const tools = runtimeVersions(checkout, sources);
+  const registries = languageTools(checkout, tools, sources);
   const miseFiles = ["mise.toml", ".mise.toml", ".tool-versions"].filter((file) => existsSync(join(checkout, file)));
   const setupScript = existsSync(join(checkout, ".tesota", "setup.sh")) ? ".tesota/setup.sh" : null;
   const dependencies = setupScript === null ? dependencyInstall(checkout) : null;
   const fingerprint = createHash("sha256").update(JSON.stringify({ mise: MISE_RELEASE.version, tools,
     miseFiles: Object.fromEntries(miseFiles.map((file) => [file, readText(checkout, file)])),
-    setup: setupScript === null ? null : readText(checkout, setupScript), dependencies })).digest("hex");
-  return { tools, sources, miseFiles, setupScript, dependencies, fingerprint };
+    setup: setupScript === null ? null : readText(checkout, setupScript), dependencies, registries })).digest("hex");
+  return { tools, sources, registries, miseFiles, setupScript, dependencies, fingerprint };
 }
 
 /** Whether anything must run inside the environment after its runtimes are in place. */
@@ -157,7 +180,30 @@ export function missingRuntimes(tools: Readonly<Record<string, string>>, carried
  * then its lockfile install. Versions hold only digits and dots
  * (`pinnedVersion`), so they are safe in a script.
  */
-export function setupStages(plan: ToolchainPlan, mise: MiseUse): SetupStage[] {
+/** Where an environment's proxy listens for its commands, when they reach the network through one. */
+export interface CommandProxy {
+  readonly host: string;
+  readonly port: number;
+}
+
+/**
+ * Shell that points Maven and Gradle at the sandbox's proxy in the sandbox's
+ * home: Java ignores proxy variables, so both would otherwise fail to reach
+ * their registries (Claude Code issues 13372 and 16222).
+ */
+function jvmProxyScript(proxy: CommandProxy): string {
+  const schemes = ["https", "http"];
+  // Maven's `protocol` is the proxy's own, which is HTTP for every destination, HTTPS ones tunnelled through it.
+  const maven = "<settings><proxies><proxy><id>tesota</id><active>true</active><protocol>http</protocol>" +
+    `<host>${proxy.host}</host><port>${proxy.port}</port><nonProxyHosts>localhost|127.0.0.1</nonProxyHosts></proxy></proxies></settings>`;
+  const gradle = [...schemes.flatMap((scheme) => [`systemProp.${scheme}.proxyHost=${proxy.host}`,
+    `systemProp.${scheme}.proxyPort=${proxy.port}`]), "systemProp.http.nonProxyHosts=localhost|127.0.0.1"].join("\n");
+  return ["set -eu", 'mkdir -p "$HOME/.m2" "$HOME/.gradle"',
+    `cat > "$HOME/.m2/settings.xml" <<'TESOTA'\n${maven}\nTESOTA`,
+    `cat > "$HOME/.gradle/gradle.properties" <<'TESOTA'\n${gradle}\nTESOTA`].join("\n");
+}
+
+export function setupStages(plan: ToolchainPlan, mise: MiseUse, proxy?: CommandProxy): SetupStage[] {
   const stages: SetupStage[] = [];
   const runtimes = Object.entries(mise.runtimes);
   if (runtimes.length > 0 || plan.miseFiles.length > 0) {
@@ -166,10 +212,13 @@ export function setupStages(plan: ToolchainPlan, mise: MiseUse): SetupStage[] {
       ...plan.miseFiles.length > 0 ? [`the tools in ${plan.miseFiles.join(" and ")}`] : []];
     // Pinned runtimes become the environment's own, in mise's global configuration; the repository's files add theirs.
     const script = ["set -eu",
-      ...runtimes.length > 0 ? [`mise use --global ${runtimes.map(([tool, version]) => `${tool}@${version}`).join(" ")}`] : [],
+      ...runtimes.length > 0 ? [`mise use --global ${runtimes.map(([tool, version]) => miseSpec(tool, version)).join(" ")}`] : [],
       ...plan.miseFiles.length > 0 ? ["mise install"] : []];
     stages.push({ description: `Install ${installed.join(" and ")}`, script: script.join("\n") });
     if (mise.reach === "folders") stages.push({ description: "Find the installed tools", script: "mise bin-paths", toolFolders: true });
+  }
+  if (proxy !== undefined && plan.tools["java"] !== undefined) {
+    stages.push({ description: "Point Maven and Gradle at the sandbox's proxy", script: jvmProxyScript(proxy) });
   }
   if (plan.setupScript !== null) stages.push({ description: `Run ${plan.setupScript}`, script: `sh ${plan.setupScript}` });
   if (plan.dependencies !== null) stages.push({ description: `Install dependencies (${plan.dependencies})`, script: plan.dependencies });

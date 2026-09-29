@@ -11,6 +11,7 @@ import { distributionSetupScript, listedDistributions } from "../src/wsl-environ
  */
 
 const layout: SandboxLayout = { workspace: "/mnt/c/Users/op/.tesota/workspaces/abc/repo", home: "/home/tesota/.local/state/s/home",
+  account: "/home/tesota",
   temp: "/home/tesota/.local/state/s/tmp", cache: "/mnt/c/Users/op/.tesota/cache/k",
   toolchains: "/home/tesota/.local/state/tesota/toolchains/k", modules: "/home/tesota/.local/state/s/node_modules",
   relay: "/home/tesota/.local/state/s/relay.cjs", socket: "/home/tesota/.local/state/s/proxy.sock", runtime: "/usr/local/bin/node",
@@ -58,6 +59,8 @@ it("gives a command only the PATH entries it can reach", () => {
 
 it("gives a command its own home, temporary folder, caches and proxy, and what it was given, nothing of the host's", () => {
   const variables = commandVariables(layout, "/usr/bin", { CI: "1", HOME: "/elsewhere" });
+  // The session's home is mounted at the account's own, so HOME and what the system says agree.
+  expect(commandVariables(layout, "/usr/bin", {})["HOME"]).toBe("/home/tesota");
   expect(variables).toEqual({ PATH: "/usr/bin", HOME: "/elsewhere", TMPDIR: "/tmp", LANG: "C.UTF-8", CI: "1",
     HTTP_PROXY: "http://127.0.0.1:3128", HTTPS_PROXY: "http://127.0.0.1:3128", http_proxy: "http://127.0.0.1:3128",
     https_proxy: "http://127.0.0.1:3128", NO_PROXY: "localhost,127.0.0.1,::1", no_proxy: "localhost,127.0.0.1,::1",
@@ -71,8 +74,8 @@ it("builds a sandbox of new namespaces that mounts only the system, tools, works
   const mounts = args.flatMap((arg, index) => ["--bind", "--ro-bind", "--ro-bind-try", "--symlink"].includes(arg)
     ? [`${arg} ${args[index + 1] ?? ""} ${args[index + 2] ?? ""}`] : []);
   expect(mounts).toEqual([
-    "--ro-bind /usr /usr", "--symlink usr/bin /bin", "--ro-bind /etc /etc", "--ro-bind-try /opt/node /opt/node",
-    `--bind ${layout.temp} /tmp`, `--bind ${layout.home} ${layout.home}`, `--bind ${layout.cache} ${layout.cache}`,
+    "--ro-bind /usr /usr", "--symlink usr/bin /bin", "--ro-bind /etc /etc", `--bind ${layout.home} /home/tesota`,
+    "--ro-bind-try /opt/node /opt/node", `--bind ${layout.temp} /tmp`, `--bind ${layout.cache} ${layout.cache}`,
     `--ro-bind ${layout.toolchains} ${layout.toolchains}`, `--bind ${layout.workspace} ${layout.workspace}`, `--bind ${layout.modules ?? ""} ${layout.workspace}/node_modules`,
     `--ro-bind ${layout.relay} ${layout.relay}`, `--bind ${layout.socket} ${layout.socket}`]);
   expect(args.slice(-10)).toEqual(["--chdir", `${layout.workspace}/src`, "--info-fd", "3", "--",

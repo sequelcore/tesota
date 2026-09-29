@@ -157,6 +157,38 @@ it.runIf(live)("runs a repository's pinned Node, its mise file's tools and its s
   } finally { if (windows) await wslProvider.release(repository); }
 }, 600_000);
 
+it.runIf(live)("installs the languages a repository's own files show, and their registries answer through the proxy", async () => {
+  const projects: Record<string, { files: Record<string, string>; command: string; expected: RegExp }> = {
+    maven: { files: { "pom.xml": "<project xmlns=\"http://maven.apache.org/POM/4.0.0\"><modelVersion>4.0.0</modelVersion>" +
+      "<groupId>p</groupId><artifactId>p</artifactId><version>1</version><properties><java.version>21</java.version></properties>" +
+      "<dependencies><dependency><groupId>org.apache.commons</groupId><artifactId>commons-lang3</artifactId><version>3.17.0</version>" +
+      "</dependency></dependencies></project>" },
+      command: "java -version 2>&1 | head -1 && mvn -q -B dependency:resolve && echo resolved", expected: /version "21\.[\s\S]*resolved/u },
+    python: { files: { "pyproject.toml": "[project]\nname = \"p\"\nversion = \"0.1\"\nrequires-python = \">=3.12\"\n",
+      "requirements.txt": "six==1.16.0\n" },
+      command: "python --version && python -m venv .venv && .venv/bin/pip install -q -r requirements.txt && echo installed",
+      expected: /Python 3\.12[\s\S]*installed/u },
+  };
+  for (const [name, project] of Object.entries(projects)) {
+    const repository = join(root, name);
+    for (const [path, text] of Object.entries(project.files)) {
+      await mkdir(join(repository, path, ".."), { recursive: true });
+      await writeFile(join(repository, path), text);
+    }
+    const environment = windows ? await wslProvider.prepare(repository) : await bubblewrapEnvironment(direct, repository);
+    try {
+      expect(environment.preparation.filter((step) => step.outcome !== "done")).toEqual([]);
+      let output = "";
+      const result = await environment.run(project.command, { cwd: repository, onOutput: (chunk) => { output += chunk.toString(); } });
+      expect({ name, exitCode: result.exitCode, refused: result.refused }).toEqual({ name, exitCode: 0, refused: [] });
+      expect(output).toMatch(project.expected);
+    } finally {
+      await environment.dispose();
+      if (windows) await wslProvider.release(repository);
+    }
+  }
+}, 900_000);
+
 it.runIf(live)("starts a command quickly", async () => {
   const timings: number[] = [];
   for (let index = 0; index < 5; index++) timings.push((await run("true")).ms);

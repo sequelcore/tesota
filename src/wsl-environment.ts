@@ -5,12 +5,13 @@ import { release } from "node:os";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { type HostMessage, type SandboxMessage, sandboxMessage } from "./bubblewrap-sandbox.js";
+import { type HostMessage, SANDBOX_PROXY_PORT, type SandboxMessage, sandboxMessage } from "./bubblewrap-sandbox.js";
 import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionProvider, isNetworkDestination,
   type NetworkControl, type PrepareOptions, type PreparationStep, type ProviderReadiness, type RunOptions, type RunResult,
   type SetupStep } from "./execution-environment.js";
 import { miseInstallScript, type MiseUse, missingRuntimes, needsDownloadHosts, planToolchain, setupStages,
-  TOOLCHAIN_HOSTS } from "./toolchain.js";
+  TOOLCHAIN_HOSTS, type ToolchainPlan } from "./toolchain.js";
+import { languageVariables } from "./languages.js";
 import { distributionStep } from "./verification/wsl-settings-rule.js";
 import { windowsSystemProgram } from "./windows-system.js";
 
@@ -152,16 +153,16 @@ function runIn(connection: Connection, workspace: string, command: string, optio
  * install, each after the one before succeeds. The toolchain hosts are open
  * only while stages that download from them run, and the process confirms
  * them closed. It skips a setup that already succeeded in this workspace.
+ * Java's build tools are pointed at the proxy commands reach it through.
  */
-function setUp(connection: Connection, workspace: string, ready: Extract<SandboxMessage, { type: "ready" }>,
+function setUp(connection: Connection, plan: ToolchainPlan, ready: Extract<SandboxMessage, { type: "ready" }>,
   options: PrepareOptions): Promise<PreparationStep[]> {
-  const plan = planToolchain(workspace);
   const mise: MiseUse = { install: false, runtimes: missingRuntimes(plan.tools, pinnedRuntimes()), reach: "folders" };
-  const stages = setupStages(plan, mise);
+  const stages = setupStages(plan, mise, { host: "127.0.0.1", port: SANDBOX_PROXY_PORT });
   if (stages.length === 0) return Promise.resolve([]);
   const destinations = needsDownloadHosts(plan, mise) ? TOOLCHAIN_HOSTS.map((host) => `${host}:443`) : [];
-  const env = { MISE_DATA_DIR: ready.toolchains, MISE_YES: "1", MISE_HIDE_UPDATE_WARNING: "1",
-    MISE_TRUSTED_CONFIG_PATHS: ready.workspace };
+  const env = { ...languageVariables(plan.tools, ready, "setup"), MISE_DATA_DIR: ready.toolchains, MISE_YES: "1",
+    MISE_HIDE_UPDATE_WARNING: "1", MISE_TRUSTED_CONFIG_PATHS: ready.workspace };
   const fingerprint = createHash("sha256").update(JSON.stringify({ plan: plan.fingerprint, stages, destinations, env })).digest("hex");
   const id = randomUUID();
   return new Promise((settle, fail) => {
@@ -195,11 +196,17 @@ export async function bubblewrapEnvironment(launch: Launch, workspace: string, o
     const first = await connection.first;
     if (first.type !== "ready") throw new Error(`The WSL sandbox could not start: ${first.type === "failed" ? first.message : first.type}`);
     options.signal?.throwIfAborted();
-    const preparation = await setUp(connection, root, first, options);
+    const plan = planToolchain(root);
+    // The repository's languages' registries and what the operator allowed for it are open from the start, setup included.
+    const allowed = [...plan.registries.map((host) => `${host}:443`), ...options.allowed ?? []];
+    if (allowed.length > 0) await sandboxNetwork(connection).allow(allowed);
+    const preparation = await setUp(connection, plan, first, options);
     options.signal?.throwIfAborted();
+    const variables = languageVariables(plan.tools, first, "commands");
     return { provider: "wsl", ...first.workspace === root ? {} : { commandRoot: first.workspace },
       guarantees: WSL_GUARANTEES, preparation,
-      network: sandboxNetwork(connection), run: (command, runOptions) => runIn(connection, root, command, runOptions),
+      network: sandboxNetwork(connection),
+      run: (command, runOptions) => runIn(connection, root, command, { ...runOptions, env: { ...variables, ...runOptions.env } }),
       dispose: () => connection.close() };
   } catch (error) {
     await connection.close();
