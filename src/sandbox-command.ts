@@ -12,7 +12,8 @@ import { wslProvider } from "./wsl-environment.js";
 /**
  * `tesota sandbox` (decision 030): each sandbox on this computer with what it
  * proved here, which one new sessions use, the operator's choice among them,
- * and clearing a repository's package cache.
+ * and clearing a repository's package cache and the tools sandboxes installed
+ * for it.
  */
 
 export interface SandboxCommandDependencies {
@@ -63,7 +64,7 @@ async function listing(dependencies: SandboxCommandDependencies): Promise<string
   rows.push(`  ${"host".padEnd(9)}${chosen.commands === "host" ? "in use: " : ""}${hostLine}`);
   return `Where commands run (${preference}: ${described[preference]}):\n${rows.join("\n")}\n` +
     `Change it with tesota sandbox use <${SANDBOX_PREFERENCES.join("|")}>; it applies to new sessions. ` +
-    "tesota sandbox clean removes this repository's package cache.\n";
+    "tesota sandbox clean removes this repository's package cache and the tools sandboxes installed for it.\n";
 }
 
 export async function runSandboxCommand(args: readonly string[], write: (text: string) => void,
@@ -72,7 +73,9 @@ export async function runSandboxCommand(args: readonly string[], write: (text: s
   if (args.length === 1 && args[0] === "clean") {
     const existed = existsSync(dependencies.cacheDirectory);
     await rm(dependencies.cacheDirectory, { recursive: true, force: true, maxRetries: 3 });
-    write(existed ? "Removed this repository's package cache.\n" : "This repository has no package cache.\n");
+    for (const provider of dependencies.candidates) await provider.releaseRepository?.(dependencies.cacheDirectory);
+    write(existed ? "Removed this repository's package cache and the tools sandboxes installed for it.\n"
+      : "This repository has no package cache; removed any tools sandboxes installed for it.\n");
     return 0;
   }
   const [verb, choice] = args;

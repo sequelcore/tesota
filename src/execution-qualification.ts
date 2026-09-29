@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import * as z from "zod";
 import { type ControlResult, controlsFor, FILESYSTEM_CONTROLS, NETWORK_CONTROLS, PROCESS_CONTROLS,
-  runControls } from "./execution-controls.js";
+  runControls, writeSetupProbe } from "./execution-controls.js";
 import type { EnvironmentGuarantees, ExecutionProvider } from "./execution-environment.js";
 import { qualifiedFilesystem, qualifiedNetwork } from "./verification/sandbox-qualification.js";
 
@@ -23,9 +23,11 @@ import { qualifiedFilesystem, qualifiedNetwork } from "./verification/sandbox-qu
  * Raised when a control changes, so every machine qualifies again; a test
  * fails when the controls change without it. 3: `network_direct` judges a
  * connection as blocked, connected or indeterminate. 4: probes are written for
- * a POSIX shell only, since no sandbox runs PowerShell (decision 047).
+ * a POSIX shell only, since no sandbox runs PowerShell (decision 047). 5:
+ * `setup_hosts_closed` shows setup's download hosts closed once it ends
+ * (decision 048).
  */
-export const CONTROLS_VERSION = 4;
+export const CONTROLS_VERSION = 5;
 const FAILED_RETRY_MS = 24 * 60 * 60 * 1_000;
 export const DEFAULT_QUALIFICATION_FILE: string = join(homedir(), ".tesota", "qualification.json");
 
@@ -57,6 +59,7 @@ export interface QualifyOptions {
   readonly fingerprint: string;
   readonly refusedUrl?: string;
   readonly registryUrl?: string;
+  readonly setupUrl?: string;
 }
 
 /** Run the provider's controls in a scratch workspace on this machine. */
@@ -66,12 +69,15 @@ export async function qualifyProvider(provider: ExecutionProvider, options: Qual
   const outside = join(run, "outside");
   await mkdir(workspace, { recursive: true });
   await mkdir(outside, { recursive: true });
+  const controls = controlsFor(provider.guarantees);
+  const setupUrl = options.setupUrl ?? "https://github.com/";
+  if (controls.includes("setup_hosts_closed")) await writeSetupProbe(workspace, setupUrl);
   try {
     const environment = await provider.prepare(workspace);
     try {
-      const results = await runControls(environment, controlsFor(provider.guarantees), { workspace, outside,
+      const results = await runControls(environment, controls, { workspace, outside,
         runtime: environment.javascriptRuntime ?? "node", refusedUrl: options.refusedUrl ?? "https://example.com/",
-        registryUrl: options.registryUrl ?? "https://registry.npmjs.org/" }, options.signal);
+        registryUrl: options.registryUrl ?? "https://registry.npmjs.org/", setupUrl }, options.signal);
       return { provider: provider.name, fingerprint: options.fingerprint, at: new Date().toISOString(),
         guarantees: qualifiedGuarantees(provider.guarantees, results), results };
     } finally { await environment.dispose(); }

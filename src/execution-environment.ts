@@ -142,6 +142,8 @@ export interface ExecutionProvider {
   fingerprint?(): Promise<string>;
   /** Remove anything the provider keeps for a workspace that is being deleted. */
   release(workspace: string): Promise<void>;
+  /** Remove what the provider keeps for a repository, such as the tools its setup installed, named by the repository's package cache. */
+  releaseRepository?(cacheDirectory: string): Promise<void>;
 }
 
 /** Commands run in a sandbox, without asking, only where files and network are both confined. */

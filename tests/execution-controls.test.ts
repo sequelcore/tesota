@@ -1,10 +1,11 @@
 import { createServer, type Server } from "node:http";
+import { existsSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { controlsFor, runControls, type ControlSite } from "../src/execution-controls.js";
+import { type ControlResult, controlsFor, runControls, type ControlSite, writeSetupProbe } from "../src/execution-controls.js";
 import type { EnvironmentGuarantees, ExecutionEnvironment } from "../src/execution-environment.js";
 import { hostProvider } from "../src/host-environment.js";
 
@@ -29,7 +30,8 @@ beforeAll(async () => {
   const address = server.address();
   const port = typeof address === "object" && address !== null ? address.port : 0;
   site = { workspace, outside, runtime: process.execPath,
-    refusedUrl: `http://127.0.0.1:${port}/refused`, registryUrl: `http://127.0.0.1:${port}/registry` };
+    refusedUrl: `http://127.0.0.1:${port}/refused`, registryUrl: `http://127.0.0.1:${port}/registry`,
+    setupUrl: `http://127.0.0.1:${port}/setup` };
 }, 30_000);
 
 afterAll(async () => {
@@ -42,7 +44,8 @@ const sandbox: EnvironmentGuarantees = { filesystem: "workspace", network: "allo
 it("chooses the controls a provider's claimed guarantees call for", () => {
   expect(controlsFor(hostProvider.guarantees)).toEqual(["workspace_read_write", "package_script", "cancel_children", "time_limit"]);
   expect(controlsFor(sandbox)).toEqual(["workspace_read_write", "package_script", "cancel_children", "time_limit",
-    "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "network_direct", "registry_reachable"]);
+    "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "network_direct", "registry_reachable",
+    "setup_hosts_closed"]);
 });
 
 it("writes each probe as quoted words for the environment's POSIX shell", async () => {
@@ -61,7 +64,7 @@ it("passes the host on what every environment must do, and fails it on every con
     const passed = Object.fromEntries(results.map((result) => [result.control, result.passed]));
     expect(passed).toEqual({ workspace_read_write: true, package_script: true, cancel_children: true, time_limit: true,
       outside_read: false, outside_write: false, beside_read: false, host_variables: false, network_refused: false,
-      network_direct: false, registry_reachable: true });
+      network_direct: false, registry_reachable: true, setup_hosts_closed: false });
     for (const result of results) expect(result.detail.length).toBeGreaterThan(0);
   } finally { await environment.dispose(); }
 }, 120_000);
@@ -81,6 +84,28 @@ function reporting(report: string): ExecutionEnvironment {
   return { provider: "fake", guarantees: sandbox, preparation: [], dispose: async () => {},
     run: async (_command, options) => { options.onOutput(Buffer.from(`${report}\n`)); return { outcome: "exited", exitCode: 0 }; } };
 }
+
+it("shows setup's download hosts closed only when setup reached them and a command after it did not", async () => {
+  const judge = async (during: string | undefined, after: string): Promise<ControlResult | undefined> => {
+    const evidence = join(site.workspace, ".tesota-control-setup.txt");
+    if (during !== undefined) await writeFile(evidence, during);
+    const [result] = await runControls(reporting(after), ["setup_hosts_closed"], site, new AbortController().signal);
+    expect(existsSync(evidence)).toBe(false);
+    return result;
+  };
+  expect(await judge("200", "403")).toMatchObject({ passed: true, detail: expect.stringContaining("a command after it was refused (403)") });
+  expect(await judge("301", "000")).toMatchObject({ passed: true });
+  expect(await judge("200", "200")).toMatchObject({ passed: false, detail: expect.stringContaining("a command after setup reached") });
+  expect(await judge("403", "403")).toMatchObject({ passed: false, detail: expect.stringContaining("setup did not reach") });
+  expect(await judge(undefined, "403")).toMatchObject({ passed: false, detail: expect.stringContaining("(no result)") });
+});
+
+it("gives a control workspace a setup script that records what setup reached", async () => {
+  const workspace = await mkdtemp(join(root, "probe-"));
+  await writeSetupProbe(workspace, "https://github.com/");
+  expect(await readFile(join(workspace, ".tesota", "setup.sh"), "utf8"))
+    .toBe("curl -sS -m 15 -o /dev/null -w '%{http_code}' \"https://github.com/\" > .tesota-control-setup.txt\n");
+});
 
 it("fails a connection that opened, even when the destination never answered", async () => {
   const silent = await silentServer();

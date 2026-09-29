@@ -116,9 +116,64 @@ export function needsSetup(plan: ToolchainPlan): boolean {
   return plan.miseFiles.length > 0 || plan.setupScript !== null || plan.dependencies !== null;
 }
 
+/** How an environment runs mise during setup. */
+export interface MiseUse {
+  /** Whether setup installs the pinned mise first, or the environment already carries it on `PATH`. */
+  readonly install: boolean;
+  /** Runtimes the repository pins that the environment does not carry, which mise installs as the environment's own. */
+  readonly runtimes: Readonly<Record<string, string>>;
+  /** How commands reach what mise installed: its shims on `PATH`, or the tools' own folders, which a last mise stage prints. */
+  readonly reach: "shims" | "folders";
+}
+
+/** One step of setting up an environment, run in its POSIX shell from the workspace's root. */
+export interface SetupStage {
+  readonly description: string;
+  readonly script: string;
+  /** Set on the stage whose output lines are the installed tools' folders, which go first on `PATH` from then on. */
+  readonly toolFolders?: true;
+}
+
 /** Whether setup must reach hosts beyond package registries, such as toolchain downloads. */
-export function needsDownloadHosts(plan: ToolchainPlan): boolean {
-  return plan.miseFiles.length > 0 || plan.setupScript !== null;
+export function needsDownloadHosts(plan: ToolchainPlan, mise: MiseUse): boolean {
+  return plan.miseFiles.length > 0 || plan.setupScript !== null || Object.keys(mise.runtimes).length > 0;
+}
+
+/**
+ * The pinned runtimes an environment must still install: those it does not
+ * carry at the pinned version, or at a release of it, as `24.15.0` is of `24`.
+ */
+export function missingRuntimes(tools: Readonly<Record<string, string>>, carried: Readonly<Record<string, string>>):
+  Record<string, string> {
+  return Object.fromEntries(Object.entries(tools).filter(([tool, version]) => {
+    const own = carried[tool];
+    return own === undefined || own !== version && !own.startsWith(`${version}.`);
+  }));
+}
+
+/**
+ * The stages that set up an environment, in order, each needing the ones
+ * before it: mise and the tools it installs, the repository's setup script,
+ * then its lockfile install. Versions hold only digits and dots
+ * (`pinnedVersion`), so they are safe in a script.
+ */
+export function setupStages(plan: ToolchainPlan, mise: MiseUse): SetupStage[] {
+  const stages: SetupStage[] = [];
+  const runtimes = Object.entries(mise.runtimes);
+  if (runtimes.length > 0 || plan.miseFiles.length > 0) {
+    if (mise.install) stages.push({ description: "Install mise", script: miseInstallScript() });
+    const installed = [...runtimes.map(([tool, version]) => `${tool} ${version}`),
+      ...plan.miseFiles.length > 0 ? [`the tools in ${plan.miseFiles.join(" and ")}`] : []];
+    // Pinned runtimes become the environment's own, in mise's global configuration; the repository's files add theirs.
+    const script = ["set -eu",
+      ...runtimes.length > 0 ? [`mise use --global ${runtimes.map(([tool, version]) => `${tool}@${version}`).join(" ")}`] : [],
+      ...plan.miseFiles.length > 0 ? ["mise install"] : []];
+    stages.push({ description: `Install ${installed.join(" and ")}`, script: script.join("\n") });
+    if (mise.reach === "folders") stages.push({ description: "Find the installed tools", script: "mise bin-paths", toolFolders: true });
+  }
+  if (plan.setupScript !== null) stages.push({ description: `Run ${plan.setupScript}`, script: `sh ${plan.setupScript}` });
+  if (plan.dependencies !== null) stages.push({ description: `Install dependencies (${plan.dependencies})`, script: plan.dependencies });
+  return stages;
 }
 
 /** POSIX shell that installs the pinned mise binary into ~/.local/bin after checking its hash. */
@@ -134,9 +189,4 @@ export function miseInstallScript(): string {
     'mv "$HOME/.local/bin/mise.download" "$HOME/.local/bin/mise"',
     '"$HOME/.local/bin/mise" --version',
   ].join("\n");
-}
-
-/** Shell that installs the tools the repository's own mise files declare. */
-export function miseFilesInstallScript(): string {
-  return "set -eu\nmise install";
 }

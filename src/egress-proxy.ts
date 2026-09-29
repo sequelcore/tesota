@@ -4,6 +4,7 @@ import type { Duplex } from "node:stream";
 import { isNetworkDestination, type NetworkControl } from "./execution-environment.js";
 import { isPublicAddress } from "./web-address.js";
 import { resolveHost } from "./web-fetch.js";
+import { type NetworkPhase, permitted } from "./verification/setup-network-rule.js";
 import { webAdmission } from "./verification/web-admission.js";
 
 /**
@@ -15,7 +16,9 @@ import { webAdmission } from "./verification/web-admission.js";
  * so an allowed name cannot point inside the operator's network. The order is
  * the rule `webAdmission` proves for web access. What was not allowed is
  * recorded for the operator's question after the command. Plain HTTP is
- * refused: package registries and Git use HTTPS.
+ * refused: package registries and Git use HTTPS. While an environment is set
+ * up, the proxy also permits the destinations setup opened, and only then
+ * (`permitted`, proved; decision 048).
  */
 
 export interface EgressProxyOptions {
@@ -53,10 +56,13 @@ function refuse(socket: Duplex, status: 400 | 403 | 502, reason: string): void {
 export class EgressProxy implements NetworkControl {
   readonly #server: Server;
   readonly #allowed: Set<string>;
+  readonly #opened = new Set<string>();
+  #phase: NetworkPhase = "agent";
   readonly #resolve: (host: string) => Promise<readonly string[]>;
   readonly #connect: (address: string, port: number) => Socket;
   readonly #refused: { at: number; destination: string }[] = [];
-  readonly #tunnels = new Set<Duplex>();
+  /** Open tunnels by the destination each reaches. */
+  readonly #tunnels = new Map<Duplex, string>();
 
   private constructor(options: EgressProxyOptions) {
     this.#allowed = new Set(options.allowed.map((destination) => destination.toLowerCase()));
@@ -84,9 +90,34 @@ export class EgressProxy implements NetworkControl {
     for (const destination of destinations) if (isNetworkDestination(destination)) this.#allowed.add(destination.toLowerCase());
   }
 
+  /**
+   * Run setup with these destinations also permitted, then close them
+   * whatever setup did: tunnels no longer permitted are ended, and the
+   * destinations are read back through the proved rule. When any is still
+   * permitted without being allowed on its own, this throws whatever setup
+   * did; otherwise it returns or throws setup's own result.
+   */
+  async during<T>(destinations: readonly string[], setup: () => Promise<T>): Promise<T> {
+    if (this.#phase === "setup") throw new Error("Setup is already under way");
+    for (const destination of destinations) if (isNetworkDestination(destination)) this.#opened.add(destination.toLowerCase());
+    this.#phase = "setup";
+    const outcome = await setup().then((value) => ({ done: true as const, value }), (error: unknown) => ({ done: false as const, error }));
+    this.#phase = "agent";
+    for (const [tunnel, destination] of this.#tunnels) if (!this.#permits(destination)) tunnel.destroy();
+    const stillOpen = [...this.#opened].filter((destination) => this.#permits(destination) && !this.#allowed.has(destination));
+    this.#opened.clear();
+    if (stillOpen.length > 0) throw new Error(`Setup's destinations could not be confirmed closed: ${stillOpen.join(", ")}`);
+    if (!outcome.done) throw outcome.error;
+    return outcome.value;
+  }
+
   async close(): Promise<void> {
-    for (const tunnel of this.#tunnels) tunnel.destroy();
+    for (const tunnel of this.#tunnels.keys()) tunnel.destroy();
     await new Promise<void>((closed) => { this.#server.close(() => { closed(); }); });
+  }
+
+  #permits(destination: string): boolean {
+    return permitted(this.#allowed.has(destination), this.#opened.has(destination), this.#phase);
   }
 
   #record(destination: string): void {
@@ -109,7 +140,7 @@ export class EgressProxy implements NetworkControl {
       refuse(socket, 400, "Bad Request");
       return;
     }
-    const permission = this.#allowed.has(wanted.destination) ? "allowed" : "denied";
+    const permission = this.#permits(wanted.destination) ? "allowed" : "denied";
     if (webAdmission(true, permission, false) === "deny") {
       this.#record(wanted.destination);
       refuse(socket, 403, "Forbidden");
@@ -126,7 +157,9 @@ export class EgressProxy implements NetworkControl {
     upstream.once("error", () => { clearTimeout(opened); refuse(socket, 502, "Bad Gateway"); });
     upstream.once("connect", () => {
       clearTimeout(opened);
-      this.#tunnels.add(socket);
+      // Setup can end while a connection opens; what it no longer permits never becomes a tunnel.
+      if (!this.#permits(wanted.destination)) { upstream.destroy(); refuse(socket, 403, "Forbidden"); return; }
+      this.#tunnels.set(socket, wanted.destination);
       socket.once("close", () => { this.#tunnels.delete(socket); upstream.destroy(); });
       upstream.once("close", () => { socket.destroy(); });
       socket.write("HTTP/1.1 200 Connection Established\r\n\r\n");

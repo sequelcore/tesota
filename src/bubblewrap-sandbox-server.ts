@@ -1,9 +1,10 @@
-import { check, type PathTranslation, releaseState, serve } from "./bubblewrap-sandbox.js";
+import { check, type PathTranslation, releaseState, releaseToolchains, serve } from "./bubblewrap-sandbox.js";
 
 /**
  * The WSL sandbox's process inside WSL (decision 043), which Tesota starts with
  * one of three commands: `serve` a workspace until its input ends, `check`
- * what the sandbox still needs, or `release` what a workspace kept. `--wsl`
+ * what the sandbox still needs, or `release` what a workspace kept, or the
+ * tools a repository's setup installed, named by its package cache. `--wsl`
  * says the host's paths are Windows paths.
  */
 const [command, ...rest] = process.argv.slice(2);
@@ -23,7 +24,10 @@ if (command === "check") {
   });
 } else if (command === "release" && workspace !== undefined) {
   await releaseState(workspace, paths);
+} else if (command === "release" && cache !== undefined) {
+  await releaseToolchains(cache, paths);
 } else {
-  process.stderr.write("Usage: bubblewrap-sandbox-server <check | serve --workspace <path> [--cache <path>] | release --workspace <path>> [--wsl]\n");
+  process.stderr.write("Usage: bubblewrap-sandbox-server <check | serve --workspace <path> [--cache <path>] | " +
+    "release <--workspace <path> | --cache <path>>> [--wsl]\n");
   process.exitCode = 2;
 }

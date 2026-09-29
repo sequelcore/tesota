@@ -54,13 +54,14 @@ project. They are listed here as they are chosen.
   [design](design/agents.md#the-advisor)): built 2026-09-26, off by default.
 - **Reasoning levels per role** (decision 029,
   [design](design/agents.md#reasoning-levels)): built 2026-09-26.
-- **A sandbox without Docker** (decisions 030, 043 and 047,
+- **A sandbox without Docker** (decisions 030, 043, 047 and 048,
   [design](design/execution.md#wsl-sandbox)): commands confined without a
   question per command, qualified on each machine. First built on Microsoft
   MXC, 2026-09-27; a WSL sandbox built 2026-09-28 replaced it as Windows'
   only sandbox, 2026-09-29, after it failed 1 of Tesota's tests where MXC
-  failed 44, in half the time. Next: real use as the default, and a
-  repository's pinned runtimes and setup script inside it. Linux and macOS
+  failed 44, in half the time. A repository's pinned runtimes, mise files
+  and setup script run inside it since 2026-09-29, with the toolchain hosts
+  open only during setup. Next: real use as the default. Linux and macOS
   are paused until real use gives feedback.
 - **Gateway routes** (decision 031): OpenRouter, OpenCode Zen and OpenCode Go,
   built 2026-09-26; OpenRouter's contract suite passes live on a free model.

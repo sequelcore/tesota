@@ -90,7 +90,8 @@ one is in use; `tesota sandbox use docker` (or `wsl`, `host`, `auto`) chooses
 for new sessions. Inside a session, `/sandbox` opens a list including
 `default`, which follows the choice for new sessions; `/sandbox docker`
 switches that session alone, keeping its conversation. `tesota sandbox clean`
-removes this repository's package cache. Docker
+removes this repository's package cache and the tools the sandbox installed
+for it. Docker
 Sandboxes is the alternative on Windows 11, and the stronger wall for files,
 since it runs a virtual machine, but it is not used for now: a program that
 ignores its proxy could still open a connection, and Tesota has not yet shown
@@ -409,10 +410,13 @@ background colors; plain conversation text still uses the terminal's foreground.
   isolation.
 - The sandbox gets the runtimes your repository pins
   (for example `packageManager` and `engines` in `package.json`, `.nvmrc`,
-  `mise.toml`), then your `.tesota/setup.sh` or the lockfile install. The first
-  session with a new set of runtime versions builds them into a cached image,
-  which can take a few minutes; later sessions reuse it and prepare in about
-  half a minute. Restored sessions prepare when opened; new sessions prepare
+  `mise.toml`), then your `.tesota/setup.sh` or the lockfile install, all run
+  inside it; only then can it download from the hosts toolchains come from.
+  In the WSL sandbox, the first session with a new runtime version downloads
+  it, and later sessions of the same repository reuse it. In Docker
+  Sandboxes, the first session with a new set of runtime versions builds them
+  into a cached image, which can take a few minutes; later sessions reuse it
+  and prepare in about half a minute. Restored sessions prepare when opened; new sessions prepare
   with their first request so unused sessions create no workspace. The status
   line shows preparation. Installed `node_modules` stay inside the sandbox,
   so your workspace folder shows it empty. Dev Container definitions are not read yet.

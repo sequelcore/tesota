@@ -17,7 +17,7 @@ import { hostProvider } from "../src/host-environment.js";
  */
 let root = "";
 let server: Server;
-let urls = { refusedUrl: "", registryUrl: "" };
+let urls = { refusedUrl: "", registryUrl: "", setupUrl: "" };
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "tesota-qualification-"));
@@ -25,7 +25,8 @@ beforeAll(async () => {
   await new Promise<void>((listening) => { server.listen(0, "127.0.0.1", listening); });
   const address = server.address();
   const port = typeof address === "object" && address !== null ? address.port : 0;
-  urls = { refusedUrl: `http://127.0.0.1:${port}/refused`, registryUrl: `http://127.0.0.1:${port}/registry` };
+  urls = { refusedUrl: `http://127.0.0.1:${port}/refused`, registryUrl: `http://127.0.0.1:${port}/registry`,
+    setupUrl: `http://127.0.0.1:${port}/setup` };
 });
 afterAll(async () => {
   server.close();
@@ -38,11 +39,14 @@ const processes = ["workspace_read_write", "package_script", "cancel_children", 
 
 it("keeps a claim only when the controls behind it, and every environment's own, passed", () => {
   const all = [...processes, "outside_read", "outside_write", "beside_read", "host_variables", "network_refused", "network_direct",
-    "registry_reachable"] as const;
+    "registry_reachable", "setup_hosts_closed"] as const;
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, true)))).toEqual(sandbox);
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "outside_read"))))
     .toEqual({ ...sandbox, filesystem: "host" });
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "registry_reachable"))))
+    .toEqual({ ...sandbox, network: "open" });
+  // Hosts opened for setup and left open reach whatever the agent sends them (decision 048).
+  expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "setup_hosts_closed"))))
     .toEqual({ ...sandbox, network: "open" });
   // A proxy that refuses what is not allowed confines nothing when a client can go around it.
   expect(qualifiedGuarantees(sandbox, all.map((control) => result(control, control !== "network_direct"))))
@@ -86,7 +90,7 @@ it("qualifies every machine again when a control changes", () => {
     .map((file) => readFileSync(file, "utf8").replaceAll("\r\n", "\n")).join("");
   // When the controls change, raise CONTROLS_VERSION so saved results are not trusted, then record their new hash here.
   expect({ version: CONTROLS_VERSION, controls: createHash("sha256").update(controls).digest("hex") })
-    .toEqual({ version: 4, controls: "7ce1c8f96991ceedceac9923dfbbdff225176799a5a788b585bc5873deefa306" });
+    .toEqual({ version: 5, controls: "4148231e9c6283c3c06d7b83bf7f4043f9ba423df683a0d11ba38ae16dbb5b91" });
 });
 
 it("does not trust a result the earlier controls produced", () => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { dockerSandboxesProvider } from "../src/docker-sandboxes-environment.js";
-import { controlsFor, NETWORK_CONTROLS, runControls } from "../src/execution-controls.js";
+import { controlsFor, NETWORK_CONTROLS, runControls, writeSetupProbe } from "../src/execution-controls.js";
 import type { ExecutionEnvironment, RunResult } from "../src/execution-environment.js";
 
 /**
@@ -35,6 +35,7 @@ beforeAll(async () => {
   await writeFile(join(workspace, "package.json"), "{}\n");
   await writeFile(join(root, "outside.txt"), "OUTSIDE-SENTINEL\n");
   await mkdir(join(root, "outside"));
+  await writeSetupProbe(workspace, "https://github.com/");
   sandbox = await dockerSandboxesProvider.prepare(workspace);
 }, 600_000);
 
@@ -47,8 +48,8 @@ afterAll(async () => {
 it.runIf(live)("passes every control its guarantees call for", async () => {
   if (sandbox === undefined) throw new Error("Sandbox unavailable");
   const results = await runControls(sandbox, controlsFor(dockerSandboxesProvider.guarantees), { workspace,
-    outside: join(root, "outside"), runtime: "node", refusedUrl: "https://example.com/", registryUrl: "https://registry.npmjs.org/" },
-  new AbortController().signal);
+    outside: join(root, "outside"), runtime: "node", refusedUrl: "https://example.com/", registryUrl: "https://registry.npmjs.org/",
+    setupUrl: "https://github.com/" }, new AbortController().signal);
   expect(results.filter((result) => !result.passed)).toEqual([]);
   expect(results.map((result) => result.control)).toEqual(controlsFor(dockerSandboxesProvider.guarantees));
 }, 300_000);
@@ -56,7 +57,8 @@ it.runIf(live)("passes every control its guarantees call for", async () => {
 it.runIf(live)("refuses and allows through its proxy, and reports what a client ignoring the proxy opened (decision 044)", async () => {
   if (sandbox === undefined) throw new Error("Sandbox unavailable");
   const results = await runControls(sandbox, NETWORK_CONTROLS, { workspace, outside: join(root, "outside"), runtime: "node",
-    refusedUrl: "https://example.com/", registryUrl: "https://registry.npmjs.org/" }, new AbortController().signal);
+    refusedUrl: "https://example.com/", registryUrl: "https://registry.npmjs.org/", setupUrl: "https://github.com/" },
+  new AbortController().signal);
   expect(results.filter((result) => result.control !== "network_direct" && !result.passed)).toEqual([]);
   // The network is declared open until what a refused direct connection receives is known; this is the evidence to watch.
   process.stdout.write(`Docker Sandboxes network_direct: ${results.find((result) => result.control === "network_direct")?.detail ?? "not run"}\n`);
