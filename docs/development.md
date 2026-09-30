@@ -33,9 +33,11 @@ Tesota modules or dependencies beside it.
 The package binary points to `dist/cli.js`. Build before `bun link`; later
 builds refresh that linked executable, and `bun unlink` removes it. The lint
 rule limits cyclomatic complexity to 20 in `src` and `tests` with no file
-exceptions. The Git workspace suites run in a separate Vitest process so a
-timed-out filesystem operation cannot contaminate later suites. Each of the
-two groups also writes a JUnit XML report to the ignored `test-reports/`
+exceptions. Vitest collects this checkout's `tests/` only, leaving a nested
+checkout's tests to its own scripts. The Git workspace suites, including the
+shell's source-turn tests, run in a separate Vitest process with a 20-second
+per-test limit so a timed-out filesystem operation cannot contaminate later
+suites. Each of the two groups also writes a JUnit XML report to the ignored `test-reports/`
 (`unit.xml` and `workspace.xml`), so a Tesota session on this repository can
 approve `bun run check => test-reports/unit.xml, test-reports/workspace.xml`
 and compare its failures with the base test by test. The opt-in
