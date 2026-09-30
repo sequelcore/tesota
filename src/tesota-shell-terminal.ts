@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { Editor, HStack, ScrollView, Text, VStack, isKeyRelease, matchesKey, truncateToWidth, wrapTextWithAnsi,
   type Component, type EditorTheme, type OverlayHandle, type ViewportTUI } from "@earendil-works/pi-tui";
+import type { SessionExecution } from "./execution-providers.js";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
 import { bold, colorText, fadedText, mutedText, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
@@ -18,7 +19,7 @@ import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, sessionStateI
 import { planLines, type WorkPlan } from "./work-plan.js";
 import { WelcomeBanner } from "./tesota-shell-welcome.js";
 import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, sidebarPresentation,
-  sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarPresentation, type SidebarSessionState } from "./verification/sidebar-rule.js";
+  sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarSessionState } from "./verification/sidebar-rule.js";
 
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
@@ -94,8 +95,11 @@ export interface TesotaShellTerminal {
   inspectFor(id: string, inspection: ShellInspection): void;
   /** Show the agent's replies and tool calls in a session as they happen. */
   showActivity(id: string, activity: AgentActivity): void;
-  /** Where a session's commands run, such as its sandbox, shown beside the prompt while it is selected. */
-  setSessionExecution(id: string, label: string): void;
+  /**
+   * Where a session's commands run, such as its sandbox, shown under the prompt while it is selected, in a color for
+   * the place: the theme's caution color on this computer, its success color in a sandbox.
+   */
+  setSessionExecution(id: string, label: string, place: SessionExecution["commands"]): void;
   /** The agent's plan for a session's work (decision 033), shown above the prompt while it is selected; undefined clears it. */
   setSessionPlan(id: string, plan: WorkPlan | undefined): void;
   /** The source repository's branch, shown with repository identity; undefined when Git cannot say. */
@@ -146,7 +150,7 @@ interface SessionView {
   /** The model the session's agent runs, once known. */
   model?: string;
   /** Where the session's commands run, once its environment is chosen. */
-  execution?: string;
+  execution?: { readonly label: string; readonly place: SessionExecution["commands"] };
   /** The agent's plan for the session's current work. */
   plan?: WorkPlan;
 }
@@ -258,6 +262,14 @@ class Line implements Component {
   }
 }
 
+/** Lines whose text is read at each render, for what follows the terminal's size. */
+class LiveLines implements Component {
+  readonly #lines: () => readonly string[];
+  constructor(lines: () => readonly string[]) { this.#lines = lines; }
+  invalidate(): void {}
+  render(width: number): string[] { return this.#lines().map((line) => truncateToWidth(` ${line}`, width)); }
+}
+
 /** The agent's plan: progress, then its steps, the one in progress in full color and the rest dimmed. */
 class PlanPanel implements Component {
   #lines: string[] = [];
@@ -273,27 +285,6 @@ class PlanPanel implements Component {
   render(width: number): string[] { return this.#lines.map((line) => truncateToWidth(` ${line}`, width)); }
 }
 
-/** The selected content's identity; workspace identity joins it only while the sidebar is absent. */
-class SessionHeading implements Component {
-  readonly #theme: TesotaShellTheme;
-  readonly #value: () => { readonly repository: string; readonly branch: string | undefined;
-    readonly title: string; readonly sidebar: SidebarPresentation };
-  constructor(theme: TesotaShellTheme, value: () => { readonly repository: string; readonly branch: string | undefined;
-    readonly title: string; readonly sidebar: SidebarPresentation }) {
-    this.#theme = theme;
-    this.#value = value;
-  }
-  invalidate(): void {}
-  render(width: number): string[] {
-    const value = this.#value();
-    const title = bold(safeTerminalText(value.title));
-    if (value.sidebar !== "hidden") return [truncateToWidth(` ${title}`, width)];
-    const branch = value.branch === undefined ? "" : ` · ${safeTerminalText(value.branch)}`;
-    const repository = colorText(`${safeTerminalText(value.repository)}${branch}`, this.#theme.accent);
-    return [truncateToWidth(` ${repository} / ${title}`, width)];
-  }
-}
-
 /** Keep Pi's editing behavior and cursor handling while removing its visible frame. */
 class PromptEditor extends Editor {
   readonly #theme: TesotaShellTheme;
@@ -301,8 +292,9 @@ class PromptEditor extends Editor {
     super(tui, editorTheme(theme), { paddingX: 1 });
     this.#theme = theme;
   }
-  protected override renderTopBorder(width: number): string { return " ".repeat(width); }
-  protected override renderBottomBorder(width: number): string { return " ".repeat(width); }
+  // A rule above and below the input sets it apart from the conversation and the lines beneath it.
+  protected override renderTopBorder(width: number): string { return mutedText("─".repeat(width), this.#theme); }
+  protected override renderBottomBorder(width: number): string { return mutedText("─".repeat(width), this.#theme); }
   override render(width: number): string[] {
     const lines = super.render(width);
     if (lines[1] !== undefined) lines[1] = colorText("›", this.#theme.accent) + lines[1].slice(1);
@@ -364,11 +356,22 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly sidebarHeader: SessionSidebarHeader;
   private readonly sidebar: SessionRail;
   private readonly sidebarScroll: ScrollView;
-  private readonly sessionHeading: SessionHeading;
   private readonly secondaryTitle = new Line();
   private readonly status = new Line();
   private readonly plan = new PlanPanel();
-  private readonly footer = new Line();
+  /**
+   * Under the prompt, as other harnesses order it: the selected session's model, joined by the repository and branch
+   * while the sidebar is hidden; then where its commands run, in the color for that place.
+   */
+  private readonly footer = new LiveLines(() => {
+    const { execution, model } = this.selected();
+    const workspace = sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns) !== "hidden" ? "" :
+      `${safeTerminalText(basename(this.options.cwd))}${this.branch === undefined ? "" : ` · ${safeTerminalText(this.branch)}`}`;
+    const identity = [model === undefined ? "" : safeTerminalText(model), workspace].filter(Boolean).join(" · ");
+    const place = execution === undefined ? "" :
+      colorText(execution.label, execution.place === "host" ? this.theme.warning : this.theme.success);
+    return [identity === "" ? "" : mutedText(identity, this.theme), place].filter(Boolean);
+  });
   private readonly result: ResultPanel;
   /** One scroll view for the result panel, kept across layouts so its position survives them. */
   private readonly resultScroll: ScrollView;
@@ -402,10 +405,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.result = new ResultPanel(this.theme);
     this.resultScroll = new ScrollView(this.result, { scrollbar: "auto" });
     this.sidebarScroll = new ScrollView(this.sidebar, { scrollbar: "auto" });
-    this.sessionHeading = new SessionHeading(this.theme, () => ({
-      repository: basename(this.options.cwd), branch: this.branch, title: this.selected().title,
-      sidebar: sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns),
-    }));
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
     initTheme(this.theme.appearance === "light" ? "light" : "dark");
     this.commandMenu = new CommandMenu(this.theme);
@@ -460,7 +459,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const selected = this.selected();
     this.plan.set(selected.plan, this.theme);
     this.updateSidebar();
-    this.updateFooter();
     this.updateResult(selected);
     this.updateStatus();
     const secondary = this.comparisonId === undefined ?
@@ -475,7 +473,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     // On a narrow terminal the result replaces the conversation in the session's column, above the prompt.
     const resultInColumn = (): boolean => this.showResult && this.contentWidth(this.tui.terminal.columns) < resultBesideWidth;
     const session = new VStack([
-      { component: this.sessionHeading, basis: "auto", shrink: 0 },
       { component: selected.scroll, basis: 0, grow: 1, minSize: 1, visible: () => !resultInColumn() },
       { component: this.resultScroll, basis: 0, grow: 1, minSize: 1, visible: () => resultInColumn() },
       { component: new VStack([{ component: this.plan, basis: "auto", visible: () => this.plan.visible },
@@ -527,12 +524,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.sidebar.setFrame(SHELL_SPINNER_FRAMES[this.frame] ?? "");
     this.sidebarScroll.updateLayout(this.sidebar.lineCount, Math.max(0, this.tui.terminal.rows - 2),
       () => this.tui.requestRender());
-  }
-
-  private updateFooter(): void {
-    const { execution, model } = this.selected();
-    this.footer.setText(mutedText([execution ?? "", model === undefined ? "" : safeTerminalText(model)]
-      .filter(Boolean).join(" · "), this.theme));
   }
 
   private updateResult(session: SessionView): void {
@@ -974,10 +965,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (this.started) this.compose();
   }
 
-  setSessionExecution(id: string, label: string): void {
+  setSessionExecution(id: string, label: string, place: SessionExecution["commands"]): void {
     const session = this.sessions.get(id);
     if (session === undefined) return;
-    session.execution = label;
+    session.execution = { label, place };
     if (this.started && id === this.selectedId) this.compose();
   }
 
