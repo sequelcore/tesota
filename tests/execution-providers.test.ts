@@ -149,9 +149,11 @@ it("only lists the steps when no one can confirm or the step has no action", asy
   expect(manual.ran).toEqual([]);
 });
 
-it("names a repository by one key whatever the case of its path, and other repositories by others", () => {
+it("names a repository by one key whatever the case of its path where the file system ignores case, and others by others", () => {
   const key = repositoryKey(join(tmpdir(), "Project"));
   expect(key).toMatch(/^[0-9a-f]{64}$/u);
-  expect(repositoryKey(join(tmpdir(), "project"))).toBe(key);
+  // Windows and macOS ignore a path's case, as their file systems do; on Linux, Project and project are two folders.
+  const ignoresCase = process.platform === "win32" || process.platform === "darwin";
+  expect(repositoryKey(join(tmpdir(), "project")) === key).toBe(ignoresCase);
   expect(repositoryKey(join(tmpdir(), "other"))).not.toBe(key);
 });

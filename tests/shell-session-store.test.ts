@@ -202,15 +202,16 @@ it("keeps a session's plan across restarts, clears it, and refuses one that is n
   reopened.close();
 });
 
-it("opens the same saved sessions whatever the case of the path, as the path finds them", () => {
+it("opens the same saved sessions whatever the case of the path where the file system ignores case", () => {
   const { root, source } = fixture();
   const first = openShellSessionStore(source, root);
   const session = first.create();
   first.close();
-  // Windows paths ignore case: a shell opened from C:\proyectos is the one saved from C:\Proyectos.
+  // Windows and macOS paths ignore case: a shell opened from C:\proyectos is the one saved from C:\Proyectos. On
+  // Linux the other spelling is another folder, with sessions of its own.
   const other = source.replace(/repository$/u, "REPOSITORY");
   const reopened = openShellSessionStore(other, root);
-  expect(reopened.list().map((entry) => entry.id)).toContain(session.id);
+  expect(reopened.list().some((entry) => entry.id === session.id)).toBe(process.platform === "win32" || process.platform === "darwin");
   reopened.close();
 });
 
