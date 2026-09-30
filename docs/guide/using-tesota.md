@@ -432,8 +432,8 @@ remain optional shortcuts for the first nine sessions in newest-first order.
 A new session shows a palo fierro in the middle of the empty conversation, with
 a saguaro seedling in its shade, and Tesota's version and the working directory
 beneath them. For a few seconds the wind moves the crown, only while the
-terminal window has focus; it fades while you type or work in another window,
-and gives way to the conversation at its first message or notice (answers to
+terminal window has focus. It fades while you work in another window, turns
+plain and dim while you type, and gives way to the conversation at its first message or notice (answers to
 commands such as `/help` or `/themes` show beneath it), leaving the version and
 directory above it. Click the resting scene to watch it again; the wind may
 bring something with it. Use
