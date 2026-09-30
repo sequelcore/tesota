@@ -10,7 +10,8 @@ import type { AgentActivity } from "../src/integrations/model-session-contract.j
 import { readOnlyFileTools } from "../src/integrations/pi-coding-session.js";
 
 // The SDK is replaced: tools keep their handlers, and query plays a scripted run against them.
-const sdk = vi.hoisted(() => ({ options: [] as Record<string, unknown>[], script: undefined as unknown, session: undefined as unknown }));
+const sdk = vi.hoisted(() => ({ options: [] as Record<string, unknown>[], script: undefined as unknown, session: undefined as unknown,
+  interrupt: async (): Promise<void> => {} }));
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   tool: (name: string, description: string, shape: unknown, handler: (args: unknown) => Promise<unknown>) =>
     ({ name, description, shape, handler }),
@@ -19,7 +20,8 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   getSessionMessages: async () => [],
   query: ({ options }: { options: Record<string, unknown> }) => {
     sdk.options.push(options);
-    return (sdk.script as (options: Record<string, unknown>) => AsyncGenerator<unknown>)(options);
+    return Object.assign((sdk.script as (options: Record<string, unknown>) => AsyncGenerator<unknown>)(options),
+      { interrupt: () => sdk.interrupt() });
   },
 }));
 
@@ -28,6 +30,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
   sdk.options.length = 0;
   sdk.session = undefined;
+  sdk.interrupt = async () => {};
 });
 function checkout(): string {
   const root = mkdtempSync(join(tmpdir(), "tesota-claude-"));
@@ -128,6 +131,45 @@ it("stops when the turn is cancelled, and fails when Claude Code cannot start", 
   expect(await session.run("go", stop.signal)).toEqual({ status: "cancelled" });
   sdk.script = async function* () { yield* []; throw new Error("Not logged in"); };
   expect(await session.run("go", new AbortController().signal)).toEqual({ status: "failed", reason: "Not logged in" });
+});
+
+it("interrupts Claude Code on a stop, cancels the running tool, and neither shows nor keeps what the model says after it", async () => {
+  const root = checkout();
+  const stop = new AbortController();
+  const activity: AgentActivity[] = [];
+  let interrupted = 0;
+  let returned: { isError?: boolean } | undefined;
+  sdk.interrupt = async () => { interrupted += 1; };
+  sdk.script = async function* (options: Record<string, unknown>) {
+    const running = handlers(options)[0]?.handler({ path: "a.ts" });
+    stop.abort();
+    returned = await running;
+    yield { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: "I can't run tools right now." }] } };
+    yield success("I can't run tools right now.");
+  };
+  const session = await ClaudeCodeSession.start({ cwd: root, model: "opus", systemPrompt: "p", tools: readOnlyFileTools(root),
+    onActivity: (entry) => { activity.push(entry); } });
+  expect(await session.run("go", stop.signal)).toEqual({ status: "cancelled" });
+  expect(interrupted).toBe(1);
+  expect(returned?.isError).toBe(true);
+  expect(activity.map((entry) => entry.type)).toEqual(["tool_started", "tool_finished"]);
+  expect(activity[1]).toMatchObject({ failed: true });
+  expect((await session.conversation()).map((entry) => entry.text)).not.toContain("I can't run tools right now.");
+});
+
+it("ends Claude Code's process when it cannot be interrupted", async () => {
+  const root = checkout();
+  const stop = new AbortController();
+  sdk.interrupt = async () => { throw new Error("Stream closed"); };
+  sdk.script = async function* (options: Record<string, unknown>) {
+    const abort = options["abortController"] as AbortController;
+    stop.abort();
+    if (!abort.signal.aborted) await new Promise((resolve) => { abort.signal.addEventListener("abort", resolve, { once: true }); });
+    yield* [];
+    throw new Error("Claude Code process aborted by user");
+  };
+  const session = await ClaudeCodeSession.start({ cwd: root, model: "opus", systemPrompt: "p", tools: [] });
+  expect(await session.run("go", stop.signal)).toEqual({ status: "cancelled" });
 });
 
 it("reports Claude Code's sign-in without any credential", () => {
