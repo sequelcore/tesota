@@ -82,16 +82,43 @@ it("plays only while the terminal has focus, and pauses faded without asking for
   expect(stage(view.render(100))).not.toBe(moving);
 });
 
-it("steps back while the operator types, as while unfocused", () => {
+it("pauses without color while the operator types, and colors again once the draft is gone", () => {
   let drafting = false;
   const { view, clock } = banner({ drafting: () => drafting });
+  const art = (lines: readonly string[]): string => lines.filter((line) => braille.test(line)).join("");
   view.render(100);
   clock.now += WELCOME_FRAME_MS * 6;
   const before = stage(view.render(100));
   drafting = true;
-  view.render(100);
+  const typed = view.render(100);
+  expect(art(typed)).not.toContain("[38;");
+  expect(art(typed)).toContain("[2m");
   for (let step = 0; step < 12; step++) { clock.now += WELCOME_FRAME_MS; view.render(100); }
   expect(stage(view.render(100))).toBe(before);
+  drafting = false;
+  expect(art(view.render(100))).toContain("[38;2;");
+});
+
+it("fades at rest too while the terminal is unfocused, and returns to full strength with focus", () => {
+  let focused = true;
+  const { view, clock, frames } = banner({ focused: () => focused });
+  const brightest = (lines: readonly string[]): number => Math.max(...lines.filter((line) => braille.test(line))
+    .join("").split("[38;2;").slice(1).flatMap((color) => color.slice(0, color.indexOf("m")).split(";").map(Number)));
+  view.render(100);
+  for (let elapsed = 0; elapsed <= WELCOME_SCENE_MS; elapsed += WELCOME_FRAME_MS) { clock.now += WELCOME_FRAME_MS; view.render(100); }
+  const rest = brightest(view.render(100));
+  focused = false;
+  view.render(100);
+  for (let step = 0; step < 10; step++) { clock.now += WELCOME_FRAME_MS; view.render(100); }
+  expect(brightest(view.render(100))).toBeLessThanOrEqual(26 + (255 - 22) * WELCOME_FADED_OPACITY);
+  expect(view.moving).toBe(false);
+  frames.length = 0;
+  view.render(100);
+  expect(frames).toEqual([]);
+  focused = true;
+  view.render(100);
+  for (let step = 0; step < 10; step++) { clock.now += WELCOME_FRAME_MS; view.render(100); }
+  expect(brightest(view.render(100))).toBe(rest);
 });
 
 it("comes to rest after the scene, at full strength, and then asks for no frames", () => {

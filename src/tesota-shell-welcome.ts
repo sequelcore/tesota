@@ -11,7 +11,7 @@ import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLi
 export const WELCOME_SCENE_MS = 9_000;
 export const WELCOME_FRAME_MS = 50;
 const FADE_MS = 400;
-/** How visible the tree stays while the terminal is unfocused or the operator is typing. */
+/** How visible the tree stays while the terminal is unfocused. */
 export const WELCOME_FADED_OPACITY = 0.18;
 /** A frame that arrives later than this, such as after the session was hidden, advances by this much at most. */
 const LONGEST_STEP_MS = 100;
@@ -71,9 +71,9 @@ export interface WelcomeBannerOptions {
   readonly viewportHeight: () => number;
   /** Rows the conversation shows beneath the opening, such as replies to the operator, at a width. */
   readonly rowsBelow?: (width: number) => number;
-  /** Whether the terminal has focus; the scene plays only then. */
+  /** Whether the terminal has focus; the scene plays only then, and the tree fades while it does not. */
   readonly focused?: () => boolean;
-  /** Whether the operator has started typing; the tree steps back while they do. */
+  /** Whether the operator has started typing; the tree pauses, without color, while they do. */
   readonly drafting?: () => boolean;
   /** Asks for another render after the delay, while the tree is moving. */
   readonly requestFrame?: (delayMs: number) => void;
@@ -85,9 +85,9 @@ export interface WelcomeBannerOptions {
 /**
  * A fresh session's opening: the palo fierro in the middle of the empty conversation, with a saguaro seedling in
  * its shade, saguaros further off, and the version and folder beneath it, while the wind moves its crown. A click on
- * the resting scene plays it again with a tumbleweed blowing through. It plays while the terminal has focus, pauses
- * and fades when it loses focus or the operator types, and leaves at the session's first recorded entry, keeping
- * only the header. It never enters the saved conversation.
+ * the resting scene plays it again with a tumbleweed blowing through. It plays while the terminal has focus and
+ * pauses and fades when it loses focus, even at rest; while the operator types it pauses, without color. It leaves
+ * at the session's first recorded entry, keeping only the header. It never enters the saved conversation.
  */
 export class WelcomeBanner implements Component {
   readonly #cwd: string;
@@ -106,6 +106,8 @@ export class WelcomeBanner implements Component {
   #fadeElapsed = FADE_MS;
   #fadeFrom = 1;
   #opacity = 1;
+  /** Whether the last frame was drawn without color, for the operator's draft. */
+  #plain = false;
   #drawnHeight: number | undefined;
   /** Where the last render drew the tree, in the banner's own rows and columns. */
   #drawnStage: { readonly top: number; readonly left: number; readonly rows: number; readonly columns: number } | undefined;
@@ -201,7 +203,9 @@ export class WelcomeBanner implements Component {
   /** Advance the clock by the time since the last drawn frame, then draw the tree's pose for it. */
   #stage(columns: number, rows: number): string[] {
     const now = (this.#options.now ?? Date.now)();
-    const faded = this.#options.focused?.() === false || this.#options.drafting?.() === true;
+    const faded = this.#options.focused?.() === false;
+    this.#plain = this.#options.drafting?.() === true;
+    const paused = faded || this.#plain;
     const step = this.#lastFrame === undefined ? 0 : Math.min(LONGEST_STEP_MS, Math.max(0, now - this.#lastFrame));
     this.#lastFrame = now;
     if (this.#faded !== faded) {
@@ -211,12 +215,11 @@ export class WelcomeBanner implements Component {
       this.#faded = faded;
     } else {
       this.#fadeElapsed = Math.min(FADE_MS, this.#fadeElapsed + step);
-      if (!faded) this.#played = Math.min(WELCOME_SCENE_MS, this.#played + step);
+      if (!paused) this.#played = Math.min(WELCOME_SCENE_MS, this.#played + step);
     }
-    // A finished scene rests at full strength, as the mark it is; only a playing one steps back.
-    const target = faded && this.#played < WELCOME_SCENE_MS ? WELCOME_FADED_OPACITY : 1;
+    const target = faded ? WELCOME_FADED_OPACITY : 1;
     this.#opacity = this.#fadeFrom + (target - this.#fadeFrom) * ease(this.#fadeElapsed, FADE_MS);
-    if (this.moving && (!faded || this.#fadeElapsed < FADE_MS)) this.#options.requestFrame?.(WELCOME_FRAME_MS);
+    if (this.moving && (!paused || this.#fadeElapsed < FADE_MS)) this.#options.requestFrame?.(WELCOME_FRAME_MS);
     return this.#paint(columns, rows, this.#played / WELCOME_SCENE_MS);
   }
 
@@ -225,7 +228,8 @@ export class WelcomeBanner implements Component {
     const background = this.#background ?? fallbackBackground[appearance];
     const cells = renderMark(columns, rows, progress, markLighting(background, appearance === "light",
       themeMarkColors(this.#theme)), this.#visitor);
-    const colored = this.#mode !== "plain" && this.#theme.appearance !== "terminal";
+    const colored = !this.#plain && this.#mode !== "plain" && this.#theme.appearance !== "terminal";
+    const dim = this.#plain || this.#opacity < 0.5;
     const lines: string[] = [];
     for (let row = 0; row < rows; row++) {
       let line = "";
@@ -233,7 +237,7 @@ export class WelcomeBanner implements Component {
         const cell = cells[row * columns + column]!;
         if (cell.dots === 0) { line += " "; continue; }
         const glyph = String.fromCodePoint(0x2800 + cell.dots);
-        if (!colored) { line += this.#opacity < 0.5 ? `\x1b[2m${glyph}\x1b[22m` : glyph; continue; }
+        if (!colored) { line += dim ? `\x1b[2m${glyph}\x1b[22m` : glyph; continue; }
         const rgb: Rgb = [cell.rgb >> 16 & 255, cell.rgb >> 8 & 255, cell.rgb & 255].map((channel, i) =>
           Math.round(background[i]! + (channel - background[i]!) * this.#opacity)) as [number, number, number];
         line += this.#mode === "ansi256" ? `\x1b[38;5;${ansi256(rgb)}m${glyph}` : `\x1b[38;2;${rgb.join(";")}m${glyph}`;
