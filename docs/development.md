@@ -56,9 +56,16 @@ ignored `live-runs/` directory.
 | --- | --- |
 | `bun run live:review` | Review on eight frozen candidates with known truth: defects found, false positives, refutation, correction, time, tokens and models. `--set=scope` runs five candidates for work beyond the request instead, scoring which extras are marked for the operator or would be sent back, and `--set=all` runs both. A case no reviewer finished is recorded as not measured and the run goes on. `--depth=`, `--skip-corrections` and `--model-reviewer=`, `--model-refuter=`, `--model-validator=` (as `route:model`) vary it |
 | `bun run live:prbench` | Tesota's review answering SWE-PRBench's pull requests, before and after refutation, for the benchmark's own judge and scorer. `--split=`, `--config=`, `--max=`, `--label=`, `--depth=` and the model flags vary it |
-| `bun run live:agent` | The working agent with Tesota's own prompt, for issue #165: a request already fixed (the right result is no change), one partly fixed and one not fixed, each decided by a hidden test run afterwards, and fifteen questions measured in words, median and 90th percentile, with the facts each must state. It may run only `node --test`. Run it before and after a change to the working agent's prompt. `--runs=` and `--model-agent=` vary it |
+| `bun run live:agent` | The working agent with Tesota's own prompt, for issue #165: a request already fixed (the right result is no change), one partly fixed and one not fixed, each decided by a hidden test run afterwards; five requests beside a temptation to do more (a bug in the next function, old-style code, a TODO, a duplicated helper, a poor name) and a control that needs two files, each in scope only when it changes no path the case does not allow, keeps the case's code verbatim and passes a preserved-behavior test, with whether the reply reports the temptation recorded apart; and fifteen questions measured in words, median and 90th percentile, with the facts each must state. It may run only `node --test`. Run it before and after a change to the working agent's prompt. `--runs=`, `--set=all\|fixes\|scope\|questions` and `--model-agent=` vary it |
 | `bun run live:answer` | The answer check on 15 registered turns that changed no files: the first pass on every turn, scoring checkable turns skipped and conversation checked, and the full check on the 10 with a known verdict, scoring requests judged held that did not hold (missed) and the reverse (false alarms), with time and tokens. `--stage=first-pass`, `--stage=review`, `--runs=` and `--model-triage=`, `--model-reviewer=`, `--model-refuter=` vary it |
 | `bun run live:delegation` | The agent with and without explorers on questions about a frozen copy of this repository. `--runs=`, `--model-agent=` and `--model-explorer=` vary it |
+
+A scope instruction in the working agent's prompt, registered with its
+cases on 2026-09-30 before any run, is adopted only if, over two runs on one
+agent model, the tempted cases kept in scope rise, none of them or of the fix
+cases loses its resolution, the control stays resolved and in scope, and the
+questions state as many facts. A baseline with every tempted case in scope
+leaves nothing to show, and no instruction is adopted.
 
 Run the relevant evaluation before and after a change to a reviewer, the
 refuter, origin checking, explorers, the answer check, their prompts or a role's model, and

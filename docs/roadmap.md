@@ -37,11 +37,13 @@ the workflow and limits.
   project next. Base checks outside the WSL sandbox wait until real use shows
   they matter.
   [Workspace](design/workspace.md#planned)
-- Evaluate scope behavior on cases that tempt the agent to make unrelated
-  changes. The reviewer's extra-work check is built, but
-  the working agent's prompt has no measured scope intervention yet. Register
-  the cases before changing it; use `live:agent` and record the result with
-  the change. [Issue #165](https://github.com/sequelcore/tesota/issues/165)
+- Scope behavior was measured on cases that tempt the agent to make unrelated
+  changes, registered before any run: five temptations and a control in
+  `live:agent`. On 2026-09-30, `claude-code:sonnet` kept all 10 tempted runs in
+  scope and resolved, and reported the temptation in 5 of 6 where it could.
+  With nothing to improve, the working agent's prompt gets no scope
+  instruction. Revisit with harder cases drawn from real drift in daily use.
+  [Issue #165](https://github.com/sequelcore/tesota/issues/165)
 - Route the answer check by what a turn holds. Jev's first pass already
   decides the request's kind from the requests alone; add journaled real turns
   to `live:answer`'s cases, then send each part to the cheapest check that
