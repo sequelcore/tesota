@@ -464,7 +464,7 @@ beneath them. For a few seconds the wind moves the crown, only while the
 terminal window has focus. It fades while you work in another window, turns
 plain and dim while you type, and gives way to the conversation at its first message or notice (answers to
 commands such as `/help` or `/themes` show beneath it), leaving the version and
-directory above it. Click the resting scene to watch it again; the wind may
+directory as the conversation's first entry. Click the resting scene to watch it again; the wind may
 bring something with it. Use
 `TESOTA_REDUCED_MOTION=1` to
 show it without motion. Short terminals show only the version and directory.
@@ -474,11 +474,12 @@ when you restore a session.
 The sidebar appears beside the conversation when there is room and hides
 automatically on a narrow terminal. `Alt+B` hides it, or opens it over the
 right side at a narrow size without taking focus from the input. `Esc` still
-stops work; it does not close the sidebar. The heading over the conversation
-names the selected session and, while the sidebar is hidden, also names the
-repository and branch. The line below the prompt contains only execution
-context and the selected session's model, such as `this computer · asks first
-· claude-code:opus`, or `sandbox · …` when commands run in the sandbox.
+stops work; it does not close the sidebar. The sidebar and the terminal
+window's title name the selected session. The prompt sits between two rules.
+The first line under it names the selected session's model, followed by the
+repository and branch while the sidebar is hidden, as in `claude-code:opus ·
+tesota · dev`. The second names where commands run: `this computer · asks
+first` in the theme's warning color, or `sandbox · …` in its success color.
 
 A question above the prompt, such as a command waiting for your approval, is
 always shown whole, over as many lines as it needs, and so is each command the

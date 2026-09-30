@@ -425,7 +425,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       output.reportFor(id, { phase: "preparing", activity: "Choosing where commands run" });
       const [workspace, execution] = await Promise.all([workspaceFor(id), executionFor(sandboxPreference(id))]);
       state.execution = execution;
-      output.setSessionExecution(id, executionLabel(execution));
+      output.setSessionExecution(id, executionLabel(execution), execution.commands);
       if (execution.commands === "host") {
         output.writeTo(id, "Commands ask before running and run on this computer without isolation. " +
           "Run tesota setup to see what sandboxed sessions need.", "warning");
@@ -815,7 +815,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       return;
     }
     await restartEnvironment(id);
-    output.setSessionExecution(id, executionLabel(next));
+    output.setSessionExecution(id, executionLabel(next), next.commands);
     // The conversation remembers commands from the earlier environment: its paths and shell may no longer apply.
     const earlier = current === undefined ? "" : `; earlier commands in this conversation ran ${executionPlace(current)}, ` +
       "so their paths and tools may differ";

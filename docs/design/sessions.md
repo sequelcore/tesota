@@ -13,9 +13,11 @@ work, command approval, checks, review, decision, application, unread work,
 ended sessions and unresolved effects; only executing phases move. On a wide
 terminal the sidebar is inline, while an explicit open on a narrow terminal is
 a non-capturing pi-tui overlay, so the editor keeps focus and `Esc` keeps its
-stop-work meaning. The selected session heads the conversation; repository
-identity joins that heading when the sidebar is absent. Execution location and
-the selected model stay beside the prompt ([using Tesota](../guide/using-tesota.md)
+stop-work meaning. The sidebar and the terminal's title name the selected
+session; no heading sits over the conversation. A rule above and below the
+input sets it apart. Under it, as other harnesses order it, the selected model
+comes first, joined by the repository and branch while the sidebar is hidden,
+and execution location has a line of its own in its color ([using Tesota](../guide/using-tesota.md)
 lists the keys).
 
 A fresh session opens with an ephemeral palo fierro welcome that fills the
@@ -36,8 +38,9 @@ edge to the left, behind the trunk and in front of the distant saguaros. It is
 left out of the opening itself, which plays in every new session and should
 stay calm.
 The scene rests in the pose it began in. The first entry
-that becomes part of the session removes it and leaves the header above the
-conversation; replies to shell commands show beneath it, and it gives up their
+that becomes part of the session removes it and leaves the header, the name in
+bold with its version muted as `Tesota (v0.0.0)`, as the conversation's first
+entry, spaced as the entries after it; replies to shell commands show beneath it, and it gives up their
 rows. Where it would not fit, only the header shows. `TESOTA_REDUCED_MOTION=1`
 shows the resting pose without motion. The welcome is presentation only: it is
 not a conversation entry or saved session state, and restored sessions do not
