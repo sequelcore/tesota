@@ -161,6 +161,12 @@ export interface WorkingAgentConversation {
 export interface WorkingAgent extends ModelSession {
   /** Whether the agent continues a conversation it already had, rather than starting one. */
   readonly resumed: boolean;
+  /**
+   * Add the operator's message to the run in progress, read before the agent's
+   * next step; false when no run is in progress. Absent on Claude Code, whose
+   * query takes its one prompt when it starts.
+   */
+  steer?(text: string): boolean;
   /** Continue the conversation on another model of the same engine (decision 026). */
   switchModel(target: ModelTarget): Promise<void>;
   /** The conversation so far, including the turn in progress, as the engine holds it (decision 027). */

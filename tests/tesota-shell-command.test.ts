@@ -13,7 +13,7 @@ function surface(overrides: Partial<TesotaShellTerminal> = {}): { surface: Tesot
     start: () => { events.push("start"); }, stop: () => { events.push("stop"); }, setTerminalFocused: () => {},
     write: (text) => { events.push(text); }, ask: async () => "",
     report: () => {}, refreshElapsed: () => {}, inspect: () => {}, addSession: () => {}, selectSession: () => {},
-    writeTo: (_id, text) => { events.push(text); }, replyTo: (_id, text) => { events.push(text); }, askIn: async () => "",
+    writeTo: (_id, text) => { events.push(text); }, replyTo: (_id, text) => { events.push(text); }, askIn: async () => "", hasQueued: () => false,
     reportFor: () => {}, clearProgressFor: () => {}, inspectFor: () => {}, showActivity: () => {}, setSessionExecution: () => {}, setSessionPlan: () => {},
     setBranch: () => {}, setSessionModel: () => {}, setSessionTitle: () => {}, blockSession: () => {}, endSession: () => {}, removeSession: () => {},
     ...overrides,

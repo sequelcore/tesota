@@ -16,6 +16,12 @@ export type ResultDecision = "apply" | "reject" | "keep";
 export interface SessionDecisions {
   /** The next request; empty ends the session. */
   nextRequest(): Promise<string>;
+  /**
+   * Whether the operator has already typed the next request. It goes before
+   * a correction round and answers the result decision with "keep", since the
+   * operator's own message may be the correction.
+   */
+  queued(): boolean;
   /** The commands to run after each change, chosen once per repository from those suggested. */
   checks(suggested: readonly string[]): Promise<readonly ApprovedCheck[]>;
   /** Which of the hidden files the chosen checks may read. */
@@ -67,12 +73,13 @@ function parseChecks(answer: string): readonly ApprovedCheck[] | string {
 /**
  * The operator's decisions, asked as questions at the shell's prompt and read
  * from their replies; `write` shows what a question needs before it is asked,
- * and why an answer cannot be used.
+ * and why an answer cannot be used, and `queued` whether requests wait.
  */
 export function askingDecisions(ask: (prompt: string) => Promise<string>,
-  write: (text: string, tone?: NoticeTone) => void): SessionDecisions {
+  write: (text: string, tone?: NoticeTone) => void, queued: () => boolean): SessionDecisions {
   return {
     nextRequest: () => ask("> "),
+    queued,
     checks: async (suggested) => {
       write(suggested.length === 0
         ? "No checks were found for this repository.\n"

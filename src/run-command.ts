@@ -84,6 +84,7 @@ export function policyDecisions(request: string, policy: RunPolicy): SessionDeci
       asked = true;
       return request;
     },
+    queued: () => false,
     checks: async (suggested) => policy.checks === "suggested" ? suggested.map((command) => ({ command, reports: [] })) : policy.checks,
     checkSecrets: async () => [],
     result: async () => policy.apply ? "apply" : "keep",

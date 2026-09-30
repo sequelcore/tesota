@@ -2,6 +2,8 @@ import { expect, it, vi } from "vitest";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { CodingSession } from "../src/integrations/pi-coding-session.js";
 import { createProcessTesotaShell } from "../src/tesota-shell-command.js";
+import type { SessionDecisions } from "../src/session-decisions.js";
+import { createSessionEngine, type SessionEngine, type SessionOutput } from "../src/session-engine.js";
 import type { ExecutionEnvironment, PreparationStep } from "../src/execution-environment.js";
 import type { SessionExecution } from "../src/execution-providers.js";
 import { hostProvider } from "../src/host-environment.js";
@@ -105,5 +107,53 @@ it.each([
     shell.dispose?.();
     for (const spy of spies) spy.mockRestore();
     notices.mockRestore();
+  }
+});
+
+it("records a message steered into the agent's run as a request of that turn, and takes none outside a run", async () => {
+  const record: ShellSessionRecord = { id: "session", title: "Session 1", engineId: "engine", workspace: null,
+    entries: [], inspections: [], interrupted: false, blocked: false,
+    retiredEngineIds: [], titleSource: "counter" };
+  const store = { list: () => [record], append: () => {},
+    setWorkspace: (_id: string, directory: string) => { record.workspace = directory; },
+    setAgentModel: () => {}, allowedNetwork: () => [], markActive: () => {}, close: () => {} } as unknown as ShellSessionStore;
+  const environment = { provider: "test", guarantees: hostProvider.guarantees, preparation: [],
+    run: vi.fn(), dispose: vi.fn(async () => {}) } satisfies ExecutionEnvironment;
+  const recordRequest = vi.fn(async (_text: string, _steered?: boolean) => {});
+  const workspace = { directory: "workspace", checkout: "workspace/repo", included: [],
+    update: () => ({ status: "current" }), snapshot: () => ({ tree: "t", changes: [] }), requests: async () => [], recordRequest } as unknown as Workspace;
+  let engine: SessionEngine | undefined;
+  let taken: boolean | undefined;
+  // The operator types while the agent works: the engine hands the message to the running agent.
+  const run = vi.fn(async () => {
+    taken = engine?.steer("session", "Use b.ts instead.");
+    return { status: "completed" as const, reply: "ok" };
+  });
+  const steer = vi.fn((_text: string) => true);
+  const coding = { run, steer, dispose: vi.fn(), resumed: false } as unknown as CodingSession;
+  const spies = [
+    vi.spyOn(Workspace, "create").mockResolvedValue(workspace),
+    vi.spyOn(SourceSession, "create").mockResolvedValue(workspace as unknown as SourceSession),
+    vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}) } as unknown as ModelRuntime),
+    vi.spyOn(SessionManager, "findById").mockReturnValue(undefined),
+    vi.spyOn(SessionManager, "create").mockReturnValue({} as SessionManager),
+    vi.spyOn(CodingSession, "create").mockResolvedValue(coding),
+  ];
+  const mode = { commands: "host", provider: { ...hostProvider, name: "test", prepare: async () => environment },
+    missing: [] } satisfies SessionExecution;
+  const output = new Proxy({}, { get: () => () => undefined }) as SessionOutput;
+  engine = createSessionEngine({ cwd: "source", store, output, decisions: () => ({}) as SessionDecisions,
+    chooseExecution: async () => mode, fresh: new Set() });
+  try {
+    expect(engine.steer("session", "Before any run.")).toBe(false);
+    await engine.session("session").work("Read a.ts");
+    expect(taken).toBe(true);
+    expect(steer).toHaveBeenCalledWith("Use b.ts instead.");
+    // Steered into the turn, the message joins its requests, so the turn's review holds the agent to it too.
+    expect(recordRequest.mock.calls).toEqual([["Read a.ts"], ["Use b.ts instead.", true]]);
+    expect(engine.steer("session", "After the run.")).toBe(false);
+  } finally {
+    await engine.dispose();
+    for (const spy of spies) spy.mockRestore();
   }
 });

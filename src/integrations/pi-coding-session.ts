@@ -467,6 +467,8 @@ export class CodingSession {
   readonly #session: AgentSession;
   readonly #unsubscribe: () => void;
   #usable = true;
+  /** Whether a run is in progress, so a steered message can still join it. */
+  #running = false;
   /** Whether the session continues a conversation its session manager already held. */
   readonly resumed: boolean;
 
@@ -496,8 +498,9 @@ export class CodingSession {
   static async start(options: SessionStartOptions): Promise<CodingSession> {
     const root = realpathSync(options.cwd);
     // Pi's install telemetry would also name Pi, not Tesota, to OpenRouter on every call.
-    const settingsManager = SettingsManager.inMemory({ defaultTools: [], enableSkillCommands: false, enableInstallTelemetry: false },
-      { projectTrusted: false });
+    // Every message the operator steers in is read at the agent's next step, not one per step.
+    const settingsManager = SettingsManager.inMemory({ defaultTools: [], enableSkillCommands: false, enableInstallTelemetry: false,
+      steeringMode: "all" }, { projectTrusted: false });
     const resourceLoader = new DefaultResourceLoader({ cwd: root, agentDir: root, settingsManager,
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
       systemPrompt: options.systemPrompt });
@@ -539,7 +542,7 @@ export class CodingSession {
     if (!this.#usable) throw new Error("Coding session unavailable");
     if (signal.aborted) return { status: "cancelled" };
     let failed: string | undefined;
-    const prompt = this.#session.prompt(request, { expandPromptTemplates: false })
+    const prompt = this.#runSteered(request, signal)
       .catch((error: unknown) => { failed = error instanceof Error ? error.message : "The model request failed"; });
     let abortRequested = false;
     let onAbort: () => void = () => {};
@@ -561,6 +564,39 @@ export class CodingSession {
     const error = failed ?? (assistant?.role === "assistant" ? assistant.errorMessage : undefined);
     if (error !== undefined) return { status: "failed", reason: error };
     return { status: "completed", reply: replyText(this.#session) };
+  }
+
+  /**
+   * Add the operator's message to the run in progress: the agent reads it
+   * before its next step, and one that arrives as the agent finishes gets a
+   * step of its own in the same run. False when no run is in progress.
+   */
+  steer(text: string): boolean {
+    if (!this.#running) return false;
+    this.#session.agent.steer({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() });
+    return true;
+  }
+
+  /** Prompt with the request, then with the messages steered in after the agent's last step, until none is left. */
+  async #runSteered(request: string, signal: AbortSignal): Promise<void> {
+    this.#running = true;
+    try {
+      for (let text: string | undefined = request; text !== undefined && !signal.aborted; text = this.#unread()) {
+        await this.#session.prompt(text, { expandPromptTemplates: false });
+      }
+    } finally {
+      this.#running = false;
+      this.#session.agent.clearAllQueues();
+    }
+  }
+
+  /** The messages steered in that the agent has not read, as one message; undefined when there are none. */
+  #unread(): string | undefined {
+    const agent = this.#session.agent;
+    const texts = agent.peekQueuedMessages().flatMap((message) => message.role === "user"
+      ? [typeof message.content === "string" ? message.content : textOf(message.content)] : []);
+    agent.clearAllQueues();
+    return texts.length === 0 ? undefined : texts.join("\n\n");
   }
 
   dispose(): void {

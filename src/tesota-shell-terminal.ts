@@ -26,6 +26,8 @@ export interface TesotaShellTerminalOptions {
   readonly tui: ViewportTUI & Partial<Backdrop>;
   readonly now?: () => number;
   readonly interrupt?: (sessionId: string) => void;
+  /** `Tab` while a session works: send a message to its agent now; false when the agent cannot take it, and it is queued. */
+  readonly onSteer?: (sessionId: string, text: string) => boolean;
   readonly theme?: TesotaShellThemeName;
   readonly onNewSession?: () => void;
   readonly onCloseSession?: (sessionId: string) => void;
@@ -88,6 +90,8 @@ export interface TesotaShellTerminal {
    */
   replyTo(id: string, text: string, tone?: NoticeTone): void;
   askIn(id: string, prompt: string): Promise<string>;
+  /** Whether the operator typed messages while the session worked that its next request prompt has not taken yet. */
+  hasQueued(id: string): boolean;
   reportFor(id: string, progress: TesotaShellProgress): void;
   /** Clear a session's progress only while it is still in this phase, so newer progress is kept. */
   clearProgressFor(id: string, phase: TesotaShellProgress["phase"]): void;
@@ -139,6 +143,8 @@ interface SessionView {
   draft: string;
   pending: PendingPrompt | undefined;
   prompt: string;
+  /** Messages typed while the session worked, which its next request prompts take in order. */
+  readonly queued: string[];
   progress: { readonly value: TesotaShellProgress; readonly startedAt: number } | undefined;
   unread: boolean;
   blocked: boolean;
@@ -243,6 +249,9 @@ class CommandMenu implements Component {
 
 function ignoreInterrupt(): void {}
 
+/** Whether input names a shell command, such as `/model`, which the shell runs instead of sending it to the agent. */
+function shellCommand(input: string): boolean { return /^\/[a-z]+(?:\s|$)/u.test(input.trimStart()); }
+
 /**
  * A row cut to the width, so chrome never pushes the conversation; or, when
  * `whole`, wrapped over as many rows as it needs, for text the operator must
@@ -267,6 +276,23 @@ class PlanPanel implements Component {
     // The steps come from the model, so their text is made safe for the terminal.
     this.#lines = planLines(plan).map((line, index) => index === current + 1 ? safeTerminalText(line)
       : mutedText(safeTerminalText(line), theme));
+  }
+  get visible(): boolean { return this.#lines.length > 0; }
+  invalidate(): void {}
+  render(width: number): string[] { return this.#lines.map((line) => truncateToWidth(` ${line}`, width)); }
+}
+
+/**
+ * While the session works: the messages queued for its next request, one row
+ * each, and how what is being typed can be sent, since Enter no longer waits.
+ */
+class QueuePanel implements Component {
+  #lines: string[] = [];
+  set(queued: readonly string[], typing: boolean, theme: TesotaShellTheme): void {
+    const hint = typing ? "Enter queues it for after this turn · Tab sends it to the agent now"
+      : queued.length > 0 ? "Sent in order after this turn · Esc stops the work and returns them to the input" : undefined;
+    this.#lines = [...queued.map((text) => `↳ ${safeTerminalText(text.replace(/\s+/gu, " "))}`),
+      ...hint === undefined ? [] : [hint]].map((line) => mutedText(line, theme));
   }
   get visible(): boolean { return this.#lines.length > 0; }
   invalidate(): void {}
@@ -368,6 +394,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly secondaryTitle = new Line();
   private readonly status = new Line();
   private readonly plan = new PlanPanel();
+  private readonly queue = new QueuePanel();
   private readonly footer = new Line();
   private readonly result: ResultPanel;
   /** One scroll view for the result panel, kept across layouts so its position survives them. */
@@ -414,7 +441,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.choicePicker = new ChoicePicker(this.theme);
     this.accountsPanel = new AccountsPanel(this.theme, () => this.tui.terminal.rows, this.now);
     this.editor = new PromptEditor(this.tui, this.theme);
-    this.editor.disableSubmit = true;
     this.editor.onChange = (value) => { this.updateCommandMenu(value); };
     this.editor.onSubmit = (answer) => { this.submit(answer); };
     this.selectedId = options.initialSession?.id ?? "default";
@@ -442,7 +468,23 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     return session;
   }
 
+  /** Whether a session is working: it takes input, but asks nothing, so what is typed waits for it or steers it. */
+  private working(session: SessionView): boolean {
+    return session.pending === undefined && !session.ended && !session.blocked;
+  }
+
+  /** Every session that has not ended or been blocked takes input: an answer at its prompt, or a message while it works. */
+  private updateSubmit(session: SessionView): void {
+    if (session.id === this.selectedId) this.editor.disableSubmit = session.ended || session.blocked;
+  }
+
+  private updateQueue(): void {
+    const session = this.selected();
+    this.queue.set(session.queued, this.working(session) && this.editor.getText().trim().length > 0, this.theme);
+  }
+
   private updateCommandMenu(value: string): void {
+    this.updateQueue();
     const session = this.selected();
     const atPrompt = session.pending !== undefined && session.prompt === "> ";
     this.commandMenu.update(value, atPrompt);
@@ -459,6 +501,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private compose(): void {
     const selected = this.selected();
     this.plan.set(selected.plan, this.theme);
+    this.updateQueue();
     this.updateSidebar();
     this.updateFooter();
     this.updateResult(selected);
@@ -479,7 +522,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       { component: selected.scroll, basis: 0, grow: 1, minSize: 1, visible: () => !resultInColumn() },
       { component: this.resultScroll, basis: 0, grow: 1, minSize: 1, visible: () => resultInColumn() },
       { component: new VStack([{ component: this.plan, basis: "auto", visible: () => this.plan.visible },
-        this.status, this.commandMenu, this.modelPicker, this.themePicker, this.choicePicker, this.editor, this.footer]),
+        { component: this.queue, basis: "auto", visible: () => this.queue.visible }, this.status, this.commandMenu, this.modelPicker, this.themePicker, this.choicePicker, this.editor, this.footer]),
         basis: "auto", shrink: 1, minSize: 3 },
     ], { gap: 1 });
     const sidebar = new VStack([
@@ -578,7 +621,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       scroll,
       inspections: [...inspections], restoredInspectionCount: inspections.length,
       selectedInspection: inspections.length - 1,
-      draft: "", pending: undefined, progress: undefined,
+      draft: "", pending: undefined, queued: [], progress: undefined,
       prompt: "> ", unread: false, blocked: false, ended: false });
     if (this.started) this.compose();
   }
@@ -591,10 +634,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const session = this.selected();
     session.unread = false;
     this.editor.setText(session.draft);
-    this.editor.disableSubmit = session.pending === undefined;
+    this.updateSubmit(session);
     this.compose();
     this.revealSelectedSession();
-    if (session.pending !== undefined) this.tui.setFocus(this.editor);
+    this.tui.setFocus(this.editor);
     this.options.onSessionChange?.(id);
   }
 
@@ -613,6 +656,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     // Pi's TUI asks terminals that speak the Kitty keyboard protocol to report releases too, and passes them to input
     // listeners; `matchesKey` matches a release as the key, so handling it would act twice per press.
     this.removeInputListener = this.tui.addInputListener((data) => isKeyRelease(data) ? undefined : this.handleKey(data));
+    // The input takes what is typed from the start: an answer at a prompt, or a message for work under way.
+    this.tui.setFocus(this.editor);
     this.compose();
     // Restored sessions are added before start; newest-first order can put the initial selection below the viewport.
     this.revealSelectedSession();
@@ -646,6 +691,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const menuInput = this.handleCommandMenuKey(data);
     if (menuInput !== undefined) return menuInput;
     if (matchesKey(data, "escape") && this.stopWork()) return { consume: true };
+    if (matchesKey(data, "tab") && this.steer()) return { consume: true };
     if (matchesKey(data, "ctrl+d") && this.editor.getText().length === 0 && this.stopOrQuit("Ctrl+D")) return { consume: true };
     if (matchesKey(data, "ctrl+n")) { this.options.onNewSession?.(); return { consume: true }; }
     if (matchesKey(data, "ctrl+w")) { this.options.onCloseSession?.(this.selectedId); return { consume: true }; }
@@ -682,6 +728,42 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (session.ended || session.blocked || session.pending !== undefined && session.prompt === "> ") return false;
     if (session.pending === undefined) this.interrupt();
     else this.cancelPrompt(session);
+    this.returnQueued(session);
+    return true;
+  }
+
+  /**
+   * Work that stops takes its queued messages with it: they return to the
+   * input, before anything typed there, to be sent again or changed, as in
+   * Claude Code, rather than starting work the operator just stopped.
+   */
+  private returnQueued(session: SessionView): void {
+    if (session.queued.length === 0) return;
+    const current = session.id === this.selectedId ? this.editor.getText() : session.draft;
+    const text = [...session.queued, current].filter((part) => part.trim().length > 0).join("\n");
+    session.queued.length = 0;
+    if (session.id === this.selectedId) this.editor.setText(text); else session.draft = text;
+    this.updateQueue();
+  }
+
+  /**
+   * `Tab` while the selected session works sends what is typed to its agent
+   * now, as part of the turn; where the agent cannot take it, as between its
+   * steps under review or on Claude Code, it is queued. False when there is
+   * nothing to send, or the session is not working.
+   */
+  private steer(): boolean {
+    const session = this.selected();
+    const text = this.editor.getText();
+    if (!this.working(session) || text.trim().length === 0 || shellCommand(text)) return false;
+    this.editor.addToHistory(text);
+    this.editor.setText("");
+    if (this.options.onSteer?.(session.id, text) === true) this.record(session, { kind: "user", text }, true);
+    else {
+      this.replyTo(session.id, "The agent cannot take a message now; it is queued for after this turn.");
+      session.queued.push(text);
+    }
+    this.updateQueue();
     return true;
   }
 
@@ -1002,6 +1084,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const pending = session.pending;
     session.pending = undefined;
     pending?.reject(new SessionBlockedError());
+    this.returnQueued(session);
+    this.updateSubmit(session);
     this.updateSidebar();
     this.refreshElapsed();
   }
@@ -1024,7 +1108,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     session.ended = true;
     session.progress = undefined;
     session.transcript.settle();
-    if (id === this.selectedId) this.editor.disableSubmit = true;
+    this.returnQueued(session);
+    this.updateSubmit(session);
     this.updateSidebar();
     this.refreshElapsed();
   }
@@ -1040,11 +1125,18 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       session.transcript.settle();
       // The first prompt may appear while the environment is still preparing; that progress stays visible.
       if (session.progress?.value.phase !== "preparing") session.progress = undefined;
+      // A message typed while the session worked is the next request, sent as if typed now.
+      const next = session.queued.shift();
+      if (next !== undefined) {
+        this.record(session, { kind: "user", text: next }, true);
+        if (id === this.selectedId) this.updateQueue();
+        this.refreshElapsed();
+        return Promise.resolve(next);
+      }
     }
     session.prompt = prompt;
     const answer = new Promise<string>((resolve, reject) => { session.pending = { resolve, reject }; });
     if (id === this.selectedId) {
-      this.editor.disableSubmit = false;
       this.tui.setFocus(this.editor);
       this.updateCommandMenu(this.editor.getText());
     }
@@ -1052,6 +1144,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.refreshElapsed();
     return answer;
   }
+
+  hasQueued(id: string): boolean { return (this.sessions.get(id)?.queued.length ?? 0) > 0; }
 
   report(progress: TesotaShellProgress): void { this.reportFor(this.selectedId, progress); }
   reportFor(id: string, progress: TesotaShellProgress): void {
@@ -1122,9 +1216,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   private submit(answer: string): void {
     const session = this.selected();
+    if (this.working(session)) { this.queueMessage(session, answer); return; }
     const pending = session.pending;
     if (pending === undefined) return;
-    if (session.prompt === "> " && /^\/[a-z]+(?:\s|$)/u.test(answer.trimStart())) {
+    if (session.prompt === "> " && shellCommand(answer)) {
       session.draft = "";
       this.editor.setText("");
       this.runShellCommand(session, answer.trim());
@@ -1132,7 +1227,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     }
     session.pending = undefined;
     session.draft = "";
-    this.editor.disableSubmit = true;
     this.commandMenu.update("", false);
     if (answer.length > 0) {
       this.editor.addToHistory(answer);
@@ -1141,6 +1235,24 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     session.prompt = "> ";
     this.refreshElapsed();
     pending.resolve(answer);
+  }
+
+  /**
+   * Enter while the session works queues the message for its next request,
+   * where it becomes a turn of its own; a shell command stays in the input,
+   * since commands such as `/model` change what the running work uses.
+   */
+  private queueMessage(session: SessionView, text: string): void {
+    if (shellCommand(text)) {
+      this.editor.setText(text);
+      this.replyTo(session.id, "Shell commands run at the prompt once this work ends; the command stays in the input.", "warning");
+      return;
+    }
+    if (text.trim().length === 0) return;
+    this.editor.addToHistory(text);
+    session.queued.push(text);
+    this.updateQueue();
+    this.tui.requestRender();
   }
 
   /** Each shell command, by name: what it does with the selected session and its arguments. */
@@ -1180,7 +1292,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       this.replyTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
         "/handoff /sandbox [where] /isolate /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
-        "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
+        "While it works: Enter queues · Tab sends to the agent now · Esc or Ctrl+C stops · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +
         "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split · Alt+A accounts");
     },
@@ -1252,10 +1364,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const pending = session.pending;
     if (pending === undefined) return;
     session.pending = undefined;
-    if (session.id === this.selectedId) {
-      this.editor.disableSubmit = true;
-      this.editor.setText("");
-    }
+    if (session.id === this.selectedId) this.editor.setText("");
     pending.reject(new DOMException("cancelled", "AbortError"));
     this.updateSidebar();
   }
