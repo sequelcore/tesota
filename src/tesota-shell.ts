@@ -4,7 +4,8 @@ import type { TesotaShellProgress } from "./shell-progress.js";
 import type { NoticeTone } from "./tesota-shell-transcript.js";
 import type { WorkspaceChange } from "./workspace.js";
 import type { ApplicationPathState } from "./workspace-apply.js";
-import { type ApprovedCheck, type CheckResult, parseApprovedCheck } from "./workspace-checks.js";
+import type { SessionDecisions } from "./session-decisions.js";
+import type { ApprovedCheck, CheckResult } from "./workspace-checks.js";
 
 export type WorkResult =
   | Readonly<{ status: "completed"; changes: readonly WorkspaceChange[] }>
@@ -50,7 +51,8 @@ export interface TesotaShellDependencies {
   readonly prepare?: () => void;
   /** Add a Tesota notice; the agent's own replies reach the surface as they stream. */
   readonly write: (text: string, tone?: NoticeTone) => void;
-  readonly ask: (prompt: string) => Promise<string>;
+  /** Every point where the session waits for someone, answered at the prompt or by a stated policy. */
+  readonly decisions: SessionDecisions;
   readonly report?: (progress: TesotaShellProgress) => void;
   /**
    * Run one request in the workspace, showing the agent's work as it happens,
@@ -92,37 +94,13 @@ function describeChanges(changes: readonly WorkspaceChange[]): string {
   return changes.map((change) => `  ${changeVerbs[change.status]} ${change.path}`).join("\n");
 }
 
-/** The checks an answer names, or the reason one of them cannot be used. */
-function parseChecks(answer: string): readonly ApprovedCheck[] | string {
-  const checks: ApprovedCheck[] = [];
-  for (const text of answer.split(";").filter((part) => part.trim().length > 0)) {
-    const check = parseApprovedCheck(text);
-    if (typeof check === "string") return check;
-    checks.push(check);
-  }
-  return checks;
-}
-
 async function chooseChecks(dependencies: TesotaShellDependencies): Promise<readonly ApprovedCheck[]> {
   const existing = dependencies.checks();
   if (existing !== null) return existing;
-  const suggested = dependencies.suggestChecks();
-  dependencies.write(suggested.length === 0
-    ? "No checks were found for this repository.\n"
-    : `Suggested checks:\n${suggested.map((command) => `  ${command}`).join("\n")}\n`);
-  dependencies.write("To compare failures test by test with the repository as it was, follow a command with " +
-    "=> and the JUnit XML reports it writes, in paths Git ignores: bun run test => reports/unit.xml, reports/e2e.xml\n");
-  for (;;) {
-    const answer = (await dependencies.ask(suggested.length === 0
-      ? "Commands to run after each change (separate with ;), or Enter for none: "
-      : "Enter to use these, type other commands (separate with ;), or 'none': ")).trim();
-    const chosen = answer.length === 0 ? suggested.map((command) => ({ command, reports: [] }))
-      : answer.toLowerCase() === "none" ? [] : parseChecks(answer);
-    if (typeof chosen === "string") { dependencies.write(`${chosen}\n`, "warning"); continue; }
-    dependencies.setChecks(chosen);
-    if (chosen.length > 0) await allowHiddenForChecks(dependencies);
-    return chosen;
-  }
+  const chosen = await dependencies.decisions.checks(dependencies.suggestChecks());
+  dependencies.setChecks(chosen);
+  if (chosen.length > 0) await allowHiddenForChecks(dependencies);
+  return chosen;
 }
 
 /**
@@ -132,21 +110,8 @@ async function chooseChecks(dependencies: TesotaShellDependencies): Promise<read
 async function allowHiddenForChecks(dependencies: TesotaShellDependencies): Promise<void> {
   const hidden = await dependencies.hiddenFiles?.() ?? [];
   if (hidden.length === 0 || dependencies.allowForChecks === undefined) return;
-  dependencies.write(`Hidden from the agent and its checks, since they may hold credentials:\n${hidden.map((path) => `  ${path}`).join("\n")}\n`);
-  const answer = await dependencies.ask("Checks that need some of them may read them: type their paths (separate with ;), or Enter for none: ");
-  const allowed = answer.split(";").map((path) => path.trim()).filter((path) => hidden.includes(path));
+  const allowed = await dependencies.decisions.checkSecrets(hidden);
   if (allowed.length > 0) dependencies.allowForChecks(allowed);
-}
-
-type Decision = "apply" | "reject" | "keep";
-
-async function askDecision(dependencies: TesotaShellDependencies): Promise<Decision> {
-  for (;;) {
-    const answer = (await dependencies.ask("[a]pply, [r]eject, or [k]eep working: ")).trim().toLowerCase();
-    if (answer === "a" || answer === "apply") return "apply";
-    if (answer === "r" || answer === "reject") return "reject";
-    if (answer === "k" || answer === "keep" || answer === "") return "keep";
-  }
 }
 
 type Assessment = "ready" | "stopped" | "unsettled";
@@ -212,7 +177,7 @@ async function reviewChanges(dependencies: TesotaShellDependencies,
     return true;
   }
   report({ phase: "awaiting_decision" });
-  const decision = await askDecision(dependencies);
+  const decision = await dependencies.decisions.result();
   if (decision === "keep") {
     dependencies.write("The changes stay in the workspace. Continue with another request.\n");
     return true;
@@ -284,7 +249,7 @@ export async function runTesotaShell(dependencies: TesotaShellDependencies): Pro
   const report = dependencies.report ?? ignoreProgress;
   dependencies.prepare?.();
   for (;;) {
-    const request = (await dependencies.ask("> ")).trim();
+    const request = (await dependencies.decisions.nextRequest()).trim();
     if (request.length === 0) {
       dependencies.write("Session ended.\n");
       return 0;

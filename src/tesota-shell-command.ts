@@ -14,7 +14,6 @@ import { allRoutes, routeStatuses, usedByRoute } from "./auth.js";
 import { usageSources } from "./integrations/usage-sources.js";
 import type { AccountsSource } from "./tesota-shell-accounts.js";
 import { BackdropTui, FocusReportingTerminal } from "./tesota-shell-tui.js";
-import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, sameAccount, startWorkingAgent,
   type WorkingAgent } from "./integrations/model-session.js";
@@ -40,6 +39,7 @@ import { consultAdvisor } from "./integrations/advisor-session.js";
 import { Semaphore } from "./semaphore.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
+import { askingDecisions, type SessionDecisions } from "./session-decisions.js";
 import { runTesotaShell, type AnswerResult, type ApplyResult, type RequestOrigin, type ReviewResult,
   type TesotaShellDependencies, type WorkPlace, type WorkResult } from "./tesota-shell.js";
 import { inspectAnswer, inspectReview } from "./tesota-shell-inspection.js";
@@ -72,7 +72,7 @@ import type { ReviewInput, ReviewReport, Reviewer, ToolCallRecord } from "./revi
 import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry, triageEntry, type AssuranceEntry }
   from "./assurance-journal.js";
 
-export type SessionWork = Omit<TesotaShellDependencies, "write" | "ask" | "report">;
+export type SessionWork = Omit<TesotaShellDependencies, "write" | "decisions" | "report">;
 
 /** How long quitting waits for the sessions' environments to be released, such as the WSL sandbox's process and proxy. */
 const RELEASE_TIME_LIMIT_MS = 5_000;
@@ -204,27 +204,9 @@ function closeWarning(record: ShellSessionRecord, pending: number): string {
   return `This session has ${pending} unapplied ${noun}. Press Ctrl+W again to close it and discard ${pending === 1 ? "it" : "them"}.`;
 }
 
-/** The question for a command on this computer: where it runs, why, and the rule the operator may save (decision 049). */
-export function commandQuestion(request: CommandRequest): string {
-  const where = request.reason === undefined ? `Run \`${request.command}\`?`
-    : `Run \`${request.command}\` on this computer, outside the sandbox? ${request.reason}`;
-  const rule = request.rule === undefined ? "" : `, [a]lways \`${request.rule.join(" ")} …\` in this repository`;
-  return `${where} [y]es${rule}, [n]o: `;
-}
-
-/** The operator's answer; "always" counts only when a rule was offered, and anything else declines. */
-export function parseApproval(answer: string, ruleOffered: boolean): CommandApproval {
-  const value = answer.trim().toLowerCase();
-  if (value === "y" || value === "yes") return "once";
-  if (ruleOffered && (value === "a" || value === "always")) return "rule";
-  return "deny";
-}
-
-function parseNetworkDecision(answer: string): NetworkDecision {
-  const value = answer.trim().toLowerCase();
-  if (value === "y" || value === "yes") return "session";
-  if (value === "a" || value === "always") return "repository";
-  return "deny";
+/** A session's decisions in the shell: the operator answers each at that session's prompt. */
+function shellDecisions(surface: TesotaShellTerminal, id: string): SessionDecisions {
+  return askingDecisions((prompt) => surface.askIn(id, prompt), (text, tone) => { surface.writeTo(id, text, tone); });
 }
 
 /**
@@ -514,6 +496,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     .map((session) => session.id), surface);
   const saved = (id: string): ReturnType<ShellSessionStore["list"]>[number] | undefined =>
     store.list().find((session) => session.id === id);
+  const decisionsFor = (id: string): SessionDecisions => shellDecisions(surface, id);
   const stateFor = (id: string): SessionState => {
     let state = states.get(id);
     if (state === undefined) { state = new SessionState(); states.set(id, state); }
@@ -706,9 +689,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       if (state.webAllowed.has(host) || store.allowedNetwork().includes(destination)) return "allowed";
       if (state.webDenied.has(host)) return "denied";
       surface.reportFor(id, { phase: "awaiting_command" });
-      const answer = await surface.askIn(id, `Read pages from ${host}? [y]es this session, [a]lways for this repository, [n]o: `);
+      const decision = await decisionsFor(id).site(host);
       surface.reportFor(id, { phase: "working" });
-      const decision = parseNetworkDecision(answer);
       if (decision === "deny") { state.webDenied.add(host); return "denied"; }
       if (decision === "repository") store.allowNetwork([destination]);
       state.webAllowed.add(host);
@@ -794,18 +776,15 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         commandRules: () => store.commandRules(),
         approveCommand: async (request) => {
           surface.reportFor(id, { phase: "awaiting_command" });
-          const answer = await surface.askIn(id, commandQuestion(request));
+          const approval = await decisionsFor(id).command(request);
           surface.reportFor(id, { phase: "working" });
-          const approval = parseApproval(answer, request.rule !== undefined);
           if (approval === "rule" && request.rule !== undefined) store.saveCommandRule(request.rule);
           return approval;
         },
         decideNetwork: async (destinations) => {
           surface.reportFor(id, { phase: "awaiting_command" });
-          const answer = await surface.askIn(id, `The sandbox refused network access to ${destinations.join(", ")}. ` +
-            "Allow it? [y]es this session, [a]lways for this repository, [n]o: ");
+          const decision = await decisionsFor(id).network(destinations);
           surface.reportFor(id, { phase: "working" });
-          const decision = parseNetworkDecision(answer);
           if (decision === "repository") store.allowNetwork(destinations);
           return decision;
         },
@@ -1545,7 +1524,7 @@ export async function runTesotaShellCommand(
       started.add(id);
       const operation = runTesotaShell({
         ...dependencies.session(id),
-        ask: (prompt) => surface.askIn(id, prompt),
+        decisions: shellDecisions(surface, id),
         write: (text, tone) => { surface.writeTo(id, text, tone); },
         report: (progress: TesotaShellProgress) => { surface.reportFor(id, progress); },
       }).then(() => {

@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { commandQuestion, parseApproval, runTesotaShellCommand, type SessionWork, type WorkspaceCallbacks } from "../src/tesota-shell-command.js";
+import { commandQuestion, parseApproval } from "../src/session-decisions.js";
+import { runTesotaShellCommand, type SessionWork, type WorkspaceCallbacks } from "../src/tesota-shell-command.js";
 import type { WorkResult } from "../src/tesota-shell.js";
 import type { TesotaShellTerminal } from "../src/tesota-shell-terminal.js";
 
