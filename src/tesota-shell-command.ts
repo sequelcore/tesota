@@ -23,7 +23,7 @@ import { accountRoute, MODEL_ROLES, ROLE_OFF, type ModelRole, parseModelChoice, 
 import { type WorkPlan, withReview } from "./work-plan.js";
 import { isGitRepository, largeUntrackedFiles, largeUntrackedWarning } from "./source-shadow.js";
 import { hiddenFilesIn } from "./secret-files.js";
-import { SourceSession } from "./source-session.js";
+import { type RevertedTurn, SourceSession } from "./source-session.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, rolePicker, routeListing,
   runRolesCommand } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
@@ -40,7 +40,7 @@ import { consultAdvisor } from "./integrations/advisor-session.js";
 import { Semaphore } from "./semaphore.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
-import { runTesotaShell, type AnswerResult, type ApplyResult, type RequestOrigin, type ReviewResult, type RevertResult,
+import { runTesotaShell, type AnswerResult, type ApplyResult, type RequestOrigin, type ReviewResult,
   type TesotaShellDependencies, type WorkPlace, type WorkResult } from "./tesota-shell.js";
 import { inspectAnswer, inspectReview } from "./tesota-shell-inspection.js";
 import { runsAnswerCheck } from "./verification/answer-check-rule.js";
@@ -48,13 +48,14 @@ import type { TriageDecision } from "./integrations/answer-triage.js";
 import { answerHeld, firstPass, reviewAnswer } from "./answer-check.js";
 import { nameSession } from "./integrations/session-namer.js";
 import { cleanTitle, seedTitle } from "./session-title.js";
-import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, type TesotaShellTerminal } from "./tesota-shell-terminal.js";
+import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, SessionBlockedError, type TesotaShellTerminal }
+  from "./tesota-shell-terminal.js";
 import type { TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { UnsupportedSourceChange } from "./source-snapshot.js";
 import { Workspace, type WorkspaceSnapshot, type WorkspaceUpdate } from "./workspace.js";
-import { applyWorkspace, ApplyConflictError, ApplyRecoveryError, ApplyRolledBackError, unfinishedApplications }
-  from "./workspace-apply.js";
-import { type BaseRuns, runChecks, suggestChecks } from "./workspace-checks.js";
+import { applyWorkspace, type ApplicationPathState, ApplyConflictError, ApplyRecoveryError, ApplyRolledBackError,
+  unfinishedApplications } from "./workspace-apply.js";
+import { approvedCheckText, type BaseRuns, runChecks, suggestChecks } from "./workspace-checks.js";
 import { flagVerificationChanges } from "./verification-changes.js";
 import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
 import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
@@ -116,6 +117,15 @@ export interface TesotaShellCommandDependencies {
   readonly agentModel?: AgentModelCommands;
   /** Where a session's commands run: `/sandbox` (decision 030). */
   readonly sessionSandbox?: SessionSandboxCommands;
+  /** A session's turns in the operator's files: `/keep`, `/revert` and `/redo`. */
+  readonly turnCommands?: TurnCommands;
+}
+
+export interface TurnCommands {
+  keep(id: string): Promise<void>;
+  /** `args` is empty, `["all"]` or `["agent"]`. */
+  revert(id: string, args: readonly string[]): Promise<void>;
+  redo(id: string): Promise<void>;
 }
 
 export interface SessionSandboxCommands {
@@ -297,6 +307,8 @@ class SessionState {
   lastReply: string | undefined;
   /** The latest turn's tool calls by call id, as Tesota saw them, for the answer check to hold the reply to. */
   readonly turnCalls: Map<string, ToolCallRecord> = new Map();
+  /** The hidden files the agent was last told of, so it hears again only when they change. */
+  toldHidden: string | undefined;
 }
 
 /**
@@ -433,6 +445,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const agent = code === 0 && args[0] === "agent" ? "New sessions start with it; /model switches this one's.\n" : "";
       surface.writeTo(id, `${text}${agent}`.trimEnd(), code === 0 ? "success" : "warning");
     },
+    onKeep: (id) => { void keepTurns(id); },
+    onRevert: (id, args) => { void revertTurn(id, args); },
+    onRedo: (id) => { void redoTurn(id); },
+    onChecks: (id, args) => { showChecks(id, args); },
     onRename: (id, name) => {
       if (name === undefined) {
         // As Codex's /rename suggests one: a title from the session's latest requests.
@@ -514,16 +530,18 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
           return work;
         } catch { store.rotateEngine(id); }
       }
-      // Decided before any wait, so two sessions starting together cannot both take the operator's files.
-      const inSource = holdsSource(id);
+      // A folder of documents keeps "nothing changes until you apply": its people are not developers, and Office
+      // locks open files. A repository works in place, one session at a time. Decided before any wait, so two
+      // sessions starting together cannot both take the operator's files.
+      const inSource = sourceKind === "repository" && holdsSource(id);
       if (inSource) sourceHolder = id;
       const work = inSource ? await SourceSession.create(cwd, undefined, { kind: sourceKind })
         : await Workspace.create(cwd, undefined, { kind: sourceKind });
       state.place = work.place === "source" ? "source" : "workspace";
       store.setWorkspace(id, work.directory);
       if (!inSource) {
-        surface.writeTo(id, "Another session works in your files, so this one works in an isolated copy, a workspace: " +
-          "nothing in your files changes until you apply its reviewed result.");
+        surface.writeTo(id, `${sourceKind === "folder" ? "Tesota works on a copy of this folder" : "Another session works in " +
+          "your files, so this one works in an isolated copy"}: nothing in your files changes until you apply its reviewed result.`);
       }
       const workspace = work;
       if (workspace.place !== "source" && workspace.included.length > 0) {
@@ -1113,21 +1131,156 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     return ended;
   };
 
-  /** A revert that did not finish, journaled; one that left a partial effect blocks the session, as an application does. */
-  const revertFailure = async (id: string, work: SourceSession, tree: string, error: unknown, paths: readonly string[]):
-    Promise<RevertResult> => {
-    if (error instanceof ApplyConflictError) {
-      await journal(id, work, decisionEntry(tree, "revert_conflict"));
-      return { status: "conflict", reason: error.message, paths: error.paths };
+  const pathList = (paths: readonly string[]): string => paths.map((path) => `  ${path}`).join("\n");
+  /** A session's work in the source for the turn commands, or why they do not apply to it now; never creates work. */
+  const turnsOf = async (id: string): Promise<SourceSession | string> => {
+    if (activeOperations.has(id) || applying.has(id)) return "Wait for the current work to finish, or stop it with Ctrl+C.";
+    const directory = saved(id)?.workspace;
+    if (states.get(id)?.workspace === undefined && (directory === null || directory === undefined)) return "This session has no turns yet.";
+    const work = await workspaceFor(id);
+    return work.place === "source" ? work
+      : "This session works in a copy: its result is applied or rejected after review, never kept or reverted in your files.";
+  };
+  const undecidedText = (session: SourceSession): string => {
+    const count = session.turns.length;
+    return count === 0 ? "No turn is undecided." : `${count} ${count === 1 ? "turn is" : "turns are"} undecided.`;
+  };
+  /** A revert or redo that did not finish, journaled; one that left a partial effect blocks the session, as an application does. */
+  const turnWriteFailure = async (id: string, session: SourceSession, tree: string, error: unknown,
+    paths: readonly string[], action: "revert" | "redo"): Promise<void> => {
+    const verb = action === "revert" ? "reverted" : "put back";
+    if (error instanceof ApplyConflictError || error instanceof ApplyRolledBackError) {
+      const rolledBack = error instanceof ApplyRolledBackError;
+      await journal(id, session, decisionEntry(tree, rolledBack ? `${action}_rolled_back` : `${action}_conflict`));
+      surface.writeTo(id, `Not ${verb}: ${error.message}.\n${error.paths.length > 0 ? `${pathList(error.paths)}\n` : ""}` +
+        (rolledBack ? "Your files hold what they held before." : "Nothing was written."), "warning");
+      return;
     }
-    if (error instanceof ApplyRolledBackError) {
-      await journal(id, work, decisionEntry(tree, "revert_rolled_back"));
-      return { status: "conflict", reason: error.message, paths: error.paths, rolledBack: true };
-    }
+    await journal(id, session, decisionEntry(tree, `${action}_recovery_required`));
+    const states: readonly ApplicationPathState[] = error instanceof ApplyRecoveryError ? error.paths
+      : paths.map((path) => ({ path, state: "unknown" as const }));
+    surface.writeTo(id, `Recovery required: the ${action} stopped partway and could not be undone.\n` +
+      `${pathList(states.map((state) => `${state.path}: ${state.state}`))}\n` +
+      "Tesota kept a copy of every file. Run tesota recover in this repository to undo or finish it. This session is closed.", "warning");
     blockSession(id);
-    await journal(id, work, decisionEntry(tree, "revert_recovery_required"));
-    return error instanceof ApplyRecoveryError ? { status: "recovery_required", id: error.id, paths: error.paths }
-      : { status: "recovery_required", id: "", paths: paths.map((path) => ({ path, state: "unknown" as const })) };
+  };
+  /** `/keep`: the operator's acceptance of every undecided turn, which the journal records apart from checks and review. */
+  const keepTurns = async (id: string): Promise<void> => {
+    const session = await turnsOf(id);
+    if (typeof session === "string") { surface.writeTo(id, session, "warning"); return; }
+    const count = session.turns.length;
+    if (count === 0) { surface.writeTo(id, "No turn is undecided; there is nothing to keep."); return; }
+    const tree = session.snapshot().tree;
+    stateFor(id).reviewed = undefined;
+    await session.keep();
+    await journal(id, session, decisionEntry(tree, "kept"));
+    session.keepRequestsOpen(false);
+    if (saved(id)?.plan !== undefined) showPlan(id, undefined);
+    surface.writeTo(id, `Kept ${count} ${count === 1 ? "turn" : "turns"}. The changes are in your files.`, "success");
+  };
+  /**
+   * `/revert`: undo the latest undecided turn; run again, it steps further
+   * back. A file the turn changed outside the agent's file tools may hold the
+   * operator's own edit, so it is touched only when the operator says which:
+   * `/revert all` reverts it too, `/revert agent` leaves it.
+   */
+  const revertTurn = (id: string, args: readonly string[]): Promise<void> => serialized(async () => {
+    const mode = args[0];
+    if (args.length > 1 || mode !== undefined && mode !== "all" && mode !== "agent") {
+      surface.writeTo(id, "Use /revert, /revert all or /revert agent.", "warning");
+      return;
+    }
+    const session = await turnsOf(id);
+    if (typeof session === "string") { surface.writeTo(id, session, "warning"); return; }
+    const turn = session.turns.at(-1);
+    if (turn === undefined) {
+      surface.writeTo(id, `No turn is undecided${session.redoable === undefined ? "" : "; /redo puts the last reverted one back"}.`);
+      return;
+    }
+    const changed = session.compare(turn.before, turn.after).changes.map((change) => change.path);
+    const outside = turn.outside.filter((path) => changed.includes(path));
+    if (outside.length > 0 && mode === undefined) {
+      surface.writeTo(id, "This turn also changed files outside the agent's file tools, by its commands or by you during the " +
+        `turn:\n${pathList(outside)}\nUse /revert all to revert them too, or /revert agent to leave them as they are.`, "warning");
+      return;
+    }
+    stateFor(id).reviewed = undefined;
+    applying.add(id);
+    try {
+      const reverted = await session.revert(join(dirname(dirname(session.directory)), "applications"), mode === "agent" ? outside : []);
+      if (reverted === undefined) return;
+      await journal(id, session, decisionEntry(turn.after, "reverted"));
+      if (session.turns.length === 0) {
+        session.keepRequestsOpen(false);
+        if (saved(id)?.plan !== undefined) showPlan(id, undefined);
+      }
+      reportRevert(id, session, reverted);
+    } catch (error) { await turnWriteFailure(id, session, turn.after, error, changed, "revert"); }
+    finally { applying.delete(id); }
+  });
+  /** Tell the operator and the agent what a revert did. */
+  const reportRevert = (id: string, session: SourceSession, reverted: RevertedTurn): void => {
+    const kept = [...reverted.changedSince, ...reverted.left];
+    stateFor(id).note = "Note: the user reverted your latest turn; its files hold what they held before it" +
+      (kept.length === 0 ? "." : `, except these, which stay as they are: ${kept.join(", ")}.`);
+    surface.writeTo(id, [`Reverted:\n${pathList(reverted.restored)}`,
+      ...reverted.changedSince.length === 0 ? [] : [`Left as they are, since they changed after the turn:\n${pathList(reverted.changedSince)}`],
+      ...reverted.left.length === 0 ? [] : [`Left as the turn left them, as you chose:\n${pathList(reverted.left)}`],
+      `${undecidedText(session)} /redo puts this turn back${session.turns.length === 0 ? "" : "; /revert again steps further back"}.`]
+      .join("\n"), reverted.changedSince.length === 0 ? "success" : "warning");
+  };
+  /** `/redo`: put the latest reverted turn back, as OpenCode's /redo does, while no new turn started since. */
+  const redoTurn = (id: string): Promise<void> => serialized(async () => {
+    const session = await turnsOf(id);
+    if (typeof session === "string") { surface.writeTo(id, session, "warning"); return; }
+    const turn = session.redoable;
+    if (turn === undefined) { surface.writeTo(id, "Nothing to redo: no turn was reverted since the latest one began."); return; }
+    const changed = session.compare(turn.before, turn.after).changes.map((change) => change.path);
+    stateFor(id).reviewed = undefined;
+    applying.add(id);
+    try {
+      const redone = await session.redo(join(dirname(dirname(session.directory)), "applications"));
+      if (redone === undefined) return;
+      await journal(id, session, decisionEntry(turn.after, "redone"));
+      stateFor(id).note = "Note: the user put your reverted turn back" +
+        (redone.changedSince.length === 0 ? "." : `, except these, which they changed since: ${redone.changedSince.join(", ")}.`);
+      surface.writeTo(id, [`Put back:\n${pathList(redone.restored)}`,
+        ...redone.changedSince.length === 0 ? [] : [`Left as they are, since they changed after the revert:\n${pathList(redone.changedSince)}`],
+        `${undecidedText(session)} Review it again with your next request, or /keep or /revert it.`].join("\n"),
+        redone.changedSince.length === 0 ? "success" : "warning");
+    } catch (error) { await turnWriteFailure(id, session, turn.before, error, changed, "redo"); }
+    finally { applying.delete(id); }
+  });
+  /** `/checks`: the repository's approved checks and the hidden files they may read; `/checks reset` chooses them again. */
+  const showChecks = (id: string, args: readonly string[]): void => {
+    if (args.length === 1 && args[0] === "reset") {
+      store.resetChecks();
+      surface.writeTo(id, "The next review asks for the checks again, and which hidden files they may read.");
+      return;
+    }
+    if (args.length > 0) { surface.writeTo(id, "Use /checks or /checks reset.", "warning"); return; }
+    const checks = store.checks();
+    const allowed = store.checkSecrets();
+    surface.writeTo(id, [checks === null ? "No checks are chosen yet; the first review asks for them."
+      : checks.length === 0 ? "No checks run after a change." : `Checks:\n${pathList(checks.map(approvedCheckText))}`,
+    allowed.length === 0 ? "The checks read no hidden files." : `Hidden files the checks may read:\n${pathList(allowed)}`,
+    "/checks reset chooses them again at the next review."].join("\n"));
+  };
+
+  /**
+   * Tell the agent which files are hidden from it, when that changed, so a
+   * command that fails without one is reported rather than worked around.
+   */
+  const hiddenNotice = async (id: string, root: string): Promise<string | undefined> => {
+    const hidden = await hiddenFilesIn(root);
+    const state = stateFor(id);
+    const told = hidden.join("\n");
+    if (told === (state.toldHidden ?? "")) return undefined;
+    state.toldHidden = told;
+    if (hidden.length === 0) return "Note: no file is hidden from you any longer.";
+    return "Note: these files are hidden from you, your file tools and your commands, since they may hold credentials:\n" +
+      `${hidden.map((path) => `  ${path}`).join("\n")}\nA command that needs one fails for that reason; say so to the user ` +
+      "instead of working around it, such as by creating the file.";
   };
 
   const sessionWork = (id: string): SessionWork => ({
@@ -1148,7 +1301,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         const work = await workspaceFor(id);
         // In the source, the turn begins now, and the operator's own edits since the agent's last turn are named to it.
         const edited = work.place === "source" ? await beginTurnIn(work) : undefined;
-        const notes = [state.note, origin === "operator" ? edited ?? await updateFromSource(id) : undefined]
+        const notes = [state.note, origin === "operator" ? edited ?? await updateFromSource(id) : undefined,
+          origin === "operator" ? await hiddenNotice(id, work.checkout) : undefined]
           .filter((note) => note !== undefined);
         // A new request makes any earlier review stale, whether or not the work finishes.
         stateFor(id).reviewed = undefined;
@@ -1192,9 +1346,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       state.reviewed = undefined;
       const snapshot = workspace.snapshot();
       const read = (revision: string, path: string): string | undefined => workspace.contentAt(revision, path);
-      const hidden = await hiddenFilesIn(workspace.checkout, store.checkSecrets());
+      // Checks are commands the operator approved: they read the hidden files the operator named, and their results say so.
+      const every = await hiddenFilesIn(workspace.checkout);
+      const readsHidden = store.checkSecrets().filter((path) => every.includes(path));
+      const hidden = every.filter((path) => !readsHidden.includes(path));
       const checks = [...await runChecks(await environmentFor(id), workspace, snapshot, commands, signal,
-        { baseRuns: state.baseRuns, hidden }),
+        { baseRuns: state.baseRuns, hidden, readsHidden }),
         ...await runOxlintVerifier(snapshot, read), ...await runLemmaScriptVerifier(snapshot, read, signal)];
       if (signal.aborted) return { status: "cancelled" };
       const flags = flagVerificationChanges(snapshot, read);
@@ -1311,43 +1468,6 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       if (saved(id)?.plan !== undefined) showPlan(id, undefined);
       state.note = "Note: the user rejected your previous changes, and the workspace was reset to the last applied state.";
     },
-    keep: async () => {
-      const work = await workspaceFor(id);
-      if (work.place !== "source" || work.turns.length === 0) return;
-      const state = stateFor(id);
-      state.reviewed = undefined;
-      const tree = work.snapshot().tree;
-      await work.keep();
-      await journal(id, work, decisionEntry(tree, "kept"));
-      work.keepRequestsOpen(false);
-      if (saved(id)?.plan !== undefined) showPlan(id, undefined);
-    },
-    revert: (confirm) => serialized(async (): Promise<RevertResult> => {
-      const work = await workspaceFor(id);
-      const turn = work.place === "source" ? work.turns.at(-1) : undefined;
-      if (work.place !== "source" || turn === undefined) return { status: "none" };
-      const state = stateFor(id);
-      state.reviewed = undefined;
-      // Files the agent's own tools did not write may hold the operator's edits, so they are reverted only if the operator says so.
-      const changed = new Set(work.compare(turn.before, turn.after).changes.map((change) => change.path));
-      const outside = turn.outside.filter((path) => changed.has(path));
-      const leave = outside.length > 0 && !await confirm(outside) ? outside : [];
-      applying.add(id);
-      try {
-        const reverted = await work.revert(join(dirname(dirname(work.directory)), "applications"), leave);
-        if (reverted === undefined) return { status: "none" };
-        await journal(id, work, decisionEntry(turn.after, "reverted"));
-        if (work.turns.length === 0) {
-          work.keepRequestsOpen(false);
-          if (saved(id)?.plan !== undefined) showPlan(id, undefined);
-        }
-        const kept = [...reverted.changedSince, ...reverted.left];
-        state.note = "Note: the user reverted your latest turn; its files hold what they held before it" +
-          (kept.length === 0 ? "." : `, except these, which stay as they are: ${kept.join(", ")}.`);
-        return { status: "reverted", ...reverted, earlier: work.turns.length };
-      } catch (error) { return await revertFailure(id, work, turn.after, error, [...changed]); }
-      finally { applying.delete(id); }
-    }),
   });
 
   return {
@@ -1358,6 +1478,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     configureWorkspace: (callbacks) => { workspaceCallbacks = callbacks; },
     agentModel,
     sessionSandbox,
+    turnCommands: { keep: keepTurns, revert: revertTurn, redo: redoTurn },
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },
     dispose: async () => {
       titling.abort();
@@ -1401,6 +1522,8 @@ export async function runTesotaShellCommand(
       }, (error: unknown) => {
         if (closed.has(id) || closing && isAbort(error)) return;
         ended.add(id);
+        // A blocked session already said why and what to run; it only ends.
+        if (error instanceof SessionBlockedError) { surface.endSession(id); return; }
         try {
           surface.writeTo(id, isAbort(error) ? "Session cancelled.\n" : "Session failed. Pending changes stay where the session left them.\n");
         } finally { surface.endSession(id); }

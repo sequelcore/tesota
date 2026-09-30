@@ -86,6 +86,8 @@ export interface ShellSessionStore {
   /** Files hidden from the agent that the operator let this repository's checks read, relative with forward slashes. */
   checkSecrets(): readonly string[];
   setCheckSecrets(paths: readonly string[]): void;
+  /** Forget the approved checks and the hidden files they may read, so the next review asks again. */
+  resetChecks(): void;
   /** Network destinations the operator allowed for every session of this repository. */
   allowedNetwork(): readonly string[];
   allowNetwork(destinations: readonly string[]): void;
@@ -264,6 +266,12 @@ export function openShellSessionStore(sourceDirectory: string,
         try { save(); } catch (error) { checks = previous; throw error; }
       },
       checkSecrets: () => checkSecrets,
+      resetChecks: () => {
+        const previous = { checks, checkSecrets };
+        checks = null;
+        checkSecrets = [];
+        try { save(); } catch (error) { ({ checks, checkSecrets } = previous); throw error; }
+      },
       setCheckSecrets: (paths) => {
         const previous = checkSecrets;
         checkSecrets = z.array(z.string().min(1).max(1_000)).max(50).parse([...new Set(paths)]);

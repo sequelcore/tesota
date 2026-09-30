@@ -211,3 +211,18 @@ it("opens the same saved sessions whatever the case of the path, as the path fin
   expect(reopened.list().map((entry) => entry.id)).toContain(session.id);
   reopened.close();
 });
+
+it("keeps the hidden files the checks may read with the checks, and forgets both when the checks are chosen again", () => {
+  const { root, source } = fixture();
+  const first = openShellSessionStore(source, root);
+  expect(first.checkSecrets()).toEqual([]);
+  first.setChecks([{ command: "bun test", reports: [] }]);
+  first.setCheckSecrets(["api/.env", "api/.env"]);
+  first.close();
+  const reopened = openShellSessionStore(source, root);
+  expect(reopened.checkSecrets()).toEqual(["api/.env"]);
+  reopened.resetChecks();
+  expect(reopened.checks()).toBeNull();
+  expect(reopened.checkSecrets()).toEqual([]);
+  reopened.close();
+});

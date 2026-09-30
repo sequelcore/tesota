@@ -8,7 +8,8 @@ it. Earlier proposals and evaluations remain in Git history.
 
 Tesota is an unpublished, pre-release terminal coding agent. It works in the
 operator's project, records each turn, runs checks and review on it, and lets
-the operator keep or revert the turn; a second session works in a separate
+the operator keep, revert or redo the turn with `/keep`, `/revert` and
+`/redo`; a folder of documents, or a second session, works in a separate
 workspace and applies or rejects. On Windows, commands can run
 in a qualified WSL sandbox; otherwise host commands ask for approval. The
 complete loop has run on throwaway and evaluation repositories. Daily use on a

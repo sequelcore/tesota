@@ -22,7 +22,8 @@ const outputTail = 2_000;
 const subjectLimit = 300;
 
 export type AssuranceDecision = "applied" | "rejected" | "application_conflict" | "application_rolled_back" |
-  "application_recovery_required" | "kept" | "reverted" | "revert_conflict" | "revert_rolled_back" | "revert_recovery_required";
+  "application_recovery_required" | "kept" | "reverted" | "revert_conflict" | "revert_rolled_back" | "revert_recovery_required" |
+  "redone" | "redo_conflict" | "redo_rolled_back" | "redo_recovery_required";
 
 export type AssuranceEntry =
   | Readonly<{ kind: "review"; at: string; base: string; tree: string; requests: readonly string[];

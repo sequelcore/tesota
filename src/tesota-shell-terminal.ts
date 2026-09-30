@@ -39,6 +39,12 @@ export interface TesotaShellTerminalOptions {
   /** `/rename <name>` names the session; `/rename` alone asks for a title from its requests (decision 036). */
   readonly onRename?: (sessionId: string, name: string | undefined) => void;
   readonly onHandoff?: (sessionId: string) => void;
+  /** `/keep`, `/revert [all|agent]` and `/redo`: decide a session's turns in the operator's files at any time. */
+  readonly onKeep?: (sessionId: string) => void;
+  readonly onRevert?: (sessionId: string, args: readonly string[]) => void;
+  readonly onRedo?: (sessionId: string) => void;
+  /** `/checks [reset]`: the repository's approved checks and the hidden files they may read. */
+  readonly onChecks?: (sessionId: string, args: readonly string[]) => void;
   /** `/sandbox`, with its argument when one was given (decision 030). */
   readonly onSandbox?: (sessionId: string, argument: string | undefined) => void;
   /** What the Accounts panel shows: `/accounts`, `/usage` and Alt+A (decision 051). */
@@ -148,6 +154,10 @@ const shellCommands = [
   { name: "roles", description: "Choose each role's model" },
   { name: "handoff", description: "Start the agent's conversation afresh" },
   { name: "sandbox", description: "Show or switch where this session's commands run" },
+  { name: "keep", description: "Keep this session's undecided turns in your files" },
+  { name: "revert", description: "Undo the latest undecided turn; again steps further back" },
+  { name: "redo", description: "Put the latest reverted turn back" },
+  { name: "checks", description: "Show the approved checks, or choose them again with reset" },
   { name: "accounts", description: "Show accounts: usage, sign-ins and each role's account" },
   { name: "usage", description: "Show how much each account has left" },
   { name: "result", description: "Show or hide the review" },
@@ -157,6 +167,14 @@ const shellCommands = [
   { name: "help", description: "Show commands and shortcuts" },
   { name: "quit", description: "Close Tesota" },
 ] as const;
+
+/** A session whose effects need `tesota recover` asks nothing more; its waiting prompt ends with this. */
+export class SessionBlockedError extends Error {
+  constructor() {
+    super("Tesota session has unresolved effects");
+    this.name = "SessionBlockedError";
+  }
+}
 
 /** A second press within this time confirms a key that asks first: quitting, and closing a session that holds work. */
 export const CONFIRMATION_WINDOW_MS = 5_000;
@@ -920,7 +938,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   blockSession(id: string): void {
-    this.find(id).blocked = true;
+    const session = this.find(id);
+    session.blocked = true;
+    // A prompt waiting when the session is blocked, such as after a revert that needs recovery, ends with it.
+    const pending = session.pending;
+    session.pending = undefined;
+    pending?.reject(new SessionBlockedError());
     this.updateSidebar();
     this.refreshElapsed();
   }
@@ -952,7 +975,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   askIn(id: string, prompt: string): Promise<string> {
     const session = this.sessions.get(id);
     if (session === undefined) return Promise.reject(new Error("Tesota session unavailable"));
-    if (session.blocked) return Promise.reject(new Error("Tesota session has unresolved effects"));
+    if (session.blocked) return Promise.reject(new SessionBlockedError());
     if (session.ended) return Promise.reject(new Error("Tesota session has ended"));
     if (session.pending !== undefined) return Promise.reject(new Error("Tesota Shell prompt already active"));
     if (prompt === "> ") {
@@ -1072,6 +1095,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     model: (session, args) => { this.changeModel(session, args); },
     roles: (session, args) => { this.changeRoleModel(session, args); },
     handoff: (session) => { this.options.onHandoff?.(session.id); },
+    keep: (session) => { this.options.onKeep?.(session.id); },
+    revert: (session, args) => { this.options.onRevert?.(session.id, args); },
+    redo: (session) => { this.options.onRedo?.(session.id); },
+    checks: (session, args) => { this.options.onChecks?.(session.id, args); },
     sandbox: (session, args) => { this.changeSandbox(session, args); },
     accounts: (session, args) => {
       const tab = args[0] ?? "usage";
@@ -1092,7 +1119,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     details: (session, args) => { this.toggleDetails(session, args); },
     help: (session) => {
       this.writeTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
-        "/handoff /sandbox [where] /accounts [tab] /usage /result /sidebar /themes [name] " +
+        "/handoff /sandbox [where] /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
         "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +

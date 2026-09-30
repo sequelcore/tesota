@@ -46,6 +46,12 @@ const recordSchema = z.strictObject({
   turns: z.array(z.strictObject({ before: treeId, after: treeId, outside: z.array(z.string()).default([]) })),
   /** The tree before a turn that has begun and not ended, such as one a crash interrupted. */
   started: treeId.optional(),
+  /**
+   * Turns reverted since the last new turn, the latest last, with the paths
+   * each revert left as the turn left them, so a revert can be redone.
+   */
+  reverted: z.array(z.strictObject({ before: treeId, after: treeId, outside: z.array(z.string()),
+    left: z.array(z.string()) })).default([]),
 });
 type SessionRecord = z.infer<typeof recordSchema>;
 
@@ -111,7 +117,8 @@ export class SourceSession implements CheckTarget {
     const directory = join(await realpath(root), randomUUID());
     await mkdir(directory, { mode: 0o700 });
     const snapshot = await SourceSnapshot.open(source, join(directory, "capture"), shadow, "shadow");
-    const record: SessionRecord = { format: "tesota-source-session", version: 1, source, shadow, base: snapshot.capture(), turns: [] };
+    const record: SessionRecord = { format: "tesota-source-session", version: 1, source, shadow, base: snapshot.capture(), turns: [],
+      reverted: [] };
     const session = new SourceSession(directory, record, snapshot);
     await session.#save(record);
     return session;
@@ -202,7 +209,8 @@ export class SourceSession implements CheckTarget {
       const merged = { before: latest.before, after, outside: [...new Set([...latest.outside, ...outside])].sort() };
       turns = [...turns.slice(0, -1), ...merged.before === merged.after ? [] : [merged]];
     } else if (after !== before) turns = [...turns, { before, after, outside }];
-    await this.#save({ ...record, turns });
+    // New work makes the reverted turns history that can no longer be redone on top of it, as an editor's redo ends.
+    await this.#save({ ...record, turns, reverted: turns === record.turns ? record.reverted : [] });
     return { latest: turns.at(-1), changed };
   }
 
@@ -246,8 +254,11 @@ export class SourceSession implements CheckTarget {
   async keep(): Promise<void> {
     const latest = this.#record.turns.at(-1);
     if (latest === undefined) return;
-    await this.#save({ ...this.#record, base: latest.after, turns: [] });
+    await this.#save({ ...this.#record, base: latest.after, turns: [], reverted: [] });
   }
+
+  /** The latest reverted turn that can be redone, if any. */
+  get redoable(): Turn | undefined { return this.#record.reverted.at(-1); }
 
   /**
    * Revert the latest undecided turn: each path it changed goes back to its
@@ -262,11 +273,30 @@ export class SourceSession implements CheckTarget {
     const changes = all.filter((change) => !leave.includes(change.path));
     const { skipped } = await writeTreeWhereUnchanged(gitTreeReader(this.shadow),
       { base: turn.after, tree: turn.before, changes }, this.source, root);
-    await this.#save({ ...this.#record, turns: this.#record.turns.slice(0, -1) });
+    const left = all.map((change) => change.path).filter((path) => leave.includes(path));
+    await this.#save({ ...this.#record, turns: this.#record.turns.slice(0, -1),
+      reverted: [...this.#record.reverted, { ...turn, outside: [...turn.outside], left }] });
     // A path that already held its content from before the turn needed no write, and counts as restored.
     const changed = new Set(skipped);
-    return { restored: changes.map((change) => change.path).filter((path) => !changed.has(path)), changedSince: skipped,
-      left: all.map((change) => change.path).filter((path) => leave.includes(path)) };
+    return { restored: changes.map((change) => change.path).filter((path) => !changed.has(path)), changedSince: skipped, left };
+  }
+
+  /**
+   * Redo the latest reverted turn: the same rules run from the tree before it
+   * to the turn's tree, so a path edited since the revert is never replaced;
+   * the paths the revert left are already as the turn left them. The turn is
+   * undecided again.
+   */
+  async redo(root: string = DEFAULT_APPLICATIONS_ROOT): Promise<Omit<RevertedTurn, "left"> | undefined> {
+    const turn = this.#record.reverted.at(-1);
+    if (turn === undefined) return undefined;
+    const changes = this.#changes(turn.before, turn.after).filter((change) => !turn.left.includes(change.path));
+    const { skipped } = await writeTreeWhereUnchanged(gitTreeReader(this.shadow),
+      { base: turn.before, tree: turn.after, changes }, this.source, root);
+    await this.#save({ ...this.#record, reverted: this.#record.reverted.slice(0, -1),
+      turns: [...this.#record.turns, { before: turn.before, after: turn.after, outside: turn.outside }] });
+    const changed = new Set(skipped);
+    return { restored: changes.map((change) => change.path).filter((path) => !changed.has(path)), changedSince: skipped };
   }
 
   /** Release the trees this session pinned in the shadow, when the session is closed. */
@@ -292,6 +322,8 @@ export class SourceSession implements CheckTarget {
     const wanted = new Map<string, string>([[`${prefix}base`, record.base],
       ...record.turns.flatMap((turn, index): [string, string][] => [[`${prefix}${index}/before`, turn.before],
         [`${prefix}${index}/after`, turn.after]]),
+      ...record.reverted.flatMap((turn, index): [string, string][] => [[`${prefix}reverted/${index}/before`, turn.before],
+        [`${prefix}reverted/${index}/after`, turn.after]]),
       ...record.started === undefined ? [] : [[`${prefix}started`, record.started] as [string, string]]]);
     const existing = git(this.shadow, ["for-each-ref", "--format=%(refname)", prefix]).split("\n").filter((ref) => ref.length > 0);
     for (const ref of existing) if (!wanted.has(ref)) git(this.shadow, ["update-ref", "-d", ref]);

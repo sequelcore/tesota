@@ -182,3 +182,28 @@ it("counts a correction as part of the turn it corrects, and names files the age
   session.discard();
   expect(spawnSync("git", ["-C", session.shadow, "for-each-ref", "refs/tesota/sessions/"], { encoding: "utf8" }).stdout).toBe("");
 });
+
+it("redoes the latest reverted turn, never replacing a file edited since, until new work starts", async () => {
+  const { source, create, applications } = await fixture();
+  const session = await create();
+  await session.beginTurn();
+  await writeFile(join(source, "src", "price.ts"), "export const price = 2;\n");
+  await writeFile(join(source, "src", "tax.ts"), "export const tax = 0.2;\n");
+  await session.endTurn({ written: ["src/price.ts", "src/tax.ts"] });
+  await session.revert(applications);
+  expect(session.redoable).toBeDefined();
+  // The operator edits a file the reverted turn had changed; redo leaves it.
+  await writeFile(join(source, "src", "price.ts"), "export const price = 5;\n");
+  expect(await session.redo(applications)).toEqual({ restored: ["src/tax.ts"], changedSince: ["src/price.ts"] });
+  expect(await readFile(join(source, "src", "tax.ts"), "utf8")).toBe("export const tax = 0.2;\n");
+  expect(await readFile(join(source, "src", "price.ts"), "utf8")).toBe("export const price = 5;\n");
+  expect(session.turns).toHaveLength(1);
+  expect(session.redoable).toBeUndefined();
+
+  await session.revert(applications);
+  await session.beginTurn();
+  await writeFile(join(source, "src", "old.ts"), "export const old = false;\n");
+  await session.endTurn();
+  expect(session.redoable).toBeUndefined();
+  expect(await session.redo(applications)).toBeUndefined();
+});

@@ -413,3 +413,12 @@ it("keeps a request pending across a turn that changed nothing while its answer 
   await workspace.recordRequest("Explain pricing");
   expect(await workspace.requests()).toEqual(["Explain pricing"]);
 });
+
+it("states in a check's result which hidden files the operator let it read", async () => {
+  const { workspace } = await fixture();
+  await changeEverything(workspace);
+  const environment = await hostProvider.prepare(workspace.checkout);
+  const [result] = await runChecks(environment, workspace, workspace.snapshot(), plain("node -e \"process.exit(0)\""),
+    new AbortController().signal, { readsHidden: [".env"] });
+  expect(result?.limits).toBe("Establishes only what the command itself tests. It could read hidden files the operator allowed: .env.");
+});

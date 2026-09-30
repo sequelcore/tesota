@@ -1,11 +1,12 @@
 # Workspace
 
-A session works in the operator's own project by default, as local
+A session in a Git repository works in the operator's own project, as local
 harnesses do: the agent's changes are in the operator's files as soon as it
 makes them, and each turn is recorded, so it can be checked and reviewed,
-then kept or reverted. A second session of the same shell, while one works
-in the project, gets an **isolated workspace**: an independent clone whose
-changes reach the project only when the operator applies a reviewed result.
+then kept or reverted. A plain folder, and a second session of the same
+shell while one works in the repository, get an **isolated workspace**: an
+independent clone whose changes reach the source only when the operator
+applies a reviewed result.
 
 ## The shadow repository
 
@@ -34,7 +35,7 @@ Windows.
 
 Before Tesota first records a folder, `tesota` says how many files it holds
 and how large they are, and that nothing in it changes until a reviewed
-result is kept or applied, and asks once: a folder has no `.gitignore` saying what is
+result is applied, and asks once: a folder has no `.gitignore` saying what is
 its work. A repository is recorded without asking, as every local harness
 snapshots one; when it holds untracked, non-ignored files over 2 MB, which
 every capture reads, the session names them and suggests `.gitignore`. The
@@ -71,32 +72,51 @@ turn.
 **Edits during a turn are named.** An edit the operator makes during a turn
 counts as the turn's, since a command's writes and the operator's cannot be
 told apart. After each turn, the session names the files it changed that the
-agent's own edit and write tools did not write, and the turn keeps that list
-for its revert. OpenCode and Gemini CLI count such edits silently, and
+agent's own edit and write tools did not write, and the turn keeps that list,
+so its revert touches them only when the operator says so. OpenCode and Gemini CLI count such edits silently, and
 Claude Code's checkpoints miss them.
 
-**Keep or revert.** After review the operator keeps the turn, reverts it, or
-continues, leaving it undecided. Keep makes the tree after the undecided
-turns the new base. Revert undoes the latest undecided turn; while earlier
-turns are undecided, it offers to step back through them one at a time, as
-OpenCode's undo and Claude Code's rewind do. It asks before touching a file
-the turn changed outside the agent's tools, and leaves it as the turn left it
-unless the operator says yes. A revert runs the application's move-aside,
+**Keep, revert and redo, at any time.** A turn stays undecided after its
+review, and the session goes on: the review ends with a notice, never a
+prompt that holds the session, and a new request continues on top, as in
+Claude Code, OpenCode, Gemini CLI and Cursor, which decide with commands or a
+bar that does not block. The operator decides with commands whenever the
+session is idle:
+
+- `/keep` keeps every undecided turn: the tree after them becomes the base.
+  It is the operator's acceptance, recorded in the journal apart from checks
+  and review.
+- `/revert` undoes the latest undecided turn, and run again steps further
+  back, as OpenCode's `/undo` does. When the turn changed files outside the
+  agent's tools, it names them and writes nothing until the operator runs
+  `/revert all`, which reverts them too, or `/revert agent`, which leaves them
+  as the turn left them.
+- `/redo` puts the latest reverted turn back, undecided again, as OpenCode's
+  `/redo` does, until a new turn begins.
+
+A revert runs the application's move-aside,
 journal and recovery rules below from the turn's tree back to the tree
 before it (`writeTreeWhereUnchanged` in `src/workspace-apply.ts`): a path is
 restored only while it still holds exactly what the turn left there, so a
-file edited since is never replaced, and is named instead. A revert that
-stops partway is undone or recorded for `tesota recover`, as an application
-is. Keep and revert are journaled in the assurance journal beside apply and
-reject.
+file edited since is never replaced, and is named instead. A redo runs
+the same rules from the tree before the turn to the turn's tree. A revert or
+redo that stops partway is undone or recorded for `tesota recover`, as an
+application is; one that needs recovery blocks the session, ending the prompt
+that was waiting. Keep, revert and redo are journaled in the assurance
+journal beside apply and reject.
 
 **What the sandbox allows.** In the WSL sandbox commands may write the
 source, with its `.git` read-only, so hooks and history cannot change, and
 with files that may hold credentials hidden
 ([execution](execution.md#wsl-sandbox)). Checks see the hidden files only
 where the operator let them, asked once when the checks are chosen and
-stored with them. A command run on the operator's computer, which the
-operator approves one at a time, sees every file.
+stored with them; `/checks` shows them and `/checks reset` chooses them
+again at the next review. A check's result states which hidden files it
+could read. The agent is told which files are hidden from it whenever that
+changes, so a command that fails without one is reported rather than worked
+around. A command run on the operator's computer, which the operator
+approves one at a time, sees every file, as does one in Docker Sandboxes,
+whose commands ask first.
 
 **Base checks on demand.** A failing check runs again on the tree before the
 turn, [test by test](assurance.md#verifiers), in a one-commit checkout of
@@ -104,9 +124,13 @@ its own fetched from the shadow, which the WSL sandbox mounts at the
 source's path for that run; it is made only when a check fails and removed
 afterwards, and the operator's files are never touched.
 
-**One session at a time.** Only one session of a shell works in the source.
-Another session, while it does, gets an isolated workspace and says so; the
-session store already allows one shell per repository.
+**One session at a time, and repositories only.** Only one session of a shell
+works in a repository in place; another, while it does, gets an isolated
+workspace and says so, and the session store already allows one shell per
+repository. A plain folder always gets an isolated workspace: its people are
+often not developers, who were promised that nothing in the folder changes
+until they apply a result, and a document Office holds open can be neither
+written nor reverted.
 
 ## An isolated workspace
 
@@ -240,8 +264,10 @@ releases the trees it pinned. The WSL sandbox's state for a session in the
 source, its `node_modules` included, belongs to the source and stays for the
 next session. `tesota prune` lists other workspaces no session uses and that
 hold no unapplied changes, and `tesota prune --force` removes them, with
-every shadow repository whose source no longer exists and that no kept
-workspace was cloned from. Applications and reverts from different sessions
+every record of a session in the source that no saved session uses, such as
+one a crash left, whose trees it releases while its changes stay in the
+files, and every shadow repository whose source no longer exists and that
+nothing kept needs. Applications and reverts from different sessions
 are serialized.
 
 ## Why
@@ -265,9 +291,16 @@ are serialized.
   once and resumes a cached container for up to 12 hours.
 - **The promise it moves:** from "reviewed before the operator applies or
   rejects it" to "reviewed before the operator keeps or reverts it". The
-  operator decided this on 2026-09-29: unreviewed work is in the source
-  between the turn and the decision, and an isolated workspace keeps the
-  earlier promise.
+  operator decided this on 2026-09-29: unreviewed work is in the source between
+  the turn and the decision, and an isolated workspace keeps the
+  earlier promise, by default for folders.
+- **What stays distinct:** the identity leads with review bound to each turn's
+  exact content and a revert that never overwrites the operator's later
+  edits ([overview](overview.md#name-and-identity)). Claude Code's rewind
+  and OpenCode's revert write earlier content over whatever a file holds.
+- **Commands rather than a prompt:** no in-place harness holds the session
+  for a decision after every turn; an undecided turn is not acceptance, and
+  only `/keep` records it.
 - **A clone rather than a Git worktree for isolation:** the agent and its
   commands cannot touch the operator's working tree, index, hooks or remotes,
   and a sandbox can mount the workspace alone.
@@ -287,10 +320,17 @@ The steps after working in the source, in order:
   repository share one Linux `node_modules` on WSL's disk, over the source's
   `node_modules`, which keeps its Windows binaries, and a session that runs no
   command costs nothing.
-- **Isolation on request.** Any session may choose an isolated workspace,
-  not only a second one. Tesota states its cost before creating it, such as
-  the dependencies it installs, their size and the time to prepare, and
-  shows what each isolated session holds on disk.
+- **Isolation on request, and checkouts that are ready.** Any session may
+  choose an isolated workspace, not only a second one or a folder's. Tesota
+  states its cost before creating it, such as the dependencies it installs,
+  their size and the time to prepare, and shows what each isolated session
+  holds on disk. A checkout is prepared with the repository's own setup, as
+  Claude Code copies the ignored files `.worktreeinclude` names into a
+  worktree and t3code runs a project's setup script; the same preparation
+  gives a failing check's base run a checkout with its dependencies where the
+  WSL sandbox cannot mount one, so a check run on the operator's computer or
+  in Docker Sandboxes, whose base is now reported unknown, is compared with
+  its base too.
 - **Then** remove what only the old default path used.
 
 Sources: [Claude Code checkpointing](https://code.claude.com/docs/en/checkpointing),

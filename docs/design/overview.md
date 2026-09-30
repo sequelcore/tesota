@@ -1,10 +1,11 @@
 # Overview
 
-**Tesota is an open-source coding agent that checks and reviews each change it
-makes, and you keep or revert it.** It works in your project and records
-every turn, so you inspect the exact changes, check results and review, then
-keep the turn or revert it; a second session works in a separate copy you
-apply from.
+**Tesota is an open-source coding agent that reviews every turn it takes in
+your project, and reverts one without overwriting your own edits.** It
+records the exact content of each turn, so you inspect the changes, check
+results and review bound to that content, then keep the turn or revert it. A
+folder of documents, or a second session, works in a separate copy you apply
+from.
 The [roadmap](../roadmap.md) owns status and priorities; this page and its
 siblings describe what is built unless a section explicitly says planned.
 
@@ -38,9 +39,10 @@ request
   -> checks and verifiers approved commands, Oxlint and LemmaScript on that tree
   -> review               reviewers, origin check, refuter; a forecast first when deep
   -> correction           failed checks and confirmed fixable findings go back, at most twice
-  -> decision             keep | revert | continue       (apply | reject | continue in a copy)
+  -> decision             /keep | /revert | /redo, at any time      (apply | reject | continue in a copy)
        keep:   the turn's tree becomes the base
        revert: files that still hold the turn's content go back to the tree before it
+       redo:   the reverted turn goes back where its files still hold the tree before it
        apply:  only files whose source still matches the base are written
 ```
 
@@ -94,14 +96,20 @@ dependability claim or an architecture term.
 **What Tesota is called.** For the release, call it an **open-source coding
 agent** and explain its distinguishing workflow directly:
 
-> Tesota checks and reviews each change it makes in your project, and you keep
-> or revert it. It records every turn and shows the diff, checks and
-> independent review so you can decide what stays in your files.
+> Tesota reviews every turn it takes in your project, and reverts one without
+> overwriting your own edits. It records the exact content of each turn and
+> shows the diff, checks and independent review, bound to that content, so you
+> decide what stays in your files.
 
-The terminal's optional short line is **Each change is checked and reviewed;
-you keep or revert it.** It describes the current workflow; it is not a slogan or a claim that
-passing checks prove correctness. Work beyond code remains a direction, not a
-release claim.
+The terminal's optional short line is **Every turn is reviewed; reverting
+never overwrites your edits.** It describes the current workflow; it is not a
+slogan or a claim that passing checks prove correctness. It rests on a
+difference read in the harnesses' own code on 2026-09-29: Claude Code's
+rewind and OpenCode's revert write a turn's earlier content over a file
+whatever it holds now (`applySnapshot` in Claude Code's `utils/fileHistory.ts`,
+`revert` in OpenCode's `snapshot/index.ts`), while Tesota's leaves a file
+edited since the turn as it is and names it. Work beyond code remains a
+direction, not a release claim.
 
 **Names of the parts.**
 

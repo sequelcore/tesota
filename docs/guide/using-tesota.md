@@ -1,9 +1,11 @@
 # Using Tesota
 
 Tesota is a pre-release coding agent for the terminal. You describe what you
-want; it works in your project, recording each turn; you review the changes
-and check results, then keep or revert them. A second session in the same
-project works in a separate copy instead, which you apply or reject. The [design](../design/overview.md)
+want; in a Git repository it works in your project, recording each turn; you
+review the changes and check results, then keep or revert them, and a revert
+never overwrites an edit you made since. A folder that is not a repository,
+and a second session in the same repository, work in a separate copy instead,
+which you apply or reject. The [design](../design/overview.md)
 explains the boundaries in detail.
 
 ## Set up
@@ -120,7 +122,8 @@ Tesota keeps its own record of your repository or folder in
 an empty `node_modules` folder the sandbox may create to mount its own over
 ([limits](#limits)), only the agent's work changes your files.
 In a folder that is not a Git repository, Tesota first asks whether to work
-on it, saying how many files it holds. In a repository it asks nothing, but
+on it, saying how many files it holds, and works on a copy of it: nothing in
+the folder changes until you apply a reviewed result. In a repository it asks nothing, but
 names untracked files over 2 MB that are not in `.gitignore`, since it reads
 them before every request. Your home directory as a whole, and the root of a
 drive, are refused.
@@ -178,7 +181,8 @@ meanwhile, which Tesota cannot tell apart. Reverting asks before it touches
 those.
 
 A second session in the same shell, while the first works in your files,
-works in a copy instead, and says so. The copy includes your uncommitted
+works in a copy instead, and says so, as a folder's session always does. The
+copy includes your uncommitted
 changes, but not files your `.gitignore` excludes, such as `.env` or
 `node_modules`. Before each request, Tesota brings in anything you changed
 since, and keeps the agent's pending changes on top. If you and the agent
@@ -273,7 +277,11 @@ command you may name the JUnit XML reports it writes, in paths your
 `bun run check => test-reports/unit.xml, test-reports/workspace.xml`.
 Checks do not see the hidden files either; when your project has some,
 Tesota lists them with the checks and asks which ones the checks may read,
-such as a `.env` your tests load, and remembers it with the checks.
+such as a `.env` your tests load, and remembers it with the checks. Each
+check's result says which hidden files it could read. `/checks` shows the
+checks and those files, and `/checks reset` chooses them again at the next
+review. The agent is told which files are hidden from it, so a command of its
+own that needs one is reported to you, not worked around.
 
 The conversation shows a review once, set apart from the agent's replies by a
 rule down its left side: each changed file and each check with ✓ or ✗.
@@ -357,20 +365,23 @@ their added and removed lines, then shows each change with line numbers,
 added and removed lines tinted green and red, and code highlighted by
 language.
 The prompt stays visible in either view.
-Then choose:
 
-- **keep** leaves the changes in your files; the next turn starts from them.
-- **revert** undoes the latest turn: each file it changed goes back to what
-  it held before, except a file you changed since, which stays as it is and
-  is named. Files the turn changed outside the agent's edit and write tools
-  are reverted only if you say yes. If earlier turns are still undecided,
-  Tesota offers to revert the one before, one at a time. It keeps a copy of
-  every file first and undoes what it wrote if it has to stop; if it cannot,
-  it says "Recovery required", as an application does.
-- **Enter** continues working, leaving the turn undecided; your next decision
-  covers it too.
+In your project, the turn then stays undecided: Tesota never holds the
+session for a decision, and a new request continues on top of it. Decide
+whenever the session is idle:
 
-A session working in a copy chooses differently:
+- `/keep` keeps every undecided turn; the next turn starts from them.
+- `/revert` undoes the latest undecided turn: each file it changed goes back
+  to what it held before, except a file you changed since, which stays as it
+  is and is named. Run it again to step further back. If the turn changed
+  files outside the agent's edit and write tools, by its commands or by you,
+  `/revert` lists them and writes nothing until you choose `/revert all`,
+  which reverts them too, or `/revert agent`, which leaves them. Tesota keeps
+  a copy of every file first and undoes what it wrote if it has to stop; if
+  it cannot, it says "Recovery required", as an application does.
+- `/redo` puts the latest reverted turn back, until a new turn begins.
+
+A session working in a copy chooses after each review:
 
 - **apply** writes the changes to your repository, only if nothing in it
   changed since the result was checked. If you edited any file, even one the
@@ -484,8 +495,11 @@ background colors; plain conversation text still uses the terminal's foreground.
 
 - Exercised live only on Windows.
 - Changes to symbolic links and submodules cannot be applied or reverted.
-- Only a second session in the same shell works in a copy; choosing a copy
-  for any session is planned.
+- A folder, and a second session in the same shell, work in a copy;
+  choosing a copy for any session is planned.
+- A check that fails is compared with the project before the turn only in
+  the WSL sandbox; on your computer or in Docker Sandboxes, whether the
+  failure came with the turn is reported as unknown.
 - Without the sandbox, approved commands run on your computer without
   isolation.
 - The sandbox gets the runtimes your repository pins
@@ -512,5 +526,6 @@ background colors; plain conversation text still uses the terminal's foreground.
   is settled with `tesota recover`.
 - Closing a session removes its copy, if it has one. `tesota prune` lists other
   workspaces it would remove, those that no session uses and that hold no
-  unapplied changes, and Tesota's records of directories that no longer
+  unapplied changes, records of sessions no saved session uses (their changes
+  stay in your files), and Tesota's records of directories that no longer
   exist; `tesota prune --force` removes them.

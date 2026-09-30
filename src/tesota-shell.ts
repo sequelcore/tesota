@@ -30,17 +30,6 @@ export type ApplyResult =
   /** A partial effect remains (decision 042); `tesota recover` undoes or finishes application `id`. */
   | Readonly<{ status: "recovery_required"; id: string; paths: readonly ApplicationPathState[] }>;
 
-export type RevertResult =
-  /** The latest turn was reverted; `earlier` undecided turns remain before it. */
-  | Readonly<{ status: "reverted"; restored: readonly string[]; changedSince: readonly string[]; left: readonly string[];
-      earlier: number }>
-  /** No undecided turn to revert. */
-  | Readonly<{ status: "none" }>
-  /** Nothing was written, or everything written was undone (`rolledBack`). */
-  | Readonly<{ status: "conflict"; reason: string; paths: readonly string[]; rolledBack?: boolean }>
-  /** A partial effect remains; `tesota recover` undoes or finishes it. */
-  | Readonly<{ status: "recovery_required"; id: string; paths: readonly ApplicationPathState[] }>;
-
 /** Where a session works: in the operator's own files, or in an isolated workspace it applies from. */
 export type WorkPlace = "source" | "workspace";
 
@@ -93,15 +82,6 @@ export interface TesotaShellDependencies {
   readonly reject: () => Promise<void>;
   /** Where the session works; an isolated workspace when absent. Known once its first request starts. */
   readonly place?: () => WorkPlace;
-  /** Keep every undecided turn of a session working in the source. */
-  readonly keep?: () => Promise<void>;
-  /**
-   * Revert the latest undecided turn of a session working in the source.
-   * `confirm` is asked about the files the turn changed outside the agent's
-   * own file tools, which the operator may have edited; they are reverted
-   * only when it answers yes.
-   */
-  readonly revert?: (confirm: (paths: readonly string[]) => Promise<boolean>) => Promise<RevertResult>;
 }
 
 function ignoreProgress(_progress: TesotaShellProgress): void {}
@@ -210,74 +190,9 @@ async function assess(dependencies: TesotaShellDependencies,
   }
 }
 
-function pathList(paths: readonly string[]): string { return paths.map((path) => `  ${path}`).join("\n"); }
-
 /** Where the session's changes are, as the operator reads it. */
 function placeOf(dependencies: TesotaShellDependencies): string {
   return dependencies.place?.() === "source" ? "in your files" : "in the workspace";
-}
-
-type SourceDecision = "keep" | "revert" | "later";
-
-async function askSourceDecision(dependencies: TesotaShellDependencies, prompt: string): Promise<SourceDecision> {
-  for (;;) {
-    const answer = (await dependencies.ask(prompt)).trim().toLowerCase();
-    if (answer === "k" || answer === "keep") return "keep";
-    if (answer === "r" || answer === "revert") return "revert";
-    if (answer === "") return "later";
-  }
-}
-
-/** Ask about the files a turn changed outside the agent's own file tools before reverting them. */
-async function confirmOutside(dependencies: TesotaShellDependencies, paths: readonly string[]): Promise<boolean> {
-  const answer = (await dependencies.ask("These files changed outside the agent's file tools, by its commands or by you " +
-    `during the turn:\n${pathList(paths)}\nRevert them too? [y/N] `)).trim().toLowerCase();
-  return answer === "y" || answer === "yes";
-}
-
-/**
- * Keep or revert a session's work in the operator's own files. Revert undoes
- * the latest turn; while earlier turns are undecided, the operator may step
- * back through them one at a time, as OpenCode's undo and Claude Code's
- * rewind do.
- */
-async function decideInSource(dependencies: TesotaShellDependencies, report: (progress: TesotaShellProgress) => void): Promise<boolean> {
-  const { keep, revert } = dependencies;
-  if (keep === undefined || revert === undefined) return true;
-  let decision = await askSourceDecision(dependencies, "[k]eep, [r]evert, or Enter to continue working: ");
-  for (;;) {
-    if (decision === "later") {
-      dependencies.write("The changes stay in your files, undecided; your next decision covers them too.\n");
-      return true;
-    }
-    if (decision === "keep") {
-      await keep();
-      dependencies.write("Kept. The changes are in your files.\n", "success");
-      return true;
-    }
-    report({ phase: "applying" });
-    const reverted = await revert((paths) => confirmOutside(dependencies, paths));
-    if (reverted.status === "none") return true;
-    if (reverted.status === "conflict") {
-      dependencies.write(`Not reverted: ${reverted.reason}.\n${reverted.paths.length > 0 ? `${pathList(reverted.paths)}\n` : ""}` +
-        `${reverted.rolledBack === true ? "Your files hold the turn's content again." : "Nothing was written."}\n`, "warning");
-      return true;
-    }
-    if (reverted.status === "recovery_required") {
-      dependencies.write("Recovery required: the revert stopped partway and could not be undone.\n" +
-        `${pathList(reverted.paths.map((path) => `${path.path}: ${path.state}`))}\n` +
-        "Tesota kept a copy of every file. Run tesota recover in this repository to undo or finish it. This session is closed.\n", "warning");
-      return false;
-    }
-    dependencies.write(`Reverted:\n${pathList(reverted.restored)}\n`, "success");
-    if (reverted.changedSince.length > 0) {
-      dependencies.write(`Left as they are, since they changed after the turn:\n${pathList(reverted.changedSince)}\n`, "warning");
-    }
-    if (reverted.left.length > 0) dependencies.write(`Left as the turn left them, as you chose:\n${pathList(reverted.left)}\n`);
-    if (reverted.earlier === 0) return true;
-    decision = await askSourceDecision(dependencies, `${reverted.earlier} earlier ${reverted.earlier === 1 ? "turn is" : "turns are"} ` +
-      "undecided. [r]evert the one before, [k]eep them, or Enter to leave them: ");
-  }
 }
 
 async function reviewChanges(dependencies: TesotaShellDependencies,
@@ -289,8 +204,14 @@ async function reviewChanges(dependencies: TesotaShellDependencies,
     return false;
   }
   if (assessment === "stopped") return true;
+  // In the source the turn is already in the operator's files; it stays undecided until they keep or revert it,
+  // with a command at any time, as Claude Code's /rewind and OpenCode's /undo work, never a prompt that holds the session.
+  if (dependencies.place?.() === "source") {
+    dependencies.write("This turn stays in your files, undecided: /keep keeps it, /revert undoes it, and a new request " +
+      "continues on top of it.\n");
+    return true;
+  }
   report({ phase: "awaiting_decision" });
-  if (dependencies.place?.() === "source") return decideInSource(dependencies, report);
   const decision = await askDecision(dependencies);
   if (decision === "keep") {
     dependencies.write("The changes stay in the workspace. Continue with another request.\n");

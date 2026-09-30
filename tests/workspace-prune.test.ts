@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { openShellSessionStore } from "../src/shell-session-store.js";
 import { openShadow, shadowDirectory } from "../src/source-shadow.js";
@@ -42,7 +42,8 @@ it("removes only unused and unreadable workspaces", async () => {
   const unreadable = join(workspaces, "00000000-0000-4000-8000-000000000000");
   await mkdir(unreadable);
 
-  const plan = await planWorkspacePrune(workspaces, stores, join(dirname(workspaces), "sources"));
+  const plan = await planWorkspacePrune(workspaces, stores, join(dirname(workspaces), "sources"),
+    join(dirname(workspaces), "source-sessions"));
   expect(new Map(plan.remove.map((entry) => [entry.directory, entry.reason]))).toEqual(new Map([
     [unreadable, "unreadable"], [unused.directory, "unused"],
   ]));
@@ -61,7 +62,8 @@ it("keeps every workspace of a repository whose shell is open", async () => {
   const unused = await Workspace.create(source, workspaces, { sourcesRoot: join(dirname(workspaces), "sources") });
   const store = openShellSessionStore(source, stores);
   try {
-    const plan = await planWorkspacePrune(workspaces, stores, join(dirname(workspaces), "sources"));
+    const plan = await planWorkspacePrune(workspaces, stores, join(dirname(workspaces), "sources"),
+    join(dirname(workspaces), "source-sessions"));
     expect(plan.remove).toEqual([]);
     expect(plan.keep).toEqual([{ directory: unused.directory, reason: "shell_open" }]);
   } finally { store.close(); }
@@ -82,10 +84,36 @@ it("removes shadow repositories whose source no longer exists, unless a kept wor
   await rm(gone, { recursive: true });
   await rm(source, { recursive: true });
 
-  const plan = await planWorkspacePrune(workspaces, stores, sources);
+  const plan = await planWorkspacePrune(workspaces, stores, sources, join(root, "source-sessions"));
   expect(plan.shadows).toEqual([{ directory: shadow, reason: "source_gone" }]);
   expect(formatPrunePlan(plan)).toContain(`remove  ${shadow}  (shadow repository; its source no longer exists)`);
   await removeWorkspaces(plan);
   expect(existsSync(shadow)).toBe(false);
   expect(existsSync(usedShadow)).toBe(true);
+});
+
+it("removes a session record in the source that no saved session uses, releasing its trees and leaving its changes", async () => {
+  const { root, source, workspaces, stores } = await fixture();
+  const sources = join(root, "sources");
+  const sessions = join(root, "source-sessions");
+  const { SourceSession } = await import("../src/source-session.js");
+  const used = await SourceSession.create(source, sessions, { sourcesRoot: sources, kind: "repository" });
+  const left = await SourceSession.create(source, sessions, { sourcesRoot: sources, kind: "repository" });
+  await left.beginTurn();
+  await writeFile(join(source, "b.txt"), "the turn's\n");
+  await left.endTurn();
+  const store = openShellSessionStore(source, stores);
+  store.setWorkspace(store.create().id, used.directory);
+  store.close();
+
+  const plan = await planWorkspacePrune(workspaces, stores, sources, sessions);
+  expect(plan.sessions).toEqual([{ directory: left.directory, reason: "unused" }]);
+  expect(formatPrunePlan(plan)).toContain("(session record; no session uses it; its changes stay in your files)");
+  await removeWorkspaces(plan);
+  expect(existsSync(left.directory)).toBe(false);
+  expect(existsSync(used.directory)).toBe(true);
+  expect(existsSync(join(source, "b.txt"))).toBe(true);
+  const refs = spawnSync("git", ["-C", used.shadow, "for-each-ref", "--format=%(refname)"], { encoding: "utf8" }).stdout;
+  expect(refs).not.toContain(basename(left.directory));
+  expect(refs).toContain(basename(used.directory));
 });

@@ -262,6 +262,8 @@ export interface CheckOptions {
   readonly timeoutSeconds?: number;
   /** Files hidden from the check's commands, relative with forward slashes, as from the agent's. */
   readonly hidden?: readonly string[];
+  /** Hidden files the operator let the checks read, which each result states. */
+  readonly readsHidden?: readonly string[];
   /** Base runs to reuse and extend; without it, each call runs the base afresh. */
   readonly baseRuns?: BaseRuns;
 }
@@ -283,8 +285,10 @@ export async function runChecks(environment: ExecutionEnvironment, target: Check
   const runs: CandidateRun[] = [];
   for (const check of checks) {
     const { command } = check;
+    const read = options.readsHidden ?? [];
     const described = { verifier: "command" as const, command, claim: `\`${command}\` exits with code 0 on this tree`,
-      limits: "Establishes only what the command itself tests.", tree: snapshot.tree, environment: environment.provider,
+      limits: `Establishes only what the command itself tests.${read.length === 0 ? ""
+        : ` It could read hidden files the operator allowed: ${read.join(", ")}.`}`, tree: snapshot.tree, environment: environment.provider,
       guarantees: environment.guarantees };
     const tracked = check.reports.filter((path) => !target.ignores(path));
     if (tracked.length > 0) {

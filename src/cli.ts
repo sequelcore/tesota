@@ -131,8 +131,9 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   process.stdout.write(formatPrunePlan(plan));
   if (args[1] === "--force") {
     await removeWorkspaces(plan);
-    process.stdout.write(`Removed ${plan.remove.length} workspaces and ${plan.shadows.length} shadow repositories.\n`);
-  } else if (plan.remove.length + plan.shadows.length > 0) {
+    process.stdout.write(`Removed ${plan.remove.length} workspaces, ${plan.sessions.length} session records and ` +
+      `${plan.shadows.length} shadow repositories.\n`);
+  } else if (plan.remove.length + plan.sessions.length + plan.shadows.length > 0) {
     process.stdout.write("Nothing was removed. Run tesota prune --force to remove what is listed.\n");
   }
 } else if (args[0] === "recover") {

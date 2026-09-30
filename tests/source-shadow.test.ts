@@ -88,11 +88,11 @@ it("describes a folder before Tesota works on it, and refuses the home directory
   await expect(openShadow(parse(folder).root, "folder", sources)).rejects.toThrow("Choose a folder, not the root of a drive");
 });
 
-it("asks before working on a folder, saying what it holds and that each change is checked, reviewed and kept or reverted", async () => {
+it("asks before working on a folder, saying what it holds and that nothing in it changes until a result is applied", async () => {
   const { folder } = await fixture();
   expect(await folderQuestion(folder)).toBe(`${folder} is not a Git repository. Tesota can work on it as a folder: ` +
-    "3 files, 58 bytes. It keeps a private record of the folder in ~/.tesota/sources, so each change the agent makes in it " +
-    "is checked and reviewed, and you keep or revert it. Work on this folder? [y/N] ");
+    "3 files, 58 bytes. It keeps a private record of the folder in ~/.tesota/sources and a copy for the agent; " +
+    "nothing in this folder changes until you apply a reviewed result. Work on this folder? [y/N] ");
 });
 
 async function repository(): Promise<{ root: string; source: string; sources: string; workspaces: string;

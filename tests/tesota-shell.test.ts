@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import type { TesotaShellProgress } from "../src/shell-progress.js";
 import type { Finding, Obligation, ReviewReport } from "../src/review.js";
-import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type RevertResult, type TesotaShellDependencies,
+import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
   type WorkResult } from "../src/tesota-shell.js";
 import type { WorkspaceChange } from "../src/workspace.js";
 import type { ApprovedCheck } from "../src/workspace-checks.js";
@@ -274,49 +274,15 @@ it("stops checking an answer after two correction rounds and leaves the rest to 
   expect(fixture.dependencies.review).not.toHaveBeenCalled();
 });
 
-it("keeps a turn in the operator's files, or leaves it undecided, and never applies or rejects there", async () => {
-  const keep = vi.fn(async () => {});
-  const fixture = shell(["Fix the discount", "", "k", "Add a tax helper", "", ""], { place: () => "source", keep,
-    revert: vi.fn(async (): Promise<RevertResult> => ({ status: "none" })) });
+it("leaves a turn in the operator's files undecided after review, never holding the session for a decision", async () => {
+  const fixture = shell(["Fix the discount", "", "Add a tax helper", ""], { place: () => "source" });
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
-  expect(keep).toHaveBeenCalledTimes(1);
   expect(fixture.dependencies.apply).not.toHaveBeenCalled();
   expect(fixture.dependencies.reject).not.toHaveBeenCalled();
-  expect(fixture.text()).toContain("Kept. The changes are in your files.\n");
-  expect(fixture.text()).toContain("The changes stay in your files, undecided; your next decision covers them too.\n");
-});
-
-it("reverts the latest turn, asks before files changed outside the agent's tools, and steps back on request", async () => {
-  const asked: string[] = [];
-  const answers = ["Fix the discount", "", "r", "n", "r", ""];
-  let turns = 2;
-  const revert = vi.fn(async (confirm: (paths: readonly string[]) => Promise<boolean>): Promise<RevertResult> => {
-    const reverted = turns === 2 && await confirm(["bun.lock"]);
-    turns -= 1;
-    return { status: "reverted", restored: ["src/price.ts"], changedSince: [], left: turns === 1 && !reverted ? ["bun.lock"] : [],
-      earlier: turns };
-  });
-  const fixture = shell([], { place: () => "source", keep: vi.fn(async () => {}), revert,
-    ask: async (prompt) => { asked.push(prompt); return answers.shift() ?? ""; } });
-  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
-  expect(revert).toHaveBeenCalledTimes(2);
-  expect(asked).toContain("[k]eep, [r]evert, or Enter to continue working: ");
-  expect(asked.some((prompt) => prompt.includes("bun.lock") && prompt.endsWith("Revert them too? [y/N] "))).toBe(true);
-  expect(asked).toContain("1 earlier turn is undecided. [r]evert the one before, [k]eep them, or Enter to leave them: ");
-  expect(fixture.text()).toContain("Left as the turn left them, as you chose:\n  bun.lock\n");
-});
-
-it("names a file edited since the turn, which revert leaves, and closes the session when recovery is required", async () => {
-  const fixture = shell(["Fix the discount", "", "r", ""], { place: () => "source", keep: vi.fn(async () => {}),
-    revert: vi.fn(async (): Promise<RevertResult> => ({ status: "reverted", restored: ["src/tax.ts"],
-      changedSince: ["src/price.ts"], left: [], earlier: 0 })) });
-  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
-  expect(fixture.text()).toContain("Left as they are, since they changed after the turn:\n  src/price.ts\n");
-  const stopped = shell(["Fix the discount", "", "r"], { place: () => "source", keep: vi.fn(async () => {}),
-    revert: vi.fn(async (): Promise<RevertResult> => ({ status: "recovery_required", id: "a1",
-      paths: [{ path: "src/price.ts", state: "changed" }] })) });
-  await expect(runTesotaShell(stopped.dependencies)).resolves.toBe(1);
-  expect(stopped.text()).toContain("Run tesota recover");
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
+  expect(fixture.text()).toContain("This turn stays in your files, undecided: /keep keeps it, /revert undoes it, and a new " +
+    "request continues on top of it.");
+  expect(fixture.progress.some((event) => event.phase === "awaiting_decision")).toBe(false);
 });
 
 it("lets checks read the hidden files the operator names, asked once with the checks", async () => {

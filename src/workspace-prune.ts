@@ -1,8 +1,9 @@
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { releaseWorkspace } from "./execution-providers.js";
 import { DEFAULT_SESSION_STORE_ROOT, isRepositoryShellOpen, referencedWorkspaces } from "./shell-session-store.js";
+import { DEFAULT_SOURCE_SESSIONS_ROOT, SourceSession } from "./source-session.js";
 import { DEFAULT_SOURCES_ROOT, listShadows } from "./source-shadow.js";
 import { Workspace } from "./workspace.js";
 import { DEFAULT_WORKSPACES_ROOT, listWorkspaceCheckouts } from "./workspace-checkout.js";
@@ -15,6 +16,40 @@ export interface PrunePlan {
   readonly keep: readonly { readonly directory: string; readonly reason: KeepReason }[];
   /** Shadow repositories whose source no longer exists, or whose record is unreadable, and that no kept workspace uses. */
   readonly shadows: readonly { readonly directory: string; readonly reason: "source_gone" | "unreadable" }[];
+  /**
+   * Records of sessions that worked in the source and that no saved session
+   * uses, such as one a crash left; their changes are in the operator's files,
+   * and removing the record only ends the chance to revert them from Tesota.
+   */
+  readonly sessions: readonly { readonly directory: string; readonly reason: "unused" | "unreadable" }[];
+}
+
+/** Shadow repositories whose source no longer exists, or whose record is unreadable, that nothing kept needs. */
+async function planShadows(root: string, kept: ReadonlySet<string>): Promise<PrunePlan["shadows"]> {
+  const shadows: { directory: string; reason: "source_gone" | "unreadable" }[] = [];
+  for (const shadow of await listShadows(root)) {
+    if (kept.has(resolve(shadow.directory))) continue;
+    if (shadow.source === undefined) shadows.push({ directory: shadow.directory, reason: "unreadable" });
+    else if (!existsSync(shadow.source)) shadows.push({ directory: shadow.directory, reason: "source_gone" });
+  }
+  return shadows;
+}
+
+/** Sessions in the source that no saved session uses, and the shadows the used ones need. */
+async function planSourceSessions(root: string, referenced: ReadonlySet<string>):
+  Promise<{ remove: { directory: string; reason: "unused" | "unreadable" }[]; shadows: string[] }> {
+  let names: string[];
+  try { names = await readdir(root); } catch { return { remove: [], shadows: [] }; }
+  const remove: { directory: string; reason: "unused" | "unreadable" }[] = [];
+  const shadows: string[] = [];
+  for (const name of names.filter((entry) => /^[0-9a-f-]{36}$/u.test(entry)).sort()) {
+    const directory = join(root, name);
+    let session: SourceSession | undefined;
+    try { session = await SourceSession.open(directory); } catch { session = undefined; }
+    if (referenced.has(resolve(directory))) { if (session !== undefined) shadows.push(resolve(session.shadow)); continue; }
+    remove.push({ directory, reason: session === undefined ? "unreadable" : "unused" });
+  }
+  return { remove, shadows };
 }
 
 /** Whether a workspace holds work that was never applied or rejected. Unknown counts as pending. */
@@ -31,7 +66,8 @@ async function hasPendingChanges(directory: string): Promise<boolean> {
  * workspace was cloned from it.
  */
 export async function planWorkspacePrune(workspacesRoot: string = DEFAULT_WORKSPACES_ROOT,
-  storeRoot: string = DEFAULT_SESSION_STORE_ROOT, sourcesRoot: string = DEFAULT_SOURCES_ROOT): Promise<PrunePlan> {
+  storeRoot: string = DEFAULT_SESSION_STORE_ROOT, sourcesRoot: string = DEFAULT_SOURCES_ROOT,
+  sourceSessionsRoot: string = DEFAULT_SOURCE_SESSIONS_ROOT): Promise<PrunePlan> {
   const referenced = referencedWorkspaces(storeRoot);
   const remove: { directory: string; reason: PruneReason }[] = [];
   const keep: { directory: string; reason: KeepReason }[] = [];
@@ -51,18 +87,19 @@ export async function planWorkspacePrune(workspacesRoot: string = DEFAULT_WORKSP
     if (entry.kind === "workspace" && removed.has(resolve(entry.directory))) kept.delete(resolve(entry.shadow));
   }
   for (const entry of keep) kept.add(resolve(entry.directory));
-  const shadows: { directory: string; reason: "source_gone" | "unreadable" }[] = [];
-  for (const shadow of await listShadows(sourcesRoot)) {
-    if (kept.has(resolve(shadow.directory))) continue;
-    if (shadow.source === undefined) shadows.push({ directory: shadow.directory, reason: "unreadable" });
-    else if (!existsSync(shadow.source)) shadows.push({ directory: shadow.directory, reason: "source_gone" });
-  }
-  return { remove, keep, shadows };
+  const sourceSessions = await planSourceSessions(sourceSessionsRoot, referenced);
+  for (const shadow of sourceSessions.shadows) kept.add(shadow);
+  return { remove, keep, shadows: await planShadows(sourcesRoot, kept), sessions: sourceSessions.remove };
 }
 
 export async function removeWorkspaces(plan: PrunePlan): Promise<void> {
   for (const entry of plan.remove) {
     await releaseWorkspace(join(entry.directory, "repo"));
+    await rm(entry.directory, { recursive: true, force: true, maxRetries: 3 });
+  }
+  for (const entry of plan.sessions) {
+    // Its trees stay pinned in the shadow until its record releases them.
+    try { (await SourceSession.open(entry.directory)).discard(); } catch { /* an unreadable record pins nothing it can name */ }
     await rm(entry.directory, { recursive: true, force: true, maxRetries: 3 });
   }
   for (const entry of plan.shadows) await rm(entry.directory, { recursive: true, force: true, maxRetries: 3 });
@@ -79,6 +116,8 @@ export function formatPrunePlan(plan: PrunePlan): string {
   const lines = [
     ...plan.remove.map((entry) => `remove  ${entry.directory}  (${reasonText[entry.reason]})`),
     ...plan.shadows.map((entry) => `remove  ${entry.directory}  (shadow repository; ${reasonText[entry.reason]})`),
+    ...plan.sessions.map((entry) => `remove  ${entry.directory}  (session record; ${entry.reason === "unused"
+      ? "no session uses it; its changes stay in your files" : reasonText.unreadable})`),
     ...plan.keep.map((entry) => `keep    ${entry.directory}  (${reasonText[entry.reason]})`),
   ];
   return lines.length === 0 ? "No workspaces found.\n" : `${lines.join("\n")}\n`;
