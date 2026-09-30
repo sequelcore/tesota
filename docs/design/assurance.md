@@ -23,8 +23,9 @@ what a reviewer sees.
 
 ## The candidate
 
-A **candidate** is the workspace's pending changes, identified by their Git
-tree, together with the operator's **request record** ([workspace](workspace.md)).
+A **candidate** is a turn's changes in the project, or a workspace's pending
+changes, identified by their Git tree, together with the operator's
+**request record** ([workspace](workspace.md)).
 Every verifier and reviewer result names the tree it describes; a changed tree
 needs new results.
 
@@ -61,11 +62,19 @@ while it works; those runs are feedback, not evidence.
 retries a failure without the patch: Chromium's CQ fails a change only for
 tests that fail with it and pass without it. When a check command fails or
 times out on the candidate, Tesota runs it again, in the same environment, on
-the candidate's base: the workspace pins the candidate's tree to a ref,
+the candidate's base. A workspace pins the candidate's tree to a ref,
 switches the checkout's tracked files to the base with `git read-tree --reset
 -u`, which leaves ignored files such as installed dependencies in place, runs
 the command, and restores the candidate, removing anything the run added;
-reopening a workspace restores a candidate a stopped run left pinned. The
+reopening a workspace restores a candidate a stopped run left pinned. A
+session working in the source never touches the operator's files: it fetches
+the tree before the turn from the shadow repository into a one-commit
+checkout of its own, with the operator's line endings, and the WSL sandbox
+mounts that checkout at the source's path for the run, with the same
+`node_modules`, so the command sees the same paths (`RunOptions.root`); the
+checkout is removed afterwards. An environment that cannot show another
+folder there, a command on the operator's computer or Docker Sandboxes,
+leaves the base run not started and the origin `unknown`. The
 failure's origin is `introduced` when the base passes, `preexisting` when the
 base ends the same way, and `unknown` otherwise, as when the base run could
 not start, was stopped or changed files (`checkOrigin` in
@@ -312,16 +321,17 @@ a round leaves the tree unchanged. Operator findings, unknown origins, check
 failures the base shares or that could not be compared with it, incomplete
 reviews and checks that could not run never go back to the agent.
 
-**The base stays fixed through the rounds**. A correction turn
-does not bring the operator's newer repository state into the workspace, so
+**The base stays fixed through the rounds**. A correction continues the turn
+it corrects, and in a workspace it does not bring the operator's newer
+repository state in, so
 the correction's diff holds only the agent's work; with an update in between,
 the operator's own edits would read as the agent's correction. That state
 arrives with the operator's next request, which starts a new cycle.
 
 ## The record
 
-Each workspace keeps an append-only **assurance journal**, `assurance.jsonl`
-beside the checkout: for every reviewed candidate, the requests, each
+Each session keeps an append-only **assurance journal**, `assurance.jsonl`
+beside its record: for every reviewed candidate, the requests, each
 verifier's claim and outcome, the flags, the depth, each reviewer's findings,
 what the review step cost, and the operator's decision; for a turn that
 changed no files, the answer check's first pass.

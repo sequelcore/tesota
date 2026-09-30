@@ -36,19 +36,21 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
     process.stderr.write(`Choose a valid shell theme: ${TESOTA_SHELL_THEME_NAMES.join(", ")}.\n`);
     process.exitCode = 2;
   } else {
-    // A plain folder is worked on only after the person agrees, once (decision 032).
-    const { folderProblem, folderQuestion, isGitRepository, trackingDirectory } = await import("./folder-source.js");
+    // A plain folder is recorded only after the person agrees, once; a repository's .gitignore already says what is its work.
+    const { folderQuestion, isGitRepository, shadowDirectory, sourceProblem, sourceRoot } = await import("./source-shadow.js");
     const { existsSync, realpathSync } = await import("node:fs");
     const cwd = realpathSync(process.cwd());
-    const problem = isGitRepository(cwd) ? undefined : folderProblem(cwd);
+    const kind = isGitRepository(cwd) ? "repository" : "folder";
+    const source = await sourceRoot(cwd, kind);
+    const problem = sourceProblem(source);
     if (problem !== undefined) {
       process.stderr.write(`${problem}: run tesota in the folder of the work you want done.\n`);
       process.exit(2);
     }
-    if (!resuming && !isGitRepository(cwd) && !existsSync(trackingDirectory(cwd))) {
+    if (!resuming && kind === "folder" && !existsSync(shadowDirectory(source))) {
       const { createInterface } = await import("node:readline/promises");
       const reader = createInterface({ input: process.stdin, output: process.stdout });
-      const answer = (await reader.question(await folderQuestion(cwd))).trim().toLowerCase();
+      const answer = (await reader.question(await folderQuestion(source))).trim().toLowerCase();
       reader.close();
       if (answer !== "y" && answer !== "yes") {
         process.stdout.write("Nothing was copied.\n");
@@ -124,14 +126,15 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   }
   process.exitCode = runRolesCommand(roleArgs, (text) => { process.stdout.write(text); });
 } else if (args[0] === "prune" && (args.length === 1 || args.length === 2 && args[1] === "--force")) {
-  const { formatPrunePlan, planWorkspacePrune, removeWorkspaces } = await import("./workspace-prune.js");
+  const { formatPrunePlan, measureWorkspaces, planWorkspacePrune, removeWorkspaces } = await import("./workspace-prune.js");
   const plan = await planWorkspacePrune();
-  process.stdout.write(formatPrunePlan(plan));
+  process.stdout.write(formatPrunePlan(plan, await measureWorkspaces(plan)));
   if (args[1] === "--force") {
     await removeWorkspaces(plan);
-    process.stdout.write(`Removed ${plan.remove.length} workspaces.\n`);
-  } else if (plan.remove.length > 0) {
-    process.stdout.write("Nothing was removed. Run tesota prune --force to remove the listed workspaces.\n");
+    process.stdout.write(`Removed ${plan.remove.length} workspaces, ${plan.sessions.length} session records and ` +
+      `${plan.shadows.length} shadow repositories.\n`);
+  } else if (plan.remove.length + plan.sessions.length + plan.shadows.length > 0) {
+    process.stdout.write("Nothing was removed. Run tesota prune --force to remove what is listed.\n");
   }
 } else if (args[0] === "recover") {
   const { realpathSync } = await import("node:fs");

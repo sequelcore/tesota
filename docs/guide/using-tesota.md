@@ -1,8 +1,11 @@
 # Using Tesota
 
 Tesota is a pre-release coding agent for the terminal. You describe what you
-want; it works in a separate copy of your repository; you review the changes
-and check results, then apply or reject them. The [design](../design/overview.md)
+want; in a Git repository it works in your project, recording each turn; you
+review the changes and check results, then keep or revert them, and a revert
+never overwrites an edit you made since. A folder that is not a repository,
+a second session in the same repository, and a session you isolate with
+`/isolate`, work in a separate copy instead, which you apply or reject. The [design](../design/overview.md)
 explains the boundaries in detail.
 
 ## Set up
@@ -76,11 +79,11 @@ act. Reviews never use the web. Sites that block automated requests, such as
 npm's, and pages built with JavaScript give little text.
 
 Commands run in a **sandbox** when one is ready, and on **this computer**
-otherwise, where each one asks you first; the agent's edits always go to its
-own copy of your repository, never to the repository itself until you apply
-them. On Windows, the **WSL sandbox** runs the agent's commands in a Linux
-shell inside WSL, in a distribution of Tesota's own, where they see only the
-workspace, under `/mnt`, and reach only package registries. Run `tesota
+otherwise, where each one asks you first; the agent's edits go to your files,
+and each turn is recorded so you can revert it. On Windows, the **WSL
+sandbox** runs the agent's commands in a Linux shell inside WSL, in a
+distribution of Tesota's own, where they see only your project, under
+`/mnt`, and reach only package registries. Run `tesota
 setup` once to prepare it: it installs WSL if needed (an administrator prompt
 and a restart), creates the distribution and restarts it when its settings
 change. The first time, Tesota checks on your computer that the sandbox keeps
@@ -114,11 +117,16 @@ cd my-project
 tesota
 ```
 
+Tesota keeps its own record of your repository or folder in
+`~/.tesota/sources` and never writes to your repository's `.git`. Apart from
+an empty `node_modules` folder the sandbox may create to mount its own over
+([limits](#limits)), only the agent's work changes your files.
 In a folder that is not a Git repository, Tesota first asks whether to work
-on it, saying how many files it holds. It keeps its own record of the
-folder in `~/.tesota/folders` and never adds anything to the folder itself;
-nothing in the folder changes until you apply a reviewed result. Your home
-directory as a whole, and the root of a drive, are refused.
+on it, saying how many files it holds, and works on a copy of it: nothing in
+the folder changes until you apply a reviewed result. In a repository it asks nothing, but
+names untracked files over 2 MB that are not in `.gitignore`, since it reads
+them before every request. Your home directory as a whole, and the root of a
+drive, are refused.
 
 Then ask for what you need:
 
@@ -140,7 +148,8 @@ and updates it as it works:
 the step can be confirmed; Tesota's checks and review, not the plan, are the
 evidence. After the review, each step the agent marked done also shows what
 the reviewer found of it: "review found it done", "review found it not done"
-or "review could not decide". The plan is cleared when you apply or reject the work.
+or "review could not decide". The plan is cleared when you keep or revert the work, or apply or reject it
+in a copy.
 
 The review also checks that everything you asked for is there, not only that
 the change has no defects: it shows how many of your requests are done, and a
@@ -151,23 +160,37 @@ is not there, is caught and sent back. A quick first pass, on your
 `triage` model, skips the check for greetings, thanks and small talk;
 `tesota roles triage off` checks every answer in full instead.
 
-The agent reads, searches, edits, creates and deletes files in its own copy of
-your repository. In the sandbox its shell commands run without
-asking, inside a sandbox that sees only that copy and reaches only package
-registries. If a command tries to reach another host, Tesota asks you:
+The agent reads, searches, edits, creates and deletes files in your project.
+In the sandbox its shell commands run without asking, inside a sandbox that
+sees only your project and reaches only package registries. There your
+`.git` is read-only, so a command cannot change your hooks or history, and
+files that may hold credentials are hidden from commands and from the
+agent's own tools: environment files (`.env`, `.env.*`), private keys and
+package registry credentials such as `.npmrc`, when your repository does not
+track them. If a command tries to reach another host, Tesota asks you:
 
 ```text
 The sandbox refused network access to api.github.com:443. Allow it? [y]es this session, [a]lways for this repository, [n]o:
 ```
 
-The agent is told your answer and reruns the command if you allowed it. The
-copy includes your uncommitted changes, but not files your
-`.gitignore` excludes, such as `.env` or `node_modules`. Before each request,
-Tesota brings in anything you changed since, and keeps the agent's pending
-changes on top. If you and the agent changed the same lines, Tesota leaves the
-copy as it was and names the files; apply or reject the pending changes to
-continue with your newer version. On this computer, Tesota asks before
-any shell command runs:
+The agent is told your answer and reruns the command if you allowed it.
+Before each request, the agent is told which files you changed since its last
+turn. After a turn, Tesota names any file the turn changed that the agent's
+own edit and write tools did not write: its commands wrote it, or you did
+meanwhile, which Tesota cannot tell apart. Reverting asks before it touches
+those.
+
+A second session in the same shell, while the first works in your files,
+works in a copy instead, and says so, as a folder's session always does. To
+have any session work in a copy, run `/isolate` before its first request; a
+session keeps working where it started. The copy includes your uncommitted
+changes, but not files your `.gitignore` excludes, such as `.env` or
+`node_modules`. Before each request, Tesota brings in anything you changed
+since, and keeps the agent's pending changes on top. If you and the agent
+changed the same lines, Tesota leaves the copy as it was and names the files;
+apply or reject the pending changes to continue with your newer version.
+
+On this computer, Tesota asks before any shell command runs:
 
 ```text
 Run `gh pr list`? [y]es, [a]lways `gh pr …` in this repository, [n]o:
@@ -187,7 +210,7 @@ command on this computer instead, with its reason:
 ```text
 Run `gh pr list` on this computer, outside the sandbox? Only your gh is signed in. [y]es, [a]lways `gh pr …` in this repository, [n]o:
 ``` `Esc` or `Ctrl+C` stops the current request; changes
-made so far stay in the workspace.
+made so far stay in your files, or in the copy, and can still be reverted.
 
 The conversation shows your messages on a tinted background, the agent's
 replies as formatted text while it writes them, and each file it reads or
@@ -244,7 +267,7 @@ is written to the conversation. It has three tabs, switched with `←→`, `Tab`
 
 `r` reads everything again; `Esc` closes the panel.
 
-## Review and apply
+## Review and decide
 
 When a request leaves changes, Tesota runs your checks on exactly that
 content. The first time in a repository it suggests commands from it (for
@@ -253,6 +276,13 @@ example `bun run check`); press Enter to accept, type your own separated by
 command you may name the JUnit XML reports it writes, in paths your
 `.gitignore` covers, so its failures are compared test by test:
 `bun run check => test-reports/unit.xml, test-reports/workspace.xml`.
+Checks do not see the hidden files either; when your project has some,
+Tesota lists them with the checks and asks which ones the checks may read,
+such as a `.env` your tests load, and remembers it with the checks. Each
+check's result says which hidden files it could read. `/checks` shows the
+checks and those files, and `/checks reset` chooses them again at the next
+review. The agent is told which files are hidden from it, so a command of its
+own that needs one is reported to you, not worked around.
 
 The conversation shows a review once, set apart from the agent's replies by a
 rule down its left side: each changed file and each check with ✓ or ✗.
@@ -314,9 +344,10 @@ proof can hold and still prove less than you asked, such as "denied and not
 allowed is refused" when you asked that denied always wins; this reviewer
 reports that gap.
 
-Each workspace keeps an assurance journal, `assurance.jsonl` beside its
-checkout: for every reviewed version, your requests, each verifier's claim and
-outcome, each reviewer's findings, and whether you applied or rejected it;
+Each session keeps an assurance journal, `assurance.jsonl` beside its
+record: for every reviewed version, your requests, each verifier's claim and
+outcome, each reviewer's findings, and whether you kept, reverted, applied or
+rejected it;
 for an answer, whether the first pass sent it to the full check and why.
 
 When a check or review confirms a problem this change caused, Tesota sends it
@@ -335,7 +366,23 @@ their added and removed lines, then shows each change with line numbers,
 added and removed lines tinted green and red, and code highlighted by
 language.
 The prompt stays visible in either view.
-Then choose:
+
+In your project, the turn then stays undecided: Tesota never holds the
+session for a decision, and a new request continues on top of it. Decide
+whenever the session is idle:
+
+- `/keep` keeps every undecided turn; the next turn starts from them.
+- `/revert` undoes the latest undecided turn: each file it changed goes back
+  to what it held before, except a file you changed since, which stays as it
+  is and is named. Run it again to step further back. If the turn changed
+  files outside the agent's edit and write tools, by its commands or by you,
+  `/revert` lists them and writes nothing until you choose `/revert all`,
+  which reverts them too, or `/revert agent`, which leaves them. Tesota keeps
+  a copy of every file first and undoes what it wrote if it has to stop; if
+  it cannot, it says "Recovery required", as an application does.
+- `/redo` puts the latest reverted turn back, until a new turn begins.
+
+A session working in a copy chooses after each review:
 
 - **apply** writes the changes to your repository, only if nothing in it
   changed since the result was checked. If you edited any file, even one the
@@ -356,7 +403,7 @@ not show the change does what you asked; read the diff.
 
 `tesota` starts a new session in the current repository or folder. Saved
 sessions remain in the sidebar: select one to continue it without losing its
-conversation or workspace. `tesota resume` lists saved sessions to choose
+conversation or its pending changes. `tesota resume` lists saved sessions to choose
 from before opening the shell; `tesota resume <session-id>` opens that exact
 session. If there are no saved sessions, start with `tesota` instead. Leaving
 a new session without sending a request does not keep an empty session.
@@ -412,15 +459,17 @@ by the `namer` role's model follows a few seconds later
 newest-first order, and `Alt+1` to `Alt+9` select those visible positions.
 `Ctrl+Tab` also selects the next where the terminal passes it on; Windows
 Terminal keeps it for its own tabs. `Ctrl+W` closes the selected session and removes
-its workspace and conversation. If the session has unapplied changes, the
-first `Ctrl+W` warns and a second one within five seconds confirms. Stop
+its conversation, and its copy if it works in one; changes in your files stay
+there and can no longer be reverted from Tesota. If the session has
+undecided or unapplied changes, the first `Ctrl+W` warns and a second one
+within five seconds confirms. Stop
 running work with `Ctrl+C` first. Closing the last session opens a new one. At wide sizes, `Alt+S` shows a second session
 read-only. `Alt+,` and `Alt+.` browse earlier results.
 As in Claude Code and Pi, `Ctrl+C` at an idle prompt clears what you typed,
 and pressed again within five seconds closes the shell; `Ctrl+D` on an empty
 prompt does the same, as does `/quit`. The session is never closed this way.
-Sessions, their workspaces and their conversations are restored after a
-restart.
+Sessions, their undecided turns or copies, and their conversations are
+restored after a restart.
 
 `tesota --theme tesota-light` or `--theme terminal` changes the appearance for
 one run. Inside the shell, `/themes` opens a list like `/roles`: type to
@@ -446,7 +495,13 @@ background colors; plain conversation text still uses the terminal's foreground.
 ## Limits
 
 - Exercised live only on Windows.
-- Changes to symbolic links and submodules cannot be applied.
+- Changes to symbolic links and submodules cannot be applied or reverted.
+- A folder, a second session in the same shell, and a session isolated with
+  `/isolate` work in a copy. A session cannot move between your files and a
+  copy once it has started.
+- A check that fails is compared with the project before the turn only in
+  the WSL sandbox; on your computer or in Docker Sandboxes, whether the
+  failure came with the turn is reported as unknown.
 - Without the sandbox, approved commands run on your computer without
   isolation.
 - The sandbox gets the runtimes your repository pins
@@ -464,10 +519,17 @@ background colors; plain conversation text still uses the terminal's foreground.
   and prepare in about half a minute. Restored sessions prepare when opened; new sessions prepare
   with their first request so unused sessions create no workspace. The status
   line shows preparation. Installed `node_modules` stay inside the sandbox,
-  so your workspace folder shows it empty. Dev Container definitions are not read yet.
+  mounted over your project's own `node_modules`, which keeps its Windows
+  binaries; in a JavaScript project without one, the sandbox creates the
+  empty folder to mount over. The sandbox's installs belong to your project
+  and are reused by its next session. Dev Container definitions are not read yet.
 - Copies of the files an application replaced stay in
   `~/.tesota/applications/` for 30 days, or until an unfinished application
   is settled with `tesota recover`.
-- Closing a session removes its workspace. `tesota prune` lists other
-  workspaces it would remove, and `tesota prune --force` removes those that no
-  session uses and that hold no unapplied changes.
+- Closing a session removes its copy, if it has one. `tesota prune` lists
+  every copy with what it holds on disk, on your computer and in the WSL
+  sandbox, whose installed `node_modules` are usually most of it, and the
+  copies it would remove: those that no session uses and that hold no
+  unapplied changes. It also lists records of sessions no saved session uses
+  (their changes stay in your files), and Tesota's records of directories
+  that no longer exist; `tesota prune --force` removes them.

@@ -10,7 +10,7 @@ export const ADVISOR_TIME_LIMIT_MS: number = 5 * 60_000;
 const adviceLimit = 8_000;
 
 export function advisorPrompt(): string {
-  return "You advise Tesota's working agent, a coding agent working in a private copy of a user's repository. You " +
+  return "You advise Tesota's working agent, a coding agent working in a user's repository. You " +
     "receive its conversation so far: the user's requests, its tool calls and their results, and its replies. " +
     "You cannot read files or run anything; judge from the conversation, and say what the agent should check when " +
     "it lacks something you need. Give a plan, a correction, or a reason to stop: the approach to take, the risk or " +

@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
-import { folderEnvironment } from "./folder-source.js";
 import { assertNoRepositoryGitPrograms, isGitObjectId, operatorLineEndingSetting, runRepositoryGit as git,
   runRepositoryGitBytes as gitBytes, type RepositoryGitEnvironment } from "./repository-git.js";
+import { refreshShadow, shadowEnvironment } from "./source-shadow.js";
 
 /** One file that differs between two captured states of the source. */
 export interface SourceChange {
@@ -45,36 +45,50 @@ function parseRawDiff(value: string): { status: SourceChange["status"]; path: st
 
 /**
  * What the source's working tree holds, as `git status` sees it: tracked
- * changes, deletions and untracked files that are not ignored. A private index
- * and object directory keep the source repository's index, refs and object
- * store untouched; they persist so Git's stat cache makes later captures cheap.
+ * changes, deletions and untracked files that are not ignored, all read
+ * through the source's shadow repository. A private index and object
+ * directory keep the shadow's own index untouched; they persist so Git's stat
+ * cache makes later captures cheap.
  */
 export class SourceSnapshot {
   readonly #source: string;
+  readonly #shadow: string;
   readonly #state: string;
   readonly #env: RepositoryGitEnvironment;
 
-  private constructor(source: string, state: string, env: RepositoryGitEnvironment) {
+  private constructor(source: string, shadow: string, state: string, env: RepositoryGitEnvironment) {
     this.#source = source;
+    this.#shadow = shadow;
     this.#state = state;
     this.#env = env;
   }
 
-  /** `tracking` is a folder's private repository (decision 032), absent for a Git repository. */
-  static async open(source: string, stateDirectory: string, tracking?: string): Promise<SourceSnapshot> {
-    const objects = join(stateDirectory, "objects");
-    await mkdir(objects, { recursive: true });
-    const view = tracking === undefined ? {} : folderEnvironment(source, tracking);
-    const sourceObjects = resolve(source, git(source, ["rev-parse", "--git-path", "objects"], view).trim());
-    if (!isAbsolute(sourceObjects)) throw new Error("Invalid source object directory");
-    return new SourceSnapshot(source, stateDirectory, { ...view, GIT_INDEX_FILE: join(stateDirectory, "index"),
-      GIT_OBJECT_DIRECTORY: objects, GIT_ALTERNATE_OBJECT_DIRECTORIES: sourceObjects });
+  /**
+   * `objects` says where captured trees are written: a private directory in
+   * the state directory, borrowing the shadow's objects, for a workspace; the
+   * shadow itself for a session working in the source, whose turns' trees
+   * the shadow keeps.
+   */
+  static async open(source: string, stateDirectory: string, shadow: string, objects: "private" | "shadow" = "private"):
+    Promise<SourceSnapshot> {
+    await mkdir(stateDirectory, { recursive: true });
+    const view = shadowEnvironment(source, shadow);
+    const index = { ...view, GIT_INDEX_FILE: join(stateDirectory, "index") };
+    if (objects === "shadow") return new SourceSnapshot(source, shadow, stateDirectory, index);
+    const own = join(stateDirectory, "objects");
+    await mkdir(own, { recursive: true });
+    const shadowObjects = resolve(source, git(source, ["rev-parse", "--git-path", "objects"], view).trim());
+    if (!isAbsolute(shadowObjects)) throw new Error("Invalid source object directory");
+    return new SourceSnapshot(source, shadow, stateDirectory, { ...index, GIT_OBJECT_DIRECTORY: own,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: shadowObjects });
   }
 
   /** Capture the working tree now and return its Git tree id. */
   capture(): string {
-    assertNoRepositoryGitPrograms(this.#source);
-    // Reading HEAD keeps tracked files that ignore rules would otherwise skip.
+    refreshShadow(this.#source, this.#shadow);
+    assertNoRepositoryGitPrograms(this.#source, shadowEnvironment(this.#source, this.#shadow));
+    // Reading HEAD keeps tracked files that ignore rules would otherwise skip, and a
+    // repository's symbolic links where Git keeps them as plain files.
     // --reset reuses stat information for unchanged entries and, without -u,
     // never touches the working tree.
     git(this.#source, ["read-tree", ...(existsSync(join(this.#state, "index")) ? ["--reset"] : []), "HEAD"], this.#env);

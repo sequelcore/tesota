@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { activityOf, confinedPath, responseUsage } from "../src/integrations/pi-coding-session.js";
+import { activityOf, confinedPath, responseUsage, workingAgentSetup } from "../src/integrations/pi-coding-session.js";
+import { hostProvider } from "../src/host-environment.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -93,4 +94,17 @@ it("counts the tokens of each finished model response by kind, and nothing else"
     { type: "message_end", message: { role: "user", content: "hi" } },
   ] as unknown as AgentSessionEvent[];
   expect(events.map(responseUsage)).toEqual([undefined, { input: 4_907, output: 100, cacheRead: 4_000, cacheCreation: 7 }, undefined]);
+});
+
+it("tells the agent whether it works in the user's own project or in a copy, and what becomes of its changes", async () => {
+  const { root } = await fixture();
+  const base = { cwd: root, environment: await hostProvider.prepare(root), sandboxed: false, approveCommand: async () => "deny" as const };
+  const inSource = workingAgentSetup({ ...base, place: "source" }).systemPrompt;
+  expect(inSource).toContain("working in the user's own project: your edits and commands change their files as you make them.");
+  expect(inSource).toContain("the user keeps or reverts them.");
+  expect(inSource).not.toContain("copy");
+  // A copy is the default, as evaluations and every workspace use.
+  const inCopy = workingAgentSetup(base).systemPrompt;
+  expect(inCopy).toContain("working in a private copy of the user's repository.");
+  expect(inCopy).toContain("the user applies or rejects them.");
 });

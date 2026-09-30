@@ -22,7 +22,8 @@ const outputTail = 2_000;
 const subjectLimit = 300;
 
 export type AssuranceDecision = "applied" | "rejected" | "application_conflict" | "application_rolled_back" |
-  "application_recovery_required";
+  "application_recovery_required" | "kept" | "reverted" | "revert_conflict" | "revert_rolled_back" | "revert_recovery_required" |
+  "redone" | "redo_conflict" | "redo_rolled_back" | "redo_recovery_required";
 
 export type AssuranceEntry =
   | Readonly<{ kind: "review"; at: string; base: string; tree: string; requests: readonly string[];
@@ -82,7 +83,9 @@ const journaledEntry = z.discriminatedUnion("kind", [
 
 /**
  * The last review of the pending changes: the journal's last review, unless
- * the operator has since applied or rejected what it reviewed.
+ * the operator has since applied, rejected, kept or reverted what it
+ * reviewed; a redo after a revert puts the reviewed turn back, so its review
+ * is open again.
  */
 export async function lastOpenReview(workspaceDirectory: string):
   Promise<Readonly<{ tree: string; reviews: readonly ReviewReport[] }> | undefined> {
@@ -93,7 +96,8 @@ export async function lastOpenReview(workspaceDirectory: string):
   const index = entries.findLastIndex((entry) => entry.kind === "review");
   const review = entries[index];
   if (review?.kind !== "review") return undefined;
-  const settled = entries.slice(index + 1).some((entry) => entry.kind === "decision" &&
-    (entry.decision === "applied" || entry.decision === "rejected"));
+  const last = entries.slice(index + 1).findLast((entry) => entry.kind === "decision" &&
+    ["applied", "rejected", "kept", "reverted", "redone"].includes(entry.decision));
+  const settled = last?.kind === "decision" && last.decision !== "redone";
   return settled ? undefined : { tree: review.tree, reviews: review.reviews as unknown as ReviewReport[] };
 }

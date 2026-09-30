@@ -30,6 +30,9 @@ export type ApplyResult =
   /** A partial effect remains (decision 042); `tesota recover` undoes or finishes application `id`. */
   | Readonly<{ status: "recovery_required"; id: string; paths: readonly ApplicationPathState[] }>;
 
+/** Where a session works: in the operator's own files, or in an isolated workspace it applies from. */
+export type WorkPlace = "source" | "workspace";
+
 /** The result a correction round started from, and the findings it sent back. */
 export interface CorrectionContext {
   readonly previousTree: string;
@@ -64,6 +67,10 @@ export interface TesotaShellDependencies {
   readonly checks: () => readonly ApprovedCheck[] | null;
   readonly suggestChecks: () => readonly string[];
   readonly setChecks: (checks: readonly ApprovedCheck[]) => void;
+  /** Files hidden from the agent and its checks, relative with forward slashes; none when absent. */
+  readonly hiddenFiles?: () => Promise<readonly string[]>;
+  /** Let the repository's checks read these hidden files, which they need. */
+  readonly allowForChecks?: (paths: readonly string[]) => void;
   /**
    * Snapshot the pending changes, run the approved checks on them and present
    * the review, once. After a correction round, `correction` names the result
@@ -73,6 +80,8 @@ export interface TesotaShellDependencies {
   readonly review: (checks: readonly ApprovedCheck[], correction?: CorrectionContext) => Promise<ReviewResult>;
   readonly apply: () => Promise<ApplyResult>;
   readonly reject: () => Promise<void>;
+  /** Where the session works; an isolated workspace when absent. Known once its first request starts. */
+  readonly place?: () => WorkPlace;
 }
 
 function ignoreProgress(_progress: TesotaShellProgress): void {}
@@ -111,8 +120,22 @@ async function chooseChecks(dependencies: TesotaShellDependencies): Promise<read
       : answer.toLowerCase() === "none" ? [] : parseChecks(answer);
     if (typeof chosen === "string") { dependencies.write(`${chosen}\n`, "warning"); continue; }
     dependencies.setChecks(chosen);
+    if (chosen.length > 0) await allowHiddenForChecks(dependencies);
     return chosen;
   }
+}
+
+/**
+ * Hidden files stay hidden from checks too, unless the operator lets the
+ * repository's checks read the ones they need, asked once with the checks.
+ */
+async function allowHiddenForChecks(dependencies: TesotaShellDependencies): Promise<void> {
+  const hidden = await dependencies.hiddenFiles?.() ?? [];
+  if (hidden.length === 0 || dependencies.allowForChecks === undefined) return;
+  dependencies.write(`Hidden from the agent and its checks, since they may hold credentials:\n${hidden.map((path) => `  ${path}`).join("\n")}\n`);
+  const answer = await dependencies.ask("Checks that need some of them may read them: type their paths (separate with ;), or Enter for none: ");
+  const allowed = answer.split(";").map((path) => path.trim()).filter((path) => hidden.includes(path));
+  if (allowed.length > 0) dependencies.allowForChecks(allowed);
 }
 
 type Decision = "apply" | "reject" | "keep";
@@ -142,7 +165,7 @@ async function assess(dependencies: TesotaShellDependencies,
     report({ phase: "checking" });
     const review = context === undefined ? await dependencies.review(checks) : await dependencies.review(checks, context);
     if (review.status === "cancelled") {
-      dependencies.write("Checks cancelled. The changes stay in the workspace.\n");
+      dependencies.write(`Checks cancelled. The changes stay ${placeOf(dependencies)}.\n`);
       return "stopped";
     }
     const correction = correctionFor(review.checks, review.reviews);
@@ -161,20 +184,33 @@ async function assess(dependencies: TesotaShellDependencies,
     if (result.status === "unsettled") return "unsettled";
     if (result.status !== "completed") {
       dependencies.write(`The agent's fix ${result.status === "cancelled" ? "was stopped" : `failed: ${result.reason}`}. ` +
-        "The changes stay in the workspace; continue with another request.\n", "warning");
+        `The changes stay ${placeOf(dependencies)}; continue with another request.\n`, "warning");
       return "stopped";
     }
   }
+}
+
+/** Where the session's changes are, as the operator reads it. */
+function placeOf(dependencies: TesotaShellDependencies): string {
+  return dependencies.place?.() === "source" ? "in your files" : "in the workspace";
 }
 
 async function reviewChanges(dependencies: TesotaShellDependencies,
   report: (progress: TesotaShellProgress) => void): Promise<boolean> {
   const assessment = await assess(dependencies, report);
   if (assessment === "unsettled") {
-    dependencies.write("The agent did not stop cleanly. This session is closed; check the workspace before continuing.\n", "warning");
+    dependencies.write(`The agent did not stop cleanly. This session is closed; check ${dependencies.place?.() === "source"
+      ? "your files" : "the workspace"} before continuing.\n`, "warning");
     return false;
   }
   if (assessment === "stopped") return true;
+  // In the source the turn is already in the operator's files; it stays undecided until they keep or revert it,
+  // with a command at any time, as Claude Code's /rewind and OpenCode's /undo work, never a prompt that holds the session.
+  if (dependencies.place?.() === "source") {
+    dependencies.write("This turn stays in your files, undecided: /keep keeps it, /revert undoes it, and a new request " +
+      "continues on top of it.\n");
+    return true;
+  }
   report({ phase: "awaiting_decision" });
   const decision = await askDecision(dependencies);
   if (decision === "keep") {
@@ -256,11 +292,12 @@ export async function runTesotaShell(dependencies: TesotaShellDependencies): Pro
     report({ phase: "working" });
     const result = await dependencies.work(request);
     if (result.status === "unsettled") {
-      dependencies.write("The agent did not stop cleanly. This session is closed; check the workspace before continuing.\n", "warning");
+      dependencies.write(`The agent did not stop cleanly. This session is closed; check the changes ${placeOf(dependencies)} ` +
+        "before continuing.\n", "warning");
       return 1;
     }
     if (result.status === "cancelled") {
-      dependencies.write("Stopped. Any changes so far stay in the workspace.\n");
+      dependencies.write(`Stopped. Any changes so far stay ${placeOf(dependencies)}.\n`);
       continue;
     }
     if (result.status === "failed") {
@@ -270,7 +307,8 @@ export async function runTesotaShell(dependencies: TesotaShellDependencies): Pro
     if (result.changes.length === 0) {
       const answer = await checkAnswer(dependencies, report);
       if (answer === "unsettled") {
-        dependencies.write("The agent did not stop cleanly. This session is closed; check the workspace before continuing.\n", "warning");
+        dependencies.write(`The agent did not stop cleanly. This session is closed; check the changes ${placeOf(dependencies)} ` +
+          "before continuing.\n", "warning");
         return 1;
       }
       if (answer === "done") continue;

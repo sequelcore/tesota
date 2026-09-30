@@ -1,13 +1,14 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { constants, homedir, release } from "node:os";
 import { posix } from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import * as z from "zod";
 import { EgressProxy } from "./egress-proxy.js";
+import { folderSize } from "./folder-size.js";
 import { PACKAGE_REGISTRY_HOSTS, type PreparationStep, type RunOutcome } from "./execution-environment.js";
 import { MISE_RELEASE } from "./toolchain.js";
 import type { NetworkPhase } from "./verification/setup-network-rule.js";
@@ -15,7 +16,7 @@ import { readsToolFolder } from "./verification/tool-folder-rule.js";
 import { countsAsDrive, settingsAsked } from "./verification/wsl-settings-rule.js";
 
 // This side runs on Linux, so its paths follow Linux's rules wherever it is tested.
-const { basename, delimiter, dirname, isAbsolute, join, normalize, resolve } = posix;
+const { basename, delimiter, dirname, isAbsolute, join, normalize, relative, resolve } = posix;
 
 /**
  * The Linux side of the WSL sandbox (decision 043): one process per
@@ -69,6 +70,8 @@ export interface SandboxLayout {
   readonly modules?: string;
   readonly relay: string;
   readonly socket: string;
+  /** An empty file mounted read-only over each file hidden from commands. */
+  readonly mask: string;
   /** The JavaScript runtime that runs the relay, which lies inside a readable folder. */
   readonly runtime: string;
   readonly system: readonly SystemFolder[];
@@ -199,14 +202,43 @@ export function commandVariables(layout: SandboxLayout, path: string, given: Rea
     npm_config_cache: join(layout.cache, "npm"), BUN_INSTALL_CACHE_DIR: join(layout.cache, "bun"), ...given };
 }
 
+/** Paths inside the workspace a command may read but not change, and files it may not read at all. */
+/** Paths inside the mounted folder, relative, that a command may read but not change, and files it may not read at all. */
+export interface GuardedPaths {
+  readonly readOnly: readonly string[];
+  readonly hidden: readonly string[];
+}
+
+/**
+ * What to guard in the folder mounted as the workspace for one command: its
+ * Git data read-only, so a command cannot change the repository's hooks or
+ * history, and each file hidden from the agent that exists as a plain file.
+ * `hidden` is relative with forward slashes; a path that leaves the folder,
+ * or that is a link or folder, is not mounted over.
+ */
+export async function guardedPaths(folder: string, hidden: readonly string[]): Promise<GuardedPaths> {
+  const readOnly = await lstat(join(folder, ".git")).then((metadata) => metadata.isSymbolicLink() ? [] : [".git"], () => []);
+  const files: string[] = [];
+  for (const path of hidden) {
+    const target = resolve(folder, ...path.split("/"));
+    if (path.length === 0 || target === folder || !within(target, folder)) continue;
+    if ((await lstat(target).catch(() => undefined))?.isFile() === true) files.push(relative(folder, target));
+  }
+  return { readOnly, hidden: files };
+}
+
 /**
  * bubblewrap's arguments for one command: new user, process, network, IPC,
  * UTS and cgroup namespaces; the system and tool folders read-only; the
- * workspace and the session's folders writable; the repository's toolchain
- * folder writable only in setup; nothing else. `--info-fd 3` reports the
- * sandbox's first process, whose end ends every process in it.
+ * workspace and the session's folders writable, except the workspace's
+ * guarded paths; the repository's toolchain folder writable only in setup;
+ * nothing else. `--info-fd 3` reports the sandbox's first process, whose end
+ * ends every process in it. `mounted` is the folder commands see at the
+ * workspace's path: the workspace itself, or another, such as a checkout of
+ * the tree before a turn, so a command sees the same paths either way.
  */
-export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command: string, phase: NetworkPhase): string[] {
+export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command: string, phase: NetworkPhase,
+  guarded: GuardedPaths = { readOnly: [], hidden: [] }, mounted: string = layout.workspace): string[] {
   const system = layout.system.flatMap((folder) => folder.link === undefined ? ["--ro-bind", folder.path, folder.path]
     : ["--symlink", folder.link, folder.path]);
   const modules = layout.modules === undefined ? [] : ["--bind", layout.modules, join(layout.workspace, "node_modules")];
@@ -216,7 +248,9 @@ export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command:
     "--proc", "/proc", "--dev", "/dev", "--bind", layout.temp, "/tmp",
     "--bind", layout.cache, layout.cache,
     phase === "setup" ? "--bind" : "--ro-bind", layout.toolchains, layout.toolchains,
-    "--bind", layout.workspace, layout.workspace, ...modules,
+    "--bind", mounted, layout.workspace, ...modules,
+    ...guarded.readOnly.flatMap((path) => ["--ro-bind", join(mounted, path), join(layout.workspace, path)]),
+    ...guarded.hidden.flatMap((path) => ["--ro-bind", layout.mask, join(layout.workspace, path)]),
     "--ro-bind", layout.relay, layout.relay, "--bind", layout.socket, layout.socket,
     "--chdir", cwd, "--info-fd", "3", "--", layout.runtime, layout.relay, layout.socket, String(SANDBOX_PROXY_PORT), command];
 }
@@ -232,7 +266,8 @@ export type SetupStageMessage = Readonly<{ description: string; script: string; 
  * succeeded here.
  */
 export type HostMessage =
-  | Readonly<{ type: "run"; id: string; command: string; cwd: string; env: Readonly<Record<string, string>>; timeoutSeconds?: number | undefined }>
+  | Readonly<{ type: "run"; id: string; command: string; cwd: string; env: Readonly<Record<string, string>>; timeoutSeconds?: number | undefined;
+    hidden?: readonly string[] | undefined; root?: string | undefined }>
   | Readonly<{ type: "stop"; id: string }>
   | Readonly<{ type: "allow"; destinations: readonly string[] }>
   | Readonly<{ type: "setup"; id: string; fingerprint: string; destinations: readonly string[]; env: Readonly<Record<string, string>>;
@@ -240,7 +275,8 @@ export type HostMessage =
 
 const hostMessage: z.ZodType<HostMessage> = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("run"), id: z.string(), command: z.string(), cwd: z.string(),
-    env: z.record(z.string(), z.string()), timeoutSeconds: z.number().positive().optional() }),
+    env: z.record(z.string(), z.string()), timeoutSeconds: z.number().positive().optional(), hidden: z.array(z.string()).optional(),
+    root: z.string().optional() }),
   z.strictObject({ type: z.literal("stop"), id: z.string() }),
   z.strictObject({ type: z.literal("allow"), destinations: z.array(z.string()) }),
   z.strictObject({ type: z.literal("setup"), id: z.string(), fingerprint: z.string(), destinations: z.array(z.string()),
@@ -362,6 +398,10 @@ interface Running {
 /** A command to run in its own sandbox, from a folder relative to the workspace, in setup or for the agent. */
 interface Execution {
   readonly command: string;
+  /** Files hidden from the command, relative to the workspace with forward slashes. */
+  readonly hidden?: readonly string[] | undefined;
+  /** The folder, on this side, mounted at the workspace's path instead of the workspace. */
+  readonly root?: string | undefined;
   readonly cwd: string;
   readonly env: Readonly<Record<string, string>>;
   readonly timeoutSeconds?: number | undefined;
@@ -379,6 +419,8 @@ const TOOL_FOLDERS_OUTPUT = 64 * 1024;
 
 interface ServerParts {
   readonly layout: SandboxLayout;
+  /** How the host's paths appear here, for a folder the host asks to mount in the workspace's place. */
+  readonly paths: PathTranslation;
   /** The `PATH` entries every command can reach, after the installed tools' folders. */
   readonly path: string;
   readonly bubblewrap: string;
@@ -416,7 +458,8 @@ class SandboxServer {
     // The agent's commands never share setup's network or its writable toolchain folder.
     const ended: Promise<Ended> = this.#settingUp || this.#unusable !== undefined
       ? Promise.resolve({ outcome: "not_started", exitCode: null, refused: [] })
-      : this.#execute(id, { ...message, phase: "agent" }, (chunk) => {
+      : this.#execute(id, { ...message, phase: "agent",
+        root: message.root === undefined ? undefined : translate(message.root, this.#parts.paths) }, (chunk) => {
         this.#parts.send({ type: "output", id, data: chunk.toString("base64") });
       });
     void ended.then((end) => { this.#parts.send({ type: "ended", id, ...end }); });
@@ -479,13 +522,16 @@ class SandboxServer {
     return steps;
   }
 
-  #execute(id: string, execution: Execution, output: (chunk: Buffer, stream: "stdout" | "stderr") => void): Promise<Ended> {
+  async #execute(id: string, execution: Execution, output: (chunk: Buffer, stream: "stdout" | "stderr") => void): Promise<Ended> {
     const { layout, bubblewrap, proxy } = this.#parts;
     const cwd = resolve(layout.workspace, execution.cwd);
-    if (!within(cwd, layout.workspace)) return Promise.resolve({ outcome: "not_started", exitCode: null, refused: [] });
+    if (!within(cwd, layout.workspace)) return { outcome: "not_started", exitCode: null, refused: [] };
+    const mounted = execution.root ?? layout.workspace;
+    if (execution.root !== undefined && layout.modules !== undefined) await mkdir(join(mounted, "node_modules"), { recursive: true });
+    const guarded = await guardedPaths(mounted, execution.hidden ?? []);
     const started = new Date();
     const path = [...this.#toolFolders, this.#parts.path].filter((entry) => entry.length > 0).join(delimiter);
-    const child = spawn(bubblewrap, bubblewrapArguments(layout, cwd, execution.command, execution.phase),
+    const child = spawn(bubblewrap, bubblewrapArguments(layout, cwd, execution.command, execution.phase, guarded, mounted),
       { env: commandVariables(layout, path, execution.env), stdio: ["ignore", "pipe", "pipe", "pipe"] });
     let info = "";
     child.stdio[3]?.on("data", (chunk: Buffer) => { info += chunk.toString("utf8"); });
@@ -566,7 +612,7 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   const layout: SandboxLayout = { workspace, home: join(state, "home"), account: homedir(), temp: join(state, "tmp"),
     cache: join(shared, "cache"), toolchains: join(shared, "toolchains"),
     ...existsSync(join(workspace, "package.json")) ? { modules: join(state, "node_modules") } : {},
-    relay: join(state, "relay.cjs"), socket: join(state, "proxy.sock"), runtime: process.execPath,
+    relay: join(state, "relay.cjs"), socket: join(state, "proxy.sock"), mask: join(state, "hidden"), runtime: process.execPath,
     system: systemFolders(), tools: toolsOnThisMachine() };
   for (const folder of [layout.home, layout.temp, join(layout.cache, "npm"), join(layout.cache, "bun"), layout.toolchains, layout.modules]) {
     if (folder !== undefined) await mkdir(folder, { recursive: true });
@@ -574,9 +620,12 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   // The mount point for the workspace's own node_modules, as Docker Sandboxes makes it.
   if (layout.modules !== undefined) await mkdir(join(workspace, "node_modules"), { recursive: true });
   await writeFile(layout.relay, RELAY_SOURCE, "utf8");
+  // Read-only, so an earlier start left one that cannot be written again.
+  await rm(layout.mask, { force: true });
+  await writeFile(layout.mask, "", { mode: 0o400 });
   await rm(layout.socket, { force: true });
   const proxy = await EgressProxy.start({ allowed: PACKAGE_REGISTRY_HOSTS.map((host) => `${host}:443`), socket: layout.socket });
-  const server = new SandboxServer({ layout, path: commandPath(process.env["PATH"] ?? "", layout.tools), bubblewrap, proxy,
+  const server = new SandboxServer({ layout, paths: options.paths, path: commandPath(process.env["PATH"] ?? "", layout.tools), bubblewrap, proxy,
     record: join(state, "setup.json"), send });
   send({ type: "ready", workspace, home: layout.account, toolchains: layout.toolchains });
   for await (const line of createInterface({ input })) {
@@ -590,6 +639,11 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
 /** Remove what a workspace's sandbox kept on WSL's disk. */
 export async function releaseState(workspace: string, paths: PathTranslation): Promise<void> {
   await rm(stateFolder(translate(workspace, paths)), { recursive: true, force: true });
+}
+
+/** The bytes a workspace's own folders hold on WSL's disk, its `node_modules` included. */
+export function stateSize(workspace: string, paths: PathTranslation): Promise<number> {
+  return folderSize(stateFolder(translate(workspace, paths)));
 }
 
 /** Remove a repository's package caches and the tools setup installed for it. */

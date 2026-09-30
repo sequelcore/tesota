@@ -6,9 +6,11 @@ it. Earlier proposals and evaluations remain in Git history.
 
 ## Status
 
-Tesota is an unpublished, pre-release terminal coding agent. It works in a
-separate workspace per session, runs checks and review on the resulting tree,
-and lets the operator apply or reject the change. On Windows, commands can run
+Tesota is an unpublished, pre-release terminal coding agent. It works in the
+operator's project, records each turn, runs checks and review on it, and lets
+the operator keep, revert or redo the turn with `/keep`, `/revert` and
+`/redo`; a folder of documents, or a second session, works in a separate
+workspace and applies or rejects. On Windows, commands can run
 in a qualified WSL sandbox; otherwise host commands ask for approval. The
 complete loop has run on throwaway and evaluation repositories. Daily use on a
 real project has not started. See the [user guide](guide/using-tesota.md) for
@@ -24,11 +26,17 @@ the workflow and limits.
 - Use the WSL sandbox as the default on a real project, including its toolchain
   preparation and the option to approve one command on the host. Correct the
   obstacles real use reveals. [Execution](design/execution.md)
-- Work in the operator's directory by default, as local harnesses do, with a
-  shadow repository for every source, turn snapshots, and keep or revert; keep
-  the isolated workspace for parallel sessions. A workspace per session costs
-  each session its own clone, sandbox and 900 MB of dependencies.
-  [Proposal](design/workspace.md#proposed-working-in-the-source)
+- Finish working in the source. Built: one shadow repository per source;
+  turns recorded in the operator's project and decided with `/keep`,
+  `/revert` and `/redo`, a revert never overwriting a later edit; secret files
+  hidden and `.git` read-only in the WSL sandbox, with the agent told what is
+  hidden; base checks in a checkout of their own; a separate workspace for a
+  folder, a second session, or any session that chooses one with `/isolate`
+  before its first request, with the disk each holds listed by `tesota
+  prune`. Not yet run with a real model in the shell: use it on a real
+  project next. Base checks outside the WSL sandbox wait until real use shows
+  they matter.
+  [Workspace](design/workspace.md#planned)
 - Evaluate scope behavior on cases that tempt the agent to make unrelated
   changes. The reviewer's extra-work check is built, but
   the working agent's prompt has no measured scope intervention yet. Register

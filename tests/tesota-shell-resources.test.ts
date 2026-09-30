@@ -12,6 +12,7 @@ import type { ShellSessionRecord, ShellSessionStore } from "../src/shell-session
 import type { TesotaShellTerminalOptions } from "../src/tesota-shell-terminal.js";
 import type { TranscriptEntry } from "../src/tesota-shell-transcript.js";
 import { Workspace } from "../src/workspace.js";
+import { SourceSession } from "../src/source-session.js";
 
 /**
  * What a session holds ends with it: an environment still being prepared is
@@ -76,6 +77,8 @@ beforeEach(() => {
     run: vi.fn(async () => ({ status: "completed", reply: "ok" })), switchModel: vi.fn(), dispose: vi.fn(),
     conversation: vi.fn(async () => []), contextTokens: () => undefined }) as unknown as WorkingAgent);
   spies.push(vi.spyOn(Workspace, "create").mockResolvedValue(workspace),
+    // A test double stands for the work whether the session works in the source or in a workspace.
+    vi.spyOn(SourceSession, "create").mockResolvedValue(workspace as unknown as SourceSession),
     vi.spyOn(SessionManager, "findById").mockReturnValue(undefined),
     vi.spyOn(SessionManager, "create").mockReturnValue({} as SessionManager));
 });

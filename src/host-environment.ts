@@ -28,6 +28,8 @@ function hostEnvironment(): ExecutionEnvironment {
     async run(command: string, options: RunOptions): Promise<RunResult> {
       const cancelled = (): boolean => options.signal?.aborted === true;
       if (cancelled()) return { outcome: "cancelled", exitCode: null };
+      // On this computer the workspace's path is the workspace itself; no other folder can stand in its place.
+      if (options.root !== undefined) return { outcome: "not_started", exitCode: null };
       try {
         const { exitCode } = await shell.exec(command, options.cwd, {
           onData: options.onOutput,

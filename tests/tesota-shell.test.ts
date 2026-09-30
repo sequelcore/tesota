@@ -273,3 +273,23 @@ it("stops checking an answer after two correction rounds and leaves the rest to 
   expect(fixture.dependencies.work).toHaveBeenCalledTimes(3);
   expect(fixture.dependencies.review).not.toHaveBeenCalled();
 });
+
+it("leaves a turn in the operator's files undecided after review, never holding the session for a decision", async () => {
+  const fixture = shell(["Fix the discount", "", "Add a tax helper", ""], { place: () => "source" });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.apply).not.toHaveBeenCalled();
+  expect(fixture.dependencies.reject).not.toHaveBeenCalled();
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
+  expect(fixture.text()).toContain("This turn stays in your files, undecided: /keep keeps it, /revert undoes it, and a new " +
+    "request continues on top of it.");
+  expect(fixture.progress.some((event) => event.phase === "awaiting_decision")).toBe(false);
+});
+
+it("lets checks read the hidden files the operator names, asked once with the checks", async () => {
+  const allowForChecks = vi.fn();
+  const fixture = shell(["Fix the discount", "", "api/.env; secrets.txt", "", ""], {
+    hiddenFiles: async () => ["api/.env", "deploy.key"], allowForChecks });
+  await runTesotaShell(fixture.dependencies);
+  expect(allowForChecks).toHaveBeenCalledWith(["api/.env"]);
+  expect(fixture.text()).toContain("Hidden from the agent and its checks, since they may hold credentials:\n  api/.env\n  deploy.key\n");
+});

@@ -1,14 +1,17 @@
 # Overview
 
-**Tesota is an open-source coding agent that checks and reviews changes before
-you apply them.** It works in a separate copy of your project. You inspect
-the exact changes, check results and review before anything reaches your files.
+**Tesota is an open-source coding agent that reviews every turn it takes in
+your project, and reverts one without overwriting your own edits.** It
+records the exact content of each turn, so you inspect the changes, check
+results and review bound to that content, then keep the turn or revert it. A
+folder of documents, or a second session, works in a separate copy you apply
+from.
 The [roadmap](../roadmap.md) owns status and priorities; this page and its
 siblings describe what is built unless a section explicitly says planned.
 
 | Design | Covers |
 | --- | --- |
-| [Workspace](workspace.md) | The separate copy, keeping it current, and applying reviewed work |
+| [Workspace](workspace.md) | The shadow repository, turns in your project with keep and revert, and the separate copy a second session applies from |
 | [Execution](execution.md) | Where commands run, a sandbox or this computer, when the operator is asked, and network |
 | [Assurance](assurance.md) | Checks, verifiers, review, refutation, correction, the journal and the forecast |
 | [Agents](agents.md) | The working agent, explorers, the advisor and the model for each role |
@@ -24,21 +27,23 @@ siblings describe what is built unless a section explicitly says planned.
 4. Checks, review, human acceptance and application are separate facts.
 5. Model output and check results never grant authority. The operator
    approves commands, or sets a sandbox that makes approval unnecessary, and
-   applies changes.
+   keeps, reverts or applies changes.
 
 ## Flow
 
 ```text
 request
-  -> working agent        Pi session in the workspace checkout; file tools confined to it,
-                          commands in the session's execution environment
-  -> snapshot             all work staged: changed paths, diff and Git tree id
+  -> working agent        Pi session in the project, or in a copy for a second session; file
+                          tools confined to it, commands in the session's execution environment
+  -> snapshot             the turn as the trees before and after it: changed paths, diff and tree id
   -> checks and verifiers approved commands, Oxlint and LemmaScript on that tree
   -> review               reviewers, origin check, refuter; a forecast first when deep
   -> correction           failed checks and confirmed fixable findings go back, at most twice
-  -> decision             apply | reject | keep working
+  -> decision             /keep | /revert | /redo, at any time      (apply | reject | continue in a copy)
+       keep:   the turn's tree becomes the base
+       revert: files that still hold the turn's content go back to the tree before it
+       redo:   the reverted turn goes back where its files still hold the tree before it
        apply:  only files whose source still matches the base are written
-       reject: the workspace returns to its base
 ```
 
 ## Components
@@ -91,14 +96,20 @@ dependability claim or an architecture term.
 **What Tesota is called.** For the release, call it an **open-source coding
 agent** and explain its distinguishing workflow directly:
 
-> Tesota checks and reviews changes before you apply them. It works in a
-> separate copy of your repository and shows the diff, checks and independent
-> review so you can decide what reaches your files.
+> Tesota reviews every turn it takes in your project, and reverts one without
+> overwriting your own edits. It records the exact content of each turn and
+> shows the diff, checks and independent review, bound to that content, so you
+> decide what stays in your files.
 
-The terminal's optional short line is **Changes stay separate until you apply
-them.** It describes the current workflow; it is not a slogan or a claim that
-passing checks prove correctness. Work beyond code remains a direction, not a
-release claim.
+The terminal's optional short line is **Every turn is reviewed; reverting
+never overwrites your edits.** It describes the current workflow; it is not a
+slogan or a claim that passing checks prove correctness. It rests on a
+difference read in the harnesses' own code on 2026-09-29: Claude Code's
+rewind and OpenCode's revert write a turn's earlier content over a file
+whatever it holds now (`applySnapshot` in Claude Code's `utils/fileHistory.ts`,
+`revert` in OpenCode's `snapshot/index.ts`), while Tesota's leaves a file
+edited since the turn as it is and names it. Work beyond code remains a
+direction, not a release claim.
 
 **Names of the parts.**
 
@@ -121,8 +132,9 @@ evidence to the operator's decision is what it is organized around.
 ## Trust
 
 Repository content and model output are untrusted. The file tools resolve
-every path against the workspace checkout and refuse anything outside it,
-including through links; edit and write also refuse `.git`. Repository
+every path against the project, or the copy, and refuse anything outside it,
+including through links; edit and write also refuse `.git`, and every file
+tool refuses the files hidden as possible credentials. Repository
 instructions in `AGENTS.md` or `CLAUDE.md` are passed to the agent and the
 reviewers as context, never as authority. Credentials, operator state, model
 routing and execution permissions live in code and in Tesota's own directory
@@ -140,7 +152,9 @@ routing and execution permissions live in code and in Tesota's own directory
 | `tesota-shell-transcript.ts` | How a conversation and a review record look, built on pi-tui components |
 | `terminal-output.ts` | What a command's output reads as once drawn: no colors, cursor sequences or redrawn progress |
 | `shell-session-store.ts` | Saved sessions, approved checks, allowed network destinations and measured review costs per repository |
-| `workspace-checkout.ts`, `source-snapshot.ts`, `workspace.ts` | Independent clones, capturing uncommitted source changes, snapshots, updates and the request record |
+| `source-shadow.ts`, `workspace-checkout.ts`, `source-snapshot.ts`, `workspace.ts` | The shadow repository of every source, independent clones of it, capturing the source's changes, snapshots and updates |
+| `source-session.ts` | A session working in the source: its turns as pairs of shadow trees, keep, and revert of the latest turn |
+| `request-record.ts` | The operator's requests behind the pending changes |
 | `workspace-apply.ts`, `verification/application-rule.ts`, `recover-command.ts`, `workspace-prune.ts` | Application with its store, journal and proved admission and outcome rules, and `tesota recover`; which workspaces `tesota prune` may remove |
 | `repository-git.ts`, `windows-system.ts` | Git without ambient config, hooks or network; Windows' own programs, never found through PATH |
 | `execution-environment.ts`, `execution-providers.ts` | The provider-neutral execution interface, choosing a mode and provider, `tesota setup` |
@@ -158,6 +172,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `review-depth.ts`, `review-forecast.ts`, `verification/review-estimate.ts` | Review depth, measured costs and the forecast, and its proved rules |
 | `correction.ts`, `assurance-journal.ts` | What goes back to the agent, and the per-workspace assurance journal |
 | `integrations/pi-coding-session.ts` | Pi sessions, confined tools, command approval, cancellation, activity and token counts |
+| `secret-files.ts` | Which files are hidden from the agent's tools and sandboxed commands |
 | `integrations/pi-explorer.ts`, `integrations/pi-explore.ts`, `verification/helper-answer.ts` | Read-only explorers, the `explore` tool, the page reader, and the proved rules for helpers' answers and allowances |
 | `integrations/advisor.ts`, `integrations/advisor-session.ts` | The advisor: the `advisor` tool, its allowance, the conversation it reads, and its session |
 | `model-roles.ts`, `models-command.ts`, `judge-warnings.ts`, `verification/judge-independence.ts` | The route and model for each role, `tesota roles`, the `tesota models` catalog, and warnings when a judge shares its author's model or lab |

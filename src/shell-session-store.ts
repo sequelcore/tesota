@@ -13,6 +13,7 @@ import { MAX_CHECK_REPORTS, normalizeReportPath } from "./test-report.js";
 import type { ApprovedCheck } from "./workspace-checks.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
 import { replacesTitle, type TitleSource } from "./verification/session-title-rule.js";
+import { pathKey } from "./source-shadow.js";
 
 const text = z.string().max(2_000_000);
 const changeSchema = z.strictObject({ added: z.number().int().nonnegative(), removed: z.number().int().nonnegative(),
@@ -35,19 +36,21 @@ const planSchema: z.ZodType<PlanStep[]> = z.array(z.strictObject({ step: z.strin
   review: z.enum(["held", "not_held", "uncertain"]).optional() }))
   .min(1).max(MAX_PLAN_STEPS);
 // `agent` is absent until the agent first starts (decision 026), `sandbox` while the session follows the operator's
-// choice (decision 030), and `plan` while no work is under way (decision 033).
+// choice (decision 030), `plan` while no work is under way (decision 033), and `isolated` unless the operator chose
+// an isolated workspace before the session's first request.
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: TranscriptEntry[];
   inspections: { title: string; summary: string; detail: string; diff?: string | undefined }[];
   workspace: string | null;
   interrupted: boolean; blocked: boolean; agent?: string | undefined; retiredEngineIds: string[];
-  sandbox?: SandboxPreference | undefined; plan?: PlanStep[] | undefined; titleSource: TitleSource }> =
+  sandbox?: SandboxPreference | undefined; plan?: PlanStep[] | undefined; isolated?: true | undefined;
+  titleSource: TitleSource }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
       workspace: z.string().min(1).nullable(),
       interrupted: z.boolean(), blocked: z.boolean(),
       agent: agentModelSchema.optional(), retiredEngineIds: z.array(z.uuid()).max(1_000),
-      sandbox: z.enum(SANDBOX_PREFERENCES).optional(), plan: planSchema.optional(),
+      sandbox: z.enum(SANDBOX_PREFERENCES).optional(), plan: planSchema.optional(), isolated: z.literal(true).optional(),
       titleSource: z.enum(["counter", "request", "generated", "operator"]) });
 const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.iso.datetime(),
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
@@ -66,6 +69,8 @@ const snapshotSchema = z.strictObject({ format: z.literal("tesota-shell-sessions
       network: z.array(z.string().refine(isNetworkDestination)).max(200),
       // Absent from files written before rules existed, which stay valid.
       commandRules: z.array(commandRuleSchema).max(100).default([]),
+      // Absent from files written before hidden files existed, which stay valid.
+      checkSecrets: z.array(z.string().min(1).max(1_000)).max(50).default([]),
       reviews: z.array(measurementSchema).max(MEASUREMENTS_KEPT),
       sessions: z.array(sessionSchema) });
 export type ShellSessionRecord = z.infer<typeof sessionSchema>;
@@ -81,6 +86,11 @@ export interface ShellSessionStore {
   /** Checks the operator approved for this repository, with their reports, or null before the first choice. */
   checks(): readonly ApprovedCheck[] | null;
   setChecks(checks: readonly ApprovedCheck[]): void;
+  /** Files hidden from the agent that the operator let this repository's checks read, relative with forward slashes. */
+  checkSecrets(): readonly string[];
+  setCheckSecrets(paths: readonly string[]): void;
+  /** Forget the approved checks and the hidden files they may read, so the next review asks again. */
+  resetChecks(): void;
   /** Network destinations the operator allowed for every session of this repository. */
   allowedNetwork(): readonly string[];
   allowNetwork(destinations: readonly string[]): void;
@@ -108,6 +118,8 @@ export interface ShellSessionStore {
    * undefined follows the operator's choice for new sessions (`tesota sandbox`).
    */
   setSandbox(id: string, preference: SandboxPreference | undefined): void;
+  /** Work in an isolated workspace rather than the operator's files, chosen with `/isolate` before any work. */
+  setIsolated(id: string): void;
   /** The agent's plan for the session's current work (decision 033); undefined once that work ends. */
   setPlan(id: string, plan: readonly PlanStep[] | undefined): void;
   /**
@@ -120,7 +132,7 @@ export interface ShellSessionStore {
 
 function readSnapshot(path: string, source: string): Snapshot {
   const empty: Snapshot = { format: "tesota-shell-sessions", version: snapshotVersion, source, checks: null,
-    network: [], commandRules: [], reviews: [], sessions: [] };
+    network: [], commandRules: [], checkSecrets: [], reviews: [], sessions: [] };
   if (!existsSync(path)) return empty;
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
   // Snapshots from earlier versions are discarded; the next save replaces the file.
@@ -132,11 +144,11 @@ function readSnapshot(path: string, source: string): Snapshot {
 export const DEFAULT_SESSION_STORE_ROOT: string = join(homedir(), ".tesota", "shell-sessions");
 
 /**
- * A repository's identity for saved sessions: its resolved path, without case,
- * since Windows paths ignore it. The file is found and checked by the same key.
+ * A repository's identity for saved sessions: its resolved path, without case
+ * where the file system ignores it. The file is found and checked by the same key.
  */
 function sourceKey(source: string): string {
-  return resolve(source).toLocaleLowerCase("en-US");
+  return pathKey(resolve(source));
 }
 
 function storePath(source: string, root: string): string {
@@ -202,6 +214,7 @@ export function openShellSessionStore(sourceDirectory: string,
     let checks = snapshot.checks;
     let network = snapshot.network;
     let commandRules: readonly CommandRule[] = snapshot.commandRules;
+    let checkSecrets: readonly string[] = snapshot.checkSecrets;
     let reviews: readonly ReviewMeasurement[] = snapshot.reviews;
     let closed = false;
     const save = (): void => {
@@ -209,7 +222,8 @@ export function openShellSessionStore(sourceDirectory: string,
       const temporary = `${path}.${randomUUID()}.tmp`;
       try {
         writeFileSync(temporary, JSON.stringify({ format: "tesota-shell-sessions", version: snapshotVersion,
-          source, checks, network, commandRules, reviews, sessions: [...sessions.values()] }) + "\n", { encoding: "utf8", mode: 0o600 });
+          source, checks, network, commandRules, checkSecrets, reviews, sessions: [...sessions.values()] }) + "\n",
+        { encoding: "utf8", mode: 0o600 });
         renameSync(temporary, path);
       } finally { if (existsSync(temporary)) unlinkSync(temporary); }
     };
@@ -255,6 +269,18 @@ export function openShellSessionStore(sourceDirectory: string,
         const previous = checks;
         checks = z.array(checkSchema).max(20).parse(approved.map((check) => ({ command: check.command, reports: [...check.reports] })));
         try { save(); } catch (error) { checks = previous; throw error; }
+      },
+      checkSecrets: () => checkSecrets,
+      resetChecks: () => {
+        const previous = { checks, checkSecrets };
+        checks = null;
+        checkSecrets = [];
+        try { save(); } catch (error) { ({ checks, checkSecrets } = previous); throw error; }
+      },
+      setCheckSecrets: (paths) => {
+        const previous = checkSecrets;
+        checkSecrets = z.array(z.string().min(1).max(1_000)).max(50).parse([...new Set(paths)]);
+        try { save(); } catch (error) { checkSecrets = previous; throw error; }
       },
       allowedNetwork: () => network,
       allowNetwork: (destinations) => {
@@ -318,6 +344,11 @@ export function openShellSessionStore(sourceDirectory: string,
           if (previous === undefined) delete session.sandbox; else session.sandbox = previous;
           throw error;
         }
+      },
+      setIsolated: (id) => {
+        const session = find(id);
+        session.isolated = true;
+        try { save(); } catch (error) { delete session.isolated; throw error; }
       },
       setTitle: (id, title, source) => {
         const session = find(id);

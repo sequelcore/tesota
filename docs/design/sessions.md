@@ -5,7 +5,7 @@
 Running `tesota` in a repository starts **Tesota Shell**, a terminal
 conversation built on pi-tui components rather than Pi's own chat components,
 so Tesota's themes apply to everything on screen. A shell holds any number of
-**sessions**, each with its own workspace, execution environment and working
+**sessions**, each with its own work, in the project or in a workspace, execution environment and working
 agent; at most two work at once, and the rest wait. Tesota's sidebar puts the
 repository and branch above a newest-created-first session list. Selection and
 background activity never reorder it. Each row distinguishes preparation,
@@ -19,8 +19,8 @@ the selected model stay beside the prompt ([using Tesota](../guide/using-tesota.
 lists the keys).
 
 A fresh session opens with an ephemeral palo fierro welcome in the conversation:
-name and package version, working directory, a short statement of the apply
-boundary, then the ASCII tree. The tree grows through five fixed-size frames;
+name and package version, working directory, a short statement of how
+changes are decided, then the ASCII tree. The tree grows through five fixed-size frames;
 smaller terminals animate a compact tree or symbol.
 `TESOTA_REDUCED_MOTION=1` shows the final frame immediately. The
 welcome is presentation only: it is not a conversation entry or saved session
@@ -80,7 +80,7 @@ and asks the operator's questions.
 
 ## What a session holds
 
-A session acquires its workspace, then its execution environment, then its
+A session acquires its work, in the project or in a workspace, then its execution environment, then its
 working agent with its explorers and advisor, each the first time it is
 needed, and keeps them until it ends. Preparation starts when
 the session opens and runs in the background. Closing the session, switching
@@ -91,7 +91,8 @@ for it. What failed to be acquired is forgotten, so the next request tries
 again, but only while nothing newer has taken its place: an environment
 prepared after a sandbox switch stays the session's even when the earlier
 preparation fails later. Closing also removes the session's workspace, unless
-the session holds unresolved effects, which keep it as evidence. Quitting
+the session holds unresolved effects, which keep it as evidence; a session in
+the project releases the trees it pinned and leaves its changes in the files. Quitting
 waits for the releases up to five seconds; a WSL sandbox process whose
 input closes stops its commands and its proxy itself
 ([execution](execution.md#wsl-sandbox)).
@@ -110,10 +111,10 @@ service is built.
 Each repository has one saved store under `~/.tesota/shell-sessions/`, and a
 lock file keeps a second shell from opening the same repository at once; a
 lock left by a process that is no longer running is replaced. The store holds,
-per session, its name and where the name came from, the transcript, the review inspections, the workspace location,
+per session, its name and where the name came from, the transcript, the review inspections, where its work is recorded,
 the agent's model and conversation id, the ids of conversations it left at a
-handoff, and whether the session was interrupted or blocked; and, per repository, the approved check commands with the JUnit XML reports each names, the network
+handoff, and whether the session was interrupted or blocked; and, per repository, the approved check commands with the JUnit XML reports each names, the hidden files they may read, the network
 destinations allowed for every session, and the measured costs of recent
-reviews. After a restart, sessions and their workspaces and conversations are
+reviews. After a restart, sessions and their work and conversations are
 restored; a session interrupted mid-request is marked so. Command approvals
 and check results are never saved: they belong to one session's run.

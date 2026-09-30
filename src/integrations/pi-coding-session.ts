@@ -9,6 +9,7 @@ import { type Api, type Model, type TSchema, Type } from "@earendil-works/pi-ai"
 import { allowedByRules, type CommandRule, offeredRule } from "../command-rules.js";
 import { confinesCommands, type ExecutionEnvironment } from "../execution-environment.js";
 import type { ReasoningLevel } from "../model-roles.js";
+import { hiddenFilesIn, isSecretPath } from "../secret-files.js";
 import type { TokenUsage } from "../token-usage.js";
 import { ADVISOR_GUIDANCE, type Advisor, advisorTool } from "./advisor.js";
 import { PLAN_GUIDANCE, planTool } from "./plan-tool.js";
@@ -44,6 +45,11 @@ export interface CodingSessionOptions {
   readonly environment: ExecutionEnvironment;
   /** Commands run in a sandbox without approval; only allowed for an environment that confines them. */
   readonly sandboxed: boolean;
+  /**
+   * Whether `cwd` is the operator's own project, where each turn is kept or
+   * reverted, or a copy whose result is applied or rejected; a copy when absent.
+   */
+  readonly place?: "source" | "copy";
   /** Asked before a command runs on this computer, unless a saved rule allows it; the answer "rule" saves the rule offered. */
   readonly approveCommand: (request: CommandRequest, signal: AbortSignal | undefined) => Promise<CommandApproval>;
   /** The rules the operator saved for this repository; none when absent. */
@@ -89,6 +95,39 @@ function existingRealpath(path: string): string {
   }
 }
 
+/** A path inside `root`, relative with forward slashes. */
+function within(root: string, path: string): string { return relative(root, path).split(sep).join("/"); }
+
+/** Refuse a file hidden from the agent, such as an ignored `.env`; its name alone is not hidden. */
+async function refuseHidden(root: string, actual: string): Promise<void> {
+  const path = within(root, actual);
+  if (isSecretPath(path) && (await hiddenFilesIn(root)).includes(path)) {
+    throw new Error(`${path} is hidden from the agent: it may hold credentials. Ask the operator if the work needs it.`);
+  }
+}
+
+/**
+ * Drop grep's lines from files hidden from the agent. Pi's grep prints each
+ * line as `path:line: text`, or `path-line- text` for context, with the path
+ * relative to the searched folder.
+ */
+async function withoutHidden<R>(root: string, searched: string, result: R): Promise<R> {
+  const hidden = await hiddenFilesIn(root);
+  if (hidden.length === 0 || typeof result !== "object" || result === null) return result;
+  const prefixes = hidden.map((path) => relative(searched, join(root, ...path.split("/"))).split(sep).join("/"))
+    .filter((path) => !path.startsWith(".."));
+  const content: unknown = Reflect.get(result, "content");
+  if (prefixes.length === 0 || !Array.isArray(content)) return result;
+  const filtered = content.map((part: unknown) => {
+    if (typeof part !== "object" || part === null || Reflect.get(part, "type") !== "text") return part;
+    const text: unknown = Reflect.get(part, "text");
+    if (typeof text !== "string") return part;
+    const lines = text.split("\n").filter((line) => !prefixes.some((prefix) => line.startsWith(`${prefix}:`) || line.startsWith(`${prefix}-`)));
+    return { ...part, text: lines.some((line) => line.trim().length > 0) ? lines.join("\n") : "No matches found" };
+  });
+  return { ...result, content: filtered };
+}
+
 /** Resolve a tool path the way Pi does and require it to stay inside the workspace. */
 export function confinedPath(root: string, path: string | undefined, write: boolean): string {
   const requested = (path ?? ".").replace(/^@/u, "");
@@ -101,12 +140,15 @@ export function confinedPath(root: string, path: string | undefined, write: bool
   return actual;
 }
 
+/** Confine a file tool to `root`, refusing files hidden from the agent; grep's output leaves them out. */
 function confine<P extends TSchema, D, S>(root: string, tool: ToolDefinition<P, D, S>,
   write: boolean): ToolDefinition<P, D, S> {
-  return { ...tool, execute: (id, params, signal, onUpdate, ctx) => {
+  return { ...tool, execute: async (id, params, signal, onUpdate, ctx) => {
     const path: unknown = typeof params === "object" && params !== null ? Reflect.get(params, "path") : undefined;
-    confinedPath(root, typeof path === "string" ? path : undefined, write);
-    return tool.execute(id, params, signal, onUpdate, ctx);
+    const actual = confinedPath(root, typeof path === "string" ? path : undefined, write);
+    await refuseHidden(root, actual);
+    const result = await tool.execute(id, params, signal, onUpdate, ctx);
+    return tool.name === "grep" ? withoutHidden(root, actual, result) : result;
   } };
 }
 
@@ -157,14 +199,16 @@ function computerGate(options: Pick<CodingSessionOptions, "approveCommand" | "co
  * default.
  */
 export function environmentBash(environment: ExecutionEnvironment, gate: CommandGate | undefined,
-  decideNetwork?: CodingSessionOptions["decideNetwork"]): BashOperations {
+  decideNetwork?: CodingSessionOptions["decideNetwork"], root?: string): BashOperations {
   return {
     exec: async (command, cwd, options) => {
       if (gate !== undefined && !await gate(command, options.signal)) {
         options.onData(Buffer.from("The operator declined this command. Do not retry it; ask or choose another approach.\n"));
         return { exitCode: 1 };
       }
-      const result = await environment.run(command, { cwd, onOutput: options.onData,
+      // Files hidden from the agent are hidden from its commands too, where the environment can hide them.
+      const hidden = root === undefined ? [] : await hiddenFilesIn(root);
+      const result = await environment.run(command, { cwd, onOutput: options.onData, ...hidden.length === 0 ? {} : { hidden },
         ...(options.signal === undefined ? {} : { signal: options.signal }),
         ...(options.timeout === undefined ? {} : { timeoutSeconds: options.timeout }) });
       if (decideNetwork !== undefined && (result.outcome === "exited" || result.outcome === "timed_out")) {
@@ -192,7 +236,7 @@ export function repositoryInstructions(root: string): string {
 
 function commandGuidance(sandboxed: boolean, environment: ExecutionEnvironment): string {
   const where = sandboxed
-    ? "Shell commands run without asking in an isolated sandbox that sees only this copy of the repository; " +
+    ? "Shell commands run without asking in an isolated sandbox that sees only this repository; " +
       "network access is limited to package registries and hosts the user allowed. When a command reaches " +
       "another host, the user is asked whether to allow it and you are told the answer. " + COMPUTER_GUIDANCE
     : "Every shell command asks the user for approval first; prefer the file tools for reading and editing, " +
@@ -204,7 +248,7 @@ function commandGuidance(sandboxed: boolean, environment: ExecutionEnvironment):
 /** When a sandboxed agent should ask for this computer (decision 049). */
 const COMPUTER_GUIDANCE = "Only when a command needs a program or login that exists on the user's computer and not in the " +
   "sandbox, such as gh, aws or docker, run it with run_on_computer, saying why; the user is asked unless a rule they saved " +
-  "allows it. It runs in this copy of the repository with the user's own tools and credentials, so never use it to get " +
+  "allows it. It runs in this repository with the user's own tools and credentials, so never use it to get " +
   "around the sandbox, and suggest a rule only of a program and its subcommand, such as [\"gh\", \"pr\"]. ";
 
 /** When the agent should ask an explorer, and what an explorer's answer is worth (decision 019). */
@@ -220,13 +264,22 @@ const explorerGuidance = "The explore tool asks a read-only explorer one questio
 
 interface Helpers { readonly explorers: boolean; readonly web: boolean; readonly advisor: boolean; readonly plan: boolean }
 
-function systemPrompt(root: string, sandboxed: boolean, environment: ExecutionEnvironment, helpers: Helpers): string {
-  return "You are Tesota, a coding agent working in a private copy of the user's repository. " +
+/** Where the agent works and what becomes of its changes: kept or reverted in the user's project, or applied from a copy. */
+const placeGuidance = {
+  source: { where: "You are Tesota, a coding agent working in the user's own project: your edits and commands change " +
+    "their files as you make them. ", after: "the user keeps or reverts them" },
+  copy: { where: "You are Tesota, a coding agent working in a private copy of the user's repository. ",
+    after: "the user applies or rejects them" },
+} as const;
+
+function systemPrompt(root: string, sandboxed: boolean, environment: ExecutionEnvironment, helpers: Helpers,
+  place: "source" | "copy"): string {
+  return placeGuidance[place].where +
     "Read, search, edit, create and delete files as the task needs. " + commandGuidance(sandboxed, environment) +
     (helpers.explorers ? explorerGuidance : "") + (helpers.web ? webGuidance : "") + (helpers.advisor ? ADVISOR_GUIDANCE : "") +
     (helpers.plan ? PLAN_GUIDANCE : "") + "Do not commit, push or change Git " +
-    "history: when you finish, Tesota shows the user your changes, runs the repository's checks and lets " +
-    "the user apply or reject them. End each turn with a short summary of what you changed and anything " +
+    "history: when you finish, Tesota shows the user your changes, runs the repository's checks and a review, and " +
+    `${placeGuidance[place].after}. End each turn with a short summary of what you changed and anything ` +
     "the user should verify. If a request needs no changes, just answer it. Lead with the answer or the result, and " +
     "use as few sentences as it needs: do not restate the question or repeat what the user can already see." +
     `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
@@ -255,7 +308,8 @@ function piEntries(message: AgentSession["messages"][number]): ConversationEntry
 
 /** The agent's shell: bash, in whichever environment its commands run; on this computer, only as the operator allows. */
 function shellTool(root: string, options: WorkingAgentOptions): ToolDefinition {
-  const operations = environmentBash(options.environment, options.sandboxed ? undefined : computerGate(options), options.decideNetwork);
+  const operations = environmentBash(options.environment, options.sandboxed ? undefined : computerGate(options), options.decideNetwork,
+    root);
   return defineTool(createBashToolDefinition(root, { operations, exposeSessionEnvironment: false }));
 }
 
@@ -268,7 +322,7 @@ function shellTool(root: string, options: WorkingAgentOptions): ToolDefinition {
 function computerTool(root: string, computer: ExecutionEnvironment, options: WorkingAgentOptions): ToolDefinition {
   return defineTool({
     name: "run_on_computer", label: "Run on this computer",
-    description: "Run one shell command on the user's computer instead of the sandbox, in this copy of the repository, " +
+    description: "Run one shell command on the user's computer instead of the sandbox, in this repository, " +
       "with the user's own programs and credentials. The user is asked, with your reason, unless a rule they saved allows it.",
     parameters: Type.Object({
       command: Type.String({ description: "The command, for the user's POSIX shell" }),
@@ -380,7 +434,7 @@ export interface SessionStartOptions {
 }
 
 /** What decides the working agent's tools, whichever engine runs it. */
-export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "approveCommand" |
+export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "place" | "approveCommand" |
   "commandRules" | "computer" | "decideNetwork" | "explorers" | "web" | "advisor" | "plan">;
 
 /**
@@ -395,7 +449,7 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
   const root = realpathSync(options.cwd);
   const helpers = { explorers: options.explorers !== undefined, web: options.web !== undefined, advisor: options.advisor !== undefined,
     plan: options.plan !== undefined };
-  return { systemPrompt: systemPrompt(root, options.sandboxed, options.environment, helpers), tools: [
+  return { systemPrompt: systemPrompt(root, options.sandboxed, options.environment, helpers, options.place ?? "copy"), tools: [
     ...readOnlyFileTools(root),
     defineTool(confine(root, createEditToolDefinition(root), true)),
     defineTool(confine(root, createWriteToolDefinition(root), true)),

@@ -165,7 +165,8 @@ function sandboxEnvironment(sbx: string, name: string, workspace: string, prepar
     preparation: prepared.steps,
     network: sandboxNetwork(sbx, name),
     async run(command: string, options: RunOptions): Promise<RunResult> {
-      if (!contains(workspace, resolve(options.cwd))) return { outcome: "not_started", exitCode: null };
+      // The sandbox's virtual machine syncs the workspace alone; no other folder can stand in its place.
+      if (!contains(workspace, resolve(options.cwd)) || options.root !== undefined) return { outcome: "not_started", exitCode: null };
       if (options.signal?.aborted === true) return { outcome: "cancelled", exitCode: null };
       const tag = `TESOTA_RUN=${randomUUID()}`;
       const started = new Date();

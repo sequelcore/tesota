@@ -11,6 +11,7 @@ import { hostProvider } from "./host-environment.js";
 import { runsWithoutAsking } from "./verification/sandbox-qualification.js";
 import { windowsPowerShell } from "./windows-system.js";
 import { wslProvider } from "./wsl-environment.js";
+import { pathKey } from "./source-shadow.js";
 
 /**
  * Where the operator wants commands to run (decisions 030 and 047): `auto`
@@ -60,10 +61,10 @@ export function chooseSandboxPreference(preference: SandboxPreference, path: str
 /**
  * The name a sandbox keeps a repository's own state under, such as its
  * package caches and the tools its setup installed, shared by its sessions
- * (decision 030): whatever the case of its path, as Windows finds it.
+ * (decision 030): whatever the case of its path where the file system ignores it.
  */
 export function repositoryKey(repository: string): string {
-  return createHash("sha256").update(resolve(repository).toLocaleLowerCase("en-US")).digest("hex");
+  return createHash("sha256").update(pathKey(resolve(repository))).digest("hex");
 }
 
 const allProviders: readonly ExecutionProvider[] = [wslProvider, dockerSandboxesProvider, hostProvider];
@@ -132,6 +133,17 @@ export async function chooseSessionExecution(candidates: readonly ExecutionProvi
 /** Release every provider's resources for a workspace checkout that is being deleted. */
 export async function releaseWorkspace(checkout: string, providers: readonly ExecutionProvider[] = allProviders): Promise<void> {
   for (const provider of providers) await provider.release(checkout).catch(() => undefined);
+}
+
+/** What each provider that can say keeps for a workspace checkout outside it, by provider name. */
+export async function heldForWorkspace(checkout: string,
+  providers: readonly ExecutionProvider[] = allProviders): Promise<{ provider: string; bytes: number }[]> {
+  const held: { provider: string; bytes: number }[] = [];
+  for (const provider of providers) {
+    const bytes = await provider.held?.(checkout).catch(() => undefined);
+    if (bytes !== undefined && bytes > 0) held.push({ provider: provider.name, bytes });
+  }
+  return held;
 }
 
 /** Run a setup action with the operator's terminal attached, so sign-in and installer prompts reach them. */

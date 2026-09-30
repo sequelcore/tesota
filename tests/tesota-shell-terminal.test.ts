@@ -2,7 +2,7 @@ import { HStack, stripTerminalSequences, TuiAltScreen, type Terminal } from "@ea
 import { expect, it, vi } from "vitest";
 import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
 import type { AccountsSource } from "../src/tesota-shell-accounts.js";
-import { createTesotaShellTerminal } from "../src/tesota-shell-terminal.js";
+import { createTesotaShellTerminal, SessionBlockedError } from "../src/tesota-shell-terminal.js";
 import { BackdropTui } from "../src/tesota-shell-tui.js";
 import { SessionRail } from "../src/tesota-shell-sidebar.js";
 import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
@@ -60,7 +60,7 @@ it("shows the opening only for a newly created session and keeps it out of the s
   const fresh = createTesotaShellTerminal({ cwd: "work/tesota", tui: freshTui, onEntry });
   fresh.start();
   freshTui.renderNow(true);
-  expect(visible(freshTerminal)).toContain("Changes stay separate until you apply them.");
+  expect(visible(freshTerminal)).toContain("Every turn is reviewed; reverting never overwrites your edits.");
   expect(onEntry).not.toHaveBeenCalled();
   fresh.stop();
 
@@ -72,7 +72,7 @@ it("shows the opening only for a newly created session and keeps it out of the s
     initialSession: { id: "saved", title: "Saved", entries: [], fresh: false } });
   saved.start();
   savedTui.renderNow(true);
-  expect(visible(savedTerminal)).not.toContain("Changes stay separate until you apply them.");
+  expect(visible(savedTerminal)).not.toContain("Every turn is reviewed; reverting never overwrites your edits.");
   saved.stop();
 });
 
@@ -1287,5 +1287,40 @@ it("opens the Accounts panel over the session: its tabs, keys that never reach t
   expect(await screen()).not.toContain("1 Usage");
   // The layout beneath is faint only while the panel is open.
   expect(screenLine(terminal.writes.join(""), "Session 1")).not.toContain("[2m");
+  shell.stop();
+});
+
+it("passes /keep, /revert with its choice, /redo and /checks to the shell, and keeps the prompt waiting", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onKeep = vi.fn();
+  const onRevert = vi.fn();
+  const onRedo = vi.fn();
+  const onChecks = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onKeep, onRevert, onRedo, onChecks });
+  shell.start();
+  let answered = false;
+  shell.ask("> ").then(() => { answered = true; }, () => undefined);
+  for (const command of ["/keep", "/revert", "/revert all", "/revert agent", "/redo", "/checks", "/checks reset"]) {
+    terminal.send(command);
+    terminal.send("\r");
+  }
+  expect(onKeep).toHaveBeenCalledWith("default");
+  expect(onRevert.mock.calls).toEqual([["default", []], ["default", ["all"]], ["default", ["agent"]]]);
+  expect(onRedo).toHaveBeenCalledWith("default");
+  expect(onChecks.mock.calls).toEqual([["default", []], ["default", ["reset"]]]);
+  expect(answered).toBe(false);
+  shell.stop();
+});
+
+it("ends a waiting prompt when its session is blocked, as after a revert that needs recovery", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const waiting = shell.ask("> ");
+  shell.blockSession("default");
+  await expect(waiting).rejects.toBeInstanceOf(SessionBlockedError);
+  await expect(shell.ask("> ")).rejects.toBeInstanceOf(SessionBlockedError);
   shell.stop();
 });
