@@ -27,8 +27,9 @@ toward the horizon and faded, so depth reads in what hides what. The camera
 stays still, looking slightly down. For nine seconds, only while the
 terminal has focus, a wind rises and falls in the crown (its tips move most,
 the trunk not at all); each crown lobe stands at its own depth and sways on its
-own phase. When the terminal loses focus or the operator starts typing it
-pauses and fades, and resumes when that ends. A plain left click on the
+own phase. When the terminal loses focus it pauses and fades, at rest too, and
+returns to full strength with focus; while the prompt holds a draft it pauses
+and drops its color, and colors again once the draft is gone. A plain left click on the
 resting scene plays it again, and from then on the same wind blows a
 tumbleweed through: a tangle of dry stems that rolls and bounces from the right
 edge to the left, behind the trunk and in front of the distant saguaros. It is
