@@ -26,7 +26,7 @@ it.runIf(process.platform === "win32")("waits for delayed Windows access-control
     const command = [...args ?? []];
     if (program.toLowerCase().endsWith("powershell.exe")) {
       const index = command.indexOf("-Command") + 1;
-      command[index] = `Start-Sleep -Milliseconds 6000; ${command[index]}`;
+      command[index] = `[System.Threading.Thread]::Sleep(6000); ${command[index]}`;
     }
     return execute(program, command, options);
   });
@@ -36,15 +36,19 @@ it.runIf(process.platform === "win32")("waits for delayed Windows access-control
     expect(await store.read(provider)).toBeUndefined();
     expect(delayed).toHaveBeenCalled();
     const acl = execute(windowsPowerShell(), ["-NoProfile", "-NonInteractive", "-Command",
-      `$acl=Get-Acl -LiteralPath '${directory.replaceAll("'", "''")}'; ` +
+      `$directory=[System.IO.DirectoryInfo]::new('${directory.replaceAll("'", "''")}'); $acl=$directory.GetAccessControl(); ` +
       `$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User; ` +
-      `[pscustomobject]@{OwnerIsCurrent=($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value); ` +
-      `Protected=$acl.AreAccessRulesProtected; Rules=@($acl.Access | ForEach-Object { ` +
-      `[pscustomobject]@{CurrentUser=($_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value -eq $sid.Value); ` +
-      `Rights=$_.FileSystemRights.ToString(); Type=$_.AccessControlType.ToString(); Inherited=$_.IsInherited}})} | ConvertTo-Json -Depth 4`],
+      `[Console]::WriteLine($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value); ` +
+      `[Console]::WriteLine($sid.Value); [Console]::WriteLine($acl.AreAccessRulesProtected); ` +
+      `foreach($entry in $acl.Access){[Console]::WriteLine([string]::Join('|',@(` +
+      `$entry.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value, ` +
+      `$entry.FileSystemRights.ToString(), $entry.AccessControlType.ToString(), $entry.IsInherited.ToString())))}`],
     { encoding: "utf8", windowsHide: true, timeout: 30_000 });
-    expect(JSON.parse(acl)).toEqual({ OwnerIsCurrent: true, Protected: true,
-      Rules: [{ CurrentUser: true, Rights: "FullControl", Type: "Allow", Inherited: false }] });
+    const [owner, currentUser, protectedAcl, ...rules] = acl.trim().split(/\r?\n/u);
+    expect(currentUser).toMatch(/^S-1-5-(?:\d+-)*\d+$/u);
+    expect(owner).toBe(currentUser);
+    expect(protectedAcl).toBe("True");
+    expect(rules).toEqual([`${currentUser}|FullControl|Allow|False`]);
   } finally {
     delayed.mockRestore();
     await rm(root, { recursive: true, force: true });
