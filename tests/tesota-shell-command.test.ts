@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { commandQuestion, parseApproval } from "../src/session-decisions.js";
+import { commandQuestion } from "../src/session-decisions.js";
 import type { SessionWork } from "../src/session-engine.js";
 import { runTesotaShellCommand, type WorkspaceCallbacks } from "../src/tesota-shell-command.js";
 import type { WorkResult } from "../src/tesota-shell.js";
@@ -13,7 +13,8 @@ function surface(overrides: Partial<TesotaShellTerminal> = {}): { surface: Tesot
     start: () => { events.push("start"); }, stop: () => { events.push("stop"); }, setTerminalFocused: () => {},
     write: (text) => { events.push(text); }, ask: async () => "",
     report: () => {}, refreshElapsed: () => {}, inspect: () => {}, addSession: () => {}, selectSession: () => {},
-    writeTo: (_id, text) => { events.push(text); }, replyTo: (_id, text) => { events.push(text); }, askIn: async () => "",
+    writeTo: (_id, text) => { events.push(text); }, replyTo: (_id, text) => { events.push(text); }, askIn: async () => "", hasQueued: () => false,
+    chooseIn: async (_id, question) => question.initial,
     reportFor: () => {}, clearProgressFor: () => {}, inspectFor: () => {}, showActivity: () => {}, setSessionExecution: () => {}, setSessionPlan: () => {},
     setBranch: () => {}, setSessionModel: () => {}, setSessionTitle: () => {}, blockSession: () => {}, endSession: () => {}, removeSession: () => {},
     ...overrides,
@@ -139,14 +140,20 @@ it("stops a closed session's runner without writing to it", async () => {
 });
 
 it("asks about a command on this computer with where it runs, why, and the rule it may save, and saves one only when offered", () => {
-  expect(commandQuestion({ command: "gh pr list", reason: "Only your gh is signed in.", rule: ["gh", "pr"] }))
-    .toBe("Run `gh pr list` on this computer, outside the sandbox? Only your gh is signed in. [y]es, [a]lways `gh pr …` in this repository, [n]o: ");
-  expect(commandQuestion({ command: "ls -la" })).toBe("Run `ls -la`? [y]es, [n]o: ");
-  expect(parseApproval("y", false)).toBe("once");
-  expect(parseApproval(" A ", true)).toBe("rule");
-  // "Always" without a rule offered no longer allows everything that follows.
-  expect(parseApproval("a", false)).toBe("deny");
-  expect(parseApproval("", true)).toBe("deny");
+  const host = commandQuestion({ command: "gh pr list", reason: "Only your gh is signed in.", rule: ["gh", "pr"] });
+  expect(host.title).toBe("Run `gh pr list` on this computer, outside the sandbox?");
+  expect(host.detail).toBe("Only your gh is signed in.");
+  expect(host.options.map(({ key, label, value }) => [key, label, value])).toEqual([["y", "Yes, once", "once"],
+    ["a", "Always `gh pr …` in this repository", "rule"], ["n", "No", "deny"]]);
+  // Enter declines, and every answer leaves a line in the conversation.
+  expect(host.initial).toBe("deny");
+  expect(host.options.map((option) => option.decided?.text)).toEqual(["✓ Allowed `gh pr list` once, on this computer, outside the sandbox.",
+    "✓ Allowed `gh pr list`; always allow `gh pr …` in this repository.", "✗ Declined `gh pr list`; the command did not run."]);
+  const plain = commandQuestion({ command: "ls -la" });
+  expect(plain.title).toBe("Run `ls -la`?");
+  expect(plain.detail).toBeUndefined();
+  // "Always" without a rule offered is no answer at all, so it cannot allow everything that follows.
+  expect(plain.options.map((option) => option.value)).toEqual(["once", "deny"]);
 });
 
 it("counts only the paths the agent's own edit and write tools wrote, inside the source", async () => {

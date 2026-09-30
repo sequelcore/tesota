@@ -62,7 +62,8 @@ function closeWarning(record: ShellSessionRecord, pending: number): string {
 
 /** A session's decisions in the shell: the operator answers each at that session's prompt. */
 function shellDecisions(surface: TesotaShellTerminal, id: string): SessionDecisions {
-  return askingDecisions((prompt) => surface.askIn(id, prompt), (text, tone) => { surface.writeTo(id, text, tone); });
+  return askingDecisions((prompt) => surface.askIn(id, prompt), (question) => surface.chooseIn(id, question),
+    (text, tone) => { surface.writeTo(id, text, tone); }, () => surface.hasQueued(id));
 }
 
 /**
@@ -117,7 +118,8 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const tui = new BackdropTui(terminal, false, undefined, { mouse: true });
   // Focus reports arrive only once the TUI has started, after the surface below exists.
   terminal.onFocusChange((focused) => { surface.setTerminalFocused(focused); });
-  const surface = createTesotaShellTerminal({ cwd, tui, interrupt: (id) => { engine.interrupt(id); }, theme,
+  const surface = createTesotaShellTerminal({ cwd, tui, interrupt: (id) => { engine.interrupt(id); },
+    onSteer: (id, text) => engine.steer(id, text), theme,
     initialSession: { ...firstDisplayed, fresh: freshSessions.has(firstDisplayed.id) },
     onEntry: (id, entry) => { store.append(id, entry); },
     onInspection: (id, inspection) => { store.inspect(id, inspection); },

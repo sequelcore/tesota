@@ -146,7 +146,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | --- | --- |
 | `cli.ts` | Commands and shell startup |
 | `tesota-shell.ts` | Surface-independent loop: request, checks, review, correction, decision |
-| `session-decisions.ts` | Every point where a session waits for someone, as typed answers, and the shell's questions for them |
+| `session-decisions.ts`, `tesota-shell-question.ts`, `verification/question-rule.ts` | Every point where a session waits for someone, the shell's typed prompts and choice panels, and its proved shortcut rule |
 | `session-engine.ts`, `semaphore.ts` | Per-session composition of workspace, environment, agent, review and application, the commands on a session, what it holds and its release, and the bound on what runs at once; written to a narrow output any surface provides |
 | `tesota-shell-command.ts` | The shell: its terminal, creating, showing and closing sessions, and running each session's loop |
 | `run-command.ts`, `verification/run-policy-rule.ts` | `tesota run`: one request without the shell, its decisions answered by the run's flags with a proved rule, its output and exit code |

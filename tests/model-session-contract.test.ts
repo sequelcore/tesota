@@ -70,7 +70,8 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
     return { tool_name: name, tool_input: call.args, tool_use_id: id,
       output: permission.behavior === "allow" && tool !== undefined ? "ran" : "refused" };
   }
-  async function* play(options: Options): AsyncGenerator<Record<string, unknown>> {
+  // An interrupt ends the turn in progress with an error result, as Claude Code does; aborting ends its process.
+  async function* play(options: Options, interrupted: AbortSignal): AsyncGenerator<Record<string, unknown>> {
     const signal = options.abortController.signal;
     remember(options);
     const hooks = options.hooks?.PostToolBatch?.flatMap((matcher) => matcher.hooks) ?? [];
@@ -79,8 +80,12 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
       sdk.calls += 1;
       calls += 1;
       if (step === "hang") {
-        await new Promise((settle) => { signal.addEventListener("abort", settle, { once: true }); });
-        throw new Error("Claude Code process aborted by user");
+        await new Promise((settle) => {
+          for (const ended of [signal, interrupted]) ended.addEventListener("abort", settle, { once: true });
+        });
+        if (signal.aborted) throw new Error("Claude Code process aborted by user");
+        yield result({ subtype: "error_during_execution", is_error: true, errors: ["[Request interrupted by user]"] }, calls);
+        return;
       }
       if ("fail" in step) { yield result({ subtype: "error_during_execution", is_error: true, errors: [step.fail] }, calls); return; }
       if ("text" in step) {
@@ -111,7 +116,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
       { type: "user", parent_tool_use_id: null, message: { role: "user", content: "The earlier request." } },
       { type: "assistant", parent_tool_use_id: null, message: { role: "assistant", content: [{ type: "text", text: "first" }] } },
     ] : [],
-    query: ({ options }: { options: Options }) => play(options),
+    query: ({ options }: { options: Options }) => {
+      const interrupt = new AbortController();
+      return Object.assign(play(options, interrupt.signal), { interrupt: async () => { interrupt.abort(); } });
+    },
   };
 });
 
@@ -135,7 +143,7 @@ interface EngineHarness {
 /** A conversation kept across sessions: Pi's session manager, or Claude Code's conversation id. */
 type Conversation = Readonly<{ piManager: SessionManager; id: string }>;
 type WorkingSession = ModelSession & Readonly<{ resumed: boolean; switchModel(target: ModelTarget): Promise<void>;
-  conversation(): Promise<readonly ConversationEntry[]>; contextTokens(): number | undefined }>;
+  conversation(): Promise<readonly ConversationEntry[]>; contextTokens(): number | undefined; steer?(text: string): boolean }>;
 
 function piHarness(): EngineHarness {
   const faux = fauxProvider({ models: [{ id: "scripted", reasoning: true }, { id: "other", reasoning: true }] });
@@ -339,6 +347,38 @@ describe.each([{ harness: piHarness }, { harness: claudeCodeHarness }])("the mod
     expect(input).toBeGreaterThan(0);
     expect(output).toBeGreaterThan(0);
     expect(input).toBeGreaterThanOrEqual(cacheRead + cacheCreation);
+  });
+});
+
+// A tool that runs `during` while the agent works, as the operator typing at that moment.
+function duringTool(during: () => void): ToolDefinition {
+  return defineTool({ name: "wait", label: "Wait", description: "Wait.", parameters: Type.Object({}),
+    execute: async () => {
+      during();
+      return { content: [{ type: "text", text: "Waited." }], details: undefined };
+    } });
+}
+
+// Claude Code's query takes its one prompt when it starts, so only Pi takes a message mid-run.
+describe("steering the agent on Pi", () => {
+  it("reads a message steered in while it works before its next model call, in the same run", async () => {
+    const engine = piHarness();
+    const observed: Observed = { activity: [], usage: NO_TOKENS };
+    let session: WorkingSession | undefined;
+    let taken: boolean | undefined;
+    engine.script([{ tools: [{ name: "wait", args: {} }] }, { text: "Using b.ts." }]);
+    session = await engine.start(checkout(), [duringTool(() => { taken = session?.steer?.("Use b.ts instead."); })], observed);
+    expect(await session.run("Read a.ts.", running())).toEqual({ status: "completed", reply: "Using b.ts." });
+    expect(taken).toBe(true);
+    expect(engine.modelCalls()).toBe(2);
+    const requests = (await session.conversation()).filter((entry) => entry.role === "user").map((entry) => entry.text);
+    expect(requests).toEqual(["Read a.ts.", "Use b.ts instead."]);
+  });
+
+  it("takes no message while no run is in progress", async () => {
+    const engine = piHarness();
+    const session = await engine.start(checkout(), [], { activity: [], usage: NO_TOKENS });
+    expect(session.steer?.("Use b.ts instead.")).toBe(false);
   });
 });
 

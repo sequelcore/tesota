@@ -13,9 +13,11 @@ work, command approval, checks, review, decision, application, unread work,
 ended sessions and unresolved effects; only executing phases move. On a wide
 terminal the sidebar is inline, while an explicit open on a narrow terminal is
 a non-capturing pi-tui overlay, so the editor keeps focus and `Esc` keeps its
-stop-work meaning. The selected session heads the conversation; repository
-identity joins that heading when the sidebar is absent. Execution location and
-the selected model stay beside the prompt ([using Tesota](../guide/using-tesota.md)
+stop-work meaning. The sidebar and the terminal's title name the selected
+session; no heading sits over the conversation. A rule above and below the
+input sets it apart. Under it, as other harnesses order it, the selected model
+comes first, joined by the repository and branch while the sidebar is hidden,
+and execution location has a line of its own in its color ([using Tesota](../guide/using-tesota.md)
 lists the keys).
 
 A fresh session opens with an ephemeral palo fierro welcome that fills the
@@ -36,8 +38,9 @@ edge to the left, behind the trunk and in front of the distant saguaros. It is
 left out of the opening itself, which plays in every new session and should
 stay calm.
 The scene rests in the pose it began in. The first entry
-that becomes part of the session removes it and leaves the header above the
-conversation; replies to shell commands show beneath it, and it gives up their
+that becomes part of the session removes it and leaves the header, the name in
+bold with its version muted as `Tesota (v0.0.0)`, as the conversation's first
+entry, spaced as the entries after it; replies to shell commands show beneath it, and it gives up their
 rows. Where it would not fit, only the header shows. `TESOTA_REDUCED_MOTION=1`
 shows the resting pose without motion. The welcome is presentation only: it is
 not a conversation entry or saved session state, and restored sessions do not
@@ -68,6 +71,18 @@ newest-first index are pure rules in `verification/sidebar-rule.ts`, with
 LemmaScript specifications proved by Dafny. Rendering belongs to
 `tesota-shell-sidebar.ts`; terminal composition and input remain in
 `tesota-shell-terminal.ts`.
+
+Command, network, site and reviewed-result questions replace the editor with
+a themed pi-tui `SelectList` in `tesota-shell-question.ts`. Arrows select,
+Enter confirms and the offered single-key shortcuts answer immediately;
+permission questions begin on No, and result questions on Keep working.
+The question scrolls independently when it is long, keeping the choices
+visible. A waiting question belongs to its session and preserves the draft
+and queued requests. Command and network answers are saved as notices that
+name what was allowed or declined, never as user messages or editor history.
+Requests, check commands and hidden-file paths still use the editor.
+`verification/question-rule.ts` proves that a shortcut can select only an
+offered option; a missing shortcut or multiple characters leave it waiting.
 
 A session is **named** after its work, as Codex, Claude Code
 and OpenCode name theirs. It starts as "Session N"; the operator's first
@@ -162,4 +177,5 @@ handoff, and whether the session was interrupted or blocked; and, per repository
 destinations allowed for every session, and the measured costs of recent
 reviews. After a restart, sessions and their work and conversations are
 restored; a session interrupted mid-request is marked so. Command approvals
-and check results are never saved: they belong to one session's run.
+belong to one session's run; their decision notices stay in the transcript
+but grant no authority to future commands. Check results are never saved.

@@ -1,21 +1,66 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
+import * as childProcess from "node:child_process";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, it, vi } from "vitest";
 import { createModels, type OAuthCredential } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { TesotaCredentials } from "../src/integrations/tesota-credentials.js";
+import { windowsPowerShell } from "../src/windows-system.js";
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return { ...actual, execFileSync: vi.fn(actual.execFileSync) };
+});
 
 const provider = "openai-codex";
 const secret: OAuthCredential = { type: "oauth", access: "TEST_ACCESS", refresh: "TEST_REFRESH", expires: 0, accountId: "TEST_ACCOUNT" };
+// Allow private-storage preparation (30 s), a held credential lock (10 s), and CLI startup (5 s).
+const authProcessLimitMs = 45_000;
+
+it.runIf(process.platform === "win32")("waits for delayed Windows access-control setup before reading credentials", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tesota-auth-slow-acl-"));
+  const execute = (await vi.importActual<typeof import("node:child_process")>("node:child_process")).execFileSync;
+  const delayed = vi.spyOn(childProcess, "execFileSync").mockImplementation((program, args, options) => {
+    const command = [...args ?? []];
+    if (program.toLowerCase().endsWith("powershell.exe")) {
+      const index = command.indexOf("-Command") + 1;
+      command[index] = `[System.Threading.Thread]::Sleep(6000); ${command[index]}`;
+    }
+    return execute(program, command, options);
+  });
+  try {
+    const directory = join(root, "auth's");
+    const store = new TesotaCredentials(directory);
+    expect(await store.read(provider)).toBeUndefined();
+    expect(delayed).toHaveBeenCalled();
+    const acl = execute(windowsPowerShell(), ["-NoProfile", "-NonInteractive", "-Command",
+      `$directory=[System.IO.DirectoryInfo]::new('${directory.replaceAll("'", "''")}'); $acl=$directory.GetAccessControl(); ` +
+      `$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User; ` +
+      `[Console]::WriteLine($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value); ` +
+      `[Console]::WriteLine($sid.Value); [Console]::WriteLine($acl.AreAccessRulesProtected); ` +
+      `foreach($entry in $acl.Access){[Console]::WriteLine([string]::Join('|',@(` +
+      `$entry.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value, ` +
+      `$entry.FileSystemRights.ToString(), $entry.AccessControlType.ToString(), $entry.IsInherited.ToString())))}`],
+    { encoding: "utf8", windowsHide: true, timeout: 30_000 });
+    const [owner, currentUser, protectedAcl, ...rules] = acl.trim().split(/\r?\n/u);
+    expect(currentUser).toMatch(/^S-1-5-(?:\d+-)*\d+$/u);
+    expect(owner).toBe(currentUser);
+    expect(protectedAcl).toBe("True");
+    expect(rules).toEqual([`${currentUser}|FullControl|Allow|False`]);
+  } finally {
+    delayed.mockRestore();
+    await rm(root, { recursive: true, force: true });
+  }
+}, 65_000);
 
 it("compiled login persists across processes, status is sanitized, and logout removes only Tesota login", async () => {
   const root = await mkdtemp(join(tmpdir(), "tesota-auth-cli-"));
   try {
     const invoke = (action: string) => spawnSync("bun", ["--no-env-file", "--preload",
       resolve("tests/fixtures/persistent-auth-smoke.mjs"), resolve("dist/cli.js"), "auth", action, "codex"], {
-      encoding: "utf8", timeout: 8_000, windowsHide: true,
+      encoding: "utf8", timeout: authProcessLimitMs, windowsHide: true,
       env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"], TESOTA_TEST_AUTH_DIRECTORY: join(root, "auth") },
     });
     const operations: readonly (readonly [string, string])[] = [
@@ -24,12 +69,13 @@ it("compiled login persists across processes, status is sanitized, and logout re
     ];
     for (const [action, expected] of operations) {
       const result = invoke(action);
-      expect(result.status, result.stderr).toBe(0);
+      const processError = result.error as NodeJS.ErrnoException | undefined;
+      expect(result.status, `auth ${action}: ${processError?.code ?? result.signal ?? result.stderr}`).toBe(0);
       expect(result.stdout).toContain(expected);
       expect(result.stdout + result.stderr).not.toMatch(/SYNTHETIC_ACCESS|SYNTHETIC_REFRESH|NETWORK_FORBIDDEN/);
     }
   } finally { await rm(root, { recursive: true, force: true }); }
-}, 30_000);
+}, 5 * authProcessLimitMs + 10_000);
 
 it("persists OAuth across instances, lists only metadata, and deletes through Pi logout", async () => {
   const root = await mkdtemp(join(tmpdir(), "tesota-auth-"));

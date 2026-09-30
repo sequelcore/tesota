@@ -61,7 +61,9 @@ A session in the source (`src/source-session.ts`) keeps its record in
 **A turn is a pair of trees.** Before the agent runs, Tesota records the
 source's tree in the shadow; after it, the tree again. A turn is one request
 with its correction rounds, since a correction continues the turn it
-corrects; a turn that changed nothing leaves nothing to decide, and one that
+corrects, and with any message the operator sent the agent while it worked,
+which joins the turn's requests; a message queued for after the turn is a turn
+of its own. A turn that changed nothing leaves nothing to decide, and one that
 stopped or failed still ends, so what it changed can be decided on. The
 trees are pinned by refs in the shadow while the session lasts. Checks,
 review and correction refer to those tree ids, so evidence stays bound to
