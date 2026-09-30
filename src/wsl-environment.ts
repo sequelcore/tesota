@@ -317,6 +317,20 @@ async function releaseInDistribution(target: readonly string[]): Promise<void> {
   await new Promise<void>((settle) => { child.once("error", () => { settle(); }); child.once("close", () => { settle(); }); });
 }
 
+/** What a workspace keeps on WSL's disk, as the sandbox's process measures it; undefined when it cannot say. */
+async function sizeInDistribution(workspace: string): Promise<number | undefined> {
+  if (process.platform !== "win32") return undefined;
+  const child = wslLaunch(["size", "--workspace", workspace]);
+  child.stdin.end();
+  let output = "";
+  child.stdout.setEncoding("utf8").on("data", (chunk: string) => { output += chunk; });
+  const code = await new Promise<number | null>((settle) => {
+    child.once("error", () => { settle(null); }); child.once("close", (exit) => { settle(exit); });
+  });
+  const bytes = Number(output.trim());
+  return code === 0 && /^\d+$/u.test(output.trim()) && Number.isSafeInteger(bytes) ? bytes : undefined;
+}
+
 export const wslProvider: ExecutionProvider = {
   name: "wsl",
   guarantees: WSL_GUARANTEES,
@@ -331,5 +345,6 @@ export const wslProvider: ExecutionProvider = {
     return `windows ${release()}; ${(await checkDistribution(wslLaunch))?.versions ?? "unknown"}`;
   },
   release: (workspace) => releaseInDistribution(["--workspace", resolve(workspace)]),
+  held: (workspace) => sizeInDistribution(resolve(workspace)),
   releaseRepository: (repository) => releaseInDistribution(["--repository", repository]),
 };

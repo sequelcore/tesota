@@ -126,9 +126,9 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   }
   process.exitCode = runRolesCommand(roleArgs, (text) => { process.stdout.write(text); });
 } else if (args[0] === "prune" && (args.length === 1 || args.length === 2 && args[1] === "--force")) {
-  const { formatPrunePlan, planWorkspacePrune, removeWorkspaces } = await import("./workspace-prune.js");
+  const { formatPrunePlan, measureWorkspaces, planWorkspacePrune, removeWorkspaces } = await import("./workspace-prune.js");
   const plan = await planWorkspacePrune();
-  process.stdout.write(formatPrunePlan(plan));
+  process.stdout.write(formatPrunePlan(plan, await measureWorkspaces(plan)));
   if (args[1] === "--force") {
     await removeWorkspaces(plan);
     process.stdout.write(`Removed ${plan.remove.length} workspaces, ${plan.sessions.length} session records and ` +

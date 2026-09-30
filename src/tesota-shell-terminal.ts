@@ -43,6 +43,8 @@ export interface TesotaShellTerminalOptions {
   readonly onKeep?: (sessionId: string) => void;
   readonly onRevert?: (sessionId: string, args: readonly string[]) => void;
   readonly onRedo?: (sessionId: string) => void;
+  /** `/isolate`: before its first request, a session works in an isolated workspace instead of the operator's files. */
+  readonly onIsolate?: (sessionId: string) => void;
   /** `/checks [reset]`: the repository's approved checks and the hidden files they may read. */
   readonly onChecks?: (sessionId: string, args: readonly string[]) => void;
   /** `/sandbox`, with its argument when one was given (decision 030). */
@@ -154,6 +156,7 @@ const shellCommands = [
   { name: "roles", description: "Choose each role's model" },
   { name: "handoff", description: "Start the agent's conversation afresh" },
   { name: "sandbox", description: "Show or switch where this session's commands run" },
+  { name: "isolate", description: "Work in an isolated copy instead of your files; before the first request" },
   { name: "keep", description: "Keep this session's undecided turns in your files" },
   { name: "revert", description: "Undo the latest undecided turn; again steps further back" },
   { name: "redo", description: "Put the latest reverted turn back" },
@@ -1098,6 +1101,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     keep: (session) => { this.options.onKeep?.(session.id); },
     revert: (session, args) => { this.options.onRevert?.(session.id, args); },
     redo: (session) => { this.options.onRedo?.(session.id); },
+    isolate: (session) => { this.options.onIsolate?.(session.id); },
     checks: (session, args) => { this.options.onChecks?.(session.id, args); },
     sandbox: (session, args) => { this.changeSandbox(session, args); },
     accounts: (session, args) => {
@@ -1119,7 +1123,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     details: (session, args) => { this.toggleDetails(session, args); },
     help: (session) => {
       this.writeTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
-        "/handoff /sandbox [where] /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
+        "/handoff /sandbox [where] /isolate /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
         "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +

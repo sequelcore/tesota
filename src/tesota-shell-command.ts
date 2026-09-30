@@ -117,7 +117,7 @@ export interface TesotaShellCommandDependencies {
   readonly agentModel?: AgentModelCommands;
   /** Where a session's commands run: `/sandbox` (decision 030). */
   readonly sessionSandbox?: SessionSandboxCommands;
-  /** A session's turns in the operator's files: `/keep`, `/revert` and `/redo`. */
+  /** A session's turns in the operator's files: `/keep`, `/revert` and `/redo`, or none of them after `/isolate`. */
   readonly turnCommands?: TurnCommands;
 }
 
@@ -126,6 +126,8 @@ export interface TurnCommands {
   /** `args` is empty, `["all"]` or `["agent"]`. */
   revert(id: string, args: readonly string[]): Promise<void>;
   redo(id: string): Promise<void>;
+  /** Work in an isolated workspace instead of the operator's files; only before the session has work. */
+  isolate(id: string): Promise<void>;
 }
 
 export interface SessionSandboxCommands {
@@ -448,6 +450,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onKeep: (id) => { void keepTurns(id); },
     onRevert: (id, args) => { void revertTurn(id, args); },
     onRedo: (id) => { void redoTurn(id); },
+    onIsolate: (id) => { void isolateSession(id); },
     onChecks: (id, args) => { showChecks(id, args); },
     onRename: (id, name) => {
       if (name === undefined) {
@@ -517,6 +520,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   let sourceHolder: string | undefined;
   const holdsSource = (id: string): boolean => sourceHolder === id || sourceHolder === undefined &&
     !store.list().some((session) => session.id !== id && session.workspace !== null && existsSync(join(session.workspace, "session.json")));
+  /** Why a session works in a copy: a folder always does, and a repository's session by choice or because another holds it. */
+  const whyCopy = (chosen: boolean): string => sourceKind === "folder" ? "Tesota works on a copy of this folder"
+    : chosen ? "This session works in an isolated copy, as you chose"
+      : "Another session works in your files, so this one works in an isolated copy";
   const workspaceFor = (id: string): Promise<Work> => {
     const state = stateFor(id);
     if (state.workspace !== undefined) return state.workspace;
@@ -531,17 +538,17 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         } catch { store.rotateEngine(id); }
       }
       // A folder of documents keeps "nothing changes until you apply": its people are not developers, and Office
-      // locks open files. A repository works in place, one session at a time. Decided before any wait, so two
-      // sessions starting together cannot both take the operator's files.
-      const inSource = sourceKind === "repository" && holdsSource(id);
+      // locks open files. A repository works in place, one session at a time, unless the session chose isolation.
+      // Decided before any wait, so two sessions starting together cannot both take the operator's files.
+      const chosen = saved(id)?.isolated === true;
+      const inSource = sourceKind === "repository" && !chosen && holdsSource(id);
       if (inSource) sourceHolder = id;
       const work = inSource ? await SourceSession.create(cwd, undefined, { kind: sourceKind })
         : await Workspace.create(cwd, undefined, { kind: sourceKind });
       state.place = work.place === "source" ? "source" : "workspace";
       store.setWorkspace(id, work.directory);
       if (!inSource) {
-        surface.writeTo(id, `${sourceKind === "folder" ? "Tesota works on a copy of this folder" : "Another session works in " +
-          "your files, so this one works in an isolated copy"}: nothing in your files changes until you apply its reviewed result.`);
+        surface.writeTo(id, `${whyCopy(chosen)}: nothing in your files changes until you apply its reviewed result.`);
       }
       const workspace = work;
       if (workspace.place !== "source" && workspace.included.length > 0) {
@@ -1141,6 +1148,28 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     return work.place === "source" ? work
       : "This session works in a copy: its result is applied or rejected after review, never kept or reverted in your files.";
   };
+  /** Choose an isolated workspace for a session that has no work yet; a session keeps where it works for its life. */
+  const isolateSession = async (id: string): Promise<void> => {
+    const directory = saved(id)?.workspace;
+    if (states.get(id)?.workspace !== undefined || (directory !== null && directory !== undefined)) {
+      const work = await workspaceFor(id);
+      surface.writeTo(id, work.place === "source" ? "This session already works in your files, and keeps working there. " +
+        "Isolation is chosen before a session's first request: start one with /new, then /isolate."
+        : "This session already works in an isolated copy.");
+      return;
+    }
+    if (sourceKind === "folder") {
+      surface.writeTo(id, "Tesota already works on a copy of this folder: nothing in it changes until you apply a reviewed result.");
+      return;
+    }
+    if (saved(id)?.isolated === true) { surface.writeTo(id, "This session will already work in an isolated copy."); return; }
+    try { store.setIsolated(id); } catch (error) {
+      surface.writeTo(id, `Tesota could not record the choice: ${error instanceof Error ? error.message : "unknown error"}.`, "warning");
+      return;
+    }
+    surface.writeTo(id, "This session will work in an isolated copy, made with its first request: nothing in your files " +
+      "changes until you apply its reviewed result.");
+  };
   const undecidedText = (session: SourceSession): string => {
     const count = session.turns.length;
     return count === 0 ? "No turn is undecided." : `${count} ${count === 1 ? "turn is" : "turns are"} undecided.`;
@@ -1478,7 +1507,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     configureWorkspace: (callbacks) => { workspaceCallbacks = callbacks; },
     agentModel,
     sessionSandbox,
-    turnCommands: { keep: keepTurns, revert: revertTurn, redo: redoTurn },
+    turnCommands: { keep: keepTurns, revert: revertTurn, redo: redoTurn, isolate: isolateSession },
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },
     dispose: async () => {
       titling.abort();

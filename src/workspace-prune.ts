@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { releaseWorkspace } from "./execution-providers.js";
+import { heldForWorkspace, releaseWorkspace } from "./execution-providers.js";
+import { folderSize, formatSize } from "./folder-size.js";
 import { DEFAULT_SESSION_STORE_ROOT, isRepositoryShellOpen, referencedWorkspaces } from "./shell-session-store.js";
 import { DEFAULT_SOURCE_SESSIONS_ROOT, SourceSession } from "./source-session.js";
 import { DEFAULT_SOURCES_ROOT, listShadows } from "./source-shadow.js";
@@ -105,6 +106,26 @@ export async function removeWorkspaces(plan: PrunePlan): Promise<void> {
   for (const entry of plan.shadows) await rm(entry.directory, { recursive: true, force: true, maxRetries: 3 });
 }
 
+/** What a workspace holds on disk: its folder on this computer, and what each provider keeps for it elsewhere. */
+export interface WorkspaceSize {
+  readonly here: number;
+  readonly elsewhere: readonly { readonly provider: string; readonly bytes: number }[];
+}
+
+/** Measure each workspace in the plan, to show beside it; a provider that cannot say is left out, never counted as 0. */
+export async function measureWorkspaces(plan: PrunePlan,
+  held: (checkout: string) => Promise<WorkspaceSize["elsewhere"]> = heldForWorkspace): Promise<Map<string, WorkspaceSize>> {
+  const sizes = new Map<string, WorkspaceSize>();
+  for (const entry of [...plan.remove, ...plan.keep]) {
+    sizes.set(entry.directory, { here: await folderSize(entry.directory), elsewhere: await held(join(entry.directory, "repo")) });
+  }
+  return sizes;
+}
+
+const sizeText = (size: WorkspaceSize | undefined): string => size === undefined ? ""
+  : `; ${formatSize(size.here)} on this computer${size.elsewhere.map((entry) =>
+    `, ${formatSize(entry.bytes)} in the ${entry.provider === "wsl" ? "WSL sandbox" : entry.provider}`).join("")}`;
+
 const reasonText: Readonly<Record<PruneReason | KeepReason, string>> = {
   incomplete: "creation did not finish", unreadable: "record unreadable", unused: "no session uses it",
   source_gone: "its source no longer exists",
@@ -112,13 +133,13 @@ const reasonText: Readonly<Record<PruneReason | KeepReason, string>> = {
   shell_open: "its repository has an open shell",
 };
 
-export function formatPrunePlan(plan: PrunePlan): string {
+export function formatPrunePlan(plan: PrunePlan, sizes: ReadonlyMap<string, WorkspaceSize> = new Map()): string {
   const lines = [
-    ...plan.remove.map((entry) => `remove  ${entry.directory}  (${reasonText[entry.reason]})`),
+    ...plan.remove.map((entry) => `remove  ${entry.directory}  (${reasonText[entry.reason]}${sizeText(sizes.get(entry.directory))})`),
     ...plan.shadows.map((entry) => `remove  ${entry.directory}  (shadow repository; ${reasonText[entry.reason]})`),
     ...plan.sessions.map((entry) => `remove  ${entry.directory}  (session record; ${entry.reason === "unused"
       ? "no session uses it; its changes stay in your files" : reasonText.unreadable})`),
-    ...plan.keep.map((entry) => `keep    ${entry.directory}  (${reasonText[entry.reason]})`),
+    ...plan.keep.map((entry) => `keep    ${entry.directory}  (${reasonText[entry.reason]}${sizeText(sizes.get(entry.directory))})`),
   ];
   return lines.length === 0 ? "No workspaces found.\n" : `${lines.join("\n")}\n`;
 }

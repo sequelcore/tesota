@@ -135,6 +135,17 @@ export async function releaseWorkspace(checkout: string, providers: readonly Exe
   for (const provider of providers) await provider.release(checkout).catch(() => undefined);
 }
 
+/** What each provider that can say keeps for a workspace checkout outside it, by provider name. */
+export async function heldForWorkspace(checkout: string,
+  providers: readonly ExecutionProvider[] = allProviders): Promise<{ provider: string; bytes: number }[]> {
+  const held: { provider: string; bytes: number }[] = [];
+  for (const provider of providers) {
+    const bytes = await provider.held?.(checkout).catch(() => undefined);
+    if (bytes !== undefined && bytes > 0) held.push({ provider: provider.name, bytes });
+  }
+  return held;
+}
+
 /** Run a setup action with the operator's terminal attached, so sign-in and installer prompts reach them. */
 export function runSetupAction(action: SetupAction): Promise<number | null> {
   const powershell = action.kind === "process" ? "" : windowsPowerShell();

@@ -4,8 +4,8 @@
 your project, and reverts one without overwriting your own edits.** It records
 the exact content of each turn, runs your checks and its own verifiers on it,
 and presents the diff with an independent review; you keep the turn or
-revert it. A folder of documents, or a second session, works in a separate
-copy that changes nothing until you apply it. Software development
+revert it. A folder of documents, a second session, or any session that asks,
+works in a separate copy that changes nothing until you apply it. Software development
 is its first proving ground; work beyond code is planned.
 
 ## The name

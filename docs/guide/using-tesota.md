@@ -4,8 +4,8 @@ Tesota is a pre-release coding agent for the terminal. You describe what you
 want; in a Git repository it works in your project, recording each turn; you
 review the changes and check results, then keep or revert them, and a revert
 never overwrites an edit you made since. A folder that is not a repository,
-and a second session in the same repository, work in a separate copy instead,
-which you apply or reject. The [design](../design/overview.md)
+a second session in the same repository, and a session you isolate with
+`/isolate`, work in a separate copy instead, which you apply or reject. The [design](../design/overview.md)
 explains the boundaries in detail.
 
 ## Set up
@@ -181,8 +181,9 @@ meanwhile, which Tesota cannot tell apart. Reverting asks before it touches
 those.
 
 A second session in the same shell, while the first works in your files,
-works in a copy instead, and says so, as a folder's session always does. The
-copy includes your uncommitted
+works in a copy instead, and says so, as a folder's session always does. To
+have any session work in a copy, run `/isolate` before its first request; a
+session keeps working where it started. The copy includes your uncommitted
 changes, but not files your `.gitignore` excludes, such as `.env` or
 `node_modules`. Before each request, Tesota brings in anything you changed
 since, and keeps the agent's pending changes on top. If you and the agent
@@ -495,8 +496,9 @@ background colors; plain conversation text still uses the terminal's foreground.
 
 - Exercised live only on Windows.
 - Changes to symbolic links and submodules cannot be applied or reverted.
-- A folder, and a second session in the same shell, work in a copy;
-  choosing a copy for any session is planned.
+- A folder, a second session in the same shell, and a session isolated with
+  `/isolate` work in a copy. A session cannot move between your files and a
+  copy once it has started.
 - A check that fails is compared with the project before the turn only in
   the WSL sandbox; on your computer or in Docker Sandboxes, whether the
   failure came with the turn is reported as unknown.
@@ -524,8 +526,10 @@ background colors; plain conversation text still uses the terminal's foreground.
 - Copies of the files an application replaced stay in
   `~/.tesota/applications/` for 30 days, or until an unfinished application
   is settled with `tesota recover`.
-- Closing a session removes its copy, if it has one. `tesota prune` lists other
-  workspaces it would remove, those that no session uses and that hold no
-  unapplied changes, records of sessions no saved session uses (their changes
-  stay in your files), and Tesota's records of directories that no longer
-  exist; `tesota prune --force` removes them.
+- Closing a session removes its copy, if it has one. `tesota prune` lists
+  every copy with what it holds on disk, on your computer and in the WSL
+  sandbox, whose installed `node_modules` are usually most of it, and the
+  copies it would remove: those that no session uses and that hold no
+  unapplied changes. It also lists records of sessions no saved session uses
+  (their changes stay in your files), and Tesota's records of directories
+  that no longer exist; `tesota prune --force` removes them.

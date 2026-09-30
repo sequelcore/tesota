@@ -127,7 +127,13 @@ afterwards, and the operator's files are never touched.
 **One session at a time, and repositories only.** Only one session of a shell
 works in a repository in place; another, while it does, gets an isolated
 workspace and says so, and the session store already allows one shell per
-repository. A plain folder always gets an isolated workspace: its people are
+repository. Any session may choose an isolated workspace with `/isolate`
+before its first request, as Claude Code's `--worktree` chooses one at
+start; the choice is saved with the session, and a session keeps where it
+works for its whole life, so undecided turns never move between the source
+and a workspace. It keeps the earlier promise, reviewed before anything
+reaches the operator's files, for an operator who wants it or keeps editing
+while the agent works. A plain folder always gets an isolated workspace: its people are
 often not developers, who were promised that nothing in the folder changes
 until they apply a result, and a document Office holds open can be neither
 written nor reverted.
@@ -262,8 +268,9 @@ unapplied changes go with it, while a session in the source leaves its
 changes in the operator's files, where Tesota can no longer revert them, and
 releases the trees it pinned. The WSL sandbox's state for a session in the
 source, its `node_modules` included, belongs to the source and stays for the
-next session. `tesota prune` lists other workspaces no session uses and that
-hold no unapplied changes, and `tesota prune --force` removes them, with
+next session. `tesota prune` lists each workspace with what it holds on disk
+(`measureWorkspaces` in `src/workspace-prune.ts`), and those no session uses
+and that hold no unapplied changes, and `tesota prune --force` removes them, with
 every record of a session in the source that no saved session uses, such as
 one a crash left, whose trees it releases while its changes stay in the
 files, and every shadow repository whose source no longer exists and that
@@ -312,23 +319,20 @@ are serialized.
 
 ## Planned
 
-The steps after working in the source, in order:
+The step after working in the source:
 
-- **Isolation when a session starts.** Any session may choose an isolated
-  workspace when it opens, as Claude Code's `--worktree` does, not only a
-  second one or a folder's; a session keeps where it works for its whole
-  life, so undecided turns never move between the source and a workspace. It
-  brings back the earlier promise, reviewed before anything reaches the
-  operator's files, for an operator who wants it or keeps editing while the
-  agent works. The session's list shows what each isolated session holds on
-  disk, beside `tesota prune`; Tesota states no estimate before creating one,
-  since no harness does and the only honest figure would be a previous
-  install it does not record.
-- **Then** remove what only the old default path used. Isolated
+- Remove what only the old default path used. Isolated
   workspaces keep almost all of it, so little is expected to go: notices and
   assumptions written for a workspace as the default.
 
 Decided, from what is built and the harnesses above:
+
+- **What isolation costs is measured, not estimated.** `tesota prune` lists
+  each workspace with what it holds on the operator's computer and what the
+  WSL sandbox keeps for it, its `node_modules` usually most of it; a
+  provider that cannot say is left out rather than counted as nothing.
+  Tesota states no estimate before creating one, since no harness does and
+  the only honest figure would be a previous install it does not record.
 
 - **Dependencies install as the session opens.** For a session in the
   source, the WSL sandbox's state, its `node_modules` included, belongs to

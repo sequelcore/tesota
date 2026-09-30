@@ -36,19 +36,21 @@ const planSchema: z.ZodType<PlanStep[]> = z.array(z.strictObject({ step: z.strin
   review: z.enum(["held", "not_held", "uncertain"]).optional() }))
   .min(1).max(MAX_PLAN_STEPS);
 // `agent` is absent until the agent first starts (decision 026), `sandbox` while the session follows the operator's
-// choice (decision 030), and `plan` while no work is under way (decision 033).
+// choice (decision 030), `plan` while no work is under way (decision 033), and `isolated` unless the operator chose
+// an isolated workspace before the session's first request.
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: TranscriptEntry[];
   inspections: { title: string; summary: string; detail: string; diff?: string | undefined }[];
   workspace: string | null;
   interrupted: boolean; blocked: boolean; agent?: string | undefined; retiredEngineIds: string[];
-  sandbox?: SandboxPreference | undefined; plan?: PlanStep[] | undefined; titleSource: TitleSource }> =
+  sandbox?: SandboxPreference | undefined; plan?: PlanStep[] | undefined; isolated?: true | undefined;
+  titleSource: TitleSource }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
       workspace: z.string().min(1).nullable(),
       interrupted: z.boolean(), blocked: z.boolean(),
       agent: agentModelSchema.optional(), retiredEngineIds: z.array(z.uuid()).max(1_000),
-      sandbox: z.enum(SANDBOX_PREFERENCES).optional(), plan: planSchema.optional(),
+      sandbox: z.enum(SANDBOX_PREFERENCES).optional(), plan: planSchema.optional(), isolated: z.literal(true).optional(),
       titleSource: z.enum(["counter", "request", "generated", "operator"]) });
 const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.iso.datetime(),
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
@@ -116,6 +118,8 @@ export interface ShellSessionStore {
    * undefined follows the operator's choice for new sessions (`tesota sandbox`).
    */
   setSandbox(id: string, preference: SandboxPreference | undefined): void;
+  /** Work in an isolated workspace rather than the operator's files, chosen with `/isolate` before any work. */
+  setIsolated(id: string): void;
   /** The agent's plan for the session's current work (decision 033); undefined once that work ends. */
   setPlan(id: string, plan: readonly PlanStep[] | undefined): void;
   /**
@@ -340,6 +344,11 @@ export function openShellSessionStore(sourceDirectory: string,
           if (previous === undefined) delete session.sandbox; else session.sandbox = previous;
           throw error;
         }
+      },
+      setIsolated: (id) => {
+        const session = find(id);
+        session.isolated = true;
+        try { save(); } catch (error) { delete session.isolated; throw error; }
       },
       setTitle: (id, title, source) => {
         const session = find(id);

@@ -31,11 +31,12 @@ the workflow and limits.
   `/revert` and `/redo`, a revert never overwriting a later edit; secret files
   hidden and `.git` read-only in the WSL sandbox, with the agent told what is
   hidden; base checks in a checkout of their own; a separate workspace for a
-  folder and for a second session. Not yet run with a real model in the
-  shell: use it on a real project to validate it, alongside the next step.
-  Next: an isolated workspace for any session that chooses one when it
-  starts, with the disk each holds shown. Base checks outside the WSL sandbox
-  wait until real use shows they matter.
+  folder, a second session, or any session that chooses one with `/isolate`
+  before its first request, with the disk each holds listed by `tesota
+  prune`. Next: remove what only the old default path used. Not yet run with
+  a real model in the shell: use it on a real project once that step is
+  done. Base checks outside the WSL sandbox wait until real use shows they
+  matter.
   [Workspace](design/workspace.md#planned)
 - Evaluate scope behavior on cases that tempt the agent to make unrelated
   changes. The reviewer's extra-work check is built, but

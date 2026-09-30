@@ -8,6 +8,7 @@ import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import * as z from "zod";
 import { EgressProxy } from "./egress-proxy.js";
+import { folderSize } from "./folder-size.js";
 import { PACKAGE_REGISTRY_HOSTS, type PreparationStep, type RunOutcome } from "./execution-environment.js";
 import { MISE_RELEASE } from "./toolchain.js";
 import type { NetworkPhase } from "./verification/setup-network-rule.js";
@@ -638,6 +639,11 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
 /** Remove what a workspace's sandbox kept on WSL's disk. */
 export async function releaseState(workspace: string, paths: PathTranslation): Promise<void> {
   await rm(stateFolder(translate(workspace, paths)), { recursive: true, force: true });
+}
+
+/** The bytes a workspace's own folders hold on WSL's disk, its `node_modules` included. */
+export function stateSize(workspace: string, paths: PathTranslation): Promise<number> {
+  return folderSize(stateFolder(translate(workspace, paths)));
 }
 
 /** Remove a repository's package caches and the tools setup installed for it. */

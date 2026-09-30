@@ -81,7 +81,7 @@ it("persists session workspaces, the repository's approved checks and engine ide
   reopened.close();
 });
 
-it("keeps a session's agent model and the conversations it left, and reads a session saved before either", () => {
+it("keeps a session's agent model, its isolation and the conversations it left, and reads a session saved before either", () => {
   const { root, source } = fixture();
   const store = openShellSessionStore(source, root);
   const session = store.create();
@@ -89,13 +89,15 @@ it("keeps a session's agent model and the conversations it left, and reads a ses
   store.setAgentModel(session.id, "claude-code:opus");
   expect(session.sandbox).toBeUndefined();
   store.setSandbox(session.id, "docker");
+  expect(session.isolated).toBeUndefined();
+  store.setIsolated(session.id);
   const first = session.engineId;
   const second = store.rotateEngine(session.id);
   store.rotateEngine(session.id);
   expect(() => { store.setAgentModel(session.id, "not a model"); }).toThrow();
   store.close();
   const reopened = openShellSessionStore(source, root);
-  expect(reopened.list()[0]).toMatchObject({ agent: "claude-code:opus", sandbox: "docker", retiredEngineIds: [first, second] });
+  expect(reopened.list()[0]).toMatchObject({ agent: "claude-code:opus", sandbox: "docker", isolated: true, retiredEngineIds: [first, second] });
   // Without a choice of its own, a session follows the operator's choice for new sessions.
   reopened.setSandbox(session.id, undefined);
   expect(reopened.list()[0]?.sandbox).toBeUndefined();

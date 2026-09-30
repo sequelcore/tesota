@@ -164,6 +164,8 @@ export interface ExecutionProvider {
   fingerprint?(): Promise<string>;
   /** Remove anything the provider keeps for a workspace that is being deleted. */
   release(workspace: string): Promise<void>;
+  /** The bytes the provider keeps for a workspace outside it, such as its `node_modules`; undefined when unknown. */
+  held?(workspace: string): Promise<number | undefined>;
   /** Remove what the provider keeps for a repository, such as its package caches and the tools its setup installed, named by its key. */
   releaseRepository?(repository: string): Promise<void>;
 }

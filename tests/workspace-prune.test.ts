@@ -6,8 +6,9 @@ import { basename, dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { openShellSessionStore } from "../src/shell-session-store.js";
 import { openShadow, shadowDirectory } from "../src/source-shadow.js";
+import { formatSize } from "../src/folder-size.js";
 import { Workspace } from "../src/workspace.js";
-import { formatPrunePlan, planWorkspacePrune, removeWorkspaces } from "../src/workspace-prune.js";
+import { formatPrunePlan, measureWorkspaces, planWorkspacePrune, removeWorkspaces } from "../src/workspace-prune.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -55,6 +56,21 @@ it("removes only unused and unreadable workspaces", async () => {
   await removeWorkspaces(plan);
   expect([unreadable, unused.directory].map(existsSync)).toEqual([false, false]);
   expect([used.directory, pending.directory].map(existsSync)).toEqual([true, true]);
+});
+
+it("shows what each workspace holds here and what a provider keeps for it, leaving out one that cannot say", async () => {
+  const { source, workspaces, stores } = await fixture();
+  const sources = join(dirname(workspaces), "sources");
+  const workspace = await Workspace.create(source, workspaces, { sourcesRoot: sources });
+  const plan = await planWorkspacePrune(workspaces, stores, sources, join(dirname(workspaces), "source-sessions"));
+  const measured = await measureWorkspaces(plan, async () => [{ provider: "wsl", bytes: 900 * 1024 * 1024 }]);
+  const here = measured.get(workspace.directory)?.here ?? 0;
+  expect(here).toBeGreaterThan(0);
+  expect(formatPrunePlan(plan, measured)).toContain(`remove  ${workspace.directory}  (no session uses it; ` +
+    `${formatSize(here)} on this computer, 900 MB in the WSL sandbox)`);
+  const unknown = await measureWorkspaces(plan, async () => []);
+  expect(formatPrunePlan(plan, unknown)).toContain(`(no session uses it; ${formatSize(here)} on this computer)
+`);
 });
 
 it("keeps every workspace of a repository whose shell is open", async () => {

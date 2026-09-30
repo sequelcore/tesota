@@ -4,8 +4,8 @@ Pre-release terminal coding agent: a Pi agent works in the operator's project,
 recording each turn, its commands run in a sandbox or with the operator's
 approval, and each turn is verified and reviewed; the operator keeps or
 reverts it, and a revert never overwrites the operator's own later edits. A
-folder of documents, or a second session, works in a separate workspace it
-applies from.
+folder of documents, a second session, or one that asks works in a separate
+workspace it applies from.
 Keep changes scoped to the active roadmap item.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;
