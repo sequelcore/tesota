@@ -3,7 +3,7 @@ import { correctionFor, correctionPrompt } from "../src/correction.js";
 import { applyRefutation, refutationMessage } from "../src/integrations/pi-refuter.js";
 import { missingAssessments, reviewMessage } from "../src/integrations/pi-reviewer.js";
 import type { Obligation, ReviewInput, ReviewReport, ToolCallRecord } from "../src/review.js";
-import { recordCall } from "../src/tesota-shell-command.js";
+import { recordCall } from "../src/session-engine.js";
 import { inspectAnswer, inspectReview } from "../src/tesota-shell-inspection.js";
 import { obligationOutcome } from "../src/verification/obligation-outcome.js";
 import { planLines, withReview } from "../src/work-plan.js";
