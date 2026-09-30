@@ -1,118 +1,43 @@
 import { readFileSync } from "node:fs";
-import { truncateToWidth, type Component } from "@earendil-works/pi-tui";
-import { colorText, type TesotaShellTheme } from "./tesota-shell-theme.js";
+import { truncateToWidth, visibleWidth, type Component, type TuiMouseEvent, type TuiMouseEventResult }
+  from "@earendil-works/pi-tui";
+import { bold, mutedText, tesotaShellTheme, type TesotaShellTheme } from "./tesota-shell-theme.js";
 import { safeTerminalText } from "./tesota-shell-transcript.js";
+import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLighting, renderMark, type MarkColors,
+  type Rgb }
+  from "./welcome-mark.js";
 
-type Logo = Readonly<{ width: number; rows: readonly string[]; tones: readonly string[] }>;
+/** The scene's length: the wind rising and falling, and on a replay the tumbleweed's pass. */
+export const WELCOME_SCENE_MS = 9_000;
+export const WELCOME_FRAME_MS = 50;
+const FADE_MS = 400;
+/** How visible the tree stays while the terminal is unfocused or the operator is typing. */
+export const WELCOME_FADED_OPACITY = 0.18;
+/** A frame that arrives later than this, such as after the session was hidden, advances by this much at most. */
+const LONGEST_STEP_MS = 100;
+const MIN_STAGE_ROWS = 8;
+const HEADER_ROWS = 3;
 
-const main: Logo = {
-  width: 34,
-  rows: [
-    "                   _.---._",
-    "     _.-._    _.--.       '-._",
-    " _.-'     '-.'    '-._        '-.",
-    "(                     '-.        )",
-    " '-.__               __.-'   _.-'",
-    "    '--._ \\  |  /   _.--'",
-    "           \\ | /",
-    "            \\|/",
-    "            \\ \\",
-    "             | |          .",
-    "            /   \\        '|'",
-    "       __.-'  |  '-.__   . . . . .",
-  ],
-  tones: [
-    "                   3333333",
-    "     11111    22222       3333",
-    " 1111     2222    2222        333",
-    "1                     222        3",
-    " 22222               22222   3333",
-    "    33333 2  2  2   33333",
-    "           2 2 2",
-    "            222",
-    "            2 2",
-    "             2 2          1",
-    "            2   2        111",
-    "       22222  2  22222   3 3 3 3 3",
-  ],
-};
+const fallbackBackground: Readonly<Record<"dark" | "light", Rgb>> = { dark: [22, 21, 26], light: [250, 248, 244] };
 
-// The small forms keep the branching trunk and simplify the rear crown.
-const compact: Logo = {
-  width: 16,
-  rows: [
-    "        _.-._",
-    " _.-._.-.    '.",
-    "(          '.  )",
-    "'-._ \\|/ _.'",
-    "  '- | |  .-' .",
-    "   _/ | \\_   '|'",
-  ],
-  tones: [
-    "        33333",
-    " 11111222    33",
-    "1          22  3",
-    "2222 222 222",
-    "  33 2 2  333 1",
-    "   22 2 22   111",
-  ],
-};
+function rgb(hex: string): Rgb {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
 
-const symbol: Logo = {
-  width: 5,
-  rows: [" .-.", "(___)", " _|_"],
-  tones: [" 111", "22222", " 222"],
-};
-
-/** The five states draw roots, trunk, rear volume, front crown, then the sprout. */
-export const TESOTA_WELCOME_FRAMES: readonly (readonly string[])[] = [
-  ["", "", "", "", "", "", "", "", "", "", "            /   \\", "       __.-'  |  '-.__"],
-  ["", "", "", "", "", "          \\  |  /", "           \\ | /", "            \\|/", "            \\ \\",
-    "             | |", "            /   \\", "       __.-'  |  '-.__"],
-  ["                   _.---._", "             _.--''       '-._", "          .-'                 '-.",
-    "                                 )", "                             _.-'", "          \\  |  /", "           \\ | /",
-    "            \\|/", "            \\ \\", "             | |", "            /   \\", "       __.-'  |  '-.__"],
-  ["                   _.---._", "     _.-._    _.--.       '-._", " _.-'     '-.'    '-._        '-.",
-    "(                     '-.        )", " '-.__               __.-'   _.-'", "    '--._ \\  |  /   _.--'",
-    "           \\ | /", "            \\|/", "            \\ \\", "             | |",
-    "            /   \\", "       __.-'  |  '-.__   . . . . ."],
-  main.rows,
-].map((rows) => rows.map((row) => row.padEnd(main.width, " ")));
-
-const compactWithoutSprout = compact.rows.map((row, index) =>
-  index === 4 ? row.slice(0, 15) : index === 5 ? row.slice(0, 13) : row);
-const compactFrames: readonly (readonly string[])[] = [
-  ["", "", "", "", "", compactWithoutSprout[5] ?? ""],
-  ["", "", "", ...compactWithoutSprout.slice(3)],
-  [compact.rows[0] ?? "", "", "", ...compactWithoutSprout.slice(3)],
-  compactWithoutSprout,
-  compact.rows,
-].map((rows) => rows.map((row) => row.padEnd(compact.width, " ")));
-
-const symbolFrames: readonly (readonly string[])[] = [
-  ["", "", symbol.rows[2] ?? ""],
-  ["", "  |", symbol.rows[2] ?? ""],
-  [symbol.rows[0] ?? "", "  |", symbol.rows[2] ?? ""],
-  symbol.rows,
-  symbol.rows,
-].map((rows) => rows.map((row) => row.padEnd(symbol.width, " ")));
-
-export const TESOTA_LOGOS: Readonly<Record<"main" | "compact" | "symbol", readonly string[]>> = Object.freeze({
-  main: Object.freeze(main.rows.map((row) => row.padEnd(main.width, " "))),
-  compact: Object.freeze(compact.rows.map((row) => row.padEnd(compact.width, " "))),
-  symbol: Object.freeze(symbol.rows.map((row) => row.padEnd(symbol.width, " "))),
-});
-
-export const TESOTA_LOGO_TONES: Readonly<Record<"main" | "compact" | "symbol", readonly string[]>> = Object.freeze({
-  main: Object.freeze(main.tones.map((row) => row.padEnd(main.width, " "))),
-  compact: Object.freeze(compact.tones.map((row) => row.padEnd(compact.width, " "))),
-  symbol: Object.freeze(symbol.tones.map((row) => row.padEnd(symbol.width, " "))),
-});
-
-const palettes = {
-  dark: { rgb: ["#E6D3A3", "#A3B18A", "#74806F"], ansi256: [187, 144, 244] },
-  light: { rgb: ["#8C6A1E", "#4E6146", "#65705F"], ansi256: [94, 59, 242] },
-} as const;
+/**
+ * The tree in the theme's own roles: leaves in its success green, bark between its warning and muted colors, edges
+ * lit in its accent and gloss in its foreground. A theme that leaves colors to the terminal lends Tesota's own.
+ */
+export function themeMarkColors(theme: TesotaShellTheme): MarkColors {
+  const { success, warning, muted, accent, foreground } = theme;
+  if (success === null || warning === null || muted === null || accent === null || foreground === null) {
+    return themeMarkColors(tesotaShellTheme("tesota-dark"));
+  }
+  const [bark, dust] = [rgb(warning), rgb(muted)];
+  return { foliage: rgb(success), wood: [(bark[0] + dust[0]) / 2, (bark[1] + dust[1]) / 2, (bark[2] + dust[2]) / 2],
+    rim: rgb(accent), foreground: rgb(foreground) };
+}
 
 export type WelcomeColorMode = "truecolor" | "ansi256" | "plain";
 
@@ -131,69 +56,189 @@ function packageVersion(): string {
   return "dev";
 }
 
-function paint(row: string, tones: string, theme: TesotaShellTheme, mode: WelcomeColorMode): string {
-  if (mode === "plain" || theme.appearance === "terminal") return row;
-  const palette = palettes[theme.appearance];
-  let output = "";
-  for (let index = 0; index < row.length;) {
-    const tone = tones[index];
-    let end = index + 1;
-    while (end < row.length && tones[end] === tone) end++;
-    const segment = row.slice(index, end);
-    if (tone === undefined || tone === " ") output += segment;
-    else if (mode === "ansi256") output += `\x1b[38;5;${palette.ansi256[Number(tone) - 1]}m${segment}\x1b[39m`;
-    else output += colorText(segment, palette.rgb[Number(tone) - 1] ?? null);
-    index = end;
-  }
-  return output;
+function ease(elapsed: number, duration: number): number {
+  const t = Math.min(1, elapsed / duration);
+  return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
-/** Ephemeral first-session identity; it never enters the saved conversation. */
+function ansi256([r, g, b]: Rgb): number {
+  const level = (value: number): number => Math.round(value / 255 * 5);
+  return 16 + 36 * level(r) + 6 * level(g) + level(b);
+}
+
+export interface WelcomeBannerOptions {
+  /** Rows of the conversation's viewport, which the opening fills while the session is empty. */
+  readonly viewportHeight: () => number;
+  /** Rows the conversation shows beneath the opening, such as replies to the operator, at a width. */
+  readonly rowsBelow?: (width: number) => number;
+  /** Whether the terminal has focus; the scene plays only then. */
+  readonly focused?: () => boolean;
+  /** Whether the operator has started typing; the tree steps back while they do. */
+  readonly drafting?: () => boolean;
+  /** Asks for another render after the delay, while the tree is moving. */
+  readonly requestFrame?: (delayMs: number) => void;
+  readonly reducedMotion?: boolean;
+  readonly colorMode?: WelcomeColorMode;
+  readonly now?: () => number;
+}
+
+/**
+ * A fresh session's opening: the palo fierro in the middle of the empty conversation, with a saguaro seedling in
+ * its shade, saguaros further off, and the version and folder beneath it, while the wind moves its crown. A click on
+ * the resting scene plays it again with a tumbleweed blowing through. It plays while the terminal has focus, pauses
+ * and fades when it loses focus or the operator types, and leaves at the session's first recorded entry, keeping
+ * only the header. It never enters the saved conversation.
+ */
 export class WelcomeBanner implements Component {
   readonly #cwd: string;
   readonly #theme: TesotaShellTheme;
-  readonly #height: () => number;
+  readonly #options: WelcomeBannerOptions;
   readonly #mode: WelcomeColorMode;
   readonly #version: string;
-  #frame: number;
+  #background: Rgb | undefined;
+  #dismissed = false;
+  /** How much of the scene has played, in milliseconds. */
+  #played: number;
+  /** Whether the tumbleweed blows through: from the first click on, not at the opening. */
+  #visitor = false;
+  #lastFrame: number | undefined;
+  #faded: boolean | undefined;
+  #fadeElapsed = FADE_MS;
+  #fadeFrom = 1;
+  #opacity = 1;
+  #drawnHeight: number | undefined;
+  /** Where the last render drew the tree, in the banner's own rows and columns. */
+  #drawnStage: { readonly top: number; readonly left: number; readonly rows: number; readonly columns: number } | undefined;
+  readonly #reducedMotion: boolean;
 
-  constructor(cwd: string, theme: TesotaShellTheme, height: () => number,
-    options: { readonly reducedMotion?: boolean; readonly colorMode?: WelcomeColorMode } = {}) {
+  constructor(cwd: string, theme: TesotaShellTheme, options: WelcomeBannerOptions) {
     this.#cwd = safeTerminalText(cwd);
     this.#theme = theme;
-    this.#height = height;
+    this.#options = options;
     this.#mode = options.colorMode ?? welcomeColorMode();
     this.#version = packageVersion();
-    this.#frame = options.reducedMotion === true ? TESOTA_WELCOME_FRAMES.length - 1 : 0;
+    this.#reducedMotion = options.reducedMotion === true;
+    this.#played = this.#reducedMotion ? WELCOME_SCENE_MS : 0;
   }
 
-  advance(): boolean {
-    if (this.#frame >= TESOTA_WELCOME_FRAMES.length - 1) return false;
-    this.#frame++;
-    return true;
+  get dismissed(): boolean { return this.#dismissed; }
+
+  /**
+   * The viewport height of the last render. pi-tui renders a scroll view's content before it measures the viewport,
+   * so a height that differs from the viewport's now calls for one more render.
+   */
+  get drawnHeight(): number | undefined { return this.#drawnHeight; }
+
+  /** Whether the scene still has motion to show: playing, or fading between its full and faded poses. */
+  get moving(): boolean {
+    return !this.#dismissed && (this.#played < WELCOME_SCENE_MS || this.#fadeElapsed < FADE_MS);
   }
+
+  /** The session's first entry ends the opening; the header stays above the conversation. */
+  dismiss(): void {
+    this.#dismissed = true;
+    this.#lastFrame = undefined;
+  }
+
+  /** The terminal's own background, which fades blend toward; each theme's usual background until it is known. */
+  setBackground(background: Rgb): void { this.#background = background; }
 
   invalidate(): void {}
 
+  /** A plain left click on the resting scene plays it again, with the tumbleweed; other gestures keep their usual owner. */
+  handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    const stage = this.#drawnStage;
+    if (this.#dismissed || this.#reducedMotion || stage === undefined || event.type !== "click" ||
+      event.button !== "left" || event.shift || event.alt || event.ctrl) return undefined;
+    if (event.y < stage.top || event.y >= stage.top + stage.rows ||
+      event.x < stage.left || event.x >= stage.left + stage.columns) return undefined;
+    if (this.#played >= WELCOME_SCENE_MS) {
+      this.#played = 0;
+      this.#visitor = true;
+      this.#lastFrame = undefined;
+    }
+    return { handled: true, render: true };
+  }
+
   render(width: number): string[] {
-    const height = this.#height();
-    const chosen = width >= main.width && height >= 22 ? main :
-      width >= compact.width && height >= 13 ? compact : width >= symbol.width && height >= 9 ? symbol : undefined;
-    const title = `Tesota ${this.#version}`;
-    const lines = [truncateToWidth(title, width), truncateToWidth(this.#cwd, width),
-      truncateToWidth("Every turn is reviewed; reverting never overwrites your edits.", width), ""];
-    if (chosen !== undefined) {
-      const rows = chosen === main ? TESOTA_WELCOME_FRAMES[this.#frame] ?? TESOTA_LOGOS.main :
-        chosen === compact ? compactFrames[this.#frame] ?? TESOTA_LOGOS.compact :
-          symbolFrames[this.#frame] ?? TESOTA_LOGOS.symbol;
-      for (const [index, row] of rows.entries()) {
-        const tones = chosen === main ? [...row].map((character, column) => {
-          if (character === " ") return " ";
-          if (main.rows[index]?.[column] === character) return main.tones[index]?.[column] ?? "2";
-          return this.#frame === 2 && index < 5 ? "3" : "2";
-        }).join("") : chosen.tones[index]?.padEnd(chosen.width, " ") ?? "";
-        lines.push(paint(row, tones, this.#theme, this.#mode));
+    const header = this.#header(width);
+    if (this.#dismissed) {
+      this.#drawnStage = undefined;
+      return [...header.map((line) => truncateToWidth(line, width)), ""];
+    }
+    this.#drawnHeight = this.#options.viewportHeight();
+    // Unmeasured until the conversation's first layout; the next frame has its height.
+    if (this.#drawnHeight === 0) this.#options.requestFrame?.(0);
+    const height = Math.max(this.#drawnHeight - (this.#options.rowsBelow?.(width) ?? 0), HEADER_ROWS);
+    let columns = Math.min(MARK_MAX_COLUMNS, width - 4);
+    let rows = Math.round(columns * MARK_STAGE_ROWS_PER_60_COLUMNS / MARK_MAX_COLUMNS);
+    if (rows + 1 + HEADER_ROWS > height) {
+      rows = height - 1 - HEADER_ROWS;
+      columns = Math.round(rows * MARK_MAX_COLUMNS / MARK_STAGE_ROWS_PER_60_COLUMNS);
+    }
+    const block: string[] = [];
+    const left = Math.floor((width - columns) / 2);
+    const drawn = rows >= MIN_STAGE_ROWS && rows <= MARK_MAX_ROWS && columns <= MARK_MAX_COLUMNS;
+    if (drawn) block.push(...this.#stage(columns, rows).map((line) => " ".repeat(left) + line), "");
+    else this.#lastFrame = undefined;
+    for (const line of header) {
+      const fitted = truncateToWidth(line, width);
+      block.push(" ".repeat(Math.max(0, Math.floor((width - visibleWidth(fitted)) / 2))) + fitted);
+    }
+    const top = Math.max(0, Math.floor((height - block.length) / 2));
+    this.#drawnStage = drawn ? { top, left, rows, columns } : undefined;
+    const lines = [...Array<string>(top).fill(""), ...block];
+    while (lines.length < height) lines.push("");
+    return lines.slice(0, Math.max(height, block.length));
+  }
+
+  #header(width: number): string[] {
+    const cwd = this.#cwd.length > width ? `…${this.#cwd.slice(-(width - 1))}` : this.#cwd;
+    return [bold(`Tesota ${this.#version}`), mutedText(cwd, this.#theme),
+      mutedText("Every turn is reviewed; reverting never overwrites your edits.", this.#theme)];
+  }
+
+  /** Advance the clock by the time since the last drawn frame, then draw the tree's pose for it. */
+  #stage(columns: number, rows: number): string[] {
+    const now = (this.#options.now ?? Date.now)();
+    const faded = this.#options.focused?.() === false || this.#options.drafting?.() === true;
+    const step = this.#lastFrame === undefined ? 0 : Math.min(LONGEST_STEP_MS, Math.max(0, now - this.#lastFrame));
+    this.#lastFrame = now;
+    if (this.#faded !== faded) {
+      // The first pose appears at once; later changes fade from wherever the opacity stands.
+      this.#fadeElapsed = this.#faded === undefined ? FADE_MS : 0;
+      this.#fadeFrom = this.#opacity;
+      this.#faded = faded;
+    } else {
+      this.#fadeElapsed = Math.min(FADE_MS, this.#fadeElapsed + step);
+      if (!faded) this.#played = Math.min(WELCOME_SCENE_MS, this.#played + step);
+    }
+    // A finished scene rests at full strength, as the mark it is; only a playing one steps back.
+    const target = faded && this.#played < WELCOME_SCENE_MS ? WELCOME_FADED_OPACITY : 1;
+    this.#opacity = this.#fadeFrom + (target - this.#fadeFrom) * ease(this.#fadeElapsed, FADE_MS);
+    if (this.moving && (!faded || this.#fadeElapsed < FADE_MS)) this.#options.requestFrame?.(WELCOME_FRAME_MS);
+    return this.#paint(columns, rows, this.#played / WELCOME_SCENE_MS);
+  }
+
+  #paint(columns: number, rows: number, progress: number): string[] {
+    const appearance = this.#theme.appearance === "light" ? "light" : "dark";
+    const background = this.#background ?? fallbackBackground[appearance];
+    const cells = renderMark(columns, rows, progress, markLighting(background, appearance === "light",
+      themeMarkColors(this.#theme)), this.#visitor);
+    const colored = this.#mode !== "plain" && this.#theme.appearance !== "terminal";
+    const lines: string[] = [];
+    for (let row = 0; row < rows; row++) {
+      let line = "";
+      for (let column = 0; column < columns; column++) {
+        const cell = cells[row * columns + column]!;
+        if (cell.dots === 0) { line += " "; continue; }
+        const glyph = String.fromCodePoint(0x2800 + cell.dots);
+        if (!colored) { line += this.#opacity < 0.5 ? `\x1b[2m${glyph}\x1b[22m` : glyph; continue; }
+        const rgb: Rgb = [cell.rgb >> 16 & 255, cell.rgb >> 8 & 255, cell.rgb & 255].map((channel, i) =>
+          Math.round(background[i]! + (channel - background[i]!) * this.#opacity)) as [number, number, number];
+        line += this.#mode === "ansi256" ? `\x1b[38;5;${ansi256(rgb)}m${glyph}` : `\x1b[38;2;${rgb.join(";")}m${glyph}`;
       }
+      lines.push(colored ? `${line.trimEnd()}\x1b[39m` : line.trimEnd());
     }
     return lines;
   }

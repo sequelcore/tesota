@@ -66,6 +66,8 @@ export interface TesotaShellTerminalOptions {
 export interface TesotaShellTerminal {
   start(): void;
   stop(): void;
+  /** Whether the terminal has focus, as it reports when focus reporting is on; assumed focused until told. */
+  setTerminalFocused(focused: boolean): void;
   write(text: string, tone?: NoticeTone): void;
   ask(prompt: string): Promise<string>;
   report(progress: TesotaShellProgress): void;
@@ -74,8 +76,17 @@ export interface TesotaShellTerminal {
   addSession(id: string, title: string, entries?: readonly TranscriptEntry[],
     inspections?: readonly ShellInspection[], fresh?: boolean): void;
   selectSession(id: string): void;
-  /** Add a Tesota notice to a session: muted by default, colored for a warning or success. */
+  /**
+   * Record a Tesota notice in a session: something that happened to its work, such as where its commands run or a
+   * turn kept or reverted. It is saved with the session and ends its opening. Muted by default, colored for a warning
+   * or success. What the agent must also know goes to it separately, with its next request.
+   */
   writeTo(id: string, text: string, tone?: NoticeTone): void;
+  /**
+   * Answer the operator in a session, such as help, a listing, a usage hint or a setting confirmed. It shows like a
+   * notice but is not saved, is not part of the session's work, and never reaches the agent.
+   */
+  replyTo(id: string, text: string, tone?: NoticeTone): void;
   askIn(id: string, prompt: string): Promise<string>;
   reportFor(id: string, progress: TesotaShellProgress): void;
   /** Clear a session's progress only while it is still in this phase, so newer progress is kept. */
@@ -141,7 +152,6 @@ interface SessionView {
 }
 
 const spinnerMs = 120;
-const welcomeFrameTicks = 4;
 /** Below this width the result panel replaces the conversation instead of sitting beside it. */
 const resultBesideWidth = 120;
 const comparisonWidth = 160;
@@ -373,6 +383,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private accountsRead = 0;
   private readonly editor: Editor;
   private timer: ReturnType<typeof setInterval> | undefined;
+  private terminalFocused = true;
+  private terminalBackground: readonly [number, number, number] | undefined;
+  private welcomeFrame: ReturnType<typeof setTimeout> | undefined;
   private removeInputListener: (() => void) | undefined;
   private started = false;
   /** The quit key pressed once, and when; a second press of it within the confirmation window quits. */
@@ -544,13 +557,25 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     inspections: readonly ShellInspection[] = [], fresh = entries.length === 0): void {
     if (this.sessions.has(id)) throw new Error("Tesota session already exists");
     const transcript = new Transcript(this.theme);
-    const welcome = fresh && entries.length === 0 ? new WelcomeBanner(this.options.cwd, this.theme,
-      () => this.tui.terminal.rows, { reducedMotion: process.env["TESOTA_REDUCED_MOTION"] === "1" }) : undefined;
-    if (welcome !== undefined) transcript.container.addChild(welcome);
+    const scroll = new ScrollView(transcript.container, { follow: "end", primary: true, scrollbar: "auto" });
+    const welcome = fresh && entries.length === 0 ? new WelcomeBanner(this.options.cwd, this.theme, {
+      viewportHeight: () => scroll.viewportHeight,
+      // Replies to the operator show beneath the opening, which gives up their rows.
+      rowsBelow: (width): number => transcript.container.children.reduce((rows: number, child) =>
+        child === welcome ? rows : rows + child.render(width).length, 0),
+      focused: () => this.terminalFocused,
+      drafting: () => (id === this.selectedId ? this.editor.getText() : this.sessions.get(id)?.draft ?? "").length > 0,
+      requestFrame: (delay) => { this.requestWelcomeFrame(delay); },
+      reducedMotion: process.env["TESOTA_REDUCED_MOTION"] === "1",
+    }) : undefined;
+    if (welcome !== undefined) {
+      if (this.terminalBackground !== undefined) welcome.setBackground(this.terminalBackground);
+      transcript.container.addChild(welcome);
+    }
     for (const entry of entries) transcript.add(entry);
     this.sessions.set(id, { id, title, transcript,
       ...welcome === undefined ? {} : { welcome },
-      scroll: new ScrollView(transcript.container, { follow: "end", primary: true, scrollbar: "auto" }),
+      scroll,
       inspections: [...inspections], restoredInspectionCount: inspections.length,
       selectedInspection: inspections.length - 1,
       draft: "", pending: undefined, progress: undefined,
@@ -592,14 +617,19 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     // Restored sessions are added before start; newest-first order can put the initial selection below the viewport.
     this.revealSelectedSession();
     this.tui.start();
+    // The opening's fades blend toward the terminal's own background; the theme's usual one serves until it answers.
+    void this.tui.queryTerminalBackgroundColor({ timeoutMs: 500 }).then((color) => {
+      if (color === undefined) return;
+      this.terminalBackground = [color.r, color.g, color.b];
+      for (const session of this.sessions.values()) session.welcome?.setBackground(this.terminalBackground);
+      this.tui.requestRender();
+    }, () => { /* A terminal that does not answer keeps the theme's background. */ });
     let ticks = 0;
     this.timer = setInterval(() => {
       ticks += 1;
-      if (ticks % welcomeFrameTicks === 0) {
-        let changed = false;
-        for (const session of this.sessions.values()) changed = session.welcome?.advance() === true || changed;
-        if (changed) this.tui.requestRender();
-      }
+      const opening = this.selected();
+      if (opening.welcome !== undefined && !opening.welcome.dismissed &&
+        opening.welcome.drawnHeight !== opening.scroll.viewportHeight) this.tui.requestRender();
       const animate = [...this.sessions.values()].some((session) => animatedSidebarState(this.sessionState(session)));
       if (animate) {
         this.frame = (this.frame + 1) % SHELL_SPINNER_FRAMES.length;
@@ -775,7 +805,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
    */
   private openAccounts(session: SessionView, tab: AccountsTab): void {
     const source = this.options.accounts;
-    if (source === undefined) { this.writeTo(session.id, "Accounts are not available in this shell.", "warning"); return; }
+    if (source === undefined) { this.replyTo(session.id, "Accounts are not available in this shell.", "warning"); return; }
     this.accountsPanel.show(tab);
     if (this.accountsOverlay === undefined) {
       // Over the whole layout, sidebar included: accounts belong to no one session. A margin shows the layout still beneath.
@@ -842,11 +872,29 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.compose();
   }
 
+  setTerminalFocused(focused: boolean): void {
+    if (focused === this.terminalFocused) return;
+    this.terminalFocused = focused;
+    if (this.started) this.tui.requestRender();
+  }
+
+  /** One pending frame for the selected session's opening; it asks again from its render while it still needs one. */
+  private requestWelcomeFrame(delay: number): void {
+    if (!this.started || this.welcomeFrame !== undefined) return;
+    this.welcomeFrame = setTimeout(() => {
+      this.welcomeFrame = undefined;
+      if (this.selected().welcome?.dismissed === false) this.tui.requestRender();
+    }, delay);
+    this.welcomeFrame.unref();
+  }
+
   stop(): void {
     if (!this.started) return;
     this.started = false;
     this.closeAccounts();
     if (this.timer !== undefined) clearInterval(this.timer);
+    if (this.welcomeFrame !== undefined) clearTimeout(this.welcomeFrame);
+    this.welcomeFrame = undefined;
     this.timer = undefined;
     this.removeInputListener?.();
     this.removeInputListener = undefined;
@@ -864,6 +912,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   private record(session: SessionView, entry: TranscriptEntry, persist: boolean): void {
+    // What becomes part of the session ends its opening; a reply to the operator only shows beneath it.
+    if (persist) session.welcome?.dismiss();
     session.transcript.add(entry);
     if (persist) this.options.onEntry?.(session.id, entry);
     if (session.id !== this.selectedId) session.unread = true;
@@ -875,6 +925,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   writeTo(id: string, text: string, tone: NoticeTone = "info"): void {
     const content = text.trim();
     if (content.length > 0) this.record(this.find(id), { kind: "notice", text: content, tone }, true);
+  }
+
+  replyTo(id: string, text: string, tone: NoticeTone = "info"): void {
+    const content = text.trim();
+    if (content.length > 0) this.record(this.find(id), { kind: "notice", text: content, tone }, false);
   }
 
   showActivity(id: string, activity: AgentActivity): void {
@@ -1107,11 +1162,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     accounts: (session, args) => {
       const tab = args[0] ?? "usage";
       if (args.length > 1 || !(ACCOUNTS_TABS as readonly string[]).includes(tab)) {
-        this.writeTo(session.id, `Use /accounts or /accounts <${ACCOUNTS_TABS.join("|")}>.`, "warning");
+        this.replyTo(session.id, `Use /accounts or /accounts <${ACCOUNTS_TABS.join("|")}>.`, "warning");
       } else this.openAccounts(session, tab as AccountsTab);
     },
     usage: (session, args) => {
-      if (args.length > 0) this.writeTo(session.id, "Use /usage; it shows every account. tesota usage <route> reads one.", "warning");
+      if (args.length > 0) this.replyTo(session.id, "Use /usage; it shows every account. tesota usage <route> reads one.", "warning");
       else this.openAccounts(session, "usage");
     },
     result: () => { this.showResult = !this.showResult; this.compose(); },
@@ -1122,7 +1177,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     },
     details: (session, args) => { this.toggleDetails(session, args); },
     help: (session) => {
-      this.writeTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
+      this.replyTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
         "/handoff /sandbox [where] /isolate /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
         "Stop and quit: Esc or Ctrl+C stops work · Ctrl+C or Ctrl+D twice quits\n" +
@@ -1135,12 +1190,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private runShellCommand(session: SessionView, input: string): void {
     const [command = "", ...args] = input.slice(1).split(/\s+/u);
     const run = Object.hasOwn(this.commandHandlers, command) ? this.commandHandlers[command] : undefined;
-    if (run === undefined) this.writeTo(session.id, "Unknown command. Type / for commands or /help for shortcuts.", "warning");
+    if (run === undefined) this.replyTo(session.id, "Unknown command. Type / for commands or /help for shortcuts.", "warning");
     else run(session, args);
   }
 
   private changeModel(session: SessionView, args: readonly string[]): void {
-    if (args.length > 1) this.writeTo(session.id, "Use /model or /model <route:model>.", "warning");
+    if (args.length > 1) this.replyTo(session.id, "Use /model or /model <route:model>.", "warning");
     else if (args.length === 0 && this.options.modelPicker !== undefined && session.pending !== undefined) {
       // `/model` alone opens the picker, filtered by what is typed after it.
       this.editor.setText("/model ");
@@ -1151,7 +1206,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private changeTheme(session: SessionView, args: readonly string[]): void {
     const name = parseTesotaShellTheme(args[0] ?? "");
     if (args.length !== 1 || name === undefined) {
-      this.writeTo(session.id, `Use /themes to choose, or /themes <${TESOTA_SHELL_THEME_NAMES.join("|")}>.`, "warning");
+      this.replyTo(session.id, `Use /themes to choose, or /themes <${TESOTA_SHELL_THEME_NAMES.join("|")}>.`, "warning");
       return;
     }
     Object.assign(this.theme, tesotaShellTheme(name));
@@ -1160,11 +1215,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.result.diff.invalidate();
     this.editor.invalidate();
     this.compose();
-    this.writeTo(session.id, `Theme: ${name}.`);
+    this.replyTo(session.id, `Theme: ${name}.`);
   }
 
   private changeSandbox(session: SessionView, args: readonly string[]): void {
-    if (args.length > 1) this.writeTo(session.id, "Use /sandbox or /sandbox <auto|wsl|docker|host|default>.", "warning");
+    if (args.length > 1) this.replyTo(session.id, "Use /sandbox or /sandbox <auto|wsl|docker|host|default>.", "warning");
     else if (args.length === 0 && this.options.sandboxPicker !== undefined && session.pending !== undefined) {
       this.editor.setText("/sandbox ");
       this.updateCommandMenu("/sandbox ");
@@ -1189,7 +1244,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     }
     const number = args.length === 0 ? 1 : Number(args[0]);
     if (!Number.isSafeInteger(number) || number < 1 || args.length > 1 || !session.transcript.toggleNotice(number - 1)) {
-      this.writeTo(session.id, "No long notice at that number. Use /details or /details 2.", "warning");
+      this.replyTo(session.id, "No long notice at that number. Use /details or /details 2.", "warning");
     } else this.tui.requestRender();
   }
 

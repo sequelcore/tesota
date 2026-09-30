@@ -18,14 +18,41 @@ identity joins that heading when the sidebar is absent. Execution location and
 the selected model stay beside the prompt ([using Tesota](../guide/using-tesota.md)
 lists the keys).
 
-A fresh session opens with an ephemeral palo fierro welcome in the conversation:
-name and package version, working directory, a short statement of how
-changes are decided, then the ASCII tree. The tree grows through five fixed-size frames;
-smaller terminals animate a compact tree or symbol.
-`TESOTA_REDUCED_MOTION=1` shows the final frame immediately. The
-welcome is presentation only: it is not a conversation entry or saved session
-state, and restored sessions do not show it again. `tesota-shell-welcome.ts`
-owns the artwork, tones and responsive rendering.
+A fresh session opens with an ephemeral palo fierro welcome that fills the
+empty conversation: a small lit scene centered above the name and package
+version, working directory and a short statement of how changes are decided.
+The palo fierro is a nurse tree, so a saguaro seedling grows in its shade;
+grown saguaros stand further off, one of them behind the tree, smaller, higher
+toward the horizon and faded, so depth reads in what hides what. The camera
+stays still, looking slightly down. For nine seconds, only while the
+terminal has focus, a wind rises and falls in the crown (its tips move most,
+the trunk not at all); each crown lobe stands at its own depth and sways on its
+own phase. When the terminal loses focus or the operator starts typing it
+pauses and fades, and resumes when that ends. A plain left click on the
+resting scene plays it again, and from then on the same wind blows a
+tumbleweed through: a tangle of dry stems that rolls and bounces from the right
+edge to the left, behind the trunk and in front of the distant saguaros. It is
+left out of the opening itself, which plays in every new session and should
+stay calm.
+The scene rests in the pose it began in. The first entry
+that becomes part of the session removes it and leaves the header above the
+conversation; replies to shell commands show beneath it, and it gives up their
+rows. Where it would not fit, only the header shows. `TESOTA_REDUCED_MOTION=1`
+shows the resting pose without motion. The welcome is presentation only: it is
+not a conversation entry or saved session state, and restored sessions do not
+show it again. The scene takes its colors from the active theme: leaves and
+the saguaros in its success color, the distant ones faded toward the
+background, bark between its warning and muted colors and the tumbleweed's
+straw from it, edges lit in its accent, and gloss in its
+foreground, so `/themes` recolors it; the `terminal` theme draws it in the
+terminal's own colors. `welcome-mark.ts` owns the scene's geometry, motion,
+lighting and Braille rasterization, adapted from the Codex welcome's method;
+`tesota-shell-welcome.ts` owns its timing, focus, layout and click. Surface
+points are computed once, with each crown point's place in the wind, and only
+the nearest point at each Braille dot is lit, so a frame costs about what the
+single turning tree it replaced did. Focus comes from the terminal's focus
+reports, which pi-tui turns on but keeps to itself, so `FocusReportingTerminal`
+in `tesota-shell-tui.ts` reads them on their way in.
 
 `tesota-shell-theme.ts` owns the terminal palettes, and
 `tesota-shell-theme-picker.ts` uses pi-tui's `SelectList` for `/themes`.
@@ -73,6 +100,20 @@ caches; adding an entry clears none of them, since `Container.invalidate()`
 clears every child's. A test fails if a frame renders any `HStack` whole.
 With 800 entries a frame takes about 2 ms, against 472 ms before (findings,
 2026-09-27).
+
+Tesota speaks in a session to two audiences, and the agent is a third. A
+**record** (`writeTo`) is something that happened to the session's work: where
+its commands run, its workspace and preparation, a model switch, a turn kept,
+reverted or redone, a review's forecast, a failure. It is saved with the
+session, restored with it, and ends the opening. A **reply** (`replyTo`)
+answers the operator: help, listings such as `/checks` or `/sandbox` alone, a
+usage hint, "nothing to keep", a presentation setting such as `/themes`, or a
+command refused before it changed anything. It shows like a notice but is not
+saved and is not part of the session. Neither reaches the agent: the agent
+reads no notice. What changes its world, such as a revert, a redo, a rejected
+result, commands moved to another sandbox, hidden files or the operator's own
+edits, reaches it as Tesota context with its next request, marked as not
+written by the user; everything else stays out of its context and its tokens.
 
 The loop itself, request, checks, review, correction and decision, is
 independent of the terminal (`tesota-shell.ts`); the terminal only renders it
