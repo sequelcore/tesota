@@ -181,7 +181,7 @@ export class WelcomeBanner implements Component {
       width >= compact.width && height >= 13 ? compact : width >= symbol.width && height >= 9 ? symbol : undefined;
     const title = `Tesota ${this.#version}`;
     const lines = [truncateToWidth(title, width), truncateToWidth(this.#cwd, width),
-      truncateToWidth("Changes stay separate until you apply them.", width), ""];
+      truncateToWidth("Each change is checked and reviewed; you keep or revert it.", width), ""];
     if (chosen !== undefined) {
       const rows = chosen === main ? TESOTA_WELCOME_FRAMES[this.#frame] ?? TESOTA_LOGOS.main :
         chosen === compact ? compactFrames[this.#frame] ?? TESOTA_LOGOS.compact :

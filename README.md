@@ -1,9 +1,10 @@
 # Tesota
 
-**Tesota is an open-source coding agent that checks and reviews changes before
-you apply them.** It works in a separate copy of your project, runs your
-checks and its own verifiers on the result, and presents the diff with an
-independent review. You decide what reaches your files. Software development
+**Tesota is an open-source coding agent that checks and reviews each change it
+makes, and you keep or revert it.** It works in your project and records
+every turn, runs your checks and its own verifiers on the result, and
+presents the diff with an independent review. You decide what stays in your
+files. Software development
 is its first proving ground; work beyond code is planned.
 
 ## The name

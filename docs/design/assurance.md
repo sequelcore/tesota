@@ -23,8 +23,9 @@ what a reviewer sees.
 
 ## The candidate
 
-A **candidate** is the workspace's pending changes, identified by their Git
-tree, together with the operator's **request record** ([workspace](workspace.md)).
+A **candidate** is a turn's changes in the project, or a workspace's pending
+changes, identified by their Git tree, together with the operator's
+**request record** ([workspace](workspace.md)).
 Every verifier and reviewer result names the tree it describes; a changed tree
 needs new results.
 
@@ -320,16 +321,17 @@ a round leaves the tree unchanged. Operator findings, unknown origins, check
 failures the base shares or that could not be compared with it, incomplete
 reviews and checks that could not run never go back to the agent.
 
-**The base stays fixed through the rounds**. A correction turn
-does not bring the operator's newer repository state into the workspace, so
+**The base stays fixed through the rounds**. A correction continues the turn
+it corrects, and in a workspace it does not bring the operator's newer
+repository state in, so
 the correction's diff holds only the agent's work; with an update in between,
 the operator's own edits would read as the agent's correction. That state
 arrives with the operator's next request, which starts a new cycle.
 
 ## The record
 
-Each workspace keeps an append-only **assurance journal**, `assurance.jsonl`
-beside the checkout: for every reviewed candidate, the requests, each
+Each session keeps an append-only **assurance journal**, `assurance.jsonl`
+beside its record: for every reviewed candidate, the requests, each
 verifier's claim and outcome, the flags, the depth, each reviewer's findings,
 what the review step cost, and the operator's decision; for a turn that
 changed no files, the answer check's first pass.

@@ -6,9 +6,10 @@ it. Earlier proposals and evaluations remain in Git history.
 
 ## Status
 
-Tesota is an unpublished, pre-release terminal coding agent. It works in a
-separate workspace per session, runs checks and review on the resulting tree,
-and lets the operator apply or reject the change. On Windows, commands can run
+Tesota is an unpublished, pre-release terminal coding agent. It works in the
+operator's project, records each turn, runs checks and review on it, and lets
+the operator keep or revert the turn; a second session works in a separate
+workspace and applies or rejects. On Windows, commands can run
 in a qualified WSL sandbox; otherwise host commands ask for approval. The
 complete loop has run on throwaway and evaluation repositories. Daily use on a
 real project has not started. See the [user guide](guide/using-tesota.md) for
@@ -24,11 +25,14 @@ the workflow and limits.
 - Use the WSL sandbox as the default on a real project, including its toolchain
   preparation and the option to approve one command on the host. Correct the
   obstacles real use reveals. [Execution](design/execution.md)
-- Work in the operator's directory by default, as local harnesses do, with a
-  shadow repository for every source, turn snapshots, and keep or revert; keep
-  the isolated workspace for parallel sessions. A workspace per session costs
-  each session its own clone, sandbox and 900 MB of dependencies.
-  [Proposal](design/workspace.md#proposed-working-in-the-source)
+- Finish working in the source. Built: one shadow repository per source,
+  turns recorded in the operator's project with keep and revert, secret files
+  hidden and `.git` read-only in the WSL sandbox, base checks in a checkout of
+  their own, and a separate workspace for a second session. Next: one
+  `node_modules` per repository shared by its sessions, then an isolated
+  workspace for any session that asks, with its cost stated, then removing
+  what only the old default path used. Use it on a real project first.
+  [Workspace](design/workspace.md#planned)
 - Evaluate scope behavior on cases that tempt the agent to make unrelated
   changes. The reviewer's extra-work check is built, but
   the working agent's prompt has no measured scope intervention yet. Register

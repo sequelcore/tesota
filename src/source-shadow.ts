@@ -252,12 +252,12 @@ export function formatSize(bytes: number): string {
   return `${value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
 }
 
-/** The question before Tesota first works on a folder: what it holds, where Tesota keeps it, and that nothing changes unapplied. */
+/** The question before Tesota first works on a folder: what it holds, where Tesota keeps its record, and what that record allows. */
 export async function folderQuestion(folder: string): Promise<string> {
   const { files, bytes } = await describeFolder(folder);
   return `${folder} is not a Git repository. Tesota can work on it as a folder: ${files} ${files === 1 ? "file" : "files"}, ` +
-    `${formatSize(bytes)}. It keeps a private record of the folder in ~/.tesota/sources and a copy for the agent; nothing in ` +
-    "this folder changes until you apply a reviewed result. Work on this folder? [y/N] ";
+    `${formatSize(bytes)}. It keeps a private record of the folder in ~/.tesota/sources, so each change the agent makes in it ` +
+    "is checked and reviewed, and you keep or revert it. Work on this folder? [y/N] ";
 }
 
 /**

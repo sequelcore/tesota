@@ -7,7 +7,7 @@ Tesota runs several model sessions for one request, each in a fixed role.
 The working agent is one Pi session per shell session, started with exactly
 Tesota's tools and system prompt: no Pi extensions, skills, prompt templates
 or context files are loaded. Its tools are read, grep, find and ls, edit and
-write, all confined to the workspace checkout, and bash, which runs in the
+write, all confined to the project, or its copy, and refusing the files hidden as possible credentials, and bash, which runs in the
 session's execution environment ([execution](execution.md)); explorers add
 `explore`. Its conversation is saved, so it survives a restart and keeps its
 context across requests and correction rounds. It is closed only when its
@@ -67,9 +67,9 @@ For a request of three or more steps, the agent keeps a
 Code, Codex (`update_plan`) and OpenCode (`todowrite`) do: it sends every
 step each time, each `pending`, `in_progress`, `done` or `blocked`, and may
 say how a step's result can be checked. The shell shows the plan above the
-prompt, saves it with the session and clears it when the work is applied or
-rejected; its tool calls stay out of the conversation. It is a Tesota tool,
-so it works on every engine, and it keeps the plan out of the workspace's
+prompt, saves it with the session and clears it when the work is kept,
+reverted, applied or rejected; its tool calls stay out of the conversation. It is a Tesota tool,
+so it works on every engine, and it keeps the plan out of the project's
 files, where a `TODO.md` would end up in the diff.
 
 **A plan is the agent's account, never evidence.** A step it marks done reads
@@ -94,7 +94,7 @@ that gate passes on the result.
 
 With `explore`, the working agent asks a read-only **explorer** one question.
 An explorer is a fresh Pi session with only the read-only file tools, confined
-to the workspace: no shell, no network, no editing and no `explore` of its
+to the project: no shell, no network, no editing and no `explore` of its
 own, so it never asks the operator anything and cannot start further
 explorers. It sees the question, never the agent's conversation, and answers
 with the files and lines it relied on and what it did not find. The agent is
@@ -113,7 +113,7 @@ answer, and the per-request allowance is a proved rule
 (`src/verification/helper-answer.ts`). Each call shows in the conversation
 with the explorer's reads as they happen and its time and tokens with its
 answer. On Pi's routes each explorer's conversation is saved in the
-workspace's `explorers` directory, where the agent cannot reach it; Claude
+session's `explorers` directory beside its record, where the agent cannot reach it; Claude
 Code keeps no conversation for a read-only role.
 
 **Explorers are off by default.** `bun run live:delegation` compares their

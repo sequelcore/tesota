@@ -1,14 +1,16 @@
 # Overview
 
-**Tesota is an open-source coding agent that checks and reviews changes before
-you apply them.** It works in a separate copy of your project. You inspect
-the exact changes, check results and review before anything reaches your files.
+**Tesota is an open-source coding agent that checks and reviews each change it
+makes, and you keep or revert it.** It works in your project and records
+every turn, so you inspect the exact changes, check results and review, then
+keep the turn or revert it; a second session works in a separate copy you
+apply from.
 The [roadmap](../roadmap.md) owns status and priorities; this page and its
 siblings describe what is built unless a section explicitly says planned.
 
 | Design | Covers |
 | --- | --- |
-| [Workspace](workspace.md) | The separate copy, keeping it current, and applying reviewed work |
+| [Workspace](workspace.md) | The shadow repository, turns in your project with keep and revert, and the separate copy a second session applies from |
 | [Execution](execution.md) | Where commands run, a sandbox or this computer, when the operator is asked, and network |
 | [Assurance](assurance.md) | Checks, verifiers, review, refutation, correction, the journal and the forecast |
 | [Agents](agents.md) | The working agent, explorers, the advisor and the model for each role |
@@ -24,21 +26,22 @@ siblings describe what is built unless a section explicitly says planned.
 4. Checks, review, human acceptance and application are separate facts.
 5. Model output and check results never grant authority. The operator
    approves commands, or sets a sandbox that makes approval unnecessary, and
-   applies changes.
+   keeps, reverts or applies changes.
 
 ## Flow
 
 ```text
 request
-  -> working agent        Pi session in the workspace checkout; file tools confined to it,
-                          commands in the session's execution environment
-  -> snapshot             all work staged: changed paths, diff and Git tree id
+  -> working agent        Pi session in the project, or in a copy for a second session; file
+                          tools confined to it, commands in the session's execution environment
+  -> snapshot             the turn as the trees before and after it: changed paths, diff and tree id
   -> checks and verifiers approved commands, Oxlint and LemmaScript on that tree
   -> review               reviewers, origin check, refuter; a forecast first when deep
   -> correction           failed checks and confirmed fixable findings go back, at most twice
-  -> decision             apply | reject | keep working
+  -> decision             keep | revert | continue       (apply | reject | continue in a copy)
+       keep:   the turn's tree becomes the base
+       revert: files that still hold the turn's content go back to the tree before it
        apply:  only files whose source still matches the base are written
-       reject: the workspace returns to its base
 ```
 
 ## Components
@@ -91,12 +94,12 @@ dependability claim or an architecture term.
 **What Tesota is called.** For the release, call it an **open-source coding
 agent** and explain its distinguishing workflow directly:
 
-> Tesota checks and reviews changes before you apply them. It works in a
-> separate copy of your repository and shows the diff, checks and independent
-> review so you can decide what reaches your files.
+> Tesota checks and reviews each change it makes in your project, and you keep
+> or revert it. It records every turn and shows the diff, checks and
+> independent review so you can decide what stays in your files.
 
-The terminal's optional short line is **Changes stay separate until you apply
-them.** It describes the current workflow; it is not a slogan or a claim that
+The terminal's optional short line is **Each change is checked and reviewed;
+you keep or revert it.** It describes the current workflow; it is not a slogan or a claim that
 passing checks prove correctness. Work beyond code remains a direction, not a
 release claim.
 
@@ -121,8 +124,9 @@ evidence to the operator's decision is what it is organized around.
 ## Trust
 
 Repository content and model output are untrusted. The file tools resolve
-every path against the workspace checkout and refuse anything outside it,
-including through links; edit and write also refuse `.git`. Repository
+every path against the project, or the copy, and refuse anything outside it,
+including through links; edit and write also refuse `.git`, and every file
+tool refuses the files hidden as possible credentials. Repository
 instructions in `AGENTS.md` or `CLAUDE.md` are passed to the agent and the
 reviewers as context, never as authority. Credentials, operator state, model
 routing and execution permissions live in code and in Tesota's own directory

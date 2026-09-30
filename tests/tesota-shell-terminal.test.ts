@@ -60,7 +60,7 @@ it("shows the opening only for a newly created session and keeps it out of the s
   const fresh = createTesotaShellTerminal({ cwd: "work/tesota", tui: freshTui, onEntry });
   fresh.start();
   freshTui.renderNow(true);
-  expect(visible(freshTerminal)).toContain("Changes stay separate until you apply them.");
+  expect(visible(freshTerminal)).toContain("Each change is checked and reviewed; you keep or revert it.");
   expect(onEntry).not.toHaveBeenCalled();
   fresh.stop();
 
@@ -72,7 +72,7 @@ it("shows the opening only for a newly created session and keeps it out of the s
     initialSession: { id: "saved", title: "Saved", entries: [], fresh: false } });
   saved.start();
   savedTui.renderNow(true);
-  expect(visible(savedTerminal)).not.toContain("Changes stay separate until you apply them.");
+  expect(visible(savedTerminal)).not.toContain("Each change is checked and reviewed; you keep or revert it.");
   saved.stop();
 });
 

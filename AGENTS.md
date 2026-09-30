@@ -1,8 +1,9 @@
 # Tesota
 
-Pre-release terminal coding agent: a Pi agent works in a separate workspace per
-session, its commands run in a sandbox or with the operator's approval, and
-each result is verified and reviewed before the operator applies or rejects it.
+Pre-release terminal coding agent: a Pi agent works in the operator's project,
+recording each turn, its commands run in a sandbox or with the operator's
+approval, and each turn is verified and reviewed before the operator keeps or
+reverts it; a second session works in a separate workspace it applies from.
 Keep changes scoped to the active roadmap item.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;
