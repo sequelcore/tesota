@@ -72,6 +72,18 @@ LemmaScript specifications proved by Dafny. Rendering belongs to
 `tesota-shell-sidebar.ts`; terminal composition and input remain in
 `tesota-shell-terminal.ts`.
 
+Command, network, site and reviewed-result questions replace the editor with
+a themed pi-tui `SelectList` in `tesota-shell-question.ts`. Arrows select,
+Enter confirms and the offered single-key shortcuts answer immediately;
+permission questions begin on No, and result questions on Keep working.
+The question scrolls independently when it is long, keeping the choices
+visible. A waiting question belongs to its session and preserves the draft
+and queued requests. Command and network answers are saved as notices that
+name what was allowed or declined, never as user messages or editor history.
+Requests, check commands and hidden-file paths still use the editor.
+`verification/question-rule.ts` proves that a shortcut can select only an
+offered option; a missing shortcut or multiple characters leave it waiting.
+
 A session is **named** after its work, as Codex, Claude Code
 and OpenCode name theirs. It starts as "Session N"; the operator's first
 request, shortened to its first line, names it at once; and in the
@@ -165,4 +177,5 @@ handoff, and whether the session was interrupted or blocked; and, per repository
 destinations allowed for every session, and the measured costs of recent
 reviews. After a restart, sessions and their work and conversations are
 restored; a session interrupted mid-request is marked so. Command approvals
-and check results are never saved: they belong to one session's run.
+belong to one session's run; their decision notices stay in the transcript
+but grant no authority to future commands. Check results are never saved.
