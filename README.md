@@ -43,16 +43,27 @@ cd my-project
 tesota
 ```
 
-The agent can read, edit, create and delete files in its copy. On Windows,
-its commands run on their own in Tesota's WSL sandbox, once `tesota setup`
-has prepared it (WSL needs an administrator prompt and a restart once) and
-Tesota has checked on your computer that the sandbox holds. Docker
+The agent reads, edits, creates and deletes files in your project, and Tesota
+records each turn, checks and reviews it; `/keep` keeps it and `/revert` undoes
+it without overwriting what you edited since. `/isolate`, before a session's
+first request, makes it work in a copy you apply from instead, as a second
+session and a folder that is not a Git repository always do.
+
+On Windows, the agent's commands run on their own in Tesota's WSL sandbox,
+once `tesota setup` has prepared it (WSL needs an administrator prompt and a
+restart once) and Tesota has checked on your computer that the sandbox holds.
+The sandbox sees only the project, with `.git` read-only and files that may
+hold credentials hidden, and reaches only package registries. Docker
 Sandboxes is not used for now, while its network allowlist is checked again:
 choosing it runs commands on your computer, outside any virtual machine,
-asking before each one. A sandbox sees only that copy and reaches
-only package registries; without one, every command asks for your approval first and then runs with your
-permissions. `tesota sandbox` shows and chooses where they run. See [Using Tesota](docs/guide/using-tesota.md) for the workflow
-and limits. Run `bun unlink` in this checkout to remove the command.
+asking before each one. Without a sandbox, every command asks for your
+approval first and then runs with your permissions. `tesota sandbox` shows
+and chooses where they run.
+
+`tesota run "<request>"` does one request without the shell, for scripts and
+benchmarks, allowing only what its flags say. See
+[Using Tesota](docs/guide/using-tesota.md) for the workflow and limits. Run
+`bun unlink` in this checkout to remove the command.
 
 Tesota is pre-release and has been exercised live only on Windows. A passing
 check shows only that the command succeeded on the reviewed content, and a
