@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { AGENT_FIX_CASES, AGENT_QUESTIONS, AGENT_SCOPE_CASES, QUESTION_REPOSITORY, allowedCommand, beyondRequest, factsStated,
-  mentions, productionChanges, quantile, wordCount } from "./agent-evaluation.js";
+import { AGENT_FIX_CASES, AGENT_PREMISE_CASES, AGENT_QUESTIONS, AGENT_SCOPE_CASES, QUESTION_REPOSITORY, allowedCommand,
+  beyondRequest, factsStated, mentions, premiseRight, productionChanges, quantile, wordCount } from "./agent-evaluation.js";
 import { hostProvider } from "./host-environment.js";
 import { openModelTarget, startWorkingAgent } from "./integrations/model-session.js";
 import { readModelChoices } from "./model-roles.js";
@@ -17,16 +17,19 @@ import { type TokenUsage, totalTokens } from "./token-usage.js";
  * change is measured by running this before and after it. The agent may run
  * only Node's test runner; a hidden test, run afterwards, decides a fix, and
  * for a scope case a preserved test and the case's allowed paths and kept code
- * decide whether it did only what was asked.
+ * decide whether it did only what was asked; for a premise case, whether it
+ * left alone a request whose premise is false and fixed the control.
  *
- *   bun run live:agent [--runs=N] [--set=all|fixes|scope|questions] [--model-agent=<id>]
+ *   bun run live:agent [--runs=N] [--set=all|fixes|scope|premise|questions] [--model-agent=<id>]
  */
 const option = (name: string): string | undefined =>
   process.argv.find((argument) => argument.startsWith(`--${name}=`))?.slice(name.length + 3);
 const runs = Number(option("runs") ?? "2");
 if (!Number.isInteger(runs) || runs < 1) throw new Error("Use --runs=N with N at least 1.");
 const set = option("set") ?? "all";
-if (!["all", "fixes", "scope", "questions"].includes(set)) throw new Error("Use --set=all, fixes, scope or questions.");
+if (!["all", "fixes", "scope", "premise", "questions"].includes(set)) {
+  throw new Error("Use --set=all, fixes, scope, premise or questions.");
+}
 const includes = (part: string): boolean => set === "all" || set === part;
 const agentId = option("model-agent") ?? readModelChoices().agent;
 const target = await openModelTarget(agentId);
@@ -71,6 +74,8 @@ const answers: { question: string; run: number; words: number; stated: number; f
 const outcome: Record<string, { attempts: number; resolved: number; untouched: number }> = {};
 const scoped: unknown[] = [];
 const scope = { attempts: 0, resolved: 0, inScope: 0, controlAttempts: 0, controlInScope: 0, mentionable: 0, mentioned: 0 };
+const premised: unknown[] = [];
+const premise = { attempts: 0, leftAlone: 0, reported: 0, controlAttempts: 0, controlResolved: 0 };
 const passes = (directory: string, path: string, text: string): boolean => {
   mkdirSync(join(directory, ".hidden"), { recursive: true });
   writeFileSync(join(directory, ".hidden", path), text);
@@ -125,6 +130,29 @@ try {
         `${testCase.mention.length > 0 ? `, ${mentioned ? "reported" : "did not report"} the temptation` : ""}, ` +
         `${Math.round(turn.tokens / 1000)}k tokens` + (turn.status === "completed" ? "" : ` (${turn.status})`));
     }
+    for (const testCase of includes("premise") ? AGENT_PREMISE_CASES : []) {
+      const directory = repository(testCase.name, testCase.base);
+      const turn = await ask(directory, testCase.request);
+      const changed = changedPaths(directory);
+      const production = productionChanges(changed);
+      const right = premiseRight(testCase, passes(directory, "check.test.js", testCase.hiddenTest), production);
+      const reported = mentions(testCase, turn.reply);
+      if (testCase.premise === "control") {
+        premise.controlAttempts += 1;
+        premise.controlResolved += right ? 1 : 0;
+      } else {
+        premise.attempts += 1;
+        premise.leftAlone += right ? 1 : 0;
+        premise.reported += reported ? 1 : 0;
+      }
+      premised.push({ name: testCase.name, premise: testCase.premise, run, right, reported, changed, production,
+        words: wordCount(turn.reply), turn });
+      const verdict = testCase.premise === "control" ? right ? "resolved" : "not resolved"
+        : `${right ? "left alone" : `acted (${production.join(", ") || "changed the behavior"})`}, ` +
+          `${reported ? "reported" : "did not report"} the premise`;
+      console.log(`run ${run} · ${testCase.name}: ${verdict}, ${Math.round(turn.tokens / 1000)}k tokens` +
+        (turn.status === "completed" ? "" : ` (${turn.status})`));
+    }
     for (const entry of includes("questions") ? AGENT_QUESTIONS : []) {
       const directory = repository("questions", QUESTION_REPOSITORY);
       const turn = await ask(directory, entry.question);
@@ -139,14 +167,14 @@ try {
 
 const words = answers.filter((entry) => entry.turn.status === "completed").map((entry) => entry.words);
 const record = { at: new Date().toISOString(), model: agentId, runs, set,
-  fixes: outcome, scope,
+  fixes: outcome, scope, premise,
   answers: { replies: words.length, unfinished: answers.length - words.length, medianWords: quantile(words, 0.5),
     p90Words: quantile(words, 0.9), stated: answers.reduce((sum, entry) => sum + entry.stated, 0),
     facts: answers.reduce((sum, entry) => sum + entry.facts, 0),
     changedFiles: answers.filter((entry) => entry.changed.length > 0).length },
-  attempts: { fixes, scope: scoped, answers } };
+  attempts: { fixes, scope: scoped, premise: premised, answers } };
 mkdirSync(join("live-runs", "agent"), { recursive: true });
 const file = join("live-runs", "agent", `${record.at.replaceAll(":", "-")}.json`);
 writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
-console.log(`fixes ${JSON.stringify(record.fixes)}\nscope ${JSON.stringify(record.scope)}\n` +
+console.log(`fixes ${JSON.stringify(record.fixes)}\nscope ${JSON.stringify(record.scope)}\npremise ${JSON.stringify(record.premise)}\n` +
   `answers ${JSON.stringify(record.answers)}\nrecorded ${file}`);

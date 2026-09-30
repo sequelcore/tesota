@@ -44,6 +44,18 @@ the workflow and limits.
   With nothing to improve, the working agent's prompt gets no scope
   instruction. Revisit with harder cases drawn from real drift in daily use.
   [Issue #165](https://github.com/sequelcore/tesota/issues/165)
+- Measure whether the agent and the review notice a request whose premise is
+  false: behavior documented as intended, code that does not exist, a
+  vendored defect, a symptom that does not occur. The cases and a control
+  were registered on 2026-09-30 in `live:agent` and `live:review`, before any
+  run. The baseline that day, on `codex:gpt-6-luna` and `claude-code:haiku`,
+  shows the gap: the agent acted on 15 of 16 false premises, changing the
+  documented policy all four times while its reply named it, and fixed the
+  control every time; the review marked no false premise for the operator
+  after refutation, 0 of 3 on each model, and judged every such request met.
+  Next: a premise assessment in which a disputed premise goes to the
+  operator, never back to the agent, measured on the same cases.
+  [Assurance](design/assurance.md#planned-the-requests-premise)
 - Route the answer check by what a turn holds. Jev's first pass already
   decides the request's kind from the requests alone; add journaled real turns
   to `live:answer`'s cases, then send each part to the cheapest check that
@@ -82,6 +94,12 @@ and reviewer choices with evidence from those sessions. A normal week of real
 changes should include checks, review, correction where needed, and the
 operator's decision on the complete result. Passing checks and a clean review
 remain separate from human acceptance.
+
+Once others contribute, apply the same roles to their pull requests and
+issues: a review of a pull request with a verdict computed from its facts,
+and a reported defect reproduced by a test that fails on the base and passes
+on the fix. Nothing is sent to GitHub without the operator's approval.
+[Contributions from others](design/assurance.md#planned-contributions-from-others)
 
 ### 5. Keep sessions after the terminal closes
 
