@@ -39,6 +39,7 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "Tesota\nUsage: tesota [--help | -h | help]\n" +
     "       tesota [--theme <tesota-dark|tesota-light|vesper|sequel|automata|phosphor|terminal>]\n" +
     "       tesota resume [<session-id>] [--theme <tesota-dark|tesota-light|vesper|sequel|automata|phosphor|terminal>]\n" +
+    "       tesota run [--allow-commands] [--allow-network] [--checks=<command;…>|none] [--apply] [--folder] [--json] (<request> | -)\n" +
     "       tesota verify <file.ts|file.js>\n" +
     "       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]\n" +
     "       tesota auth login <codex|claude-code> --as <name>\n" +
@@ -49,12 +50,15 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota recover [undo|finish|resolved [<id>]]\n" +
     "       tesota setup\n" +
     "       tesota sandbox [use [<auto|wsl|docker|host>] | clean]\n\n" +
-    "Starts a new coding session in the current repository. The agent works in a\n" +
-    "separate copy; you review its changes and checks before anything is applied.\n",
+    "Starts a new coding session in the current repository. The agent works in\n" +
+    "your files and each turn is checked and reviewed; you keep or revert it. A\n" +
+    "plain folder, or a session you isolate, works in a copy you apply from.\n" +
+    "tesota run does one request without the shell, allowing only what its flags\n" +
+    "say, and leaves the session to resume.\n",
   );
 });
 
-it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["--theme"], ["--execution", "host-local"],
+it.each([["--unknown"], ["--help", "--unknown"], ["help", "extra"], ["--theme"], ["--execution", "host-local"],
   ["task", "propose", "Explain"], ["candidate", "list"], ["isolation", "qualify"], ["prune", "--all"]])(
   "rejects invalid compiled CLI arguments %j",
   (...args) => {
@@ -62,6 +66,16 @@ it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["-
     expect(result.status).toBe(2);
     expect(result.stdout).toBe("");
     expect(result.stderr).toBe("Invalid arguments. Use tesota --help.\n");
+  },
+);
+
+it.each([[["run"], "Give the request"], [["run", "--yes", "Fix it"], "Unknown option --yes"]])(
+  "refuses a compiled run without a request or with an unknown option: %j",
+  (args, message) => {
+    const result = run(args);
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain(message);
   },
 );
 

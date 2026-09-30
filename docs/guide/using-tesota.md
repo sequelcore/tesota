@@ -408,6 +408,35 @@ from before opening the shell; `tesota resume <session-id>` opens that exact
 session. If there are no saved sessions, start with `tesota` instead. Leaving
 a new session without sending a request does not keep an empty session.
 
+## Without the shell
+
+`tesota run "<request>"` does one request in the current repository without
+the shell, for scripts and benchmarks: the same work, checks, review and
+correction, with nobody at the keyboard. `tesota run -` reads the request from
+standard input. The agent's reply goes to standard output and Tesota's notices
+and progress to standard error; `--json` prints one record of the run
+instead: its session, how the turn ended, the reply of its latest round, the
+notices and results. The exit code is 0 when the turn completed, 130 when it
+was stopped and 1 otherwise.
+
+A run allows only what its flags say, for that run alone, and never saves a
+rule or allows a destination for the repository:
+
+- `--allow-commands` runs commands that would ask for approval; without it
+  they are refused. In a sandbox, commands run without asking as always.
+- `--allow-network` reaches destinations the sandbox refused and lets the
+  agent read web pages; without it they are refused.
+- `--checks=<command;…>` names the checks, and `--checks=none` runs none;
+  otherwise a repository without approved checks uses the suggested ones.
+  Hidden files stay hidden from them.
+- `--apply` applies a result from a copy; without it the result stays in the
+  copy. In your files a turn is never kept or reverted by a run.
+- `--folder` lets Tesota keep a copy of a folder that is not a Git
+  repository, which the shell asks for once.
+
+The run's session stays saved: `tesota resume <session-id>`, which the run
+prints last, opens it to keep or revert its turn.
+
 In an interactive terminal, `tesota resume`, `tesota sandbox use`,
 `tesota auth login`, `tesota auth logout` and `tesota roles <role>` offer
 numbered, filterable choices when their target is omitted. Enter cancels;
