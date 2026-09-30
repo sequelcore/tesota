@@ -33,6 +33,13 @@ export interface Finding {
   readonly statement: string;
   /** What in the request, the code or the checks shows it. */
   readonly reason: string;
+  /**
+   * Set when the finding disputes a request's premise: the behavior it calls a
+   * bug is intended, the code it names does not exist, or the defect is not this
+   * repository's. Such a finding is always the operator's call: only the
+   * operator can say the documented behavior should change after all.
+   */
+  readonly premise?: true;
   /** Why Tesota made the reviewer's origin claim `unknown`; absent when the claim stood. */
   readonly originNote?: string;
   /** Absent until the refuter has tested the finding. */

@@ -1,3 +1,4 @@
+import { correctionFor } from "./correction.js";
 import type { Finding, ReviewReport } from "./review.js";
 
 /**
@@ -278,6 +279,12 @@ export interface CaseScore {
   readonly premise: number;
   readonly premiseMarked: number;
   readonly premiseSentBack: number;
+  /**
+   * 1 when a false-premise case would send anything back to the agent, a finding
+   * or an obligation, as correction decides; added after the premise baseline,
+   * since an obligation sent back pushes the agent toward the premise as well.
+   */
+  readonly premiseCaseSentBack: number;
 }
 
 function matches(finding: Finding, defect: SeededDefect): boolean {
@@ -320,5 +327,6 @@ export function scoreCase(testCase: EvaluationCase, reports: readonly ReviewRepo
     premise: premise.length,
     premiseMarked: marked(premise, "operator"),
     premiseSentBack: marked(premise, "fixable"),
+    premiseCaseSentBack: premise.length > 0 && mode === "refuted" && correctionFor([], reports) !== undefined ? 1 : 0,
   };
 }
