@@ -116,8 +116,11 @@ edits, reaches it as Tesota context with its next request, marked as not
 written by the user; everything else stays out of its context and its tokens.
 
 The loop itself, request, checks, review, correction and decision, is
-independent of the terminal (`tesota-shell.ts`); the terminal only renders it
-and asks the operator's questions.
+independent of the terminal (`tesota-shell.ts`), and so is each session's
+work (`session-engine.ts`). Every point where a session waits for someone is
+a typed decision (`session-decisions.ts`): the terminal asks the operator
+each one and renders the session's output, and a run without a terminal
+can answer them by a stated policy.
 
 ## What a session holds
 
