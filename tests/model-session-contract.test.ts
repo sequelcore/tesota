@@ -70,7 +70,8 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
     return { tool_name: name, tool_input: call.args, tool_use_id: id,
       output: permission.behavior === "allow" && tool !== undefined ? "ran" : "refused" };
   }
-  async function* play(options: Options): AsyncGenerator<Record<string, unknown>> {
+  // An interrupt ends the turn in progress with an error result, as Claude Code does; aborting ends its process.
+  async function* play(options: Options, interrupted: AbortSignal): AsyncGenerator<Record<string, unknown>> {
     const signal = options.abortController.signal;
     remember(options);
     const hooks = options.hooks?.PostToolBatch?.flatMap((matcher) => matcher.hooks) ?? [];
@@ -79,8 +80,12 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
       sdk.calls += 1;
       calls += 1;
       if (step === "hang") {
-        await new Promise((settle) => { signal.addEventListener("abort", settle, { once: true }); });
-        throw new Error("Claude Code process aborted by user");
+        await new Promise((settle) => {
+          for (const ended of [signal, interrupted]) ended.addEventListener("abort", settle, { once: true });
+        });
+        if (signal.aborted) throw new Error("Claude Code process aborted by user");
+        yield result({ subtype: "error_during_execution", is_error: true, errors: ["[Request interrupted by user]"] }, calls);
+        return;
       }
       if ("fail" in step) { yield result({ subtype: "error_during_execution", is_error: true, errors: [step.fail] }, calls); return; }
       if ("text" in step) {
@@ -111,7 +116,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
       { type: "user", parent_tool_use_id: null, message: { role: "user", content: "The earlier request." } },
       { type: "assistant", parent_tool_use_id: null, message: { role: "assistant", content: [{ type: "text", text: "first" }] } },
     ] : [],
-    query: ({ options }: { options: Options }) => play(options),
+    query: ({ options }: { options: Options }) => {
+      const interrupt = new AbortController();
+      return Object.assign(play(options, interrupt.signal), { interrupt: async () => { interrupt.abort(); } });
+    },
   };
 });
 
