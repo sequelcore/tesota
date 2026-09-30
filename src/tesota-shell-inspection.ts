@@ -159,7 +159,7 @@ function causeWords(finding: Finding): string {
 function findingDetail(finding: Finding): string {
   const action = actionOfFinding(finding);
   const mark = finding.standing === "refuted" || finding.duplicateOf !== undefined ? "·" : findingMark(finding, action);
-  const who = finding.disposition === "operator" ? "your call" : "fixable";
+  const who = finding.premise === true ? "your call, the request's premise" : finding.disposition === "operator" ? "your call" : "fixable";
   const second = finding.standing === undefined ? "" :
     `\n      Second check: ${standingWords[finding.standing]}${finding.refutation === undefined ? "" : `. ${finding.refutation}`}`;
   return `\n\n    ${mark} ${finding.severity}, ${who}: ${location(finding)}${finding.statement}\n      ${finding.reason}` +

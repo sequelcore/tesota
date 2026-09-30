@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { hostProvider } from "../src/host-environment.js";
 import { reviewMessage, reviewReport, submitReviewTool } from "../src/integrations/pi-reviewer.js";
+import { actionOfFinding } from "../src/review-action.js";
 import type { Finding, ReviewInput } from "../src/review.js";
 
 const tree = "t".repeat(40);
@@ -70,6 +71,22 @@ it("records only the first submission and ends the review", async () => {
   expect(second.content).toEqual([{ type: "text", text: "A review was already recorded; only the first submission counts." }]);
   expect(recorded).toEqual([{ summary: "One problem", findings: [{ severity: "high", disposition: "fixable",
     statement: finding.statement, reason: finding.reason }] }]);
+});
+
+it("makes a disputed premise the operator's call whatever disposition the reviewer gave it, so it never goes back", async () => {
+  const recorded: Finding[] = [];
+  const tool = submitReviewTool((_summary, findings) => { recorded.push(...findings); return true; });
+  const disputed = { severity: "high" as const, disposition: "fixable" as const, origin: "introduced" as const, premise: true,
+    path: "src/shipping.js", line: 3, statement: "An order of exactly 50 now ships free",
+    reason: "docs/pricing.md says an order of exactly 50 pays shipping" };
+  await tool.execute("call-1", { summary: "Premise", findings: [disputed, { ...disputed, premise: false }] }, undefined, undefined,
+    {} as ExtensionContext);
+  expect(recorded.map((item) => [item.disposition, item.premise])).toEqual([["operator", true], ["fixable", undefined]]);
+  const [premise] = recorded;
+  if (premise === undefined) throw new Error("no finding recorded");
+  expect(actionOfFinding({ ...premise, standing: "confirmed" })).toBe("operator");
+  expect(actionOfFinding({ ...premise, standing: "unsettled" })).toBe("operator");
+  expect(actionOfFinding({ ...premise, standing: "refuted" })).toBe("context");
 });
 
 it("reminds a reviewer that answered in prose once, and then accepts its submission", async () => {

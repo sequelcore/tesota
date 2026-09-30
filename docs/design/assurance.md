@@ -299,7 +299,7 @@ fails or does not decide falls back to the full check, and
 yes-or-no pass only if, on registered cases drawn from journaled turns, it
 skips nothing the current pass checks and costs less.
 
-### Planned: the request's premise
+### The request's premise
 
 Obligations judge whether a request was done, not whether it should have
 been. A request that calls documented behavior a bug is met by changing that
@@ -333,28 +333,67 @@ should change: it read the report as an authority over the documentation, not
 as a claim to check against it. On `claude-code:haiku` the main reviewer also
 reported the comment the change left stale as fixable, which would have sent
 the agent back to make the comment agree with the change. Both refuted the
-control's planted claim and raised nothing against its fix.
+control's planted claim and raised nothing against its fix. The answer check
+had the same gap from the other side: given a turn in which the agent rightly
+declined a request about a function that does not exist, it judged the
+request unmet and sent it back every time, on both models, pushing the agent
+toward the change it was right to refuse.
 
-So the main reviewer will also assess each request's premise as
-`holds`, `intended`, `absent`, `upstream`, `not reproducible` or `uncertain`,
-with evidence: `intended` needs a document, a test or a commit that states
-the behavior, and `not reproducible` needs the base to behave as the request
-asks. A disputed premise faces the refuter as a gap does, and the refuter is
-told what the baseline showed it does not assume: a request that reports a
-bug is a claim about the repository, to be checked against its documents,
-tests and history, not an instruction that settles them. The action rule
-gains one clause, proved beside the others in `review-action-rule.ts`: a
-premise the refuter confirmed disputed, or left unsettled, goes to the
-operator, and never to the agent, since only the operator can say that
-documented behavior should change after all; a refuted dispute is context.
-The first pass does not take this on, since settling a premise needs the
-repository and the first pass reads only the requests.
+**What the review does now.** The main reviewer checks each request's
+premise as well as whether it was done: that the behavior called a bug is not
+documented or tested as intended, that the named code exists, that the defect
+is not in vendored or third-party code the repository says not to edit, and
+that the base does not already behave as asked. A false premise is one
+finding marked `premise`, on the change that follows it, quoting what shows
+it false; a document, comment or test that disagrees with the change only
+because the change follows the premise is that finding's evidence, not a
+defect of its own, and the request's obligation is `uncertain` rather than
+partial or unmet. Every reviewer, focused lenses included, is told that a
+change contradicting documented or tested behavior because a request asked
+for it questions the premise, not the change. Tesota makes a premise finding `operator` whatever
+disposition the reviewer gave it (`src/integrations/pi-reviewer.ts`), so the
+proved `findingAction` never sends it back: confirmed or unsettled, it needs
+the operator, who alone can say that documented behavior should change after
+all; refuted, it is context. The refuter is told what the baseline showed it
+assumed: a request that reports a bug is the user's claim about the
+repository, to be checked against its documents, tests and history, and a
+dispute is not refuted because the request asks for the change. In a turn
+that changed no files, the reviewer marks a rightly declined false premise
+`uncertain` rather than `unmet`, so the request waits for the operator
+instead of going back to the agent. The result panel labels a premise
+finding "your call, the request's premise". The first pass does not take
+this on, since settling a premise needs the repository and the first pass
+reads only the requests.
 
-The answer check needs the same clause. An agent that rightly declines a
-false premise changes no files, and today the answer check would judge the
-request unmet and send it back, pushing the agent toward the change it was
-right to refuse. `live:answer` has no such turn yet; one is registered before
-the answer check changes.
+**Measured** on 2026-09-30 with the premise cases and the answer case
+registered before any run, each model filling the reviewer, refuter and
+validator roles. After refutation, false premises marked for the operator
+went from 0 of 6 to 5 of 12 on `codex:gpt-6-luna` (four runs) and from 0 of 6
+to 2 of 3 on `claude-code:haiku` (one run), and no premise finding was sent
+back; before, `codex:gpt-6-luna` sent one back. The score counts a finding
+only when Tesota could establish that the change caused it, so a premise
+finding that names no file reaches the operator without counting. The
+control's planted claim was refuted every time and its fix drew nothing. A
+first version, which told only the main reviewer, let a focused lens report
+the documented policy as a defect to fix and the main reviewer mark the
+vendored request partial, and both went back to the agent on
+`claude-code:haiku`; telling every reviewer, and making such an obligation
+`uncertain`, removed both. One false-premise case still sent a finding back
+once in twelve: `codex:gpt-6-luna` reported, correctly, that the added guard
+turns `-0` into `0`. That model also usually missed the symptom that does not
+occur. `live:review`'s core cases on `codex:gpt-6-luna` kept 14 of 15 planted
+defects found over three runs, with three false positives, against 5 of 5
+and one in the run before, and every planted false claim refuted; the scope
+cases marked 5 of 6 extras. `claude-code:haiku`'s core and scope cases were
+not measured with the final prompts. `live:answer` over six runs on
+`codex:gpt-6-luna` left the declined false premise to the operator six times
+of six, against none before (four sent back, two cleared), with 55 of 60
+other verdicts right against 53 before; `claude-code:haiku` left it to the
+operator twice of two, against sent back twice. Neither the answer prompt
+nor its cases changed after that measurement.
+
+The working agent's prompt is unchanged: it acted on 15 of 16 false
+premises, and a change to it is measured on its own.
 
 ## Correction
 

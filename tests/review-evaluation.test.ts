@@ -26,9 +26,9 @@ it("counts a matched planted defect once and every other counted finding as a fa
     reason: "Unclear", standing: "confirmed" }), finding({ standing: "refuted" }), finding({ origin: "preexisting" })])];
   // The thin-tests finding is a real secondary problem: neither a hit nor a false positive.
   expect(scoreCase(boundary, reports, "raw")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 0, duplicates: 0, shown: 4,
-    unknownOrigin: 0, defectsUnknown: 0, extras: 0, extrasMarked: 0, extrasSentBack: 0, premise: 0, premiseMarked: 0, premiseSentBack: 0 });
+    unknownOrigin: 0, defectsUnknown: 0, extras: 0, extrasMarked: 0, extrasSentBack: 0, premise: 0, premiseMarked: 0, premiseSentBack: 0, premiseCaseSentBack: 0 });
   expect(scoreCase(boundary, reports, "refuted")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 1, duplicates: 0, shown: 3,
-    unknownOrigin: 0, defectsUnknown: 0, extras: 0, extrasMarked: 0, extrasSentBack: 0, premise: 0, premiseMarked: 0, premiseSentBack: 0 });
+    unknownOrigin: 0, defectsUnknown: 0, extras: 0, extrasMarked: 0, extrasSentBack: 0, premise: 0, premiseMarked: 0, premiseSentBack: 0, premiseCaseSentBack: 0 });
 });
 
 it("scores a refuted or unsettled finding on a control as removed, not as a false positive", () => {
@@ -83,6 +83,17 @@ it("counts a false premise marked for the operator, one that would be sent back,
   expect(scoreCase(changed, [report([premise("fixable")])], "refuted"))
     .toMatchObject({ premise: 1, premiseMarked: 0, premiseSentBack: 1, falsePositives: 0 });
   expect(scoreCase(changed, [report([])], "refuted")).toMatchObject({ premise: 1, premiseMarked: 0, premiseSentBack: 0 });
+});
+
+it("counts a false-premise case that would send anything back, an obligation included, once and only after refutation", () => {
+  const changed = PREMISE_CASES.find((entry) => entry.name === "documented policy changed")!;
+  const gap = { ...report([]), obligations: [{ source: "request" as const, index: 1, obligation: "Fix the charge at 50",
+    status: "partial" as const, evidence: "The vendor command would undo it", standing: "confirmed" as const }] };
+  expect(scoreCase(changed, [gap], "refuted")).toMatchObject({ premiseSentBack: 0, premiseCaseSentBack: 1 });
+  expect(scoreCase(changed, [gap], "raw")).toMatchObject({ premiseCaseSentBack: 0 });
+  const uncertain = { ...gap, obligations: [{ ...gap.obligations[0]!, status: "uncertain" as const }] };
+  expect(scoreCase(changed, [uncertain], "refuted")).toMatchObject({ premiseCaseSentBack: 0 });
+  expect(scoreCase(control, [gap], "refuted")).toMatchObject({ premiseCaseSentBack: 0 });
 });
 
 // The review must do the work: every scope and premise candidate, the quick hack included, passes the checks it ships with.

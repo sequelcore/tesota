@@ -53,6 +53,14 @@ it("marks a finding left to the operator, which may report work beyond the reque
   expect(message).toContain("1. [high, introduced, operator's call] at src/price.ts:3: A refactor nobody asked for");
 });
 
+it("marks a premise dispute so the refuter checks the premise against the repository, not the request", () => {
+  const input: ReviewInput = { checkout: "C:/work/repo", requests: ["Exactly 100 is charged; fix it"], checks: [], flags: [],
+    snapshot: { base: "b".repeat(40), tree, diff: "diff --git a/src/price.ts b/src/price.ts", changes: [{ status: "modified", path: "src/price.ts" }] } };
+  const message = refutationMessage(input, [{ reviewer: "Tesota reviewer", tree, status: "completed", summary: "",
+    findings: [{ ...finding("The pricing policy charges exactly 100"), disposition: "operator", premise: true }] }]);
+  expect(message).toContain("1. [high, introduced, premise dispute, operator's call] at src/price.ts:3: The pricing policy");
+});
+
 it("merges a finding that repeats an earlier one, and ignores a duplicate that points forward", () => {
   const tested = applyRefutation(reports, [
     { id: 1, verdict: "confirmed", evidence: "price.ts:3" },

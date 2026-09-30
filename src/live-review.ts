@@ -37,7 +37,7 @@ function totals(scores: readonly CaseScore[]): Record<string, number> {
     unsettled: sum("unsettled"), refuted: sum("refuted"), duplicates: sum("duplicates"), shown: sum("shown"),
     unknownOrigin: sum("unknownOrigin"), defectsUnknown: sum("defectsUnknown"), extras: sum("extras"),
     extrasMarked: sum("extrasMarked"), extrasSentBack: sum("extrasSentBack"), premise: sum("premise"),
-    premiseMarked: sum("premiseMarked"), premiseSentBack: sum("premiseSentBack") };
+    premiseMarked: sum("premiseMarked"), premiseSentBack: sum("premiseSentBack"), premiseCaseSentBack: sum("premiseCaseSentBack") };
 }
 
 /**
