@@ -149,6 +149,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `session-decisions.ts` | Every point where a session waits for someone, as typed answers, and the shell's questions for them |
 | `session-engine.ts`, `semaphore.ts` | Per-session composition of workspace, environment, agent, review and application, the commands on a session, what it holds and its release, and the bound on what runs at once; written to a narrow output any surface provides |
 | `tesota-shell-command.ts` | The shell: its terminal, creating, showing and closing sessions, and running each session's loop |
+| `run-command.ts`, `verification/run-policy-rule.ts` | `tesota run`: one request without the shell, its decisions answered by the run's flags with a proved rule, its output and exit code |
 | `tesota-shell-terminal.ts`, `tesota-shell-sidebar.ts`, `tesota-shell-theme.ts`, `tesota-shell-inspection.ts`, `shell-progress.ts`, `verification/sidebar-rule.ts` | Terminal composition and input, session navigation and its proved state and responsive rules, themes, result panel and status |
 | `tesota-shell-diff.ts` | The result panel's diff view, from git's unified diff |
 | `tesota-shell-transcript.ts` | How a conversation and a review record look, built on pi-tui components |

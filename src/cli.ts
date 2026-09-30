@@ -7,6 +7,7 @@ const help = `Tesota
 Usage: tesota [--help | -h | help]
        tesota [--theme <${TESOTA_SHELL_THEME_NAMES.join("|")}>]
        tesota resume [<session-id>] [--theme <${TESOTA_SHELL_THEME_NAMES.join("|")}>]
+       tesota run [--allow-commands] [--allow-network] [--checks=<command;…>|none] [--apply] [--folder] [--json] (<request> | -)
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]
        tesota auth login <codex|claude-code> --as <name>
@@ -18,8 +19,11 @@ Usage: tesota [--help | -h | help]
        tesota setup
        tesota sandbox [use [<auto|wsl|docker|host>] | clean]
 
-Starts a new coding session in the current repository. The agent works in a
-separate copy; you review its changes and checks before anything is applied.
+Starts a new coding session in the current repository. The agent works in
+your files and each turn is checked and reviewed; you keep or revert it. A
+plain folder, or a session you isolate, works in a copy you apply from.
+tesota run does one request without the shell, allowing only what its flags
+say, and leaves the session to resume.
 `;
 
 const args = process.argv.slice(2);
@@ -101,6 +105,43 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
     process.exit(2);
   }
   process.exit(await runAuthCommand(args[1], route));
+} else if (args[0] === "run") {
+  const { parseRunArgs, runInDirectory } = await import("./run-command.js");
+  const parsed = parseRunArgs(args.slice(1));
+  if (typeof parsed === "string") {
+    process.stderr.write(`${parsed}\n`);
+    process.exit(2);
+  }
+  const { existsSync, realpathSync } = await import("node:fs");
+  const { isGitRepository, shadowDirectory, sourceProblem, sourceRoot } = await import("./source-shadow.js");
+  const cwd = realpathSync(process.cwd());
+  const kind = isGitRepository(cwd) ? "repository" : "folder";
+  const source = await sourceRoot(cwd, kind);
+  const problem = sourceProblem(source);
+  if (problem !== undefined) {
+    process.stderr.write(`${problem}: run tesota in the folder of the work you want done.\n`);
+    process.exit(2);
+  }
+  // The shell asks once before recording a plain folder; a run has nobody to ask, so it needs the flag.
+  if (kind === "folder" && !existsSync(shadowDirectory(source)) && !parsed.folder) {
+    process.stderr.write("This folder is not a Git repository. Pass --folder to let Tesota keep a copy of it, as the shell " +
+      "asks once.\n");
+    process.exit(2);
+  }
+  let request = parsed.request;
+  if (request === "-") {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk as Uint8Array));
+    request = Buffer.concat(chunks).toString("utf8").trim();
+  }
+  if (request.length === 0) {
+    process.stderr.write("The request read from standard input is empty.\n");
+    process.exit(2);
+  }
+  process.exitCode = await runInDirectory(cwd, { ...parsed, request }, {
+    out: (text) => { process.stdout.write(text); },
+    err: (text) => { process.stderr.write(text); },
+  });
 } else if (args[0] === "models") {
   const { runModelsCommand } = await import("./models-command.js");
   process.exitCode = runModelsCommand(args.slice(1), (text) => { process.stdout.write(text); });

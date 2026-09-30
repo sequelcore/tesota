@@ -68,8 +68,9 @@ Score at least two reviewer setups on SWE-PRBench's 100-pull-request split
 with its official judge, before and after refutation, and record the results
 with the evaluation change. `live:prbench` and the scorer are built; scores are
 not yet recorded here. Then compare the whole loop against plain Pi on one
-model through Terminal-Bench and Harbor. That comparison needs a noninteractive
-way to run Tesota. [Evaluation method](development.md#evaluations)
+model through Terminal-Bench and Harbor. `tesota run` is the noninteractive
+way to run Tesota it needs; Harbor's adapter for it is not built.
+[Evaluation method](development.md#evaluations)
 
 ### 4. Use Tesota daily
 
