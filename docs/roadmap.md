@@ -32,11 +32,10 @@ the workflow and limits.
   hidden and `.git` read-only in the WSL sandbox, with the agent told what is
   hidden; base checks in a checkout of their own; a separate workspace for a
   folder and for a second session. Not yet run with a real model in the
-  shell: use it on a real project first, and let that decide the open
-  questions of the next steps. Next: one `node_modules` per repository shared
-  by its sessions, then an isolated workspace for any session that asks, with
-  its cost stated and its checkout prepared by the repository's setup, which
-  also compares checks with their base outside the WSL sandbox.
+  shell: use it on a real project to validate it, alongside the next step.
+  Next: an isolated workspace for any session that chooses one when it
+  starts, with the disk each holds shown. Base checks outside the WSL sandbox
+  wait until real use shows they matter.
   [Workspace](design/workspace.md#planned)
 - Evaluate scope behavior on cases that tempt the agent to make unrelated
   changes. The reviewer's extra-work check is built, but

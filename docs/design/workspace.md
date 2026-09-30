@@ -314,43 +314,44 @@ are serialized.
 
 The steps after working in the source, in order:
 
-- **Dependencies once per repository.** The WSL sandbox's state for a
-  session in the source already belongs to the source, so a new session
-  installs nothing its predecessor installed. Next, sessions of one
-  repository share one Linux `node_modules` on WSL's disk, over the source's
-  `node_modules`, which keeps its Windows binaries, and a session that runs no
-  command costs nothing.
-- **Isolation on request, and checkouts that are ready.** Any session may
-  choose an isolated workspace, not only a second one or a folder's. Tesota
-  states its cost before creating it, such as the dependencies it installs,
-  their size and the time to prepare, and shows what each isolated session
-  holds on disk. A checkout is prepared with the repository's own setup, as
-  Claude Code copies the ignored files `.worktreeinclude` names into a
-  worktree and t3code runs a project's setup script; the same preparation
-  gives a failing check's base run a checkout with its dependencies where the
-  WSL sandbox cannot mount one, so a check run on the operator's computer or
-  in Docker Sandboxes, whose base is now reported unknown, is compared with
-  its base too.
+- **Isolation when a session starts.** Any session may choose an isolated
+  workspace when it opens, as Claude Code's `--worktree` does, not only a
+  second one or a folder's; a session keeps where it works for its whole
+  life, so undecided turns never move between the source and a workspace. It
+  brings back the earlier promise, reviewed before anything reaches the
+  operator's files, for an operator who wants it or keeps editing while the
+  agent works. The session's list shows what each isolated session holds on
+  disk, beside `tesota prune`; Tesota states no estimate before creating one,
+  since no harness does and the only honest figure would be a previous
+  install it does not record.
 - **Then** remove what only the old default path used. Isolated
   workspaces keep almost all of it, so little is expected to go: notices and
   assumptions written for a workspace as the default.
 
-Open questions, for real use to decide before each step is built:
+Decided, from what is built and the harnesses above:
 
-- **When dependencies install.** A session prepares its sandbox as it
-  opens, so it is ready by the first request, and a session that only
-  answers still pays for it. Installing at the first command instead costs
-  that command the wait.
-- **How a session asks for isolation.** A command such as `/isolate`, a
-  choice when the session starts, or both.
-- **Where the cost comes from.** What an install will take is known only
-  after it; the honest estimate is the repository's last measured install,
-  which Tesota does not record yet.
-- **How a checkout gets its dependencies outside the WSL sandbox.** Running
-  the repository's install on the operator's computer needs their approval
-  and time for every failing check; a list of ignored files to copy or link
-  instead, as Claude Code's `.worktreeinclude` names, may be enough for
-  most repositories.
+- **Dependencies install as the session opens.** For a session in the
+  source, the WSL sandbox's state, its `node_modules` included, belongs to
+  the source, and the setup fingerprint skips setup when nothing changed, so
+  only a repository's first session, or one after its lockfile changes, pays
+  for it.
+- **No `node_modules` shared across sessions.** Only one session works in the
+  source, so a shared `node_modules` would be mounted into isolated clones,
+  where one session's install would change the others' and a clone whose
+  lockfile differs would get the wrong packages. No harness shares one: t3code
+  runs a project's setup script per checkout and Claude Code copies the
+  ignored files `.worktreeinclude` names into a worktree. The repository's
+  package cache, already shared by its sessions, makes an isolated session's
+  install mostly a copy.
+
+Waiting for real use:
+
+- **A base checkout outside the WSL sandbox.** A failing check run on the
+  operator's computer or in Docker Sandboxes reports its base as unknown,
+  since the WSL sandbox cannot mount that checkout there and the checkout has
+  no dependencies. Preparing one with the repository's setup, or with a list
+  of ignored files to copy as `.worktreeinclude` names, is built only if real
+  use shows such failures often enough to matter.
 
 Sources: [Claude Code checkpointing](https://code.claude.com/docs/en/checkpointing),
 [Claude Code worktrees](https://code.claude.com/docs/en/worktrees),
