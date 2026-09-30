@@ -14,7 +14,7 @@
   },
   "trustedDependencies": [],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && bun build src/bubblewrap-sandbox-server.ts --target=node --format=esm --outfile=dist/bubblewrap-sandbox-server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun run build && bun run test:run",
     "test:fast": "vitest run --config tests/vitest.fast.config.ts",
