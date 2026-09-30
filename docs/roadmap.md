@@ -50,6 +50,9 @@ the workflow and limits.
   settles it. A cheaper reviewer tier needs escalation that never trusts its
   clean verdicts, and a measured saving.
   [Assurance](design/assurance.md#planned-routing-the-answer-check)
+- Run checks and review beside the agent's next request, on a frozen copy of
+  the candidate, so a queued message no longer waits for them. Measure it on
+  journaled sessions first. [Assurance](design/assurance.md#planned-review-beside-the-next-request)
 - Exercise model routes that have not completed a live request. OpenCode Zen
   restricts its free models to its own client, and OpenCode Go requires an
   active subscription. Do not present either route as live-qualified until it

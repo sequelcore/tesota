@@ -212,6 +212,16 @@ Run `gh pr list` on this computer, outside the sandbox? Only your gh is signed i
 ``` `Esc` or `Ctrl+C` stops the current request; changes
 made so far stay in your files, or in the copy, and can still be reverted.
 
+You can keep typing while the agent works. `Enter` queues a message: it
+shows above the input and is sent as your next request when the work ends,
+as its own turn that you can revert on its own. `Tab` sends it to the agent
+now instead: the agent reads it before its next step, and it joins the
+current turn, whose review holds the agent to it too. Where the agent cannot
+take a message mid-run, as under review or on the `claude-code` route, `Tab`
+queues it. A queued message goes before any fix Tesota would send back after
+review; those stay in the review for you. Stopping the work returns queued
+messages to the input. Shell commands such as `/model` wait for the prompt.
+
 The conversation shows your messages on a tinted background, the agent's
 replies as formatted text while it writes them, and each file it reads or
 edits and each command it runs as one line; successful edits show line counts

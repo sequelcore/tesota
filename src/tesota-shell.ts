@@ -117,6 +117,19 @@ async function allowHiddenForChecks(dependencies: TesotaShellDependencies): Prom
 type Assessment = "ready" | "stopped" | "unsettled";
 
 /**
+ * A request the operator already typed goes before a correction round: nine
+ * in ten visible resolutions of coding agents' mistakes are the developer's
+ * own correction (Tang et al., 2026), so the queued message may be the fix.
+ * True when one waits, after saying where the unsent items stay.
+ */
+function queuedFirst(dependencies: TesotaShellDependencies, count: number): boolean {
+  if (!dependencies.decisions.queued()) return false;
+  dependencies.write(`Your next message goes first. ${count === 1 ? "The item for the agent to fix was not sent; it stays"
+    : `The ${count} items for the agent to fix were not sent; they stay`} in the review.\n`, "warning");
+  return true;
+}
+
+/**
  * Check and review the candidate; send failed checks and fixable findings back
  * to the agent for at most MAX_CORRECTION_ROUNDS rounds, stopping early when a
  * round changes nothing (decision 015).
@@ -135,6 +148,7 @@ async function assess(dependencies: TesotaShellDependencies,
     }
     const correction = correctionFor(review.checks, review.reviews);
     if (correction === undefined || round >= MAX_CORRECTION_ROUNDS) return "ready";
+    if (queuedFirst(dependencies, problemCount(correction))) return "ready";
     if (review.tree === previousTree) {
       dependencies.write("The agent's correction changed nothing; the remaining problems are yours to judge.\n", "warning");
       return "ready";
@@ -176,8 +190,10 @@ async function reviewChanges(dependencies: TesotaShellDependencies,
       "continues on top of it.\n");
     return true;
   }
-  report({ phase: "awaiting_decision" });
-  const decision = await dependencies.decisions.result();
+  // A message typed while the work ran continues it, as "keep working" does.
+  const queued = dependencies.decisions.queued();
+  if (!queued) report({ phase: "awaiting_decision" });
+  const decision = queued ? "keep" : await dependencies.decisions.result();
   if (decision === "keep") {
     dependencies.write("The changes stay in the workspace. Continue with another request.\n");
     return true;
@@ -229,6 +245,7 @@ async function checkAnswer(dependencies: TesotaShellDependencies,
     if (assessment.status === "cancelled") return "done";
     const correction = correctionFor([], assessment.reviews);
     if (correction === undefined || round >= MAX_CORRECTION_ROUNDS) return "done";
+    if (queuedFirst(dependencies, problemCount(correction))) return "done";
     const count = problemCount(correction);
     dependencies.write(`Sending ${count} ${count === 1 ? "item" : "items"} back to the agent to fix ` +
       `(attempt ${round + 1} of ${MAX_CORRECTION_ROUNDS}).\n`);

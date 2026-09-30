@@ -761,6 +761,99 @@ it("quits with Ctrl+D pressed twice on an empty prompt, stops work with Esc, and
   shell.stop();
 });
 
+it("queues messages typed while the session works and hands them, in order, to its next request prompts", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onEntry = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onEntry });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("add a tax helper");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Enter queues it for after this turn · Tab sends it to the agent now");
+  terminal.send("\r");
+  terminal.send("then document it");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("↳ add a tax helper");
+  expect(visible(terminal)).toContain("↳ then document it");
+  expect(shell.hasQueued("default")).toBe(true);
+  // A queued message joins the conversation when it is sent, not when it is typed.
+  expect(onEntry).not.toHaveBeenCalled();
+  await expect(shell.askIn("default", "> ")).resolves.toBe("add a tax helper");
+  // Only the request prompt takes them: a question during the next turn waits for its own answer.
+  const question = shell.askIn("default", "Run `bun test`? [y]es, [n]o: ");
+  terminal.send("y");
+  terminal.send("\r");
+  await expect(question).resolves.toBe("y");
+  await expect(shell.askIn("default", "> ")).resolves.toBe("then document it");
+  expect(shell.hasQueued("default")).toBe(false);
+  expect(onEntry.mock.calls.map(([, entry]) => entry)).toEqual([{ kind: "user", text: "add a tax helper" },
+    { kind: "user", text: "y" }, { kind: "user", text: "then document it" }]);
+  shell.stop();
+});
+
+it("sends a message to the working agent with Tab, and queues it when the agent cannot take one", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onSteer = vi.fn((_id: string, _text: string) => true);
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onSteer });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("use pnpm, not npm");
+  terminal.send("\t");
+  expect(onSteer).toHaveBeenCalledWith("default", "use pnpm, not npm");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("use pnpm, not npm");
+  expect(shell.hasQueued("default")).toBe(false);
+  onSteer.mockReturnValueOnce(false);
+  terminal.send("and add a test");
+  terminal.send("\t");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("The agent cannot take a message now; it is queued for after this turn.");
+  expect(visible(terminal)).toContain("↳ and add a test");
+  expect(shell.hasQueued("default")).toBe(true);
+  shell.stop();
+});
+
+it("returns queued messages to the input when the work stops, rather than starting what was stopped", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const interrupt = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, interrupt });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("alpha");
+  terminal.send("\r");
+  terminal.send("bravo");
+  terminal.send("\r");
+  terminal.send("charlie");
+  terminal.send("\x1b");
+  expect(interrupt).toHaveBeenCalledOnce();
+  expect(shell.hasQueued("default")).toBe(false);
+  const next = shell.askIn("default", "> ");
+  terminal.send("\r");
+  await expect(next).resolves.toBe("alpha\nbravo\ncharlie");
+  shell.stop();
+});
+
+it("keeps a shell command typed while the session works in the input, since it would change the running work", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onModel = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onModel });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("/model codex:gpt-6-sol");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(onModel).not.toHaveBeenCalled();
+  expect(shell.hasQueued("default")).toBe(false);
+  expect(visible(terminal)).toContain("Shell commands run at the prompt once this work ends");
+  expect(visible(terminal)).toContain("/model codex:gpt-6-sol");
+  shell.stop();
+});
+
 // A command the operator approves must be readable whole: a hidden tail could be the dangerous part.
 const longCommand = "git status --short; git log --oneline -5; find src tests -type f | sort; cat package.json; " +
   "ls docs docs/guide docs/design; rm -rf node_modules/.cache --verbose-final-marker";
