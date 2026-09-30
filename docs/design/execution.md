@@ -118,9 +118,10 @@ questions. The sandbox and saved rules reduce repeated approvals without
 giving the agent authority to choose where a command runs.
 
 The
-line beside the prompt names where commands run, `sandbox` or `this computer
-· asks first`, followed by the selected agent model; the code's `host` is
-shown as "this computer". `tesota setup` prepares
+second line under the prompt names where commands run, `sandbox · …` in the
+theme's success color or `this computer · asks first` in its warning color, so
+the place and what it permits read at a glance; the code's `host` is shown as
+"this computer". The selected agent model has the line above it. `tesota setup` prepares
 the chosen sandbox: for the WSL sandbox, WSL itself, Tesota's distribution
 and a restart of it; for Docker Sandboxes, the Windows Hypervisor Platform,
 Docker Sandboxes, a Docker sign-in and a deny-all network policy. It shows

@@ -389,7 +389,7 @@ it("renames a session with /rename, asks for a suggestion without a name, and sh
   shell.setSessionTitle("default", "Budget totals for March");
   terminal.writes.length = 0;
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("Budget totals for March");
+  expect(terminal.titles.at(-1)).toContain("Budget totals for March");
   shell.stop();
 });
 
@@ -609,12 +609,15 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   await expect(answer).resolves.toBe("Explain the shell");
   tui.renderNow(true);
   const screen = visible(terminal);
-  expect(screen).toContain("tesota / Session 1");
+  // The session is named in the window title and the sidebar, never in a bar over the conversation.
+  expect(screen).not.toContain("Session 1");
+  expect(terminal.titles.at(-1)).toContain("Session 1");
   expect(screen).toContain("The repository is bounded.");
   expect(screen).toContain("Explain the shell");
   expect(screen).toContain("Ready");
   expect(screen).toContain("›");
-  expect(screen).not.toContain("────");
+  // A rule above and below the input sets it apart.
+  expect(screen).toContain("─".repeat(20));
   shell.stop();
   expect(terminal.started).toBe(false);
 });
@@ -881,30 +884,60 @@ it("shows a command the agent runs whole in the conversation", () => {
   shell.stop();
 });
 
-it("places workspace identity in the sidebar and execution context beside the prompt", () => {
+it("names the model and workspace under the prompt, and where commands run on a line of their own, in its color", () => {
   const terminal = new TestTerminal();
   terminal.columns = 120;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
-  shell.setSessionExecution("default", "this computer · asks first");
+  shell.setSessionExecution("default", "this computer · asks first", "host");
   shell.setBranch("dev");
   shell.setSessionModel("default", "claude-code:opus");
   shell.addSession("second", "Session 2");
-  shell.setSessionExecution("second", "sandbox · Docker");
+  shell.setSessionExecution("second", "sandbox · Docker", "sandbox");
   shell.start();
+  terminal.writes.length = 0;
   tui.renderNow(true);
   const screen = visible(terminal);
   // Each session runs its commands where it chose; the footer names the selected session's.
   expect(screen).not.toContain("sandbox · Docker");
   expect(screen).toContain("tesota · dev");
   expect(screen).toContain("Session 1");
-  expect(screen).toContain("this computer · asks first · claude-code:opus");
-  expect(screen).not.toContain("this computer · asks first · tesota");
+  // The model first, as other harnesses show it; the workspace is the sidebar's while it shows.
+  const raw = terminal.writes.join("");
+  const theme = tesotaShellTheme("tesota-dark");
+  expect(stripTerminalSequences(screenLine(raw, "claude-code:opus")).trim()).toBe("claude-code:opus");
+  // This computer in the theme's caution color, a sandbox in its success color.
+  const warning = theme.warning!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";");
+  expect(screenLine(raw, "this computer · asks first")).toContain(`[38;2;${warning}mthis computer · asks first`);
+  // The input stands between two rules.
+  expect(screen.match(/─{20,}/gu)?.length).toBe(2);
   terminal.writes.length = 0;
-  terminal.send("\x1bb");
+  terminal.send("b");
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("tesota · dev / Session 1");
+  expect(visible(terminal)).not.toContain("Session 1");
+  expect(visible(terminal)).toContain("claude-code:opus · tesota · dev");
+  shell.selectSession("second");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const success = theme.success!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";");
+  expect(screenLine(terminal.writes.join(""), "sandbox · Docker")).toContain(`\x1b[38;2;${success}msandbox · Docker`);
   shell.stop();
+
+  // A terminal too narrow for the sidebar hides it too, and the prompt's line names the workspace until it widens.
+  const narrow = new TestTerminal();
+  narrow.columns = 70;
+  const narrowTui = new TuiAltScreen(narrow, false, undefined, { mouse: false });
+  const narrowShell = createTesotaShellTerminal({ cwd: "work/tesota", tui: narrowTui });
+  narrowShell.setBranch("dev");
+  narrowShell.setSessionModel("default", "claude-code:opus");
+  narrowShell.start();
+  narrowTui.renderNow(true);
+  expect(visible(narrow)).toContain("claude-code:opus · tesota · dev");
+  narrow.resizeTo(120, 24);
+  narrow.writes.length = 0;
+  narrowTui.renderNow(true);
+  expect(visible(narrow)).not.toContain("claude-code:opus · tesota");
+  narrowShell.stop();
 });
 
 it("reflows the persistent layout after terminal resize", () => {
@@ -1021,7 +1054,7 @@ it("shows precise session needs inline and opens the rail as an overlay on narro
   terminal.send("\x1bb"); // Alt+B hides the rail without changing the selected session.
   tui.renderNow(true);
   expect(visible(terminal)).not.toContain("Session 2");
-  expect(visible(terminal)).toContain("tesota / Session 1");
+  expect(visible(terminal)).not.toContain("Session 1");
 
   terminal.send("\x1bb");
   terminal.resizeTo(70, 24);
@@ -1129,7 +1162,7 @@ it("closes the selected session with Ctrl+W and moves input to the next one", as
   shell.removeSession("default");
   await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("Session 2");
+  expect(terminal.titles.at(-1)).toContain("Session 2");
   expect(() => { shell.removeSession("second"); }).toThrow("last Tesota session");
   shell.stop();
 });

@@ -138,12 +138,16 @@ it("starts settled and still when motion is reduced", () => {
   expect(frames).toEqual([]);
 });
 
-it("leaves at dismissal, keeping only the header above the conversation", () => {
+it("leaves at dismissal, keeping only the header as the conversation's first entry", () => {
   const { view } = banner();
   view.dismiss();
-  const lines = view.render(100).map((line) => stripTerminalSequences(line));
-  expect(lines).toEqual([expect.stringMatching(/^Tesota /u), "C:\\work\\tesota",
-    "Every turn is reviewed; reverting never overwrites your edits.", ""]);
+  const raw = view.render(100);
+  const lines = raw.map((line) => stripTerminalSequences(line));
+  // Indented as entries are; the transcript's own spacing separates it from the next one.
+  expect(lines).toEqual([expect.stringMatching(/^ Tesota \((v\d|dev)/u), " C:\\work\\tesota",
+    " Every turn is reviewed; reverting never overwrites your edits."]);
+  // The name in bold, the version muted as the lines beneath it.
+  expect(raw[0]).toContain("\x1b[1mTesota\x1b[22m \x1b[38;2;");
   expect(view.moving).toBe(false);
 });
 
