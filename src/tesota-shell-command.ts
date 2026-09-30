@@ -62,8 +62,8 @@ function closeWarning(record: ShellSessionRecord, pending: number): string {
 
 /** A session's decisions in the shell: the operator answers each at that session's prompt. */
 function shellDecisions(surface: TesotaShellTerminal, id: string): SessionDecisions {
-  return askingDecisions((prompt) => surface.askIn(id, prompt), (text, tone) => { surface.writeTo(id, text, tone); },
-    () => surface.hasQueued(id));
+  return askingDecisions((prompt) => surface.askIn(id, prompt), (question) => surface.chooseIn(id, question),
+    (text, tone) => { surface.writeTo(id, text, tone); }, () => surface.hasQueued(id));
 }
 
 /**

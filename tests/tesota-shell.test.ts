@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import { askingDecisions } from "../src/session-decisions.js";
+import { optionForKey, type ShellQuestion } from "../src/tesota-shell-question.js";
 import type { TesotaShellProgress } from "../src/shell-progress.js";
 import type { Finding, Obligation, ReviewReport } from "../src/review.js";
 import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
@@ -11,6 +12,12 @@ import type { ApprovedCheck } from "../src/workspace-checks.js";
 const change: WorkspaceChange = { status: "modified", path: "src/price.ts" };
 const added: WorkspaceChange = { status: "added", path: "src/tax.ts" };
 
+/** Answer a question with fixed answers from the scripted replies, as its key picks it; an empty reply is Enter. */
+function choosing(answers: string[]) {
+  return async <V extends string>(question: ShellQuestion<V>): Promise<V> =>
+    optionForKey(question.options, answers.shift() ?? "")?.value ?? question.initial;
+}
+
 function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = {}) {
   const output: string[] = [];
   const progress: TesotaShellProgress[] = [];
@@ -19,7 +26,7 @@ function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = 
   const write = (text: string): void => { output.push(text); };
   const dependencies: TesotaShellDependencies = {
     write,
-    decisions: askingDecisions(async () => answers.shift() ?? "", write, () => typed.queued),
+    decisions: askingDecisions(async () => answers.shift() ?? "", choosing(answers), write, () => typed.queued),
     report: (event) => { progress.push(event); },
     work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [change, added] })),
     checks: () => checks,
@@ -46,7 +53,7 @@ it("ends the session on an empty request without doing work", async () => {
 it("starts preparing the environment before asking for the first request", async () => {
   const order: string[] = [];
   const fixture = shell([], { prepare: () => { order.push("prepare"); },
-    decisions: askingDecisions(async () => { order.push("ask"); return ""; }, () => {}, () => false) });
+    decisions: askingDecisions(async () => { order.push("ask"); return ""; }, choosing([]), () => {}, () => false) });
   await runTesotaShell(fixture.dependencies);
   expect(order).toEqual(["prepare", "ask"]);
 });
