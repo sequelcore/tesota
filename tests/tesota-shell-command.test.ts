@@ -1,5 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { commandQuestion, parseApproval, runTesotaShellCommand, type SessionWork, type WorkspaceCallbacks } from "../src/tesota-shell-command.js";
+import { commandQuestion, parseApproval } from "../src/session-decisions.js";
+import type { SessionWork } from "../src/session-engine.js";
+import { runTesotaShellCommand, type WorkspaceCallbacks } from "../src/tesota-shell-command.js";
 import type { WorkResult } from "../src/tesota-shell.js";
 import type { TesotaShellTerminal } from "../src/tesota-shell-terminal.js";
 
@@ -148,7 +150,7 @@ it("asks about a command on this computer with where it runs, why, and the rule 
 });
 
 it("counts only the paths the agent's own edit and write tools wrote, inside the source", async () => {
-  const { agentWrites } = await import("../src/tesota-shell-command.js");
+  const { agentWrites } = await import("../src/session-engine.js");
   const { resolve } = await import("node:path");
   const root = resolve("/work/project");
   expect(agentWrites([

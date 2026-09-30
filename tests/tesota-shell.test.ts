@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
+import { askingDecisions } from "../src/session-decisions.js";
 import type { TesotaShellProgress } from "../src/shell-progress.js";
 import type { Finding, Obligation, ReviewReport } from "../src/review.js";
 import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
@@ -14,9 +15,10 @@ function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = 
   const output: string[] = [];
   const progress: TesotaShellProgress[] = [];
   let checks: readonly ApprovedCheck[] | null = null;
+  const write = (text: string): void => { output.push(text); };
   const dependencies: TesotaShellDependencies = {
-    write: (text) => { output.push(text); },
-    ask: async () => answers.shift() ?? "",
+    write,
+    decisions: askingDecisions(async () => answers.shift() ?? "", write),
     report: (event) => { progress.push(event); },
     work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [change, added] })),
     checks: () => checks,
@@ -43,7 +45,7 @@ it("ends the session on an empty request without doing work", async () => {
 it("starts preparing the environment before asking for the first request", async () => {
   const order: string[] = [];
   const fixture = shell([], { prepare: () => { order.push("prepare"); },
-    ask: async () => { order.push("ask"); return ""; } });
+    decisions: askingDecisions(async () => { order.push("ask"); return ""; }, () => {}) });
   await runTesotaShell(fixture.dependencies);
   expect(order).toEqual(["prepare", "ask"]);
 });
