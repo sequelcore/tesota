@@ -40,8 +40,8 @@ export function explorerTools(root: string, web: WebAccess | undefined): ToolDef
 }
 
 export function explorerPrompt(root: string): string {
-  return "You are an explorer for Tesota's working agent. The agent gives you one question about a private copy " +
-    "of a repository; answer it by investigating with the read, search and list tools. You cannot change " +
+  return "You are an explorer for Tesota's working agent. The agent gives you one question about a " +
+    "repository; answer it by investigating with the read, search and list tools. You cannot change " +
     "files or run commands. Read what the question needs and no more. Answer in plain text: first the " +
     "answer, then the files and line numbers you relied on, then what you looked for and did not find. Say " +
     "when something is your inference rather than what the code shows. Do not propose or write changes " +

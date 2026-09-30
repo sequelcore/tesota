@@ -66,8 +66,10 @@ stopped or failed still ends, so what it changed can be decided on. The
 trees are pinned by refs in the shadow while the session lasts. Checks,
 review and correction refer to those tree ids, so evidence stays bound to
 exact content, and a correction round reviews only the tree the correction
-changed. The agent is told the files the operator changed since its last
-turn.
+changed. The agent is told that it works in the operator's own project and
+that the operator keeps or reverts its turns, where an agent in a copy is told
+its result is applied or rejected, and it is told the files the operator
+changed since its last turn.
 
 **Edits during a turn are named.** An edit the operator makes during a turn
 counts as the turn's, since a command's writes and the operator's cannot be
@@ -319,11 +321,8 @@ are serialized.
 
 ## Planned
 
-The step after working in the source:
-
-- Remove what only the old default path used. Isolated
-  workspaces keep almost all of it, so little is expected to go: notices and
-  assumptions written for a workspace as the default.
+Working in the source is built; what only the old default path used is
+gone, since isolated workspaces keep the rest. Real use comes next.
 
 Decided, from what is built and the harnesses above:
 

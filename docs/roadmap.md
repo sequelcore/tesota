@@ -33,10 +33,9 @@ the workflow and limits.
   hidden; base checks in a checkout of their own; a separate workspace for a
   folder, a second session, or any session that chooses one with `/isolate`
   before its first request, with the disk each holds listed by `tesota
-  prune`. Next: remove what only the old default path used. Not yet run with
-  a real model in the shell: use it on a real project once that step is
-  done. Base checks outside the WSL sandbox wait until real use shows they
-  matter.
+  prune`. Not yet run with a real model in the shell: use it on a real
+  project next. Base checks outside the WSL sandbox wait until real use shows
+  they matter.
   [Workspace](design/workspace.md#planned)
 - Evaluate scope behavior on cases that tempt the agent to make unrelated
   changes. The reviewer's extra-work check is built, but

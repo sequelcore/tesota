@@ -785,7 +785,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       state.advisor = advisor;
       const agent = await startWorkingAgent({ target }, { cwd: workspace.checkout, environment, web,
         ...(explorers === undefined ? {} : { explorers }), ...(advisor === undefined ? {} : { advisor }),
-        sandboxed: confinesCommands(environment.guarantees),
+        sandboxed: confinesCommands(environment.guarantees), place: workspace.place === "source" ? "source" : "copy",
         // A sandboxed agent may ask to run one command here, with the operator's own tools and logins (decision 049).
         ...confinesCommands(environment.guarantees) ? { computer: await hostProvider.prepare(workspace.checkout) } : {},
         commandRules: () => store.commandRules(),

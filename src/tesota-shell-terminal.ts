@@ -1024,9 +1024,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const quit = this.quitArmed;
     if (quit !== undefined && this.now() - quit.at <= CONFIRMATION_WINDOW_MS) {
       const working = [...this.sessions.values()].some((entry) => busy(entry.progress?.value));
-      text = working ? colorText(`Press ${quit.key} again to quit. Running work stops; its changes stay in the workspace.`,
+      text = working ? colorText(`Press ${quit.key} again to quit. Running work stops; its changes stay where it made them.`,
         this.theme.warning) : mutedText(`Press ${quit.key} again to quit. Sessions are restored next time.`, this.theme);
-    } else if (session.blocked) text = colorText("Unresolved effects. Inspect the workspace before new work.", this.theme.warning);
+    } else if (session.blocked) text = colorText("Unresolved effects. Run tesota recover before new work.", this.theme.warning);
     else if (session.ended) text = mutedText("Session ended. Ctrl+N starts a new one; Ctrl+W closes this one.", this.theme);
     else if (session.pending !== undefined && session.prompt !== "> ") {
       text = bold(colorText(safeTerminalText(session.prompt.trim()), this.theme.warning));

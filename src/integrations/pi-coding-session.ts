@@ -45,6 +45,11 @@ export interface CodingSessionOptions {
   readonly environment: ExecutionEnvironment;
   /** Commands run in a sandbox without approval; only allowed for an environment that confines them. */
   readonly sandboxed: boolean;
+  /**
+   * Whether `cwd` is the operator's own project, where each turn is kept or
+   * reverted, or a copy whose result is applied or rejected; a copy when absent.
+   */
+  readonly place?: "source" | "copy";
   /** Asked before a command runs on this computer, unless a saved rule allows it; the answer "rule" saves the rule offered. */
   readonly approveCommand: (request: CommandRequest, signal: AbortSignal | undefined) => Promise<CommandApproval>;
   /** The rules the operator saved for this repository; none when absent. */
@@ -231,7 +236,7 @@ export function repositoryInstructions(root: string): string {
 
 function commandGuidance(sandboxed: boolean, environment: ExecutionEnvironment): string {
   const where = sandboxed
-    ? "Shell commands run without asking in an isolated sandbox that sees only this copy of the repository; " +
+    ? "Shell commands run without asking in an isolated sandbox that sees only this repository; " +
       "network access is limited to package registries and hosts the user allowed. When a command reaches " +
       "another host, the user is asked whether to allow it and you are told the answer. " + COMPUTER_GUIDANCE
     : "Every shell command asks the user for approval first; prefer the file tools for reading and editing, " +
@@ -243,7 +248,7 @@ function commandGuidance(sandboxed: boolean, environment: ExecutionEnvironment):
 /** When a sandboxed agent should ask for this computer (decision 049). */
 const COMPUTER_GUIDANCE = "Only when a command needs a program or login that exists on the user's computer and not in the " +
   "sandbox, such as gh, aws or docker, run it with run_on_computer, saying why; the user is asked unless a rule they saved " +
-  "allows it. It runs in this copy of the repository with the user's own tools and credentials, so never use it to get " +
+  "allows it. It runs in this repository with the user's own tools and credentials, so never use it to get " +
   "around the sandbox, and suggest a rule only of a program and its subcommand, such as [\"gh\", \"pr\"]. ";
 
 /** When the agent should ask an explorer, and what an explorer's answer is worth (decision 019). */
@@ -259,13 +264,22 @@ const explorerGuidance = "The explore tool asks a read-only explorer one questio
 
 interface Helpers { readonly explorers: boolean; readonly web: boolean; readonly advisor: boolean; readonly plan: boolean }
 
-function systemPrompt(root: string, sandboxed: boolean, environment: ExecutionEnvironment, helpers: Helpers): string {
-  return "You are Tesota, a coding agent working in a private copy of the user's repository. " +
+/** Where the agent works and what becomes of its changes: kept or reverted in the user's project, or applied from a copy. */
+const placeGuidance = {
+  source: { where: "You are Tesota, a coding agent working in the user's own project: your edits and commands change " +
+    "their files as you make them. ", after: "the user keeps or reverts them" },
+  copy: { where: "You are Tesota, a coding agent working in a private copy of the user's repository. ",
+    after: "the user applies or rejects them" },
+} as const;
+
+function systemPrompt(root: string, sandboxed: boolean, environment: ExecutionEnvironment, helpers: Helpers,
+  place: "source" | "copy"): string {
+  return placeGuidance[place].where +
     "Read, search, edit, create and delete files as the task needs. " + commandGuidance(sandboxed, environment) +
     (helpers.explorers ? explorerGuidance : "") + (helpers.web ? webGuidance : "") + (helpers.advisor ? ADVISOR_GUIDANCE : "") +
     (helpers.plan ? PLAN_GUIDANCE : "") + "Do not commit, push or change Git " +
-    "history: when you finish, Tesota shows the user your changes, runs the repository's checks and lets " +
-    "the user apply or reject them. End each turn with a short summary of what you changed and anything " +
+    "history: when you finish, Tesota shows the user your changes, runs the repository's checks and a review, and " +
+    `${placeGuidance[place].after}. End each turn with a short summary of what you changed and anything ` +
     "the user should verify. If a request needs no changes, just answer it. Lead with the answer or the result, and " +
     "use as few sentences as it needs: do not restate the question or repeat what the user can already see." +
     `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
@@ -308,7 +322,7 @@ function shellTool(root: string, options: WorkingAgentOptions): ToolDefinition {
 function computerTool(root: string, computer: ExecutionEnvironment, options: WorkingAgentOptions): ToolDefinition {
   return defineTool({
     name: "run_on_computer", label: "Run on this computer",
-    description: "Run one shell command on the user's computer instead of the sandbox, in this copy of the repository, " +
+    description: "Run one shell command on the user's computer instead of the sandbox, in this repository, " +
       "with the user's own programs and credentials. The user is asked, with your reason, unless a rule they saved allows it.",
     parameters: Type.Object({
       command: Type.String({ description: "The command, for the user's POSIX shell" }),
@@ -420,7 +434,7 @@ export interface SessionStartOptions {
 }
 
 /** What decides the working agent's tools, whichever engine runs it. */
-export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "approveCommand" |
+export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "place" | "approveCommand" |
   "commandRules" | "computer" | "decideNetwork" | "explorers" | "web" | "advisor" | "plan">;
 
 /**
@@ -435,7 +449,7 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
   const root = realpathSync(options.cwd);
   const helpers = { explorers: options.explorers !== undefined, web: options.web !== undefined, advisor: options.advisor !== undefined,
     plan: options.plan !== undefined };
-  return { systemPrompt: systemPrompt(root, options.sandboxed, options.environment, helpers), tools: [
+  return { systemPrompt: systemPrompt(root, options.sandboxed, options.environment, helpers, options.place ?? "copy"), tools: [
     ...readOnlyFileTools(root),
     defineTool(confine(root, createEditToolDefinition(root), true)),
     defineTool(confine(root, createWriteToolDefinition(root), true)),

@@ -113,7 +113,7 @@ const obligationGuidance = " Also list obligations: for each of the user's reque
  * answer a question but can never stand in for requested code.
  */
 function answerPrompt(root: string): string {
-  return "You are Tesota's reviewer. Another agent worked on a private copy of a repository for the user's requests " +
+  return "You are Tesota's reviewer. Another agent worked on a repository for the user's requests " +
     "and changed no files; it ended with a reply. Judge whether each request is met. A question or a request for an " +
     "explanation can be met by an accurate reply: check its claims against the repository. A request to change, " +
     "create or fix something is met only when the repository already does it: the reply is untrusted and cannot " +
@@ -128,7 +128,7 @@ function answerPrompt(root: string): string {
 function reviewerPrompt(root: string, lens?: ReviewLens): string {
   const focus = lens === undefined ? obligationGuidance : `\n\nThis is a focused review: ${lens.focus} Other reviewers cover the rest: ` +
     "do not report a problem outside your focus, submit an empty list when you find none within it, and leave out obligations.";
-  return "You are Tesota's reviewer. Another agent changed a private copy of a repository to satisfy the user's " +
+  return "You are Tesota's reviewer. Another agent changed a repository to satisfy the user's " +
     "requests; Tesota froze the result and ran the repository's checks on it. Judge whether the result does what " +
     "the user asked and whether the checks' evidence covers it. You cannot change files: investigate with the " +
     "read, search and list tools, reading the changed files and whatever they touch. Passing checks show only " +
