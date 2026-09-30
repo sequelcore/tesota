@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { QUESTION_REPOSITORY } from "../src/agent-evaluation.js";
-import { ANSWER_CASES, isCheckable, scoreFirstPass, scoreReview, tally } from "../src/answer-evaluation.js";
+import { ANSWER_CASES, isCheckable, scoreFirstPass, scorePremise, scoreReview, tally } from "../src/answer-evaluation.js";
 
 /**
  * The answer check's registered evaluation: its cases must stay what they
@@ -45,4 +45,16 @@ it("scores a request judged held that did not hold as missed, the reverse as a f
   expect(scoreReview(false, true, false)).toBe("right");
   expect(scoreReview(false, false, false)).toBe("incomplete");
   expect(tally(["right", "missed"], ["right", "right"])).toEqual({ right: 2, missed: 0 });
+});
+
+it("registers a declined false premise and scores it right only when the operator is left to settle it", () => {
+  const declined = ANSWER_CASES.filter((answer) => answer.operator === true);
+  expect(declined.map((answer) => answer.name)).toEqual(["false premise declined"]);
+  expect(declined.every((answer) => answer.holds === undefined && isCheckable(answer))).toBe(true);
+  expect(QUESTION_REPOSITORY["src/orders.js"]).not.toContain("parseDate");
+  expect(scorePremise(true, ["uncertain"])).toBe("operator");
+  expect(scorePremise(true, ["held", "uncertain"])).toBe("operator");
+  expect(scorePremise(true, ["uncertain", "not_held"])).toBe("sent back");
+  expect(scorePremise(true, ["held"])).toBe("cleared");
+  expect(scorePremise(false, [])).toBe("incomplete");
 });
