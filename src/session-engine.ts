@@ -221,6 +221,8 @@ class SessionState {
   advisor: Advisor | undefined;
   /** The agent once it has started, for what can be read without waiting: the size of its conversation. */
   agent: WorkingAgent | undefined;
+  /** The agent's run in progress, which the operator may steer, and the recording of each request steered into it. */
+  running: { readonly agent: WorkingAgent; readonly work: Work; readonly steered: Promise<void>[] } | undefined;
   /** Sites the operator allowed or refused for this session's page reading (decision 024). */
   readonly webAllowed: Set<string> = new Set();
   readonly webDenied: Set<string> = new Set();
@@ -269,6 +271,12 @@ export interface SessionEngine {
   contextTokens(id: string): number | undefined;
   /** Stop a session's running work. */
   interrupt(id: string): void;
+  /**
+   * Send the operator's message to the agent while it works, as a request of
+   * the turn in progress; false when no agent is running or its engine cannot
+   * take one mid-run.
+   */
+  steer(id: string, text: string): boolean;
   abortActive(): void;
   /** Whether a session is working or applying, when it cannot close. */
   busy(id: string): boolean;
@@ -425,7 +433,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       output.reportFor(id, { phase: "preparing", activity: "Choosing where commands run" });
       const [workspace, execution] = await Promise.all([workspaceFor(id), executionFor(sandboxPreference(id))]);
       state.execution = execution;
-      output.setSessionExecution(id, executionLabel(execution));
+      output.setSessionExecution(id, executionLabel(execution), execution.commands);
       if (execution.commands === "host") {
         output.writeTo(id, "Commands ask before running and run on this computer without isolation. " +
           "Run tesota setup to see what sandboxed sessions need.", "warning");
@@ -815,7 +823,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       return;
     }
     await restartEnvironment(id);
-    output.setSessionExecution(id, executionLabel(next));
+    output.setSessionExecution(id, executionLabel(next), next.commands);
     // The conversation remembers commands from the earlier environment: its paths and shell may no longer apply.
     const earlier = current === undefined ? "" : `; earlier commands in this conversation ran ${executionPlace(current)}, ` +
       "so their paths and tools may differ";
@@ -1158,9 +1166,17 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         state.turnCalls.clear();
         let ended: Awaited<ReturnType<SourceSession["endTurn"]>> | undefined;
         let result: Awaited<ReturnType<typeof coding.run>>;
+        const steered: Promise<void>[] = [];
+        state.running = { agent: coding, work, steered };
         // A turn that stops or fails still ends, so what it changed can be kept or reverted.
         try { result = await coding.run(prompt, signal); }
-        finally { if (work.place === "source") ended = await endTurnIn(id, work, origin).catch(() => undefined); }
+        finally {
+          state.running = undefined;
+          if ((await Promise.allSettled(steered)).some((recorded) => recorded.status === "rejected")) {
+            output.writeTo(id, "A message you sent during the turn could not be recorded, so its review does not see it.", "warning");
+          }
+          if (work.place === "source") ended = await endTurnIn(id, work, origin).catch(() => undefined);
+        }
         if (result.status === "unsettled") { blockSession(id); return result; }
         if (result.status !== "completed") return result;
         state.lastReply = result.reply;
@@ -1320,6 +1336,12 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     offered,
     contextTokens: (id) => states.get(id)?.agent?.contextTokens(),
     interrupt,
+    steer: (id, text) => {
+      const running = states.get(id)?.running;
+      if (running?.agent.steer?.(text) !== true) return false;
+      running.steered.push(running.work.recordRequest(text, true));
+      return true;
+    },
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },
     busy: (id) => activeOperations.has(id) || applying.has(id),
     pendingChanges: pendingChangeCount,

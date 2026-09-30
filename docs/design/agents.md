@@ -354,6 +354,7 @@ engines by the opt-in live suite.
 | A request ends `completed`, `failed` with the engine's own message, `cancelled`, or `unsettled` when the engine cannot be stopped | Pi's session events | The SDK's result message |
 | Tool activity and replies are reported as they happen | Pi's events | Tesota's tool wrappers and the SDK's messages |
 | Tokens are reported as OpenTelemetry's GenAI conventions count them: `input` includes cached input, with cache reads and cache creation as parts of it | Pi's usage, cache added back into input | Claude Code's per-model usage, likewise |
+| The working agent reads a message steered into its run before its next model call, in the same run (checked on Pi only) | Pi's steering queue, read whole; one that arrives as the agent finishes gets a model call of its own | Not offered: a query takes its one prompt when it starts, so the message is queued for the next request |
 
 The failure message stays the engine's own, such as Pi's "You have hit your
 ChatGPT usage limit": Pi classifies failures only by matching text, so a

@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
-import { windowsPowerShell, windowsSystemProgram } from "../windows-system.js";
+import { windowsPowerShell } from "../windows-system.js";
 
 const maxBytes = 64 * 1024;
 
@@ -102,15 +102,11 @@ export class TesotaCredentials implements CredentialStore {
     if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Credential directory is not private storage");
     if (process.platform === "win32") {
       // No credentials pass through subprocesses. Grant only the current Windows user.
-      const identity = execFileSync(windowsSystemProgram("whoami.exe"), ["/user", "/fo", "csv", "/nh"],
-        { encoding: "utf8", windowsHide: true, timeout: 5_000 });
-      const sid = identity.match(/S-1-5-(?:\d+-)*\d+/)?.[0];
-      if (sid === undefined) throw new Error("Cannot establish credential directory owner");
       const path = this.directory.replaceAll("'", "''");
       execFileSync(windowsPowerShell(), ["-NoProfile", "-NonInteractive", "-Command",
         `$ErrorActionPreference='Stop'; $directory=[System.IO.DirectoryInfo]::new('${path}'); ` +
         `$owner=$directory.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Owner); ` +
-        `$sid=[System.Security.Principal.SecurityIdentifier]::new('${sid}'); ` +
+        `$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User; ` +
         `$current=$owner.GetOwner([System.Security.Principal.SecurityIdentifier]); ` +
         `if($current.Value -ne $sid.Value){` +
         `if(-not $${created ? "true" : "false"}){throw 'Unexpected owner'}; ` +
@@ -122,7 +118,8 @@ export class TesotaCredentials implements CredentialStore {
         `foreach($entry in @($acl.Access)){$acl.RemoveAccessRuleSpecific($entry)}; ` +
         `$rule=[System.Security.AccessControl.FileSystemAccessRule]::new($sid,'FullControl','ContainerInherit,ObjectInherit','None','Allow'); ` +
         `$acl.AddAccessRule($rule); $directory.SetAccessControl($acl)`],
-        { stdio: "ignore", windowsHide: true, timeout: 5_000 });
+        // Cold PowerShell startup on a busy Windows runner can take longer than five seconds.
+        { stdio: "ignore", windowsHide: true, timeout: 30_000 });
     } else if ((info.mode & 0o077) !== 0 || info.uid !== process.getuid?.()) {
       throw new Error("Credential directory must be owned by this user with mode 0700");
     }

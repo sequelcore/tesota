@@ -1,5 +1,6 @@
 import { HStack, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
+import { commandQuestion } from "../src/session-decisions.js";
 import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
 import type { AccountsSource } from "../src/tesota-shell-accounts.js";
 import { createTesotaShellTerminal, SessionBlockedError } from "../src/tesota-shell-terminal.js";
@@ -389,7 +390,7 @@ it("renames a session with /rename, asks for a suggestion without a name, and sh
   shell.setSessionTitle("default", "Budget totals for March");
   terminal.writes.length = 0;
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("Budget totals for March");
+  expect(terminal.titles.at(-1)).toContain("Budget totals for March");
   shell.stop();
 });
 
@@ -609,12 +610,15 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   await expect(answer).resolves.toBe("Explain the shell");
   tui.renderNow(true);
   const screen = visible(terminal);
-  expect(screen).toContain("tesota / Session 1");
+  // The session is named in the window title and the sidebar, never in a bar over the conversation.
+  expect(screen).not.toContain("Session 1");
+  expect(terminal.titles.at(-1)).toContain("Session 1");
   expect(screen).toContain("The repository is bounded.");
   expect(screen).toContain("Explain the shell");
   expect(screen).toContain("Ready");
   expect(screen).toContain("›");
-  expect(screen).not.toContain("────");
+  // A rule above and below the input sets it apart.
+  expect(screen).toContain("─".repeat(20));
   shell.stop();
   expect(terminal.started).toBe(false);
 });
@@ -758,21 +762,251 @@ it("quits with Ctrl+D pressed twice on an empty prompt, stops work with Esc, and
   shell.stop();
 });
 
+it("queues messages typed while the session works and hands them, in order, to its next request prompts", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onEntry = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onEntry });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("add a tax helper");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Enter queues it for after this turn · Tab sends it to the agent now");
+  terminal.send("\r");
+  terminal.send("then document it");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("↳ add a tax helper");
+  expect(visible(terminal)).toContain("↳ then document it");
+  expect(shell.hasQueued("default")).toBe(true);
+  // A queued message joins the conversation when it is sent, not when it is typed.
+  expect(onEntry).not.toHaveBeenCalled();
+  await expect(shell.askIn("default", "> ")).resolves.toBe("add a tax helper");
+  // Only the request prompt takes them: a question during the next turn waits for its own answer.
+  const question = shell.chooseIn("default", commandQuestion({ command: "bun test" }));
+  terminal.send("y");
+  await expect(question).resolves.toBe("once");
+  await expect(shell.askIn("default", "> ")).resolves.toBe("then document it");
+  expect(shell.hasQueued("default")).toBe(false);
+  expect(onEntry.mock.calls.map(([, entry]) => entry)).toEqual([{ kind: "user", text: "add a tax helper" },
+    { kind: "notice", text: "✓ Allowed `bun test` once.", tone: "info" }, { kind: "user", text: "then document it" }]);
+  shell.stop();
+});
+
+it("sends a message to the working agent with Tab, and queues it when the agent cannot take one", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onSteer = vi.fn((_id: string, _text: string) => true);
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onSteer });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("use pnpm, not npm");
+  terminal.send("\t");
+  expect(onSteer).toHaveBeenCalledWith("default", "use pnpm, not npm");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("use pnpm, not npm");
+  expect(shell.hasQueued("default")).toBe(false);
+  onSteer.mockReturnValueOnce(false);
+  terminal.send("and add a test");
+  terminal.send("\t");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("The agent cannot take a message now; it is queued for after this turn.");
+  expect(visible(terminal)).toContain("↳ and add a test");
+  expect(shell.hasQueued("default")).toBe(true);
+  shell.stop();
+});
+
+it("returns queued messages to the input when the work stops, rather than starting what was stopped", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const interrupt = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, interrupt });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("alpha");
+  terminal.send("\r");
+  terminal.send("bravo");
+  terminal.send("\r");
+  terminal.send("charlie");
+  terminal.send("\x1b");
+  expect(interrupt).toHaveBeenCalledOnce();
+  expect(shell.hasQueued("default")).toBe(false);
+  const next = shell.askIn("default", "> ");
+  terminal.send("\r");
+  await expect(next).resolves.toBe("alpha\nbravo\ncharlie");
+  shell.stop();
+});
+
+it("keeps a shell command typed while the session works in the input, since it would change the running work", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onModel = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onModel });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("/model codex:gpt-6-sol");
+  terminal.send("\r");
+  tui.renderNow(true);
+  expect(onModel).not.toHaveBeenCalled();
+  expect(shell.hasQueued("default")).toBe(false);
+  expect(visible(terminal)).toContain("Shell commands run at the prompt once this work ends");
+  expect(visible(terminal)).toContain("/model codex:gpt-6-sol");
+  shell.stop();
+});
+
 // A command the operator approves must be readable whole: a hidden tail could be the dangerous part.
 const longCommand = "git status --short; git log --oneline -5; find src tests -type f | sort; cat package.json; " +
   "ls docs docs/guide docs/design; rm -rf node_modules/.cache --verbose-final-marker";
 
-it("shows an approval question whole, however long, with its answers", () => {
+it("shows an approval question whole, however long, with its answers in place of the input", () => {
   const terminal = new TestTerminal();
   terminal.columns = 70;
+  terminal.rows = 40;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
   shell.start();
-  shell.askIn("default", `Run \`${longCommand}\`? [y]es, [a]lways this session, [n]o: `).catch(() => undefined);
+  shell.chooseIn("default", commandQuestion({ command: longCommand, reason: "Only your gh is signed in.", rule: ["git", "status"] }))
+    .catch(() => undefined);
   tui.renderNow(true);
   const screen = visible(terminal);
-  expect(screen).toContain("--verbose-final-marker`?");
-  expect(screen).toContain("[n]o");
+  expect(screen).toContain("--verbose-final-marker` on this");
+  expect(screen).toContain("Only your gh is signed in.");
+  expect(screen).toContain("y  Yes, once");
+  expect(screen).toContain("a  Always `git status …` in this repository");
+  // Enter declines until another answer is chosen.
+  expect(screen).toContain("→ n  No");
+  expect(screen).toContain("Esc stop");
+  shell.stop();
+});
+
+it("answers a question from its list or its keys, never from what is typed, and records the answer", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onEntry = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onEntry });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("draft");
+  const declined = shell.chooseIn("default", commandQuestion({ command: "rm -rf dist" }));
+  // Letters that are no answer, and Enter on the highlighted one, which starts on "No".
+  terminal.send("x");
+  terminal.send("\r");
+  await expect(declined).resolves.toBe("deny");
+  const allowed = shell.chooseIn("default", commandQuestion({ command: "gh pr list", rule: ["gh", "pr"] }));
+  terminal.send("\x1b[A");
+  terminal.send("\r");
+  await expect(allowed).resolves.toBe("rule");
+  expect(onEntry.mock.calls.map(([, entry]) => entry)).toEqual([
+    { kind: "notice", text: "✗ Declined `rm -rf dist`; the command did not run.", tone: "warning" },
+    { kind: "notice", text: "✓ Allowed `gh pr list`; always allow `gh pr …` in this repository.", tone: "info" }]);
+  // The draft typed before the questions is still in the input, and nothing typed during them joined it.
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("draft");
+  expect(visible(terminal)).not.toContain("draftx");
+  shell.stop();
+});
+
+it("stops the work with Esc at a question, leaving the draft in the input", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  shell.reportFor("default", { phase: "working" });
+  terminal.send("keep this");
+  const question = shell.chooseIn("default", commandQuestion({ command: "bun test" }));
+  terminal.send("\x1b");
+  await expect(question).rejects.toThrow("cancelled");
+  const next = shell.askIn("default", "> ");
+  terminal.send("\r");
+  await expect(next).resolves.toBe("keep this");
+  shell.stop();
+});
+
+it.each([60, 240])("keeps choices visible in a short terminal %i columns wide and scrolls the whole command with Ctrl+PageDown", async (columns) => {
+  const terminal = new TestTerminal();
+  terminal.columns = columns;
+  terminal.rows = 16;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  shell.addSession("second", "Comparison task");
+  terminal.send("\x1bs");
+  const question = shell.chooseIn("default", commandQuestion({
+    command: `${"echo long-command; ".repeat(100)}dangerous-final-marker`,
+  }));
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("→ n  No");
+  expect(visible(terminal)).not.toContain("dangerous-final-marker");
+  for (let page = 0; page < 100; page += 1) {
+    terminal.send("\x1b[6;5~");
+    tui.renderNow(true);
+  }
+  expect(visible(terminal)).toContain("dangerous-final-marker");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("→ n  No");
+  terminal.send("\r");
+  await expect(question).resolves.toBe("deny");
+  shell.stop();
+});
+
+it("answers only the selected session's question, with plain and Kitty keys, keeping drafts and history", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onEntry = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onEntry });
+  shell.start();
+  terminal.send("first draft");
+  const first = shell.chooseIn("default", commandQuestion({ command: "bun test" }));
+  let answered = false;
+  first.then(() => { answered = true; });
+  shell.addSession("second", "Other task");
+  shell.selectSession("second");
+  terminal.send("second draft");
+  const second = shell.chooseIn("second", commandQuestion({ command: "git status" }));
+  terminal.send("\x1b[121u");
+  await expect(second).resolves.toBe("once");
+  expect(answered).toBe(false);
+  shell.selectSession("default");
+  // An unavailable shortcut, pasted text and a modified key never approve.
+  terminal.send("a");
+  terminal.send("yes");
+  terminal.send("\x1b[121;5u");
+  await Promise.resolve();
+  expect(answered).toBe(false);
+  terminal.send("Y");
+  await expect(first).resolves.toBe("once");
+  const request = shell.askIn("default", "> ");
+  terminal.send("\r");
+  await expect(request).resolves.toBe("first draft");
+  const recalled = shell.askIn("default", "> ");
+  terminal.send("\x1b[A");
+  terminal.send("\r");
+  await expect(recalled).resolves.toBe("first draft");
+  shell.selectSession("second");
+  const otherRequest = shell.askIn("second", "> ");
+  terminal.send("\r");
+  await expect(otherRequest).resolves.toBe("second draft");
+  expect(onEntry.mock.calls.filter(([, entry]) => entry.kind === "notice").map(([id]) => id)).toEqual(["second", "default"]);
+  shell.stop();
+});
+
+it("rejects a pending choice when its session is blocked or closed, leaving other sessions waiting", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  shell.addSession("second", "Other task");
+  const blocked = shell.chooseIn("default", commandQuestion({ command: "bun test" }));
+  const closed = shell.chooseIn("second", commandQuestion({ command: "git status" }));
+  shell.blockSession("default");
+  await expect(blocked).rejects.toBeInstanceOf(SessionBlockedError);
+  shell.selectSession("second");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Run `git status`?");
+  shell.removeSession("second");
+  await expect(closed).rejects.toThrow("closed");
+  await expect(shell.chooseIn("default", commandQuestion({ command: "bun test" }))).rejects.toBeInstanceOf(SessionBlockedError);
   shell.stop();
 });
 
@@ -788,30 +1022,60 @@ it("shows a command the agent runs whole in the conversation", () => {
   shell.stop();
 });
 
-it("places workspace identity in the sidebar and execution context beside the prompt", () => {
+it("names the model and workspace under the prompt, and where commands run on a line of their own, in its color", () => {
   const terminal = new TestTerminal();
   terminal.columns = 120;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
-  shell.setSessionExecution("default", "this computer · asks first");
+  shell.setSessionExecution("default", "this computer · asks first", "host");
   shell.setBranch("dev");
   shell.setSessionModel("default", "claude-code:opus");
   shell.addSession("second", "Session 2");
-  shell.setSessionExecution("second", "sandbox · Docker");
+  shell.setSessionExecution("second", "sandbox · Docker", "sandbox");
   shell.start();
+  terminal.writes.length = 0;
   tui.renderNow(true);
   const screen = visible(terminal);
   // Each session runs its commands where it chose; the footer names the selected session's.
   expect(screen).not.toContain("sandbox · Docker");
   expect(screen).toContain("tesota · dev");
   expect(screen).toContain("Session 1");
-  expect(screen).toContain("this computer · asks first · claude-code:opus");
-  expect(screen).not.toContain("this computer · asks first · tesota");
+  // The model first, as other harnesses show it; the workspace is the sidebar's while it shows.
+  const raw = terminal.writes.join("");
+  const theme = tesotaShellTheme("tesota-dark");
+  expect(stripTerminalSequences(screenLine(raw, "claude-code:opus")).trim()).toBe("claude-code:opus");
+  // This computer in the theme's caution color, a sandbox in its success color.
+  const warning = theme.warning!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";");
+  expect(screenLine(raw, "this computer · asks first")).toContain(`[38;2;${warning}mthis computer · asks first`);
+  // The input stands between two rules.
+  expect(screen.match(/─{20,}/gu)?.length).toBe(2);
   terminal.writes.length = 0;
-  terminal.send("\x1bb");
+  terminal.send("b");
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("tesota · dev / Session 1");
+  expect(visible(terminal)).not.toContain("Session 1");
+  expect(visible(terminal)).toContain("claude-code:opus · tesota · dev");
+  shell.selectSession("second");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const success = theme.success!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";");
+  expect(screenLine(terminal.writes.join(""), "sandbox · Docker")).toContain(`\x1b[38;2;${success}msandbox · Docker`);
   shell.stop();
+
+  // A terminal too narrow for the sidebar hides it too, and the prompt's line names the workspace until it widens.
+  const narrow = new TestTerminal();
+  narrow.columns = 70;
+  const narrowTui = new TuiAltScreen(narrow, false, undefined, { mouse: false });
+  const narrowShell = createTesotaShellTerminal({ cwd: "work/tesota", tui: narrowTui });
+  narrowShell.setBranch("dev");
+  narrowShell.setSessionModel("default", "claude-code:opus");
+  narrowShell.start();
+  narrowTui.renderNow(true);
+  expect(visible(narrow)).toContain("claude-code:opus · tesota · dev");
+  narrow.resizeTo(120, 24);
+  narrow.writes.length = 0;
+  narrowTui.renderNow(true);
+  expect(visible(narrow)).not.toContain("claude-code:opus · tesota");
+  narrowShell.stop();
 });
 
 it("reflows the persistent layout after terminal resize", () => {
@@ -928,7 +1192,7 @@ it("shows precise session needs inline and opens the rail as an overlay on narro
   terminal.send("\x1bb"); // Alt+B hides the rail without changing the selected session.
   tui.renderNow(true);
   expect(visible(terminal)).not.toContain("Session 2");
-  expect(visible(terminal)).toContain("tesota / Session 1");
+  expect(visible(terminal)).not.toContain("Session 1");
 
   terminal.send("\x1bb");
   terminal.resizeTo(70, 24);
@@ -1036,7 +1300,7 @@ it("closes the selected session with Ctrl+W and moves input to the next one", as
   shell.removeSession("default");
   await expect(pending).rejects.toMatchObject({ name: "AbortError" });
   tui.renderNow(true);
-  expect(visible(terminal)).toContain("Session 2");
+  expect(terminal.titles.at(-1)).toContain("Session 2");
   expect(() => { shell.removeSession("second"); }).toThrow("last Tesota session");
   shell.stop();
 });

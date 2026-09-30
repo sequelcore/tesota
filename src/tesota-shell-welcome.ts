@@ -166,7 +166,8 @@ export class WelcomeBanner implements Component {
     const header = this.#header(width);
     if (this.#dismissed) {
       this.#drawnStage = undefined;
-      return [...header.map((line) => truncateToWidth(line, width)), ""];
+      // It stays as the conversation's first entry, indented and spaced as the entries after it.
+      return header.map((line) => truncateToWidth(` ${line}`, width));
     }
     this.#drawnHeight = this.#options.viewportHeight();
     // Unmeasured until the conversation's first layout; the next frame has its height.
@@ -196,7 +197,8 @@ export class WelcomeBanner implements Component {
 
   #header(width: number): string[] {
     const cwd = this.#cwd.length > width ? `…${this.#cwd.slice(-(width - 1))}` : this.#cwd;
-    return [bold(`Tesota ${this.#version}`), mutedText(cwd, this.#theme),
+    const version = /^\d/u.test(this.#version) ? `v${this.#version}` : this.#version;
+    return [`${bold("Tesota")} ${mutedText(`(${version})`, this.#theme)}`, mutedText(cwd, this.#theme),
       mutedText("Every turn is reviewed; reverting never overwrites your edits.", this.#theme)];
   }
 

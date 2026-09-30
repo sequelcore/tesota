@@ -69,7 +69,11 @@ Before a page is read from a site you have not allowed, Tesota asks, as for
 the sandbox's network:
 
 ```text
-Read pages from docs.example.com? [y]es this session, [a]lways for this repository, [n]o:
+Read pages from docs.example.com?
+
+  y  Yes, this session
+  a  Always, in this repository
+→ n  No
 ```
 
 Only `https` pages at public addresses are read, never a site on your own
@@ -170,7 +174,11 @@ package registry credentials such as `.npmrc`, when your repository does not
 track them. If a command tries to reach another host, Tesota asks you:
 
 ```text
-The sandbox refused network access to api.github.com:443. Allow it? [y]es this session, [a]lways for this repository, [n]o:
+The sandbox refused network access to api.github.com:443. Allow it?
+
+  y  Yes, this session
+  a  Always, in this repository
+→ n  No
 ```
 
 The agent is told your answer and reruns the command if you allowed it.
@@ -193,8 +201,21 @@ apply or reject the pending changes to continue with your newer version.
 On this computer, Tesota asks before any shell command runs:
 
 ```text
-Run `gh pr list`? [y]es, [a]lways `gh pr …` in this repository, [n]o:
+Run `gh pr list`?
+
+  y  Yes, once
+  a  Always `gh pr …` in this repository
+→ n  No
 ```
+
+The answers replace the input while Tesota waits, so nothing you were typing
+is taken as one: choose with the arrows and `Enter`, or press an answer's key.
+`Enter` alone declines, and `Esc` stops the request. Use `Ctrl+PageUp` and
+`Ctrl+PageDown` to read a long question; its choices stay visible. Your answer
+stays in the conversation with the command, such as
+``✓ Allowed `gh pr list` once.`` or
+``✗ Declined `gh pr list`; the command did not run.`` It does not enter
+the input's history.
 
 Approved commands run with your permissions, files, network and credentials.
 They are not sandboxed. "Always" saves that rule for the repository: later
@@ -208,9 +229,24 @@ In the sandbox, your own programs and logins, such as `gh`, `aws` or
 command on this computer instead, with its reason:
 
 ```text
-Run `gh pr list` on this computer, outside the sandbox? Only your gh is signed in. [y]es, [a]lways `gh pr …` in this repository, [n]o:
+Run `gh pr list` on this computer, outside the sandbox?
+Only your gh is signed in.
+
+  y  Yes, once
+  a  Always `gh pr …` in this repository
+→ n  No
 ``` `Esc` or `Ctrl+C` stops the current request; changes
 made so far stay in your files, or in the copy, and can still be reverted.
+
+You can keep typing while the agent works. `Enter` queues a message: it
+shows above the input and is sent as your next request when the work ends,
+as its own turn that you can revert on its own. `Tab` sends it to the agent
+now instead: the agent reads it before its next step, and it joins the
+current turn, whose review holds the agent to it too. Where the agent cannot
+take a message mid-run, as under review or on the `claude-code` route, `Tab`
+queues it. A queued message goes before any fix Tesota would send back after
+review; those stay in the review for you. Stopping the work returns queued
+messages to the input. Shell commands such as `/model` wait for the prompt.
 
 The conversation shows your messages on a tinted background, the agent's
 replies as formatted text while it writes them, and each file it reads or
@@ -382,7 +418,8 @@ whenever the session is idle:
   it cannot, it says "Recovery required", as an application does.
 - `/redo` puts the latest reverted turn back, until a new turn begins.
 
-A session working in a copy chooses after each review:
+A session working in a copy chooses after each review, from a list like the
+one for commands, where `Enter` alone keeps working:
 
 - **apply** writes the changes to your repository, only if nothing in it
   changed since the result was checked. If you edited any file, even one the
@@ -464,7 +501,7 @@ beneath them. For a few seconds the wind moves the crown, only while the
 terminal window has focus. It fades while you work in another window, turns
 plain and dim while you type, and gives way to the conversation at its first message or notice (answers to
 commands such as `/help` or `/themes` show beneath it), leaving the version and
-directory above it. Click the resting scene to watch it again; the wind may
+directory as the conversation's first entry. Click the resting scene to watch it again; the wind may
 bring something with it. Use
 `TESOTA_REDUCED_MOTION=1` to
 show it without motion. Short terminals show only the version and directory.
@@ -474,11 +511,12 @@ when you restore a session.
 The sidebar appears beside the conversation when there is room and hides
 automatically on a narrow terminal. `Alt+B` hides it, or opens it over the
 right side at a narrow size without taking focus from the input. `Esc` still
-stops work; it does not close the sidebar. The heading over the conversation
-names the selected session and, while the sidebar is hidden, also names the
-repository and branch. The line below the prompt contains only execution
-context and the selected session's model, such as `this computer · asks first
-· claude-code:opus`, or `sandbox · …` when commands run in the sandbox.
+stops work; it does not close the sidebar. The sidebar and the terminal
+window's title name the selected session. The prompt sits between two rules.
+The first line under it names the selected session's model, followed by the
+repository and branch while the sidebar is hidden, as in `claude-code:opus ·
+tesota · dev`. The second names where commands run: `this computer · asks
+first` in the theme's warning color, or `sandbox · …` in its success color.
 
 A question above the prompt, such as a command waiting for your approval, is
 always shown whole, over as many lines as it needs, and so is each command the

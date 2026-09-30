@@ -374,7 +374,12 @@ candidate, has a **fix validator** confirm whether each finding sent back is
 resolved, and reviews only the correction's own diff, so a round settles what
 it was sent instead of raising a fresh list; the main reviewer reassesses
 every obligation against the whole current result. At most two rounds run, fewer if
-a round leaves the tree unchanged. Operator findings, unknown origins, check
+a round leaves the tree unchanged. **A request the operator already typed goes
+first**: when one is queued, no round starts, the items stay in the review
+unsent, and in a workspace the result stays pending, as "keep working" leaves
+it. The queued message may be the correction: in 20,574 real sessions, 91% of
+the visible resolutions of an agent's mistake were the developer's own
+correction ([Tang et al., 2026](https://arxiv.org/abs/2605.29442)). Operator findings, unknown origins, check
 failures the base shares or that could not be compared with it, incomplete
 reviews and checks that could not run never go back to the agent.
 
@@ -384,6 +389,21 @@ repository state in, so
 the correction's diff holds only the agent's work; with an update in between,
 the operator's own edits would read as the agent's correction. That state
 arrives with the operator's next request, which starts a new cycle.
+
+### Planned: review beside the next request
+
+Checks and review still run before the next request, so a queued message
+waits for them: in the first recorded sessions a review step took 8 to 49
+seconds, and two short questions with two correction rounds held the session
+for two minutes. The planned change freezes the candidate's tree in a checkout
+of its own, as base checks already do, and runs checks and review there while
+the agent takes the next request. A result names its tree, so one whose tree
+has moved shows as earlier and never decides a keep or an application, and a
+correction goes back only while its tree is current. Two facts stand in the
+way: a check on the operator's computer cannot run from another folder, and
+review beside work must fit the two operations a shell runs at once. It is
+adopted only if, replayed on journaled sessions, it catches as much while
+holding the operator less.
 
 ## The record
 

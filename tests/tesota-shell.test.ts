@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import { askingDecisions } from "../src/session-decisions.js";
+import { optionForKey, type ShellQuestion } from "../src/tesota-shell-question.js";
 import type { TesotaShellProgress } from "../src/shell-progress.js";
 import type { Finding, Obligation, ReviewReport } from "../src/review.js";
 import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
@@ -11,14 +12,21 @@ import type { ApprovedCheck } from "../src/workspace-checks.js";
 const change: WorkspaceChange = { status: "modified", path: "src/price.ts" };
 const added: WorkspaceChange = { status: "added", path: "src/tax.ts" };
 
+/** Answer a question with fixed answers from the scripted replies, as its key picks it; an empty reply is Enter. */
+function choosing(answers: string[]) {
+  return async <V extends string>(question: ShellQuestion<V>): Promise<V> =>
+    optionForKey(question.options, answers.shift() ?? "")?.value ?? question.initial;
+}
+
 function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = {}) {
   const output: string[] = [];
   const progress: TesotaShellProgress[] = [];
   let checks: readonly ApprovedCheck[] | null = null;
+  const typed = { queued: false };
   const write = (text: string): void => { output.push(text); };
   const dependencies: TesotaShellDependencies = {
     write,
-    decisions: askingDecisions(async () => answers.shift() ?? "", write),
+    decisions: askingDecisions(async () => answers.shift() ?? "", choosing(answers), write, () => typed.queued),
     report: (event) => { progress.push(event); },
     work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [change, added] })),
     checks: () => checks,
@@ -32,7 +40,7 @@ function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = 
     reject: vi.fn(async () => {}),
     ...overrides,
   };
-  return { dependencies, output, progress, text: () => output.join("") };
+  return { dependencies, output, progress, typed, text: () => output.join("") };
 }
 
 it("ends the session on an empty request without doing work", async () => {
@@ -45,7 +53,7 @@ it("ends the session on an empty request without doing work", async () => {
 it("starts preparing the environment before asking for the first request", async () => {
   const order: string[] = [];
   const fixture = shell([], { prepare: () => { order.push("prepare"); },
-    decisions: askingDecisions(async () => { order.push("ask"); return ""; }, () => {}) });
+    decisions: askingDecisions(async () => { order.push("ask"); return ""; }, choosing([]), () => {}, () => false) });
   await runTesotaShell(fixture.dependencies);
   expect(order).toEqual(["prepare", "ask"]);
 });
@@ -221,6 +229,18 @@ it("never sends the operator's calls back to the agent", async () => {
   expect(fixture.text()).not.toContain("Correction round");
 });
 
+it("lets a request the operator already typed go before a correction round and the decision, sending nothing back", async () => {
+  const fixture = shell(["Charge over $100 less", "", ""], { review: reviews({ tree: "1".repeat(40), findings: [fixable] }) });
+  fixture.typed.queued = true;
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
+  expect(fixture.text()).toContain("Your next message goes first. The item for the agent to fix was not sent; it stays in the review.");
+  // Typing on is "keep working": the changes stay pending, and nothing asks for the decision.
+  expect(fixture.progress.map((event) => event.phase)).not.toContain("awaiting_decision");
+  expect(fixture.text()).toContain("The changes stay in the workspace.");
+  expect(fixture.dependencies.apply).not.toHaveBeenCalled();
+});
+
 it("skips the decision when a correction is stopped, keeping the changes", async () => {
   let calls = 0;
   const fixture = shell(["Charge over $100 less", "", ""], {
@@ -274,6 +294,17 @@ it("stops checking an answer after two correction rounds and leaves the rest to 
   expect(assessAnswer).toHaveBeenCalledTimes(3);
   expect(fixture.dependencies.work).toHaveBeenCalledTimes(3);
   expect(fixture.dependencies.review).not.toHaveBeenCalled();
+});
+
+it("sends an answer's gaps back only when the operator has not already typed the next request", async () => {
+  const assessAnswer = vi.fn(async () => answered([unmet]));
+  const fixture = shell(["Add a farewell() helper", ""], { assessAnswer,
+    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [] })) });
+  fixture.typed.queued = true;
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(assessAnswer).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
+  expect(fixture.text()).toContain("Your next message goes first.");
 });
 
 it("leaves a turn in the operator's files undecided after review, never holding the session for a decision", async () => {

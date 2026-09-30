@@ -23,12 +23,21 @@ for quick feedback on pure code, then the affected process-backed suite. Run
 `git diff --check` before completing a change. Report what actually ran;
 passing checks, live observations and human acceptance are different claims.
 
+The build keeps TypeScript's compiler for the CLI and bundles the WSL sandbox
+server with Bun's Node target into one ESM file, including its Zod dependency.
+WSL starts it from the Windows drive; a single file avoids resolving and
+reading the dependency tree across that filesystem for every readiness probe
+and sandbox start. The compiled server is also tested from a folder with no
+Tesota modules or dependencies beside it.
+
 The package binary points to `dist/cli.js`. Build before `bun link`; later
 builds refresh that linked executable, and `bun unlink` removes it. The lint
 rule limits cyclomatic complexity to 20 in `src` and `tests` with no file
-exceptions. The Git workspace suites run in a separate Vitest process so a
-timed-out filesystem operation cannot contaminate later suites. Each of the
-two groups also writes a JUnit XML report to the ignored `test-reports/`
+exceptions. Vitest collects this checkout's `tests/` only, leaving a nested
+checkout's tests to its own scripts. The Git workspace suites, including the
+shell's source-turn tests, run in a separate Vitest process with a 20-second
+per-test limit so a timed-out filesystem operation cannot contaminate later
+suites. Each of the two groups also writes a JUnit XML report to the ignored `test-reports/`
 (`unit.xml` and `workspace.xml`), so a Tesota session on this repository can
 approve `bun run check => test-reports/unit.xml, test-reports/workspace.xml`
 and compare its failures with the base test by test. The opt-in
