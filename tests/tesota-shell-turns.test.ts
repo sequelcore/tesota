@@ -77,11 +77,14 @@ async function openShell(record: ShellSessionRecord, run: () => Promise<{ status
   const mode = { commands: "host", provider: { ...hostProvider, name: "test", prepare: async () => environment },
     missing: [] } satisfies SessionExecution;
   const shell = createProcessTesotaShell(source, "tesota-dark", async () => mode, "session");
+  // Records and replies in the order the operator sees them; `replies` holds the ones not saved with the session.
   const notices: string[] = [];
+  const replies: string[] = [];
   vi.spyOn(shell.surface, "writeTo").mockImplementation((_id, text) => { notices.push(text); });
+  vi.spyOn(shell.surface, "replyTo").mockImplementation((_id, text) => { notices.push(text); replies.push(text); });
   const turns = shell.turnCommands;
   if (turns === undefined) throw new Error("No turn commands");
-  return { source, shell, notices, turns };
+  return { source, shell, notices, replies, turns };
 }
 
 const newRecord = (): ShellSessionRecord => ({ id: "session", title: "Session 1", engineId: "engine", workspace: null,
@@ -138,7 +141,7 @@ it("works in an isolated copy when the session chose it before its first request
   });
   const opened = await openShell(record, run);
   source = opened.source;
-  const { shell, notices, turns } = opened;
+  const { shell, notices, replies, turns } = opened;
   try {
     await turns.isolate("session");
     expect(record.isolated).toBe(true);
@@ -150,6 +153,9 @@ it("works in an isolated copy when the session chose it before its first request
       "until you apply its reviewed result.");
     await turns.isolate("session");
     expect(notices.at(-1)).toBe("This session already works in an isolated copy.");
+    // The choice changed the session and is saved with it; being told it already holds is only an answer.
+    expect(replies).toContain("This session already works in an isolated copy.");
+    expect(replies.some((text) => text.startsWith("This session works in an isolated copy, as you chose"))).toBe(false);
     await turns.keep("session");
     expect(notices.at(-1)).toContain("This session works in a copy");
   } finally {

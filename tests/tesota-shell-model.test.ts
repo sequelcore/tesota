@@ -90,10 +90,11 @@ function shell() {
     missing: [] } satisfies SessionExecution;
   const created = createProcessTesotaShell("source", "tesota-dark", async () => mode, "session");
   const notices = vi.spyOn(created.surface, "writeTo");
+  const replies = vi.spyOn(created.surface, "replyTo");
   const model = vi.spyOn(created.surface, "setSessionModel");
-  spies.push(notices, model);
-  const said = (): string => notices.mock.calls.map((call) => call[1]).join("\n");
-  return { created, notices, model, said };
+  spies.push(notices, replies, model);
+  const said = (): string => [...notices.mock.calls, ...replies.mock.calls].map((call) => call[1]).join("\n");
+  return { created, notices, replies, model, said };
 }
 
 it("switches in place on the same engine, and the conversation continues", async () => {
@@ -182,16 +183,18 @@ it("gives the agent an advisor only when the role is on, reading the agent's con
 });
 
 it("refuses a model no route offers and changes nothing", async () => {
-  const { created, notices } = shell();
+  // A refusal changes nothing in the session, so it is a reply and is not saved.
+  const { created, notices, replies } = shell();
   await created.agentModel?.change("session", "codex:no-such-model");
-  expect(notices).toHaveBeenLastCalledWith("session", expect.stringContaining("is not offered"), "warning");
+  expect(replies).toHaveBeenLastCalledWith("session", expect.stringContaining("is not offered"), "warning");
+  expect(notices).not.toHaveBeenCalled();
   expect(record.agent).toBeUndefined();
   await created.agentModel?.change("session", "codex:gpt-6-luna");
-  expect(notices).toHaveBeenLastCalledWith("session", expect.stringContaining("already uses codex:gpt-6-luna"));
+  expect(replies).toHaveBeenLastCalledWith("session", expect.stringContaining("already uses codex:gpt-6-luna"));
   // A reasoning level the model accepts is a switch on the same engine; one it does not is refused.
   await created.agentModel?.change("session", "codex:gpt-6-luna@high");
   expect(record.agent).toBe("codex:gpt-6-luna@high");
   await created.agentModel?.change("session", "claude-code:haiku@high");
-  expect(notices).toHaveBeenLastCalledWith("session", expect.stringContaining("is not offered"), "warning");
+  expect(replies).toHaveBeenLastCalledWith("session", expect.stringContaining("is not offered"), "warning");
   created.dispose?.();
 });

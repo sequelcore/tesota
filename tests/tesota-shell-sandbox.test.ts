@@ -99,19 +99,23 @@ function shell(dockerReady = true, wslReady = { now: true }) {
   });
   const created = createProcessTesotaShell("source", "tesota-dark", chosen, "session");
   const notices = vi.spyOn(created.surface, "writeTo");
+  const replies = vi.spyOn(created.surface, "replyTo");
   const label = vi.spyOn(created.surface, "setSessionExecution");
-  spies.push(notices, label);
-  const said = (): string => notices.mock.calls.map((call) => call[1]).join("\n");
-  return { created, chosen, wsl, docker, label, said };
+  spies.push(notices, replies, label);
+  const said = (): string => [...notices.mock.calls, ...replies.mock.calls].map((call) => call[1]).join("\n");
+  /** Only what changed the session is saved with it; a status or a refusal is a reply. */
+  const recorded = (): string => notices.mock.calls.map((call) => call[1]).join("\n");
+  return { created, chosen, wsl, docker, label, said, recorded };
 }
 
 it("switches one session's sandbox, and its agent restarts with the same conversation", async () => {
-  const { created, chosen, wsl, docker, label, said } = shell();
+  const { created, chosen, wsl, docker, label, said, recorded } = shell();
   await created.session("session").work("Add a retry limit.");
   expect(chosen).toHaveBeenLastCalledWith("auto");
   expect(label).toHaveBeenLastCalledWith("session", "sandbox · WSL");
   await created.sessionSandbox?.change("session", undefined);
   expect(said()).toContain("Commands in this session run in the WSL sandbox");
+  expect(recorded()).not.toContain("Commands in this session run in the WSL sandbox");
   expect(said()).toContain("/sandbox <auto|wsl|docker|host>");
   await created.sessionSandbox?.change("session", "docker");
   expect(wsl.environment.dispose).toHaveBeenCalled();

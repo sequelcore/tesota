@@ -21,6 +21,20 @@ the GUI appearance infrastructure is not included.
 Kiln
 Copyright 2024-2026 Sequel
 
+Codex welcome animation
+
+The turning welcome tree in src/welcome-mark.ts adapts the method of the Codex
+terminal welcome (codex-rs/tui/src/empty_state_animation in
+https://github.com/openai/codex at c9b3924a62): a vector mark extruded with a
+bevel, turned in perspective with a depth buffer, lit with key, fill, rim and
+gloss terms, and drawn in colored Braille dots, with its timing and focus fade.
+Codex is licensed under the Apache License, Version 2.0.
+OpenAI Codex
+Copyright 2025 OpenAI
+
+The palo fierro silhouette and materials, and the colors it takes from
+Tesota's themes, are Tesota's own.
+
 ClaimCheck
 
 The round-trip review in src/integrations/pi-claimcheck.ts adapts the method and

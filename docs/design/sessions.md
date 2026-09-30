@@ -18,14 +18,28 @@ identity joins that heading when the sidebar is absent. Execution location and
 the selected model stay beside the prompt ([using Tesota](../guide/using-tesota.md)
 lists the keys).
 
-A fresh session opens with an ephemeral palo fierro welcome in the conversation:
-name and package version, working directory, a short statement of how
-changes are decided, then the ASCII tree. The tree grows through five fixed-size frames;
-smaller terminals animate a compact tree or symbol.
-`TESOTA_REDUCED_MOTION=1` shows the final frame immediately. The
-welcome is presentation only: it is not a conversation entry or saved session
-state, and restored sessions do not show it again. `tesota-shell-welcome.ts`
-owns the artwork, tones and responsive rendering.
+A fresh session opens with an ephemeral palo fierro welcome that fills the
+empty conversation: the tree, lit and turning about its trunk, centered above
+the name and package version, working directory and a short statement of how
+changes are decided. The tree turns three times, only while the terminal has
+focus, and rests face-on; when the terminal loses focus or the operator starts
+typing it pauses and fades, and resumes when that ends. A plain left click on
+the resting tree turns it twice more. The first entry that becomes part of the
+session removes the tree and leaves the header above the conversation; replies
+to shell commands show beneath the tree, which gives up their rows. Where the
+tree would not fit, only the header shows. `TESOTA_REDUCED_MOTION=1` shows the
+resting pose without motion. The welcome is presentation only: it is not a
+conversation entry or saved session state, and restored sessions do not show it
+again. The tree takes its colors from the active theme: leaves in its success
+color, bark between its warning and muted colors, edges lit in its accent, and
+gloss in its foreground, so `/themes` recolors it; the `terminal` theme draws it
+in the terminal's own colors. `welcome-mark.ts` owns the tree's geometry, lighting and Braille
+rasterization, adapted from the Codex welcome's method; `tesota-shell-welcome.ts`
+owns its timing, focus, layout and click. The tree's surface points are
+computed once and only the nearest point at each Braille dot is lit, so a frame
+costs about 1.5 ms at its largest. Focus comes from the terminal's focus
+reports, which pi-tui turns on but keeps to itself, so `FocusReportingTerminal`
+in `tesota-shell-tui.ts` reads them on their way in.
 
 `tesota-shell-theme.ts` owns the terminal palettes, and
 `tesota-shell-theme-picker.ts` uses pi-tui's `SelectList` for `/themes`.
@@ -73,6 +87,20 @@ caches; adding an entry clears none of them, since `Container.invalidate()`
 clears every child's. A test fails if a frame renders any `HStack` whole.
 With 800 entries a frame takes about 2 ms, against 472 ms before (findings,
 2026-09-27).
+
+Tesota speaks in a session to two audiences, and the agent is a third. A
+**record** (`writeTo`) is something that happened to the session's work: where
+its commands run, its workspace and preparation, a model switch, a turn kept,
+reverted or redone, a review's forecast, a failure. It is saved with the
+session, restored with it, and ends the opening. A **reply** (`replyTo`)
+answers the operator: help, listings such as `/checks` or `/sandbox` alone, a
+usage hint, "nothing to keep", a presentation setting such as `/themes`, or a
+command refused before it changed anything. It shows like a notice but is not
+saved and is not part of the session. Neither reaches the agent: the agent
+reads no notice. What changes its world, such as a revert, a redo, a rejected
+result, commands moved to another sandbox, hidden files or the operator's own
+edits, reaches it as Tesota context with its next request, marked as not
+written by the user; everything else stays out of its context and its tokens.
 
 The loop itself, request, checks, review, correction and decision, is
 independent of the terminal (`tesota-shell.ts`); the terminal only renders it

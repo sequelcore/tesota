@@ -429,11 +429,16 @@ the selection never changes on its own.
 The rail shows titles and states without position numbers; `Alt+1` to `Alt+9`
 remain optional shortcuts for the first nine sessions in newest-first order.
 
-A new session shows Tesota's version, the working directory, and a palo fierro
-tree above the conversation. The tree draws in five steps when there is room;
-use `TESOTA_REDUCED_MOTION=1` to show it without animation. Narrow terminals
-animate a smaller tree or symbol. This welcome does not become part of the saved
-conversation and does not replay when you restore a session.
+A new session shows a palo fierro tree turning in the middle of the empty
+conversation, with Tesota's version and the working directory beneath it. The
+tree turns only while the terminal window has focus, fades while you type or
+work in another window, and gives way to the conversation at its first message
+or notice (answers to commands such as `/help` or `/themes` show beneath it),
+leaving the version and directory above it. Click the resting tree to watch
+it turn again. Use `TESOTA_REDUCED_MOTION=1` to
+show it without motion. Short terminals show only the version and directory.
+This welcome does not become part of the saved conversation and does not replay
+when you restore a session.
 
 The sidebar appears beside the conversation when there is room and hides
 automatically on a narrow terminal. `Alt+B` hides it, or opens it over the
@@ -449,7 +454,10 @@ always shown whole, over as many lines as it needs, and so is each command the
 agent runs. Type `/` at the normal request prompt to see a command menu above
 the input; the selected row is highlighted. Use arrow keys to choose and Enter
 to run a command, or `/help` for commands and keyboard shortcuts. These
-commands stay in the shell and do not become agent requests. `Ctrl+N` starts a
+commands stay in the shell and do not become agent requests. Their answers,
+such as help, listings and usage hints, are not saved with the session; what a
+command changed, such as a reverted turn or where commands run, is, and the
+agent learns it with your next request. `Ctrl+N` starts a
 new session. `/details` lists long notices, newest first, to expand or collapse;
 `/details <number>` targets one directly, and `Alt+D` toggles the latest.
 Your first request names it at once, and a short title written

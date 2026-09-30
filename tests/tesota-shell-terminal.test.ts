@@ -3,9 +3,10 @@ import { expect, it, vi } from "vitest";
 import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
 import type { AccountsSource } from "../src/tesota-shell-accounts.js";
 import { createTesotaShellTerminal, SessionBlockedError } from "../src/tesota-shell-terminal.js";
-import { BackdropTui } from "../src/tesota-shell-tui.js";
+import { BackdropTui, FocusReportingTerminal } from "../src/tesota-shell-tui.js";
 import { SessionRail } from "../src/tesota-shell-sidebar.js";
 import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
+import { WelcomeBanner } from "../src/tesota-shell-welcome.js";
 import type { TranscriptEntry } from "../src/tesota-shell-transcript.js";
 
 class TestTerminal implements Terminal {
@@ -76,19 +77,36 @@ it("shows the opening only for a newly created session and keeps it out of the s
   saved.stop();
 });
 
-it("redraws the tree as the shell timer advances", async () => {
+it("turns the tree in an empty session while focused, and removes it at the first entry", async () => {
   const terminal = new TestTerminal();
   terminal.columns = 100;
   terminal.rows = 40;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  const braille = /[⠁-⣿]/u;
   try {
     shell.start();
     tui.renderNow(true);
-    expect(visible(terminal)).not.toContain("\\|/");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(visible(terminal)).toMatch(braille);
     terminal.writes.length = 0;
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    expect(visible(terminal)).toContain("\\|/");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(visible(terminal)).toMatch(braille);
+
+    shell.setTerminalFocused(false);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    terminal.writes.length = 0;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(visible(terminal)).not.toMatch(braille);
+
+    shell.setTerminalFocused(true);
+    shell.write("A first notice.");
+    tui.renderNow(true);
+    expect(visible(terminal)).toContain("A first notice.");
+    terminal.writes.length = 0;
+    tui.renderNow(true);
+    expect(visible(terminal)).not.toMatch(braille);
+    expect(visible(terminal)).toContain("Every turn is reviewed; reverting never overwrites your edits.");
   } finally {
     shell.stop();
   }
@@ -1323,4 +1341,78 @@ it("ends a waiting prompt when its session is blocked, as after a revert that ne
   await expect(waiting).rejects.toBeInstanceOf(SessionBlockedError);
   await expect(shell.ask("> ")).rejects.toBeInstanceOf(SessionBlockedError);
   shell.stop();
+});
+
+it("reads the terminal's focus reports on their way to pi-tui, which consumes them", () => {
+  const inner = new TestTerminal();
+  const terminal = new FocusReportingTerminal(inner);
+  const focus: boolean[] = [];
+  const input: string[] = [];
+  terminal.onFocusChange((focused) => { focus.push(focused); });
+  terminal.start((data) => { input.push(data); }, () => {});
+  inner.send("\x1b[O");
+  inner.send("a");
+  inner.send("\x1b[I");
+  expect(focus).toEqual([false, true]);
+  expect(input).toEqual(["\x1b[O", "a", "\x1b[I"]);
+});
+
+it("hands a click in the middle of an empty session to its tree", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 100;
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  const handled = vi.spyOn(WelcomeBanner.prototype, "handleMouse");
+  try {
+    shell.start();
+    tui.renderNow(true);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    tui.renderNow(true);
+    terminal.send("\x1b[<0;62;15M");
+    terminal.send("\x1b[<0;62;15m");
+    expect(handled.mock.results.some((result) => result.value?.handled === true)).toBe(true);
+  } finally {
+    handled.mockRestore();
+    shell.stop();
+  }
+});
+
+it("answers shell commands without saving the answer or ending the opening, which makes room for it", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 100;
+  terminal.rows = 40;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onEntry = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onEntry });
+  const braille = /[⠁-⣿]/u;
+  try {
+    shell.start();
+    shell.ask("> ").catch(() => {});
+    tui.renderNow(true);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    for (const command of ["/themes vesper", "/nonsense"]) {
+      for (const key of command) terminal.send(key);
+      terminal.send("\r");
+    }
+    shell.replyTo("default", "A listing the operator asked for.");
+    terminal.writes.length = 0;
+    tui.renderNow(true);
+    const screen = visible(terminal);
+    expect(screen).toMatch(braille);
+    expect(screen).toContain("Theme: vesper.");
+    expect(screen).toContain("Unknown command.");
+    expect(screen).toContain("A listing the operator asked for.");
+    expect(screen).toContain("Every turn is reviewed; reverting never overwrites your edits.");
+    expect(onEntry).not.toHaveBeenCalled();
+
+    shell.write("Commands in this session will run in WSL.");
+    terminal.writes.length = 0;
+    tui.renderNow(true);
+    expect(visible(terminal)).not.toMatch(braille);
+    expect(onEntry).toHaveBeenCalledWith(expect.any(String), { kind: "notice", text: "Commands in this session will run in WSL.", tone: "info" });
+    expect(onEntry).toHaveBeenCalledTimes(1);
+  } finally {
+    shell.stop();
+  }
 });

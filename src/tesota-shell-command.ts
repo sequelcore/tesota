@@ -13,7 +13,7 @@ import { pendingUsage, readUsage, type RouteUsage } from "./account-usage.js";
 import { allRoutes, routeStatuses, usedByRoute } from "./auth.js";
 import { usageSources } from "./integrations/usage-sources.js";
 import type { AccountsSource } from "./tesota-shell-accounts.js";
-import { BackdropTui } from "./tesota-shell-tui.js";
+import { BackdropTui, FocusReportingTerminal } from "./tesota-shell-tui.js";
 import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, sameAccount, startWorkingAgent,
@@ -385,7 +385,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const closeWarnings = new Map<string, number>();
   /** Sessions writing to the source repository; they cannot be closed until it settles. */
   const applying = new Set<string>();
-  const tui = new BackdropTui(new ProcessTerminal(), false, undefined, { mouse: true });
+  const terminal = new FocusReportingTerminal(new ProcessTerminal());
+  const tui = new BackdropTui(terminal, false, undefined, { mouse: true });
+  // Focus reports arrive only once the TUI has started, after the surface below exists.
+  terminal.onFocusChange((focused) => { surface.setTerminalFocused(focused); });
   const interrupt = (sessionId: string): void => { activeOperations.get(sessionId)?.abort(); };
   const runOperation = async <T>(sessionId: string, operation: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     if (activeOperations.has(sessionId)) throw new Error("Tesota Shell session operation already active");
@@ -445,7 +448,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const code = runRolesCommand(args, (written) => { text += written; }, offered());
       // The agent's role sets the model new sessions start with; `/model` switches a running session's.
       const agent = code === 0 && args[0] === "agent" ? "New sessions start with it; /model switches this one's.\n" : "";
-      surface.writeTo(id, `${text}${agent}`.trimEnd(), code === 0 ? "success" : "warning");
+      surface.replyTo(id, `${text}${agent}`.trimEnd(), code === 0 ? "success" : "warning");
     },
     onKeep: (id) => { void keepTurns(id); },
     onRevert: (id, args) => { void revertTurn(id, args); },
@@ -457,16 +460,16 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         // As Codex's /rename suggests one: a title from the session's latest requests.
         const requests = (store.list().find((session) => session.id === id)?.entries ?? [])
           .flatMap((entry) => entry.kind === "user" && !entry.text.startsWith("/") ? [entry.text] : []).slice(-8);
-        if (requests.length === 0) { surface.writeTo(id, "Nothing to name yet. Use /rename <name>.", "warning"); return; }
-        surface.writeTo(id, "Naming the session from its requests.");
+        if (requests.length === 0) { surface.replyTo(id, "Nothing to name yet. Use /rename <name>.", "warning"); return; }
+        surface.replyTo(id, "Naming the session from its requests.");
         nameInBackground(id, requests, "operator");
         return;
       }
       const title = cleanTitle(name);
       try {
         if (title !== undefined && store.setTitle(id, title, "operator")) surface.setSessionTitle(id, title);
-        else surface.writeTo(id, "Use /rename <name>, with some text.", "warning");
-      } catch { surface.writeTo(id, "The name could not be saved.", "warning"); }
+        else surface.replyTo(id, "Use /rename <name>, with some text.", "warning");
+      } catch { surface.replyTo(id, "The name could not be saved.", "warning"); }
     },
     modelPicker: (id, prefix) => {
       try {
@@ -858,12 +861,12 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       let current: string;
       let role: string;
       try { current = agentChoice(id); role = readModelChoices().agent; } catch (error) {
-        surface.writeTo(id, `${error instanceof Error ? error.message : "The model choices could not be read"}.`, "warning");
+        surface.replyTo(id, `${error instanceof Error ? error.message : "The model choices could not be read"}.`, "warning");
         return;
       }
       const models = offered();
       if (argument === undefined) {
-        surface.writeTo(id, `The agent uses ${current} in this session; new sessions use ${role} (tesota roles agent).\n` +
+        surface.replyTo(id, `The agent uses ${current} in this session; new sessions use ${role} (tesota roles agent).\n` +
           "/model <route:model> switches it: on the same engine its conversation continues, on another it starts a new one. " +
           `/model default returns to ${role}. Add @low, @medium, @high, @xhigh or @max for a reasoning level the model ` +
           `accepts. Offered:\n${routeListing(models)}`);
@@ -873,18 +876,18 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const from = parseModelChoice(current);
       const to = parseModelChoice(choice);
       if (from === undefined || to === undefined || !offeredChoices(models).includes(choice)) {
-        surface.writeTo(id, `${choice} is not offered. /model lists the models.`, "warning");
+        surface.replyTo(id, `${choice} is not offered. /model lists the models.`, "warning");
         return;
       }
       // Another account needs its own runtime or process, so only a switch within one account continues in place (decision 050).
       switch (modelSwitch(choice === current, ROUTE_ENGINE[from.kind] === ROUTE_ENGINE[to.kind] && sameAccount(from, to))) {
-        case "unchanged": surface.writeTo(id, `The agent already uses ${current}.`); return;
+        case "unchanged": surface.replyTo(id, `The agent already uses ${current}.`); return;
         case "in_place": {
           try {
             const target = await openModelTarget(choice);
             await (await liveAgent(id))?.switchModel(target);
           } catch (error) {
-            surface.writeTo(id, `The agent could not switch to ${choice}: ${error instanceof Error ? error.message : "unknown error"}. ` +
+            surface.replyTo(id, `The agent could not switch to ${choice}: ${error instanceof Error ? error.message : "unknown error"}. ` +
               `It still uses ${current}.`, "warning");
             return;
           }
@@ -910,7 +913,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     handOff: async (id) => {
       let current: string;
       try { current = agentChoice(id); } catch (error) {
-        surface.writeTo(id, `${error instanceof Error ? error.message : "The model choices could not be read"}.`, "warning");
+        surface.replyTo(id, `${error instanceof Error ? error.message : "The model choices could not be read"}.`, "warning");
         return;
       }
       await newConversation(id, current);
@@ -935,7 +938,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const own = saved(id)?.sandbox;
     const current = execution === undefined ? "Commands in this session run where its next request chooses"
       : `Commands in this session run ${executionPlace(execution)}`;
-    surface.writeTo(id, `${current}; ${own === undefined ? "it follows your choice for new sessions" : `its own choice is ${own}`}, ` +
+    surface.replyTo(id, `${current}; ${own === undefined ? "it follows your choice for new sessions" : `its own choice is ${own}`}, ` +
       `and new sessions use ${readSandboxPreference()} (tesota sandbox).\n` +
       `/sandbox <${SANDBOX_PREFERENCES.join("|")}> switches this session: its environment is prepared again, and the ` +
       "agent restarts with its conversation. /sandbox default follows your choice for new sessions.");
@@ -950,7 +953,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     // A sandbox named outright, never auto or this computer, is used only when it is ready here.
     if (preference !== "auto" && preference !== "host" && next.commands === "host") {
       const name = Object.values(SANDBOX_NAMES).find((entry) => entry.choice === preference)?.described ?? preference;
-      surface.writeTo(id, `${name.charAt(0).toUpperCase()}${name.slice(1)} is not ready here: ${unavailableReason(next)}. ` +
+      surface.replyTo(id, `${name.charAt(0).toUpperCase()}${name.slice(1)} is not ready here: ${unavailableReason(next)}. ` +
         `Commands in this session still run ${current === undefined ? "where they did" : executionPlace(current)}. ` +
         "tesota sandbox shows what each sandbox needs.", "warning");
       return;
@@ -958,7 +961,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     store.setSandbox(id, followDefault ? undefined : preference);
     if (followDefault) surface.writeTo(id, `This session follows your choice for new sessions (${preference}).`);
     if (current?.provider === next.provider) {
-      surface.writeTo(id, `Commands in this session already run ${executionPlace(next)}.`);
+      surface.replyTo(id, `Commands in this session already run ${executionPlace(next)}.`);
       return;
     }
     if (state.environment === undefined) {
@@ -978,11 +981,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const sessionSandbox: SessionSandboxCommands = {
     change: async (id, argument) => {
       if (argument !== undefined && argument !== "default" && !(SANDBOX_PREFERENCES as readonly string[]).includes(argument)) {
-        surface.writeTo(id, sandboxUsage, "warning");
+        surface.replyTo(id, sandboxUsage, "warning");
         return;
       }
       if (argument !== undefined && activeOperations.has(id)) {
-        surface.writeTo(id, "Stop the current work (Esc) or wait for it before switching where commands run.", "warning");
+        surface.replyTo(id, "Stop the current work (Esc) or wait for it before switching where commands run.", "warning");
         return;
       }
       try {
@@ -990,7 +993,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         else if (argument === "default") await switchSandbox(id, readSandboxPreference(), true);
         else await switchSandbox(id, argument as SandboxPreference, false);
       } catch (error) {
-        surface.writeTo(id, `Tesota could not switch where commands run: ${error instanceof Error ? error.message : "unknown error"}.`,
+        surface.replyTo(id, `Tesota could not switch where commands run: ${error instanceof Error ? error.message : "unknown error"}.`,
           "warning");
       }
     },
@@ -1028,7 +1031,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       return false;
     }
     closeWarnings.set(id, Date.now());
-    surface.writeTo(id, closeWarning(record, pending));
+    surface.replyTo(id, closeWarning(record, pending));
     return true;
   };
 
@@ -1067,7 +1070,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const record = saved(id);
     if (record === undefined) return;
     if (activeOperations.has(id) || applying.has(id)) {
-      surface.writeTo(id, "Stop the current work with Ctrl+C before closing this session.");
+      surface.replyTo(id, "Stop the current work with Ctrl+C before closing this session.");
       return;
     }
     if (awaitingConfirmation(id, record, await pendingChangeCount(id))) return;
@@ -1153,18 +1156,18 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const directory = saved(id)?.workspace;
     if (states.get(id)?.workspace !== undefined || (directory !== null && directory !== undefined)) {
       const work = await workspaceFor(id);
-      surface.writeTo(id, work.place === "source" ? "This session already works in your files, and keeps working there. " +
+      surface.replyTo(id, work.place === "source" ? "This session already works in your files, and keeps working there. " +
         "Isolation is chosen before a session's first request: start one with /new, then /isolate."
         : "This session already works in an isolated copy.");
       return;
     }
     if (sourceKind === "folder") {
-      surface.writeTo(id, "Tesota already works on a copy of this folder: nothing in it changes until you apply a reviewed result.");
+      surface.replyTo(id, "Tesota already works on a copy of this folder: nothing in it changes until you apply a reviewed result.");
       return;
     }
-    if (saved(id)?.isolated === true) { surface.writeTo(id, "This session will already work in an isolated copy."); return; }
+    if (saved(id)?.isolated === true) { surface.replyTo(id, "This session will already work in an isolated copy."); return; }
     try { store.setIsolated(id); } catch (error) {
-      surface.writeTo(id, `Tesota could not record the choice: ${error instanceof Error ? error.message : "unknown error"}.`, "warning");
+      surface.replyTo(id, `Tesota could not record the choice: ${error instanceof Error ? error.message : "unknown error"}.`, "warning");
       return;
     }
     surface.writeTo(id, "This session will work in an isolated copy, made with its first request: nothing in your files " +
@@ -1196,9 +1199,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   /** `/keep`: the operator's acceptance of every undecided turn, which the journal records apart from checks and review. */
   const keepTurns = async (id: string): Promise<void> => {
     const session = await turnsOf(id);
-    if (typeof session === "string") { surface.writeTo(id, session, "warning"); return; }
+    if (typeof session === "string") { surface.replyTo(id, session, "warning"); return; }
     const count = session.turns.length;
-    if (count === 0) { surface.writeTo(id, "No turn is undecided; there is nothing to keep."); return; }
+    if (count === 0) { surface.replyTo(id, "No turn is undecided; there is nothing to keep."); return; }
     const tree = session.snapshot().tree;
     stateFor(id).reviewed = undefined;
     await session.keep();
@@ -1216,20 +1219,20 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const revertTurn = (id: string, args: readonly string[]): Promise<void> => serialized(async () => {
     const mode = args[0];
     if (args.length > 1 || mode !== undefined && mode !== "all" && mode !== "agent") {
-      surface.writeTo(id, "Use /revert, /revert all or /revert agent.", "warning");
+      surface.replyTo(id, "Use /revert, /revert all or /revert agent.", "warning");
       return;
     }
     const session = await turnsOf(id);
-    if (typeof session === "string") { surface.writeTo(id, session, "warning"); return; }
+    if (typeof session === "string") { surface.replyTo(id, session, "warning"); return; }
     const turn = session.turns.at(-1);
     if (turn === undefined) {
-      surface.writeTo(id, `No turn is undecided${session.redoable === undefined ? "" : "; /redo puts the last reverted one back"}.`);
+      surface.replyTo(id, `No turn is undecided${session.redoable === undefined ? "" : "; /redo puts the last reverted one back"}.`);
       return;
     }
     const changed = session.compare(turn.before, turn.after).changes.map((change) => change.path);
     const outside = turn.outside.filter((path) => changed.includes(path));
     if (outside.length > 0 && mode === undefined) {
-      surface.writeTo(id, "This turn also changed files outside the agent's file tools, by its commands or by you during the " +
+      surface.replyTo(id, "This turn also changed files outside the agent's file tools, by its commands or by you during the " +
         `turn:\n${pathList(outside)}\nUse /revert all to revert them too, or /revert agent to leave them as they are.`, "warning");
       return;
     }
@@ -1261,9 +1264,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   /** `/redo`: put the latest reverted turn back, as OpenCode's /redo does, while no new turn started since. */
   const redoTurn = (id: string): Promise<void> => serialized(async () => {
     const session = await turnsOf(id);
-    if (typeof session === "string") { surface.writeTo(id, session, "warning"); return; }
+    if (typeof session === "string") { surface.replyTo(id, session, "warning"); return; }
     const turn = session.redoable;
-    if (turn === undefined) { surface.writeTo(id, "Nothing to redo: no turn was reverted since the latest one began."); return; }
+    if (turn === undefined) { surface.replyTo(id, "Nothing to redo: no turn was reverted since the latest one began."); return; }
     const changed = session.compare(turn.before, turn.after).changes.map((change) => change.path);
     stateFor(id).reviewed = undefined;
     applying.add(id);
@@ -1287,10 +1290,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       surface.writeTo(id, "The next review asks for the checks again, and which hidden files they may read.");
       return;
     }
-    if (args.length > 0) { surface.writeTo(id, "Use /checks or /checks reset.", "warning"); return; }
+    if (args.length > 0) { surface.replyTo(id, "Use /checks or /checks reset.", "warning"); return; }
     const checks = store.checks();
     const allowed = store.checkSecrets();
-    surface.writeTo(id, [checks === null ? "No checks are chosen yet; the first review asks for them."
+    surface.replyTo(id, [checks === null ? "No checks are chosen yet; the first review asks for them."
       : checks.length === 0 ? "No checks run after a change." : `Checks:\n${pathList(checks.map(approvedCheckText))}`,
     allowed.length === 0 ? "The checks read no hidden files." : `Hidden files the checks may read:\n${pathList(allowed)}`,
     "/checks reset chooses them again at the next review."].join("\n"));
