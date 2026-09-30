@@ -331,7 +331,26 @@ The steps after working in the source, in order:
   WSL sandbox cannot mount one, so a check run on the operator's computer or
   in Docker Sandboxes, whose base is now reported unknown, is compared with
   its base too.
-- **Then** remove what only the old default path used.
+- **Then** remove what only the old default path used. Isolated
+  workspaces keep almost all of it, so little is expected to go: notices and
+  assumptions written for a workspace as the default.
+
+Open questions, for real use to decide before each step is built:
+
+- **When dependencies install.** A session prepares its sandbox as it
+  opens, so it is ready by the first request, and a session that only
+  answers still pays for it. Installing at the first command instead costs
+  that command the wait.
+- **How a session asks for isolation.** A command such as `/isolate`, a
+  choice when the session starts, or both.
+- **Where the cost comes from.** What an install will take is known only
+  after it; the honest estimate is the repository's last measured install,
+  which Tesota does not record yet.
+- **How a checkout gets its dependencies outside the WSL sandbox.** Running
+  the repository's install on the operator's computer needs their approval
+  and time for every failing check; a list of ignored files to copy or link
+  instead, as Claude Code's `.worktreeinclude` names, may be enough for
+  most repositories.
 
 Sources: [Claude Code checkpointing](https://code.claude.com/docs/en/checkpointing),
 [Claude Code worktrees](https://code.claude.com/docs/en/worktrees),

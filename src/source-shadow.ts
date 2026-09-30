@@ -52,8 +52,12 @@ function ownHome(home: string): string {
   try { return realpathSync(home); } catch { return home; }
 }
 
-/** A path as the file system compares it: without case on Windows and macOS, exactly elsewhere. */
-function pathKey(path: string): string {
+/**
+ * A path as the file system compares it: without case on Windows and macOS,
+ * exactly elsewhere, where `App` and `app` are two directories. Every key
+ * Tesota derives from a path uses it.
+ */
+export function pathKey(path: string): string {
   return process.platform === "win32" || process.platform === "darwin" ? path.toLocaleLowerCase("en-US") : path;
 }
 

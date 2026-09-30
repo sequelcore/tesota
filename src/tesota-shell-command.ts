@@ -21,7 +21,7 @@ import { type ModelAccess, type ModelTarget, openModelTarget, sameAccount, start
 import { accountRoute, MODEL_ROLES, ROLE_OFF, type ModelRole, parseModelChoice, readAddedRoutes, readModelChoices,
   ROUTE_ENGINE } from "./model-roles.js";
 import { type WorkPlan, withReview } from "./work-plan.js";
-import { isGitRepository, largeUntrackedFiles, largeUntrackedWarning } from "./source-shadow.js";
+import { isGitRepository, largeUntrackedFiles, largeUntrackedWarning, pathKey } from "./source-shadow.js";
 import { hiddenFilesIn } from "./secret-files.js";
 import { type RevertedTurn, SourceSession } from "./source-session.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, rolePicker, routeListing,
@@ -379,7 +379,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const firstDisplayed = savedSessions[0] ?? initial;
   let workspaceCallbacks: WorkspaceCallbacks | undefined;
   const piSessionsDirectory = join(homedir(), ".tesota", "pi-sessions",
-    createHash("sha256").update(resolve(cwd).toLocaleLowerCase("en-US")).digest("hex"));
+    createHash("sha256").update(pathKey(resolve(cwd))).digest("hex"));
   const closeWarnings = new Map<string, number>();
   /** Sessions writing to the source repository; they cannot be closed until it settles. */
   const applying = new Set<string>();

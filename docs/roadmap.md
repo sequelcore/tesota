@@ -26,13 +26,17 @@ the workflow and limits.
 - Use the WSL sandbox as the default on a real project, including its toolchain
   preparation and the option to approve one command on the host. Correct the
   obstacles real use reveals. [Execution](design/execution.md)
-- Finish working in the source. Built: one shadow repository per source,
-  turns recorded in the operator's project with keep and revert, secret files
-  hidden and `.git` read-only in the WSL sandbox, base checks in a checkout of
-  their own, and a separate workspace for a second session. Next: one
-  `node_modules` per repository shared by its sessions, then an isolated
-  workspace for any session that asks, with its cost stated, then removing
-  what only the old default path used. Use it on a real project first.
+- Finish working in the source. Built: one shadow repository per source;
+  turns recorded in the operator's project and decided with `/keep`,
+  `/revert` and `/redo`, a revert never overwriting a later edit; secret files
+  hidden and `.git` read-only in the WSL sandbox, with the agent told what is
+  hidden; base checks in a checkout of their own; a separate workspace for a
+  folder and for a second session. Not yet run with a real model in the
+  shell: use it on a real project first, and let that decide the open
+  questions of the next steps. Next: one `node_modules` per repository shared
+  by its sessions, then an isolated workspace for any session that asks, with
+  its cost stated and its checkout prepared by the repository's setup, which
+  also compares checks with their base outside the WSL sandbox.
   [Workspace](design/workspace.md#planned)
 - Evaluate scope behavior on cases that tempt the agent to make unrelated
   changes. The reviewer's extra-work check is built, but

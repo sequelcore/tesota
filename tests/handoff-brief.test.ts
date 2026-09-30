@@ -79,4 +79,12 @@ it("reads the last review of the pending changes from the journal, until the ope
   expect((await lastOpenReview(directory))?.tree).toBe("2");
   await appendAssurance(directory, decisionEntry("2", "rejected"));
   expect(await lastOpenReview(directory)).toBeUndefined();
+  // In the operator's files, a reverted turn settles its review, and redoing the turn opens it again.
+  await appendAssurance(directory, reviewEntry(snapshot("3"), [], [], [], [report("3", "third")]));
+  await appendAssurance(directory, decisionEntry("3", "reverted"));
+  expect(await lastOpenReview(directory)).toBeUndefined();
+  await appendAssurance(directory, decisionEntry("3", "redone"));
+  expect((await lastOpenReview(directory))?.tree).toBe("3");
+  await appendAssurance(directory, decisionEntry("3", "kept"));
+  expect(await lastOpenReview(directory)).toBeUndefined();
 });

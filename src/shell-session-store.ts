@@ -13,6 +13,7 @@ import { MAX_CHECK_REPORTS, normalizeReportPath } from "./test-report.js";
 import type { ApprovedCheck } from "./workspace-checks.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
 import { replacesTitle, type TitleSource } from "./verification/session-title-rule.js";
+import { pathKey } from "./source-shadow.js";
 
 const text = z.string().max(2_000_000);
 const changeSchema = z.strictObject({ added: z.number().int().nonnegative(), removed: z.number().int().nonnegative(),
@@ -139,11 +140,11 @@ function readSnapshot(path: string, source: string): Snapshot {
 export const DEFAULT_SESSION_STORE_ROOT: string = join(homedir(), ".tesota", "shell-sessions");
 
 /**
- * A repository's identity for saved sessions: its resolved path, without case,
- * since Windows paths ignore it. The file is found and checked by the same key.
+ * A repository's identity for saved sessions: its resolved path, without case
+ * where the file system ignores it. The file is found and checked by the same key.
  */
 function sourceKey(source: string): string {
-  return resolve(source).toLocaleLowerCase("en-US");
+  return pathKey(resolve(source));
 }
 
 function storePath(source: string, root: string): string {
