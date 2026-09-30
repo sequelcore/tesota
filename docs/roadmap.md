@@ -96,6 +96,27 @@ on observed outcomes and is stable.
 
 - Read `.devcontainer/devcontainer.json` as a repository toolchain definition.
 - Exercise a non-TypeScript repository and another operating system.
+- Improve verifier feedback for correction on real tasks: preserve the
+  original requirement, surface the failing obligation and its source when
+  available, and distinguish a demonstrated violation from an unresolved
+  proof, unsupported behavior or a check that could not finish. Preserve
+  editable proof work when source artifacts are regenerated, and refresh
+  evidence when code, contracts, proof files or their dependencies change.
+- Evaluate additional verification methods and prover backends only for
+  concrete properties current methods cannot establish effectively. Record
+  each method's supported semantics, assumptions and limits. Compare repair
+  success, missed defects, specification weakening, time and tokens on the
+  same cases. Targeted checks may guide repair; final assurance must cover
+  the declared candidate and claim. Adopt an optimization only for a
+  measured benefit without weakening that coverage.
+- Evaluate a Java verifier on an existing consumer's precise domain rule,
+  after exercising the current turn workflow on a real project. Establish
+  the supported language and library subset before selecting a tool or
+  building one. Integrate a demonstrated method with its assumptions,
+  diagnostics and evidence bound to the candidate; measure correction
+  against an unchanged request, including specification weakening. The
+  verifier's implementation and consumers' product roadmaps remain outside
+  Tesota's roadmap.
 - Add remote execution providers only after they pass the same live controls.
 - Consider a Jev relay only with real users and TypeSafe's agreement.
 - Add a review queue, cross-session notifications, or workflow profiles when
