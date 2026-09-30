@@ -1,6 +1,6 @@
 // The lit, extruded and Braille-rasterized mark adapts the method of the Codex
 // welcome blossom (codex-rs/tui/src/empty_state_animation, openai/codex c9b3924a62).
-// The palo fierro silhouette, its materials and palettes are Tesota's own.
+// The palo fierro scene, its creatures, materials and motion are Tesota's own.
 
 export const MARK_MAX_COLUMNS = 60;
 export const MARK_MAX_ROWS = 24;
@@ -12,10 +12,29 @@ const EXTENT = 1.08;
 const STEP = EXTENT * 2 / (GRID - 1);
 const TAU = Math.PI * 2;
 const DOT_BITS = [1, 8, 2, 16, 4, 32, 64, 128] as const;
-const WOBBLE = 0.11;
 const GRAIN_PHASE = 3.9;
-/** Virtual-canvas units per unit of the mark, on the 800 by 550 stage. */
-const SCALE = 250;
+/** Virtual-canvas units per unit of the scene, on the 800 by 550 stage, and the scene's height at its center. */
+const SCALE = 245;
+const CENTER_Y = 0.04;
+/** The still camera looks slightly down, so the ground reads as a floor. */
+const PITCH = -0.22;
+const WIND_CYCLES = 10;
+const WIND = 0.045;
+/** The ground the roots and the saguaros stand on, and the tumbleweed bounces along. */
+const GROUND = 0.8;
+const TRUNK_X = -0.06;
+/**
+ * The tumbleweed's pass, blown along a line behind the trunk from beyond the right edge to beyond the left, in
+ * bounces; each moment is a share of the scene.
+ */
+const TUMBLE_Z = -0.38;
+const TUMBLE_RADIUS = 0.2;
+const ENTER_X = 2.5;
+const LEAVE_X = -2.7;
+const BLOWN_IN = 0.06;
+const BLOWN_OUT = 0.8;
+const HOPS = 3.5;
+const HOP = 0.3;
 
 export type Rgb = readonly [number, number, number];
 
@@ -54,55 +73,100 @@ function lobe(p: Point, center: Point, radii: Point, leaves: number, turn: numbe
   return ellipse(p, center, radii) + Math.sin(angle * leaves + turn) * 0.022;
 }
 
+/** What a point is made of, which picks its palette. */
+const Stuff = { Foliage: 0, Wood: 1, Saguaro: 2, Distant: 3, Straw: 4 } as const;
+type Stuff = typeof Stuff[keyof typeof Stuff];
+/** What moves a point: the wind, in the crown, or the tumbleweed's roll and bounce. */
+const Group = { Scene: 0, Tumbleweed: 1 } as const;
+type Group = typeof Group[keyof typeof Group];
+
 interface Part {
   readonly material: Material;
-  readonly foliage: boolean;
+  readonly stuff: Stuff;
   /** How far the part stands in front of the trunk's plane. */
   readonly offset: number;
   readonly shape: (p: Point) => number;
 }
 
-const FORK: Point = [-0.06, 0.22];
+const FORK: Point = [TRUNK_X, 0.22];
 
 /**
  * The palo fierro as the welcome drew it: a low front crown on the left, a wide rear crown on the right and a
  * crown between them, over a short trunk that forks into three limbs, on spread roots. Each crown stands at its
- * own depth, so turning shows the tree's volume.
+ * own depth, so the camera's sway shows the tree's volume.
  */
 const PARTS: readonly Part[] = [
-  { material: FOLIAGE, foliage: true, offset: -0.2, shape: (p) => lobe(p, [0.34, -0.46], [0.66, 0.34], 11, 0.4) },
-  { material: FOLIAGE, foliage: true, offset: 0.02, shape: (p) => lobe(p, [-0.02, -0.62], [0.4, 0.27], 9, 1.3) },
-  { material: FOLIAGE, foliage: true, offset: 0.22, shape: (p) => lobe(p, [-0.52, -0.3], [0.44, 0.27], 10, 2.1) },
-  { material: WOOD, foliage: false, offset: 0, shape: (p) => [
-    limb(p, [-0.06, 0.6], FORK, 0.085, 0.065),
+  { material: FOLIAGE, stuff: Stuff.Foliage, offset: -0.2, shape: (p) => lobe(p, [0.34, -0.46], [0.66, 0.34], 11, 0.4) },
+  { material: FOLIAGE, stuff: Stuff.Foliage, offset: 0.02, shape: (p) => lobe(p, [-0.02, -0.62], [0.4, 0.27], 9, 1.3) },
+  { material: FOLIAGE, stuff: Stuff.Foliage, offset: 0.22, shape: (p) => lobe(p, [-0.52, -0.3], [0.44, 0.27], 10, 2.1) },
+  { material: WOOD, stuff: Stuff.Wood, offset: 0, shape: (p) => [
+    limb(p, [TRUNK_X, 0.6], FORK, 0.085, 0.065),
     limb(p, FORK, [-0.5, -0.24], 0.06, 0.028),
     limb(p, FORK, [0.0, -0.4], 0.05, 0.028),
     limb(p, FORK, [0.42, -0.26], 0.06, 0.028),
-    limb(p, [-0.06, 0.5], [-0.52, 0.76], 0.06, 0.02),
-    limb(p, [-0.06, 0.5], [0.4, 0.76], 0.06, 0.02),
-    limb(p, [-0.06, 0.56], [-0.1, 0.8], 0.07, 0.03),
+    limb(p, [TRUNK_X, 0.5], [-0.52, 0.76], 0.06, 0.02),
+    limb(p, [TRUNK_X, 0.5], [0.4, 0.76], 0.06, 0.02),
+    limb(p, [TRUNK_X, 0.56], [-0.1, GROUND], 0.07, 0.03),
   ].reduce((a, b) => smoothMax(a, b, 0.04)) },
 ];
 
-/** A surface point in the mark's own space, fixed for every frame. */
-interface Samples {
-  readonly count: number;
-  /** x, y, z, nx, ny, nz and grain for each point. */
-  readonly values: Float64Array;
-  /** 1 for foliage, 0 for wood. */
-  readonly foliage: Uint8Array;
+type Vector = readonly [number, number, number];
+
+/** A small seeded generator, so the tumbleweed's tangle is the same every time. */
+function random(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-const SAMPLE_VALUES = 7;
+/** Surface points, fixed for every frame, each moved by its group before it is drawn. */
+interface Samples {
+  readonly count: number;
+  /**
+   * x, y, z, nx, ny, nz, grain, how much the wind moves it, and the sine and cosine of its place in the wind and of
+   * four fifths of it, for each point; the wind then costs each frame no trigonometry per point.
+   */
+  readonly values: Float64Array;
+  readonly stuff: Uint8Array;
+  readonly group: Uint8Array;
+}
+
+const SAMPLE_VALUES = 12;
 let samples: Samples | undefined;
 
-/** Every point on the parts' faces, bevels and sides, in drawing order, with its bumped normal and grain. */
+function cross(a: Vector, b: Vector): Vector {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+
+function unit(v: Vector): Vector {
+  const length = Math.hypot(v[0], v[1], v[2]) || 1;
+  return [v[0] / length, v[1] / length, v[2] / length];
+}
+
+/** Every point of the scene, with its normal, grain and exposure to the wind. */
 function surface(): Samples {
   if (samples !== undefined) return samples;
   const values: number[] = [];
-  const foliage: number[] = [];
+  const stuff: number[] = [];
+  const group: number[] = [];
+  const push = (x: number, y: number, z: number, nx: number, ny: number, nz: number, kind: Stuff, moved: Group,
+    wind: number): void => {
+    // Each part of the crown sways on its own phase, set by where it stands.
+    const phase = x * 2.1 + z * 3.3;
+    values.push(x, y, z, nx, ny, nz, Math.sin(x * 23 + y * 19 + GRAIN_PHASE) * 0.01, wind,
+      Math.sin(phase), Math.cos(phase), Math.sin(phase * 0.8), Math.cos(phase * 0.8));
+    stuff.push(kind);
+    group.push(moved);
+  };
+  // The crown's tips move most in the wind and the trunk's base not at all.
+  const exposure = (y: number): number => Math.min(1, Math.max(0, (0.3 - y) / 1.2)) ** 1.6;
   const add = (x: number, y: number, offset: number, z: number, nx: number, ny: number, nz: number,
-    leaves: boolean, bumpy: boolean): void => {
+    kind: Stuff, bumpy: boolean): void => {
     if (bumpy) {
       // Leaf clumps: a low, irregular swell across the crown's faces.
       const u = x * 7.3 + y * 2.1;
@@ -113,8 +177,7 @@ function surface(): Samples {
       const length = Math.hypot(nx, ny, nz) || 1;
       nx /= length; ny /= length; nz /= length;
     }
-    values.push(x, y, z + offset, nx, ny, nz, Math.sin(x * 23 + y * 19 + GRAIN_PHASE) * 0.01);
-    foliage.push(leaves ? 1 : 0);
+    push(x, y, z + offset, nx, ny, nz, kind, Group.Scene, exposure(y));
   };
   for (const part of PARTS) {
     const distance = new Float32Array(GRID * GRID);
@@ -123,7 +186,8 @@ function surface(): Samples {
         distance[row * GRID + column] = part.shape([column * STEP - EXTENT, row * STEP - EXTENT]);
       }
     }
-    const { material, offset } = part;
+    const { material, offset, stuff: kind } = part;
+    const leaves = kind === Stuff.Foliage;
     for (let row = 1; row < GRID - 1; row++) {
       for (let column = 1; column < GRID - 1; column++) {
         const i = row * GRID + column;
@@ -140,21 +204,105 @@ function surface(): Samples {
           const edge = Math.min(1, Math.max(0, 1 - d / material.bevel));
           const nz = Math.sqrt(1 - edge * edge);
           const z = material.halfDepth - material.bevel + material.bevel * nz;
-          add(x, y, offset, z, -gx * edge, -gy * edge, nz, part.foliage, part.foliage);
-          add(x, y, offset, -z, -gx * edge, -gy * edge, -nz, part.foliage, part.foliage);
+          add(x, y, offset, z, -gx * edge, -gy * edge, nz, kind, leaves);
+          add(x, y, offset, -z, -gx * edge, -gy * edge, -nz, kind, leaves);
         }
         if (Math.abs(d) < STEP * 0.8) {
           const side = material.halfDepth - material.bevel;
           const layers = Math.ceil(side * 2 / STEP);
           for (let layer = 0; layer <= layers; layer++) {
             add(x - gx * d, y - gy * d, offset, layers === 0 ? 0 : -side + layer / layers * side * 2,
-              -gx, -gy, 0, part.foliage, false);
+              -gx, -gy, 0, kind, false);
           }
         }
       }
     }
   }
-  samples = { count: foliage.length, values: Float64Array.from(values), foliage: Uint8Array.from(foliage) };
+  // Points on the volumes sit about two to a Braille dot; the distant saguaros, drawn smaller, need fewer.
+  const near = STEP * 0.6;
+  const far = STEP * 1.15;
+  /** An ellipsoid's surface, turned by `tilt` in the x-y plane, with points `spacing` apart. */
+  const ellipsoid = (center: Vector, [a, b, c]: Vector, tilt: number, kind: Stuff, moved: Group,
+    spacing = near): void => {
+    const rings = Math.max(6, Math.ceil(Math.PI * Math.max(a, b, c) / spacing));
+    const [st, ct] = [Math.sin(tilt), Math.cos(tilt)];
+    for (let ring = 0; ring <= rings; ring++) {
+      const polar = ring / rings * Math.PI;
+      const around = Math.max(1, Math.ceil(TAU * Math.max(a, b, c) * Math.sin(polar) / spacing));
+      for (let step = 0; step < around; step++) {
+        const azimuth = step / around * TAU;
+        const [x, y, z] = [Math.sin(polar) * Math.cos(azimuth) * a, Math.cos(polar) * b, Math.sin(polar) * Math.sin(azimuth) * c];
+        const [nx, ny, nz] = unit([x / (a * a), y / (b * b), z / (c * c)]);
+        push(center[0] + x * ct - y * st, center[1] + x * st + y * ct, center[2] + z,
+          nx * ct - ny * st, nx * st + ny * ct, nz, kind, moved, 0);
+      }
+    }
+  };
+  /** A tube from a to b tapering from ra to rb, ribbed when `ribs` is above 0, closed by a sphere at each end. */
+  const tube = (a: Vector, b: Vector, ra: number, rb: number, kind: Stuff, moved: Group, ribs = 0,
+    spacing = near): void => {
+    const axis: Vector = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const length = Math.hypot(axis[0], axis[1], axis[2]);
+    const along = unit(axis);
+    const across = unit(cross(along, Math.abs(along[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0]));
+    const third = cross(along, across);
+    const steps = Math.max(2, Math.ceil(length / spacing));
+    for (let step = 0; step <= steps; step++) {
+      const t = step / steps;
+      const radius = ra + (rb - ra) * t;
+      const around = Math.max(6, Math.ceil(TAU * radius / spacing));
+      for (let turn = 0; turn < around; turn++) {
+        const angle = turn / around * TAU;
+        const rib = ribs > 0 ? 1 + 0.14 * Math.cos(angle * ribs) : 1;
+        const [c, s] = [Math.cos(angle), Math.sin(angle)];
+        const normal: Vector = [across[0] * c + third[0] * s, across[1] * c + third[1] * s, across[2] * c + third[2] * s];
+        push(a[0] + axis[0] * t + normal[0] * radius * rib, a[1] + axis[1] * t + normal[1] * radius * rib,
+          a[2] + axis[2] * t + normal[2] * radius * rib, normal[0], normal[1], normal[2], kind, moved, 0);
+      }
+    }
+    ellipsoid(a, [ra, ra, ra], 0, kind, moved, spacing);
+    ellipsoid(b, [rb, rb, rb], 0, kind, moved, spacing);
+  };
+  /** A saguaro: a ribbed column with arms that reach out, then turn up. */
+  const saguaro = (base: Vector, height: number, radius: number, kind: Stuff,
+    arms: readonly (readonly [side: number, at: number, reach: number, rise: number])[] = []): void => {
+    const spacing = kind === Stuff.Distant ? far : near;
+    tube(base, [base[0], base[1] - height, base[2]], radius, radius * 0.9, kind, Group.Scene, 10, spacing);
+    for (const [side, at, reach, rise] of arms) {
+      const elbow: Vector = [base[0] + side * reach, base[1] - height * at, base[2]];
+      tube([base[0], base[1] - height * at, base[2]], elbow, radius * 0.7, radius * 0.7, kind, Group.Scene, 8, spacing);
+      tube(elbow, [elbow[0], elbow[1] - rise, elbow[2]], radius * 0.7, radius * 0.65, kind, Group.Scene, 8, spacing);
+    }
+  };
+  // A saguaro seedling in the palo fierro's shade: the nurse tree is what lets it grow.
+  saguaro([-0.74, GROUND, 0.12], 0.24, 0.055, Stuff.Saguaro);
+  // Grown saguaros further off, one of them behind the tree, so depth reads in what hides what.
+  saguaro([1.4, GROUND, -1.3], 0.85, 0.08, Stuff.Distant, [[-1, 0.38, 0.2, 0.3], [1, 0.55, 0.18, 0.22]]);
+  saguaro([-1.5, GROUND, -1.8], 0.95, 0.09, Stuff.Distant, [[1, 0.45, 0.22, 0.32]]);
+  saguaro([0.5, GROUND, -2.4], 1.05, 0.09, Stuff.Distant, [[-1, 0.42, 0.22, 0.32], [1, 0.52, 0.2, 0.26]]);
+  // The tumbleweed, in its own space around its center: a ball of thin, dry, tangled stems.
+  const next = random(3371);
+  for (let strand = 0; strand < 9; strand++) {
+    const axis = unit([next() * 2 - 1, next() * 2 - 1, next() * 2 - 1]);
+    const first = unit(cross(axis, Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]));
+    const second = cross(axis, first);
+    const radius = TUMBLE_RADIUS * (0.7 + next() * 0.35);
+    const start = next() * TAU;
+    const sweep = TAU * (0.5 + next() * 0.4);
+    const kink = next() * TAU;
+    const steps = Math.ceil(sweep * radius / (near * 0.8));
+    for (let step = 0; step <= steps; step++) {
+      const angle = start + step / steps * sweep;
+      const r = radius * (1 + 0.08 * Math.sin(angle * 5 + kink));
+      const [c, s] = [Math.cos(angle), Math.sin(angle)];
+      const point: Vector = [r * (c * first[0] + s * second[0]), r * (c * first[1] + s * second[1]),
+        r * (c * first[2] + s * second[2])];
+      const [nx, ny, nz] = unit(point);
+      push(point[0], point[1], point[2], nx, ny, nz, Stuff.Straw, Group.Tumbleweed, 0);
+    }
+  }
+  samples = { count: stuff.length, values: Float64Array.from(values), stuff: Uint8Array.from(stuff),
+    group: Uint8Array.from(group) };
   return samples;
 }
 
@@ -166,8 +314,8 @@ export interface MarkPalette {
 
 export interface MarkLighting {
   readonly background: Rgb;
-  readonly foliage: MarkPalette;
-  readonly wood: MarkPalette;
+  /** One palette for each kind of stuff: foliage, wood, saguaro, plumage and markings. */
+  readonly palettes: readonly MarkPalette[];
   readonly rim: Rgb;
   readonly highlight: Rgb;
 }
@@ -187,7 +335,9 @@ function mix(from: Rgb, to: Rgb, share: number): Rgb {
 
 /**
  * Studio lighting over a dark or light terminal background. On a dark background shadows sink toward it; on a light
- * one the mark is ink, so shadows deepen toward the foreground and nothing is paler than a material's own color.
+ * one the scene is ink, so shadows deepen toward the foreground and nothing is paler than a material's own color.
+ * The seedling is the crown's green, a shade apart; saguaros further off fade toward the background, as distance
+ * does in desert air; the tumbleweed is dry straw, from the bark.
  */
 export function markLighting(background: Rgb, light: boolean, colors: MarkColors): MarkLighting {
   // A theme's role colors are tuned for text, so the lit side is lifted from them and the shadows fall away from them.
@@ -196,17 +346,23 @@ export function markLighting(background: Rgb, light: boolean, colors: MarkColors
     const key = mix(color, colors.foreground, 0.25);
     return { key, shadow: mix(key, background, 0.65), fill: mix(key, background, 0.35) };
   };
+  const ink = light ? colors.foreground : background;
   return {
     background,
-    foliage: material(colors.foliage),
-    wood: material(colors.wood),
+    palettes: [
+      material(colors.foliage),
+      material(colors.wood),
+      material(mix(colors.foliage, ink, 0.25)),
+      material(mix(mix(colors.foliage, ink, 0.25), background, 0.45)),
+      material(light ? colors.wood : mix(colors.wood, colors.foreground, 0.4)),
+    ],
     rim: colors.rim,
     highlight: light ? mix(colors.foliage, background, 0.4) : colors.foreground,
   };
 }
 
-function shade(light: MarkLighting, palette: MarkPalette, [nx, ny, nz]: readonly [number, number, number],
-  depth: number, grain: number): number {
+function shade(light: MarkLighting, palette: MarkPalette, nx: number, ny: number, nz: number, depth: number,
+  grain: number): number {
   const clamp = (value: number): number => Math.min(1, Math.max(0, value));
   const diffuse = clamp(nx * -0.41 + ny * -0.564 + nz * 0.718 + grain);
   const bounce = clamp(nx * 0.55 + ny * 0.2 - nz * 0.35) * (1 - diffuse) * 0.38;
@@ -225,11 +381,6 @@ function shade(light: MarkLighting, palette: MarkPalette, [nx, ny, nz]: readonly
   return rgb;
 }
 
-function smooth(value: number): number {
-  const t = Math.min(1, Math.max(0, value));
-  return t * t * t * (t * (t * 6 - 15) + 10);
-}
-
 export interface MarkCell {
   /** Braille dots, as the offset from U+2800; 0 leaves the cell empty. */
   readonly dots: number;
@@ -237,19 +388,82 @@ export interface MarkCell {
   readonly rgb: number;
 }
 
+/** Where everything stands at one moment of the scene. */
+interface Pose {
+  /** Whether the tumbleweed is on the stage. */
+  readonly visitor: boolean;
+  /** The wind's reach and phase. */
+  readonly wind: number;
+  /** The sine and cosine of the gust's phase, and of four fifths of it. */
+  readonly gustSine: number;
+  readonly gustCosine: number;
+  readonly slowSine: number;
+  readonly slowCosine: number;
+  /** The tumbleweed's center and the sine and cosine of how far it has rolled. */
+  readonly tumble: Vector;
+  readonly rollSine: number;
+  readonly rollCosine: number;
+}
+
 /**
- * One frame of the mark turning about its trunk: two eased turns per loop, resting face-on at every half loop.
- * Deterministic for its inputs; the caller owns timing.
+ * The scene at `progress`, from 0 to 1: the crown moves in a wind that rises and falls. With a `visitor`, the same
+ * wind blows a tumbleweed through, bouncing and rolling from the right edge to the left behind the trunk. At 0 and
+ * at 1 everything rests in the same pose, with the tumbleweed off the stage.
  */
-export function renderMark(columns: number, rows: number, phase: number, light: MarkLighting): MarkCell[] {
+function pose(progress: number, visitor: boolean): Pose {
+  const p = Math.min(1, Math.max(0, progress));
+  const t = Math.min(1, Math.max(0, (p - BLOWN_IN) / (BLOWN_OUT - BLOWN_IN)));
+  const x = ENTER_X + (LEAVE_X - ENTER_X) * t;
+  // Each bounce a little lower than the last, as the gust that lifted it passes.
+  const lift = HOP * (1 - 0.35 * t) * Math.abs(Math.sin(Math.PI * HOPS * t));
+  // Rolling left, its top turns toward where it goes.
+  const roll = -(ENTER_X - x) / TUMBLE_RADIUS;
+  return {
+    visitor: visitor && p > BLOWN_IN && p < BLOWN_OUT,
+    wind: WIND * Math.sin(Math.PI * p),
+    gustSine: Math.sin(TAU * WIND_CYCLES * p), gustCosine: Math.cos(TAU * WIND_CYCLES * p),
+    slowSine: Math.sin(TAU * WIND_CYCLES * p * 0.8), slowCosine: Math.cos(TAU * WIND_CYCLES * p * 0.8),
+    tumble: [x, GROUND - TUMBLE_RADIUS - lift, TUMBLE_Z],
+    rollSine: Math.sin(roll), rollCosine: Math.cos(roll),
+  };
+}
+
+/** Moves a point of the given group into the scene at `at`, writing its position and normal into `out`. */
+function place(at: Pose, values: Float64Array, k: number, moved: number, out: Float64Array): void {
+  let x = values[k]!;
+  const y = values[k + 1]!;
+  let z = values[k + 2]!;
+  const nx = values[k + 3]!;
+  const ny = values[k + 4]!;
+  const nz = values[k + 5]!;
+  if (moved === Group.Scene) {
+    const reach = values[k + 7]! * at.wind;
+    if (reach !== 0) {
+      // As in renderMark's projection, which moves these points itself.
+      x += reach * (at.gustSine * values[k + 9]! + at.gustCosine * values[k + 8]!);
+      z += reach * 0.6 * (at.slowCosine * values[k + 11]! - at.slowSine * values[k + 10]!);
+    }
+    out[0] = x; out[1] = y; out[2] = z; out[3] = nx; out[4] = ny; out[5] = nz;
+    return;
+  }
+  const [s, c] = [at.rollSine, at.rollCosine];
+  out[0] = at.tumble[0] + x * c - y * s;
+  out[1] = at.tumble[1] + x * s + y * c;
+  out[2] = at.tumble[2] + z;
+  out[3] = nx * c - ny * s;
+  out[4] = nx * s + ny * c;
+  out[5] = nz;
+}
+
+/**
+ * One frame of the palo fierro scene at `progress`, from 0 to 1, for a stage of `columns` by `rows` cells, with the
+ * tumbleweed blowing through when `visitor` is set. Deterministic for its inputs; the caller owns timing.
+ */
+export function renderMark(columns: number, rows: number, progress: number, light: MarkLighting,
+  visitor = false): MarkCell[] {
   if (columns > MARK_MAX_COLUMNS || rows > MARK_MAX_ROWS) throw new RangeError("the mark's stage is too large");
-  const loop = ((phase % 1) + 1) % 1;
-  const second = loop >= 0.5 ? 1 : 0;
-  const rotation = (second + smooth((loop * 2 - second) / 0.82)) * TAU;
-  const [sx, cx] = [Math.sin(Math.sin(rotation) * WOBBLE), Math.cos(Math.sin(rotation) * WOBBLE)];
-  const [sy, cy] = [Math.sin(rotation), Math.cos(rotation)];
-  const roll = Math.sin(loop * TAU) * 0.045;
-  const [sz, cz] = [Math.sin(roll), Math.cos(roll)];
+  const at = pose(progress, visitor);
+  const [sx, cx] = [Math.sin(PITCH), Math.cos(PITCH)];
   const dotColumns = columns * 2;
   const dotRows = rows * 4;
   const dotWidth = 800 / dotColumns;
@@ -258,23 +472,34 @@ export function renderMark(columns: number, rows: number, phase: number, light: 
   const depthBuffer = new Float32Array(dots).fill(Number.NEGATIVE_INFINITY);
   const winner = new Int32Array(dots);
   const colors = new Uint32Array(dots);
-  const { count, values, foliage } = surface();
+  const { count, values, stuff, group } = surface();
+  const placed = new Float64Array(6);
 
   // Project every point, keeping the nearest at each dot; only the winners are lit afterwards.
   for (let point = 0; point < count; point++) {
+    // The still scene is nearly every point; only the tumbleweed's few need the full move.
     const k = point * SAMPLE_VALUES;
-    const x = values[k]!;
-    const y = values[k + 1]!;
-    const z = values[k + 2]!;
-    const x1 = x * cy + z * sy;
-    const z1 = -x * sy + z * cy;
-    const y2 = y * cx - z1 * sx;
-    const z2 = y * sx + z1 * cx;
-    const x3 = x1 * cz - y2 * sz;
-    const y3 = x1 * sz + y2 * cz;
+    const moved = group[point]!;
+    let x: number;
+    let y: number;
+    let z: number;
+    if (moved === Group.Scene) {
+      const reach = values[k + 7]! * at.wind;
+      x = values[k]! + reach * (at.gustSine * values[k + 9]! + at.gustCosine * values[k + 8]!);
+      y = values[k + 1]!;
+      z = values[k + 2]! + reach * 0.6 * (at.slowCosine * values[k + 11]! - at.slowSine * values[k + 10]!);
+    } else {
+      if (!at.visitor) continue;
+      place(at, values, k, moved, placed);
+      x = placed[0]!;
+      y = placed[1]!;
+      z = placed[2]!;
+    }
+    const y2 = y * cx - z * sx;
+    const z2 = y * sx + z * cx;
     const perspective = 4.4 / (4.4 - z2);
-    const column = Math.floor((400 + x3 * SCALE * perspective) / dotWidth);
-    const row = Math.floor((275 + (y3 - 0.02) * SCALE * perspective) / dotHeight);
+    const column = Math.floor((400 + x * SCALE * perspective) / dotWidth);
+    const row = Math.floor((275 + (y2 - CENTER_Y) * SCALE * perspective) / dotHeight);
     if (column < 0 || column >= dotColumns || row < 0 || row >= dotRows) continue;
     const i = row * dotColumns + column;
     if (z2 <= depthBuffer[i]!) continue;
@@ -285,15 +510,10 @@ export function renderMark(columns: number, rows: number, phase: number, light: 
     if (depthBuffer[i] === Number.NEGATIVE_INFINITY) continue;
     const point = winner[i]!;
     const k = point * SAMPLE_VALUES;
-    const [x, y, z] = [values[k]!, values[k + 1]!, values[k + 2]!];
-    const [nx, ny, nz] = [values[k + 3]!, values[k + 4]!, values[k + 5]!];
-    const z2 = y * sx + (-x * sy + z * cy) * cx;
-    const nx1 = nx * cy + nz * sy;
-    const nz1 = -nx * sy + nz * cy;
-    const ny2 = ny * cx - nz1 * sx;
-    const nz2 = ny * sx + nz1 * cx;
-    colors[i] = shade(light, foliage[point] === 1 ? light.foliage : light.wood,
-      [nx1 * cz - ny2 * sz, nx1 * sz + ny2 * cz, nz2], z2, values[k + 6]!);
+    place(at, values, k, group[point]!, placed);
+    const [y, z, nx, ny, nz] = [placed[1]!, placed[2]!, placed[3]!, placed[4]!, placed[5]!];
+    colors[i] = shade(light, light.palettes[stuff[point]!]!, nx, ny * cx - nz * sx, ny * sx + nz * cx,
+      y * sx + z * cx, values[k + 6]!);
   }
 
   const cells: MarkCell[] = [];

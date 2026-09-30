@@ -1,7 +1,7 @@
 import { stripTerminalSequences, visibleWidth, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { expect, it } from "vitest";
 import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
-import { WELCOME_FADED_OPACITY, WELCOME_FRAME_MS, WELCOME_SPIN_MS, WelcomeBanner, welcomeColorMode, type WelcomeBannerOptions }
+import { WELCOME_FADED_OPACITY, WELCOME_FRAME_MS, WELCOME_SCENE_MS, WelcomeBanner, welcomeColorMode, type WelcomeBannerOptions }
   from "../src/tesota-shell-welcome.js";
 import { MARK_MAX_COLUMNS, markLighting, renderMark } from "../src/welcome-mark.js";
 import { themeMarkColors } from "../src/tesota-shell-welcome.js";
@@ -23,11 +23,11 @@ function stage(lines: readonly string[]): string {
   return lines.map((line) => stripTerminalSequences(line)).filter((line) => braille.test(line)).join("\n");
 }
 
-it("turns the tree about its trunk and rests face-on where it started", () => {
+it("plays the scene and rests in the pose it started from", () => {
   const start = renderMark(60, 21, 0, light);
   expect(start.some((cell) => cell.dots !== 0)).toBe(true);
-  expect(renderMark(60, 21, 0.5, light)).toEqual(start);
-  expect(renderMark(60, 21, 0.62, light)).not.toEqual(start);
+  expect(renderMark(60, 21, 1, light)).toEqual(start);
+  for (const moment of [0.25, 0.5, 0.75]) expect(renderMark(60, 21, moment, light)).not.toEqual(start);
   expect(() => renderMark(MARK_MAX_COLUMNS + 1, 21, 0, light)).toThrow(RangeError);
 });
 
@@ -48,13 +48,17 @@ it("fills the empty conversation with the tree centered above a centered header"
   expect(plain.at(-1)).toBe("");
 });
 
-it("turns only while the terminal has focus, and pauses faded without asking for frames", () => {
+it("plays only while the terminal has focus, and pauses faded without asking for frames", () => {
   let focused = true;
   const { view, clock, frames } = banner({ focused: () => focused });
+  // Frame by frame, as the shell draws it; the wind starts calm, so the crown needs a moment to move.
+  const play = (count: number): void => {
+    for (let step = 0; step < count; step++) { clock.now += WELCOME_FRAME_MS; view.render(100); }
+  };
   const first = stage(view.render(100));
-  clock.now += WELCOME_FRAME_MS * 12;
-  const turning = stage(view.render(100));
-  expect(turning).not.toBe(first);
+  play(40);
+  const moving = stage(view.render(100));
+  expect(moving).not.toBe(first);
   expect(frames.length).toBeGreaterThan(0);
 
   focused = false;
@@ -62,7 +66,7 @@ it("turns only while the terminal has focus, and pauses faded without asking for
   clock.now += 1_000;
   for (let step = 0; step < 10; step++) { clock.now += WELCOME_FRAME_MS; view.render(100); }
   const paused = view.render(100);
-  expect(stage(paused)).toBe(turning);
+  expect(stage(paused)).toBe(moving);
   // Faded toward the dark background: no channel of the lit tree stays above the faded share of full white.
   const channels = paused.filter((line) => braille.test(line)).join("").split("\x1b[38;2;").slice(1)
     .flatMap((color) => color.slice(0, color.indexOf("m")).split(";").map(Number));
@@ -74,8 +78,8 @@ it("turns only while the terminal has focus, and pauses faded without asking for
 
   focused = true;
   view.render(100);
-  clock.now += WELCOME_FRAME_MS * 4;
-  expect(stage(view.render(100))).not.toBe(turning);
+  play(10);
+  expect(stage(view.render(100))).not.toBe(moving);
 });
 
 it("steps back while the operator types, as while unfocused", () => {
@@ -90,10 +94,10 @@ it("steps back while the operator types, as while unfocused", () => {
   expect(stage(view.render(100))).toBe(before);
 });
 
-it("settles face-on after its turns, at full strength, and then asks for no frames", () => {
+it("comes to rest after the scene, at full strength, and then asks for no frames", () => {
   const { view, clock, frames } = banner();
   const start = stage(view.render(100));
-  for (let elapsed = 0; elapsed <= WELCOME_SPIN_MS; elapsed += WELCOME_FRAME_MS) { clock.now += WELCOME_FRAME_MS; view.render(100); }
+  for (let elapsed = 0; elapsed <= WELCOME_SCENE_MS; elapsed += WELCOME_FRAME_MS) { clock.now += WELCOME_FRAME_MS; view.render(100); }
   expect(view.moving).toBe(false);
   frames.length = 0;
   expect(stage(view.render(100))).toBe(start);
@@ -149,26 +153,26 @@ function center(lines: readonly string[]): [number, number] {
   return [50, rows[Math.floor(rows.length / 2)]!];
 }
 
-it("turns twice more when the resting tree is clicked, and comes back to rest face-on", () => {
+it("plays again when the resting scene is clicked, and comes back to rest", () => {
   const { view, clock, frames } = banner();
   const resting = stage(view.render(100));
-  for (let elapsed = 0; elapsed <= WELCOME_SPIN_MS; elapsed += WELCOME_FRAME_MS) { clock.now += WELCOME_FRAME_MS; view.render(100); }
+  for (let elapsed = 0; elapsed <= WELCOME_SCENE_MS; elapsed += WELCOME_FRAME_MS) { clock.now += WELCOME_FRAME_MS; view.render(100); }
   expect(view.moving).toBe(false);
   const [x, y] = center(view.render(100));
   expect(view.handleMouse(click(x, y))).toEqual({ handled: true, render: true });
   expect(view.moving).toBe(true);
-  view.render(100);
-  clock.now += WELCOME_FRAME_MS * 12;
+  // A few seconds in, frame by frame, the tumbleweed is on the stage.
+  for (let step = 0; step < 50; step++) { clock.now += WELCOME_FRAME_MS; view.render(100); }
   expect(stage(view.render(100))).not.toBe(resting);
   frames.length = 0;
-  for (let elapsed = 0; elapsed <= 7_200; elapsed += WELCOME_FRAME_MS) { clock.now += WELCOME_FRAME_MS; view.render(100); }
+  for (let elapsed = 0; elapsed <= WELCOME_SCENE_MS; elapsed += WELCOME_FRAME_MS) { clock.now += WELCOME_FRAME_MS; view.render(100); }
   expect(view.moving).toBe(false);
   expect(stage(view.render(100))).toBe(resting);
 });
 
 it("leaves other gestures, and clicks beside the tree, to their usual owner", () => {
   const { view, clock } = banner();
-  for (let elapsed = 0; elapsed <= WELCOME_SPIN_MS; elapsed += WELCOME_FRAME_MS) { clock.now += WELCOME_FRAME_MS; view.render(100); }
+  for (let elapsed = 0; elapsed <= WELCOME_SCENE_MS; elapsed += WELCOME_FRAME_MS) { clock.now += WELCOME_FRAME_MS; view.render(100); }
   const [x, y] = center(view.render(100));
   for (const event of [click(x, y, { button: "right" }), click(x, y, { ctrl: true }), click(x, y, { type: "press" }),
     click(1, y), click(x, 0)]) {
@@ -194,4 +198,11 @@ it("colors the tree from the active theme's roles, and follows a theme changed i
   const after = colorsOf(view.render(100));
   expect(stripTerminalSequences(after)).toBe(stripTerminalSequences(before));
   expect(after).not.toBe(before);
+});
+
+it("blows the tumbleweed through only when asked, and has it gone again when the scene rests", () => {
+  const rest = renderMark(60, 21, 0, light);
+  expect(renderMark(60, 21, 0.35, light, true)).not.toEqual(renderMark(60, 21, 0.35, light));
+  expect(renderMark(60, 21, 1, light, true)).toEqual(rest);
+  expect(renderMark(60, 21, 0.9, light, true)).toEqual(renderMark(60, 21, 0.9, light));
 });

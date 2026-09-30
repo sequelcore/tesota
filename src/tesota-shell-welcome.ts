@@ -7,11 +7,8 @@ import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLi
   type Rgb }
   from "./welcome-mark.js";
 
-/** Three eased turns, two per loop, ending face-on. */
-export const WELCOME_SPIN_MS = 10_800;
-const LOOP_MS = 7_200;
-/** The face-on pose a turn rests in: half a loop. */
-const SETTLED_PHASE = 0.5;
+/** The scene's length: the wind rising and falling, and on a replay the tumbleweed's pass. */
+export const WELCOME_SCENE_MS = 9_000;
 export const WELCOME_FRAME_MS = 50;
 const FADE_MS = 400;
 /** How visible the tree stays while the terminal is unfocused or the operator is typing. */
@@ -74,7 +71,7 @@ export interface WelcomeBannerOptions {
   readonly viewportHeight: () => number;
   /** Rows the conversation shows beneath the opening, such as replies to the operator, at a width. */
   readonly rowsBelow?: (width: number) => number;
-  /** Whether the terminal has focus; the tree turns only then. */
+  /** Whether the terminal has focus; the scene plays only then. */
   readonly focused?: () => boolean;
   /** Whether the operator has started typing; the tree steps back while they do. */
   readonly drafting?: () => boolean;
@@ -86,9 +83,11 @@ export interface WelcomeBannerOptions {
 }
 
 /**
- * A fresh session's opening: the palo fierro turning in the middle of the empty conversation, with the version and
- * folder beneath it. It turns while the terminal has focus, pauses and fades when it loses focus or the operator
- * types, and leaves at the session's first entry, keeping only the header. It never enters the saved conversation.
+ * A fresh session's opening: the palo fierro in the middle of the empty conversation, with a saguaro seedling in
+ * its shade, saguaros further off, and the version and folder beneath it, while the wind moves its crown. A click on
+ * the resting scene plays it again with a tumbleweed blowing through. It plays while the terminal has focus, pauses
+ * and fades when it loses focus or the operator types, and leaves at the session's first recorded entry, keeping
+ * only the header. It never enters the saved conversation.
  */
 export class WelcomeBanner implements Component {
   readonly #cwd: string;
@@ -98,7 +97,10 @@ export class WelcomeBanner implements Component {
   readonly #version: string;
   #background: Rgb | undefined;
   #dismissed = false;
-  #spun: number;
+  /** How much of the scene has played, in milliseconds. */
+  #played: number;
+  /** Whether the tumbleweed blows through: from the first click on, not at the opening. */
+  #visitor = false;
   #lastFrame: number | undefined;
   #faded: boolean | undefined;
   #fadeElapsed = FADE_MS;
@@ -116,7 +118,7 @@ export class WelcomeBanner implements Component {
     this.#mode = options.colorMode ?? welcomeColorMode();
     this.#version = packageVersion();
     this.#reducedMotion = options.reducedMotion === true;
-    this.#spun = this.#reducedMotion ? WELCOME_SPIN_MS : 0;
+    this.#played = this.#reducedMotion ? WELCOME_SCENE_MS : 0;
   }
 
   get dismissed(): boolean { return this.#dismissed; }
@@ -127,9 +129,9 @@ export class WelcomeBanner implements Component {
    */
   get drawnHeight(): number | undefined { return this.#drawnHeight; }
 
-  /** Whether the tree still has motion to show: turning, or fading between its full and faded poses. */
+  /** Whether the scene still has motion to show: playing, or fading between its full and faded poses. */
   get moving(): boolean {
-    return !this.#dismissed && (this.#spun < WELCOME_SPIN_MS || this.#fadeElapsed < FADE_MS);
+    return !this.#dismissed && (this.#played < WELCOME_SCENE_MS || this.#fadeElapsed < FADE_MS);
   }
 
   /** The session's first entry ends the opening; the header stays above the conversation. */
@@ -143,15 +145,16 @@ export class WelcomeBanner implements Component {
 
   invalidate(): void {}
 
-  /** A plain left click on the resting tree turns it twice more; other gestures keep their usual owner. */
+  /** A plain left click on the resting scene plays it again, with the tumbleweed; other gestures keep their usual owner. */
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
     const stage = this.#drawnStage;
     if (this.#dismissed || this.#reducedMotion || stage === undefined || event.type !== "click" ||
       event.button !== "left" || event.shift || event.alt || event.ctrl) return undefined;
     if (event.y < stage.top || event.y >= stage.top + stage.rows ||
       event.x < stage.left || event.x >= stage.left + stage.columns) return undefined;
-    if (this.#spun >= WELCOME_SPIN_MS) {
-      this.#spun = WELCOME_SPIN_MS - LOOP_MS;
+    if (this.#played >= WELCOME_SCENE_MS) {
+      this.#played = 0;
+      this.#visitor = true;
       this.#lastFrame = undefined;
     }
     return { handled: true, render: true };
@@ -208,20 +211,20 @@ export class WelcomeBanner implements Component {
       this.#faded = faded;
     } else {
       this.#fadeElapsed = Math.min(FADE_MS, this.#fadeElapsed + step);
-      if (!faded) this.#spun = Math.min(WELCOME_SPIN_MS, this.#spun + step);
+      if (!faded) this.#played = Math.min(WELCOME_SCENE_MS, this.#played + step);
     }
-    // A finished turn rests at full strength, as the mark it is; only a moving tree steps back.
-    const target = faded && this.#spun < WELCOME_SPIN_MS ? WELCOME_FADED_OPACITY : 1;
+    // A finished scene rests at full strength, as the mark it is; only a playing one steps back.
+    const target = faded && this.#played < WELCOME_SCENE_MS ? WELCOME_FADED_OPACITY : 1;
     this.#opacity = this.#fadeFrom + (target - this.#fadeFrom) * ease(this.#fadeElapsed, FADE_MS);
     if (this.moving && (!faded || this.#fadeElapsed < FADE_MS)) this.#options.requestFrame?.(WELCOME_FRAME_MS);
-    return this.#paint(columns, rows, SETTLED_PHASE - WELCOME_SPIN_MS / LOOP_MS + this.#spun / LOOP_MS);
+    return this.#paint(columns, rows, this.#played / WELCOME_SCENE_MS);
   }
 
-  #paint(columns: number, rows: number, phase: number): string[] {
+  #paint(columns: number, rows: number, progress: number): string[] {
     const appearance = this.#theme.appearance === "light" ? "light" : "dark";
     const background = this.#background ?? fallbackBackground[appearance];
-    const cells = renderMark(columns, rows, phase, markLighting(background, appearance === "light",
-      themeMarkColors(this.#theme)));
+    const cells = renderMark(columns, rows, progress, markLighting(background, appearance === "light",
+      themeMarkColors(this.#theme)), this.#visitor);
     const colored = this.#mode !== "plain" && this.#theme.appearance !== "terminal";
     const lines: string[] = [];
     for (let row = 0; row < rows; row++) {

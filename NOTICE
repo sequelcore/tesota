@@ -23,7 +23,7 @@ Copyright 2024-2026 Sequel
 
 Codex welcome animation
 
-The turning welcome tree in src/welcome-mark.ts adapts the method of the Codex
+The welcome scene in src/welcome-mark.ts adapts the method of the Codex
 terminal welcome (codex-rs/tui/src/empty_state_animation in
 https://github.com/openai/codex at c9b3924a62): a vector mark extruded with a
 bevel, turned in perspective with a depth buffer, lit with key, fill, rim and
@@ -32,8 +32,8 @@ Codex is licensed under the Apache License, Version 2.0.
 OpenAI Codex
 Copyright 2025 OpenAI
 
-The palo fierro silhouette and materials, and the colors it takes from
-Tesota's themes, are Tesota's own.
+The palo fierro scene, its saguaros and tumbleweed, their motion and materials,
+and the colors they take from Tesota's themes, are Tesota's own.
 
 ClaimCheck
 
