@@ -10,6 +10,7 @@ import type { SandboxPreference, SessionExecution } from "../src/execution-provi
 import { hostProvider } from "../src/host-environment.js";
 import type { ShellSessionRecord, ShellSessionStore } from "../src/shell-session-store.js";
 import { Workspace } from "../src/workspace.js";
+import { SourceSession } from "../src/source-session.js";
 
 /**
  * Decision 030 in the shell: `/sandbox` chooses where one session's commands
@@ -62,6 +63,8 @@ beforeEach(() => {
     return { usable: true, resumed: true, ...entry } as unknown as WorkingAgent;
   });
   spies.push(vi.spyOn(Workspace, "create").mockResolvedValue(workspace),
+    // A test double stands for the work whether the session works in the source or in a workspace.
+    vi.spyOn(SourceSession, "create").mockResolvedValue(workspace as unknown as SourceSession),
     vi.spyOn(SessionManager, "findById").mockReturnValue(undefined),
     vi.spyOn(SessionManager, "create").mockReturnValue({} as SessionManager));
 });

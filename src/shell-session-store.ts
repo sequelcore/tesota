@@ -66,6 +66,8 @@ const snapshotSchema = z.strictObject({ format: z.literal("tesota-shell-sessions
       network: z.array(z.string().refine(isNetworkDestination)).max(200),
       // Absent from files written before rules existed, which stay valid.
       commandRules: z.array(commandRuleSchema).max(100).default([]),
+      // Absent from files written before hidden files existed, which stay valid.
+      checkSecrets: z.array(z.string().min(1).max(1_000)).max(50).default([]),
       reviews: z.array(measurementSchema).max(MEASUREMENTS_KEPT),
       sessions: z.array(sessionSchema) });
 export type ShellSessionRecord = z.infer<typeof sessionSchema>;
@@ -81,6 +83,9 @@ export interface ShellSessionStore {
   /** Checks the operator approved for this repository, with their reports, or null before the first choice. */
   checks(): readonly ApprovedCheck[] | null;
   setChecks(checks: readonly ApprovedCheck[]): void;
+  /** Files hidden from the agent that the operator let this repository's checks read, relative with forward slashes. */
+  checkSecrets(): readonly string[];
+  setCheckSecrets(paths: readonly string[]): void;
   /** Network destinations the operator allowed for every session of this repository. */
   allowedNetwork(): readonly string[];
   allowNetwork(destinations: readonly string[]): void;
@@ -120,7 +125,7 @@ export interface ShellSessionStore {
 
 function readSnapshot(path: string, source: string): Snapshot {
   const empty: Snapshot = { format: "tesota-shell-sessions", version: snapshotVersion, source, checks: null,
-    network: [], commandRules: [], reviews: [], sessions: [] };
+    network: [], commandRules: [], checkSecrets: [], reviews: [], sessions: [] };
   if (!existsSync(path)) return empty;
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
   // Snapshots from earlier versions are discarded; the next save replaces the file.
@@ -202,6 +207,7 @@ export function openShellSessionStore(sourceDirectory: string,
     let checks = snapshot.checks;
     let network = snapshot.network;
     let commandRules: readonly CommandRule[] = snapshot.commandRules;
+    let checkSecrets: readonly string[] = snapshot.checkSecrets;
     let reviews: readonly ReviewMeasurement[] = snapshot.reviews;
     let closed = false;
     const save = (): void => {
@@ -209,7 +215,8 @@ export function openShellSessionStore(sourceDirectory: string,
       const temporary = `${path}.${randomUUID()}.tmp`;
       try {
         writeFileSync(temporary, JSON.stringify({ format: "tesota-shell-sessions", version: snapshotVersion,
-          source, checks, network, commandRules, reviews, sessions: [...sessions.values()] }) + "\n", { encoding: "utf8", mode: 0o600 });
+          source, checks, network, commandRules, checkSecrets, reviews, sessions: [...sessions.values()] }) + "\n",
+        { encoding: "utf8", mode: 0o600 });
         renameSync(temporary, path);
       } finally { if (existsSync(temporary)) unlinkSync(temporary); }
     };
@@ -255,6 +262,12 @@ export function openShellSessionStore(sourceDirectory: string,
         const previous = checks;
         checks = z.array(checkSchema).max(20).parse(approved.map((check) => ({ command: check.command, reports: [...check.reports] })));
         try { save(); } catch (error) { checks = previous; throw error; }
+      },
+      checkSecrets: () => checkSecrets,
+      setCheckSecrets: (paths) => {
+        const previous = checkSecrets;
+        checkSecrets = z.array(z.string().min(1).max(1_000)).max(50).parse([...new Set(paths)]);
+        try { save(); } catch (error) { checkSecrets = previous; throw error; }
       },
       allowedNetwork: () => network,
       allowNetwork: (destinations) => {

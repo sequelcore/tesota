@@ -55,6 +55,8 @@ const pinnedCandidateRef = "refs/tesota/candidate";
  * awaiting review.
  */
 export class Workspace {
+  /** Where the session works, telling a workspace from a session in the source. */
+  readonly place = "workspace" as const;
   readonly directory: string;
   readonly checkout: string;
   /** The source this workspace was cloned from, through its shadow repository, and applies back to. */

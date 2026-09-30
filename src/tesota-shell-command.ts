@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { ProcessTerminal } from "@earendil-works/pi-tui";
 import { confinesCommands, type ExecutionEnvironment, type PreparationStep } from "./execution-environment.js";
@@ -21,6 +22,8 @@ import { accountRoute, MODEL_ROLES, ROLE_OFF, type ModelRole, parseModelChoice, 
   ROUTE_ENGINE } from "./model-roles.js";
 import { type WorkPlan, withReview } from "./work-plan.js";
 import { isGitRepository, largeUntrackedFiles, largeUntrackedWarning } from "./source-shadow.js";
+import { hiddenFilesIn } from "./secret-files.js";
+import { SourceSession } from "./source-session.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, type OfferedModel, rolePicker, routeListing,
   runRolesCommand } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
@@ -37,8 +40,8 @@ import { consultAdvisor } from "./integrations/advisor-session.js";
 import { Semaphore } from "./semaphore.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
-import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
-  type WorkResult } from "./tesota-shell.js";
+import { runTesotaShell, type AnswerResult, type ApplyResult, type RequestOrigin, type ReviewResult, type RevertResult,
+  type TesotaShellDependencies, type WorkPlace, type WorkResult } from "./tesota-shell.js";
 import { inspectAnswer, inspectReview } from "./tesota-shell-inspection.js";
 import { runsAnswerCheck } from "./verification/answer-check-rule.js";
 import type { TriageDecision } from "./integrations/answer-triage.js";
@@ -181,6 +184,11 @@ function closeWarning(record: ShellSessionRecord, pending: number): string {
       `its workspace stays at ${record.workspace ?? "(none)"}.`;
   }
   const noun = pending === 1 ? "change" : "changes";
+  // A session working in the operator's files leaves its changes there when it closes; only reverting them ends.
+  if (record.workspace !== null && existsSync(join(record.workspace, "session.json"))) {
+    return `This session's latest turn has ${pending} undecided ${noun} in your files. Press Ctrl+W again to close it; ` +
+      `${pending === 1 ? "it stays" : "they stay"} in your files and can no longer be reverted from Tesota.`;
+  }
   return `This session has ${pending} unapplied ${noun}. Press Ctrl+W again to close it and discard ${pending === 1 ? "it" : "them"}.`;
 }
 
@@ -242,8 +250,29 @@ export function recordCall(calls: Map<string, ToolCallRecord>, activity: AgentAc
   if (started !== undefined) calls.set(activity.call, { ...started, outcome: activity.failed ? "failed" : "succeeded" });
 }
 
+/** What a session works in: an isolated workspace, or the operator's own files through the source's shadow. */
+type Work = Workspace | SourceSession;
+
+/** A saved session's work, opened as what its record says it is. */
+function openWork(directory: string): Promise<Work> {
+  return existsSync(join(directory, "session.json")) ? SourceSession.open(directory) : Workspace.open(directory);
+}
+
+/** The paths the agent's own file tools wrote, relative to `root` with forward slashes. */
+export function agentWrites(calls: Iterable<ToolCallRecord>, root: string): string[] {
+  const written = new Set<string>();
+  for (const call of calls) {
+    if ((call.tool !== "edit" && call.tool !== "write") || call.outcome !== "succeeded" || call.subject.length === 0) continue;
+    const path = relative(root, resolve(root, call.subject.replace(/^@/u, ""))).split(sep).join("/");
+    if (path.length > 0 && !path.startsWith("..")) written.add(path);
+  }
+  return [...written];
+}
+
 class SessionState {
-  workspace: Promise<Workspace> | undefined;
+  workspace: Promise<Work> | undefined;
+  /** Where the session works, once its first request opened its work. */
+  place: WorkPlace | undefined;
   environment: Promise<ExecutionEnvironment> | undefined;
   /** Stops the environment's preparation when the session closes, switches sandbox or the shell quits. */
   preparation: AbortController | undefined;
@@ -451,7 +480,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   surface.setBranch(sourceBranch());
   for (const session of savedSessions) {
     if (session.interrupted) {
-      surface.writeTo(session.id, "The previous shell stopped during work. Pending changes stay in the workspace.");
+      surface.writeTo(session.id, "The previous shell stopped during work. Pending changes stay where the session left them.");
       store.markActive(session.id, false);
     }
     if (session.blocked) {
@@ -468,24 +497,43 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     if (state === undefined) { state = new SessionState(); states.set(id, state); }
     return state;
   };
-  const workspaceFor = (id: string): Promise<Workspace> => {
+  /** The session that works in the operator's files; one at a time may, and others get an isolated workspace. */
+  let sourceHolder: string | undefined;
+  const holdsSource = (id: string): boolean => sourceHolder === id || sourceHolder === undefined &&
+    !store.list().some((session) => session.id !== id && session.workspace !== null && existsSync(join(session.workspace, "session.json")));
+  const workspaceFor = (id: string): Promise<Work> => {
     const state = stateFor(id);
     if (state.workspace !== undefined) return state.workspace;
-    const pending = (async () => {
+    const pending = (async (): Promise<Work> => {
       const directory = saved(id)?.workspace;
       if (directory !== null && directory !== undefined) {
-        try { return await Workspace.open(directory); } catch { store.rotateEngine(id); }
+        try {
+          const work = await openWork(directory);
+          state.place = work.place === "source" ? "source" : "workspace";
+          if (work.place === "source") sourceHolder = id;
+          return work;
+        } catch { store.rotateEngine(id); }
       }
-      const workspace = await Workspace.create(cwd, undefined, { kind: sourceKind });
-      store.setWorkspace(id, workspace.directory);
-      if (workspace.included.length > 0) {
+      // Decided before any wait, so two sessions starting together cannot both take the operator's files.
+      const inSource = holdsSource(id);
+      if (inSource) sourceHolder = id;
+      const work = inSource ? await SourceSession.create(cwd, undefined, { kind: sourceKind })
+        : await Workspace.create(cwd, undefined, { kind: sourceKind });
+      state.place = work.place === "source" ? "source" : "workspace";
+      store.setWorkspace(id, work.directory);
+      if (!inSource) {
+        surface.writeTo(id, "Another session works in your files, so this one works in an isolated copy, a workspace: " +
+          "nothing in your files changes until you apply its reviewed result.");
+      }
+      const workspace = work;
+      if (workspace.place !== "source" && workspace.included.length > 0) {
         surface.writeTo(id, `The workspace includes your ${workspace.included.length} uncommitted ` +
           `${workspace.included.length === 1 ? "change" : "changes"}. Later edits in your repository are not visible to the agent.`);
       }
       // A repository is recorded without asking, so large untracked files, read before every request, are named instead.
-      const large = sourceKind === "repository" ? largeUntrackedWarning(await largeUntrackedFiles(workspace.source)) : undefined;
+      const large = sourceKind === "repository" ? largeUntrackedWarning(await largeUntrackedFiles(work.source)) : undefined;
       if (large !== undefined) surface.writeTo(id, large, "warning");
-      return workspace;
+      return work;
     })();
     return remember(pending, () => state.workspace, (value) => { state.workspace = value; });
   };
@@ -651,7 +699,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     };
   };
   /** What this session has recorded, for a brief to an agent that starts a new conversation (decision 026). */
-  const sessionHistory = async (id: string, workspace: Workspace): Promise<SessionHistory> => {
+  const sessionHistory = async (id: string, workspace: Work): Promise<SessionHistory> => {
     const snapshot = workspace.snapshot();
     let review: SessionHistory["review"];
     try {
@@ -664,7 +712,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     return { requests: await workspace.requests(), changes: snapshot.changes, review, lastReply };
   };
   /** An agent that starts a new conversation in a session with history gets the brief with the next request, shown whole. */
-  const briefNewConversation = async (id: string, agent: WorkingAgent, workspace: Workspace): Promise<void> => {
+  const briefNewConversation = async (id: string, agent: WorkingAgent, workspace: Work): Promise<void> => {
     if (agent.resumed) return;
     const history = await sessionHistory(id, workspace);
     const brief = handoffBrief(history);
@@ -931,7 +979,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   };
   const blockSession = (id: string): void => { store.block(id); surface.blockSession(id); };
   /** Evidence that could not be recorded is reported, never dropped silently. */
-  const journal = async (id: string, workspace: Workspace, entry: AssuranceEntry): Promise<void> => {
+  const journal = async (id: string, workspace: Work, entry: AssuranceEntry): Promise<void> => {
     try { await appendAssurance(workspace.directory, entry); } catch (error) {
       surface.writeTo(id, `Tesota could not record this in the workspace's assurance journal: ${error instanceof Error ? error.message : "unknown error"}.`, "warning");
     }
@@ -942,7 +990,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const directory = saved(id)?.workspace;
     const loaded = states.get(id)?.workspace;
     if (loaded === undefined && (directory === null || directory === undefined)) return 0;
-    try { return (await (loaded ?? Workspace.open(directory ?? ""))).snapshot().changes.length; }
+    try { return (await (loaded ?? openWork(directory ?? ""))).snapshot().changes.length; }
     catch { return 0; }
   };
 
@@ -964,11 +1012,20 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const state = states.get(id);
     states.delete(id);
     if (state !== undefined) await release(state);
+    if (sourceHolder === id) sourceHolder = undefined;
     if (record.workspace !== null) {
-      await releaseWorkspace(join(record.workspace, "repo"));
+      let checkout = join(record.workspace, "repo");
+      if (existsSync(join(record.workspace, "session.json"))) {
+        // Working in the source shares the source's sandbox state with later sessions; only the pinned trees go.
+        try {
+          const session = await SourceSession.open(record.workspace);
+          checkout = session.checkout;
+          session.discard();
+        } catch { checkout = cwd; }
+      } else await releaseWorkspace(checkout);
       // The conversation and those it left behind at a handoff (decision 026).
       for (const engineId of [record.engineId, ...record.retiredEngineIds ?? []]) {
-        const transcript = SessionManager.findById(join(record.workspace, "repo"), engineId, piSessionsDirectory);
+        const transcript = SessionManager.findById(checkout, engineId, piSessionsDirectory);
         if (transcript !== undefined) await rm(transcript, { force: true });
       }
       if (!record.blocked) await rm(record.workspace, { recursive: true, force: true, maxRetries: 3 });
@@ -1006,8 +1063,11 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
    * request, and return what the agent should be told about it.
    */
   const updateFromSource = async (id: string): Promise<string | undefined> => {
+    const work = await workspaceFor(id);
+    // Working in the source, there is nothing to bring in; the turn names the operator's own edits instead.
+    if (work.place === "source") return undefined;
     let update: WorkspaceUpdate;
-    try { update = await (await workspaceFor(id)).update(); } catch (error) {
+    try { update = await work.update(); } catch (error) {
       surface.writeTo(id, "Could not bring your latest repository changes into the workspace" +
         `${error instanceof UnsupportedSourceChange ? `: ${error.message}` : ""}. The agent works on the earlier state.`, "warning");
       return undefined;
@@ -1022,6 +1082,52 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     surface.writeTo(id, `Brought ${update.changes.length} newer ${update.changes.length === 1 ? "change" : "changes"} ` +
       `from your repository into the workspace:\n${files}`);
     return `Note: the user changed these files in their repository since your last turn; the workspace now includes them:\n${files}`;
+  };
+
+  /**
+   * Begin a turn in the operator's files, and return what the agent should be
+   * told: the files the operator changed since its last turn, if any.
+   */
+  const beginTurnIn = async (session: SourceSession): Promise<string | undefined> => {
+    const previous = session.turns.at(-1)?.after ?? session.base;
+    const started = await session.beginTurn();
+    if (previous === started) return undefined;
+    const changes = session.compare(previous, started).changes;
+    if (changes.length === 0) return undefined;
+    return `Note: the user changed these files since your last turn:\n${changes.map((change) => `  ${change.status} ${change.path}`).join("\n")}`;
+  };
+  /**
+   * End a turn in the operator's files, and name the files it changed that
+   * the agent's own file tools did not write: its commands wrote them, or the
+   * operator did meanwhile, which cannot be told apart.
+   */
+  const endTurnIn = async (id: string, session: SourceSession, origin: RequestOrigin):
+    Promise<Awaited<ReturnType<SourceSession["endTurn"]>>> => {
+    const written = agentWrites(stateFor(id).turnCalls.values(), session.checkout);
+    const ended = await session.endTurn({ written, continues: origin === "tesota" });
+    const outside = ended.changed.map((change) => change.path).filter((path) => !written.includes(path));
+    if (outside.length > 0) {
+      surface.writeTo(id, "Changed outside the agent's file tools, by its commands or by you during the turn; reverting asks " +
+        `before it touches them:\n${outside.map((path) => `  ${path}`).join("\n")}`, "warning");
+    }
+    return ended;
+  };
+
+  /** A revert that did not finish, journaled; one that left a partial effect blocks the session, as an application does. */
+  const revertFailure = async (id: string, work: SourceSession, tree: string, error: unknown, paths: readonly string[]):
+    Promise<RevertResult> => {
+    if (error instanceof ApplyConflictError) {
+      await journal(id, work, decisionEntry(tree, "revert_conflict"));
+      return { status: "conflict", reason: error.message, paths: error.paths };
+    }
+    if (error instanceof ApplyRolledBackError) {
+      await journal(id, work, decisionEntry(tree, "revert_rolled_back"));
+      return { status: "conflict", reason: error.message, paths: error.paths, rolledBack: true };
+    }
+    blockSession(id);
+    await journal(id, work, decisionEntry(tree, "revert_recovery_required"));
+    return error instanceof ApplyRecoveryError ? { status: "recovery_required", id: error.id, paths: error.paths }
+      : { status: "recovery_required", id: "", paths: paths.map((path) => ({ path, state: "unknown" as const })) };
   };
 
   const sessionWork = (id: string): SessionWork => ({
@@ -1039,7 +1145,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         const state = stateFor(id);
         // A correction keeps the base the candidate was checked on, so its review sees only the agent's own
         // correction; the operator's newer repository state arrives with their next request (decision 039).
-        const notes = [state.note, origin === "operator" ? await updateFromSource(id) : undefined]
+        const work = await workspaceFor(id);
+        // In the source, the turn begins now, and the operator's own edits since the agent's last turn are named to it.
+        const edited = work.place === "source" ? await beginTurnIn(work) : undefined;
+        const notes = [state.note, origin === "operator" ? edited ?? await updateFromSource(id) : undefined]
           .filter((note) => note !== undefined);
         // A new request makes any earlier review stale, whether or not the work finishes.
         stateFor(id).reviewed = undefined;
@@ -1053,12 +1162,15 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         state.explorers?.startTurn();
         state.advisor?.startTurn();
         state.turnCalls.clear();
-        const result = await coding.run(prompt, signal);
+        let ended: Awaited<ReturnType<SourceSession["endTurn"]>> | undefined;
+        let result: Awaited<ReturnType<typeof coding.run>>;
+        // A turn that stops or fails still ends, so what it changed can be kept or reverted.
+        try { result = await coding.run(prompt, signal); }
+        finally { if (work.place === "source") ended = await endTurnIn(id, work, origin).catch(() => undefined); }
         if (result.status === "unsettled") { blockSession(id); return result; }
         if (result.status !== "completed") return result;
         state.lastReply = result.reply;
-        const workspace = await workspaceFor(id);
-        return { status: "completed", changes: workspace.snapshot().changes };
+        return { status: "completed", changes: ended?.changed ?? work.snapshot().changes };
       } catch (error) {
         if (signal.aborted || isAbort(error)) return { status: "cancelled" };
         return { status: "failed", reason: error instanceof Error ? error.message : "Unknown failure" };
@@ -1067,17 +1179,22 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     checks: () => store.checks(),
     suggestChecks: () => {
       const directory = saved(id)?.workspace;
-      return suggestChecks(directory === null || directory === undefined ? cwd : join(directory, "repo"));
+      return suggestChecks(directory === null || directory === undefined || existsSync(join(directory, "session.json"))
+        ? cwd : join(directory, "repo"));
     },
     setChecks: (commands) => { store.setChecks(commands); },
+    hiddenFiles: async () => hiddenFilesIn((await workspaceFor(id)).checkout),
+    allowForChecks: (paths) => { store.setCheckSecrets([...store.checkSecrets(), ...paths]); },
+    place: () => stateFor(id).place ?? "workspace",
     review: (commands, correction) => runOperation(id, async (signal): Promise<ReviewResult> => {
       const workspace = await workspaceFor(id);
       const state = stateFor(id);
       state.reviewed = undefined;
       const snapshot = workspace.snapshot();
       const read = (revision: string, path: string): string | undefined => workspace.contentAt(revision, path);
+      const hidden = await hiddenFilesIn(workspace.checkout, store.checkSecrets());
       const checks = [...await runChecks(await environmentFor(id), workspace, snapshot, commands, signal,
-        { baseRuns: state.baseRuns }),
+        { baseRuns: state.baseRuns, hidden }),
         ...await runOxlintVerifier(snapshot, read), ...await runLemmaScriptVerifier(snapshot, read, signal)];
       if (signal.aborted) return { status: "cancelled" };
       const flags = flagVerificationChanges(snapshot, read);
@@ -1108,7 +1225,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         }
       }
       // Reviewers have no tool that writes, but only an unchanged candidate may be applied.
-      const unchanged = workspace.snapshot().tree === snapshot.tree;
+      const unchanged = workspace.currentTree() === snapshot.tree;
       const reviews: ReviewReport[] = unchanged ? reports : reports.map((report) => ({ reviewer: report.reviewer,
         tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" }));
       if (unchanged) state.reviewed = snapshot;
@@ -1156,8 +1273,9 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const reviewed = state.reviewed;
       if (reviewed === undefined) return { status: "conflict", reason: "there is no current review", paths: [] };
       state.reviewed = undefined;
-      applying.add(id);
       const workspace = await workspaceFor(id);
+      if (workspace.place === "source") return { status: "conflict", reason: "the changes are already in your files", paths: [] };
+      applying.add(id);
       try {
         const applied = await applyWorkspace(workspace, reviewed);
         await journal(id, workspace, decisionEntry(reviewed.tree, "applied"));
@@ -1186,12 +1304,50 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       const rejected = state.reviewed;
       state.reviewed = undefined;
       const workspace = await workspaceFor(id);
+      if (workspace.place === "source") return;
       if (rejected !== undefined) await journal(id, workspace, decisionEntry(rejected.tree, "rejected"));
       workspace.revert();
       workspace.keepRequestsOpen(false);
       if (saved(id)?.plan !== undefined) showPlan(id, undefined);
       state.note = "Note: the user rejected your previous changes, and the workspace was reset to the last applied state.";
     },
+    keep: async () => {
+      const work = await workspaceFor(id);
+      if (work.place !== "source" || work.turns.length === 0) return;
+      const state = stateFor(id);
+      state.reviewed = undefined;
+      const tree = work.snapshot().tree;
+      await work.keep();
+      await journal(id, work, decisionEntry(tree, "kept"));
+      work.keepRequestsOpen(false);
+      if (saved(id)?.plan !== undefined) showPlan(id, undefined);
+    },
+    revert: (confirm) => serialized(async (): Promise<RevertResult> => {
+      const work = await workspaceFor(id);
+      const turn = work.place === "source" ? work.turns.at(-1) : undefined;
+      if (work.place !== "source" || turn === undefined) return { status: "none" };
+      const state = stateFor(id);
+      state.reviewed = undefined;
+      // Files the agent's own tools did not write may hold the operator's edits, so they are reverted only if the operator says so.
+      const changed = new Set(work.compare(turn.before, turn.after).changes.map((change) => change.path));
+      const outside = turn.outside.filter((path) => changed.has(path));
+      const leave = outside.length > 0 && !await confirm(outside) ? outside : [];
+      applying.add(id);
+      try {
+        const reverted = await work.revert(join(dirname(dirname(work.directory)), "applications"), leave);
+        if (reverted === undefined) return { status: "none" };
+        await journal(id, work, decisionEntry(turn.after, "reverted"));
+        if (work.turns.length === 0) {
+          work.keepRequestsOpen(false);
+          if (saved(id)?.plan !== undefined) showPlan(id, undefined);
+        }
+        const kept = [...reverted.changedSince, ...reverted.left];
+        state.note = "Note: the user reverted your latest turn; its files hold what they held before it" +
+          (kept.length === 0 ? "." : `, except these, which stay as they are: ${kept.join(", ")}.`);
+        return { status: "reverted", ...reverted, earlier: work.turns.length };
+      } catch (error) { return await revertFailure(id, work, turn.after, error, [...changed]); }
+      finally { applying.delete(id); }
+    }),
   });
 
   return {
@@ -1246,7 +1402,7 @@ export async function runTesotaShellCommand(
         if (closed.has(id) || closing && isAbort(error)) return;
         ended.add(id);
         try {
-          surface.writeTo(id, isAbort(error) ? "Session cancelled.\n" : "Session failed. Pending changes stay in the workspace.\n");
+          surface.writeTo(id, isAbort(error) ? "Session cancelled.\n" : "Session failed. Pending changes stay where the session left them.\n");
         } finally { surface.endSession(id); }
       });
       running.add(operation);

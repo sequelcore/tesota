@@ -39,7 +39,8 @@ function gitExecutionDirectory(source: string): string {
 }
 
 function repositoryGitArguments(args: readonly string[]): string[] {
-  return ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+  // Paths past Windows' 260-character limit, such as a shadow's packs under a long home, stay readable, as OpenCode sets it.
+  return ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", "-c", "core.longpaths=true",
     "-c", "protocol.allow=never", "-c", "protocol.file.allow=always", "-c", "submodule.recurse=false",
     "-c", "core.autocrlf=false", ...args];
 }

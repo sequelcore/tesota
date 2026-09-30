@@ -109,7 +109,7 @@ it("reports a failed session and keeps the shell open", async () => {
     initialSessionId: "default", session: () => work(async () => { throw new Error("broken"); }),
     configureWorkspace: (callbacks) => { controls = callbacks; } });
   await vi.waitFor(() => { expect(ended).toEqual(["default"]); });
-  expect(fixture.events).toContain("Session failed. Pending changes stay in the workspace.\n");
+  expect(fixture.events).toContain("Session failed. Pending changes stay where the session left them.\n");
   controls?.quit();
   await expect(running).resolves.toBe(0);
 });
@@ -145,4 +145,17 @@ it("asks about a command on this computer with where it runs, why, and the rule 
   // "Always" without a rule offered no longer allows everything that follows.
   expect(parseApproval("a", false)).toBe("deny");
   expect(parseApproval("", true)).toBe("deny");
+});
+
+it("counts only the paths the agent's own edit and write tools wrote, inside the source", async () => {
+  const { agentWrites } = await import("../src/tesota-shell-command.js");
+  const { resolve } = await import("node:path");
+  const root = resolve("/work/project");
+  expect(agentWrites([
+    { tool: "edit", subject: "src/price.ts", outcome: "succeeded" },
+    { tool: "write", subject: "@docs/notes.md", outcome: "succeeded" },
+    { tool: "write", subject: "src/failed.ts", outcome: "failed" },
+    { tool: "bash", subject: "bun install", outcome: "succeeded" },
+    { tool: "write", subject: "../outside.ts", outcome: "succeeded" },
+  ], root)).toEqual(["src/price.ts", "docs/notes.md"]);
 });

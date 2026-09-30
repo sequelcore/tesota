@@ -182,7 +182,8 @@ export async function openShadow(source: string, kind: SourceKind, root: string 
     await writeFile(join(shadow, "info", "exclude"), `${excludedPatterns.join("\n")}\n`);
   }
   // A superseded HEAD stays reachable through the reflog for the retention period, and only the daily cleanup prunes.
-  for (const [name, value] of [["gc.auto", "0"], ["core.logAllRefUpdates", "always"], ["gc.reflogExpire", retention],
+  // Long paths also hold for the processes Git starts on the shadow for a fetch or clone, which do not inherit `-c`.
+  for (const [name, value] of [["gc.auto", "0"], ["core.longpaths", "true"], ["core.logAllRefUpdates", "always"], ["gc.reflogExpire", retention],
     ["gc.reflogExpireUnreachable", retention], ["gc.pruneExpire", `${retention}.ago`]] as const) git(shadow, ["config", name, value]);
   await writeFile(join(shadow, recordFile), `${JSON.stringify({ source, kind }, null, 2)}\n`, { mode: 0o600 });
   if (kind === "repository") {

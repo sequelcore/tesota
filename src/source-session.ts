@@ -27,6 +27,12 @@ export const DEFAULT_SOURCE_SESSIONS_ROOT: string = join(homedir(), ".tesota", "
 export interface Turn {
   readonly before: string;
   readonly after: string;
+  /**
+   * Paths the turn changed that the agent's own file tools did not write: its
+   * commands wrote them, or the operator did during the turn, which cannot be
+   * told apart. Reverting asks before it touches one of them.
+   */
+  readonly outside: readonly string[];
 }
 
 const treeId = z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u);
@@ -37,7 +43,7 @@ const recordSchema = z.strictObject({
   shadow: z.string().refine(isAbsolute),
   /** The tree when the session started, or when the operator last kept its work. */
   base: treeId,
-  turns: z.array(z.strictObject({ before: treeId, after: treeId })),
+  turns: z.array(z.strictObject({ before: treeId, after: treeId, outside: z.array(z.string()).default([]) })),
   /** The tree before a turn that has begun and not ended, such as one a crash interrupted. */
   started: treeId.optional(),
 });
@@ -47,6 +53,8 @@ type SessionRecord = z.infer<typeof recordSchema>;
 export interface RevertedTurn {
   readonly restored: readonly string[];
   readonly changedSince: readonly string[];
+  /** Paths the operator chose to leave as the turn left them. */
+  readonly left: readonly string[];
 }
 
 const recordFile = "session.json";
@@ -70,6 +78,8 @@ async function readRecord(directory: string): Promise<SessionRecord> {
 }
 
 export class SourceSession implements CheckTarget {
+  /** Where the session works, telling a workspace from a session in the source. */
+  readonly place = "source" as const;
   readonly directory: string;
   /** The source's own directory, where the agent and its commands work. */
   readonly checkout: string;
@@ -170,14 +180,30 @@ export class SourceSession implements CheckTarget {
     return started;
   }
 
-  /** Record the source after the turn; a turn that changed nothing leaves no turn to decide. */
-  async endTurn(): Promise<Turn | undefined> {
+  /**
+   * Record the source after the turn, and return the latest undecided turn
+   * with what this call changed; a turn that changed nothing leaves no turn
+   * to decide. `written` are the
+   * paths the agent's own file tools wrote. A correction `continues` the turn
+   * it corrects when nothing changed between them, so the operator decides on
+   * the request and its corrections together.
+   */
+  async endTurn(options: { readonly written?: readonly string[]; readonly continues?: boolean } = {}):
+    Promise<{ readonly latest: Turn | undefined; readonly changed: readonly WorkspaceChange[] }> {
     const before = this.#record.started ?? this.capture();
     const after = this.capture();
     const { started: _started, ...record } = this.#record;
-    const turn = after === before ? undefined : { before, after };
-    await this.#save({ ...record, turns: turn === undefined ? record.turns : [...record.turns, turn] });
-    return turn;
+    const written = new Set(options.written ?? []);
+    const changed = this.#changes(before, after);
+    const outside = changed.map((change) => change.path).filter((path) => !written.has(path));
+    const latest = record.turns.at(-1);
+    let turns = record.turns;
+    if (options.continues === true && latest !== undefined && latest.after === before) {
+      const merged = { before: latest.before, after, outside: [...new Set([...latest.outside, ...outside])].sort() };
+      turns = [...turns.slice(0, -1), ...merged.before === merged.after ? [] : [merged]];
+    } else if (after !== before) turns = [...turns, { before, after, outside }];
+    await this.#save({ ...record, turns });
+    return { latest: turns.at(-1), changed };
   }
 
   /** The latest undecided turn as a candidate, or the base with nothing changed when there is none. */
@@ -229,16 +255,26 @@ export class SourceSession implements CheckTarget {
    * and recovery rules run from the turn's tree to the tree before it. A path
    * edited since the turn is never replaced; it is returned instead.
    */
-  async revert(root: string = DEFAULT_APPLICATIONS_ROOT): Promise<RevertedTurn | undefined> {
+  async revert(root: string = DEFAULT_APPLICATIONS_ROOT, leave: readonly string[] = []): Promise<RevertedTurn | undefined> {
     const turn = this.#record.turns.at(-1);
     if (turn === undefined) return undefined;
-    const changes = this.#changes(turn.after, turn.before);
+    const all = this.#changes(turn.after, turn.before);
+    const changes = all.filter((change) => !leave.includes(change.path));
     const { skipped } = await writeTreeWhereUnchanged(gitTreeReader(this.shadow),
       { base: turn.after, tree: turn.before, changes }, this.source, root);
     await this.#save({ ...this.#record, turns: this.#record.turns.slice(0, -1) });
     // A path that already held its content from before the turn needed no write, and counts as restored.
-    const left = new Set(skipped);
-    return { restored: changes.map((change) => change.path).filter((path) => !left.has(path)), changedSince: skipped };
+    const changed = new Set(skipped);
+    return { restored: changes.map((change) => change.path).filter((path) => !changed.has(path)), changedSince: skipped,
+      left: all.map((change) => change.path).filter((path) => leave.includes(path)) };
+  }
+
+  /** Release the trees this session pinned in the shadow, when the session is closed. */
+  discard(): void {
+    const prefix = `refs/tesota/sessions/${this.#id}/`;
+    for (const ref of git(this.shadow, ["for-each-ref", "--format=%(refname)", prefix]).split("\n").filter((entry) => entry.length > 0)) {
+      git(this.shadow, ["update-ref", "-d", ref]);
+    }
   }
 
   #changes(from: string, to: string): WorkspaceChange[] {

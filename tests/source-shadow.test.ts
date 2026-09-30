@@ -177,8 +177,8 @@ it("keeps a superseded HEAD for seven days and cleans the shadow at most once a 
   const first = git("rev-parse", "HEAD").trim();
   const { shadow } = await openShadow(source, "repository", sources);
   const shadowGit = (...args: string[]): string => spawnSync("git", ["-C", shadow, ...args], { encoding: "utf8" }).stdout.trim();
-  expect(["gc.auto", "gc.reflogExpire", "gc.reflogExpireUnreachable", "gc.pruneExpire"].map((name) => shadowGit("config", name)))
-    .toEqual(["0", "7.days", "7.days", "7.days.ago"]);
+  expect(["gc.auto", "core.longpaths", "gc.reflogExpire", "gc.reflogExpireUnreachable", "gc.pruneExpire"].map((name) => shadowGit("config", name)))
+    .toEqual(["0", "true", "7.days", "7.days", "7.days.ago"]);
   expect(existsSync(join(shadow, "tesota-cleaned"))).toBe(true);
   await writeFile(join(source, "a.txt"), "b\n");
   git("commit", "--quiet", "-am", "Second");

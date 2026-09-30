@@ -48,7 +48,7 @@ it("records a turn as the trees before and after it, without touching the operat
   await writeFile(join(source, "src", "price.ts"), "export const price = 2;\n");
   await writeFile(join(source, "src", "tax.ts"), "export const tax = 0.2;\n");
   await unlink(join(source, "src", "old.ts"));
-  const turn = await session.endTurn();
+  const turn = (await session.endTurn()).latest;
   expect(turn?.before).toBe(before);
   const snapshot = session.snapshot();
   expect(snapshot).toMatchObject({ base: before, tree: turn?.after });
@@ -63,7 +63,7 @@ it("leaves nothing to decide after a turn that changed nothing", async () => {
   const { create } = await fixture();
   const session = await create();
   await session.beginTurn();
-  expect(await session.endTurn()).toBeUndefined();
+  expect((await session.endTurn()).latest).toBeUndefined();
   expect(session.turns).toEqual([]);
   expect(session.snapshot().changes).toEqual([]);
 });
@@ -82,13 +82,13 @@ it("reverts only the latest turn, restoring deleted and removing added files, an
   // The operator edits a file the turn added, after the turn.
   await writeFile(join(source, "src", "tax.ts"), "export const tax = 0.25;\n");
 
-  expect(await session.revert(applications)).toEqual({ restored: ["src/old.ts", "src/price.ts"], changedSince: ["src/tax.ts"] });
+  expect(await session.revert(applications)).toEqual({ restored: ["src/old.ts", "src/price.ts"], changedSince: ["src/tax.ts"], left: [] });
   expect(await readFile(join(source, "src", "price.ts"), "utf8")).toBe("export const price = 2;\n");
   expect(await readFile(join(source, "src", "old.ts"), "utf8")).toBe("export const old = true;\n");
   expect(await readFile(join(source, "src", "tax.ts"), "utf8")).toBe("export const tax = 0.25;\n");
   expect(session.turns).toHaveLength(1);
 
-  expect(await session.revert(applications)).toEqual({ restored: ["src/price.ts"], changedSince: [] });
+  expect(await session.revert(applications)).toEqual({ restored: ["src/price.ts"], changedSince: [], left: [] });
   expect(await readFile(join(source, "src", "price.ts"), "utf8")).toBe("export const price = 1;\n");
   expect(session.turns).toEqual([]);
   expect(await session.revert(applications)).toBeUndefined();
@@ -100,7 +100,7 @@ it("keeps the undecided turns by making the source's tree after them the base, a
   await session.recordRequest("raise the price");
   await session.beginTurn();
   await writeFile(join(source, "src", "price.ts"), "export const price = 2;\n");
-  const turn = await session.endTurn();
+  const turn = (await session.endTurn()).latest;
   await session.recordRequest("and add a test");
   expect(await session.requests()).toEqual(["raise the price", "and add a test"]);
   await session.keep();
@@ -116,7 +116,7 @@ it("pins every tree it names in the shadow, and reopens with its undecided turns
   const session = await create();
   await session.beginTurn();
   await writeFile(join(source, "src", "price.ts"), "export const price = 2;\n");
-  const turn = await session.endTurn();
+  const turn = (await session.endTurn()).latest;
   const started = await session.beginTurn();
   const refs = spawnSync("git", ["-C", session.shadow, "for-each-ref", "--format=%(objectname)", "refs/tesota/sessions/"],
     { encoding: "utf8" }).stdout.trim().split("\n").sort();
@@ -127,7 +127,7 @@ it("pins every tree it names in the shadow, and reopens with its undecided turns
   // A turn a crash interrupted keeps the tree from before it began.
   await writeFile(join(source, "src", "price.ts"), "export const price = 3;\n");
   expect(await reopened.beginTurn()).toBe(started);
-  expect((await reopened.endTurn())?.before).toBe(started);
+  expect((await reopened.endTurn()).latest?.before).toBe(started);
   expect(existsSync(join(source, ".git", "refs", "tesota"))).toBe(false);
 });
 
@@ -159,4 +159,26 @@ it("runs a failing check again on the tree before the turn, in a checkout of its
   // An environment that cannot leaves whose failure it is unknown, never guessed.
   const [unknown] = await runChecks(host, session, session.snapshot(), [check], new AbortController().signal);
   expect(unknown?.base).toMatchObject({ outcome: "not_started", origin: "unknown" });
+});
+
+it("counts a correction as part of the turn it corrects, and names files the agent's own tools did not write", async () => {
+  const { source, create, applications } = await fixture();
+  const session = await create();
+  await session.beginTurn();
+  await writeFile(join(source, "src", "price.ts"), "export const price = 2;\n");
+  await writeFile(join(source, "bun.lock"), "lock\n");
+  const first = (await session.endTurn({ written: ["src/price.ts"] })).latest;
+  expect(first?.outside).toEqual(["bun.lock"]);
+  await session.beginTurn();
+  await writeFile(join(source, "src", "tax.ts"), "export const tax = 0.2;\n");
+  const corrected = (await session.endTurn({ written: ["src/tax.ts"], continues: true })).latest;
+  expect(session.turns).toHaveLength(1);
+  expect(corrected).toMatchObject({ before: first?.before, outside: ["bun.lock"] });
+  // Reverting leaves what the operator chose to leave, exactly as the turn left it.
+  expect(await session.revert(applications, ["bun.lock"])).toEqual({ restored: ["src/price.ts", "src/tax.ts"],
+    changedSince: [], left: ["bun.lock"] });
+  expect(await readFile(join(source, "bun.lock"), "utf8")).toBe("lock\n");
+  expect(existsSync(join(source, "src", "tax.ts"))).toBe(false);
+  session.discard();
+  expect(spawnSync("git", ["-C", session.shadow, "for-each-ref", "refs/tesota/sessions/"], { encoding: "utf8" }).stdout).toBe("");
 });
