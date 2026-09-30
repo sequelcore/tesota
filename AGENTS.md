@@ -1,25 +1,26 @@
 # Tesota
 
-This pre-release package provides a CLI, development checks, bounded Oxlint
-verification, durable evidence recovery, independent candidate checkouts and
-one approved contained repository typecheck profile, one proposal-backed
-TypeScript source task with bounded execution, local review
-decisions and guarded exact-file promotion.
-Separate Pi compatibility and live
-authentication, fixed verification-tool and isolated candidate-correction experiments
-exist. The bounded source-task flow has Windows/Docker live qualification;
-this does not establish general repository-task support or cross-platform live qualification.
-Keep changes scoped to the active increment.
+Pre-release terminal coding agent: a Pi agent works in the operator's project,
+recording each turn, its commands run in a sandbox or with the operator's
+approval, and each turn is verified and reviewed; the operator keeps or
+reverts it, and a revert never overwrites the operator's own later edits. A
+folder of documents, a second session, or one that asks works in a separate
+workspace it applies from.
+Keep changes scoped to the active roadmap item.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;
   it is not a verified functional baseline.
 - Read README.md for supported tooling and commands.
-- Read docs/identity.md for product identity, purpose and naming.
-- Read docs/architecture.md for ownership and docs/roadmap.md for current scope.
+- Read docs/design/overview.md for purpose, design and ownership, and
+  docs/roadmap.md for current scope.
 - Follow docs/development.md for documentation placement and verification.
 - Run `bun run check` for source, tests, compiled CLI behavior, and lint.
 - Preserve LICENSE, NOTICE, and retained third-party notices.
 - Keep one owner per behavior; introduce modules only for implemented consumers.
+- Give new or changed pure decision and calculation functions whose rule can be
+  stated precisely, such as permission and budget checks, LemmaScript `//@`
+  specifications taken from the requirement, and prove them with `lsc check
+  --backend=dafny` (see `src/verification/finding-origin-rule.ts`).
 - Keep credentials, operator state, provider routing, and execution permissions
   out of instruction Markdown. Technical integration contracts belong in docs;
   effective restrictions belong in code and configuration.

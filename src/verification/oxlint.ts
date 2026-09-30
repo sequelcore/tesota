@@ -8,7 +8,6 @@ import {
   type OxlintReport,
   type OxlintResult,
 } from "./oxlint-result.js";
-import { isRecoveredOxlintEvidence } from "./evidence.js";
 import { OXLINT_PROFILE, digest, fixedConfiguration, observeVerifier, semanticArguments, sourceBytes, type InputBinding } from "./oxlint-input.js";
 
 /** Trusted application configuration, never CLI-supplied executable or argv. */
@@ -31,61 +30,11 @@ export function configuredOxlint(cwd: string, executable: string): OxlintCheck {
   };
 }
 
-const issued = new WeakMap<object, InputBinding>();
-
-export function isIssuedOxlintResult(value: unknown): value is OxlintResult {
-  return typeof value === "object" && value !== null && issued.has(value);
-}
-
 function effectiveCheck(check: OxlintCheck, file: string): InputBinding["check"] {
   return { profile: OXLINT_PROFILE, configuration: check.configuration,
     arguments: ["--no-env-file", "<oxlint-entry>", ...semanticArguments(file)],
     limits: { timeoutMs: check.timeoutMs, maxOutputBytes: check.maxOutputBytes,
       terminationWaitMs: check.terminationWaitMs } };
-}
-
-export interface Applicability {
-  readonly status: "applicable" | "stale" | "unavailable";
-  readonly provenance: "issued" | "recovered_untrusted" | "unavailable";
-  readonly comparedAt: string;
-}
-
-/** Recovered data can be compared, but its provenance remains explicitly untrusted. */
-export async function assessApplicability(result: unknown, current: OxlintCheck): Promise<Applicability> {
-  const check = { ...current };
-  const isRecovered = isRecoveredOxlintEvidence(result);
-  const isIssued = isIssuedOxlintResult(result);
-  const binding = isRecovered ? result.historical.binding : isIssued ? issued.get(result) : undefined;
-  const provenance: Applicability["provenance"] = isRecovered ? "recovered_untrusted" : isIssued ? "issued" : "unavailable";
-  let status: Applicability["status"] = "unavailable";
-  if (binding !== undefined) {
-    try {
-      const file = binding.source.file;
-      const bytes = await sourceBytes(file);
-      const verifier = await observeVerifier(check.executable, check.entry);
-      if (verifier.executableSha256 !== null) {
-        const observed: InputBinding = { source: { file, sha256: digest(bytes) },
-          check: effectiveCheck(check, file), verifier };
-        status = sameBinding(observed, binding) ? "applicable" : "stale";
-      }
-    } catch { /* Unavailable inputs cannot establish applicability. */ }
-  }
-  return { status, provenance, comparedAt: new Date().toISOString() };
-}
-
-function sameBinding(a: InputBinding, b: InputBinding): boolean {
-  return a.source.file === b.source.file && a.source.sha256 === b.source.sha256 &&
-    a.check.profile === b.check.profile && a.check.configuration === b.check.configuration &&
-    a.check.arguments.length === b.check.arguments.length &&
-    a.check.arguments.every((argument, index) => argument === b.check.arguments[index]) &&
-    a.check.limits.timeoutMs === b.check.limits.timeoutMs &&
-    a.check.limits.maxOutputBytes === b.check.limits.maxOutputBytes &&
-    a.check.limits.terminationWaitMs === b.check.limits.terminationWaitMs &&
-    a.verifier.packageVersion === b.verifier.packageVersion &&
-    a.verifier.executable === b.verifier.executable &&
-    a.verifier.executableSha256 === b.verifier.executableSha256 &&
-    a.verifier.entry === b.verifier.entry &&
-    a.verifier.installationSha256 === b.verifier.installationSha256;
 }
 
 export async function runOxlint(configuration: OxlintCheck, input: string): Promise<OxlintResult> {
@@ -137,7 +86,7 @@ export async function runOxlint(configuration: OxlintCheck, input: string): Prom
   }
   if (result.status === "execution_failed") return result;
   if (binding === undefined) return { status: "execution_failed", reason: "missing_binding", process: result.process };
-  // Keep public evidence immutable as well as retaining the private issued copy.
+  // Keep the public result and its exact input binding immutable.
   Object.freeze(binding.source);
   Object.freeze(binding.check.arguments);
   Object.freeze(binding.check.limits);
@@ -146,9 +95,7 @@ export async function runOxlint(configuration: OxlintCheck, input: string): Prom
   Object.freeze(binding);
   for (const diagnostic of result.diagnostics) Object.freeze(diagnostic);
   Object.freeze(result.diagnostics);
-  const completed: OxlintResult = Object.freeze({ ...result, binding });
-  issued.set(completed, structuredClone(binding));
-  return completed;
+  return Object.freeze({ ...result, binding });
 }
 
 function execute(check: OxlintCheck, cwd: string, args: readonly string[], file: string): Promise<OxlintReport> {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, expect, it, vi } from "vitest";
-import { assessApplicability, configuredOxlint, runOxlint } from "../src/verification/oxlint.js";
+import { configuredOxlint, runOxlint } from "../src/verification/oxlint.js";
 
 const spawn = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", () => ({ spawn }));
@@ -39,7 +39,6 @@ it("does not treat a successful kill request as observed process exit", async ()
       expect(await readFile(join(retained, "source.ts"), "utf8")).toBe("export const value = 1;\n");
     }
     expect(result.binding?.source.file).toBe(file);
-    expect((await assessApplicability(result, configuredOxlint(root, process.execPath))).status).toBe("unavailable");
     expect(spawn).toHaveBeenCalledWith(process.execPath, expect.any(Array), expect.objectContaining({
       shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
     }));

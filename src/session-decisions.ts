@@ -1,0 +1,139 @@
+import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
+import type { ShellQuestion } from "./tesota-shell-question.js";
+import type { NoticeTone } from "./tesota-shell-transcript.js";
+import { type ApprovedCheck, parseApprovedCheck } from "./workspace-checks.js";
+
+/** What becomes of a result worked on in a copy: applied to the source, discarded, or kept pending. */
+export type ResultDecision = "apply" | "reject" | "keep";
+
+/**
+ * Every point where a session waits for someone: the operator answering at
+ * the shell's prompt, or a policy stated up front where nobody is at the
+ * keyboard. Each answer is typed, so how a question is worded never changes
+ * what it decides. What follows an answer, such as saving a rule or allowing
+ * a destination for the repository, belongs to the session, not to whoever
+ * answered.
+ */
+export interface SessionDecisions {
+  /** The next request; empty ends the session. */
+  nextRequest(): Promise<string>;
+  /**
+   * Whether the operator has already typed the next request. It goes before
+   * a correction round and answers the result decision with "keep", since the
+   * operator's own message may be the correction.
+   */
+  queued(): boolean;
+  /** The commands to run after each change, chosen once per repository from those suggested. */
+  checks(suggested: readonly string[]): Promise<readonly ApprovedCheck[]>;
+  /** Which of the hidden files the chosen checks may read. */
+  checkSecrets(hidden: readonly string[]): Promise<readonly string[]>;
+  /** What becomes of a reviewed result in a copy. */
+  result(): Promise<ResultDecision>;
+  /** Whether a command runs where it needs approval. */
+  command(request: CommandRequest): Promise<CommandApproval>;
+  /** Whether destinations the sandbox refused may be reached. */
+  network(destinations: readonly string[]): Promise<NetworkDecision>;
+  /** Whether the agent may read pages from a site. */
+  site(host: string): Promise<NetworkDecision>;
+}
+
+/**
+ * The question for a command on this computer: where it runs, why, and the rule the operator may save (decision 049).
+ * Enter declines, and each answer leaves a line in the conversation under the command.
+ */
+export function commandQuestion(request: CommandRequest): ShellQuestion<CommandApproval> {
+  const host = request.reason !== undefined;
+  const rule = request.rule === undefined ? undefined : `\`${request.rule.join(" ")} …\``;
+  return {
+    title: host ? `Run \`${request.command}\` on this computer, outside the sandbox?` : `Run \`${request.command}\`?`,
+    ...host ? { detail: request.reason } : {},
+    options: [
+      { value: "once", key: "y", label: "Yes, once",
+        decided: { text: `✓ Allowed \`${request.command}\` once${host ? ", on this computer, outside the sandbox" : ""}.`, tone: "info" } },
+      ...rule === undefined ? [] : [{ value: "rule" as const, key: "a", label: `Always ${rule} in this repository`,
+        decided: { text: `✓ Allowed \`${request.command}\`; always allow ${rule} in this repository.`, tone: "info" as const } }],
+      { value: "deny", key: "n", label: "No",
+        decided: { text: `✗ Declined \`${request.command}\`; the command did not run.`, tone: "warning" } },
+    ],
+    initial: "deny",
+  };
+}
+
+/** The question for network access, to destinations the sandbox refused or to a site the agent would read; Enter declines. */
+function networkQuestion(title: string, what: string): ShellQuestion<NetworkDecision> {
+  return {
+    title,
+    options: [
+      { value: "session", key: "y", label: "Yes, this session",
+        decided: { text: `✓ Allowed ${what} for this session.`, tone: "info" } },
+      { value: "repository", key: "a", label: "Always, in this repository",
+        decided: { text: `✓ Allowed ${what} in this repository from now on.`, tone: "info" } },
+      { value: "deny", key: "n", label: "No", decided: { text: `✗ Declined ${what}.`, tone: "warning" } },
+    ],
+    initial: "deny",
+  };
+}
+
+/** What becomes of a reviewed result; Enter keeps working, and what follows the answer says what was done. */
+const resultQuestion: ShellQuestion<ResultDecision> = {
+  title: "What becomes of these changes?",
+  options: [
+    { value: "apply", key: "a", label: "Apply them to your repository" },
+    { value: "reject", key: "r", label: "Reject them" },
+    { value: "keep", key: "k", label: "Keep working" },
+  ],
+  initial: "keep",
+};
+
+/** The checks an answer names, or the reason one of them cannot be used. */
+function parseChecks(answer: string): readonly ApprovedCheck[] | string {
+  const checks: ApprovedCheck[] = [];
+  for (const text of answer.split(";").filter((part) => part.trim().length > 0)) {
+    const check = parseApprovedCheck(text);
+    if (typeof check === "string") return check;
+    checks.push(check);
+  }
+  return checks;
+}
+
+/**
+ * The operator's decisions: requests and checks typed at the shell's prompt,
+ * and questions with fixed answers picked with `choose`; `write` shows what a
+ * question needs before it is asked, and why an answer cannot be used, and
+ * `queued` whether requests wait.
+ */
+export function askingDecisions(ask: (prompt: string) => Promise<string>,
+  choose: <V extends string>(question: ShellQuestion<V>) => Promise<V>,
+  write: (text: string, tone?: NoticeTone) => void, queued: () => boolean): SessionDecisions {
+  return {
+    nextRequest: () => ask("> "),
+    queued,
+    checks: async (suggested) => {
+      write(suggested.length === 0
+        ? "No checks were found for this repository.\n"
+        : `Suggested checks:\n${suggested.map((command) => `  ${command}`).join("\n")}\n`);
+      write("To compare failures test by test with the repository as it was, follow a command with " +
+        "=> and the JUnit XML reports it writes, in paths Git ignores: bun run test => reports/unit.xml, reports/e2e.xml\n");
+      for (;;) {
+        const answer = (await ask(suggested.length === 0
+          ? "Commands to run after each change (separate with ;), or Enter for none: "
+          : "Enter to use these, type other commands (separate with ;), or 'none': ")).trim();
+        const chosen = answer.length === 0 ? suggested.map((command) => ({ command, reports: [] }))
+          : answer.toLowerCase() === "none" ? [] : parseChecks(answer);
+        if (typeof chosen !== "string") return chosen;
+        write(`${chosen}\n`, "warning");
+      }
+    },
+    checkSecrets: async (hidden) => {
+      write(`Hidden from the agent and its checks, since they may hold credentials:\n${hidden.map((path) => `  ${path}`).join("\n")}\n`);
+      const answer = await ask("Checks that need some of them may read them: type their paths (separate with ;), or Enter for none: ");
+      return answer.split(";").map((path) => path.trim()).filter((path) => hidden.includes(path));
+    },
+    result: () => choose(resultQuestion),
+    command: (request) => choose(commandQuestion(request)),
+    network: (destinations) => choose(networkQuestion(
+      `The sandbox refused network access to ${destinations.join(", ")}. Allow it?`,
+      `network access to ${destinations.join(", ")}`)),
+    site: (host) => choose(networkQuestion(`Read pages from ${host}?`, `reading pages from ${host}`)),
+  };
+}

@@ -1,7 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
@@ -13,7 +11,7 @@ for (const key of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP",
   if (value !== undefined) env[key] = value;
 }
 
-function run(args: readonly string[], cwd?: string) {
+function run(args: readonly string[]) {
   const result = spawnSync("bun", ["--no-env-file", entry, ...args], {
     encoding: "utf8",
     windowsHide: true,
@@ -21,7 +19,6 @@ function run(args: readonly string[], cwd?: string) {
     timeout: 5000,
     maxBuffer: 64 * 1024,
     env,
-    ...(cwd === undefined ? {} : { cwd }),
   });
   if (result.error !== undefined) throw result.error;
   expect(result.signal).toBeNull();
@@ -40,52 +37,29 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
   expect(result.stderr).toBe("");
   expect(result.stdout).toBe(
     "Tesota\nUsage: tesota [--help | -h | help]\n" +
+    "       tesota [--theme <tesota-dark|tesota-light|vesper|sequel|automata|phosphor|terminal>]\n" +
+    "       tesota resume [<session-id>] [--theme <tesota-dark|tesota-light|vesper|sequel|automata|phosphor|terminal>]\n" +
+    "       tesota run [--allow-commands] [--allow-network] [--checks=<command;…>|none] [--apply] [--folder] [--json] (<request> | -)\n" +
     "       tesota verify <file.ts|file.js>\n" +
-    "       tesota auth <login|status|logout>\n" +
-    "       tesota candidate create\n" +
-    "       tesota candidate inspect <candidate-id|candidate-directory>\n" +
-    "       tesota candidate check typecheck <candidate-id|candidate-directory>\n" +
-    "       tesota candidate list\n" +
-    "       tesota candidate clean\n" +
-    "       tesota candidate abandon <candidate-id|candidate-directory>\n" +
-    "       tesota isolation qualify\n" +
-    "       tesota task propose <request>\n" +
-    "       tesota task start <proposal-id>\n" +
-    "       tesota task outcome <proposal-id>\n" +
-    "       tesota task run gentle-review <candidate-id|candidate-directory> <gentle-ai-executable> <lineage-id>\n" +
-    "       tesota task review <candidate-id|candidate-directory>\n" +
-    "       tesota task decide <candidate-id|candidate-directory> <accept|reject> <review-sha256>\n" +
-    "       tesota task promote <candidate-id|candidate-directory> <review-sha256>\n\n" +
-    "Runs bounded verification and scoped repository tasks.\n",
+    "       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]\n" +
+    "       tesota auth login <codex|claude-code> --as <name>\n" +
+    "       tesota models [<route>]\n" +
+    "       tesota usage [<route>]\n" +
+    "       tesota roles [<role> [<route:model|default|off>]]\n" +
+    "       tesota prune [--force]\n" +
+    "       tesota recover [undo|finish|resolved [<id>]]\n" +
+    "       tesota setup\n" +
+    "       tesota sandbox [use [<auto|wsl|docker|host>] | clean]\n\n" +
+    "Starts a new coding session in the current repository. The agent works in\n" +
+    "your files and each turn is checked and reviewed; you keep or revert it. A\n" +
+    "plain folder, or a session you isolate, works in a copy you apply from.\n" +
+    "tesota run does one request without the shell, allowing only what its flags\n" +
+    "say, and leaves the session to resume.\n",
   );
 });
 
-it("does not approve a repository typecheck in a non-interactive process", () => {
-  const result = run(["candidate", "check", "typecheck", "candidate"]);
-  expect(result.status).toBe(2);
-  expect(result.stdout).toBe("");
-  expect(result.stderr).toBe("Repository typecheck requires an interactive Windows terminal. Nothing changed.\n");
-});
-
-it.runIf(process.platform === "win32")("treats a repository without a committed baseline as unavailable", () => {
-  const foreignRepository = mkdtempSync(join(tmpdir(), "tesota-cli-foreign-"));
-  try {
-    const initialized = spawnSync("git", ["init", "--quiet"], {
-      cwd: foreignRepository, encoding: "utf8", windowsHide: true, shell: false, timeout: 5000, env,
-    });
-    expect(initialized.status).toBe(0);
-    const result = run(["task", "propose", "Explain this repository"], foreignRepository);
-    expect(result.status).toBe(1);
-    expect(result.stdout).toBe("");
-    expect(result.stderr).toBe("Repository discovery unavailable or failed; nothing changed and no authority was created.\n");
-  } finally {
-    rmSync(foreignRepository, { recursive: true, force: true });
-  }
-});
-
-it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["candidate", "check"],
-  ["candidate", "check", "typecheck"], ["candidate", "check", "unknown", "candidate"], ["task", "run", "gentle-review"],
-  ["task", "propose"], ["task", "outcome"], ["task", "run", "unregistered"], ["task", "recover", "missing-candidate"]])(
+it.each([["--unknown"], ["--help", "--unknown"], ["help", "extra"], ["--theme"], ["--execution", "host-local"],
+  ["task", "propose", "Explain"], ["candidate", "list"], ["isolation", "qualify"], ["prune", "--all"]])(
   "rejects invalid compiled CLI arguments %j",
   (...args) => {
     const result = run(args);
@@ -94,3 +68,26 @@ it.each([["--unknown"], ["run"], ["--help", "--unknown"], ["help", "extra"], ["c
     expect(result.stderr).toBe("Invalid arguments. Use tesota --help.\n");
   },
 );
+
+it.each([[["run"], "Give the request"], [["run", "--yes", "Fix it"], "Unknown option --yes"]])(
+  "refuses a compiled run without a request or with an unknown option: %j",
+  (args, message) => {
+    const result = run(args);
+    expect(result.status).toBe(2);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toContain(message);
+  },
+);
+
+it.each([["login"], ["logout"]])("requires an explicit auth route without a terminal for %j", (action) => {
+  const result = run(["auth", action]);
+  expect(result.status).toBe(2);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).toBe("Choose an auth route in a terminal, or pass one explicitly.\n");
+});
+
+it("does not accept role assignments through the model catalog command", () => {
+  const result = run(["models", "agent", "codex:gpt-6-luna"]);
+  expect(result.status).toBe(2);
+  expect(result.stdout).toContain("Usage: tesota models [<");
+});

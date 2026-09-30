@@ -1,214 +1,328 @@
 import { expect, it, vi } from "vitest";
-import { runTesotaShell } from "../src/tesota-shell.js";
-import { PROPOSAL_LIMITS } from "../src/task-proposal-contract.js";
+import { hostProvider } from "../src/host-environment.js";
+import { askingDecisions } from "../src/session-decisions.js";
+import { optionForKey, type ShellQuestion } from "../src/tesota-shell-question.js";
 import type { TesotaShellProgress } from "../src/shell-progress.js";
-import type { TaskStartProgress } from "../src/task-start.js";
+import type { Finding, Obligation, ReviewReport } from "../src/review.js";
+import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
+  type WorkResult } from "../src/tesota-shell.js";
+import type { WorkspaceChange } from "../src/workspace.js";
+import type { ApprovedCheck } from "../src/workspace-checks.js";
 
-const baseline = "a".repeat(40);
+const change: WorkspaceChange = { status: "modified", path: "src/price.ts" };
+const added: WorkspaceChange = { status: "added", path: "src/tax.ts" };
 
-function answerResult(message = "The shell is bounded.", observedBaseline = baseline) {
-  return { status: "completed" as const, exitCode: 0, turn: { kind: "answer" as const,
-    answer: { kind: "answer" as const, message, evidenceFiles: ["src/tesota-shell.ts"], uncertainties: [] },
-    baseline: observedBaseline } };
+/** Answer a question with fixed answers from the scripted replies, as its key picks it; an empty reply is Enter. */
+function choosing(answers: string[]) {
+  return async <V extends string>(question: ShellQuestion<V>): Promise<V> =>
+    optionForKey(question.options, answers.shift() ?? "")?.value ?? question.initial;
 }
 
-function clarificationResult() {
-  return { status: "completed" as const, exitCode: 0, turn: { kind: "clarification" as const,
-    clarification: { kind: "clarification" as const, question: "Which guide should change?",
-      reason: "Two guides match the request." }, baseline } };
-}
-
-function proposalResult() {
-  const id = "9877887d-1475-4439-a0a6-c1c85091fc9e";
-  return { status: "completed" as const, exitCode: 0, turn: { kind: "task_proposal" as const, proposedTask: { directory: "proposal",
-    record: { format: "tesota-task-proposal" as const, version: 1 as const, id,
-      recordedAt: "2026-09-12T00:00:00.000Z", source: "C:\\work\\tesota", baseline,
-      request: "Update the value", authority: "none" as const, provenance: "model_proposed" as const,
-      status: "ready" as const, proposal: { objective: "Update the value", completionConditions: ["It is correct"],
-        readFiles: ["src/value.ts"], writeFiles: ["src/value.ts"],
-        checks: ["scope-integrity" as const, "typescript-no-emit/v1" as const],
-        uncertainties: [] }, dirtyPaths: [], dirtyConflicts: [], checks: [{ id: "scope-integrity" as const,
-        definition: "application_owned_declarative_only" as const, executable: false as const },
-      { id: "typescript-no-emit/v1" as const,
-        definition: "application_owned_declarative_only" as const, executable: false as const }],
-      discovery: { provider: "test", model: "test", inferenceTransport: "configured_provider" as const,
-        modelControlledNetwork: false as const, modelInvocations: 1, toolCalls: 1, operations: 1,
-        exposedBytes: 1, limits: PROPOSAL_LIMITS } } } } };
-}
-
-it("starts a Tesota-owned conversation and sends the natural-language request to discovery", async () => {
+function shell(answers: string[], overrides: Partial<TesotaShellDependencies> = {}) {
   const output: string[] = [];
   const progress: TesotaShellProgress[] = [];
-  const discover = vi.fn(async () => answerResult());
-  const answers = ["  Corrige la experiencia del shell.  ", ""];
-
-  const result = await runTesotaShell({
-    write: (text) => { output.push(text); },
-    ask: async (prompt) => {
-      output.push(prompt);
-      return answers.shift() ?? "";
-    },
-    discover,
-    start: vi.fn(),
+  let checks: readonly ApprovedCheck[] | null = null;
+  const typed = { queued: false };
+  const write = (text: string): void => { output.push(text); };
+  const dependencies: TesotaShellDependencies = {
+    write,
+    decisions: askingDecisions(async () => answers.shift() ?? "", choosing(answers), write, () => typed.queued),
     report: (event) => { progress.push(event); },
+    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [change, added] })),
+    checks: () => checks,
+    suggestChecks: () => ["bun run check"],
+    setChecks: vi.fn((approved: readonly ApprovedCheck[]) => { checks = approved; }),
+    review: vi.fn(async (approved: readonly ApprovedCheck[]) => ({ status: "ready" as const, tree: "b".repeat(40),
+      changes: [change, added], reviews: [], requests: ["Fix the discount"],
+      checks: approved.map(({ command }) => ({ verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree: "b".repeat(40), environment: "host",
+        guarantees: hostProvider.guarantees, outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" })) })),
+    apply: vi.fn(async (): Promise<ApplyResult> => ({ status: "applied", changes: [change, added] })),
+    reject: vi.fn(async () => {}),
+    ...overrides,
+  };
+  return { dependencies, output, progress, typed, text: () => output.join("") };
+}
+
+it("ends the session on an empty request without doing work", async () => {
+  const fixture = shell([""]);
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.work).not.toHaveBeenCalled();
+  expect(fixture.text()).toBe("Session ended.\n");
+});
+
+it("starts preparing the environment before asking for the first request", async () => {
+  const order: string[] = [];
+  const fixture = shell([], { prepare: () => { order.push("prepare"); },
+    decisions: askingDecisions(async () => { order.push("ask"); return ""; }, choosing([]), () => {}, () => false) });
+  await runTesotaShell(fixture.dependencies);
+  expect(order).toEqual(["prepare", "ask"]);
+});
+
+it("asks for the next request without a review when the agent changed nothing", async () => {
+  const fixture = shell(["Explain pricing", ""], {
+    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [] })),
   });
-
-  expect(result).toBe(0);
-  expect(discover).toHaveBeenCalledOnce();
-  expect(discover).toHaveBeenCalledWith({ request: "Corrige la experiencia del shell." });
-  expect(output.join("")).toBe(
-    "> \n" +
-    "The shell is bounded.\nEvidence: src/tesota-shell.ts\nBaseline: " + baseline + "\nAuthority: none; nothing changed.\n" +
-    "Read-only turn complete. No execution authority was created.\n" +
-    "> Tesota session ended. Nothing changed.\n",
-  );
-  expect(progress).toEqual([{ phase: "discovering", operation: "repository_discovery" }]);
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  // The agent's reply streams to the surface during work; the loop adds nothing about it.
+  expect(fixture.text()).toBe("Session ended.\n");
+  expect(fixture.dependencies.review).not.toHaveBeenCalled();
 });
 
-it("ends without inference when the operator enters no request", async () => {
-  const output: string[] = [];
-  const discover = vi.fn(async () => answerResult());
+it("chooses checks once, reviews the changes and applies them on request", async () => {
+  const fixture = shell(["Fix the discount", "", "a", "Add a tax helper", "a", ""]);
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.setChecks).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.setChecks).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }]);
+  expect(fixture.dependencies.review).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }]);
+  expect(fixture.dependencies.apply).toHaveBeenCalledTimes(2);
+  // The review itself is presented once, by the review dependency; the loop only reports what was applied.
+  expect(fixture.text()).not.toContain("Checks:");
+  expect(fixture.text()).toContain("Applied to your repository:\n  edit src/price.ts\n  add src/tax.ts\n");
+  expect(fixture.progress.map((event) => event.phase)).toEqual(
+    ["working", "checking", "awaiting_decision", "applying", "working", "checking", "awaiting_decision", "applying"]);
+});
 
-  const result = await runTesotaShell({
-    write: (text) => { output.push(text); },
-    ask: async () => "   ",
-    discover,
-    start: vi.fn(),
+it.each([
+  ["npm test; npm run lint", [{ command: "npm test", reports: [] }, { command: "npm run lint", reports: [] }]],
+  ["none", []],
+  ["bun run check => test-reports/unit.xml, test-reports\\workspace.xml; bun run lint",
+    [{ command: "bun run check", reports: ["test-reports/unit.xml", "test-reports/workspace.xml"] },
+      { command: "bun run lint", reports: [] }]],
+  ["node -e \"[1].map((x) => x)\"", [{ command: "node -e \"[1].map((x) => x)\"", reports: [] }]],
+] as const)("accepts replacement checks %j", async (answer, expected) => {
+  const fixture = shell(["Fix it", answer, "k", ""]);
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.setChecks).toHaveBeenCalledWith(expected);
+  expect(fixture.dependencies.review).toHaveBeenCalledWith(expected);
+});
+
+it.each(["bun run test => ../outside.xml", "bun run test => C:\\reports\\unit.xml", "bun run test => .git/unit.xml",
+  "bun run test =>"])("asks again when a check's reports are not paths inside the repository: %j", async (answer) => {
+  const fixture = shell(["Fix it", answer, "bun run test => reports/unit.xml", "k", ""]);
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.setChecks).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.setChecks).toHaveBeenCalledWith([{ command: "bun run test", reports: ["reports/unit.xml"] }]);
+  expect(fixture.text()).toMatch(/report/u);
+});
+
+it("rejects changes without applying them", async () => {
+  const fixture = shell(["Fix it", "", "r", ""]);
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.reject).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.apply).not.toHaveBeenCalled();
+  expect(fixture.text()).toContain("Changes discarded. Your repository was not touched.\n");
+});
+
+it("keeps changes in the workspace when the operator wants more work", async () => {
+  const fixture = shell(["Fix it", "", "k", ""]);
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.apply).not.toHaveBeenCalled();
+  expect(fixture.dependencies.reject).not.toHaveBeenCalled();
+  expect(fixture.text()).toContain("The changes stay in the workspace.");
+});
+
+it("reports a conflict and continues without writing", async () => {
+  const fixture = shell(["Fix it", "", "a", ""], {
+    apply: async () => ({ status: "conflict", reason: "These files changed in your repository", paths: ["src/price.ts"] }),
   });
-
-  expect(result).toBe(0);
-  expect(discover).not.toHaveBeenCalled();
-  expect(output.at(-1)).toBe("No request entered. Nothing changed.\n");
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.text()).toContain("Not applied: These files changed in your repository.\n  src/price.ts\nNothing was written.");
 });
 
-it("reports a blocked proposal without claiming executable progress", async () => {
-  const output: string[] = [];
-
-  const result = await runTesotaShell({
-    write: (text) => { output.push(text); },
-    ask: async () => "Update the docs",
-    discover: async () => ({ ...proposalResult(), exitCode: 1,
-      turn: { ...proposalResult().turn, proposedTask: { ...proposalResult().turn.proposedTask,
-        record: { ...proposalResult().turn.proposedTask.record, status: "blocked_dirty" as const } } } }),
-    start: vi.fn(),
+it("says when everything written was undone", async () => {
+  const fixture = shell(["Fix it", "", "a", ""], {
+    apply: async () => ({ status: "conflict", reason: "a file changed while applying", paths: ["src/price.ts"],
+      rolledBack: true }),
   });
-
-  expect(result).toBe(1);
-  expect(output.at(-1)).toBe("Request blocked or unavailable. Nothing changed.\n");
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.text()).toContain("  src/price.ts\nYour repository holds its original files again. The changes stay");
 });
 
-it("continues a ready proposal into the approval flow without asking for its id", async () => {
-  const output: string[] = [];
-  const start = vi.fn(async (_id: string, _report: (progress: TaskStartProgress) => void) =>
-    ({ status: "settled" as const, exitCode: 0 as const, outcome: "promoted" as const }));
-  const answers = ["Update the guide", ""];
-  const ask = vi.fn(async () => answers.shift() ?? "");
-  const progress: TesotaShellProgress[] = [];
-  const result = await runTesotaShell({ write: (text) => output.push(text),
-    ask, discover: async () => proposalResult(), start: async (id, report) => {
-      report({ phase: "executing", operation: "candidate_task" });
-      return start(id, report);
-    }, report: (event) => { progress.push(event); } });
-  expect(result).toBe(0);
-  expect(ask).toHaveBeenCalledTimes(2);
-  expect(start).toHaveBeenCalledWith("9877887d-1475-4439-a0a6-c1c85091fc9e", expect.any(Function));
-  expect(progress).toContainEqual({ phase: "executing", operation: "candidate_task" });
-  expect(output.join("")).toContain("Proposal ready. Execution still requires your approval.\n");
-  expect(output.at(-1)).toBe("Tesota session ended. Nothing changed.\n");
+it("names files outside the result that changed while it was applied", async () => {
+  const fixture = shell(["Fix it", "", "a", ""], {
+    apply: async () => ({ status: "applied", changes: [], alsoChanged: ["notes.md"] }),
+  });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.text()).toContain("also changed while it was applied; the next request brings them in:\n  notes.md\n");
 });
 
-it("returns to a fresh prompt after task cancellation is settled", async () => {
-  const answers = ["Update the guide", ""];
-  const ask = vi.fn(async () => answers.shift() ?? "");
-
-  const result = await runTesotaShell({ write: () => {}, ask, discover: async () => proposalResult(),
-    start: async () => ({ status: "settled", exitCode: 130, outcome: "cancelled" }) });
-
-  expect(result).toBe(0);
-  expect(ask).toHaveBeenCalledTimes(2);
+it("closes the session and points to recovery when application stopped partway", async () => {
+  const fixture = shell(["Fix it", "", "a", "More"], {
+    apply: async () => ({ status: "recovery_required", id: "a1", paths: [{ path: "src/price.ts", state: "applied" },
+      { path: "src/tax.ts", state: "changed" }] }),
+  });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(1);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
+  expect(fixture.text()).toContain("Recovery required: application stopped partway and could not be undone.\n" +
+    "  src/price.ts: applied\n  src/tax.ts: changed by someone else, not touched\n");
+  expect(fixture.text()).toContain("Run tesota recover in this repository");
 });
 
-it("returns to a fresh prompt after a lifecycle failure is settled", async () => {
-  const answers = ["Update the guide", ""];
-  const ask = vi.fn(async () => answers.shift() ?? "");
-
-  const result = await runTesotaShell({ write: () => {}, ask, discover: async () => proposalResult(),
-    start: async () => ({ status: "settled", exitCode: 1, outcome: "failed" }) });
-
-  expect(result).toBe(0);
-  expect(ask).toHaveBeenCalledTimes(2);
+it.each([
+  [{ status: "failed", reason: "model unavailable" }, "The request failed: model unavailable\n", 0],
+  [{ status: "cancelled" }, "Stopped. Any changes so far stay in the workspace.\n", 0],
+  [{ status: "unsettled" }, "The agent did not stop cleanly.", 1],
+] as const)("handles %j work results", async (result, message, exit) => {
+  const fixture = shell(["Fix it", ""], { work: async () => result });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(exit);
+  expect(fixture.text()).toContain(message);
+  expect(fixture.dependencies.review).not.toHaveBeenCalled();
 });
 
-it("returns to a fresh prompt after read-only cancellation is settled", async () => {
-  const answers = ["Inspect the repository", ""];
-  const ask = vi.fn(async () => answers.shift() ?? "");
+const fixable: Finding = { severity: "high", disposition: "fixable", origin: "introduced" as const, standing: "confirmed",
+  path: "src/price.ts", line: 3,
+  statement: "Exactly $100 is discounted", reason: "The request says over $100" };
+const operatorCall: Finding = { severity: "medium", disposition: "operator", origin: "introduced" as const, statement: "Rounding is unspecified",
+  reason: "Cents or dollars?" };
 
-  const result = await runTesotaShell({ write: () => {}, ask,
-    discover: async () => ({ status: "cancelled", exitCode: 130, settlement: "observed" }), start: vi.fn() });
+/** A review dependency that returns one prepared review per call, each for its own tree. */
+function reviews(...rounds: { tree: string; findings: readonly Finding[] }[]): TesotaShellDependencies["review"] {
+  return vi.fn(async (approved: readonly ApprovedCheck[]): Promise<ReviewResult> => {
+    const round = rounds.shift() ?? { tree: "z".repeat(40), findings: [] };
+    return { status: "ready", tree: round.tree, changes: [change], requests: ["Charge over $100 less"],
+      checks: approved.map(({ command }) => ({ verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree: round.tree, environment: "host", guarantees: hostProvider.guarantees,
+        outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" })),
+      reviews: [{ reviewer: "Tesota reviewer", tree: round.tree, status: "completed", summary: "", findings: round.findings }] };
+  });
+}
 
-  expect(result).toBe(0);
-  expect(ask).toHaveBeenCalledTimes(2);
+it("sends fixable findings back with the unchanged requests, then asks the operator on the corrected result", async () => {
+  const fixture = shell(["Charge over $100 less", "", "a", ""],
+    { review: reviews({ tree: "1".repeat(40), findings: [fixable] }, { tree: "2".repeat(40), findings: [] }) });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.work).toHaveBeenNthCalledWith(1, "Charge over $100 less");
+  expect(fixture.dependencies.work).toHaveBeenNthCalledWith(2,
+    expect.stringContaining("The user's requests, unchanged:\n1. Charge over $100 less"), "tesota");
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
+  expect(fixture.dependencies.review).toHaveBeenCalledTimes(2);
+  // The second review knows the result it corrects and what was sent back, so it can review only the correction.
+  const approved = [{ command: "bun run check", reports: [] }];
+  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(1, approved);
+  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(2, approved, { previousTree: "1".repeat(40), sentBack: [fixable] });
+  expect(fixture.text()).toContain("Sending 1 item back to the agent to fix (attempt 1 of 2).");
+  expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);
 });
 
-it("ends the shell when read-only cancellation remains unconfirmed", async () => {
-  const ask = vi.fn(async () => "Inspect the repository");
-
-  const result = await runTesotaShell({ write: () => {}, ask,
-    discover: async () => ({ status: "unsettled", exitCode: 1, reason: "discovery_unconfirmed" }), start: vi.fn() });
-
-  expect(result).toBe(1);
-  expect(ask).toHaveBeenCalledOnce();
+it("stops correcting after two rounds and leaves the rest to the operator", async () => {
+  const fixture = shell(["Charge over $100 less", "", "k", ""], { review: reviews(
+    { tree: "1".repeat(40), findings: [fixable] }, { tree: "2".repeat(40), findings: [fixable] },
+    { tree: "3".repeat(40), findings: [fixable] }) });
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(3);
+  expect(fixture.dependencies.review).toHaveBeenCalledTimes(3);
+  expect(fixture.progress.map((event) => event.phase)).toContain("awaiting_decision");
 });
 
-it("ends the shell when task settlement remains unconfirmed", async () => {
-  const ask = vi.fn(async () => "Update the guide");
-
-  const result = await runTesotaShell({ write: () => {}, ask, discover: async () => proposalResult(),
-    start: async () => ({ status: "unsettled", exitCode: 1, outcome: "promotion_unconfirmed" }) });
-
-  expect(result).toBe(1);
-  expect(ask).toHaveBeenCalledOnce();
+it("stops early when a correction changes nothing", async () => {
+  const fixture = shell(["Charge over $100 less", "", "k", ""], { review: reviews(
+    { tree: "1".repeat(40), findings: [fixable] }, { tree: "1".repeat(40), findings: [fixable] }) });
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
+  expect(fixture.text()).toContain("The agent's correction changed nothing; the remaining problems are yours to judge.");
 });
 
-it("continues one clarification in the same shell session without granting authority", async () => {
-  const output: string[] = [];
-  const answers = ["Update the guide", "docs/guide.md"];
-  const discover = vi.fn()
-    .mockResolvedValueOnce(clarificationResult())
-    .mockResolvedValueOnce(answerResult("The requested guide is already clear."));
-
-  const progress: TesotaShellProgress[] = [];
-  const result = await runTesotaShell({ write: (text) => output.push(text),
-    ask: async () => answers.shift() ?? "", discover, start: vi.fn(), report: (event) => { progress.push(event); } });
-
-  expect(result).toBe(0);
-  expect(discover).toHaveBeenNthCalledWith(1, { request: "Update the guide" });
-  expect(discover).toHaveBeenNthCalledWith(2, { request: "Update the guide", clarification: {
-    question: "Which guide should change?", answer: "docs/guide.md", baseline } });
-  expect(progress).toContainEqual({ phase: "awaiting_clarification", operation: "operator_answer" });
-  expect(output.join("")).toContain("The requested guide is already clear.");
+it("never sends the operator's calls back to the agent", async () => {
+  const fixture = shell(["Charge over $100 less", "", "k", ""],
+    { review: reviews({ tree: "1".repeat(40), findings: [operatorCall] }) });
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
+  expect(fixture.text()).not.toContain("Correction round");
 });
 
-it("stops after an unanswered clarification without starting work", async () => {
-  const output: string[] = [];
-  const answers = ["Update the guide", "   "];
-  const start = vi.fn();
-  const result = await runTesotaShell({ write: (text) => output.push(text),
-    ask: async () => answers.shift() ?? "", discover: async () => clarificationResult(), start });
-  expect(result).toBe(0);
-  expect(start).not.toHaveBeenCalled();
-  expect(output.at(-1)).toBe("Clarification cancelled. Nothing changed.\n");
+it("lets a request the operator already typed go before a correction round and the decision, sending nothing back", async () => {
+  const fixture = shell(["Charge over $100 less", "", ""], { review: reviews({ tree: "1".repeat(40), findings: [fixable] }) });
+  fixture.typed.queued = true;
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
+  expect(fixture.text()).toContain("Your next message goes first. The item for the agent to fix was not sent; it stays in the review.");
+  // Typing on is "keep working": the changes stay pending, and nothing asks for the decision.
+  expect(fixture.progress.map((event) => event.phase)).not.toContain("awaiting_decision");
+  expect(fixture.text()).toContain("The changes stay in the workspace.");
+  expect(fixture.dependencies.apply).not.toHaveBeenCalled();
 });
 
-it("invalidates a clarification continuation when the committed baseline changes", async () => {
-  const output: string[] = [];
-  const answers = ["Update the guide", "docs/guide.md"];
-  const discover = vi.fn()
-    .mockResolvedValueOnce(clarificationResult())
-    .mockResolvedValueOnce({ status: "unavailable" as const, exitCode: 1,
-      reason: "baseline_changed" as const });
-  const result = await runTesotaShell({ write: (text) => output.push(text),
-    ask: async () => answers.shift() ?? "", discover, start: vi.fn() });
-  expect(result).toBe(1);
-  expect(output.at(-1)).toBe("The committed baseline changed during clarification. Start a new request. Nothing changed.\n");
+it("skips the decision when a correction is stopped, keeping the changes", async () => {
+  let calls = 0;
+  const fixture = shell(["Charge over $100 less", "", ""], {
+    review: reviews({ tree: "1".repeat(40), findings: [fixable] }),
+    work: vi.fn(async (): Promise<WorkResult> => ++calls === 1 ? { status: "completed", changes: [change] } : { status: "cancelled" }),
+  });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.text()).toContain("The agent's fix was stopped. The changes stay in the workspace");
+  expect(fixture.progress.map((event) => event.phase)).not.toContain("awaiting_decision");
+  expect(fixture.dependencies.apply).not.toHaveBeenCalled();
+});
+
+const answered = (obligations: Obligation[]): AnswerResult => ({ status: "assessed", requests: ["Add a farewell() helper"],
+  reviews: [{ reviewer: "Tesota reviewer", tree: "t", status: "completed", summary: "s", findings: [], obligations } satisfies ReviewReport] });
+const unmet: Obligation = { source: "request", index: 1, obligation: "farewell() exists", status: "unmet",
+  evidence: "no farewell in src/", standing: "confirmed" };
+const met: Obligation = { source: "request", index: 1, obligation: "farewell() exists", status: "met", evidence: "src/greet.ts:4" };
+
+it("checks a turn that changed nothing against its requests, and asks nothing more when every request held", async () => {
+  const assessAnswer = vi.fn(async () => answered([met]));
+  const fixture = shell(["Explain pricing", ""], { assessAnswer,
+    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [] })) });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(assessAnswer).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.review).not.toHaveBeenCalled();
+  expect(fixture.progress.map((event) => event.phase)).toEqual(["working", "reviewing"]);
+  expect(fixture.text()).toBe("Session ended.\n");
+});
+
+it("sends a request a reply only claimed back to the agent, and reviews the files its correction then writes", async () => {
+  const assessAnswer = vi.fn(async () => answered([unmet]));
+  const work = vi.fn(async (_request: string, _origin?: string): Promise<WorkResult> => ({ status: "completed", changes: [] }))
+    .mockResolvedValueOnce({ status: "completed", changes: [] })
+    .mockResolvedValueOnce({ status: "completed", changes: [added] });
+  const fixture = shell(["Add a farewell() helper", "", "a", ""], { assessAnswer, work });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(work).toHaveBeenCalledTimes(2);
+  expect(work.mock.calls[1]?.[1]).toBe("tesota");
+  expect(String(work.mock.calls[1]?.[0])).toContain("- Request 1 is not done: farewell() exists");
+  expect(fixture.text()).toContain("Sending 1 item back to the agent to fix (attempt 1 of 2).");
+  // Files now exist, so the correction faces the full review and the operator's decision.
+  expect(fixture.dependencies.review).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);
+});
+
+it("stops checking an answer after two correction rounds and leaves the rest to the operator", async () => {
+  const assessAnswer = vi.fn(async () => answered([unmet]));
+  const fixture = shell(["Add a farewell() helper", ""], { assessAnswer,
+    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [] })) });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(assessAnswer).toHaveBeenCalledTimes(3);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(3);
+  expect(fixture.dependencies.review).not.toHaveBeenCalled();
+});
+
+it("sends an answer's gaps back only when the operator has not already typed the next request", async () => {
+  const assessAnswer = vi.fn(async () => answered([unmet]));
+  const fixture = shell(["Add a farewell() helper", ""], { assessAnswer,
+    work: vi.fn(async (): Promise<WorkResult> => ({ status: "completed", changes: [] })) });
+  fixture.typed.queued = true;
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(assessAnswer).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
+  expect(fixture.text()).toContain("Your next message goes first.");
+});
+
+it("leaves a turn in the operator's files undecided after review, never holding the session for a decision", async () => {
+  const fixture = shell(["Fix the discount", "", "Add a tax helper", ""], { place: () => "source" });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.apply).not.toHaveBeenCalled();
+  expect(fixture.dependencies.reject).not.toHaveBeenCalled();
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
+  expect(fixture.text()).toContain("This turn stays in your files, undecided: /keep keeps it, /revert undoes it, and a new " +
+    "request continues on top of it.");
+  expect(fixture.progress.some((event) => event.phase === "awaiting_decision")).toBe(false);
+});
+
+it("lets checks read the hidden files the operator names, asked once with the checks", async () => {
+  const allowForChecks = vi.fn();
+  const fixture = shell(["Fix the discount", "", "api/.env; secrets.txt", "", ""], {
+    hiddenFiles: async () => ["api/.env", "deploy.key"], allowForChecks });
+  await runTesotaShell(fixture.dependencies);
+  expect(allowForChecks).toHaveBeenCalledWith(["api/.env"]);
+  expect(fixture.text()).toContain("Hidden from the agent and its checks, since they may hold credentials:\n  api/.env\n  deploy.key\n");
 });

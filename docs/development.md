@@ -2,205 +2,163 @@
 
 ## Toolchain and checks
 
-Use the Bun and Node versions selected in [package.json](../package.json).
-Install with `bun install --frozen-lockfile --ignore-scripts`; dependencies come
-from registry packages, with no Kiln links. Lifecycle scripts remain disabled.
-Run commands from the repository root.
+Use the Bun and Node versions in [package.json](../package.json). From the
+repository root, install with `bun install --frozen-lockfile --ignore-scripts`.
+Dependencies come from registry packages; lifecycle scripts are disabled.
 
 | Command | Purpose |
 | --- | --- |
-| `bun run build` | Compile source to `dist/` |
+| `bun run build` | Compile the CLI to `dist/` |
 | `bun run typecheck` | Check source and test types |
-| `bun run test:fast` | Run deterministic in-worker tests for quick feedback; it launches no external process |
-| `bun run test` | Build, then run core and filesystem-heavy Vitest groups in isolated processes |
-| `bun run lint` | Check source and tests; no fixes, warnings rejected |
+| `bun run test:fast` | Run deterministic tests that launch no external process |
+| `bun run test` | Build and run all test groups, including process-backed suites |
+| `bun run lint` | Lint source and tests without fixes; reject warnings |
 | `bun run check` | Run the complete repository gate |
-| `bun run formal:check` | Run the standalone LemmaScript/Dafny proof for the invocation-admission predicate; requires external Dafny and is not part of `bun run check` |
-| `bun link` / `bun unlink` | Register or remove this checkout's global `tesota` development command |
-| `bun --no-env-file dist/cli.js isolation qualify` | Run the explicit live Windows isolation comparison; excluded from normal checks |
+| `bun run formal:check` | Prove the LemmaScript rules in `src/verification/`; requires Dafny |
 
-The [verification reference](verification.md#current-check-and-review-paths) is the
-task-oriented map for Oxlint, the standalone LemmaScript/Dafny formal check and
-the optional Gentle review provider. It records each path's prerequisites,
-evidence subject, participation in the supported flow and limitations.
-`bun run check` does not invoke `formal:check` or a live review provider.
+`bun run check` does not invoke Dafny or a live model. Tests exercise real Git
+workspaces, check processes, Oxlint and compiled CLI processes. Use `test:fast`
+for quick feedback on pure code, then the affected process-backed suite. Run
+`bun run check`, `bun run formal:check` when a proved rule changed, and
+`git diff --check` before completing a change. Report what actually ran;
+passing checks, live observations and human acceptance are different claims.
 
-The package-owned `tesota` binary targets `dist/cli.js` and runs through the
-pinned Bun runtime. Build before the first `bun link`; later `check` and `build`
-commands refresh the linked executable because the registration continues to
-point at this checkout. This is a reversible development link, not a release
-installation.
+The build keeps TypeScript's compiler for the CLI and bundles the WSL sandbox
+server with Bun's Node target into one ESM file, including its Zod dependency.
+WSL starts it from the Windows drive; a single file avoids resolving and
+reading the dependency tree across that filesystem for every readiness probe
+and sandbox start. The compiled server is also tested from a folder with no
+Tesota modules or dependencies beside it.
 
-With no arguments, the main CLI opens Tesota Shell when standard input, output and
-error are interactive terminals. It accepts a natural-language message. Bounded
-discovery can answer a repository question, ask one clarification or retain a
-proposal for a requested change. An answer returns to the prompt. A clarification
-answer continues the original request only against the same committed baseline;
-blank input ends the session or cancels the pending clarification. A ready supported
-TypeScript source proposal continues to its explicit approval and review flow. The
-persistent renderer keeps the transcript, current phase, elapsed time and editor
-visible while the terminal resizes or scrolls. Ctrl+C cancels a pending prompt; in
-discovery or execution it reaches the application owner. Those observations and
-controls grant no authority. The surface is named **Tesota Shell**; “TUI” is only
-its implementation category.
-With no arguments in a non-interactive process, or with
-`help`, `--help` or `-h`, it prints help (exit 0).
-`candidate create` and `candidate inspect <id|directory>` prepare and inspect
-[independent checkouts](candidates.md); they do not invoke a model.
-`candidate check typecheck <id|directory>` prepares the sole admitted repository
-check profile and requires explicit interactive approval. It never evaluates a
-model-controlled command: only the exact canonical declaration is accepted and
-Tesota invokes its fixed TypeScript argv inside the pinned, network-disabled,
-read-only container policy. This Windows development slice requires Docker
-Desktop, the pinned image already present locally and a matching TypeScript
-closure in the source repository. Provision it from the committed
-lockfile with `bun install --frozen-lockfile --ignore-scripts --os=linux
---cpu=x64`; when TypeScript declares a platform package, the closure must
-include `@typescript/typescript-linux-x64` at the declared TypeScript version.
-Portable JavaScript TypeScript releases do not declare that package. Tesota
-performs no install or image pull.
-That Docker requirement belongs to the current profile, not every Tesota
-operation; [decision 007](decisions/007-execution-environments.md) owns the
-long-term execution-environment policy.
-`isolation qualify` runs the same fixed probe in the installed Codex Windows
-sandbox and a pinned Docker container. It selects a backend only when every
-filesystem, synthetic-credential, network, descendant and cancellation control
-passes. It creates only temporary fixtures, invokes no model and grants no task
-execution authority. See the [qualification record](../experiments/isolation/README.md).
-`candidate list` summarizes stored candidates by lifecycle status, and
-`candidate clean` removes only old rejected, abandoned or failed checkout directories while
-retaining their evidence. `candidate abandon <id|directory>` records an explicit
-operator decision for work that no longer needs review.
-`task propose <request>` uses the saved login for bounded read-only discovery over
-the current repository's committed baseline. It retains a proposal with no execution authority,
-creates no candidate and never runs in the normal check suite. See
-[task proposals](proposals.md).
-`task start <proposal-id>` is the composable seam behind the shell continuation.
-It requires an interactive Windows terminal and admits only a current ready
-proposal for one or two existing TypeScript files below `src/`. Approval creates
-a fresh candidate; replay and resume are rejected. The current checks establish
-scope integrity and run the exact contained `typescript-no-emit/v1` profile while
-explicitly leaving outcome correctness to human review. Repository check
-configuration, dependency declarations, test and file-lifecycle changes remain denied. A
-later accept/reject question is bound to the escaped diff;
-acceptance invokes conflict-safe promotion without requiring another ID.
-`task outcome <proposal-id>` reloads the proposal-bound outcome journal. It
-reports elapsed time, first-check status, correction count, observed operation
-counts, operator decision and promotion state. Token usage and monetary cost are
-reported as unavailable because the current execution producer does not observe
-them. The outcome is evidence for inspection; it grants no execution, acceptance
-or promotion authority.
-`task run gentle-review <candidate> <gentle-ai-executable> <lineage-id>`
-collects one reviewer slot currently offered by Gentle. It requires an existing
-candidate and an existing provider lineage whose current status offers that
-slot; the command does not create or start a lineage. The executable path must
-be absolute and identify the stable Gentle AI 2.8.0 binary. After upgrading,
-run the provider-owned `gentle-ai sync` operation before review so its managed
-assets match the binary. Tesota negotiates capabilities protocol 2.5, verifies
-the executable's locally calculated SHA-256 against its self-report, requires
-the non-legacy features used by the qualified lifecycle and accepts only STATUS
-v7 with compact-v2 authority. Tesota preserves the provider's prompt and binding,
-runs tool-free Codex inference with the saved login, and submits only after the
-same binding is observed again. Run the command again for the next offered
-slot. START consent, acknowledgement, Tesota human acceptance and source
-promotion remain separate operations; review never authorizes promotion. See
-[Gentle AI review provider](verification.md#gentle-ai-review-provider) for the
-evidence and authority boundary.
-An approved terminal response returns its identity-bound per-lens reviewer
-evidence; an escalated status or closure returns the provider's canonical cause,
-finding IDs and available refuter outcomes. These are inspectable evidence, not
-acceptance or command authority. Tesota does not automatically run the offered
-acknowledgement.
-If model inference fails, the command submits nothing. Retry only through a new
-explicit command after bound status still offers the slot; this is capture
-re-entry, not reconstructed `review.recover` authority.
-Gentle's targeted validator launches a locked-down `pi` process. The compiled
-`dist/pi-review-relay.js` is Tesota's credential-preserving implementation of
-that process contract: it admits the fixed tool-free argv and Gentle 2.8's
-optional model/thinking suffix only when it names Tesota's fixed reviewer route. It never copies
-OAuth credentials into Pi's default store. Gentle remains responsible for the
-isolated process, prompt and verdict admission.
-`task review <directory>` and `task decide <directory> <accept|reject> <review-sha256>`
-provide offline review and local decision recording; neither promotes code.
-`task promote <directory> <review-sha256>` explicitly applies an accepted
-admitted write set from the original source root
-after checking for conflicting source work.
-`verify <file.ts|file.js>` runs the
-[Oxlint single-file static profile](verification.md#oxlint-single-file-static-profile);
-unsupported arguments print a diagnostic on stderr and exit 2.
+The package binary points to `dist/cli.js`. Build before `bun link`; later
+builds refresh that linked executable, and `bun unlink` removes it. The lint
+rule limits cyclomatic complexity to 20 in `src` and `tests` with no file
+exceptions. Vitest collects this checkout's `tests/` only, leaving a nested
+checkout's tests to its own scripts. The Git workspace suites, including the
+shell's source-turn tests, run in a separate Vitest process with a 20-second
+per-test limit so a timed-out filesystem operation cannot contaminate later
+suites. Each of the two groups also writes a JUnit XML report to the ignored `test-reports/`
+(`unit.xml` and `workspace.xml`), so a Tesota session on this repository can
+approve `bun run check => test-reports/unit.xml, test-reports/workspace.xml`
+and compare its failures with the base test by test. The opt-in
+`TESOTA_LIVE_SANDBOX=1` suite exercises Docker Sandboxes' boundary live,
+`TESOTA_LIVE_WSL=1` the WSL sandbox on Windows, or its Linux side directly
+where bubblewrap runs, after `bun run build`, and
+`TESOTA_LIVE_WEB=1` reads a real page and checks that a public name resolving
+to this computer is refused; add `TESOTA_LIVE_WEB_SEARCH=1` to search through
+the SearXNG in `~/.tesota/web.json`.
 
-Tests exercise real Oxlint, controlled Pi boundaries and compiled CLI processes.
-Use `test:fast` while changing pure orchestration or contracts, then run the
-smallest affected process-backed test file. The complete `test` command remains
-the qualification gate: new tests are excluded from the fast set until their
-implementation is explicitly confirmed not to launch Git, a compiler, a CLI, a
-verifier, a provider or another operating-system process.
-The repository lint configuration applies Oxlint's classic cyclomatic-complexity
-limit of 20 to every function in `src` and `tests`; it has no baseline or
-file-level exceptions and remains separate from the candidate verifier profile.
-Normal checks do not log in or invoke a live model. Network experiments have a
-separate [operating guide](../experiments/codex/README.md). Filesystem-heavy
-candidate suites run in separate Vitest processes so a timed-out filesystem
-operation cannot contaminate later suites; they retain the same isolated worker
-model and per-test limits. The CI workflow gives its Windows and Linux checks 20
-minutes; a declared lane does not establish that it has run successfully.
+A change to an engine adapter or to the model-session contract passes
+`tests/model-session-contract.test.ts`, which holds every engine to the same
+clauses, and then the opt-in live suite, `TESOTA_LIVE_MODELS=1` with
+`TESOTA_LIVE_MODEL_CHOICES` naming the `route:model` choices (default
+`claude-code:haiku,codex:gpt-6-luna`); it uses the operator's sign-ins and a
+little model usage. A new engine joins the shared suite with a harness before
+any role uses it.
 
-Before completing a change, run the relevant checks and `git diff --check`.
-Report what actually ran and any unverified behavior. Passing checks, reviewer
-judgment, live observations and human acceptance are separate claims.
+## Evaluations
 
-## Change scope
+Live evaluations use the saved login and write one JSON record under the
+ignored `live-runs/` directory.
 
-Keep one owner for each behavior and introduce modules only for implemented
-consumers. Preserve unrelated work and retained attribution. Use Kiln through
-the [reference procedure](references/kiln.md), selecting code or tests for a
-specific need. Do not import its package structure or roadmap by default.
+| Command | Measures |
+| --- | --- |
+| `bun run live:review` | Review on eight frozen candidates with known truth: defects found, false positives, refutation, correction, time, tokens and models. `--set=scope` runs five candidates for work beyond the request instead, scoring which extras are marked for the operator or would be sent back, and `--set=all` runs both. A case no reviewer finished is recorded as not measured and the run goes on. `--depth=`, `--skip-corrections` and `--model-reviewer=`, `--model-refuter=`, `--model-validator=` (as `route:model`) vary it |
+| `bun run live:prbench` | Tesota's review answering SWE-PRBench's pull requests, before and after refutation, for the benchmark's own judge and scorer. `--split=`, `--config=`, `--max=`, `--label=`, `--depth=` and the model flags vary it |
+| `bun run live:agent` | The working agent with Tesota's own prompt, for issue #165: a request already fixed (the right result is no change), one partly fixed and one not fixed, each decided by a hidden test run afterwards; five requests beside a temptation to do more (a bug in the next function, old-style code, a TODO, a duplicated helper, a poor name) and a control that needs two files, each in scope only when it changes no path the case does not allow, keeps the case's code verbatim and passes a preserved-behavior test, with whether the reply reports the temptation recorded apart; and fifteen questions measured in words, median and 90th percentile, with the facts each must state. It may run only `node --test`. Run it before and after a change to the working agent's prompt. `--runs=`, `--set=all\|fixes\|scope\|questions` and `--model-agent=` vary it |
+| `bun run live:answer` | The answer check on 15 registered turns that changed no files: the first pass on every turn, scoring checkable turns skipped and conversation checked, and the full check on the 10 with a known verdict, scoring requests judged held that did not hold (missed) and the reverse (false alarms), with time and tokens. `--stage=first-pass`, `--stage=review`, `--runs=` and `--model-triage=`, `--model-reviewer=`, `--model-refuter=` vary it |
+| `bun run live:delegation` | The agent with and without explorers on questions about a frozen copy of this repository. `--runs=`, `--model-agent=` and `--model-explorer=` vary it |
+
+A scope instruction in the working agent's prompt, registered with its
+cases on 2026-09-30 before any run, is adopted only if, over two runs on one
+agent model, the tempted cases kept in scope rise, none of them or of the fix
+cases loses its resolution, the control stays resolved and in scope, and the
+questions state as many facts. A baseline with every tempted case in scope
+leaves nothing to show, and no instruction is adopted.
+
+Run the relevant evaluation before and after a change to a reviewer, the
+refuter, origin checking, explorers, the answer check, their prompts or a role's model, and
+record the result with the change; a change that lowers precision
+or adds cost without a gain is not adopted. `live:review`'s eight candidates
+were written with Tesota's prompts and every model finds their defects, so
+they check Tesota's machinery, not which model or prompt reviews better; that
+is SWE-PRBench's job.
+
+**SWE-PRBench** scores
+Tesota's review against human reviewers' comments on 100 real pull requests
+with the benchmark's own code, pinned at pipeline v0.4.1 (commit `379f0bf`).
+Set it up once under the ignored `live-runs/swe-prbench/`:
+
+```
+git clone https://github.com/FoundryHQ-AI/swe-prbench.git live-runs/swe-prbench/harness
+git -C live-runs/swe-prbench/harness checkout 379f0bf
+python -m venv live-runs/swe-prbench/.venv
+live-runs/swe-prbench/.venv/Scripts/python -m pip install -r live-runs/swe-prbench/harness/requirements.txt huggingface_hub
+live-runs/swe-prbench/.venv/Scripts/hf download foundry-ai/swe-prbench --repo-type dataset --local-dir live-runs/swe-prbench/data
+```
+
+Put the judge's `OPENAI_API_KEY=` line in `live-runs/swe-prbench/harness/.env`,
+never in the repository; the official judge, GPT-5.2, is billed per token to
+that key. Then answer and score:
+
+```
+bun run live:prbench --label=astra-sol
+live-runs/swe-prbench/.venv/Scripts/python evaluations/swe-prbench/score.py --label=astra-sol
+live-runs/swe-prbench/.venv/Scripts/python evaluations/swe-prbench/score.py --label=astra-sol --response=unrefuted
+```
+
+Tesota's reviewer receives the official context and an empty checkout, as the
+benchmark's agents do, so its scores compare with the published ones; scores
+from another judge or split do not.
+
+## Adding a capability
+
+A capability is added for a real consumer, and one that claims to improve
+results is measured against the simplest alternative before it becomes a
+default. Prefer an existing owner, keep one owner per behavior, and add
+modules only for implemented consumers. There are no external consumers of
+Tesota's internal contracts: obsolete code and documentation are removed, not
+kept behind aliases or compatibility paths. Pure decision rules that can be
+stated precisely, such as permissions, budgets and finding origins, carry
+LemmaScript specifications and are proved by `bun run formal:check`.
 
 Changes to verification rules, evidence formats, permissions or acceptance
-criteria need explicit rationale and checks of the affected boundary. A candidate
-must not appear successful because it removed the condition that detected a failure.
+criteria need rationale and checks at the affected boundary. A change must not
+appear successful because it removed the condition that detected a failure.
 
-## Documentation ownership
+## Branches
 
-Write maintained documentation in English, using the identifiers in code and
-plain explanations of their meaning. Link to the existing owner instead of
-copying its explanation into another file.
+`main` is the stable default branch and `dev` the protected integration
+branch. Work starts on a short-lived branch from `dev` and returns through a
+pull request; integrated increments move from `dev` to `main` through a pull
+request with a merge commit. A hotfix starts from `main` and is merged back
+into `dev` promptly. Both branches require the Ubuntu and Windows checks, an
+up-to-date pull request and resolved conversations, and forbid force pushes
+and deletion.
+
+## Documentation
+
+Write maintained documentation in English, with identifiers from code and
+plain explanations. Update the owner below rather than repeating its content
+elsewhere. Public wording leads with what the person can do, then why the
+evidence matters, then mechanism, and never claims more than was exercised.
 
 | Content | Owner |
 | --- | --- |
-| Orientation and navigation | [README](../README.md) |
-| Product identity, thesis, vocabulary and purpose | [Identity](identity.md) |
-| Complete supported user workflow and current limitations | [Using Tesota](using-tesota.md) |
-| Public market comparison evidence | [Public positioning](references/public-positioning.md) |
-| Implemented structure and boundaries | [Architecture](architecture.md) |
-| Product direction, current status and priority | [Roadmap](roadmap.md), as the sole owner |
-| Evidence required to qualify roadmap capabilities | [Qualification](qualification.md) |
-| Stable behavioral contracts and usage | [Verification](verification.md) |
-| Verifier selection and qualification criteria; not product priority | [Verifier strategy](verifier-strategy.md) |
-| Authentication and private credential lifecycle | [Authentication](authentication.md) |
-| Candidate checkout creation and inspection | [Candidate checkouts](candidates.md) |
-| Task scope and source checks | [Scoped candidate task](tasks.md) |
-| Read-only conversational discovery and proposal records | [Task proposals](proposals.md) |
-| Experimental guides and records | [experiments/](../experiments/README.md), grouped by capability |
-| Consequential decisions and rationale | `docs/decisions/`, linked from the relevant guide |
-| Selected upstream source and reuse | `docs/references/`; [Kiln extraction](references/kiln-extraction.md) owns the dated selective-recovery classification, not current priorities |
-| Bootstrap and toolchain records | [Project history](history/README.md) |
-| Agent working instructions | [AGENTS.md](../AGENTS.md); CLAUDE.md references it |
+| Orientation | [README](../README.md) |
+| The user workflow | [Using Tesota](guide/using-tesota.md), [authentication](guide/authentication.md), [choosing models](guide/choosing-models.md) |
+| Built behavior and its rationale | [Design](design/overview.md); planned sections are labelled |
+| Status and priorities | [Roadmap](roadmap.md) |
+| Build, test and contribution practice | This page |
+| Agent working instructions | [AGENTS.md](../AGENTS.md) |
 
-Name product surfaces Tesota and files by their purpose. Milestone codes belong
-only in historical context, not package names, CI labels, commands or new schemas.
-Mark proposed work as proposed. Update status from repository evidence and
-identify conclusions reconstructed from operator reports. Preserve superseded
-decision rationale rather than rewriting it as though the later choice came first.
-Retain a new report only when it has a durable reader or evidentiary purpose.
+Put the current rule in its owning design page and mark proposals explicitly.
+The roadmap contains only current status and unfinished priorities. Record
+evaluation results with the change that used them; Git retains the earlier
+proposals and observations. Do not add protocols, transcripts or machine
+evidence to the repository.
 
-Keep conversation exports, scratch notes, personal account information and
-session bookkeeping outside tracked documentation. A private repository or
-ignored folder is not a substitute for deciding what belongs in it. Do not use
-Kiln's private state namespace for Tesota. Machine-specific reference checkout
-paths are local working context, not documentation prerequisites.
-
-When moving documentation, update links and inspect references from code and
-tests. Preserve historical machine evidence bytes; update all consumers when moving files. Check relative
-links, command spelling and source claims; keep temporary validation scripts out
-of the final change. Do not add empty documentation categories or placeholder pages.
+Keep credentials, conversation exports, scratch notes and session bookkeeping
+outside tracked documentation, and do not use Kiln's private state namespace.
+When moving or removing a document, update its links, and verify changed
+claims against code.
