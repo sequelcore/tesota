@@ -1,12 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { workingTreeDiff } from "../src/working-diff.js";
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true, maxRetries: 5 })));
+});
 
 function repository(commit = true): string {
   const root = mkdtempSync(join(tmpdir(), "tesota-working-diff-test-"));
@@ -43,9 +46,19 @@ it("shows everything uncommitted against HEAD, untracked files too, and writes n
 it("shows nothing for a clean tree, every file for a repository with no commit yet, and no diff outside one", () => {
   expect(workingTreeDiff(repository())).toBe("");
   expect(workingTreeDiff(repository(false))).toContain("+export const price = 1;");
-  const folder = mkdtempSync(join(tmpdir(), "tesota-working-diff-folder-"));
-  roots.push(folder);
-  expect(workingTreeDiff(folder)).toBeUndefined();
+  // A repository at the home folder is not the operator's project, as everywhere in Tesota, so a folder in it has no diff.
+  const home = repository();
+  const folder = join(home, "documents");
+  mkdirSync(folder);
+  writeFileSync(join(folder, "letter.md"), "draft\n");
+  expect(workingTreeDiff(folder, home)).toBeUndefined();
+});
+
+it("reads the whole repository from one of its folders, as git diff HEAD does", () => {
+  const root = repository();
+  writeFileSync(join(root, "price.ts"), "export const price = 2;\n");
+  mkdirSync(join(root, "docs"));
+  expect(workingTreeDiff(join(root, "docs"))).toContain("+export const price = 2;");
 });
 
 it("reads no file's bytes when the repository configures a Git program of its own", () => {

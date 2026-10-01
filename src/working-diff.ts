@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { assertNoRepositoryGitPrograms, isGitObjectId, operatorLineEndingSetting, runRepositoryGit,
   type RepositoryGitEnvironment } from "./repository-git.js";
+import { isGitRepository } from "./source-shadow.js";
 
 /**
  * Everything uncommitted in the operator's repository as a unified diff, as
@@ -14,12 +15,15 @@ import { assertNoRepositoryGitPrograms, isGitObjectId, operatorLineEndingSetting
  * the repository's own, and both are removed after. Repository-local Git
  * programs are refused before any file's bytes are read, as every snapshot
  * Tesota takes refuses them, and Git runs without hooks or ambient config.
- * Undefined when there is no repository or Git cannot read it.
+ * Undefined when there is no repository, as `isGitRepository` judges one from `home`, or Git cannot read it.
  */
-export function workingTreeDiff(cwd: string): string | undefined {
-  const source = resolve(cwd);
+export function workingTreeDiff(cwd: string, home?: string): string | undefined {
+  // As Tesota judges a repository everywhere: one at a drive's root or the home folder is not the operator's project.
+  if (!isGitRepository(resolve(cwd), home)) return undefined;
   let state: string | undefined;
   try {
+    // From the top level, so the whole repository is read even when Tesota starts in one of its folders.
+    const source = resolve(runRepositoryGit(resolve(cwd), ["rev-parse", "--show-toplevel"]).trim());
     const objects = resolve(source, runRepositoryGit(source, ["rev-parse", "--git-path", "objects"]).trim());
     if (!isAbsolute(objects)) return undefined;
     state = mkdtempSync(join(tmpdir(), "tesota-working-diff-"));
