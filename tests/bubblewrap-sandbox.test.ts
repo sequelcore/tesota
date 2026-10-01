@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { bubblewrapArguments, commandPath, guardedPaths, commandVariables, installedToolFolders, releaseRepository, type SandboxLayout, settingsWritten,
+import { bubblewrapArguments, commandPath, guardedPaths, commandVariables, installedToolFolders, releaseRepository, type SandboxLayout, settingsWritten, interopServed,
   toolFolders, windowsDrives, windowsMounts } from "../src/bubblewrap-sandbox.js";
 import { distributionSetupScript, listedDistributions } from "../src/wsl-environment.js";
 
@@ -45,6 +45,13 @@ it("reads whether WSL's configuration asks for interop off and drives owned by t
   expect(settingsWritten("[interop]\nenabled=false\n", 1000, 1000)).toBe(false);
   expect(settingsWritten("# [interop]\n[automount]\noptions=uid=1000,gid=1000 # mine\n[interop]\nEnabled = false", 1000, 1000)).toBe(true);
   expect(settingsWritten("", 1000, 1000)).toBe(false);
+});
+
+it("takes interop as still on only while WSL serves this session, whatever the VM-wide binfmt entry", () => {
+  // As WSL names a session's interop server when the distribution has interop on, and names none when it is off.
+  expect(interopServed({ WSL_INTEROP: "/run/WSL/290_interop" })).toBe(true);
+  expect(interopServed({})).toBe(false);
+  expect(interopServed({ WSL_INTEROP: "" })).toBe(false);
 });
 
 it("lets a command read tool installations from PATH, never the operator's home, the root or Windows' programs", () => {
