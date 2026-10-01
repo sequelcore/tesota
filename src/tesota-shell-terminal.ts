@@ -7,8 +7,8 @@ import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
 import { bold, colorText, fadedText, mutedText, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
-import { recordRows, safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
-import { DiffView } from "./tesota-shell-diff.js";
+import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
+import { ResultPanel } from "./tesota-shell-result.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
 import { ThemePicker } from "./tesota-shell-theme-picker.js";
 import { ChoicePicker, type ShellChoice } from "./tesota-shell-choice-picker.js";
@@ -356,29 +356,6 @@ function busy(progress: TesotaShellProgress | undefined): boolean {
   return progress !== undefined && animatedSidebarState(progress.phase);
 }
 
-/** The result panel: a heading, the record under section headings, then the candidate's diff as a diff view. */
-class ResultPanel implements Component {
-  readonly diff: DiffView;
-  readonly #theme: TesotaShellTheme;
-  #heading = "";
-  #record = "";
-  #cached: { width: number; lines: string[] } | undefined;
-  constructor(theme: TesotaShellTheme) { this.#theme = theme; this.diff = new DiffView(theme); }
-  /** Show a styled heading and a record's plain text beneath it. */
-  show(heading: string, record = ""): void { this.#heading = heading; this.#record = record; this.#cached = undefined; }
-  invalidate(): void { this.#cached = undefined; }
-  render(width: number): string[] {
-    if (this.#cached?.width !== width) {
-      const inner = Math.max(1, width - 2);
-      const lines = [...wrapTextWithAnsi(this.#heading, inner),
-        ...this.#record.length === 0 ? [] : recordRows(this.#record, inner, this.#theme, true)].map((row) => ` ${row}`);
-      this.#cached = { width, lines };
-    }
-    const diff = this.diff.render(width);
-    return [...this.#cached.lines, ...(diff.length === 0 ? [] : ["", ...diff])];
-  }
-}
-
 class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly tui: ViewportTUI & Partial<Backdrop>;
   private readonly now: () => number;
@@ -424,9 +401,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   });
   /** The selected session's waiting question, in place of the input. */
   private readonly question = new VStack();
+  /** The result panel, kept across layouts so each tab's position survives them. */
   private readonly result: ResultPanel;
-  /** One scroll view for the result panel, kept across layouts so its position survives them. */
-  private readonly resultScroll: ScrollView;
   private readonly commandMenu: CommandMenu;
   private readonly modelPicker: ModelPicker;
   private readonly themePicker: ThemePicker;
@@ -453,9 +429,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.interrupt = () => { (options.interrupt ?? ignoreInterrupt)(this.selectedId); };
     this.theme = { ...tesotaShellTheme(options.theme) };
     this.sidebarHeader = new SessionSidebarHeader(this.theme);
-    this.sidebar = new SessionRail(this.theme);
-    this.result = new ResultPanel(this.theme);
-    this.resultScroll = new ScrollView(this.result, { scrollbar: "auto" });
+    this.sidebar = new SessionRail(this.theme, (id) => { if (id !== this.selectedId) this.selectSession(id); });
+    this.result = new ResultPanel(this.theme, () => { this.tui.requestRender(); });
     this.sidebarScroll = new ScrollView(this.sidebar, { scrollbar: "auto" });
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
     initTheme(this.theme.appearance === "light" ? "light" : "dark");
@@ -542,7 +517,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const resultInColumn = (): boolean => this.showResult && this.contentWidth(this.tui.terminal.columns) < resultBesideWidth;
     const session = new VStack([
       { component: selected.scroll, basis: 0, grow: 1, minSize: 1, visible: () => !resultInColumn() },
-      { component: this.resultScroll, basis: 0, grow: 1, minSize: 1, visible: () => resultInColumn() },
+      { component: this.result.view, basis: 0, grow: 1, minSize: 1, visible: () => resultInColumn() },
       { component: new VStack([{ component: this.plan, basis: "auto", visible: () => this.plan.visible },
         { component: this.queue, basis: "auto", visible: () => this.queue.visible }, this.status, this.commandMenu, this.modelPicker, this.themePicker, this.choicePicker,
         { component: this.editor, basis: "auto", visible: () => this.selected().question === undefined },
@@ -562,7 +537,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       { component: session, basis: 0, grow: 1, minSize: 30 },
       { component: comparison, basis: 48, shrink: 1, minSize: 30,
         visible: (viewport) => this.split && secondary !== undefined && this.contentWidth(viewport.width) >= comparisonWidth },
-      { component: this.resultScroll, basis: 0, grow: 1, minSize: 30,
+      { component: this.result.view, basis: 0, grow: 1, minSize: 30,
         visible: (viewport) => this.showResult && this.contentWidth(viewport.width) >= resultBesideWidth },
     ], { gap: 1 }));
     this.tui.requestRender();
@@ -602,7 +577,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const inspection = session.inspections[session.selectedInspection];
     if (inspection === undefined) {
       this.result.show(mutedText("No result yet. A review's full diff and check output appear here.", this.theme));
-      this.result.diff.setDiff(undefined);
       return;
     }
     const note = session.selectedInspection < session.restoredInspectionCount ?
@@ -612,8 +586,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const position = session.inspections.length > 1 ?
       mutedText(` ${session.selectedInspection + 1} of ${session.inspections.length} · Alt+, Alt+.`, this.theme) : "";
     this.result.show(`${bold(colorText(safeTerminalText(inspection.title), this.theme.accent))}${position}\n` +
-      `${mutedText(note, this.theme)}`, inspection.detail);
-    this.result.diff.setDiff(inspection.diff);
+      `${mutedText(note, this.theme)}`, inspection.detail, inspection.diff);
   }
 
   addSession(id: string, title: string, entries: readonly TranscriptEntry[] = [],
@@ -728,6 +701,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   /** The keys that change what the shell shows beside the conversation. */
   private readonly viewKeys: readonly (readonly [Parameters<typeof matchesKey>[1], () => void])[] = [
     ["alt+r", () => { this.showResult = !this.showResult; this.compose(); }],
+    // The result's next tab, or the result itself when it is hidden.
+    ["alt+t", () => { if (this.showResult) this.result.next(); else { this.showResult = true; this.compose(); } }],
     ["alt+b", () => { this.toggleSidebar(); }],
     ["alt+d", () => { this.toggleLatestNotice(); }],
     ["alt+,", () => { this.moveInspection(-1); }],
@@ -1385,7 +1360,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         "/details [number] /help /quit\n" +
         "While it works: Enter queues · Tab sends to the agent now · Esc or Ctrl+C stops · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close · Shift+Tab mode\n" +
-        "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split · Alt+A accounts");
+        "View: Alt+R result · Alt+T result tab · Alt+B sidebar · Alt+D details · Alt+S split · Alt+A accounts");
     },
     quit: () => { this.options.onQuit?.(); },
   };
@@ -1415,7 +1390,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     Object.assign(this.theme, tesotaShellTheme(name));
     initTheme(this.theme.appearance === "light" ? "light" : "dark");
     for (const view of this.sessions.values()) view.scroll.invalidate();
-    this.result.diff.invalidate();
+    this.result.invalidate();
     this.editor.invalidate();
     this.compose();
     this.replyTo(session.id, `Theme: ${name}.`);

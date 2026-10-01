@@ -1497,21 +1497,125 @@ it("shows and restores a successful edit's bounded inline patch", () => {
   restored.stop();
 });
 
-it("presents a review once in the conversation and its diff beside it on a wide terminal", () => {
+it("presents a review once in the conversation and its diff beside it on a wide terminal, on its own tab", () => {
   const entries: TranscriptEntry[] = [];
-  const { shell, render } = wideShell({ onEntry: (_id, entry) => { entries.push(entry); } });
+  const { terminal, shell, render } = wideShell({ onEntry: (_id, entry) => { entries.push(entry); } });
   shell.inspect({ title: "Review · 1 file", summary: "  edit   src/price.ts\n  ✓ npm test", detail: "Requested\n  1. Fix it",
     diff: "diff --git a/src/price.ts b/src/price.ts\n--- a/src/price.ts\n+++ b/src/price.ts\n@@ -2 +2 @@\n" +
       "-  return price + discount;\n+  return price - discount;" });
+  const review = stripTerminalSequences(render());
+  expect(review.split("Review · 1 file").length - 1).toBe(2);
+  expect(review.split("✓ npm test").length - 1).toBe(1);
+  // The review opens on its record; with no checks recorded, its only other tab is the diff.
+  expect(review).toContain(" Review  Diff ");
+  expect(review).not.toContain(" Checks ");
+  expect(review).toContain("1. Fix it");
+  expect(review).not.toContain("1 file changed");
+  terminal.send("\x1bt");
   const rendered = render();
   const screen = stripTerminalSequences(rendered);
-  expect(screen.split("Review · 1 file").length - 1).toBe(2);
-  expect(screen.split("✓ npm test").length - 1).toBe(1);
+  expect(screen).not.toContain("1. Fix it");
   expect(screen).toContain("1 file changed +1 -1");
   expect(screen).toContain("2 +   return price - discount;");
   expect(screen).toContain("2 -   return price + discount;");
   expect(rendered).toContain("\x1b[48;2;29;51;36m"); // The added row's tint.
   expect(entries).toEqual([{ kind: "review", title: "Review · 1 file", text: "  edit   src/price.ts\n  ✓ npm test" }]);
+  shell.stop();
+});
+
+/** The rows of a full frame, as the TUI draws each after moving to its start; `undefined` for a row not drawn. */
+function frameRows(frame: string): string[] {
+  const rows: string[] = [];
+  // Each row starts at ESC [ row ;1H; the text before the first is the frame's own setup.
+  let row: number | undefined;
+  for (const part of frame.split("\x1b[")) {
+    const start = /^(\d+);1H/u.exec(part);
+    if (start !== null) row = Number(start[1]) - 1;
+    if (row !== undefined) rows[row] = start === null ? `${rows[row] ?? ""}\x1b[${part}` : part.slice(start[0].length);
+  }
+  return rows;
+}
+
+/** Click the first drawn `text` with the left button, as a terminal or a phone's SSH client reports a tap. */
+function clickText(terminal: TestTerminal, frame: string, text: string): void {
+  const rows = frameRows(frame).map((row) => stripTerminalSequences(row ?? ""));
+  const row = rows.findIndex((line) => line.includes(text));
+  expect(row, `${text} on screen`).toBeGreaterThanOrEqual(0);
+  const column = (rows[row] ?? "").indexOf(text) + 1;
+  terminal.send(`\x1b[<0;${column + 1};${row + 1}M`);
+  terminal.send(`\x1b[<0;${column + 1};${row + 1}m`);
+}
+
+it("steps through a result's tabs with Alt+T or a click, each keeping its own place, and starts a new result on Review", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 150;
+  terminal.rows = 30;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
+  const output = Array.from({ length: 80 }, (_, index) => `    │ line ${index}`).join("\n");
+  shell.inspect({ title: "Review · 1 file", summary: "  edit   src/a.ts",
+    detail: `Your requests\n  1. Fix it\n\nChecks\n  ✓ passed (exit 0): npm test\n${output}\n\nReview\n  advisor\n    Looks right`,
+    diff: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new" });
+  let frame = stripTerminalSequences(render());
+  expect(frame).toContain(" Review  Checks  Diff ");
+  expect(frame).toContain("Alt+T");
+  // The Review tab holds the record without its checks.
+  expect(frame).toContain("Looks right");
+  expect(frame).not.toContain("npm test");
+  terminal.send("\x1bt");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("✓ passed (exit 0): npm test");
+  expect(frame).not.toContain("Looks right");
+  // Scrolled to the checks' end, the Checks tab keeps its place while another tab is shown.
+  for (let step = 0; step < 60; step += 1) terminal.send("\x1b[<65;120;20M");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("line 79");
+  clickText(terminal, render(), " Diff ");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("1 file changed +1 -1");
+  expect(frame).not.toContain("line 79");
+  clickText(terminal, render(), " Checks ");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("line 79");
+  expect(frame).not.toContain("npm test");
+  // A click elsewhere in the tab row chooses nothing.
+  clickText(terminal, render(), "Alt+T");
+  expect(stripTerminalSequences(render())).toContain("line 79");
+  // A new result opens on its Review tab, from the start.
+  shell.inspect({ title: "Answer check", summary: "No files changed.", detail: "Your requests\n  1. Explain it\n\nReview\n  None" });
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("1. Explain it");
+  // An answer has only its review, so there are no tabs to choose.
+  expect(frame).not.toContain("Alt+T");
+  shell.stop();
+});
+
+it("selects a session clicked in the sidebar, as Alt+J does", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 150;
+  terminal.rows = 30;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.addSession("second", "Other task");
+  shell.start();
+  const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
+  const selection = "\x1b[48;2;75;61;83m";
+  const rowOf = (frame: string, text: string): string =>
+    frameRows(frame).find((row) => stripTerminalSequences(row ?? "").includes(text)) ?? "";
+  let frame = render();
+  expect(rowOf(frame, "Other task")).not.toContain(selection);
+  // The session's second row, its state, selects it too.
+  const rows = frameRows(frame).map((row) => stripTerminalSequences(row ?? ""));
+  const below = rows.findIndex((line) => line.includes("Other task")) + 1;
+  terminal.send(`\x1b[<0;4;${below + 1}M`);
+  terminal.send(`\x1b[<0;4;${below + 1}m`);
+  frame = render();
+  expect(rowOf(frame, "Other task")).toContain(selection);
+  expect(rowOf(frame, "Session 1")).not.toContain(selection);
+  clickText(terminal, frame, "Session 1");
+  expect(rowOf(render(), "Session 1")).toContain(selection);
   shell.stop();
 });
 
