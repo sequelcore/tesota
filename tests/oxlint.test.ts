@@ -197,6 +197,17 @@ it("times out a real hanging process and verifies it has exited", async () => {
   expect(() => process.kill(pid, 0)).toThrow();
 });
 
+it("runs under Node as under Bun, passing Bun's option against .env files only to Bun", async () => {
+  const { root, file } = await fixture("debugger;\n");
+  // Node 24 rejects --no-env-file; Tesota runs from dist/cli.js under Node.
+  const node = await runOxlint(configuredOxlint(root, process.execPath), file);
+  expect(node).toMatchObject({ status: "check_failed", process: "exited" });
+  expect(node.binding?.check.arguments).not.toContain("--no-env-file");
+  const underBun = await runOxlint(configuredOxlint(root, bun), file);
+  expect(underBun).toMatchObject({ status: "check_failed", process: "exited" });
+  expect(underBun.binding?.check.arguments[0]).toBe("--no-env-file");
+});
+
 it("binds exact bytes and the effective check through the compiled CLI", async () => {
   const source = Buffer.from("\ufeffexport const value = 1;\r\n");
   const { file, check } = await fixture();

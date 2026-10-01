@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
@@ -30,11 +30,43 @@ export function configuredOxlint(cwd: string, executable: string): OxlintCheck {
   };
 }
 
-function effectiveCheck(check: OxlintCheck, file: string): InputBinding["check"] {
+const runtimeFlags = new Map<string, readonly string[]>();
+
+/**
+ * The flags that keep the runtime running oxlint from reading a `.env` file
+ * in the checked repository: Bun reads one by default and `--no-env-file`
+ * stops it; Node reads one only when asked, and rejects that option. The
+ * executable is asked which runtime it is, once, from an empty directory with
+ * an empty environment, so not even the question can read a `.env`;
+ * undefined when it cannot answer, as when it cannot start.
+ */
+export function envFileFlags(executable: string): readonly string[] | undefined {
+  const known = runtimeFlags.get(executable);
+  if (known !== undefined) return known;
+  const asked = spawnSync(executable, ["-e", "process.stdout.write(typeof Bun)"],
+    { cwd: tmpdir(), env: {}, encoding: "utf8", windowsHide: true, timeout: 10_000 });
+  if (asked.status !== 0) return undefined;
+  const flags = asked.stdout === "object" ? ["--no-env-file"] : [];
+  runtimeFlags.set(executable, flags);
+  return flags;
+}
+
+function effectiveCheck(check: OxlintCheck, file: string, flags: readonly string[]): InputBinding["check"] {
   return { profile: OXLINT_PROFILE, configuration: check.configuration,
-    arguments: ["--no-env-file", "<oxlint-entry>", ...semanticArguments(file)],
+    arguments: [...flags, "<oxlint-entry>", ...semanticArguments(file)],
     limits: { timeoutMs: check.timeoutMs, maxOutputBytes: check.maxOutputBytes,
       terminationWaitMs: check.terminationWaitMs } };
+}
+
+/** The pinned oxlint and the flags its runtime needs, or why it cannot be started. */
+async function verifierRuntime(check: OxlintCheck):
+  Promise<{ readonly verifier: InputBinding["verifier"]; readonly flags: readonly string[] } | OxlintResult> {
+  const verifier = await observeVerifier(check.executable, check.entry);
+  if (verifier.packageVersion !== "1.82.0") {
+    return { status: "execution_failed", reason: "unsupported_oxlint_version", process: "not_started" };
+  }
+  const flags = envFileFlags(check.executable);
+  return flags === undefined ? { status: "execution_failed", reason: "spawn_failed", process: "not_started" } : { verifier, flags };
 }
 
 export async function runOxlint(configuration: OxlintCheck, input: string): Promise<OxlintResult> {
@@ -58,18 +90,17 @@ export async function runOxlint(configuration: OxlintCheck, input: string): Prom
     if (/(?:oxlint|eslint)-disable/u.test(bytes.toString("utf8"))) {
       return { status: "execution_failed", reason: "inline_suppression", process: "not_started" };
     }
-    const verifier = await observeVerifier(check.executable, check.entry);
-    if (verifier.packageVersion !== "1.82.0") {
-      return { status: "execution_failed", reason: "unsupported_oxlint_version", process: "not_started" };
-    }
+    const runtime = await verifierRuntime(check);
+    if ("status" in runtime) return runtime;
+    const { verifier, flags } = runtime;
     directory = await mkdtemp(join(tmpdir(), "tesota-oxlint-"));
     const config = join(directory, "profile.json");
     const snapshot = join(directory, basename(file));
-    binding = { source: { file, sha256: digest(bytes) }, check: effectiveCheck(check, file), verifier };
+    binding = { source: { file, sha256: digest(bytes) }, check: effectiveCheck(check, file, flags), verifier };
     await writeFile(config, check.configuration, { encoding: "utf8", flag: "wx", mode: 0o600 });
     await writeFile(snapshot, bytes, { flag: "wx", mode: 0o600 });
     result = await execute(check, directory,
-      ["--no-env-file", check.entry, ...semanticArguments(file)], snapshot);
+      [...flags, check.entry, ...semanticArguments(file)], snapshot);
     if (result.status !== "execution_failed") result = { ...result, file };
   } catch {
     result = { status: "execution_failed", reason: "input_or_installation_unavailable", process: "not_started" };
