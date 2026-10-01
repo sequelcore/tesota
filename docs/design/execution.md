@@ -265,7 +265,14 @@ again. The sandbox's check therefore tells two cases apart: a configuration
 that does not ask for them sends setup back to its script, and one that asks
 for them while interop is still on or a drive, such as `/mnt/c`, is still
 another user's is applied by restarting the distribution
-(`wsl.exe --terminate tesota`). Only Windows' drives count, as WSL tells them
+(`wsl.exe --terminate tesota`). Interop counts as still on while WSL serves
+the session an interop server, which it names in `WSL_INTEROP` only when the
+distribution has interop on (`interopServed` in `src/bubblewrap-sandbox.ts`).
+The `WSLInterop` binfmt entry tells nothing about one distribution: WSL 2's
+`mini_init` registers it for the whole virtual machine, whatever a
+distribution's `wsl.conf` says (WSL's interop documentation and
+`src/linux/init`), so on WSL 2.6.1 a check of the entry asked for a restart
+that could never apply. Only Windows' drives count, as WSL tells them
 from its other shares, such as its GPU drivers, which stay root's
 (`distributionStep`, `settingsAsked` and `countsAsDrive` in
 `src/verification/wsl-settings-rule.ts`, proved).

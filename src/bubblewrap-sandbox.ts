@@ -153,6 +153,18 @@ export function windowsDrives(mountinfo: string): string[] {
 }
 
 /**
+ * Whether this WSL session can still start Windows programs. WSL 2 registers
+ * the `WSLInterop` binfmt entry for its whole virtual machine, so the entry
+ * exists whatever a distribution's `wsl.conf` says; a distribution with
+ * interop off gets no interop server, and WSL names a session's server in
+ * `WSL_INTEROP` only when it has one (WSL's interop documentation and
+ * `src/linux/init`). Without a server, `/init` cannot start a Windows program.
+ */
+export function interopServed(environment: Readonly<Record<string, string | undefined>>): boolean {
+  return (environment["WSL_INTEROP"] ?? "") !== "";
+}
+
+/**
  * Whether WSL's configuration asks for what the sandbox needs at the
  * distribution's next start, as `settingsAsked` decides (proved): interop off,
  * and Windows' drives owned by this user and group.
@@ -687,7 +699,7 @@ export function check(paths: PathTranslation): Readonly<{ problems: string[]; se
     if (!settingsWritten(configuration, uid, gid)) {
       problems.push("/etc/wsl.conf does not turn interop off and give Windows' drives to this user");
     } else {
-      if (existsSync("/proc/sys/fs/binfmt_misc/WSLInterop")) settings.push("Windows interop is still on");
+      if (interopServed(process.env)) settings.push("Windows interop is still on");
       for (const drive of windowsDrives(readFileSync("/proc/self/mountinfo", "utf8"))) {
         const owner = statSync(drive).uid;
         if (owner !== uid) settings.push(`${drive} is still owned by user ${owner}, not by this user (${uid})`);
