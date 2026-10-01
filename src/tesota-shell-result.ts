@@ -14,10 +14,40 @@ const tabLabels: Readonly<Record<ResultTab, string>> = { review: "Review", check
  * unindented line after a blank one; everything nested in it is indented.
  */
 export function resultSections(record: string): Readonly<{ review: string; checks: string }> {
-  const sections = record.length === 0 ? [] : record.split(/\n\n(?=\S)/u);
+  const sections = recordSections(record);
   const isChecks = (section: string): boolean => section.split("\n", 1)[0] === "Checks";
   return { review: sections.filter((section) => !isChecks(section)).join("\n\n"),
     checks: sections.filter(isChecks).join("\n\n") };
+}
+
+/** The headings a record's sections have, as `src/tesota-shell-inspection.ts` writes them; "Requested" in earlier records. */
+const RECORD_HEADINGS: ReadonlySet<string> = new Set(["Your requests", "Requested", "First pass", "Files",
+  "Changes to how the result is checked", "Checks", "Review", "Content"]);
+const REQUEST_HEADINGS: ReadonlySet<string> = new Set(["Your requests", "Requested"]);
+
+/**
+ * A record's sections, each starting at an unindented line after a blank one.
+ * Records saved before a request's own lines were kept under its number have
+ * them unindented, where they would read as headings: what follows the
+ * requests under no heading of the record's own is theirs, drawn indented.
+ */
+export function recordSections(record: string): string[] {
+  const sections: string[] = [];
+  let requests = false;
+  for (const section of record.length === 0 ? [] : record.split(/\n\n(?=\S)/u)) {
+    const heading = section.split("\n", 1)[0] ?? "";
+    if (requests && !RECORD_HEADINGS.has(heading)) {
+      sections[sections.length - 1] += `\n\n${section}`;
+      continue;
+    }
+    sections.push(section);
+    requests = REQUEST_HEADINGS.has(heading);
+  }
+  return sections.map((section) => {
+    const [heading = "", ...lines] = section.split("\n");
+    if (!REQUEST_HEADINGS.has(heading)) return section;
+    return [heading, ...lines.map((line) => line.length === 0 || line.startsWith(" ") ? line : `     ${line}`)].join("\n");
+  });
 }
 
 /** The tab after `tab` among those a result has, wrapping around. */
@@ -72,7 +102,7 @@ export class ResultPanel {
     const record = (text: () => string) => new TabBody((width) => {
       const inner = Math.max(1, width - 2);
       const rule = mutedText("─".repeat(width), this.#theme);
-      return text().length === 0 ? [] : text().split(/\n\n(?=\S)/u).flatMap((section, index) =>
+      return recordSections(text()).flatMap((section, index) =>
         [...index === 0 ? [] : [""], rule, ...recordRows(section, inner, this.#theme, true).map((row) => ` ${row}`)]);
     });
     const bodies = { review: record(() => this.#sections.review), checks: record(() => this.#sections.checks),
