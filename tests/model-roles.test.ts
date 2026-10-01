@@ -218,3 +218,32 @@ it("offers /roles a role, then that role's models with default and, when it can 
   expect(rolePicker("/roles nobody ", offered, path)).toBeUndefined();
   expect(rolePicker("/models ", offered, path)).toBeUndefined();
 });
+
+it("says when roles spread across routes draw on one account, under the listing and after a choice that makes it so", () => {
+  const path = file();
+  const added = [{ name: "claude-2", kind: "claude-code" }] as const;
+  const withSecond: OfferedModel[] = [...offered, { id: "claude-2:opus", route: "claude-2", kind: "claude-code", name: "Claude Code's opus",
+    reasoning: all }];
+  const ours = { id: "45e4b49f" };
+  const accounts = [{ route: "claude-code", account: ours }, { route: "claude-2", account: ours }, { route: "codex", account: { id: "plus" } }];
+  let output = "";
+  const write = (text: string): void => { output += text; };
+  expect(runRolesCommand(["agent", "claude-code:opus"], write, withSecond, path, accounts, added)).toBe(0);
+  expect(output).not.toContain("share one plan's limits");
+  output = "";
+  expect(runRolesCommand(["advisor", "claude-2:opus"], write, withSecond, path, accounts, added)).toBe(0);
+  const note = "Roles on claude-code (agent) and claude-2 (advisor) share one plan's limits: both routes are signed in to the same account.";
+  expect(output).toContain(`${note}\n`);
+  output = "";
+  expect(runRolesCommand([], write, withSecond, path, accounts, added)).toBe(0);
+  expect(output).toContain(note);
+  // A choice on a route of its own account says nothing of the others.
+  output = "";
+  expect(runRolesCommand(["refuter", "codex:gpt-6-sol"], write, withSecond, path, accounts, added)).toBe(0);
+  expect(output).not.toContain("share one plan's limits");
+  // Signed in to different accounts, the same roles share nothing.
+  output = "";
+  expect(runRolesCommand([], write, withSecond, path, [{ route: "claude-code", account: ours }, { route: "claude-2", account: { id: "b7" } }],
+    added)).toBe(0);
+  expect(output).not.toContain("share one plan's limits");
+});

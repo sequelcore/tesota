@@ -49,7 +49,9 @@ their length, so a free Codex account shows its 30-day window. An OpenRouter
 key with a limit shows what remains of it; one without a limit shows what it
 has used. OpenCode shows its Go subscription's windows. The Anthropic API
 route, OpenCode Zen and TypeSafe have no usage source for the key Tesota
-holds, so the table says where to look instead.
+holds, so the table says where to look instead. Routes signed in to the same
+account share one plan, so that account is read once: the first route shows
+its meters and the others say `same account as <route>: one reading, above`.
 
 Codex's usage comes from a private ChatGPT endpoint and Claude Code's from an
 experimental report, so either may stop working. When a read fails, the table

@@ -12,7 +12,8 @@ const claims = Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { cha
 const codexToken = `TEST_HEADER.${claims}.TEST_SIGNATURE`;
 
 /** Sources that answer as the providers did on 2026-09-29, recording what each request carried. */
-function sources(answers: Readonly<Record<string, UsageResponse | Error>>, keys: Readonly<Record<string, string>> = {}) {
+function sources(answers: Readonly<Record<string, UsageResponse | Error>>, keys: Readonly<Record<string, string>> = {},
+  accounts: Readonly<Record<string, string>> = {}) {
   const requests: { url: string; headers: Readonly<Record<string, string>> }[] = [];
   const answer = (url: string): UsageResponse => {
     const found = answers[url];
@@ -25,6 +26,7 @@ function sources(answers: Readonly<Record<string, UsageResponse | Error>>, keys:
     get: async (url, headers) => { requests.push({ url, headers }); return answer(url); },
     claudeCode: async (directory) => answer(`claude:${directory ?? "default"}`).body,
     claudeCodeDirectory: (route) => `/claude/${route}`,
+    account: async (route) => accounts[route],
     userAgent: "tesota/test",
   };
   return { fake, requests };
@@ -160,5 +162,41 @@ it("names a refused sign-in, and refuses a route it does not know", async () => 
     let written = "";
     expect(await runUsageCommand(["no-such-route"], (text) => { written += text; }, fake, { path: join(folder, "usage.json") })).toBe(2);
     expect(written).toMatch(/^Usage: tesota usage \[codex\|/u);
+  } finally { await rm(folder, { recursive: true, force: true }); }
+});
+
+it("reads an account once through its first route, and every route on it shows that one reading", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "tesota-usage-"));
+  const path = join(folder, "usage.json");
+  // claude-code and claude-2 are signed in to one claude.ai account; codex-free1's account cannot be read.
+  const routes = [{ route: "claude-code", kind: "claude-code" }, { route: "codex-free1", kind: "codex" },
+    { route: "claude-2", kind: "claude-code" }];
+  const accounts = { "claude-code": "45e4b49f", "claude-2": "45e4b49f" };
+  const report = { subscription_type: "max", rate_limits: { five_hour: { utilization: 40 } } };
+  try {
+    const asked: string[] = [];
+    const { fake } = sources({ "claude:default": { status: 200, body: report } }, {}, accounts);
+    const counted = { ...fake, claudeCode: async (directory: string | undefined) => { asked.push(directory ?? "default"); return fake.claudeCode(directory); } };
+    const arrived: string[] = [];
+    const usage = await readUsage(routes, counted, { path, now: () => now, onEach: (one) => { arrived.push(one.route); } });
+    expect(asked).toEqual(["default"]);
+    expect(arrived.sort()).toEqual(["claude-2", "claude-code", "codex-free1"]);
+    expect(usage[2]).toMatchObject({ route: "claude-2", kind: "claude-code", state: "read", sameAccountAs: "claude-code",
+      reading: { plan: "max", meters: [{ label: "5h", left: 60 }] } });
+    expect(usage[0]?.sameAccountAs).toBeUndefined();
+    expect(usageLines(usage, now).slice(1)).toEqual([
+      "claude-code  Claude Code max  5h      ████████████░░░░░░░░  60%",
+      "codex-free1  Codex            signed out: tesota auth login codex-free1",
+      "claude-2     Claude Code max  same account as claude-code: one reading, above"]);
+    // Saved under both routes, so a later failed read of either shows the same last reading.
+    expect(Object.keys(JSON.parse(await readFile(path, "utf8")) as object).sort()).toEqual(["claude-2", "claude-code"]);
+    const failing = sources({ "claude:default": new Error("could not reach claude.ai") }, {}, accounts).fake;
+    const later = await readUsage(routes, failing, { path, now: () => now + 10 * 60_000 });
+    expect(later[0]).toMatchObject({ state: "last_known", readAt: now });
+    expect(later[2]).toMatchObject({ state: "last_known", readAt: now, sameAccountAs: "claude-code" });
+    // An account that cannot be read leaves each route to be read by itself.
+    const unknown = sources({ "claude:default": { status: 200, body: report }, "claude:/claude/claude-2": { status: 200, body: report } }).fake;
+    expect((await readUsage(routes, { ...unknown, account: async () => { throw new Error("unreadable"); } }, { path, now: () => now }))
+      .map((entry) => entry.sameAccountAs)).toEqual([undefined, undefined, undefined]);
   } finally { await rm(folder, { recursive: true, force: true }); }
 });

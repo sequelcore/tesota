@@ -345,13 +345,13 @@ export async function routeStatuses(names: readonly string[], credentials: Tesot
   return Promise.all(names.map(async (route): Promise<RouteStatus> => {
     const kind = added.find((entry) => entry.name === route)?.kind ?? route;
     const signIn = await signInOf(route, kind, credentials);
-    const account = signIn.startsWith("signed in") ? await accountOf(route, kind, credentials) : undefined;
+    const account = signIn.startsWith("signed in") ? await routeAccount(route, kind, credentials) : undefined;
     return { route, kind: kindLabels[kind] ?? kind, signIn, ...account === undefined ? {} : { account } };
   }));
 }
 
 /** Which account a signed-in route is for, from its own sign-in; read locally, never shown whole unless asked. */
-async function accountOf(route: string, kind: string, credentials: TesotaCredentials): Promise<RouteAccount | undefined> {
+export async function routeAccount(route: string, kind: string, credentials: TesotaCredentials): Promise<RouteAccount | undefined> {
   if (kind === "codex") {
     const store = route === "codex" ? credentials : TesotaCredentials.forRoute(route, "openai-codex");
     return codexAccount(await store.read("openai-codex"));
@@ -361,14 +361,16 @@ async function accountOf(route: string, kind: string, credentials: TesotaCredent
 }
 
 /**
- * What `tesota usage` says under its table: the routes signed in to one account, whose meters are one reading (#235).
- * Read from each route's own sign-in, locally; a route that cannot be read is left out.
+ * Each route's account, read from its own sign-in, locally, for `tesota roles`
+ * to tell roles spread across routes that draw on one account (#235); a
+ * route that cannot be read has none.
  */
-export async function routeAccountNotes(routes: readonly { readonly route: string; readonly kind: string }[],
-  credentials: TesotaCredentials = new TesotaCredentials()): Promise<string[]> {
-  const accounts = await Promise.all(routes.map(async (entry) =>
-    ({ route: entry.route, account: await accountOf(entry.route, entry.kind, credentials).catch(() => undefined) })));
-  return sharedAccounts(accounts).map(sharedAccountNote);
+export async function routeAccounts(routes: readonly { readonly route: string; readonly kind: string }[],
+  credentials: TesotaCredentials = new TesotaCredentials()): Promise<{ route: string; account?: RouteAccount }[]> {
+  return Promise.all(routes.map(async ({ route, kind }) => {
+    const account = await routeAccount(route, kind, credentials).catch(() => undefined);
+    return account === undefined ? { route } : { route, account };
+  }));
 }
 
 /** The status of these routes, every route when none is named, as one table. */

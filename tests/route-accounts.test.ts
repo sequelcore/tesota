@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { accountText, claudeCodeAccount, codexAccount, maskEmail, sharedAccountNote, sharedAccounts } from "../src/route-accounts.js";
+import { accountText, claudeCodeAccount, codexAccount, maskEmail, sharedAccountNote, sharedAccounts, sharedRoleGroups, sharedRoleNote }
+  from "../src/route-accounts.js";
 import { routeAfter } from "../src/verification/route-removal-rule.js";
 
 /**
@@ -62,6 +63,20 @@ it("names the routes signed in to one account, once each, and none alone", () =>
   expect(sharedAccountNote(groups[0] ?? [])).toContain("claude-code and claude-2 are signed in to the same account");
 });
 
+it("names roles spread across routes that draw on one account, and not a shared route no role uses", () => {
+  const ours = { id: "45e4b49f" };
+  const routes = [{ route: "claude-code", account: ours }, { route: "claude-2", account: ours }, { route: "claude-3", account: ours },
+    { route: "codex", account: { id: "plus" } }];
+  const roles: Readonly<Record<string, readonly string[]>> = { "claude-code": ["agent", "reviewer"], "claude-2": ["advisor"], codex: ["refuter"] };
+  const usedBy = (route: string): readonly string[] => roles[route] ?? [];
+  const groups = sharedRoleGroups(routes, usedBy);
+  expect(groups).toEqual([["claude-code", "claude-2"]]);
+  expect(sharedRoleNote(groups[0] ?? [], usedBy)).toBe("Roles on claude-code (agent, reviewer) and claude-2 (advisor) share one plan's " +
+    "limits: both routes are signed in to the same account.");
+  // Roles all on one route draw on one account by choice, which needs no note.
+  expect(sharedRoleGroups(routes, (route) => route === "claude-code" ? ["agent", "advisor"] : [])).toEqual([]);
+});
+
 it("keeps a route and its roles when it is signed in or out, and removes it only when no role uses it", () => {
   expect(routeAfter("login", true)).toBe("keep");
   expect(routeAfter("logout", true)).toBe("keep");
@@ -69,7 +84,7 @@ it("keeps a route and its roles when it is signed in or out, and removes it only
   expect(routeAfter("remove", false)).toBe("delete");
 });
 
-it("shows each route's account in the shell's Sign-ins tab, masked until s shows it, and the shared account in both tabs", async () => {
+it("shows each route's account in the shell's Sign-ins tab, masked until s shows it, and the shared account where it matters", async () => {
   const { AccountsPanel } = await import("../src/tesota-shell-accounts.js");
   const { tesotaShellTheme } = await import("../src/tesota-shell-theme.js");
   const { stripTerminalSequences } = await import("@earendil-works/pi-tui");
@@ -77,12 +92,19 @@ it("shows each route's account in the shell's Sign-ins tab, masked until s shows
   const ours = { id: "45e4b49f", email: "r3xed@outlook.es" };
   panel.setSignIns({ rows: [{ route: "claude-code", kind: "Claude Code", signIn: "signed in with claude.ai", account: ours },
     { route: "claude-2", kind: "Claude Code", signIn: "signed in with claude.ai", account: ours }], usedBy: () => [] });
-  panel.setUsage([{ route: "claude-code", kind: "claude-code", state: "read",
-    reading: { plan: "pro", notes: [], meters: [{ label: "week", left: 80 }] } }]);
+  const reading = { plan: "pro", notes: [], meters: [{ label: "week", left: 80 }] };
+  panel.setUsage([{ route: "claude-code", kind: "claude-code", state: "read", reading },
+    { route: "claude-2", kind: "claude-code", state: "read", reading, sameAccountAs: "claude-code" }]);
+  panel.setRoles([{ role: "agent", choice: "claude-code:opus", route: "claude-code" }, { role: "advisor", choice: "claude-2:opus", route: "claude-2" }]);
   const text = (): string => stripTerminalSequences(panel.render(140).join("\n"));
-  // The Usage tab names the shared account too, since its two meters are one plan's.
-  expect(text()).toContain("claude-code and claude-2 are signed in to the same account");
+  // The Usage tab reads the shared account once, and its second route points to that reading.
+  expect(text()).toContain("same account as claude-code: one reading, above");
+  // The Roles tab says the agent and the advisor share one plan, and each role's meter is that one reading.
+  panel.handleKey("3");
+  expect(text()).toContain("Roles on claude-code (agent) and claude-2 (advisor) share one plan's limits");
+  expect(text().match(/80%/gu)).toHaveLength(2);
   panel.handleKey("2");
+  expect(text()).toContain("claude-code and claude-2 are signed in to the same account");
   expect(text()).toContain("r3…@outlook.es");
   expect(text()).not.toContain("r3xed@outlook.es");
   expect(text()).toContain("s show emails");

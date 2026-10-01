@@ -1,6 +1,7 @@
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
 import { bar, span, USAGE_SOURCES_NOTE, usageLines, type RouteUsage, type UsagePaint } from "./account-usage.js";
 import { accountNotes, type RouteStatus, SIGN_IN_NOTE, statusLines, type StatusPaint } from "./auth.js";
+import { sharedRoleGroups, sharedRoleNote } from "./route-accounts.js";
 import { bold, colorText, mutedText, selectedRow, surfaceText, type TesotaShellTheme } from "./tesota-shell-theme.js";
 import { meterTone } from "./verification/usage-meter-rule.js";
 
@@ -218,10 +219,7 @@ export class AccountsPanel implements Component {
     // Twenty segments where the table fits, as Codex draws them; ten where it would not.
     const wide = usageLines(this.#usage, this.#now());
     const segments = wide.every((line) => visibleWidth(line) <= inner) ? 20 : 10;
-    // Routes on one account, known once the sign-ins are read, show one plan's limits twice (#235).
-    const shared = accountNotes(this.#signIns?.rows ?? []).flatMap((note) =>
-      wrapTextWithAnsi(note, inner).map((line) => colorText(line, this.#theme.warning)));
-    return [...usageLines(this.#usage, this.#now(), { segments, paint: this.#usagePaint(), width: inner }), "", ...shared,
+    return [...usageLines(this.#usage, this.#now(), { segments, paint: this.#usagePaint(), width: inner }), "",
       ...this.#footnote(USAGE_SOURCES_NOTE, inner)];
   }
 
@@ -231,11 +229,13 @@ export class AccountsPanel implements Component {
     if (this.#signIns === undefined) return [mutedText("Reading each route's sign-in…", this.#theme)];
     const paint: StatusPaint = { muted: (text) => mutedText(text, this.#theme), strong: bold,
       attention: (text) => colorText(text, this.#theme.warning) };
-    // Routes on one account matter to the team the operator plans, so they stand out from the notes.
-    const shared = accountNotes(this.#signIns.rows).flatMap((note) =>
-      wrapTextWithAnsi(note, inner).map((line) => colorText(line, this.#theme.warning)));
-    return [...statusLines(this.#signIns.rows, this.#signIns.usedBy, paint, this.#showAccounts), "", ...shared,
-      ...this.#footnote(SIGN_IN_NOTE, inner)];
+    return [...statusLines(this.#signIns.rows, this.#signIns.usedBy, paint, this.#showAccounts), "",
+      ...this.#warnings(accountNotes(this.#signIns.rows), inner), ...this.#footnote(SIGN_IN_NOTE, inner)];
+  }
+
+  /** Notes about routes on one account, which matter to the team the operator plans, so they stand out from the other notes. */
+  #warnings(notes: readonly string[], inner: number): string[] {
+    return notes.flatMap((note) => wrapTextWithAnsi(note, inner).map((line) => colorText(line, this.#theme.warning)));
   }
 
   /** The tightest meter of a route's account: the one with the least left, as a short bar. */
@@ -264,12 +264,15 @@ export class AccountsPanel implements Component {
     const choiceWidth = Math.max(5, ...this.#roles.map((row) => row.choice.length)) + 2;
     const routeWidth = Math.max(7, ...this.#roles.map((row) => (row.route ?? "").length)) + 2;
     const heading = mutedText(`  ${"Role".padEnd(roleWidth)}${"Model".padEnd(choiceWidth)}${"Account".padEnd(routeWidth)}Least left`, this.#theme);
+    // Roles spread across routes that draw on one account, known once the sign-ins are read (#235).
+    const usedBy = (route: string): string[] => this.#roles.filter((row) => row.route === route).map((row) => row.role);
+    const shared = sharedRoleGroups(this.#signIns?.rows ?? [], usedBy).map((group) => sharedRoleNote(group, usedBy));
     return [heading, ...this.#roles.map((row, index) => {
       const selected = index === this.#selectedRole;
       const choice = row.route === undefined ? mutedText(row.choice.padEnd(choiceWidth), this.#theme) : row.choice.padEnd(choiceWidth);
       const lead = `${selected ? "›" : " "} ${row.role.padEnd(roleWidth)}${choice}${(row.route ?? "").padEnd(routeWidth)}`;
       const line = `${selected ? bold(lead) : lead}${this.#tightest(row.route)}`;
       return selected ? selectedRow(truncateToWidth(line, inner), inner, this.#theme) : line;
-    })];
+    }), ...shared.length === 0 ? [] : ["", ...this.#warnings(shared, inner)]];
   }
 }
