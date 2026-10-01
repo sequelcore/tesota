@@ -1212,7 +1212,13 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     const next = nextMode(modeOf(id));
     const asked = needsConfirmation(next, state.fullAccessConfirmed);
     if (asked) {
-      if (!await decisions(id).fullAccess()) return;
+      let confirmed: boolean;
+      // The question cannot open while another waits, such as a command's approval; the mode stays and the shell says why.
+      try { confirmed = await decisions(id).fullAccess(); } catch (error) {
+        if (!isAbort(error)) output.replyTo(id, "Answer the waiting question first; the mode did not change.", "warning");
+        return;
+      }
+      if (!confirmed) return;
       state.fullAccessConfirmed = true;
     }
     store.setMode(id, next);

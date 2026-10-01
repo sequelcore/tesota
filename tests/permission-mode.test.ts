@@ -190,6 +190,15 @@ it("cycles accept edits, full access, read only with Shift+Tab, asking once per 
   await engine.dispose();
 });
 
+it("keeps the mode and says why when the confirmation cannot be asked, without failing the switch", async () => {
+  const { engine, record, labels, notices } = modeEngine(async () => { throw new Error("Tesota Shell prompt already active"); });
+  await expect(engine.permissionMode.cycle("s")).resolves.toBeUndefined();
+  expect(record.mode).toBe("accept-edits");
+  expect(labels).toEqual([]);
+  expect(notices).toEqual(["Answer the waiting question first; the mode did not change."]);
+  await engine.dispose();
+});
+
 it("stays in the current mode when the operator declines Full access", async () => {
   const { engine, record, labels } = modeEngine(async () => false);
   await engine.permissionMode.cycle("s");
