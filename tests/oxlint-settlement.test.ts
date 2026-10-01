@@ -7,7 +7,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { configuredOxlint, runOxlint } from "../src/verification/oxlint.js";
 
 const spawn = vi.hoisted(() => vi.fn());
-vi.mock("node:child_process", () => ({ spawn }));
+// Only oxlint's own process is faked; asking the runtime which one it is runs for real.
+vi.mock("node:child_process", async (importOriginal) =>
+  ({ spawn, spawnSync: (await importOriginal<typeof import("node:child_process")>()).spawnSync }));
 afterEach(() => { vi.restoreAllMocks(); spawn.mockReset(); });
 
 it("does not treat a successful kill request as observed process exit", async () => {
