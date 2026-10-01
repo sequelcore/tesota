@@ -20,6 +20,8 @@ import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./h
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
 import { commandPlace, needsConfirmation, nextMode, type PermissionMode } from "./verification/permission-mode.js";
+import { installsDeclaredTools, toolchainStep } from "./verification/toolchain-refresh-rule.js";
+import { planToolchain } from "./toolchain.js";
 import { currentBranch } from "./repository-git.js";
 import { askExplorer, askPageReader } from "./integrations/pi-explorer.js";
 import type { WebAccess } from "./integrations/web-tools.js";
@@ -282,6 +284,8 @@ class SessionState {
   readonly turnCalls: Map<string, ToolCallRecord> = new Map();
   /** The hidden files the agent was last told of, so it hears again only when they change. */
   toldHidden: string | undefined;
+  /** The repository's toolchain declaration the sandbox was set up for, or last asked about (decision 048). */
+  toolchain: string | undefined;
   /** The mode the agent was last told of; undefined while its system prompt's, accept edits, holds. */
   toldMode: PermissionMode | undefined;
   /** Whether the operator confirmed Full access in this session, which is asked once. */
@@ -523,6 +527,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         output.writeTo(id, summary, failed ? "warning" : "info");
         if (failed) state.note = [state.note, `Note: ${summary}`].filter((note) => note !== undefined).join("\n\n");
       }
+      state.toolchain = planToolchain(workspace.checkout).fingerprint;
       return environment;
     })();
     return remember(pending, () => state.environment, (value) => { state.environment = value; });
@@ -715,6 +720,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         commandRules: () => store.commandRules(),
         mode: () => modeOf(id),
         onFullAccessCommand: () => { stateFor(id).fullAccessCommands += 1; },
+        beforeSandboxCommand: () => installDeclaredTools(id, workspace.checkout),
         approveCommand: async (request) => {
           output.reportFor(id, { phase: "awaiting_command" });
           const approval = await decisions(id).command(request);
@@ -1228,6 +1234,42 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     showExecution(id);
     // The answer to the question already says so; entering Full access again in the session still leaves a line.
     if (next === "full-access" && !asked) output.writeTo(id, "Full access: commands run on this computer without asking.", "warning");
+  };
+  /**
+   * Before a sandboxed command: when the repository's toolchain declaration changed since the sandbox was set up, as
+   * when the agent declares a tool a check needs, ask the operator, once per declaration, and set it up on their yes
+   * (proved: `toolchainStep`, `installsDeclaredTools`). What the agent must know comes back for the command's output.
+   */
+  const installDeclaredTools = async (id: string, checkout: string): Promise<string | undefined> => {
+    const state = stateFor(id);
+    const plan = planToolchain(checkout);
+    const environment = await environmentFor(id);
+    const step = toolchainStep(plan.fingerprint !== state.toolchain, environment.refreshToolchain !== undefined);
+    if (step === "unchanged") return undefined;
+    state.toolchain = plan.fingerprint;
+    const files = [...plan.miseFiles, ...plan.setupScript === null ? [] : [plan.setupScript]];
+    if (step === "unavailable") {
+      return "Tesota: the repository's toolchain changed, but this sandbox sets up tools only when it is prepared; " +
+        "they are not available in this session. Say so to the user rather than working around it.";
+    }
+    output.reportFor(id, { phase: "awaiting_command" });
+    const approved = await decisions(id).toolchain(files);
+    output.reportFor(id, { phase: "working" });
+    if (!installsDeclaredTools(true, true, approved) || environment.refreshToolchain === undefined) {
+      return "Tesota: the user declined installing the tools the repository's toolchain now declares; they are not " +
+        "available. Say so rather than working around it.";
+    }
+    output.reportFor(id, { phase: "preparing", activity: "Installing the declared tools" });
+    try {
+      const steps = await environment.refreshToolchain({ onProgress: (activity) => { output.reportFor(id, { phase: "preparing", activity }); } });
+      const failed = steps.find((entry) => entry.outcome === "failed");
+      const summary = describePreparation(steps);
+      if (summary !== undefined) output.writeTo(id, summary, failed === undefined ? "info" : "warning");
+      return failed === undefined ? "Tesota: the user approved, and the sandbox now has what the repository's toolchain declares."
+        : `Tesota: installing the declared tools stopped at "${failed.description}": ${failed.output.trim().slice(-600)}`;
+    } catch (error) {
+      return `Tesota: the declared tools could not be installed: ${error instanceof Error ? error.message : "unknown error"}.`;
+    } finally { output.clearProgressFor(id, "preparing"); output.reportFor(id, { phase: "working" }); }
   };
   /** A session opens in the mode last chosen, which can be Full access without a question: the operator is reminded. */
   const openMode = (id: string): void => {
