@@ -418,9 +418,14 @@ so a round settles what it was sent instead of raising a fresh list: at most
 two rounds, fewer if a round changes nothing. Each round shows its own review, and `Ctrl+C` stops it. Only then
 does Tesota ask for your decision. What only you can decide never goes back
 to the agent. The full record and the diff open beside it on a wide terminal;
-`Alt+R` shows or hides them, in place of the conversation on a narrow one. The
-record groups your requests, the files, the checks and the review under
-headings; what each check shows and does not show, and its output, sit beneath it, the output
+`Alt+R` shows or hides them, in place of the conversation on a narrow one.
+The result has up to three tabs: Review, with your requests, the files and
+the review; Checks; and Diff. An answer that changed no files has only its
+review. `Alt+T`, or a click or tap on a tab, chooses one, and each tab keeps
+its own scroll position; a new result opens on Review. A click or tap on a
+session in the sidebar selects it too, as `Alt+J` and `Alt+K` do, so a phone
+over SSH reaches both without those keys. Under Checks, what each check
+shows and does not show, and its output, sit beneath it, the output
 behind a `│` and without its colors. The diff lists the changed files with
 their added and removed lines, then shows each change with line numbers,
 added and removed lines tinted green and red, and code highlighted by
