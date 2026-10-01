@@ -168,7 +168,9 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   process.exitCode = runRolesCommand(roleArgs, (text) => { process.stdout.write(text); });
 } else if (args[0] === "prune" && (args.length === 1 || args.length === 2 && args[1] === "--force")) {
   const { formatPrunePlan, measureWorkspaces, planWorkspacePrune, removeWorkspaces } = await import("./workspace-prune.js");
-  const plan = await planWorkspacePrune();
+  const { claudeCodeConfigDirectories } = await import("./claude-code-transcripts.js");
+  // Claude Code's folders are read only here, never by default, so nothing else scans the operator's own.
+  const plan = await planWorkspacePrune(undefined, undefined, undefined, undefined, claudeCodeConfigDirectories());
   process.stdout.write(formatPrunePlan(plan, await measureWorkspaces(plan)));
   if (args[1] === "--force") {
     await removeWorkspaces(plan);
