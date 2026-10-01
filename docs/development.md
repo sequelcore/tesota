@@ -90,10 +90,15 @@ refuted, and `live:review`'s core and scope totals do not lose precision. A
 baseline with every false premise left alone and marked leaves nothing to
 show, and nothing is adopted.
 
-Run the relevant evaluation before and after a change to a reviewer, the
-refuter, origin checking, explorers, the answer check, their prompts or a role's model, and
-record the result with the change; a change that lowers precision
-or adds cost without a gain is not adopted. `live:review`'s eight candidates
+Run the relevant evaluation before and after a change in this repository to
+a reviewer, the refuter, origin checking, explorers, the answer check, their
+prompts or a role's built-in model, and record the result with the change; a
+change that lowers precision or adds cost without a gain is not adopted.
+This rule governs what Tesota ships to everyone. An operator's own team,
+chosen with `tesota roles`, needs no evaluation: each user may set any model
+for any role, Tesota warns where a judge shares a model or lab with what it
+judges and never refuses, and running the evaluations on a chosen team stays
+an optional, separate activity. `live:review`'s eight candidates
 were written with Tesota's prompts and every model finds their defects, so
 they check Tesota's machinery, not which model or prompt reviews better; that
 is SWE-PRBench's job.
