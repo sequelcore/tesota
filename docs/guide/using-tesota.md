@@ -437,7 +437,11 @@ The prompt stays visible in either view.
 
 In your project, the turn then stays undecided: Tesota never holds the
 session for a decision, and a new request continues on top of it. Decide
-whenever the session is idle:
+whenever the session is idle. Above the prompt, a bar says how many turns
+and files are undecided and offers **Keep**, **Revert** and **Diff**, or
+**Redo** after a revert; click or tap one. Diff opens the result on its Diff
+tab. No key alone acts on the bar, so a letter typed to start a request never
+keeps or reverts anything. The commands do the same:
 
 - `/keep` keeps every undecided turn; the next turn starts from them.
 - `/revert` undoes the latest undecided turn: each file it changed goes back
