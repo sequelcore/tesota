@@ -537,12 +537,14 @@ automatically on a narrow terminal. `Alt+B` hides it, or opens it over the
 right side at a narrow size without taking focus from the input. `Esc` still
 stops work; it does not close the sidebar. The sidebar and the terminal
 window's title name the selected session. The prompt sits between two rules.
-The first line under it names the selected session's model, followed by the
-repository and branch while the sidebar is hidden, as in `claude-code:opus ·
-tesota · dev`. The second names the mode and where commands run, such as
-`accept edits · sandbox · WSL` in the theme's success color, or `accept edits
-· this computer · asks first` and `full access · this computer` in its
-warning color.
+The first line under it names the selected session's model, repository and
+branch, as in `claude-code:opus · tesota · dev`. The second names the mode,
+marked with the prompt's chevron (`· read only on`, `›› accept edits on`,
+`››› full access on`), and where commands run, such as `›› accept edits on ·
+sandbox · WSL` in the theme's success color, or `››› full access on · this
+computer` in its warning color. It ends with `(shift+tab to cycle)` and, while
+the input is empty, `? for shortcuts`: as in Codex, `?` on an empty input
+shows the shortcuts, and anywhere else it is typed.
 
 A question above the prompt, such as a command waiting for your approval, is
 always shown whole, over as many lines as it needs, and so is each command the

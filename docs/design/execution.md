@@ -149,10 +149,11 @@ questions; the sandbox and saved rules reduce repeated approvals without
 giving the agent authority to choose where a command runs.
 
 The
-second line under the prompt names the mode and where commands run, such as
-`accept edits · sandbox · WSL` in the theme's success color, or `accept edits
-· this computer · asks first` and `full access · this computer` in its warning
-color, so the place and what it permits read at a glance; the code's `host` is
+second line under the prompt names the mode, marked with the prompt's chevron
+(`·` for Read only, one more `›` for each step of what runs without asking), and
+where commands run, such as `›› accept edits on · sandbox · WSL` in the
+theme's success color, or `›› accept edits on · this computer · asks first`
+and `››› full access on · this computer` in its warning color, so the place and what it permits read at a glance; the code's `host` is
 shown as "this computer" (`executionLabel` in `src/session-engine.ts`). The selected agent model has the line above it. `tesota setup` prepares
 the chosen sandbox: for the WSL sandbox, WSL itself, Tesota's distribution
 and a restart of it; for Docker Sandboxes, the Windows Hypervisor Platform,

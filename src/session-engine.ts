@@ -114,9 +114,12 @@ export interface AgentModelCommands {
   handOff(id: string): Promise<void>;
 }
 
-/** A permission mode in the operator's words, as the footer and notices name it. */
-const MODE_NAMES: Readonly<Record<PermissionMode, string>> = { "read-only": "read only", "accept-edits": "accept edits",
-  "full-access": "full access" };
+/**
+ * A permission mode as the footer names it, marked with Tesota's prompt chevron: a dot for Read only, where nothing
+ * runs without asking, and one more chevron for each step of what does.
+ */
+const MODE_NAMES: Readonly<Record<PermissionMode, string>> = { "read-only": "· read only on",
+  "accept-edits": "›› accept edits on", "full-access": "››› full access on" };
 
 /**
  * The footer's line: the mode, then where commands run once the session's

@@ -15,9 +15,10 @@ terminal the sidebar is inline, while an explicit open on a narrow terminal is
 a non-capturing pi-tui overlay, so the editor keeps focus and `Esc` keeps its
 stop-work meaning. The sidebar and the terminal's title name the selected
 session; no heading sits over the conversation. A rule above and below the
-input sets it apart. Under it, as other harnesses order it, the selected model
-comes first, joined by the repository and branch while the sidebar is hidden,
-and execution location has a line of its own in its color ([using Tesota](../guide/using-tesota.md)
+input sets it apart. Under it, as Claude Code and Codex order it, the selected
+model comes first with the repository and branch, and the mode and execution
+location have a line of their own in its color, followed by the keys that
+cycle the mode and show the shortcuts ([using Tesota](../guide/using-tesota.md)
 lists the keys).
 
 A fresh session opens with an ephemeral palo fierro welcome that fills the

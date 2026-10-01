@@ -402,17 +402,20 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly plan = new PlanPanel();
   private readonly queue = new QueuePanel();
   /**
-   * Under the prompt, as other harnesses order it: the selected session's model, joined by the repository and branch
-   * while the sidebar is hidden; then where its commands run, in the color for that place.
+   * Under the prompt, as Claude Code and Codex order it: the selected session's model, repository and branch; then its
+   * mode and where its commands run, in the color for that place, with the keys that change the mode and show the
+   * shortcuts, the latter while the input is empty, as in Codex.
    */
   private readonly footer = new LiveLines(() => {
     const { execution, model } = this.selected();
-    const workspace = sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns) !== "hidden" ? "" :
-      `${safeTerminalText(basename(this.options.cwd))}${this.branch === undefined ? "" : ` · ${safeTerminalText(this.branch)}`}`;
+    const workspace = `${safeTerminalText(basename(this.options.cwd))}${this.branch === undefined ? "" : ` · ${safeTerminalText(this.branch)}`}`;
     const identity = [model === undefined ? "" : safeTerminalText(model), workspace].filter(Boolean).join(" · ");
+    const hints = [execution === undefined ? "" : "(shift+tab to cycle)", this.editor.getText() === "" ? "? for shortcuts" : ""]
+      .filter(Boolean).join(" · ");
     const place = execution === undefined ? "" :
       colorText(execution.label, execution.place === "host" ? this.theme.warning : this.theme.success);
-    return [identity === "" ? "" : mutedText(identity, this.theme), place].filter(Boolean);
+    const mode = [place, hints === "" ? "" : mutedText(hints, this.theme)].filter(Boolean).join(" ");
+    return [mutedText(identity, this.theme), mode].filter(Boolean);
   });
   /** The selected session's waiting question, in place of the input. */
   private readonly question = new VStack();
@@ -807,6 +810,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
    */
   private handleSessionKey(data: string): boolean {
     if (matchesKey(data, "shift+tab")) { this.options.onCycleMode?.(this.selectedId); return true; }
+    // As in Codex, `?` on an empty input shows the shortcuts; anywhere else it is typed.
+    if (data === "?" && this.editor.getText() === "") { this.commandHandlers["help"]?.(this.selected(), []); return true; }
     const ids = this.sessionOrder().map((session) => session.id);
     if (matchesKey(data, "ctrl+tab") || matchesKey(data, "alt+j") || matchesKey(data, "alt+k")) {
       this.selectSession(sessionBeside(ids, this.selectedId, matchesKey(data, "alt+k") ? -1 : 1));
