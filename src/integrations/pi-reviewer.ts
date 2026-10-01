@@ -39,6 +39,10 @@ const obligationSchema = Type.Object({
   status: Type.Union([Type.Literal("met"), Type.Literal("partial"), Type.Literal("unmet"), Type.Literal("uncertain")],
     { description: "Judged against the whole result, not only the changed lines" }),
   evidence: Type.String({ description: "The code, check output or request text that shows the status, or what is missing" }),
+  disposition: Type.Optional(Type.Union([Type.Literal("fixable"), Type.Literal("operator")], { description: "For a partial " +
+    "or unmet obligation: fixable when the agent can satisfy it by changing the repository within the request; operator " +
+    "when it cannot, such as a check that also fails without the change for a reason outside it, like a program or " +
+    "service the environment lacks. Leave out for met or uncertain" })),
 });
 const submissionSchema = Type.Object({
   summary: Type.String({ description: "One paragraph: whether the result does what was asked, and how well the checks cover it" }),
@@ -122,7 +126,10 @@ const obligationGuidance = " Also list obligations: for each of the user's reque
   "for, and for each plan step the agent marked done, whether that step really happened. Judge each against the " +
   "whole result, reading unchanged files too, as met, partial, unmet or uncertain, with the evidence. A plan step " +
   "is the agent's claim, not evidence: check it in the code. An obligation is not a finding: it has no origin, and " +
-  "missing work belongs here even when no changed line shows it. Then check the other direction: for each change " +
+  "missing work belongs here even when no changed line shows it. Give a partial or unmet obligation a disposition: " +
+  "`fixable` when the agent can satisfy it by changing the repository, `operator` when it cannot, such as a check " +
+  "that also fails without the change, for a reason outside it, like a program or service the environment lacks. " +
+  "Then check the other direction: for each change " +
   "in the diff, whether a request or a claimed plan step needs it. Report each change none of them needs, such as a " +
   "refactor of unrelated code or an abstraction, option or helper beyond what the requests call for, as one " +
   "`operator` finding naming the change, since an extra may be welcome; report it as `fixable` only when it breaks " +

@@ -52,12 +52,18 @@ export function checkAction(verifier: ActionVerifier, outcome: ActionOutcome, or
 
 export type ActionObligation = "held" | "not_held" | "uncertain";
 
-/** A request or plan step the second check confirmed is not done goes to the agent; an unclear one needs the operator. */
-//@ ensures \result === "agent" <==> outcome === "not_held"
-//@ ensures \result === "operator" <==> outcome === "uncertain"
+export type ObligationDisposition = "fixable" | "operator";
+
+/**
+ * A request or plan step the second check confirmed is not done goes to the agent only when the agent can satisfy
+ * it within the request; one it cannot, as when a check fails on the base for a reason outside the change, and an
+ * unclear one need the operator (#224).
+ */
+//@ ensures \result === "agent" <==> (outcome === "not_held" && disposition === "fixable")
+//@ ensures \result === "operator" <==> (outcome === "uncertain" || outcome === "not_held" && disposition === "operator")
 //@ ensures \result === "context" <==> outcome === "held"
-export function obligationAction(outcome: ActionObligation): ReviewAction {
-  if (outcome === "not_held") return "agent";
+export function obligationAction(outcome: ActionObligation, disposition: ObligationDisposition): ReviewAction {
+  if (outcome === "not_held") return disposition === "fixable" ? "agent" : "operator";
   if (outcome === "uncertain") return "operator";
   return "context";
 }

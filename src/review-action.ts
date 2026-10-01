@@ -15,5 +15,5 @@ export function actionOfCheck(check: CheckResult): ReviewAction {
 
 /** Who acts on a request or plan step the review judged (decision 041). */
 export function actionOfObligation(obligation: Obligation): ReviewAction {
-  return obligationAction(obligationOutcome(obligation.status, obligation.standing ?? "untested"));
+  return obligationAction(obligationOutcome(obligation.status, obligation.standing ?? "untested"), obligation.disposition ?? "fixable");
 }

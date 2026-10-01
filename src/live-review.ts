@@ -10,7 +10,7 @@ import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.j
 import { attributeOrigins } from "./finding-origin.js";
 import { reviewDepth } from "./review-depth.js";
 import type { ReviewReport } from "./review.js";
-import { EVALUATION_CASES, PREMISE_CASES, SCOPE_CASES, scoreCase, type CaseScore, type EvaluationCase } from "./review-evaluation.js";
+import { ENVIRONMENT_CASES, EVALUATION_CASES, PREMISE_CASES, SCOPE_CASES, scoreCase, type CaseScore, type EvaluationCase } from "./review-evaluation.js";
 import { validateFixes } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput } from "./review.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
@@ -37,7 +37,8 @@ function totals(scores: readonly CaseScore[]): Record<string, number> {
     unsettled: sum("unsettled"), refuted: sum("refuted"), duplicates: sum("duplicates"), shown: sum("shown"),
     unknownOrigin: sum("unknownOrigin"), defectsUnknown: sum("defectsUnknown"), extras: sum("extras"),
     extrasMarked: sum("extrasMarked"), extrasSentBack: sum("extrasSentBack"), premise: sum("premise"),
-    premiseMarked: sum("premiseMarked"), premiseSentBack: sum("premiseSentBack"), premiseCaseSentBack: sum("premiseCaseSentBack") };
+    premiseMarked: sum("premiseMarked"), premiseSentBack: sum("premiseSentBack"), premiseCaseSentBack: sum("premiseCaseSentBack"),
+    blockedSentBack: sum("blockedSentBack"), blockedToOperator: sum("blockedToOperator") };
 }
 
 /**
@@ -89,12 +90,13 @@ if (!["computed", "standard", "deep"].includes(depthArgument)) throw new Error("
 const depthMode = depthArgument as "computed" | "standard" | "deep";
 const skipCorrections = process.argv.includes("--skip-corrections");
 // --set=core (default) runs the eight core cases, scope the work-beyond-the-request cases (issue #165), premise the
-// changes acting on a false premise, all every set.
+// changes acting on a false premise, environment the requests a check blocks for a reason outside the change (#224),
+// all every set.
 const setArgument = process.argv.find((argument) => argument.startsWith("--set="))?.slice("--set=".length) ?? "core";
 const sets: Record<string, readonly EvaluationCase[]> = { core: EVALUATION_CASES, scope: SCOPE_CASES, premise: PREMISE_CASES,
-  all: [...EVALUATION_CASES, ...SCOPE_CASES, ...PREMISE_CASES] };
+  environment: ENVIRONMENT_CASES, all: [...EVALUATION_CASES, ...SCOPE_CASES, ...PREMISE_CASES, ...ENVIRONMENT_CASES] };
 const selected = sets[setArgument];
-if (selected === undefined) throw new Error("Use --set=core, scope, premise or all.");
+if (selected === undefined) throw new Error("Use --set=core, scope, premise, environment or all.");
 
 // --model-reviewer=, --model-refuter= and --model-validator= compare route:model choices; otherwise the operator's apply.
 const chosen = readModelChoices();
