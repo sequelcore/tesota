@@ -112,7 +112,7 @@ it("switches one session's sandbox, and its agent restarts with the same convers
   const { created, chosen, wsl, docker, label, said, recorded } = shell();
   await created.session("session").work("Add a retry limit.");
   expect(chosen).toHaveBeenLastCalledWith("auto");
-  expect(label).toHaveBeenLastCalledWith("session", "sandbox · WSL", "sandbox");
+  expect(label).toHaveBeenLastCalledWith("session", "accept edits · sandbox · WSL", "sandbox");
   await created.sessionSandbox?.change("session", undefined);
   expect(said()).toContain("Commands in this session run in the WSL sandbox");
   expect(recorded()).not.toContain("Commands in this session run in the WSL sandbox");
@@ -121,7 +121,7 @@ it("switches one session's sandbox, and its agent restarts with the same convers
   expect(wsl.environment.dispose).toHaveBeenCalled();
   expect(agents[0]?.dispose).toHaveBeenCalled();
   expect(record.sandbox).toBe("docker");
-  expect(label).toHaveBeenLastCalledWith("session", "sandbox · Docker", "sandbox");
+  expect(label).toHaveBeenLastCalledWith("session", "accept edits · sandbox · Docker", "sandbox");
   expect(said()).toContain("Commands in this session now run in Docker Sandboxes");
   expect(said()).toContain("its conversation continues");
   await created.session("session").work("Now log each retry.");

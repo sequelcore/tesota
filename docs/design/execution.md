@@ -82,14 +82,44 @@ kept.
 
 ## Where commands run
 
-Tesota has no permission modes to switch. Three things that
-other harnesses fold into their modes are separate here:
+The operator's **permission mode**, switched with `Shift+Tab` as in Claude
+Code and Codex, decides what runs without asking. The sandbox decides what a
+command can reach whatever the mode, and every mode records each turn:
 
-| | Rule |
-| --- | --- |
-| **Where commands run** | In a **sandbox** when a provider is ready and its `workspace` filesystem and `allowlist` network hold on this machine, and on **this computer** (the host) otherwise. The operator's `tesota sandbox` choice orders the sandboxes; nothing switches it during a session |
-| **When the operator is asked** | Follows from where commands run and is not a setting: on this computer every command asks (yes, always for commands beginning the same way in this repository, or no) unless a rule the operator saved allows it; in the sandbox commands run without asking, a destination the network refused asks, and so does one command the agent asks to run on this computer |
-| **Where edits land** | Always the session's own copy of the repository; nothing reaches the repository until the operator applies a result after its checks and review |
+| Mode | Edits | Commands |
+| --- | --- | --- |
+| **Read only** | Refused by the edit and write tools | Every command asks, in the sandbox too, and saved rules do not apply |
+| **Accept edits** | Allowed | In a qualified sandbox, run without asking; on this computer, ask unless a saved rule allows them |
+| **Full access** | Allowed | Run on this computer without asking, in a sandboxed session too |
+
+Where commands run in Read only and Accept edits: in a **sandbox** when a
+provider is ready and its `workspace` filesystem and `allowlist` network hold
+on this machine, and on **this computer** (the host) otherwise. The operator's
+`tesota sandbox` choice orders the sandboxes. Edits land in the operator's
+project for a repository session, and in an isolated workspace for a folder,
+a second session or one that chose `/isolate`
+([workspace](workspace.md)).
+
+The rules are one module, proved (`editsAllowed`, `commandPlace`,
+`commandRunsWithoutAsking`, `offersRule`, `nextMode` and `needsConfirmation`
+in `src/verification/permission-mode.ts`). The agent's tools read the mode at
+each call, so a switch applies to work under way, and the agent is told the
+new mode with the next request. Shift+Tab cycles Read only, Accept edits and
+Full access; entering Full access asks the operator once per session, worded
+as Codex's own confirmation, with the risk in the warning color, and `Enter`
+cancels. The operator stays aware of it without a question at each command: a
+session that opens in Full access says so, every later entry leaves a line in
+the conversation, and a turn ends with how many commands ran without asking. A session keeps its mode; a new one starts in the mode last
+chosen in the repository, and one saved before modes runs in Accept edits.
+`tesota run` always runs in Accept edits.
+
+Full access exists because the operator, not Tesota, decides how much to
+trust the agent. It gives up what the sandbox provides: commands reach the
+operator's files, credentials and network, and files hidden from the agent's
+file tools are not hidden from its commands. A turn's changes to the project
+can still be reverted, but not what a command did elsewhere. Unlike Claude
+Code's auto mode or Codex's auto-review, no classifier judges commands yet;
+a reviewer-model mode between Accept edits and Full access is planned.
 
 On this computer an approved command runs with the operator's permissions,
 files, network and credentials; it works on any machine with no setup.
@@ -113,15 +143,17 @@ extension or version (`beginsWith`, `coveredPart`, `runsWithoutAsking` and
 `savableRule` in `src/verification/command-rule.ts`, proved). Tesota offers
 the agent's suggested rule when it may be saved and begins the command,
 otherwise the command's leading names, up to three; "always" means that
-rule, never every later command, as it did before. No setting stops the
-questions. The sandbox and saved rules reduce repeated approvals without
+rule, never every later command, as it did before. Rules are offered and
+consulted only in Accept edits. Only the operator's mode stops the
+questions; the sandbox and saved rules reduce repeated approvals without
 giving the agent authority to choose where a command runs.
 
 The
-second line under the prompt names where commands run, `sandbox · …` in the
-theme's success color or `this computer · asks first` in its warning color, so
-the place and what it permits read at a glance; the code's `host` is shown as
-"this computer". The selected agent model has the line above it. `tesota setup` prepares
+second line under the prompt names the mode and where commands run, such as
+`accept edits · sandbox · WSL` in the theme's success color, or `accept edits
+· this computer · asks first` and `full access · this computer` in its warning
+color, so the place and what it permits read at a glance; the code's `host` is
+shown as "this computer" (`executionLabel` in `src/session-engine.ts`). The selected agent model has the line above it. `tesota setup` prepares
 the chosen sandbox: for the WSL sandbox, WSL itself, Tesota's distribution
 and a restart of it; for Docker Sandboxes, the Windows Hypervisor Platform,
 Docker Sandboxes, a Docker sign-in and a deny-all network policy. It shows

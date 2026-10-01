@@ -9,7 +9,9 @@ Tesota's tools and system prompt: no Pi extensions, skills, prompt templates
 or context files are loaded. Its tools are read, grep, find and ls, edit and
 write, all confined to the project, or its copy, and refusing the files hidden as possible credentials, and bash, which runs in the
 session's execution environment ([execution](execution.md)); explorers add
-`explore`. Its conversation is saved, so it survives a restart and keeps its
+`explore`. Edit, write and bash follow the operator's permission mode, read
+at each call: in Read only, edit and write refuse and every command asks
+([execution](execution.md#where-commands-run)). Its conversation is saved, so it survives a restart and keeps its
 context across requests and correction rounds. It is closed only when its
 session closes.
 

@@ -11,7 +11,8 @@ operator's project, records each turn, runs checks and review on it, and lets
 the operator keep, revert or redo the turn with `/keep`, `/revert` and
 `/redo`; a folder of documents, or a second session, works in a separate
 workspace and applies or rejects. On Windows, commands can run
-in a qualified WSL sandbox; otherwise host commands ask for approval. The
+in a qualified WSL sandbox; otherwise host commands ask for approval.
+`Shift+Tab` switches between Read only, Accept edits and Full access. The
 complete loop has run on throwaway and evaluation repositories. Daily use on a
 real project has not started. See the [user guide](guide/using-tesota.md) for
 the workflow and limits.
@@ -62,6 +63,14 @@ the workflow and limits.
 - Run checks and review beside the agent's next request, on a frozen copy of
   the candidate, so a queued message no longer waits for them. Measure it on
   journaled sessions first. [Assurance](design/assurance.md#planned-review-beside-the-next-request)
+- Add an Auto mode between Accept edits and Full access, as Claude Code's
+  auto mode and Codex's auto-review do: a reviewer model allows commands on
+  this computer and asks the operator about risky ones. Register safe and
+  risky command cases first, and offer it only when it asks for every risky
+  case and saves approvals on safe ones; its allowed commands never count as
+  the operator's. Custom behavior modes, such as a grilling or triage mode,
+  wait for daily use, under workflow profiles.
+  [Execution](design/execution.md#where-commands-run)
 - Exercise model routes that have not completed a live request. OpenCode Zen
   restricts its free models to its own client, and OpenCode Go requires an
   active subscription. Do not present either route as live-qualified until it

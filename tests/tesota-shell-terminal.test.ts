@@ -1,6 +1,6 @@
 import { HStack, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
-import { commandQuestion } from "../src/session-decisions.js";
+import { commandQuestion, fullAccessQuestion } from "../src/session-decisions.js";
 import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
 import type { AccountsSource } from "../src/tesota-shell-accounts.js";
 import { createTesotaShellTerminal, SessionBlockedError } from "../src/tesota-shell-terminal.js";
@@ -307,6 +307,34 @@ it("passes /model and /sandbox with their argument, and /handoff, to the shell",
   expect(onModel.mock.calls).toEqual([["default", "claude-code:opus"], ["default", undefined]]);
   expect(onHandoff).toHaveBeenCalledWith("default");
   expect(onSandbox.mock.calls).toEqual([["default", "docker"], ["default", undefined]]);
+  shell.stop();
+});
+
+it("asks before Full access with its risk in the theme's warning color, and Enter cancels", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const question = shell.chooseIn("default", fullAccessQuestion);
+  tui.renderNow(true);
+  const warning = tesotaShellTheme("tesota-dark").warning!.slice(1).match(/../gu)!
+    .map((hex) => Number.parseInt(hex, 16)).join(";");
+  expect(visible(terminal)).toContain("Enable Full access?");
+  expect(screenLine(terminal.writes.join(""), "significantly increases")).toContain(`[38;2;${warning}m`);
+  terminal.send("\r");
+  await expect(question).resolves.toBe("deny");
+  shell.stop();
+});
+
+it("passes Shift+Tab to the shell as the selected session's permission mode switch", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onCycleMode = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onCycleMode });
+  shell.start();
+  shell.ask("> ").catch(() => undefined);
+  terminal.send("\x1b[Z");
+  expect(onCycleMode).toHaveBeenCalledWith("default");
   shell.stop();
 });
 
