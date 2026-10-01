@@ -155,6 +155,11 @@ interface SessionView {
   draft: string;
   pending: PendingPrompt | undefined;
   prompt: string;
+  /**
+   * The request prompt a question opened over, such as Full access's confirmation asked while the session is idle;
+   * it waits again once the question is answered or cancelled.
+   */
+  held: PendingPrompt | undefined;
   /** The question with fixed answers the pending prompt asks, drawn in place of the input. */
   question: QuestionPanel | undefined;
   /** Messages typed while the session worked, which its next request prompts take in order. */
@@ -626,7 +631,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       scroll,
       inspections: [...inspections], restoredInspectionCount: inspections.length,
       selectedInspection: inspections.length - 1,
-      draft: "", pending: undefined, question: undefined, queued: [], progress: undefined,
+      draft: "", pending: undefined, held: undefined, question: undefined, queued: [], progress: undefined,
       prompt: "> ", unread: false, blocked: false, ended: false });
     if (this.started) this.compose();
   }
@@ -1094,9 +1099,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     session.blocked = true;
     // A prompt waiting when the session is blocked, such as after a revert that needs recovery, ends with it.
     const pending = session.pending;
+    const held = session.held;
     session.pending = undefined;
+    session.held = undefined;
     session.question = undefined;
     pending?.reject(new SessionBlockedError());
+    held?.reject(new SessionBlockedError());
     this.returnQueued(session);
     this.updateSubmit(session);
     this.updateSidebar();
@@ -1109,11 +1117,14 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (this.sessions.size === 1) throw new Error("The last Tesota session cannot be removed");
     if (id === this.selectedId) this.selectSession(sessionBeside(this.sessionOrder().map((item) => item.id), id, 1));
     const pending = session.pending;
+    const held = session.held;
     session.pending = undefined;
+    session.held = undefined;
     session.question = undefined;
     this.sessions.delete(id);
     if (this.comparisonId === id) this.comparisonId = undefined;
     pending?.reject(new DOMException("closed", "AbortError"));
+    held?.reject(new DOMException("closed", "AbortError"));
     if (this.started) this.compose();
   }
 
@@ -1130,19 +1141,25 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   ask(prompt: string): Promise<string> { return this.askIn(this.selectedId, prompt); }
 
-  /** The session that can be asked something now, or why it cannot. */
-  private askable(id: string): SessionView | Error {
+  /**
+   * The session that can be asked something now, or why it cannot. A question may open over the request prompt
+   * waiting while the session is idle, never over another question or prompt.
+   */
+  private askable(id: string, overRequest = false): SessionView | Error {
     const session = this.sessions.get(id);
     if (session === undefined) return new Error("Tesota session unavailable");
     if (session.blocked) return new SessionBlockedError();
     if (session.ended) return new Error("Tesota session has ended");
-    if (session.pending !== undefined) return new Error("Tesota Shell prompt already active");
+    const request = overRequest && session.prompt === "> " && session.question === undefined && session.held === undefined;
+    if (session.pending !== undefined && !request) return new Error("Tesota Shell prompt already active");
     return session;
   }
 
   chooseIn<V extends string>(id: string, question: ShellQuestion<V>): Promise<V> {
-    const session = this.askable(id);
+    const session = this.askable(id, true);
     if (session instanceof Error) return Promise.reject(session);
+    // A question asked while the session is idle sets the request prompt aside; the input keeps what was typed.
+    session.held = session.pending;
     session.prompt = question.title;
     session.question = new QuestionPanel(question, this.theme);
     const answer = new Promise<string>((resolve, reject) => { session.pending = { resolve, reject }; });
@@ -1162,7 +1179,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (picked === undefined) return false;
     if (picked !== "moved") {
       const pending = session.pending;
-      session.pending = undefined;
+      session.pending = session.held;
+      session.held = undefined;
       session.question = undefined;
       session.prompt = "> ";
       if (picked.decided !== undefined) this.writeTo(session.id, picked.decided.text, picked.decided.tone);
@@ -1424,7 +1442,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private cancelPrompt(session: SessionView): void {
     const pending = session.pending;
     if (pending === undefined) return;
-    session.pending = undefined;
+    // A question asked over the idle request prompt gives it back; the request prompt waits again.
+    session.pending = session.held;
+    session.held = undefined;
+    if (session.pending !== undefined) session.prompt = "> ";
     // A cancelled question leaves the input as it was: the operator's draft was never its answer.
     if (session.question !== undefined) session.question = undefined;
     else if (session.id === this.selectedId) this.editor.setText("");

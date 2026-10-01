@@ -326,6 +326,39 @@ it("asks before Full access with its risk in the theme's warning color, and Ente
   shell.stop();
 });
 
+it("asks Full access's question over the idle request prompt, which waits again with the draft kept", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const request = shell.askIn("default", "> ");
+  terminal.send("half a request");
+  // Shift+Tab while idle: the question opens over the request prompt instead of failing.
+  const allowed = shell.chooseIn("default", fullAccessQuestion);
+  terminal.send("y");
+  await expect(allowed).resolves.toBe("allow");
+  // Esc cancels a second question, and the request prompt waits again.
+  const cancelled = shell.chooseIn("default", fullAccessQuestion);
+  terminal.send("\x1b");
+  await expect(cancelled).rejects.toThrow("cancelled");
+  terminal.send(" finished");
+  terminal.send("\r");
+  await expect(request).resolves.toBe("half a request finished");
+  shell.stop();
+});
+
+it("refuses a question while another waits, and leaves the first one waiting", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const command = shell.chooseIn("default", commandQuestion({ command: "bun test" }));
+  await expect(shell.chooseIn("default", fullAccessQuestion)).rejects.toThrow("prompt already active");
+  terminal.send("y");
+  await expect(command).resolves.toBe("once");
+  shell.stop();
+});
+
 it("passes Shift+Tab to the shell as the selected session's permission mode switch", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
