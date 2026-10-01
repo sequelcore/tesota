@@ -1,4 +1,5 @@
-import { TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
+import { TuiAltScreen, visibleWidth, type Terminal } from "@earendil-works/pi-tui";
+import { colorText, surfaceText } from "./tesota-shell-theme.js";
 
 /** Fades the layout beneath the overlays while a panel is open, as a web page dims behind a dialog. */
 export interface Backdrop {
@@ -7,20 +8,96 @@ export interface Backdrop {
 }
 
 /**
- * The shell's TUI: pi-tui's alternate screen, whose layout lines are faded
- * before the overlays are drawn over them while a backdrop is set.
+ * A column of the layout on a surface of its own, from `x` for `width`
+ * cells, every row; `rule` draws a line in the free cell beside it, at that
+ * column, which sets it apart from the conversation.
  */
-export class BackdropTui extends TuiAltScreen implements Backdrop {
+export interface ShellSurface {
+  readonly x: number;
+  readonly width: number;
+  readonly background: string | null;
+  readonly rule?: Readonly<{ x: number; color: string | null }>;
+}
+
+/** The layout's columns on surfaces of their own, beneath whatever background their content sets itself. */
+export interface Surfaces {
+  setSurfaces(surfaces: (() => readonly ShellSurface[]) | undefined): void;
+}
+
+const ESC = String.fromCharCode(27);
+const BEL = String.fromCharCode(7);
+/**
+ * One escape sequence, which takes no cell: a CSI such as a color; a string sequence, an OSC such as a link or an APC
+ * such as pi-tui's cursor marker; or a two-character one.
+ */
+const sequence = new RegExp(`^${ESC}(?:\\[[0-9;?:<=>]*[ -/]*[@-~]|[\\]_P^X][^${BEL}${ESC}]*(?:${BEL}|${ESC}\\\\)|.)`, "u");
+
+/**
+ * A line cut at a cell: what is drawn before `column`, padded to it, and what
+ * from it. Sequences go with the cell after them, so the styles a column
+ * opens at its start stay with it.
+ */
+function cut(line: string, column: number): readonly [string, string] {
+  let width = 0;
+  let index = 0;
+  while (index < line.length) {
+    const escape = sequence.exec(line.slice(index))?.[0];
+    if (escape !== undefined) {
+      if (width >= column) break;
+      index += escape.length;
+      continue;
+    }
+    const character = String.fromCodePoint(line.codePointAt(index) ?? 32);
+    const cells = visibleWidth(character);
+    if (width + cells > column) break;
+    width += cells;
+    index += character.length;
+  }
+  return [`${line.slice(0, index)}${" ".repeat(Math.max(0, column - width))}`, line.slice(index)];
+}
+
+/** One line with the range from `x` for `width` cells replaced by `paint` of what it held there, padded to that width. */
+function paintRange(line: string, x: number, width: number, paint: (cells: string) => string): string {
+  const [before, rest] = cut(line, x);
+  const [within, after] = cut(rest, width);
+  return `${before}${ESC}[0m${paint(within)}${ESC}[0m${after}`;
+}
+
+/** Lay each surface under its column, the content's own backgrounds kept, and draw each surface's rule. */
+export function paintSurfaces(lines: readonly string[], surfaces: readonly ShellSurface[]): string[] {
+  return lines.map((line) => surfaces.reduce((painted, surface) => {
+    const filled = surface.background === null ? painted
+      : paintRange(painted, surface.x, surface.width, (cells) => surfaceText(cells, surface.background));
+    const rule = surface.rule;
+    return rule === undefined ? filled : paintRange(filled, rule.x, 1,
+      () => rule.color === null ? "\x1b[2m│\x1b[22m" : colorText("│", rule.color));
+  }, line));
+}
+
+/**
+ * The shell's TUI: pi-tui's alternate screen, whose layout lines are laid on
+ * their columns' surfaces, then faded while a backdrop is set, before the
+ * overlays are drawn over them.
+ */
+export class BackdropTui extends TuiAltScreen implements Backdrop, Surfaces {
   #fade: ((line: string) => string) | undefined;
+  #surfaces: (() => readonly ShellSurface[]) | undefined;
 
   setBackdrop(fade: ((line: string) => string) | undefined): void {
     this.#fade = fade;
     this.requestRender();
   }
 
+  setSurfaces(surfaces: (() => readonly ShellSurface[]) | undefined): void {
+    this.#surfaces = surfaces;
+    this.requestRender();
+  }
+
   protected override compositeOverlays(lines: string[], termWidth: number, termHeight: number): string[] {
     const fade = this.#fade;
-    return super.compositeOverlays(fade === undefined ? lines : lines.map((line) => fade(line)), termWidth, termHeight);
+    const surfaces = this.#surfaces?.() ?? [];
+    const laid = surfaces.length === 0 ? lines : paintSurfaces(lines, surfaces);
+    return super.compositeOverlays(fade === undefined ? laid : laid.map((line) => fade(line)), termWidth, termHeight);
   }
 }
 

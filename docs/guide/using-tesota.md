@@ -550,7 +550,10 @@ The sidebar appears beside the conversation when there is room and hides
 automatically on a narrow terminal. `Alt+B` hides it, or opens it over the
 right side at a narrow size without taking focus from the input. `Esc` still
 stops work; it does not close the sidebar. The sidebar and the terminal
-window's title name the selected session. The prompt sits between two rules.
+window's title name the selected session. The sidebar and the result beside
+the conversation sit on a slightly raised surface, each behind a `│` rule, so
+the conversation stands apart; the input is filled with the same background
+as your sent messages.
 The first line under it names the selected session's model, repository and
 branch, as in `claude-code:opus · tesota · dev`. The second names the mode,
 marked with the prompt's chevron (`· read only on`, `›› accept edits on`,

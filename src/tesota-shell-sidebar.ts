@@ -1,6 +1,6 @@
-import { truncateToWidth, type Component, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type Component, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { animatedSidebarState, attentionSidebarState, type SidebarSessionState } from "./verification/sidebar-rule.js";
-import { bold, colorText, mutedText, selectedRow, type TesotaShellTheme } from "./tesota-shell-theme.js";
+import { bold, colorText, mutedText, selectedRow, surfaceText, type ShellSurfaces, type TesotaShellTheme } from "./tesota-shell-theme.js";
 import { safeTerminalText } from "./tesota-shell-transcript.js";
 
 export interface SidebarSession {
@@ -135,23 +135,33 @@ export class SessionSidebarOverlay implements Component {
   readonly #header: SessionSidebarHeader;
   readonly #rail: SessionRail;
   readonly #height: () => number;
+  readonly #surfaces: (() => ShellSurfaces) | undefined;
   /** The header's rows as last drawn, above a blank row and the sessions. */
   #headerRows = 0;
 
-  constructor(header: SessionSidebarHeader, rail: SessionRail, height: () => number) {
+  /** Over the conversation on a narrow terminal, on the side surface its whole height, with a rule down its left edge. */
+  constructor(header: SessionSidebarHeader, rail: SessionRail, height: () => number, surfaces?: () => ShellSurfaces) {
     this.#header = header;
     this.#rail = rail;
     this.#height = height;
+    this.#surfaces = surfaces;
   }
   invalidate(): void {}
   render(width: number): string[] {
     const height = Math.max(1, this.#height());
-    const header = this.#header.render(width);
+    const inner = Math.max(1, width - 1);
+    const header = this.#header.render(inner);
     this.#headerRows = header.length;
-    if (height <= 1) return header;
-    return [...header, "", ...this.#rail.renderWindow(width, height - 2)].slice(0, height);
+    const lines = height <= 1 ? header : [...header, "", ...this.#rail.renderWindow(inner, height - 2)].slice(0, height);
+    const surfaces = this.#surfaces?.();
+    if (surfaces === undefined) return lines;
+    const rule = surfaces.rule === null ? "\x1b[2m│\x1b[22m" : colorText("│", surfaces.rule);
+    return Array.from({ length: height }, (_, row) => {
+      const line = lines[row] ?? "";
+      return rule + surfaceText(line + " ".repeat(Math.max(0, inner - visibleWidth(line))), surfaces.side);
+    });
   }
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-    return this.#rail.clickRow(event, event.y - this.#headerRows - 1);
+    return this.#rail.clickRow({ ...event, x: event.x - 1 }, event.y - this.#headerRows - 1);
   }
 }

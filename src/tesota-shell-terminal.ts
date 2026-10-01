@@ -1,11 +1,11 @@
 import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { Editor, HStack, ScrollView, Text, VStack, isKeyRelease, matchesKey, truncateToWidth, wrapTextWithAnsi,
+import { Editor, HStack, ScrollView, Text, VStack, isKeyRelease, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi,
   type Component, type EditorTheme, type TuiAltScreen, type OverlayHandle, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { SessionExecution } from "./execution-providers.js";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
-import { bold, colorText, fadedText, mutedText, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
+import { backgroundText, bold, colorText, fadedText, mutedText, parseTesotaShellTheme, selectedRow, shellSurfaces, surfaceText, tesotaShellTheme, type ShellSurfaces, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
 import { ResultPanel } from "./tesota-shell-result.js";
@@ -14,7 +14,7 @@ import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.j
 import { ThemePicker } from "./tesota-shell-theme-picker.js";
 import { ChoicePicker, type ShellChoice } from "./tesota-shell-choice-picker.js";
 import { QuestionPanel, type ShellQuestion } from "./tesota-shell-question.js";
-import type { Backdrop } from "./tesota-shell-tui.js";
+import type { Backdrop, ShellSurface, Surfaces } from "./tesota-shell-tui.js";
 import { ACCOUNTS_PANEL_HEIGHT, ACCOUNTS_PANEL_WIDTH, ACCOUNTS_TABS, AccountsPanel, type AccountsSource, type AccountsTab }
   from "./tesota-shell-accounts.js";
 import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, sessionStateIcon, type SidebarSession } from "./tesota-shell-sidebar.js";
@@ -29,7 +29,7 @@ type TextSelection = Pick<TuiAltScreen, "hasActiveSelection" | "copyActiveSelect
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
   /** The shell's TUI; one with a backdrop fades the layout beneath an open panel. */
-  readonly tui: ViewportTUI & Partial<Backdrop> & Partial<TextSelection>;
+  readonly tui: ViewportTUI & Partial<Backdrop> & Partial<Surfaces> & Partial<TextSelection>;
   readonly now?: () => number;
   readonly interrupt?: (sessionId: string) => void;
   /** `Tab` while a session works: send a message to its agent now; false when the agent cannot take it, and it is queued. */
@@ -342,13 +342,25 @@ class PromptEditor extends Editor {
     super(tui, editorTheme(theme), { paddingX: 1 });
     this.#theme = theme;
   }
-  // A rule above and below the input sets it apart from the conversation and the lines beneath it.
-  protected override renderTopBorder(width: number): string { return mutedText("─".repeat(width), this.#theme); }
-  protected override renderBottomBorder(width: number): string { return mutedText("─".repeat(width), this.#theme); }
+  /**
+   * The input sits on the operator's own background, as their sent messages do, so what is typed reads as what was
+   * said, with a filled row above and below it; without colors, a rule above and below sets it apart instead.
+   */
+  #edge(width: number): string {
+    const fill = this.#theme.userBackground;
+    return fill === null ? mutedText("─".repeat(width), this.#theme) : backgroundText(" ".repeat(width), fill);
+  }
+  protected override renderTopBorder(width: number): string { return this.#edge(width); }
+  protected override renderBottomBorder(width: number): string { return this.#edge(width); }
   override render(width: number): string[] {
     const lines = super.render(width);
     if (lines[1] !== undefined) lines[1] = colorText("›", this.#theme.accent) + lines[1].slice(1);
-    return lines;
+    const fill = this.#theme.userBackground;
+    if (fill === null) return lines;
+    // The rows between the edges are the text; any below the bottom edge are the completion list, left as they are.
+    const bottom = lines.indexOf(this.#edge(width), 1);
+    return lines.map((line, index) => index === 0 || bottom < 0 || index >= bottom ? line
+      : surfaceText(line + " ".repeat(Math.max(0, width - visibleWidth(line))), fill));
   }
 }
 
@@ -364,7 +376,7 @@ function busy(progress: TesotaShellProgress | undefined): boolean {
 }
 
 class PersistentTesotaShellTerminal implements TesotaShellTerminal {
-  private readonly tui: ViewportTUI & Partial<Backdrop> & Partial<TextSelection>;
+  private readonly tui: ViewportTUI & Partial<Backdrop> & Partial<Surfaces> & Partial<TextSelection>;
   private readonly now: () => number;
   private readonly interrupt: () => void;
   private readonly options: TesotaShellTerminalOptions;
@@ -463,8 +475,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.addSession(this.selectedId, options.initialSession?.title ?? "Session 1",
       options.initialSession?.entries ?? [], options.initialSession?.inspections ?? [],
       options.initialSession?.fresh ?? options.initialSession === undefined);
+    this.tui.setSurfaces?.(() => this.surfaces());
     this.tui.showOverlay(
-      new SessionSidebarOverlay(this.sidebarHeader, this.sidebar, () => this.tui.terminal.rows),
+      new SessionSidebarOverlay(this.sidebarHeader, this.sidebar, () => this.tui.terminal.rows, () => this.shellSurfaces()),
       { width: sidebarWidth, maxHeight: "100%", anchor: "top-right", nonCapturing: true,
         // Hidden under an open panel: overlays are drawn after the backdrop fades the layout, so it would stay bright.
         visible: (width) => sidebarPresentation(this.sidebarPreference, width) === "overlay" && this.accountsOverlay === undefined },
@@ -559,6 +572,32 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         visible: (viewport) => this.showResult && this.contentWidth(viewport.width) >= resultBesideWidth },
     ], { gap: 1 }));
     this.tui.requestRender();
+  }
+
+  /**
+   * The columns beside the conversation on the side surface, each with a rule between it and the conversation: the
+   * inline sidebar and the result panel beside it. The conversation stays on the terminal's own background, as the
+   * main content; the result in its place on a narrow terminal has nothing beside it to stand apart from.
+   */
+  /** The side surface and rule, stepped from the terminal's own background once it answers, the theme's until then. */
+  private shellSurfaces(): ShellSurfaces {
+    const background = this.terminalBackground;
+    return shellSurfaces(this.theme,
+      background === undefined ? undefined : `#${background.map((part) => part.toString(16).padStart(2, "0")).join("")}`);
+  }
+
+  private surfaces(): ShellSurface[] {
+    const { side, rule } = this.shellSurfaces();
+    const columns = this.tui.terminal.columns;
+    const surfaces: ShellSurface[] = [];
+    if (sidebarPresentation(this.sidebarPreference, columns) === "inline") {
+      surfaces.push({ x: 0, width: sidebarWidth, background: side, rule: { x: sidebarWidth, color: rule } });
+    }
+    const width = this.result.width;
+    if (this.showResult && this.contentWidth(columns) >= resultBesideWidth && width !== undefined && width < columns) {
+      surfaces.push({ x: columns - width, width, background: side, rule: { x: columns - width - 1, color: rule } });
+    }
+    return surfaces;
   }
 
   /** What the terminal leaves for sessions and their panels beside an inline sidebar. */
