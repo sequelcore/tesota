@@ -1,12 +1,12 @@
-import { HStack, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
+import { HStack, sliceByColumn, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
 import { commandQuestion, fullAccessQuestion } from "../src/session-decisions.js";
 import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
 import type { AccountsSource } from "../src/tesota-shell-accounts.js";
-import { createTesotaShellTerminal, SessionBlockedError } from "../src/tesota-shell-terminal.js";
+import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, SessionBlockedError } from "../src/tesota-shell-terminal.js";
 import { BackdropTui, FocusReportingTerminal } from "../src/tesota-shell-tui.js";
 import { SessionRail } from "../src/tesota-shell-sidebar.js";
-import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
+import { shellSurfaces, tesotaShellTheme } from "../src/tesota-shell-theme.js";
 import { WelcomeBanner } from "../src/tesota-shell-welcome.js";
 import type { TranscriptEntry } from "../src/tesota-shell-transcript.js";
 
@@ -554,7 +554,7 @@ it("filters slash commands before dispatching a typed command", async () => {
 
 it.each([
   { theme: "tesota-dark" as const, highlight: "\x1b[48;2;75;61;83m" },
-  { theme: "tesota-light" as const, highlight: "\x1b[48;2;226;214;232m" },
+  { theme: "tesota-light" as const, highlight: "\x1b[48;2;211;194;220m" },
   { theme: "terminal" as const, highlight: "\x1b[7m" },
 ])("highlights the entire selected command row in $theme", ({ theme, highlight }) => {
   const terminal = new TestTerminal();
@@ -698,8 +698,9 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   expect(screen).toContain("Explain the shell");
   expect(screen).toContain("Ready");
   expect(screen).toContain("›");
-  // A rule above and below the input sets it apart.
-  expect(screen).toContain("─".repeat(20));
+  // The input sits on the operator's own background, as their sent messages do, rather than between rules.
+  expect(screen).not.toContain("─".repeat(20));
+  expect(screenLine(terminal.writes.join(""), "›")).toContain("\x1b[48;2;47;42;53m");
   shell.stop();
   expect(terminal.started).toBe(false);
 });
@@ -767,11 +768,12 @@ it.each([
   shell.stop();
 });
 
-it("routes Ctrl+C to the active prompt or active operation and restores the terminal", async () => {
+it("cancels a question with one Ctrl+C, stops running work only with a second, and restores the terminal", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const interrupt = vi.fn();
-  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, interrupt });
+  let now = 0;
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, interrupt, now: () => now });
   shell.start();
 
   const answer = shell.ask("Answer: ");
@@ -779,13 +781,46 @@ it("routes Ctrl+C to the active prompt or active operation and restores the term
   await expect(answer).rejects.toMatchObject({ name: "AbortError" });
   expect(interrupt).not.toHaveBeenCalled();
 
+  // One stray press, often a copy from habit, never loses the turn under way: it asks for a second.
+  terminal.send("\x03");
+  expect(interrupt).not.toHaveBeenCalled();
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Press Ctrl+C again to stop · Esc stops now");
+  // Too late, the press asks again rather than stopping.
+  now = CONFIRMATION_WINDOW_MS + 1;
+  terminal.send("\x03");
+  expect(interrupt).not.toHaveBeenCalled();
+  now += 1_000;
   terminal.send("\x03");
   expect(interrupt).toHaveBeenCalledOnce();
+  // Esc is the deliberate key, and stops at once.
+  terminal.send("\x1b");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  expect(interrupt).toHaveBeenCalledTimes(2);
   shell.stop();
   expect(terminal.started).toBe(false);
 });
 
-// As in Claude Code, Pi and Gemini CLI: Ctrl+C stops work or clears the input, and quits only when pressed again.
+it("copies selected text with Ctrl+C, as a terminal does, without stopping the work or counting toward it", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const interrupt = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, interrupt });
+  shell.start();
+  const selected = vi.spyOn(tui, "hasActiveSelection").mockReturnValue(true);
+  const copy = vi.spyOn(tui, "copyActiveSelectionToClipboard").mockResolvedValue(true);
+  terminal.send("\x03");
+  terminal.send("\x03");
+  expect(copy).toHaveBeenCalledTimes(2);
+  expect(interrupt).not.toHaveBeenCalled();
+  selected.mockReturnValue(false);
+  terminal.send("\x03");
+  expect(interrupt).not.toHaveBeenCalled();
+  shell.stop();
+});
+
+// With nothing to stop, Ctrl+C clears the input, and quits only when pressed again.
 it("clears the idle prompt with Ctrl+C and quits on a second press, never ending the session", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -1103,6 +1138,25 @@ it("shows a command the agent runs whole in the conversation", () => {
   shell.stop();
 });
 
+it("keeps the status line to one row for a command that spans lines, as a heredoc does, and shows the command whole once", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 100;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const heredoc = "cat .gitignore; cat > package.json <<'E'\n{\n  \"name\": \"dowser\",\n  \"type\": \"module\"\n}\nE";
+  shell.showActivity("default", { type: "tool_started", call: "c1", tool: "bash", subject: heredoc });
+  // Each spinner frame draws the status line again; it must not spill the command's other lines into the layout.
+  for (let frame = 0; frame < 4; frame += 1) { shell.refreshElapsed(); tui.renderNow(); }
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const screen = stripTerminalSequences(terminal.writes.join(""));
+  expect(screen).toContain("Running cat .gitignore; cat > package.json <<'E' …");
+  // The transcript shows the command whole, once; the status line shows only its first line.
+  expect(screen.split("\"name\": \"dowser\"").length - 1).toBe(1);
+  shell.stop();
+});
+
 it("names the model, repository and branch under the prompt, then the mode and where commands run, in its color", () => {
   const terminal = new TestTerminal();
   terminal.columns = 120;
@@ -1131,8 +1185,8 @@ it("names the model, repository and branch under the prompt, then the mode and w
   // This computer in the theme's caution color, a sandbox in its success color.
   const warning = theme.warning!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";");
   expect(screenLine(raw, "this computer · asks first")).toContain(`[38;2;${warning}mthis computer · asks first`);
-  // The input stands between two rules.
-  expect(screen.match(/─{20,}/gu)?.length).toBe(2);
+  // The input is filled with the operator's background, with no rules around it.
+  expect(screen.match(/─{20,}/gu)).toBeNull();
   terminal.writes.length = 0;
   terminal.send("b");
   tui.renderNow(true);
@@ -1478,21 +1532,311 @@ it("shows and restores a successful edit's bounded inline patch", () => {
   restored.stop();
 });
 
-it("presents a review once in the conversation and its diff beside it on a wide terminal", () => {
+it("presents a review once in the conversation and its diff beside it on a wide terminal, on its own tab", () => {
   const entries: TranscriptEntry[] = [];
-  const { shell, render } = wideShell({ onEntry: (_id, entry) => { entries.push(entry); } });
+  const { terminal, shell, render } = wideShell({ onEntry: (_id, entry) => { entries.push(entry); } });
   shell.inspect({ title: "Review · 1 file", summary: "  edit   src/price.ts\n  ✓ npm test", detail: "Requested\n  1. Fix it",
     diff: "diff --git a/src/price.ts b/src/price.ts\n--- a/src/price.ts\n+++ b/src/price.ts\n@@ -2 +2 @@\n" +
       "-  return price + discount;\n+  return price - discount;" });
+  const review = stripTerminalSequences(render());
+  expect(review.split("Review · 1 file").length - 1).toBe(2);
+  expect(review.split("✓ npm test").length - 1).toBe(1);
+  // The review opens on its record; with no checks recorded, its only other tab is the diff.
+  expect(review).toContain(" Review  Diff ");
+  expect(review).not.toContain(" Checks ");
+  expect(review).toContain("1. Fix it");
+  expect(review).not.toContain("1 file changed");
+  terminal.send("\x1bt");
   const rendered = render();
   const screen = stripTerminalSequences(rendered);
-  expect(screen.split("Review · 1 file").length - 1).toBe(2);
-  expect(screen.split("✓ npm test").length - 1).toBe(1);
+  expect(screen).not.toContain("1. Fix it");
   expect(screen).toContain("1 file changed +1 -1");
   expect(screen).toContain("2 +   return price - discount;");
   expect(screen).toContain("2 -   return price + discount;");
   expect(rendered).toContain("\x1b[48;2;29;51;36m"); // The added row's tint.
   expect(entries).toEqual([{ kind: "review", title: "Review · 1 file", text: "  edit   src/price.ts\n  ✓ npm test" }]);
+  shell.stop();
+});
+
+/** The rows of a full frame, as the TUI draws each after moving to its start; `undefined` for a row not drawn. */
+function frameRows(frame: string): string[] {
+  const rows: string[] = [];
+  // Each row starts at ESC [ row ;1H; the text before the first is the frame's own setup.
+  let row: number | undefined;
+  for (const part of frame.split("\x1b[")) {
+    const start = /^(\d+);1H/u.exec(part);
+    if (start !== null) row = Number(start[1]) - 1;
+    if (row !== undefined) rows[row] = start === null ? `${rows[row] ?? ""}\x1b[${part}` : part.slice(start[0].length);
+  }
+  return rows;
+}
+
+/** Each cell's background in a drawn row, as a terminal applies it: an SGR sequence sets or ends it, and other sequences take no cell. */
+function cellBackgrounds(row: string): (string | undefined)[] {
+  const cells: (string | undefined)[] = [];
+  let background: string | undefined;
+  const escape = String.fromCharCode(27);
+  for (let index = 0; index < row.length;) {
+    if (row[index] === escape) {
+      if (row[index + 1] === "]") { index = row.indexOf(String.fromCharCode(7), index) + 1; continue; }
+      const end = row.slice(index + 2).search(/[A-Za-z]/u) + index + 2;
+      if (row[end] === "m") {
+        const codes = row.slice(index + 2, end);
+        if (codes === "0" || codes === "" || codes === "49") background = undefined;
+        else if (codes.startsWith("48;2;")) background = codes;
+      }
+      index = end + 1;
+      continue;
+    }
+    const character = row.codePointAt(index) ?? 0;
+    cells.push(background);
+    index += character > 0xffff ? 2 : 1;
+  }
+  return cells;
+}
+
+/** Click the first drawn `text` with the left button, as a terminal or a phone's SSH client reports a tap. */
+function clickText(terminal: TestTerminal, frame: string, text: string): void {
+  const rows = frameRows(frame).map((row) => stripTerminalSequences(row ?? ""));
+  const row = rows.findIndex((line) => line.includes(text));
+  expect(row, `${text} on screen`).toBeGreaterThanOrEqual(0);
+  const column = (rows[row] ?? "").indexOf(text) + 1;
+  terminal.send(`\x1b[<0;${column + 1};${row + 1}M`);
+  terminal.send(`\x1b[<0;${column + 1};${row + 1}m`);
+}
+
+it("steps through a result's tabs with Alt+T or a click, each keeping its own place, and starts a new result on Review", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 150;
+  terminal.rows = 30;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
+  const output = Array.from({ length: 80 }, (_, index) => `    │ line ${index}`).join("\n");
+  shell.inspect({ title: "Review · 1 file", summary: "  edit   src/a.ts",
+    detail: `Your requests\n  1. Fix it\n\nChecks\n  ✓ passed (exit 0): npm test\n${output}\n\nReview\n  advisor\n    Looks right`,
+    diff: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new" });
+  let frame = stripTerminalSequences(render());
+  expect(frame).toContain(" Review  Checks  Diff ");
+  expect(frame).toContain("Alt+T");
+  // The Review tab holds the record without its checks.
+  expect(frame).toContain("Looks right");
+  expect(frame).not.toContain("npm test");
+  terminal.send("\x1bt");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("✓ passed (exit 0): npm test");
+  expect(frame).not.toContain("Looks right");
+  // Scrolled to the checks' end, the Checks tab keeps its place while another tab is shown.
+  for (let step = 0; step < 60; step += 1) terminal.send("\x1b[<65;120;20M");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("line 79");
+  clickText(terminal, render(), " Diff ");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("1 file changed +1 -1");
+  expect(frame).not.toContain("line 79");
+  clickText(terminal, render(), " Checks ");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("line 79");
+  expect(frame).not.toContain("npm test");
+  // A click elsewhere in the tab row chooses nothing.
+  clickText(terminal, render(), "Alt+T");
+  expect(stripTerminalSequences(render())).toContain("line 79");
+  // A new result opens on its Review tab, from the start.
+  shell.inspect({ title: "Answer check", summary: "No files changed.", detail: "Your requests\n  1. Explain it\n\nReview\n  None" });
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("1. Explain it");
+  // An answer has only its review, so there are no tabs to choose.
+  expect(frame).not.toContain("Alt+T");
+  shell.stop();
+});
+
+it("offers an undecided turn's actions above the idle prompt, each chosen with a click, never with a key alone", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 100;
+  terminal.rows = 30;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const onKeep = vi.fn();
+  const onRevert = vi.fn();
+  const onRedo = vi.fn();
+  const undecided = "diff --git a/src/b.ts b/src/b.ts\n--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1 +1,2 @@\n-one\n+two\n+three";
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onKeep, onRevert, onRedo,
+    diffSources: async () => ({ undecided }) });
+  shell.start();
+  const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
+  shell.setSessionUndecided("default", { turns: 1, files: 2, redoable: false });
+  shell.inspect({ title: "Review · 2 files", summary: "  edit   src/a.ts", detail: "Your requests\n  1. Fix it",
+    diff: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new" });
+  // While the session works, the bar waits.
+  expect(stripTerminalSequences(render())).not.toContain("undecided");
+  shell.ask("> ").catch(() => undefined);
+  let frame = render();
+  expect(stripTerminalSequences(frame)).toContain("1 turn undecided · 2 files   Keep   Revert   Diff   or /keep /revert");
+  // A letter typed to start a request is the request's, never an action.
+  terminal.send("r");
+  terminal.send("k");
+  expect(onRevert).not.toHaveBeenCalled();
+  expect(onKeep).not.toHaveBeenCalled();
+  clickText(terminal, frame, " Keep ");
+  expect(onKeep).toHaveBeenCalledWith("default");
+  clickText(terminal, frame, " Revert ");
+  expect(onRevert).toHaveBeenCalledWith("default", []);
+  // Diff opens the result on its Diff tab, in place of the conversation on a narrow terminal.
+  // Diff opens the undecided turns together, which Keep and Revert act on, in place of the conversation on a narrow terminal.
+  clickText(terminal, frame, " Diff ");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("1 file changed +2 -1");
+  expect(frame).toContain("source: Undecided ▾");
+  // A reverted turn can be put back.
+  shell.setSessionUndecided("default", { turns: 0, files: 0, redoable: true });
+  frame = render();
+  expect(stripTerminalSequences(frame)).toContain("Turn reverted   Redo   or /redo");
+  clickText(terminal, frame, " Redo ");
+  expect(onRedo).toHaveBeenCalledWith("default");
+  shell.setSessionUndecided("default", undefined);
+  expect(stripTerminalSequences(render())).not.toContain("Turn reverted");
+  shell.stop();
+});
+
+it("lays the sidebar and the result beside the conversation on the side surface, each behind a rule, the conversation on the canvas", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 150;
+  terminal.rows = 30;
+  const tui = new BackdropTui(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  shell.inspect({ title: "Review · 1 file", summary: "  edit   src/a.ts", detail: "Your requests\n  1. Fix it",
+    diff: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new" });
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const rows = frameRows(terminal.writes.join(""));
+  const side = `48;2;${shellSurfaces(tesotaShellTheme()).side!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";")}`;
+  const plain = rows.map((row) => stripTerminalSequences(row ?? ""));
+  // The sidebar's rule runs the whole height beside it, and the result's beside the result.
+  expect(plain.every((row) => row[25] === "│")).toBe(true);
+  const ruled = Array.from({ length: 150 }, (_, column) => column).filter((column) => column > 26 &&
+    plain.every((row) => row[column] === "│"));
+  expect(ruled).toHaveLength(1);
+  const [resultRule = 0] = ruled;
+  // Every cell of a side column is filled, by the side surface or by a background its content sets, as a selected
+  // session's; the conversation between them is never on the side surface.
+  const cells = rows.map((row) => cellBackgrounds(row ?? ""));
+  for (const row of cells) {
+    expect(row.slice(0, 25)).not.toContain(undefined);
+    expect(row.slice(resultRule + 1, 150)).not.toContain(undefined);
+    expect(row.slice(26, resultRule)).not.toContain(side);
+  }
+  expect(cells.filter((row) => row.slice(0, 25).every((cell) => cell === side)).length).toBeGreaterThan(20);
+  expect(cells.filter((row) => row.slice(resultRule + 1, 150).every((cell) => cell === side)).length).toBeGreaterThan(20);
+  // The diff's file is a block between rules.
+  terminal.send("\x1bt");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const diff = frameRows(terminal.writes.join("")).map((row) => stripTerminalSequences(sliceByColumn(row ?? "", resultRule + 1, 150)));
+  const header = diff.findIndex((row) => row.trim() === "src/a.ts");
+  expect(diff[header - 1]?.trim()).toMatch(/^─+$/u);
+  expect(diff[header + 1]?.trim()).toMatch(/^─+$/u);
+  shell.stop();
+});
+
+it("draws the sidebar over a narrow conversation on the side surface, its whole height, behind a rule", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 80;
+  terminal.rows = 24;
+  const tui = new BackdropTui(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  terminal.send("\x1bb");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const rows = frameRows(terminal.writes.join(""));
+  expect(rows.filter((row) => stripTerminalSequences(row ?? "")[55] === "│")).toHaveLength(24);
+  expect(stripTerminalSequences(rows.join("\n"))).toContain("Session 1");
+  shell.stop();
+});
+
+it("shows the diff with /diff: everything uncommitted before a review, each source chosen by name or a click, hidden again", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 150;
+  terminal.rows = 30;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const file = (path: string, added: string): string =>
+    `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+${added}`;
+  let sources: { working?: string; undecided?: string } = { working: file("notes.md", "mine") };
+  const asked = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui,
+    diffSources: async (id) => { asked(id); return sources; } });
+  shell.start();
+  const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
+  const settle = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
+  const command = async (text: string): Promise<void> => {
+    const answer = shell.ask("> ");
+    terminal.send(text);
+    terminal.send("\r");
+    terminal.send("\r");
+    await answer.catch(() => undefined);
+    await settle();
+  };
+  // Before any review, as Claude Code's /diff, the current changes, read when asked.
+  await command("/diff");
+  let frame = stripTerminalSequences(render());
+  expect(asked).toHaveBeenCalledWith("default");
+  expect(frame).toContain("notes.md");
+  expect(frame).toContain("source: Working tree");
+  expect(frame).not.toContain("source: Working tree ▾");
+  // Run again on the Diff tab, it hides the panel.
+  await command("/diff");
+  expect(stripTerminalSequences(render())).not.toContain("source: Working tree");
+  // After a review, the reviewed result first; the other sources by name or by clicking the source.
+  sources = { working: file("notes.md", "mine"), undecided: file("src/a.ts", "turns") };
+  shell.inspect({ title: "Review · 1 file", summary: "  edit   src/a.ts", detail: "Your requests\n  1. Fix it",
+    diff: file("src/a.ts", "reviewed") });
+  await command("/diff");
+  frame = render();
+  expect(stripTerminalSequences(frame)).toContain("source: Reviewed ▾");
+  expect(stripTerminalSequences(frame)).toContain("+ reviewed");
+  clickText(terminal, frame, "source: Reviewed");
+  frame = render();
+  expect(stripTerminalSequences(frame)).toContain("source: Undecided ▾");
+  expect(stripTerminalSequences(frame)).toContain("+ turns");
+  await command("/diff working");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("source: Working tree ▾");
+  expect(frame).toContain("+ mine");
+  // Nothing uncommitted says so, and an unknown source is refused.
+  sources = { working: "" };
+  await command("/diff working");
+  expect(stripTerminalSequences(render())).toContain("No changes in the working tree.");
+  await command("/diff everything");
+  expect(stripTerminalSequences(render())).toContain("Use /diff, or /diff working, /diff undecided or /diff reviewed.");
+  shell.stop();
+});
+
+it("selects a session clicked in the sidebar, as Alt+J does", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 150;
+  terminal.rows = 30;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.addSession("second", "Other task");
+  shell.start();
+  const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
+  const selection = "\x1b[48;2;75;61;83m";
+  const rowOf = (frame: string, text: string): string =>
+    frameRows(frame).find((row) => stripTerminalSequences(row ?? "").includes(text)) ?? "";
+  let frame = render();
+  expect(rowOf(frame, "Other task")).not.toContain(selection);
+  // The session's second row, its state, selects it too.
+  const rows = frameRows(frame).map((row) => stripTerminalSequences(row ?? ""));
+  const below = rows.findIndex((line) => line.includes("Other task")) + 1;
+  terminal.send(`\x1b[<0;4;${below + 1}M`);
+  terminal.send(`\x1b[<0;4;${below + 1}m`);
+  frame = render();
+  expect(rowOf(frame, "Other task")).toContain(selection);
+  expect(rowOf(frame, "Session 1")).not.toContain(selection);
+  clickText(terminal, frame, "Session 1");
+  expect(rowOf(render(), "Session 1")).toContain(selection);
   shell.stop();
 });
 
@@ -1662,7 +2006,7 @@ it("opens the Accounts panel over the session: its tabs, keys that never reach t
   terminal.send("x");
   terminal.send("\t");
   const signIns = await screen();
-  expect(signIns).toMatch(/codex {2}Codex {2}signed in {2}reviewer/u);
+  expect(signIns).toMatch(/codex {2}Codex {2}signed in {2}— +reviewer/u);
   terminal.send("3");
   terminal.send("\x1b[B");
   expect(await screen()).toMatch(/› reviewer {2}codex:gpt-6-astra {3}codex {8}██░░░░░░░░ {2}20% {2}week/u);

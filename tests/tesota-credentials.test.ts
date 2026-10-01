@@ -55,7 +55,7 @@ it.runIf(process.platform === "win32")("waits for delayed Windows access-control
   }
 }, 65_000);
 
-it("compiled login persists across processes, status is sanitized, and logout removes only Tesota login", async () => {
+it("compiled login persists across processes, a second login replaces the first, status is sanitized, and logout removes only Tesota login", async () => {
   const root = await mkdtemp(join(tmpdir(), "tesota-auth-cli-"));
   try {
     const invoke = (action: string) => spawnSync("bun", ["--no-env-file", "--preload",
@@ -65,7 +65,7 @@ it("compiled login persists across processes, status is sanitized, and logout re
     });
     const operations: readonly (readonly [string, string])[] = [
       ["login", "login saved"], ["status", "signed in"],
-      ["login", "already logged in"], ["logout", "credentials removed"], ["status", "signed out: tesota auth login codex"],
+      ["login", "in place of the earlier one"], ["logout", "credentials removed"], ["status", "signed out: tesota auth login codex"],
     ];
     for (const [action, expected] of operations) {
       const result = invoke(action);

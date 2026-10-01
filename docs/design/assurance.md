@@ -31,7 +31,7 @@ needs new results.
 
 Tesota flags, with fixed rules, changes to tests, check or lint
 configuration, CI workflows, formal specifications, package scripts and its
-own setup. Flags go to the reviewers and to the operator, marked ⚠: a flagged
+own setup. Flags go to the reviewers and to the operator, marked !: a flagged
 change may be a legitimate fix or a way to make checks pass, and only the
 operator decides which.
 
@@ -172,7 +172,7 @@ it, and a finding is merged only into an earlier one in the same file with
 the same origin, so a defect the change introduced is never hidden behind one
 whose cause is unknown.
 
-The operator sees ✗ for a confirmed fixable defect the change introduced, ⚠
+The operator sees ✗ for a confirmed fixable defect the change introduced, !
 for the operator's call, including a cause Tesota could not establish, `?
 unsettled`, and `· already there` for what the change did not cause; refuted
 findings are counted, with the refuter's evidence in the result panel.
@@ -471,7 +471,7 @@ from steps in which every reviewer finished. Whether there are enough
 measurements, which sorted positions are the median, and whether a step counts
 are proved rules in `src/verification/review-estimate.ts`. The forecast asks
 nothing: depth is computed from facts, correction rounds must not stall, and
-`Ctrl+C` stops a review at any time.
+`Esc` stops a review at any time.
 
 ## Measurement
 

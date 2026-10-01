@@ -109,7 +109,7 @@ told to treat the answer as a lead to check, not as fact.
 | Output | Advice to the agent | Findings that decide correction and inform the operator |
 
 Explorers are bounded: at most three run at once and eight per request, each
-has a five-minute limit and stops with its turn on `Ctrl+C`, and its answer is
+has a five-minute limit and stops with its turn on `Esc`, and its answer is
 cut at a fixed length. An unfinished or empty reply is never presented as an
 answer, and the per-request allowance is a proved rule
 (`src/verification/helper-answer.ts`). Each call shows in the conversation
@@ -246,12 +246,26 @@ is one model. A failed request names its route, since a lapsed plan fails
 with only the model's refusal, as on 2026-09-29. `/model` continues in
 place only on one account: another route's account needs its own runtime
 or Claude Code process, so it starts a new conversation with the brief. A
-route that a role uses is not removed until the roles choose another.
+route that a role uses is not removed until the roles choose another
+(`routeAfter` in `src/verification/route-removal-rule.ts`, proved): signing
+a route in again, to change its account, or out keeps the route and the
+roles on it, and only `tesota auth remove` deletes one. Status names the
+account each route is signed in to, from Claude Code's `.claude.json` or the
+Codex token's profile claim, read locally, its email masked unless asked, and
+names routes signed in to the same account, whose limits are one plan's
+(`src/route-accounts.ts`). `tesota roles`, the Accounts panel's Roles tab
+and a role choice that makes it so name roles on different routes that draw
+on one account, since spreading roles across routes is meant to spread them
+across plans; roles all on one route draw on one account by choice.
 
 **What each account has left**. `tesota usage` and the
 shell's Accounts panel ask each route's provider, only when run or opened,
 and show a meter per window or credit: the share left in 20 segments, as
-Codex's `/status` draws it, and when it resets. Codex's windows come from `wham/usage`, the private
+Codex's `/status` draws it, and when it resets. An account is read once,
+through the first route signed in to it, and every route on it shows that
+reading and names that route, so two meters of one plan cannot disagree
+(`usageReader` in `src/verification/usage-reader-rule.ts`, proved); a route
+whose account cannot be read is read by itself. Codex's windows come from `wham/usage`, the private
 endpoint Codex's own client reads, with the route's token, which Pi
 refreshes; Claude Code's from the Agent SDK's experimental usage report,
 read without sending a request and with Claude Code's ordinary traffic on,
@@ -382,7 +396,7 @@ a stream quiet for five minutes and retries three times; Claude Code waits up
 to 180 seconds for the first byte and five minutes for a quiet stream, and
 retries ten times. Retried stalls can therefore last far longer than one
 timer, which is what the limit bounds. The working agent has no limit: the
-operator is present, and `Ctrl+C` stops it.
+operator is present, and `Esc` stops it.
 
 Forecasts and summaries compare token totals, and `live:review` records the
 kinds, since a cache read costs a fraction of fresh input.

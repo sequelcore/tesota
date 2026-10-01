@@ -8,10 +8,19 @@ const snapshot: WorkspaceSnapshot = { base: "b".repeat(40), tree: "t".repeat(40)
 const check = { verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command: "bun run check", tree: snapshot.tree, environment: "host", guarantees: hostProvider.guarantees,
   outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" };
 
+it("keeps each line of a request of several lines under its number, so none reads as a section of the record", () => {
+  const review = inspectReview({ snapshot, checks: [check], flags: [], reviews: [],
+    requests: ["Redesign the explorer.\nTarget design:\n\n- Header line: the path\nAcceptance", "Run it"] });
+  expect(review.detail).toMatch(/^Your requests\n {2}1\. Redesign the explorer\.\n {5}Target design:\n\n {5}- Header line: the path\n {5}Acceptance\n {2}2\. Run it\n/u);
+  // The record's own headings are its only unindented lines after a blank one.
+  const headings = review.detail.split(/\n\n(?=\S)/u).map((section) => section.split("\n", 1)[0]);
+  expect(headings).toEqual(["Your requests", "Files", "Checks", "Review", "Content"]);
+});
+
 it("lists changes to what gets checked as the operator's decision, and the requests behind the result", () => {
   const review = inspectReview({ snapshot, checks: [check], requests: ["Charge over $100 less", "Keep the old test"],
     flags: [{ path: "src/price.test.ts", status: "modified", kind: "test" }], reviews: [] });
-  expect(review.summary).toContain("Needs you\n  ⚠ edited test: src/price.test.ts");
+  expect(review.summary).toContain("Needs you\n  ! edited test: src/price.test.ts");
   expect(review.summary).toContain("For context\n  ✓ bun run check");
   expect(review.summary).toContain("only you can tell whether that is legitimate");
   expect(review.detail).toMatch(/^Your requests\n {2}1\. Charge over \$100 less\n {2}2\. Keep the old test\n/u);
@@ -27,7 +36,7 @@ it("keeps the diff apart from the record, for the result panel to draw as a diff
 
 it("says nothing about flags when no check-affecting file changed", () => {
   const review = inspectReview({ snapshot, checks: [check], requests: ["Fix it"], flags: [], reviews: [] });
-  expect(review.summary).not.toContain("⚠");
+  expect(review.summary).not.toContain("! ");
   expect(review.detail).not.toContain("Changes to how the result is checked");
 });
 
@@ -83,9 +92,9 @@ it("shows a finding whose cause Tesota could not establish as the operator's cal
     { reviewer: "Tesota reviewer", tree: snapshot.tree, status: "completed", summary: "One unclear.", findings: [
       { severity: "high", disposition: "fixable", origin: "unknown", originNote: note, path: "src/tax.ts", line: 9,
         statement: "Tax ignores refunds", reason: "r", standing: "confirmed" }] }] });
-  expect(review.summary).toContain("  ⚠ high · cause unclear · src/tax.ts:9 — Tax ignores refunds");
+  expect(review.summary).toContain("  ! high · cause unclear · src/tax.ts:9 — Tax ignores refunds");
   expect(review.summary).not.toContain("no problems introduced");
-  expect(review.detail).toContain(`    ⚠ high, fixable: src/tax.ts:9 — Tax ignores refunds\n      r\n      Next: needs your decision\n      Cause: unclear. ${note}\n      Second check: confirmed`);
+  expect(review.detail).toContain(`    ! high, fixable: src/tax.ts:9 — Tax ignores refunds\n      r\n      Next: needs your decision\n      Cause: unclear. ${note}\n      Second check: confirmed`);
 });
 
 it("nests a check's claim, limits and output under it, with the output behind a gutter", () => {

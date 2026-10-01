@@ -10,6 +10,8 @@ Usage: tesota [--help | -h | help]
        tesota run [--allow-commands] [--allow-network] [--checks=<command;…>|none] [--apply] [--folder] [--json] (<request> | -)
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]
+       tesota auth status --show-accounts
+       tesota auth remove <added route>
        tesota auth login <codex|claude-code> --as <name>
        tesota models [<route>]
        tesota usage [<route>]
@@ -100,6 +102,10 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
     route = await chooseCliOption(`${args[1]} route`, AUTH_ROUTES.map((value) => ({ value, label: value })));
     if (route === undefined) process.exit(0);
   }
+  if (route === undefined && args[1] === "remove") {
+    process.stderr.write("Name the added route to remove: tesota auth remove <route>.\n");
+    process.exit(2);
+  }
   if (route === undefined && ["login", "logout"].includes(args[1])) {
     process.stderr.write("Choose an auth route in a terminal, or pass one explicitly.\n");
     process.exit(2);
@@ -151,7 +157,8 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   process.exitCode = await runUsageCommand(args.slice(1), (text) => { process.stdout.write(text); }, usageSources());
 } else if (args[0] === "roles") {
   const { offeredModels, rolePicker, runRolesCommand } = await import("./models-command.js");
-  const { isModelRole } = await import("./model-roles.js");
+  const { DEFAULT_MODELS_FILE, isModelRole } = await import("./model-roles.js");
+  const { allRoutes, routeAccounts } = await import("./auth.js");
   let roleArgs = args.slice(1);
   if (roleArgs.length === 1 && isModelRole(roleArgs[0] ?? "") && process.stdin.isTTY && process.stdout.isTTY) {
     const { chooseCliOption } = await import("./cli-choice.js");
@@ -165,7 +172,8 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
     if (choice === undefined) process.exit(0);
     roleArgs = [role, choice];
   }
-  process.exitCode = runRolesCommand(roleArgs, (text) => { process.stdout.write(text); });
+  process.exitCode = runRolesCommand(roleArgs, (text) => { process.stdout.write(text); }, offeredModels(), DEFAULT_MODELS_FILE,
+    await routeAccounts(allRoutes()));
 } else if (args[0] === "prune" && (args.length === 1 || args.length === 2 && args[1] === "--force")) {
   const { formatPrunePlan, measureWorkspaces, planWorkspacePrune, removeWorkspaces } = await import("./workspace-prune.js");
   const { claudeCodeConfigDirectories } = await import("./claude-code-transcripts.js");

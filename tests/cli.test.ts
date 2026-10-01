@@ -42,6 +42,8 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota run [--allow-commands] [--allow-network] [--checks=<command;…>|none] [--apply] [--folder] [--json] (<request> | -)\n" +
     "       tesota verify <file.ts|file.js>\n" +
     "       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]\n" +
+    "       tesota auth status --show-accounts\n" +
+    "       tesota auth remove <added route>\n" +
     "       tesota auth login <codex|claude-code> --as <name>\n" +
     "       tesota models [<route>]\n" +
     "       tesota usage [<route>]\n" +

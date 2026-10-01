@@ -19,8 +19,16 @@ const progressLabels: Readonly<Record<TesotaShellProgress["phase"], string>> = O
   applying: "Applying changes",
 });
 
+/**
+ * What a session is doing, as one line: its activity, such as the command it
+ * runs, or the phase's own label. A command may span lines, as a heredoc
+ * does; the label keeps its first line and marks the rest, which the
+ * transcript shows whole, so a status line never grows.
+ */
 export function tesotaShellProgressLabel(progress: TesotaShellProgress): string {
-  return (progress.phase === "working" || progress.phase === "preparing" || progress.phase === "reviewing") &&
-    progress.activity !== undefined &&
-    progress.activity.length > 0 ? progress.activity : progressLabels[progress.phase];
+  const activity = (progress.phase === "working" || progress.phase === "preparing" || progress.phase === "reviewing")
+    ? progress.activity?.trim() : undefined;
+  if (activity === undefined || activity.length === 0) return progressLabels[progress.phase];
+  const [first = "", ...rest] = activity.split(/\r?\n/u);
+  return rest.some((line) => line.trim().length > 0) ? `${first.trimEnd()} …` : first;
 }

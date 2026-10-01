@@ -1,3 +1,5 @@
+import type { DiffSources } from "./tesota-shell-result.js";
+import { workingTreeDiff } from "./working-diff.js";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -297,7 +299,8 @@ class SessionState {
 
 /** Where a session's work shows: the part of the shell's surface the engine writes to, which a run without a terminal also provides. */
 export type SessionOutput = Pick<TesotaShellTerminal, "writeTo" | "replyTo" | "reportFor" | "clearProgressFor" | "inspectFor" |
-  "showActivity" | "setSessionExecution" | "setSessionPlan" | "setBranch" | "setSessionModel" | "setSessionTitle" | "blockSession">;
+  "showActivity" | "setSessionExecution" | "setSessionPlan" | "setBranch" | "setSessionModel" | "setSessionTitle" | "blockSession" |
+  "setSessionUndecided">;
 
 export interface SessionEngineOptions {
   readonly cwd: string;
@@ -320,6 +323,10 @@ export interface SessionEngineOptions {
 export interface SessionEngine {
   readonly session: (id: string) => SessionWork;
   readonly turnCommands: TurnCommands;
+  /** Show a restored session's undecided turns in the operator's files, read from its record without starting work. */
+  showUndecided(id: string): Promise<void>;
+  /** The Diff tab's live sources for a session, read without starting work. */
+  diffSources(id: string): Promise<DiffSources>;
   readonly agentModel: AgentModelCommands;
   readonly sessionSandbox: SessionSandboxCommands;
   readonly permissionMode: PermissionModeCommands;
@@ -1030,6 +1037,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     Promise<Awaited<ReturnType<SourceSession["endTurn"]>>> => {
     const written = agentWrites(stateFor(id).turnCalls.values(), session.checkout);
     const ended = await session.endTurn({ written, continues: origin === "tesota" });
+    reportUndecided(id, session);
     const outside = ended.changed.map((change) => change.path).filter((path) => !written.includes(path));
     if (outside.length > 0) {
       output.writeTo(id, "Changed outside the agent's file tools, by its commands or by you during the turn; reverting asks " +
@@ -1039,9 +1047,41 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
   };
 
   const pathList = (paths: readonly string[]): string => paths.map((path) => `  ${path}`).join("\n");
+  /** A session's undecided turns in the operator's files, and whether a reverted one can be put back, for the shell's decision bar. */
+  const reportUndecided = (id: string, work: Work): void => {
+    if (work.place !== "source") return;
+    const first = work.turns[0];
+    const last = work.turns.at(-1);
+    output.setSessionUndecided(id, { turns: work.turns.length, redoable: work.redoable !== undefined,
+      files: first === undefined || last === undefined ? 0 : work.compare(first.before, last.after).changes.length });
+  };
+  /**
+   * Where the session works, everything uncommitted and its undecided turns together. A session in a copy has the
+   * copy's changes, which nothing in the operator's files holds yet; one with no work yet, the repository's own.
+   */
+  const diffSources = async (id: string): Promise<DiffSources> => {
+    const directory = saved(id)?.workspace;
+    const loaded = states.get(id)?.workspace;
+    let work: Work | undefined;
+    if (loaded !== undefined || (directory !== null && directory !== undefined)) {
+      try { work = await (loaded ?? openWork(directory ?? "")); } catch { work = undefined; }
+    }
+    if (work !== undefined && work.place !== "source") return { working: work.snapshot().diff };
+    const working = sourceKind === "repository" ? workingTreeDiff(cwd) : undefined;
+    const first = work?.turns[0];
+    const last = work?.turns.at(-1);
+    return { working, undecided: work === undefined || first === undefined || last === undefined ? undefined
+      : work.compare(first.before, last.after).diff };
+  };
+  const showUndecided = async (id: string): Promise<void> => {
+    const directory = saved(id)?.workspace;
+    const loaded = states.get(id)?.workspace;
+    if (loaded === undefined && (directory === null || directory === undefined)) return;
+    try { reportUndecided(id, await (loaded ?? openWork(directory ?? ""))); } catch { /* A record that cannot be read shows no bar. */ }
+  };
   /** A session's work in the source for the turn commands, or why they do not apply to it now; never creates work. */
   const turnsOf = async (id: string): Promise<SourceSession | string> => {
-    if (activeOperations.has(id) || applying.has(id)) return "Wait for the current work to finish, or stop it with Ctrl+C.";
+    if (activeOperations.has(id) || applying.has(id)) return "Wait for the current work to finish, or stop it with Esc.";
     const directory = saved(id)?.workspace;
     if (states.get(id)?.workspace === undefined && (directory === null || directory === undefined)) return "This session has no turns yet.";
     const work = await workspaceFor(id);
@@ -1102,6 +1142,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     const tree = session.snapshot().tree;
     stateFor(id).reviewed = undefined;
     await session.keep();
+    reportUndecided(id, session);
     await journal(id, session, decisionEntry(tree, "kept"));
     session.keepRequestsOpen(false);
     if (saved(id)?.plan !== undefined) showPlan(id, undefined);
@@ -1138,6 +1179,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     try {
       const reverted = await session.revert(join(dirname(dirname(session.directory)), "applications"), mode === "agent" ? outside : []);
       if (reverted === undefined) return;
+      reportUndecided(id, session);
       await journal(id, session, decisionEntry(turn.after, "reverted"));
       if (session.turns.length === 0) {
         session.keepRequestsOpen(false);
@@ -1170,6 +1212,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     try {
       const redone = await session.redo(join(dirname(dirname(session.directory)), "applications"));
       if (redone === undefined) return;
+      reportUndecided(id, session);
       await journal(id, session, decisionEntry(turn.after, "redone"));
       stateFor(id).note = "Note: the user put your reverted turn back" +
         (redone.changedSince.length === 0 ? "." : `, except these, which they changed since: ${redone.changedSince.join(", ")}.`);
@@ -1501,6 +1544,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
   return {
     session: sessionWork,
     turnCommands: { keep: keepTurns, revert: revertTurn, redo: redoTurn, isolate: isolateSession },
+    showUndecided,
+    diffSources,
     agentModel,
     sessionSandbox,
     permissionMode,

@@ -170,7 +170,9 @@ export class DiffView implements Component {
   #renderFile(file: DiffFile, width: number): string[] {
     const theme = this.#theme;
     const status = file.status === "modified" ? "" : mutedText(` (${file.status})`, theme);
-    const lines = [` ${bold(file.path)}${status}`];
+    // Each file is a block between rules, its name on a row of its own, so files stay apart in a long diff.
+    const rule = mutedText("─".repeat(width), theme);
+    const lines = [rule, ` ${bold(file.path)}${status}`, rule];
     if (file.binary) return [...lines, mutedText("   Binary file, not shown.", theme)];
     const numbers = file.hunks.flatMap((hunk) => hunk.lines.map((line) => line.newLine ?? line.oldLine ?? 0));
     const digits = String(Math.max(1, ...numbers)).length;

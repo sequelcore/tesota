@@ -1,19 +1,20 @@
 import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { Editor, HStack, ScrollView, Text, VStack, isKeyRelease, matchesKey, truncateToWidth, wrapTextWithAnsi,
-  type Component, type EditorTheme, type OverlayHandle, type ViewportTUI } from "@earendil-works/pi-tui";
+import { Editor, HStack, ScrollView, Text, VStack, isKeyRelease, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi,
+  type Component, type EditorTheme, type TuiAltScreen, type OverlayHandle, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { SessionExecution } from "./execution-providers.js";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
-import { bold, colorText, fadedText, mutedText, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
+import { backgroundText, bold, colorText, fadedText, mutedText, parseTesotaShellTheme, selectedRow, shellSurfaces, surfaceText, tesotaShellTheme, type ShellSurfaces, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
-import { recordRows, safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
-import { DiffView } from "./tesota-shell-diff.js";
+import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
+import { ResultPanel, type DiffSource, type DiffSources } from "./tesota-shell-result.js";
+import { DecisionBar, type DecisionAction, type UndecidedTurns } from "./tesota-shell-decision-bar.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
 import { ThemePicker } from "./tesota-shell-theme-picker.js";
 import { ChoicePicker, type ShellChoice } from "./tesota-shell-choice-picker.js";
 import { QuestionPanel, type ShellQuestion } from "./tesota-shell-question.js";
-import type { Backdrop } from "./tesota-shell-tui.js";
+import type { Backdrop, ShellSurface, Surfaces } from "./tesota-shell-tui.js";
 import { ACCOUNTS_PANEL_HEIGHT, ACCOUNTS_PANEL_WIDTH, ACCOUNTS_TABS, AccountsPanel, type AccountsSource, type AccountsTab }
   from "./tesota-shell-accounts.js";
 import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, sessionStateIcon, type SidebarSession } from "./tesota-shell-sidebar.js";
@@ -22,10 +23,13 @@ import { WelcomeBanner } from "./tesota-shell-welcome.js";
 import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, showWaitingInFooter,
   sidebarGroupRank, sidebarPresentation, sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarSessionState } from "./verification/sidebar-rule.js";
 
+/** pi-tui's own text selection on the alternate screen, which takes the mouse from the terminal's. */
+type TextSelection = Pick<TuiAltScreen, "hasActiveSelection" | "copyActiveSelectionToClipboard">;
+
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
   /** The shell's TUI; one with a backdrop fades the layout beneath an open panel. */
-  readonly tui: ViewportTUI & Partial<Backdrop>;
+  readonly tui: ViewportTUI & Partial<Backdrop> & Partial<Surfaces> & Partial<TextSelection>;
   readonly now?: () => number;
   readonly interrupt?: (sessionId: string) => void;
   /** `Tab` while a session works: send a message to its agent now; false when the agent cannot take it, and it is queued. */
@@ -47,6 +51,8 @@ export interface TesotaShellTerminalOptions {
   readonly onKeep?: (sessionId: string) => void;
   readonly onRevert?: (sessionId: string, args: readonly string[]) => void;
   readonly onRedo?: (sessionId: string) => void;
+  /** `/diff`: the Diff tab's live sources for a session, read when the operator asks for them. */
+  readonly diffSources?: (sessionId: string) => Promise<DiffSources>;
   /** `/isolate`: before its first request, a session works in an isolated workspace instead of the operator's files. */
   readonly onIsolate?: (sessionId: string) => void;
   /** `/checks [reset]`: the repository's approved checks and the hidden files they may read. */
@@ -119,6 +125,8 @@ export interface TesotaShellTerminal {
   /** The model the session's agent runs, as `route:model`, shown beside the prompt while it is selected. */
   setSessionModel(id: string, model: string): void;
   setSessionTitle(id: string, title: string): void;
+  /** A session's undecided turns in the operator's files, offered above its prompt while it is idle; undefined for none. */
+  setSessionUndecided(id: string, undecided: UndecidedTurns | undefined): void;
   blockSession(id: string): void;
   endSession(id: string): void;
   /** Remove a session from the workspace; its pending prompt fails with a closed error. */
@@ -131,7 +139,7 @@ export interface ShellInspection {
   readonly summary: string;
   /**
    * Sections under unindented headings; nested lines are indented and may
-   * start with a mark (✓ ✗ ⚠ ? ·) or, for command output, a │ gutter.
+   * start with a mark (✓ ✗ ! ? ·) or, for command output, a │ gutter.
    */
   readonly detail: string;
   /** The candidate's unified diff, drawn as a diff view below `detail`; absent from results recorded before it was kept apart. */
@@ -172,6 +180,7 @@ interface SessionView {
   model?: string;
   /** Where the session's commands run, once its environment is chosen. */
   execution?: { readonly label: string; readonly place: SessionExecution["commands"] };
+  undecided?: UndecidedTurns | undefined;
   /** The agent's plan for the session's current work. */
   plan?: WorkPlan;
 }
@@ -192,6 +201,7 @@ const shellCommands = [
   { name: "handoff", description: "Start the agent's conversation afresh" },
   { name: "sandbox", description: "Show or switch where this session's commands run" },
   { name: "isolate", description: "Work in an isolated copy instead of your files; before the first request" },
+  { name: "diff", description: "Show the diff: everything uncommitted, the undecided turns or the reviewed result" },
   { name: "keep", description: "Keep this session's undecided turns in your files" },
   { name: "revert", description: "Undo the latest undecided turn; again steps further back" },
   { name: "redo", description: "Put the latest reverted turn back" },
@@ -282,7 +292,9 @@ class Line implements Component {
   setText(text: string, whole = false): void { this.#text = text; this.#whole = whole; }
   invalidate(): void {}
   render(width: number): string[] {
-    return this.#whole ? wrapTextWithAnsi(` ${this.#text}`, width) : [truncateToWidth(` ${this.#text}`, width)];
+    // One row means one row: a line break left in would push the layout below it down, out of the renderer's account.
+    return this.#whole ? wrapTextWithAnsi(` ${this.#text}`, width)
+      : [truncateToWidth(` ${this.#text.replace(/\r?\n/gu, " ")}`, width)];
   }
 }
 
@@ -333,13 +345,25 @@ class PromptEditor extends Editor {
     super(tui, editorTheme(theme), { paddingX: 1 });
     this.#theme = theme;
   }
-  // A rule above and below the input sets it apart from the conversation and the lines beneath it.
-  protected override renderTopBorder(width: number): string { return mutedText("─".repeat(width), this.#theme); }
-  protected override renderBottomBorder(width: number): string { return mutedText("─".repeat(width), this.#theme); }
+  /**
+   * The input sits on the operator's own background, as their sent messages do, so what is typed reads as what was
+   * said, with a filled row above and below it; without colors, a rule above and below sets it apart instead.
+   */
+  #edge(width: number): string {
+    const fill = this.#theme.userBackground;
+    return fill === null ? mutedText("─".repeat(width), this.#theme) : backgroundText(" ".repeat(width), fill);
+  }
+  protected override renderTopBorder(width: number): string { return this.#edge(width); }
+  protected override renderBottomBorder(width: number): string { return this.#edge(width); }
   override render(width: number): string[] {
     const lines = super.render(width);
     if (lines[1] !== undefined) lines[1] = colorText("›", this.#theme.accent) + lines[1].slice(1);
-    return lines;
+    const fill = this.#theme.userBackground;
+    if (fill === null) return lines;
+    // The rows between the edges are the text; any below the bottom edge are the completion list, left as they are.
+    const bottom = lines.indexOf(this.#edge(width), 1);
+    return lines.map((line, index) => index === 0 || bottom < 0 || index >= bottom ? line
+      : surfaceText(line + " ".repeat(Math.max(0, width - visibleWidth(line))), fill));
   }
 }
 
@@ -354,31 +378,8 @@ function busy(progress: TesotaShellProgress | undefined): boolean {
   return progress !== undefined && animatedSidebarState(progress.phase);
 }
 
-/** The result panel: a heading, the record under section headings, then the candidate's diff as a diff view. */
-class ResultPanel implements Component {
-  readonly diff: DiffView;
-  readonly #theme: TesotaShellTheme;
-  #heading = "";
-  #record = "";
-  #cached: { width: number; lines: string[] } | undefined;
-  constructor(theme: TesotaShellTheme) { this.#theme = theme; this.diff = new DiffView(theme); }
-  /** Show a styled heading and a record's plain text beneath it. */
-  show(heading: string, record = ""): void { this.#heading = heading; this.#record = record; this.#cached = undefined; }
-  invalidate(): void { this.#cached = undefined; }
-  render(width: number): string[] {
-    if (this.#cached?.width !== width) {
-      const inner = Math.max(1, width - 2);
-      const lines = [...wrapTextWithAnsi(this.#heading, inner),
-        ...this.#record.length === 0 ? [] : recordRows(this.#record, inner, this.#theme, true)].map((row) => ` ${row}`);
-      this.#cached = { width, lines };
-    }
-    const diff = this.diff.render(width);
-    return [...this.#cached.lines, ...(diff.length === 0 ? [] : ["", ...diff])];
-  }
-}
-
 class PersistentTesotaShellTerminal implements TesotaShellTerminal {
-  private readonly tui: ViewportTUI & Partial<Backdrop>;
+  private readonly tui: ViewportTUI & Partial<Backdrop> & Partial<Surfaces> & Partial<TextSelection>;
   private readonly now: () => number;
   private readonly interrupt: () => void;
   private readonly options: TesotaShellTerminalOptions;
@@ -422,13 +423,13 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   });
   /** The selected session's waiting question, in place of the input. */
   private readonly question = new VStack();
+  /** The result panel, kept across layouts so each tab's position survives them. */
   private readonly result: ResultPanel;
-  /** One scroll view for the result panel, kept across layouts so its position survives them. */
-  private readonly resultScroll: ScrollView;
   private readonly commandMenu: CommandMenu;
   private readonly modelPicker: ModelPicker;
   private readonly themePicker: ThemePicker;
   private readonly choicePicker: ChoicePicker;
+  private readonly decisionBar: DecisionBar;
   private readonly accountsPanel: AccountsPanel;
   /** The Accounts panel while it is open. */
   private accountsOverlay: OverlayHandle | undefined;
@@ -441,8 +442,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private welcomeFrame: ReturnType<typeof setTimeout> | undefined;
   private removeInputListener: (() => void) | undefined;
   private started = false;
-  /** The quit key pressed once, and when; a second press of it within the confirmation window quits. */
-  private quitArmed: Readonly<{ key: "Ctrl+C" | "Ctrl+D"; at: number }> | undefined;
+  /**
+   * A key pressed once that acts when pressed again within the confirmation window, and when: Ctrl+C stops running
+   * work, and Ctrl+C or Ctrl+D quits.
+   */
+  private armed: Readonly<{ action: "stop" | "quit"; key: "Ctrl+C" | "Ctrl+D"; at: number }> | undefined;
 
   constructor(options: TesotaShellTerminalOptions) {
     this.tui = options.tui;
@@ -451,9 +455,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.interrupt = () => { (options.interrupt ?? ignoreInterrupt)(this.selectedId); };
     this.theme = { ...tesotaShellTheme(options.theme) };
     this.sidebarHeader = new SessionSidebarHeader(this.theme);
-    this.sidebar = new SessionRail(this.theme);
-    this.result = new ResultPanel(this.theme);
-    this.resultScroll = new ScrollView(this.result, { scrollbar: "auto" });
+    this.sidebar = new SessionRail(this.theme, (id) => { if (id !== this.selectedId) this.selectSession(id); });
+    this.result = new ResultPanel(this.theme, () => { this.tui.requestRender(); });
     this.sidebarScroll = new ScrollView(this.sidebar, { scrollbar: "auto" });
     // Pi's code highlighter reads Pi's global theme; match its light or dark variant.
     initTheme(this.theme.appearance === "light" ? "light" : "dark");
@@ -461,6 +464,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.modelPicker = new ModelPicker(this.theme);
     this.themePicker = new ThemePicker(this.theme);
     this.choicePicker = new ChoicePicker(this.theme);
+    this.decisionBar = new DecisionBar(this.theme, () => {
+      const session = this.selected();
+      // Only at rest at the request prompt: never while it works, waits on a question or asks something else.
+      if (session.pending === undefined || session.prompt !== "> " || session.question !== undefined) return undefined;
+      return { undecided: session.undecided, hasDiff: true };
+    }, (action) => { this.decide(action); });
     this.accountsPanel = new AccountsPanel(this.theme, () => this.tui.terminal.rows, this.now);
     this.editor = new PromptEditor(this.tui, this.theme);
     this.editor.onChange = (value) => { this.updateCommandMenu(value); };
@@ -469,8 +478,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.addSession(this.selectedId, options.initialSession?.title ?? "Session 1",
       options.initialSession?.entries ?? [], options.initialSession?.inspections ?? [],
       options.initialSession?.fresh ?? options.initialSession === undefined);
+    this.tui.setSurfaces?.(() => this.surfaces());
     this.tui.showOverlay(
-      new SessionSidebarOverlay(this.sidebarHeader, this.sidebar, () => this.tui.terminal.rows),
+      new SessionSidebarOverlay(this.sidebarHeader, this.sidebar, () => this.tui.terminal.rows, () => this.shellSurfaces()),
       { width: sidebarWidth, maxHeight: "100%", anchor: "top-right", nonCapturing: true,
         // Hidden under an open panel: overlays are drawn after the backdrop fades the layout, so it would stay bright.
         visible: (width) => sidebarPresentation(this.sidebarPreference, width) === "overlay" && this.accountsOverlay === undefined },
@@ -540,9 +550,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const resultInColumn = (): boolean => this.showResult && this.contentWidth(this.tui.terminal.columns) < resultBesideWidth;
     const session = new VStack([
       { component: selected.scroll, basis: 0, grow: 1, minSize: 1, visible: () => !resultInColumn() },
-      { component: this.resultScroll, basis: 0, grow: 1, minSize: 1, visible: () => resultInColumn() },
+      { component: this.result.view, basis: 0, grow: 1, minSize: 1, visible: () => resultInColumn() },
       { component: new VStack([{ component: this.plan, basis: "auto", visible: () => this.plan.visible },
-        { component: this.queue, basis: "auto", visible: () => this.queue.visible }, this.status, this.commandMenu, this.modelPicker, this.themePicker, this.choicePicker,
+        { component: this.queue, basis: "auto", visible: () => this.queue.visible }, this.status,
+        { component: this.decisionBar, basis: "auto", visible: () => this.decisionBar.visible }, this.commandMenu, this.modelPicker, this.themePicker, this.choicePicker,
         { component: this.editor, basis: "auto", visible: () => this.selected().question === undefined },
         { component: this.question, basis: "auto", visible: () => this.selected().question !== undefined }, this.footer]),
         basis: "auto", shrink: 1, minSize: 3 },
@@ -560,10 +571,36 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       { component: session, basis: 0, grow: 1, minSize: 30 },
       { component: comparison, basis: 48, shrink: 1, minSize: 30,
         visible: (viewport) => this.split && secondary !== undefined && this.contentWidth(viewport.width) >= comparisonWidth },
-      { component: this.resultScroll, basis: 0, grow: 1, minSize: 30,
+      { component: this.result.view, basis: 0, grow: 1, minSize: 30,
         visible: (viewport) => this.showResult && this.contentWidth(viewport.width) >= resultBesideWidth },
     ], { gap: 1 }));
     this.tui.requestRender();
+  }
+
+  /**
+   * The columns beside the conversation on the side surface, each with a rule between it and the conversation: the
+   * inline sidebar and the result panel beside it. The conversation stays on the terminal's own background, as the
+   * main content; the result in its place on a narrow terminal has nothing beside it to stand apart from.
+   */
+  /** The side surface and rule, stepped from the terminal's own background once it answers, the theme's until then. */
+  private shellSurfaces(): ShellSurfaces {
+    const background = this.terminalBackground;
+    return shellSurfaces(this.theme,
+      background === undefined ? undefined : `#${background.map((part) => part.toString(16).padStart(2, "0")).join("")}`);
+  }
+
+  private surfaces(): ShellSurface[] {
+    const { side, rule } = this.shellSurfaces();
+    const columns = this.tui.terminal.columns;
+    const surfaces: ShellSurface[] = [];
+    if (sidebarPresentation(this.sidebarPreference, columns) === "inline") {
+      surfaces.push({ x: 0, width: sidebarWidth, background: side, rule: { x: sidebarWidth, color: rule } });
+    }
+    const width = this.result.width;
+    if (this.showResult && this.contentWidth(columns) >= resultBesideWidth && width !== undefined && width < columns) {
+      surfaces.push({ x: columns - width, width, background: side, rule: { x: columns - width - 1, color: rule } });
+    }
+    return surfaces;
   }
 
   /** What the terminal leaves for sessions and their panels beside an inline sidebar. */
@@ -600,7 +637,6 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const inspection = session.inspections[session.selectedInspection];
     if (inspection === undefined) {
       this.result.show(mutedText("No result yet. A review's full diff and check output appear here.", this.theme));
-      this.result.diff.setDiff(undefined);
       return;
     }
     const note = session.selectedInspection < session.restoredInspectionCount ?
@@ -610,8 +646,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const position = session.inspections.length > 1 ?
       mutedText(` ${session.selectedInspection + 1} of ${session.inspections.length} · Alt+, Alt+.`, this.theme) : "";
     this.result.show(`${bold(colorText(safeTerminalText(inspection.title), this.theme.accent))}${position}\n` +
-      `${mutedText(note, this.theme)}`, inspection.detail);
-    this.result.diff.setDiff(inspection.diff);
+      `${mutedText(note, this.theme)}`, inspection.detail, inspection.diff);
   }
 
   addSession(id: string, title: string, entries: readonly TranscriptEntry[] = [],
@@ -726,6 +761,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   /** The keys that change what the shell shows beside the conversation. */
   private readonly viewKeys: readonly (readonly [Parameters<typeof matchesKey>[1], () => void])[] = [
     ["alt+r", () => { this.showResult = !this.showResult; this.compose(); }],
+    // The result's next tab, or the result itself when it is hidden.
+    ["alt+t", () => { if (this.showResult) this.result.next(); else { this.showResult = true; this.compose(); } }],
     ["alt+b", () => { this.toggleSidebar(); }],
     ["alt+d", () => { this.toggleLatestNotice(); }],
     ["alt+,", () => { this.moveInspection(-1); }],
@@ -740,8 +777,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   /**
-   * `Esc` and `Ctrl+C` stop the selected session's work: they cancel the
-   * question it is waiting on, or interrupt what is running. False when it is
+   * `Esc`, and `Ctrl+C` pressed twice, stop the selected session's work: they
+   * cancel the question it is waiting on, or interrupt what is running. False when it is
    * idle at its request prompt, or has ended, so there is nothing to stop.
    */
   private stopWork(): boolean {
@@ -789,22 +826,46 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   /**
-   * As in Claude Code, Pi and Gemini CLI: `Ctrl+C` stops work first; with
-   * nothing to stop it clears the input, and `Ctrl+D` works on an empty one.
-   * Either then quits when pressed again within the confirmation window. The
+   * `Ctrl+C` copies selected text, as a terminal does; otherwise it stops work first, running work only when pressed
+   * again within the confirmation window, since one stray press, often a copy from habit, would lose a turn under way;
+   * `Esc` stops it at once. A question it waits on is cancelled at the first press. With nothing to stop, `Ctrl+C`
+   * clears the input, and `Ctrl+D` works on an empty one; either then quits when pressed again within the window. The
    * session itself never ends this way. False when there was nothing to do.
    */
+  /** What a key pressed once will do when pressed again, while the confirmation window lasts. */
+  private armedText(session: SessionView): string | undefined {
+    const armed = this.armed;
+    if (armed === undefined || this.now() - armed.at > CONFIRMATION_WINDOW_MS) return undefined;
+    if (armed.action === "stop") {
+      return this.working(session) ? colorText(`Press ${armed.key} again to stop · Esc stops now`, this.theme.warning) : undefined;
+    }
+    const working = [...this.sessions.values()].some((entry) => busy(entry.progress?.value));
+    return working ? colorText(`Press ${armed.key} again to quit. Running work stops; its changes stay where it made them.`,
+      this.theme.warning) : mutedText(`Press ${armed.key} again to quit. Sessions are restored next time.`, this.theme);
+  }
+
   private stopOrQuit(key: "Ctrl+C" | "Ctrl+D"): boolean {
+    if (key === "Ctrl+C" && this.tui.hasActiveSelection?.() === true) {
+      void this.tui.copyActiveSelectionToClipboard?.();
+      return true;
+    }
+    const now = this.now();
+    const again = (action: "stop" | "quit"): boolean =>
+      this.armed?.action === action && this.armed.key === key && now - this.armed.at <= CONFIRMATION_WINDOW_MS;
+    if (key === "Ctrl+C" && this.working(this.selected())) {
+      if (again("stop")) { this.armed = undefined; this.stopWork(); } else this.armed = { action: "stop", key, at: now };
+      this.refreshElapsed();
+      return true;
+    }
     if (key === "Ctrl+C" && this.stopWork()) return true;
     if (key === "Ctrl+D" && this.selected().pending !== undefined && this.selected().prompt !== "> ") return false;
     this.editor.setText("");
-    const now = this.now();
-    if (this.quitArmed?.key === key && now - this.quitArmed.at <= CONFIRMATION_WINDOW_MS) {
-      this.quitArmed = undefined;
+    if (again("quit")) {
+      this.armed = undefined;
       this.options.onQuit?.();
       return true;
     }
-    this.quitArmed = { key, at: now };
+    this.armed = { action: "quit", key, at: now };
     this.refreshElapsed();
     return true;
   }
@@ -1083,6 +1144,60 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (this.started) this.compose();
   }
 
+  setSessionUndecided(id: string, undecided: UndecidedTurns | undefined): void {
+    const session = this.sessions.get(id);
+    if (session === undefined) return;
+    session.undecided = undecided;
+    if (this.started && id === this.selectedId) this.tui.requestRender();
+  }
+
+  /** An action chosen on the decision bar, as its command does; Diff shows the latest result's diff. */
+  private decide(action: DecisionAction): void {
+    const session = this.selected();
+    if (action === "keep") this.options.onKeep?.(session.id);
+    else if (action === "revert") this.options.onRevert?.(session.id, []);
+    else if (action === "redo") this.options.onRedo?.(session.id);
+    else {
+      session.selectedInspection = Math.max(0, session.inspections.length - 1);
+      void this.showDiff(session, ["undecided"]);
+    }
+  }
+
+  /**
+   * `/diff [source]`: the result panel on its Diff tab, read again where the session works, as Claude Code's /diff
+   * shows the current changes: everything uncommitted until a result is reviewed, then the reviewed result, and any
+   * source named. Run again on the Diff tab without a source, it hides the panel.
+   */
+  private async showDiff(session: SessionView, args: readonly string[]): Promise<void> {
+    const named = args[0];
+    const sources: Readonly<Record<string, DiffSource>> = { working: "working", undecided: "undecided", reviewed: "reviewed" };
+    const wanted = named === undefined ? undefined : sources[named];
+    if (args.length > 1 || named !== undefined && wanted === undefined) {
+      this.replyTo(session.id, "Use /diff, or /diff working, /diff undecided or /diff reviewed.", "warning");
+      return;
+    }
+    if (wanted === undefined && this.showResult && this.result.tab === "diff" && session.id === this.selectedId) {
+      this.showResult = false;
+      this.compose();
+      return;
+    }
+    const read = await this.options.diffSources?.(session.id).catch(() => ({})) ?? {};
+    if (session.id !== this.selectedId) return;
+    this.showResult = true;
+    this.compose();
+    this.result.setSources(read);
+    if (this.result.sources.length === 0) {
+      this.replyTo(session.id, "Nothing to diff: this folder is not a Git repository, and no result was reviewed.");
+      return;
+    }
+    const source = wanted ?? this.result.source;
+    if (!this.result.sources.includes(source) && wanted !== undefined) {
+      this.replyTo(session.id, `There is no ${source === "working" ? "working tree" : source} diff for this session.`, "warning");
+    }
+    this.result.chooseSource(this.result.sources.includes(source) ? source : this.result.sources[0] ?? "working");
+    this.tui.requestRender();
+  }
+
   setSessionExecution(id: string, label: string, place: SessionExecution["commands"]): void {
     const session = this.sessions.get(id);
     if (session === undefined) return;
@@ -1258,12 +1373,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const progress = session.progress;
     let text: string;
     let whole = false;
-    const quit = this.quitArmed;
-    if (quit !== undefined && this.now() - quit.at <= CONFIRMATION_WINDOW_MS) {
-      const working = [...this.sessions.values()].some((entry) => busy(entry.progress?.value));
-      text = working ? colorText(`Press ${quit.key} again to quit. Running work stops; its changes stay where it made them.`,
-        this.theme.warning) : mutedText(`Press ${quit.key} again to quit. Sessions are restored next time.`, this.theme);
-    } else if (session.blocked) text = colorText("Unresolved effects. Run tesota recover before new work.", this.theme.warning);
+    const armed = this.armedText(session);
+    if (armed !== undefined) text = armed;
+    else if (session.blocked) text = colorText("Unresolved effects. Run tesota recover before new work.", this.theme.warning);
     else if (session.ended) text = mutedText("Session ended. Ctrl+N starts a new one; Ctrl+W closes this one.", this.theme);
     else if (session.question !== undefined) text = bold(colorText("Waiting for your decision", this.theme.warning));
     else if (session.pending !== undefined && session.prompt !== "> ") {
@@ -1354,6 +1466,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     model: (session, args) => { this.changeModel(session, args); },
     roles: (session, args) => { this.changeRoleModel(session, args); },
     handoff: (session) => { this.options.onHandoff?.(session.id); },
+    diff: (session, args) => { void this.showDiff(session, args); },
     keep: (session) => { this.options.onKeep?.(session.id); },
     revert: (session, args) => { this.options.onRevert?.(session.id, args); },
     redo: (session) => { this.options.onRedo?.(session.id); },
@@ -1379,11 +1492,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     details: (session, args) => { this.toggleDetails(session, args); },
     help: (session) => {
       this.replyTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
-        "/handoff /sandbox [where] /isolate /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
+        "/handoff /sandbox [where] /isolate /diff [working|undecided|reviewed] /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
-        "While it works: Enter queues · Tab sends to the agent now · Esc or Ctrl+C stops · Ctrl+C or Ctrl+D twice quits\n" +
+        "While it works: Enter queues · Tab sends to the agent now · Esc stops · Ctrl+C twice stops · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close · Shift+Tab mode\n" +
-        "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split · Alt+A accounts");
+        "View: Alt+R result · Alt+T result tab · Alt+B sidebar · Alt+D details · Alt+S split · Alt+A accounts");
     },
     quit: () => { this.options.onQuit?.(); },
   };
@@ -1413,7 +1526,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     Object.assign(this.theme, tesotaShellTheme(name));
     initTheme(this.theme.appearance === "light" ? "light" : "dark");
     for (const view of this.sessions.values()) view.scroll.invalidate();
-    this.result.diff.invalidate();
+    this.result.invalidate();
     this.editor.invalidate();
     this.compose();
     this.replyTo(session.id, `Theme: ${name}.`);

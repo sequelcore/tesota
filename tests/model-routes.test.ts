@@ -98,14 +98,24 @@ it("names the route in a failed request, so the operator knows which account's p
   expect(named.usable).toBe(true);
 });
 
-it("shows every route's sign-in as one table, with the roles that use it, and says once what a sign-in does not show", () => {
-  const table = statusTable([{ route: "codex", kind: "Codex", signIn: "signed in" },
+it("shows every route's sign-in as one table, its account and the roles that use it, and says once what a sign-in does not show", () => {
+  const ours = { id: "45e4b49f", email: "r3xed@outlook.es" };
+  const rows = [{ route: "codex", kind: "Codex", signIn: "signed in", account: { id: "acct-1", email: "plus@example.com" } },
     { route: "codex-free1", kind: "Codex", signIn: "signed out: tesota auth login codex-free1" },
-    { route: "claude-code", kind: "Claude Code", signIn: "signed in with claude.ai (your own Claude Code)" }],
-  (route) => route === "codex" ? ["reviewer", "refuter"] : []);
+    { route: "claude-code", kind: "Claude Code", signIn: "signed in with claude.ai (your own Claude Code)", account: ours },
+    { route: "claude-2", kind: "Claude Code", signIn: "signed in with claude.ai", account: ours }];
+  const usedBy = (route: string): string[] => route === "codex" ? ["reviewer", "refuter"] : route === "claude-2" ? ["advisor"] : [];
+  const table = statusTable(rows, usedBy);
   const lines = table.split("\n");
-  expect(lines[0]).toMatch(/^Route {8}Kind {9}Sign-in {42}Used by$/u);
-  expect(lines[1]).toMatch(/^codex {6}.*signed in {40}reviewer, refuter$/u);
-  expect(lines[2]).toMatch(/^codex-free1 {2}Codex .*signed out: tesota auth login codex-free1 +—$/u);
+  expect(lines[0]).toMatch(/^Route {8}Kind {9}Sign-in {42}Account {10}Used by$/u);
+  expect(lines[1]).toMatch(/^codex {6}.*signed in {40}pl…@example\.com +reviewer, refuter$/u);
+  expect(lines[2]).toMatch(/^codex-free1 {2}Codex .*signed out: tesota auth login codex-free1 +— +—$/u);
+  // Emails are masked unless shown; two routes on one account are named once under the table (#235).
+  expect(table).not.toContain("r3xed@outlook.es");
+  expect(table).toContain("claude-code and claude-2 are signed in to the same account");
+  expect(table).toContain("tesota auth status --show-accounts");
   expect(table.match(/checked when a role first uses them/gu)).toHaveLength(1);
+  const shown = statusTable(rows, usedBy, true);
+  expect(shown).toContain("r3xed@outlook.es");
+  expect(shown).not.toContain("--show-accounts");
 });

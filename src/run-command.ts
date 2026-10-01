@@ -164,6 +164,8 @@ export class RunOutput implements SessionOutput {
   }
 
   setSessionExecution(_id: string, label: string): void { this.record.execution = label; }
+  /** A run decides its result itself, so it shows no decision bar. */
+  setSessionUndecided(): void {}
   setSessionPlan(_id: string, plan: WorkPlan | undefined): void { this.record.plan = plan; }
   setBranch(): void {}
   setSessionModel(_id: string, model: string): void { this.record.model = model; }

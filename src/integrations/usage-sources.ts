@@ -1,7 +1,7 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { UsageSources } from "../account-usage.js";
-import { AUTH_ROUTES, claudeCodeExecutable } from "../auth.js";
+import { AUTH_ROUTES, claudeCodeExecutable, routeAccount } from "../auth.js";
 import { claudeCodeRouteDirectory, tesotaUserAgent } from "./model-session.js";
 import { TesotaCredentials } from "./tesota-credentials.js";
 
@@ -61,5 +61,6 @@ async function claudeCodeReport(configDirectory: string | undefined): Promise<un
 /** Where `tesota usage` and `/usage` read from. */
 export function usageSources(credentials: TesotaCredentials = new TesotaCredentials()): UsageSources {
   return { key: (route, provider) => routeKey(route, provider, credentials), get, claudeCode: claudeCodeReport,
-    claudeCodeDirectory: claudeCodeRouteDirectory, userAgent: tesotaUserAgent() };
+    claudeCodeDirectory: claudeCodeRouteDirectory, account: async (route, kind) => (await routeAccount(route, kind, credentials))?.id,
+    userAgent: tesotaUserAgent() };
 }

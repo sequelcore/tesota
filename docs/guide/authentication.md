@@ -49,7 +49,9 @@ their length, so a free Codex account shows its 30-day window. An OpenRouter
 key with a limit shows what remains of it; one without a limit shows what it
 has used. OpenCode shows its Go subscription's windows. The Anthropic API
 route, OpenCode Zen and TypeSafe have no usage source for the key Tesota
-holds, so the table says where to look instead.
+holds, so the table says where to look instead. Routes signed in to the same
+account share one plan, so that account is read once: the first route shows
+its meters and the others say `same account as <route>: one reading, above`.
 
 Codex's usage comes from a private ChatGPT endpoint and Claude Code's from an
 experimental report, so either may stop working. When a read fails, the table
@@ -94,15 +96,17 @@ Pi refreshes expiring Codex credentials when they are used. `bun run
 auth:codex` is also a login command. Login requires an interactive,
 unrecorded terminal once: enter the temporary code only on the official website
 shown by Tesota, using the intended account. It performs no model inference.
-An existing saved login is retained; use logout before deliberately changing
-accounts. A TTY check cannot detect terminal recording.
+Logging in again on a signed-in route signs in afresh, as to change accounts;
+the earlier login stays until the new one completes. A TTY check cannot detect terminal recording.
 
 Login stops after three minutes, and cancelling it stops it at once; a code
 that arrives after that is never shown. Login fails if anything tries to call
 a model during it, even if that attempt is caught.
 
-Status is offline and prints only whether a saved login exists. It does not
-refresh tokens, identify the account or establish model access. Logout removes
+Status is offline and prints whether a saved login exists and the account it
+is for, read from the saved login's own claims, its email masked unless you
+ask with `--show-accounts`. It does not refresh tokens or establish model
+access. Logout removes
 Tesota's local credential only; it does not revoke the provider session or stop
 an already running request. It does not affect other applications' logins.
 

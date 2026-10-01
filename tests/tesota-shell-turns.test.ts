@@ -104,10 +104,14 @@ it("reverts a turn only after the operator says what to do with files its tools 
   const opened = await openShell(newRecord(), run, (listener) => { onActivity = listener; });
   source = opened.source;
   const { shell, notices, turns } = opened;
+  // What the decision bar above the prompt is told after each step.
+  const undecided = vi.spyOn(shell.surface, "setSessionUndecided");
+  const latest = (): unknown => undecided.mock.calls.at(-1)?.[1];
   try {
     const session = shell.session("session");
     expect(await session.work("Raise the price")).toMatchObject({ status: "completed" });
     expect(session.place?.()).toBe("source");
+    expect(latest()).toEqual({ turns: 1, files: 2, redoable: false });
     expect(notices.some((text) => text.includes("Changed outside the agent's file tools") && text.includes("bun.lock"))).toBe(true);
 
     await turns.revert("session", []);
@@ -119,11 +123,14 @@ it("reverts a turn only after the operator says what to do with files its tools 
     expect(await readFile(join(source, "price.ts"), "utf8")).toBe("export const price = 1;\n");
     expect(await readFile(join(source, "bun.lock"), "utf8")).toBe("lock\n");
     expect(notices.at(-1)).toContain("Left as the turn left them, as you chose:\n  bun.lock");
+    expect(latest()).toEqual({ turns: 0, files: 0, redoable: true });
 
     await turns.redo("session");
     expect(await readFile(join(source, "price.ts"), "utf8")).toBe("export const price = 2;\n");
+    expect(latest()).toMatchObject({ turns: 1, redoable: false });
     await turns.keep("session");
     expect(notices.at(-1)).toBe("Kept 1 turn. The changes are in your files.");
+    expect(latest()).toEqual({ turns: 0, files: 0, redoable: false });
     await turns.revert("session", []);
     expect(notices.at(-1)).toBe("No turn is undecided.");
     expect(existsSync(join(source, ".git", "refs", "tesota"))).toBe(false);

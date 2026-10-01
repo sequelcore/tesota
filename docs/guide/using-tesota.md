@@ -259,8 +259,11 @@ Only your gh is signed in.
   y  Yes, once
   a  Always `gh pr …` in this repository
 → n  No
-``` `Esc` or `Ctrl+C` stops the current request; changes
-made so far stay in your files, or in the copy, and can still be reverted.
+``` `Esc` stops the current request at once, and so does `Ctrl+C` pressed
+twice: a single `Ctrl+C`, often pressed from habit to copy, only asks for the
+second, and with text selected it copies it. A question waiting for you is
+cancelled with one press of either. Changes made so far stay in your files,
+or in the copy, and can still be reverted.
 
 You can keep typing while the agent works. `Enter` queues a message: it
 shows above the input and is sent as your next request when the work ends,
@@ -348,7 +351,7 @@ The conversation shows a review once, set apart from the agent's replies by a
 rule down its left side: each changed file and each check with ✓ or ✗.
 Changes to what checks the result, such as an edited test, lint or type
 configuration, CI workflow, package scripts or a formal specification, are
-marked ⚠: they can be a legitimate fix or a way to make checks pass, and
+marked !: they can be a legitimate fix or a way to make checks pass, and
 only you can tell which. The result panel starts with your requests behind
 the changes, word for word, since everything else is measured against them.
 
@@ -394,7 +397,7 @@ reviewers for correctness, security and authority, and your repository's
 merged before you see them. Before a thorough review starts, a line says why
 it is thorough, how many reviewers will work, and how long comparable reviews
 have taken once three have been measured; the result then shows its time and tokens.
-It asks for nothing; `Ctrl+C` stops it.
+It asks for nothing; `Esc` stops it.
 
 When LemmaScript proved contracts in the changes, an extra review checks
 whether those contracts cover what you asked: one session restates each
@@ -415,12 +418,35 @@ back to the agent, with your requests unchanged. It then runs every
 check on the corrected result, has a separate validator confirm that each
 problem sent back is resolved, and reviews only what the correction changed,
 so a round settles what it was sent instead of raising a fresh list: at most
-two rounds, fewer if a round changes nothing. Each round shows its own review, and `Ctrl+C` stops it. Only then
+two rounds, fewer if a round changes nothing. Each round shows its own review, and `Esc` stops it. Only then
 does Tesota ask for your decision. What only you can decide never goes back
 to the agent. The full record and the diff open beside it on a wide terminal;
-`Alt+R` shows or hides them, in place of the conversation on a narrow one. The
-record groups your requests, the files, the checks and the review under
-headings; what each check shows and does not show, and its output, sit beneath it, the output
+`Alt+R` shows or hides them, in place of the conversation on a narrow one.
+The result has up to three tabs: Review, with your requests, the files and
+the review; Checks; and Diff. An answer that changed no files has only its
+review. `Alt+T`, or a click or tap on a tab, chooses one, and each tab keeps
+its own scroll position; a new result opens on Review. A click or tap on a
+session in the sidebar selects it too, as `Alt+J` and `Alt+K` do, so a phone
+over SSH reaches both without those keys.
+
+The Diff tab shows one source at a time, named at the right of the tabs;
+click the name to step to the next:
+
+- **Reviewed**: the result the checks and review describe, the default once
+  a result is reviewed.
+- **Undecided**: every undecided turn in your files together, which Keep and
+  Revert act on.
+- **Working tree**: everything uncommitted where the session works, your own
+  edits and untracked files included, read again each time you ask.
+
+`/diff` opens the Diff tab, as Claude Code's `/diff` does, whether or not a
+result exists: on the working tree before a review, then on the source last
+shown. Run again on the Diff tab, it hides the panel. `/diff working`,
+`/diff undecided` and `/diff reviewed` choose a source. Tesota reads the
+working tree with Git into a temporary index of its own, so your
+repository's `.git` is never written, and repository-local Git programs are
+refused as they are for every snapshot. Under Checks, what each check
+shows and does not show, and its output, sit beneath it, the output
 behind a `│` and without its colors. The diff lists the changed files with
 their added and removed lines, then shows each change with line numbers,
 added and removed lines tinted green and red, and code highlighted by
@@ -429,7 +455,11 @@ The prompt stays visible in either view.
 
 In your project, the turn then stays undecided: Tesota never holds the
 session for a decision, and a new request continues on top of it. Decide
-whenever the session is idle:
+whenever the session is idle. Above the prompt, a bar says how many turns
+and files are undecided and offers **Keep**, **Revert** and **Diff**, or
+**Redo** after a revert; click or tap one. Diff opens the undecided turns on the Diff
+tab. No key alone acts on the bar, so a letter typed to start a request never
+keeps or reverts anything. The commands do the same:
 
 - `/keep` keeps every undecided turn; the next turn starts from them.
 - `/revert` undoes the latest undecided turn: each file it changed goes back
@@ -538,7 +568,10 @@ The sidebar appears beside the conversation when there is room and hides
 automatically on a narrow terminal. `Alt+B` hides it, or opens it over the
 right side at a narrow size without taking focus from the input. `Esc` still
 stops work; it does not close the sidebar. The sidebar and the terminal
-window's title name the selected session. The prompt sits between two rules.
+window's title name the selected session. The sidebar and the result beside
+the conversation sit on a slightly raised surface, each behind a `│` rule, so
+the conversation stands apart; the input is filled with the same background
+as your sent messages.
 The first line under it names the selected session's model, repository and
 branch, as in `claude-code:opus · tesota · dev`. The second names the mode,
 marked with the prompt's chevron (`· read only on`, `›› accept edits on`,

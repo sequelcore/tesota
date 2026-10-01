@@ -60,6 +60,26 @@ tesota roles validator codex-work:gpt-6-luna
 tesota auth status
 ```
 
+`tesota auth status` names the account each route is signed in to, with its
+email masked (`r3…@outlook.es`); `tesota auth status --show-accounts` shows it
+whole, and so does `s` on the Sign-ins tab of the shell's Accounts panel.
+When two routes are signed in to the same account, it says so under the table:
+their limits are one plan's, so a route added for another account must be
+signed in to that one. `tesota usage` reads that account once and shows the
+second route as `same account as claude-code`. When roles on such routes
+draw on one plan, `tesota roles`, the panel's Roles tab and the choice that
+makes it so say which:
+
+```text
+Roles on claude-code (agent, reviewer) and claude-2 (advisor) share one plan's limits: both routes are signed in to the same account.
+```
+
+To move a route to another account, sign it in again: `tesota auth login
+codex-work` keeps the route and the roles on it, and the earlier login stays
+until the new one completes. `tesota auth logout codex-work` signs it out and
+keeps it too. `tesota auth remove codex-work` deletes an added route, and
+refuses while a role uses it.
+
 `tesota usage` shows available provider usage data when you request it; some
 routes cannot report it. [Using Tesota](using-tesota.md) explains the shell
 controls.

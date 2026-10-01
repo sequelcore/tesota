@@ -61,14 +61,15 @@ function findingLabel(finding: Finding, action: ReviewAction): string {
   return "your call";
 }
 
-const findingMarks: Readonly<Record<ReviewAction, string>> = { agent: "✗", operator: "⚠", context: "·" };
+// Text marks, never ones a terminal may draw as an emoji, as it can ⚠: "!" is the sidebar's mark for what needs you.
+const findingMarks: Readonly<Record<ReviewAction, string>> = { agent: "✗", operator: "!", context: "·" };
 
 function findingMark(finding: Finding, action: ReviewAction): string {
   return action === "operator" && finding.standing !== "confirmed" ? "?" : findingMarks[action];
 }
 
 function checkLine(check: CheckResult, action: ReviewAction): string {
-  const mark = check.outcome === "passed" ? "✓" : action === "agent" ? "✗" : action === "operator" ? "⚠" : "·";
+  const mark = check.outcome === "passed" ? "✓" : action === "agent" ? "✗" : action === "operator" ? "!" : "·";
   const ended = check.outcome === "passed" ? "" :
     ` (${check.outcome.replace("_", " ")}${check.exitCode === null ? "" : `, exit ${check.exitCode}`})`;
   return `  ${mark} ${check.command}${ended}${check.base === undefined ? "" : `\n      ${describeBase(check.base)}`}`;
@@ -187,8 +188,17 @@ function checkDetail(check: CheckResult): string {
     `${check.base === undefined ? "" : `\n    ${describeBase(check.base)}`}${output}`;
 }
 
+/**
+ * The operator's requests, numbered. A request of several lines keeps each
+ * under its number: an unindented line in a record is a section heading, so a
+ * request's own lines must never start one.
+ */
 function requestedDetail(requests: readonly string[]): string {
-  return `Your requests\n${requests.map((request, index) => `  ${index + 1}. ${request}`).join("\n") || "  (not recorded)"}`;
+  return `Your requests\n${requests.map((request, index) => {
+    const number = `  ${index + 1}. `;
+    const [first = "", ...rest] = request.split(/\r?\n/u);
+    return [`${number}${first}`, ...rest.map((line) => line.trim().length === 0 ? "" : `${" ".repeat(number.length)}${line}`)].join("\n");
+  }).join("\n") || "  (not recorded)"}`;
 }
 
 /**
@@ -234,7 +244,7 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews, dept
     const action = actionOfCheck(check);
     groups[action].push(checkLine(check, action));
   }
-  groups.operator.push(...flags.map((flag) => `  ⚠ ${flagVerbs[flag.status]} ${flag.kind}: ${flag.path}`));
+  groups.operator.push(...flags.map((flag) => `  ! ${flagVerbs[flag.status]} ${flag.kind}: ${flag.path}`));
   if (flags.length > 0) {
     groups.operator.push("    These change how the result is checked; only you can tell whether that is legitimate.");
   }

@@ -1,6 +1,7 @@
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
 import { bar, span, USAGE_SOURCES_NOTE, usageLines, type RouteUsage, type UsagePaint } from "./account-usage.js";
-import { type RouteStatus, SIGN_IN_NOTE, statusLines, type StatusPaint } from "./auth.js";
+import { accountNotes, type RouteStatus, SIGN_IN_NOTE, statusLines, type StatusPaint } from "./auth.js";
+import { sharedRoleGroups, sharedRoleNote } from "./route-accounts.js";
 import { bold, colorText, mutedText, selectedRow, surfaceText, type TesotaShellTheme } from "./tesota-shell-theme.js";
 import { meterTone } from "./verification/usage-meter-rule.js";
 
@@ -58,6 +59,8 @@ export class AccountsPanel implements Component {
   #usageReadAt: number | undefined;
   #signIns: SignIns | undefined;
   #signInsFailed = false;
+  /** Whether the Sign-ins tab shows each route's email whole; masked until the operator asks, for screens others see. */
+  #showAccounts = false;
   #roles: readonly RoleAccount[] = [];
   #selectedRole = 0;
   readonly #scroll: Record<AccountsTab, number> = { usage: 0, "sign-ins": 0, roles: 0 };
@@ -89,6 +92,7 @@ export class AccountsPanel implements Component {
   handleKey(data: string): AccountsAction {
     if (matchesKey(data, "escape")) return "close";
     if (data === "r" || data === "R") return "refresh";
+    if (this.#tab === "sign-ins" && (data === "s" || data === "S")) { this.#showAccounts = !this.#showAccounts; return undefined; }
     if (this.#switchTab(data)) return undefined;
     if (this.#tab === "roles") return this.#roleKey(data);
     this.#scrollKey(data);
@@ -187,7 +191,9 @@ export class AccountsPanel implements Component {
   #hint(): string {
     const common = "←→ tabs · r read again · Esc close";
     if (this.#tab === "roles") return `↑↓ choose · Enter change its model · ${common}`;
-    if (this.#tab === "sign-ins") return `↑↓ scroll · sign in with tesota auth login <route> · ${common}`;
+    if (this.#tab === "sign-ins") {
+      return `↑↓ scroll · s ${this.#showAccounts ? "hide" : "show"} emails · sign in with tesota auth login <route> · ${common}`;
+    }
     return `↑↓ scroll · ${common}`;
   }
 
@@ -223,7 +229,13 @@ export class AccountsPanel implements Component {
     if (this.#signIns === undefined) return [mutedText("Reading each route's sign-in…", this.#theme)];
     const paint: StatusPaint = { muted: (text) => mutedText(text, this.#theme), strong: bold,
       attention: (text) => colorText(text, this.#theme.warning) };
-    return [...statusLines(this.#signIns.rows, this.#signIns.usedBy, paint), "", ...this.#footnote(SIGN_IN_NOTE, inner)];
+    return [...statusLines(this.#signIns.rows, this.#signIns.usedBy, paint, this.#showAccounts), "",
+      ...this.#warnings(accountNotes(this.#signIns.rows), inner), ...this.#footnote(SIGN_IN_NOTE, inner)];
+  }
+
+  /** Notes about routes on one account, which matter to the team the operator plans, so they stand out from the other notes. */
+  #warnings(notes: readonly string[], inner: number): string[] {
+    return notes.flatMap((note) => wrapTextWithAnsi(note, inner).map((line) => colorText(line, this.#theme.warning)));
   }
 
   /** The tightest meter of a route's account: the one with the least left, as a short bar. */
@@ -252,12 +264,15 @@ export class AccountsPanel implements Component {
     const choiceWidth = Math.max(5, ...this.#roles.map((row) => row.choice.length)) + 2;
     const routeWidth = Math.max(7, ...this.#roles.map((row) => (row.route ?? "").length)) + 2;
     const heading = mutedText(`  ${"Role".padEnd(roleWidth)}${"Model".padEnd(choiceWidth)}${"Account".padEnd(routeWidth)}Least left`, this.#theme);
+    // Roles spread across routes that draw on one account, known once the sign-ins are read (#235).
+    const usedBy = (route: string): string[] => this.#roles.filter((row) => row.route === route).map((row) => row.role);
+    const shared = sharedRoleGroups(this.#signIns?.rows ?? [], usedBy).map((group) => sharedRoleNote(group, usedBy));
     return [heading, ...this.#roles.map((row, index) => {
       const selected = index === this.#selectedRole;
       const choice = row.route === undefined ? mutedText(row.choice.padEnd(choiceWidth), this.#theme) : row.choice.padEnd(choiceWidth);
       const lead = `${selected ? "›" : " "} ${row.role.padEnd(roleWidth)}${choice}${(row.route ?? "").padEnd(routeWidth)}`;
       const line = `${selected ? bold(lead) : lead}${this.#tightest(row.route)}`;
       return selected ? selectedRow(truncateToWidth(line, inner), inner, this.#theme) : line;
-    })];
+    }), ...shared.length === 0 ? [] : ["", ...this.#warnings(shared, inner)]];
   }
 }
