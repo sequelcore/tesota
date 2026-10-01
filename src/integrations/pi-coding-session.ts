@@ -62,6 +62,11 @@ export interface CodingSessionOptions {
   readonly mode?: () => PermissionMode;
   /** Called for each command Full access let run without asking, so the operator can be told how many did. */
   readonly onFullAccessCommand?: () => void;
+  /**
+   * Called before each command in the sandbox, so a toolchain the repository now declares differently can be
+   * installed first, once the operator approves (decision 048); what it returns is written before the command's output.
+   */
+  readonly beforeSandboxCommand?: () => Promise<string | undefined>;
   /** Asked after a command whose network access the environment refused. */
   readonly decideNetwork?: (destinations: readonly string[]) => Promise<NetworkDecision>;
   readonly onActivity?: (activity: AgentActivity) => void;
@@ -273,7 +278,9 @@ function commandGuidance(sandboxed: boolean, environment: ExecutionEnvironment):
 }
 
 /** When a sandboxed agent should ask for this computer (decision 049). */
-const COMPUTER_GUIDANCE = "Only when a command needs a program or login that exists on the user's computer and not in the " +
+const COMPUTER_GUIDANCE = "When a check needs a tool the sandbox lacks, declare it in the repository's mise.toml, as the " +
+  "repository's own toolchain, and run the command again: Tesota asks the user to install it first. " +
+  "Only when a command needs a program or login that exists on the user's computer and not in the " +
   "sandbox, such as gh, aws or docker, run it with run_on_computer, saying why; the user is asked unless a rule they saved " +
   "allows it. It runs in this repository with the user's own tools and credentials, so never use it to get " +
   "around the sandbox, and suggest a rule only of a program and its subcommand, such as [\"gh\", \"pr\"]. ";
@@ -339,8 +346,15 @@ function piEntries(message: AgentSession["messages"][number]): ConversationEntry
  * operator allows. A sandboxed session without this computer keeps its commands in the sandbox.
  */
 function shellTool(root: string, options: WorkingAgentOptions): ToolDefinition {
-  const sandbox = environmentBash(options.environment, commandGate(options, options.sandboxed ? "sandbox" : "computer"),
+  const confined = environmentBash(options.environment, commandGate(options, options.sandboxed ? "sandbox" : "computer"),
     options.decideNetwork, root);
+  // Before a sandboxed command runs, a toolchain the repository now declares differently may be installed first.
+  const sandbox: BashOperations = !options.sandboxed || options.beforeSandboxCommand === undefined ? confined : {
+    exec: async (command, cwd, execOptions) => {
+      const notice = await options.beforeSandboxCommand?.();
+      if (notice !== undefined) execOptions.onData(Buffer.from(`${notice}\n`));
+      return confined.exec(command, cwd, execOptions);
+    } };
   const computer = options.sandboxed && options.computer !== undefined
     ? environmentBash(options.computer, commandGate(options, "computer")) : undefined;
   const operations: BashOperations = { exec: (command, cwd, execOptions) =>
@@ -471,7 +485,7 @@ export interface SessionStartOptions {
 
 /** What decides the working agent's tools, whichever engine runs it. */
 export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "place" | "approveCommand" |
-  "commandRules" | "computer" | "mode" | "onFullAccessCommand" | "decideNetwork" | "explorers" | "web" | "advisor" | "plan">;
+  "commandRules" | "computer" | "mode" | "onFullAccessCommand" | "beforeSandboxCommand" | "decideNetwork" | "explorers" | "web" | "advisor" | "plan">;
 
 /**
  * The working agent's system prompt and tools: every file tool confined to the

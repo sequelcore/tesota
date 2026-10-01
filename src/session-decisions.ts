@@ -37,6 +37,8 @@ export interface SessionDecisions {
   site(host: string): Promise<NetworkDecision>;
   /** Whether the session may enter Full access, asked the first time it would in a session. */
   fullAccess(): Promise<boolean>;
+  /** Whether to install, in the sandbox, the tools the repository's changed toolchain files now declare. */
+  toolchain(files: readonly string[]): Promise<boolean>;
 }
 
 /**
@@ -94,6 +96,26 @@ export const fullAccessQuestion: ShellQuestion<"allow" | "deny"> = {
   ],
   initial: "deny",
 };
+
+/**
+ * The question for a toolchain the repository now declares differently, as when the agent adds a tool a check needs:
+ * installing runs the sandbox's setup, which downloads only while it runs. Enter declines.
+ */
+export function toolchainQuestion(files: readonly string[]): ShellQuestion<"install" | "decline"> {
+  const named = files.map((file) => `\`${file}\``).join(", ");
+  return {
+    title: `The repository's toolchain changed (${named}). Install it in the sandbox now?`,
+    detail: "Tesota runs the sandbox's setup again. It may download from the tools' release hosts, such as GitHub, and " +
+      "from package registries, only while setup runs; the sandbox's network closes again afterwards.",
+    options: [
+      { value: "install", key: "y", label: "Yes, install it",
+        decided: { text: `✓ Installing what ${named} declares in the sandbox.`, tone: "info" } },
+      { value: "decline", key: "n", label: "No",
+        decided: { text: `✗ Not installed; the agent is told the declared tools are unavailable.`, tone: "warning" } },
+    ],
+    initial: "decline",
+  };
+}
 
 /** What becomes of a reviewed result; Enter keeps working, and what follows the answer says what was done. */
 const resultQuestion: ShellQuestion<ResultDecision> = {
@@ -157,5 +179,6 @@ export function askingDecisions(ask: (prompt: string) => Promise<string>,
       `network access to ${destinations.join(", ")}`)),
     site: (host) => choose(networkQuestion(`Read pages from ${host}?`, `reading pages from ${host}`)),
     fullAccess: async () => await choose(fullAccessQuestion) === "allow",
+    toolchain: async (files) => await choose(toolchainQuestion(files)) === "install",
   };
 }

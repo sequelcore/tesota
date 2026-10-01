@@ -108,3 +108,24 @@ it("runs on this computer without asking what a saved rule covers, part by part,
   expect(here.commands).toEqual(["gh pr list && git status --short"]);
   expect(asked).toEqual(["gh pr list && rm -rf build", "gh pr list > prs.txt", "gh repo delete x"]);
 });
+
+it("checks the repository's declared toolchain before each sandboxed command, and writes what it says first", async () => {
+  const root = workspace();
+  const { environment, commands } = sandbox();
+  const here = computer();
+  const order: string[] = [];
+  const setup = workingAgentSetup({ cwd: root, environment, sandboxed: true, computer: here.environment,
+    approveCommand: async () => "once",
+    beforeSandboxCommand: async () => { order.push(`check before ${commands.length}`); return "Tesota: the tools are installed."; } });
+  const bash = setup.tools.find((tool) => tool.name === "bash");
+  const computerTool = setup.tools.find((tool) => tool.name === "run_on_computer");
+  if (bash === undefined || computerTool === undefined) throw new Error("Missing tools");
+  const output = await call(bash, { command: "dafny --version" });
+  expect(output.indexOf("Tesota: the tools are installed.")).toBeLessThan(output.indexOf("sandboxed"));
+  expect(order).toEqual(["check before 0"]);
+  expect(commands).toEqual(["dafny --version"]);
+  // A command on this computer uses the operator's own tools; the sandbox's toolchain is not checked for it.
+  await call(computerTool, { command: "gh pr list", reason: "Your gh." });
+  expect(order).toEqual(["check before 0"]);
+  expect(setup.systemPrompt).toContain("declare it in the repository's mise.toml");
+});

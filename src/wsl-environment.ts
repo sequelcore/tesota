@@ -204,10 +204,16 @@ export async function bubblewrapEnvironment(launch: Launch, workspace: string, o
     if (allowed.length > 0) await sandboxNetwork(connection).allow(allowed);
     const preparation = await setUp(connection, plan, first, options);
     options.signal?.throwIfAborted();
-    const variables = languageVariables(plan.tools, first, "commands");
+    let variables = languageVariables(plan.tools, first, "commands");
     return { provider: "wsl", ...first.workspace === root ? {} : { commandRoot: first.workspace },
       guarantees: WSL_GUARANTEES, preparation, runsInOtherFolders: true,
       network: sandboxNetwork(connection),
+      refreshToolchain: async (refresh) => {
+        const current = planToolchain(root);
+        const steps = await setUp(connection, current, first, { ...refresh });
+        variables = languageVariables(current.tools, first, "commands");
+        return steps;
+      },
       run: (command, runOptions) => runIn(connection, root, command, { ...runOptions, env: { ...variables, ...runOptions.env } }),
       dispose: () => connection.close() };
   } catch (error) {

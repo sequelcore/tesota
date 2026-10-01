@@ -206,6 +206,22 @@ workspace mount, in both. A failed step stops setup but not the session, and
 the operator and agent are told what failed; a fingerprint of the setup
 inputs skips setup when nothing changed.
 
+**A toolchain declared mid-session.** When a check needs a tool the sandbox
+lacks, the agent is told to declare it in the repository's `mise.toml`,
+which stays with the result as the repository's own toolchain, as a
+devcontainer would. Before the next command in the sandbox, Tesota compares
+the toolchain plan's fingerprint with the one the sandbox was set up for.
+When it changed, the operator is asked once per declaration, with `Enter`
+declining, and only on their yes does the sandbox run its setup again
+(`refreshToolchain`), its download hosts open only while setup runs. The
+agent reads the outcome before that command's output: the tools are ready,
+the operator declined, or setup stopped and why. Docker Sandboxes sets up
+only when prepared, so there the agent is told the tools are unavailable in
+this session, without a question (`toolchainStep` and
+`installsDeclaredTools` in `src/verification/toolchain-refresh-rule.ts`,
+proved). A command on this computer, through `run_on_computer`, uses the
+operator's own tools and is not affected.
+
 Preparation stops when its session closes, switches sandbox or Tesota quits
 ([sessions](sessions.md#what-a-session-holds)). The WSL sandbox ends its
 process, which stops the setup stage under way and closes its proxy; Docker

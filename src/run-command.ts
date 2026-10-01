@@ -93,6 +93,8 @@ export function policyDecisions(request: string, policy: RunPolicy): SessionDeci
     site: async () => runNetworkAnswer(policy.network),
     // A run keeps accept edits; its --commands flag decides commands that ask.
     fullAccess: async () => false,
+    // A run installs nothing it was not prepared with; its sandbox's toolchain is the one its session started with.
+    toolchain: async () => false,
   };
 }
 
