@@ -1586,6 +1586,40 @@ it("marks the title for a background session that waits, without taking the sele
   shell.stop();
 });
 
+it("lists sessions waiting on the operator first, keeps newest-first otherwise, and counts them in the footer when the sidebar hides", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 120;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui,
+    initialSession: { id: "default", title: "Budget totals", entries: [] } });
+  shell.addSession("second", "Login fix");
+  shell.addSession("third", "Docs pass");
+  shell.start();
+  const order = (): number[] => ["Budget totals", "Login fix", "Docs pass"].map((title) => visible(terminal).indexOf(title));
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const [budget, login, docs] = order();
+  expect(docs).toBeLessThan(login ?? 0);
+  expect(login).toBeLessThan(budget ?? 0);
+  // The oldest session waits on the operator: it rises to the top, and Alt+1 selects it.
+  shell.reportFor("default", { phase: "awaiting_decision" });
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const [waiting, second, newest] = order();
+  expect(waiting).toBeLessThan(newest ?? 0);
+  expect(newest).toBeLessThan(second ?? 0);
+  shell.selectSession("third");
+  terminal.send("1");
+  expect(terminal.titles.at(-1)).toMatch(/Budget totals/u);
+  // With the sidebar visible its marks show who waits; the footer counts them only once it hides.
+  expect(visible(terminal)).not.toContain("needs you");
+  terminal.resizeTo(70, 24);
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("1 needs you");
+  shell.stop();
+});
+
 it("opens the Accounts panel over the session: its tabs, keys that never reach the prompt, and a role's model through /roles", async () => {
   const terminal = new TestTerminal();
   terminal.columns = 120;

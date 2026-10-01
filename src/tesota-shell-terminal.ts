@@ -19,8 +19,8 @@ import { ACCOUNTS_PANEL_HEIGHT, ACCOUNTS_PANEL_WIDTH, ACCOUNTS_TABS, AccountsPan
 import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, sessionStateIcon, type SidebarSession } from "./tesota-shell-sidebar.js";
 import { planLines, type WorkPlan } from "./work-plan.js";
 import { WelcomeBanner } from "./tesota-shell-welcome.js";
-import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, sidebarPresentation,
-  sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarSessionState } from "./verification/sidebar-rule.js";
+import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, showWaitingInFooter,
+  sidebarGroupRank, sidebarPresentation, sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarSessionState } from "./verification/sidebar-rule.js";
 
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
@@ -415,7 +415,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const place = execution === undefined ? "" :
       colorText(execution.label, execution.place === "host" ? this.theme.warning : this.theme.success);
     const mode = [place, hints === "" ? "" : mutedText(hints, this.theme)].filter(Boolean).join(" ");
-    return [mutedText(identity, this.theme), mode].filter(Boolean);
+    const waiting = [...this.sessions.values()].filter((entry) => attentionSidebarState(this.sessionState(entry))).length;
+    const needs = showWaitingInFooter(sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns), waiting) ?
+      colorText(`${waiting} ${waiting === 1 ? "needs" : "need"} you`, this.theme.warning) : "";
+    return [mutedText(identity, this.theme), [needs, mode].filter(Boolean).join(" · ")].filter(Boolean);
   });
   /** The selected session's waiting question, in place of the input. */
   private readonly question = new VStack();
@@ -574,10 +577,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       session.progress?.value.phase ?? "none", session.unread);
   }
 
-  /** Sessions in their visual and shortcut order: newest-created first, stable while activity changes. */
+  /** Sessions in their visual and shortcut order: those waiting on the operator first, then the rest, each newest-created first. */
   private sessionOrder(): readonly SessionView[] {
     const inserted = [...this.sessions.values()];
-    return inserted.map((_, visual) => inserted[newestFirstSourceIndex(inserted.length, visual)] as SessionView);
+    const newest = inserted.map((_, visual) => inserted[newestFirstSourceIndex(inserted.length, visual)] as SessionView);
+    const rank = new Map(newest.map((session) => [session, sidebarGroupRank(this.sessionState(session))]));
+    return newest.sort((a, b) => (rank.get(a) ?? 1) - (rank.get(b) ?? 1));
   }
 
   private updateSidebar(): void {

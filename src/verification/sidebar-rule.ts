@@ -69,6 +69,27 @@ export function attentionSidebarState(state: SidebarSessionState): boolean {
     state === "awaiting_decision";
 }
 
+/**
+ * The sidebar's group for a session: those that wait on the operator come
+ * first (0), the rest after (1). A stable sort on this rank keeps newest-first
+ * order within each group.
+ */
+//@ ensures attentionSidebarState(state) ==> \result === 0
+//@ ensures !attentionSidebarState(state) ==> \result === 1
+export function sidebarGroupRank(state: SidebarSessionState): number {
+  return attentionSidebarState(state) ? 0 : 1;
+}
+
+/**
+ * The footer names how many sessions wait on the operator only while the
+ * sidebar is hidden, which is when their marks cannot be seen, and only if
+ * some wait.
+ */
+//@ ensures \result === (presentation === "hidden" && waiting > 0)
+export function showWaitingInFooter(presentation: SidebarPresentation, waiting: number): boolean {
+  return presentation === "hidden" && waiting > 0;
+}
+
 export type TerminalTitleMark = "attention" | "working" | "selected";
 
 /**
