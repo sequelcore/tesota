@@ -188,8 +188,17 @@ function checkDetail(check: CheckResult): string {
     `${check.base === undefined ? "" : `\n    ${describeBase(check.base)}`}${output}`;
 }
 
+/**
+ * The operator's requests, numbered. A request of several lines keeps each
+ * under its number: an unindented line in a record is a section heading, so a
+ * request's own lines must never start one.
+ */
 function requestedDetail(requests: readonly string[]): string {
-  return `Your requests\n${requests.map((request, index) => `  ${index + 1}. ${request}`).join("\n") || "  (not recorded)"}`;
+  return `Your requests\n${requests.map((request, index) => {
+    const number = `  ${index + 1}. `;
+    const [first = "", ...rest] = request.split(/\r?\n/u);
+    return [`${number}${first}`, ...rest.map((line) => line.trim().length === 0 ? "" : `${" ".repeat(number.length)}${line}`)].join("\n");
+  }).join("\n") || "  (not recorded)"}`;
 }
 
 /**

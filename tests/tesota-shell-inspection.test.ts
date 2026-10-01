@@ -8,6 +8,15 @@ const snapshot: WorkspaceSnapshot = { base: "b".repeat(40), tree: "t".repeat(40)
 const check = { verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command: "bun run check", tree: snapshot.tree, environment: "host", guarantees: hostProvider.guarantees,
   outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" };
 
+it("keeps each line of a request of several lines under its number, so none reads as a section of the record", () => {
+  const review = inspectReview({ snapshot, checks: [check], flags: [], reviews: [],
+    requests: ["Redesign the explorer.\nTarget design:\n\n- Header line: the path\nAcceptance", "Run it"] });
+  expect(review.detail).toMatch(/^Your requests\n {2}1\. Redesign the explorer\.\n {5}Target design:\n\n {5}- Header line: the path\n {5}Acceptance\n {2}2\. Run it\n/u);
+  // The record's own headings are its only unindented lines after a blank one.
+  const headings = review.detail.split(/\n\n(?=\S)/u).map((section) => section.split("\n", 1)[0]);
+  expect(headings).toEqual(["Your requests", "Files", "Checks", "Review", "Content"]);
+});
+
 it("lists changes to what gets checked as the operator's decision, and the requests behind the result", () => {
   const review = inspectReview({ snapshot, checks: [check], requests: ["Charge over $100 less", "Keep the old test"],
     flags: [{ path: "src/price.test.ts", status: "modified", kind: "test" }], reviews: [] });
