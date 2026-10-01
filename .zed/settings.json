@@ -1,0 +1,40 @@
+// Zed project settings. User-level defaults keep JS/TS format-on-save off;
+// this file opts the repository in. No formatter: save applies Oxlint (.oxlintrc.json) safe fixes only.
+// TypeScript 7: tsgo (typescript-ls) first, vtsls as fallback for unsupported features.
+{
+  "languages": {
+    "JavaScript": {
+      "format_on_save": "on",
+      "formatter": [],
+      "code_actions_on_format": {
+        "source.fixAll.oxc": true
+      }
+    },
+    "TypeScript": {
+      "format_on_save": "on",
+      "formatter": [],
+      "code_actions_on_format": {
+        "source.fixAll.oxc": true
+      },
+      "language_servers": [
+        "typescript-ls",
+        "vtsls",
+        "!typescript-language-server",
+        "..."
+      ]
+    },
+    "TSX": {
+      "format_on_save": "on",
+      "formatter": [],
+      "code_actions_on_format": {
+        "source.fixAll.oxc": true
+      },
+      "language_servers": [
+        "typescript-ls",
+        "vtsls",
+        "!typescript-language-server",
+        "..."
+      ]
+    }
+  }
+}
