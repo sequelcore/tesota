@@ -1,6 +1,7 @@
+import { truncateToWidth } from "@earendil-works/pi-tui";
 import { expect, it } from "vitest";
 import { acceptsShellTheme } from "../src/verification/shell-theme-rule.js";
-import { parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES } from "../src/tesota-shell-theme.js";
+import { bold, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES } from "../src/tesota-shell-theme.js";
 
 function luminance(hex: string): number {
   const channels = [1, 3, 5].map((start) => {
@@ -50,3 +51,19 @@ it.each(TESOTA_SHELL_THEME_NAMES.filter((name) => name !== "terminal"))(
     expect(selectedRow("selected", 20, theme)).toContain("\x1b[38;2;");
   },
 );
+
+it("keeps a truncated row selected to its end, past the reset truncation leaves before its ellipsis", () => {
+  const theme = tesotaShellTheme("tesota-dark");
+  // pi-tui ends a cut styled line with a full reset before "...", as the sidebar's long session titles are cut.
+  const cut = truncateToWidth(` ${bold("Build and test filesystem scanner")}`, 22);
+  expect(cut).toContain("\x1b[0m...");
+  const row = selectedRow(cut, 25, theme);
+  const background = `\x1b[48;2;${theme.selectionBackground!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";")}m`;
+  // After every reset, the selection's background is laid again, so the ellipsis and the padding stay selected.
+  const resets: number[] = [];
+  for (let at = row.indexOf("\x1b[0m"); at >= 0; at = row.indexOf("\x1b[0m", at + 1)) resets.push(at);
+  expect(resets.length).toBeGreaterThan(0);
+  for (const index of resets) expect(row.slice(index + "\x1b[0m".length).startsWith(background)).toBe(true);
+  const terminal = tesotaShellTheme("terminal");
+  expect(selectedRow(cut, 25, terminal)).toContain("\x1b[0m\x1b[7m...");
+});
