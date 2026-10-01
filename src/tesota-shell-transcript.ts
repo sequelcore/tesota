@@ -126,8 +126,11 @@ class ToolBlock implements Component {
   }
 }
 
-/** The part of a record line that its wrapped rows continue under: the indent, then a mark, the output gutter or a list number. */
-const recordLead = /^ *(?:[✓✗⚠?·│] |\d+\. )?/u;
+/**
+ * The part of a record line that its wrapped rows continue under: the indent, then a mark, the output gutter or a list
+ * number. Records saved before "!" replaced "⚠" keep theirs, drawn as "!".
+ */
+const recordLead = /^ *(?:[✓✗!⚠?·│] |\d+\. )?/u;
 const recordLabel = /^(?:Claim|Limits|Origin|Refuter):/u;
 
 /**
@@ -142,7 +145,7 @@ function paintRecordLine(lead: string, body: string, theme: TesotaShellTheme, he
   switch (lead.trim()[0]) {
     case "✓": return all((text) => colorText(text, theme.success));
     case "✗": return all((text) => colorText(text, theme.error));
-    case "⚠": case "?": return all((text) => colorText(text, theme.warning));
+    case "!": case "?": return all((text) => colorText(text, theme.warning));
     case "·": case "│": return all((text) => mutedText(text, theme));
   }
   const label = recordLabel.exec(body)?.[0];
@@ -156,8 +159,9 @@ function paintRecordLine(lead: string, body: string, theme: TesotaShellTheme, he
  */
 export function recordRows(text: string, width: number, theme: TesotaShellTheme, headings: boolean): string[] {
   return safeTerminalText(text).split("\n").flatMap((line) => {
-    const lead = recordLead.exec(line)?.[0] ?? "";
-    const [paintedLead, body] = paintRecordLine(lead, line.slice(lead.length), theme, headings);
+    const saved = recordLead.exec(line)?.[0] ?? "";
+    const lead = saved.replace("⚠", "!");
+    const [paintedLead, body] = paintRecordLine(lead, line.slice(saved.length), theme, headings);
     const indent = visibleWidth(lead);
     if (width - indent < 16) return wrapTextWithAnsi(paintedLead + body, Math.max(1, width));
     // Command output keeps its gutter on every row, so a long output line never reads as part of the record.

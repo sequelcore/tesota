@@ -259,8 +259,11 @@ Only your gh is signed in.
   y  Yes, once
   a  Always `gh pr …` in this repository
 → n  No
-``` `Esc` or `Ctrl+C` stops the current request; changes
-made so far stay in your files, or in the copy, and can still be reverted.
+``` `Esc` stops the current request at once, and so does `Ctrl+C` pressed
+twice: a single `Ctrl+C`, often pressed from habit to copy, only asks for the
+second, and with text selected it copies it. A question waiting for you is
+cancelled with one press of either. Changes made so far stay in your files,
+or in the copy, and can still be reverted.
 
 You can keep typing while the agent works. `Enter` queues a message: it
 shows above the input and is sent as your next request when the work ends,
@@ -348,7 +351,7 @@ The conversation shows a review once, set apart from the agent's replies by a
 rule down its left side: each changed file and each check with ✓ or ✗.
 Changes to what checks the result, such as an edited test, lint or type
 configuration, CI workflow, package scripts or a formal specification, are
-marked ⚠: they can be a legitimate fix or a way to make checks pass, and
+marked !: they can be a legitimate fix or a way to make checks pass, and
 only you can tell which. The result panel starts with your requests behind
 the changes, word for word, since everything else is measured against them.
 
@@ -394,7 +397,7 @@ reviewers for correctness, security and authority, and your repository's
 merged before you see them. Before a thorough review starts, a line says why
 it is thorough, how many reviewers will work, and how long comparable reviews
 have taken once three have been measured; the result then shows its time and tokens.
-It asks for nothing; `Ctrl+C` stops it.
+It asks for nothing; `Esc` stops it.
 
 When LemmaScript proved contracts in the changes, an extra review checks
 whether those contracts cover what you asked: one session restates each
@@ -415,7 +418,7 @@ back to the agent, with your requests unchanged. It then runs every
 check on the corrected result, has a separate validator confirm that each
 problem sent back is resolved, and reviews only what the correction changed,
 so a round settles what it was sent instead of raising a fresh list: at most
-two rounds, fewer if a round changes nothing. Each round shows its own review, and `Ctrl+C` stops it. Only then
+two rounds, fewer if a round changes nothing. Each round shows its own review, and `Esc` stops it. Only then
 does Tesota ask for your decision. What only you can decide never goes back
 to the agent. The full record and the diff open beside it on a wide terminal;
 `Alt+R` shows or hides them, in place of the conversation on a narrow one.

@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import { commandQuestion, fullAccessQuestion } from "../src/session-decisions.js";
 import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
 import type { AccountsSource } from "../src/tesota-shell-accounts.js";
-import { createTesotaShellTerminal, SessionBlockedError } from "../src/tesota-shell-terminal.js";
+import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, SessionBlockedError } from "../src/tesota-shell-terminal.js";
 import { BackdropTui, FocusReportingTerminal } from "../src/tesota-shell-tui.js";
 import { SessionRail } from "../src/tesota-shell-sidebar.js";
 import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
@@ -767,11 +767,12 @@ it.each([
   shell.stop();
 });
 
-it("routes Ctrl+C to the active prompt or active operation and restores the terminal", async () => {
+it("cancels a question with one Ctrl+C, stops running work only with a second, and restores the terminal", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
   const interrupt = vi.fn();
-  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, interrupt });
+  let now = 0;
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, interrupt, now: () => now });
   shell.start();
 
   const answer = shell.ask("Answer: ");
@@ -779,13 +780,46 @@ it("routes Ctrl+C to the active prompt or active operation and restores the term
   await expect(answer).rejects.toMatchObject({ name: "AbortError" });
   expect(interrupt).not.toHaveBeenCalled();
 
+  // One stray press, often a copy from habit, never loses the turn under way: it asks for a second.
+  terminal.send("\x03");
+  expect(interrupt).not.toHaveBeenCalled();
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Press Ctrl+C again to stop · Esc stops now");
+  // Too late, the press asks again rather than stopping.
+  now = CONFIRMATION_WINDOW_MS + 1;
+  terminal.send("\x03");
+  expect(interrupt).not.toHaveBeenCalled();
+  now += 1_000;
   terminal.send("\x03");
   expect(interrupt).toHaveBeenCalledOnce();
+  // Esc is the deliberate key, and stops at once.
+  terminal.send("\x1b");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  expect(interrupt).toHaveBeenCalledTimes(2);
   shell.stop();
   expect(terminal.started).toBe(false);
 });
 
-// As in Claude Code, Pi and Gemini CLI: Ctrl+C stops work or clears the input, and quits only when pressed again.
+it("copies selected text with Ctrl+C, as a terminal does, without stopping the work or counting toward it", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const interrupt = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, interrupt });
+  shell.start();
+  const selected = vi.spyOn(tui, "hasActiveSelection").mockReturnValue(true);
+  const copy = vi.spyOn(tui, "copyActiveSelectionToClipboard").mockResolvedValue(true);
+  terminal.send("\x03");
+  terminal.send("\x03");
+  expect(copy).toHaveBeenCalledTimes(2);
+  expect(interrupt).not.toHaveBeenCalled();
+  selected.mockReturnValue(false);
+  terminal.send("\x03");
+  expect(interrupt).not.toHaveBeenCalled();
+  shell.stop();
+});
+
+// With nothing to stop, Ctrl+C clears the input, and quits only when pressed again.
 it("clears the idle prompt with Ctrl+C and quits on a second press, never ending the session", async () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
