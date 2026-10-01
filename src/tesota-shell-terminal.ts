@@ -676,7 +676,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.revealSelectedSession();
     this.tui.start();
     // The opening's fades blend toward the terminal's own background; the theme's usual one serves until it answers.
-    void this.tui.queryTerminalBackgroundColor({ timeoutMs: 500 }).then((color) => {
+    void this.tui.queryTerminalColors({ timeoutMs: 500 }).then(({ background: color }) => {
       if (color === undefined) return;
       this.terminalBackground = [color.r, color.g, color.b];
       for (const session of this.sessions.values()) session.welcome?.setBackground(this.terminalBackground);

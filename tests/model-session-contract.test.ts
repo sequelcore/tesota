@@ -218,6 +218,12 @@ function submitTool(submitted: string[]): ToolDefinition {
     } });
 }
 
+// A tool that fails by returning an error result rather than throwing, as Pi's bash does for a command that fails.
+function failingTool(): ToolDefinition {
+  return defineTool({ name: "check", label: "Check", description: "Run the check.", parameters: Type.Object({}),
+    execute: async () => ({ content: [{ type: "text", text: "Command exited with code 1" }], details: undefined, isError: true }) });
+}
+
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function checkout(): string {
@@ -262,6 +268,14 @@ describe.each([{ harness: piHarness }, { harness: claudeCodeHarness }])("the mod
       [{ tools: [{ name: "submit", args: { answer: "42" } }, { name: "read", args: { path: "a.ts" } }] }, { text: "Done." }]);
     expect(await session.run("Submit the answer.", running())).toEqual({ status: "completed", reply: "Done." });
     expect(engine.modelCalls()).toBe(2);
+  });
+
+  it(`reports a tool that returned an error result as failed, not only one that threw (${harness().engine})`, async () => {
+    const { session, observed } = await open((root) => [...readOnlyFileTools(root), failingTool()],
+      [{ tools: [{ name: "check", args: {} }] }, { text: "The check failed." }]);
+    expect((await session.run("Run the check.", running())).status).toBe("completed");
+    expect(observed.activity).toContainEqual(expect.objectContaining({ type: "tool_finished", failed: true,
+      output: "Command exited with code 1" }));
   });
 
   it(`never runs a tool it was not given (${harness().engine})`, async () => {

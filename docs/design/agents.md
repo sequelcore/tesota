@@ -351,7 +351,8 @@ engines by the opt-in live suite.
 
 | Clause | Pi | Claude Code |
 | --- | --- | --- |
-| A session has exactly the tools it was given | Its tool list | Built-in tools disabled, Tesota's tools from an in-process MCP server, and anything else refused |
+| A session has exactly the tools it was given | Its tool list; none of Pi's built-in extensions (codemode, tool search, MCP), whatever the workspace's `.pi` folder asks for (`tests/pi-session-tools.test.ts`) | Built-in tools disabled, Tesota's tools from an in-process MCP server, and anything else refused |
+| A tool that fails is reported as failed, whether it threw or returned an error result, as Pi's bash does for a command that fails | Pi's `isError` | The result's `isError`, passed on to Claude Code |
 | A batch in which every tool asks to end the turn ends it, with no further model call | `terminate` on a tool result | A `PostToolBatch` hook answering `continue: false` |
 | A request ends `completed`, `failed` with the engine's own message, `cancelled`, or `unsettled` when the engine cannot be stopped | Pi's session events | The SDK's result message |
 | Tool activity and replies are reported as they happen | Pi's events | Tesota's tool wrappers and the SDK's messages |
