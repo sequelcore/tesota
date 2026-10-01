@@ -10,6 +10,8 @@ Usage: tesota [--help | -h | help]
        tesota run [--allow-commands] [--allow-network] [--checks=<command;…>|none] [--apply] [--folder] [--json] (<request> | -)
        tesota verify <file.ts|file.js>
        tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]
+       tesota auth status --show-accounts
+       tesota auth remove <added route>
        tesota auth login <codex|claude-code> --as <name>
        tesota models [<route>]
        tesota usage [<route>]
@@ -100,6 +102,10 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
     route = await chooseCliOption(`${args[1]} route`, AUTH_ROUTES.map((value) => ({ value, label: value })));
     if (route === undefined) process.exit(0);
   }
+  if (route === undefined && args[1] === "remove") {
+    process.stderr.write("Name the added route to remove: tesota auth remove <route>.\n");
+    process.exit(2);
+  }
   if (route === undefined && ["login", "logout"].includes(args[1])) {
     process.stderr.write("Choose an auth route in a terminal, or pass one explicitly.\n");
     process.exit(2);
@@ -149,6 +155,11 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   const { runUsageCommand } = await import("./account-usage.js");
   const { usageSources } = await import("./integrations/usage-sources.js");
   process.exitCode = await runUsageCommand(args.slice(1), (text) => { process.stdout.write(text); }, usageSources());
+  if (process.exitCode === 0 && args.length === 1) {
+    // Routes on one account show one plan's limits twice; say so under the table (#235).
+    const { allRoutes, routeAccountNotes } = await import("./auth.js");
+    for (const note of await routeAccountNotes(allRoutes())) process.stdout.write(`${note}\n`);
+  }
 } else if (args[0] === "roles") {
   const { offeredModels, rolePicker, runRolesCommand } = await import("./models-command.js");
   const { isModelRole } = await import("./model-roles.js");

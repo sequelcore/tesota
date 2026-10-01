@@ -1662,7 +1662,7 @@ it("opens the Accounts panel over the session: its tabs, keys that never reach t
   terminal.send("x");
   terminal.send("\t");
   const signIns = await screen();
-  expect(signIns).toMatch(/codex {2}Codex {2}signed in {2}reviewer/u);
+  expect(signIns).toMatch(/codex {2}Codex {2}signed in {2}— +reviewer/u);
   terminal.send("3");
   terminal.send("\x1b[B");
   expect(await screen()).toMatch(/› reviewer {2}codex:gpt-6-astra {3}codex {8}██░░░░░░░░ {2}20% {2}week/u);

@@ -246,7 +246,14 @@ is one model. A failed request names its route, since a lapsed plan fails
 with only the model's refusal, as on 2026-09-29. `/model` continues in
 place only on one account: another route's account needs its own runtime
 or Claude Code process, so it starts a new conversation with the brief. A
-route that a role uses is not removed until the roles choose another.
+route that a role uses is not removed until the roles choose another
+(`routeAfter` in `src/verification/route-removal-rule.ts`, proved): signing
+a route in again, to change its account, or out keeps the route and the
+roles on it, and only `tesota auth remove` deletes one. Status names the
+account each route is signed in to, from Claude Code's `.claude.json` or the
+Codex token's profile claim, read locally, its email masked unless asked, and
+names routes signed in to the same account, whose limits are one plan's
+(`src/route-accounts.ts`).
 
 **What each account has left**. `tesota usage` and the
 shell's Accounts panel ask each route's provider, only when run or opened,
