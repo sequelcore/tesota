@@ -1103,6 +1103,25 @@ it("shows a command the agent runs whole in the conversation", () => {
   shell.stop();
 });
 
+it("keeps the status line to one row for a command that spans lines, as a heredoc does, and shows the command whole once", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 100;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const heredoc = "cat .gitignore; cat > package.json <<'E'\n{\n  \"name\": \"dowser\",\n  \"type\": \"module\"\n}\nE";
+  shell.showActivity("default", { type: "tool_started", call: "c1", tool: "bash", subject: heredoc });
+  // Each spinner frame draws the status line again; it must not spill the command's other lines into the layout.
+  for (let frame = 0; frame < 4; frame += 1) { shell.refreshElapsed(); tui.renderNow(); }
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const screen = stripTerminalSequences(terminal.writes.join(""));
+  expect(screen).toContain("Running cat .gitignore; cat > package.json <<'E' …");
+  // The transcript shows the command whole, once; the status line shows only its first line.
+  expect(screen.split("\"name\": \"dowser\"").length - 1).toBe(1);
+  shell.stop();
+});
+
 it("names the model, repository and branch under the prompt, then the mode and where commands run, in its color", () => {
   const terminal = new TestTerminal();
   terminal.columns = 120;
