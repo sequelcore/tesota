@@ -2,7 +2,10 @@
 
 ## Toolchain and checks
 
-Use the Bun and Node versions in [package.json](../package.json). From the
+Use the Bun and Node versions in [package.json](../package.json). The other
+tools the checks need, ripgrep for Pi's grep tool and Dafny for
+`bun run formal:check`, are declared in [mise.toml](../mise.toml), which
+`mise install` and Tesota's sandboxes install. From the
 repository root, install with `bun install --frozen-lockfile --ignore-scripts`.
 Dependencies come from registry packages; lifecycle scripts are disabled.
 
