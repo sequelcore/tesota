@@ -71,6 +71,11 @@ the workflow and limits.
   the operator's. Custom behavior modes, such as a grilling or triage mode,
   wait for daily use, under workflow profiles.
   [Execution](design/execution.md#where-commands-run)
+- Put the sessions that wait on the operator, for an approval or an answer,
+  first in the sidebar, as Codex's agents view groups "Needs input" first,
+  and name how many wait in the footer while the sidebar is hidden, so a
+  blocked session is seen without looking for it.
+  [Sessions](design/sessions.md)
 - Exercise model routes that have not completed a live request. OpenCode Zen
   restricts its free models to its own client, and OpenCode Go requires an
   active subscription. Do not present either route as live-qualified until it
@@ -115,6 +120,15 @@ daily use. Before choosing an orchestration runtime, compare Effect v4 and
 the current platform primitives
 against the same registered fault-injection cases; adopt Effect only if it wins
 on observed outcomes and is stable.
+
+With the service, add a sessions overlay, as the Accounts panel is one, for
+what the sidebar cannot hold: sessions across repositories, sessions running
+after the terminal closed, status filters and search, as Codex's agents view
+(`← for agents`) offers over its background server. It complements the
+sidebar, which stays the always-visible signal. **Needs deeper analysis
+first:** compare Codex's agents view, Claude Code's background agents and the
+sidebar on real multi-session use (how many sessions, how often one waits,
+how it is noticed) before choosing its layout, grouping and keys.
 
 ## Later
 

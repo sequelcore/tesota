@@ -359,6 +359,26 @@ it("refuses a question while another waits, and leaves the first one waiting", a
   shell.stop();
 });
 
+it("shows the shortcuts for ? on an empty input, and types it anywhere else", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.setSessionExecution("default", "›› accept edits on · sandbox · WSL", "sandbox");
+  shell.start();
+  const request = shell.ask("> ");
+  terminal.send("?");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Shift+Tab mode");
+  // Once something is typed, the hint leaves the footer and ? is part of the request.
+  terminal.send("why?");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).not.toContain("? for shortcuts");
+  terminal.send("\r");
+  await expect(request).resolves.toBe("why?");
+  shell.stop();
+});
+
 it("passes Shift+Tab to the shell as the selected session's permission mode switch", () => {
   const terminal = new TestTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -1083,7 +1103,7 @@ it("shows a command the agent runs whole in the conversation", () => {
   shell.stop();
 });
 
-it("names the model and workspace under the prompt, and where commands run on a line of their own, in its color", () => {
+it("names the model, repository and branch under the prompt, then the mode and where commands run, in its color", () => {
   const terminal = new TestTerminal();
   terminal.columns = 120;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -1101,10 +1121,13 @@ it("names the model and workspace under the prompt, and where commands run on a 
   expect(screen).not.toContain("sandbox · Docker");
   expect(screen).toContain("tesota · dev");
   expect(screen).toContain("Session 1");
-  // The model first, as other harnesses show it; the workspace is the sidebar's while it shows.
+  // The model first, then the repository and branch, as Claude Code and Codex show them, whether or not the sidebar shows.
   const raw = terminal.writes.join("");
   const theme = tesotaShellTheme("tesota-dark");
-  expect(stripTerminalSequences(screenLine(raw, "claude-code:opus")).trim()).toBe("claude-code:opus");
+  expect(stripTerminalSequences(screenLine(raw, "claude-code:opus")).trim()).toBe("claude-code:opus · tesota · dev");
+  // The mode's line ends with the keys that cycle it and, while the input is empty, show the shortcuts.
+  expect(stripTerminalSequences(screenLine(raw, "this computer · asks first")))
+    .toContain("this computer · asks first (shift+tab to cycle) · ? for shortcuts");
   // This computer in the theme's caution color, a sandbox in its success color.
   const warning = theme.warning!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";");
   expect(screenLine(raw, "this computer · asks first")).toContain(`[38;2;${warning}mthis computer · asks first`);
@@ -1135,7 +1158,7 @@ it("names the model and workspace under the prompt, and where commands run on a 
   narrow.resizeTo(120, 24);
   narrow.writes.length = 0;
   narrowTui.renderNow(true);
-  expect(visible(narrow)).not.toContain("claude-code:opus · tesota");
+  expect(visible(narrow)).toContain("claude-code:opus · tesota · dev");
   narrowShell.stop();
 });
 

@@ -112,14 +112,14 @@ it("runs commands without asking in Full access on a computer with no sandbox", 
 it("names the mode and where commands run under the prompt, in the caution color whenever they reach this computer", () => {
   const wsl = { commands: "sandbox", provider: { ...hostProvider, name: "wsl" } } as unknown as SessionExecution;
   const host = { commands: "host", provider: hostProvider, missing: [] } as unknown as SessionExecution;
-  expect(executionLabel("accept-edits", wsl)).toEqual({ label: "accept edits · sandbox · WSL", place: "sandbox" });
-  expect(executionLabel("read-only", wsl)).toEqual({ label: "read only · sandbox · WSL", place: "sandbox" });
-  expect(executionLabel("full-access", wsl)).toEqual({ label: "full access · this computer", place: "host" });
-  expect(executionLabel("accept-edits", host)).toEqual({ label: "accept edits · this computer · asks first", place: "host" });
-  expect(executionLabel("full-access", host)).toEqual({ label: "full access · this computer", place: "host" });
+  expect(executionLabel("accept-edits", wsl)).toEqual({ label: "›› accept edits on · sandbox · WSL", place: "sandbox" });
+  expect(executionLabel("read-only", wsl)).toEqual({ label: "· read only on · sandbox · WSL", place: "sandbox" });
+  expect(executionLabel("full-access", wsl)).toEqual({ label: "››› full access on · this computer", place: "host" });
+  expect(executionLabel("accept-edits", host)).toEqual({ label: "›› accept edits on · this computer · asks first", place: "host" });
+  expect(executionLabel("full-access", host)).toEqual({ label: "››› full access on · this computer", place: "host" });
   // Before the session's environment is chosen, the mode alone.
-  expect(executionLabel("read-only", undefined)).toEqual({ label: "read only", place: "sandbox" });
-  expect(executionLabel("full-access", undefined)).toEqual({ label: "full access · this computer", place: "host" });
+  expect(executionLabel("read-only", undefined)).toEqual({ label: "· read only on", place: "sandbox" });
+  expect(executionLabel("full-access", undefined)).toEqual({ label: "››› full access on · this computer", place: "host" });
 });
 
 it("starts new sessions in the mode last chosen in the repository, while each saved session keeps its own", () => {
@@ -184,7 +184,7 @@ it("cycles accept edits, full access, read only with Shift+Tab, asking once per 
   await engine.permissionMode.cycle("s");
   expect(record.mode).toBe("full-access");
   expect(fullAccess).toHaveBeenCalledOnce();
-  expect(labels).toEqual(["full access · this computer", "read only", "accept edits", "full access · this computer"]);
+  expect(labels).toEqual(["››› full access on · this computer", "· read only on", "›› accept edits on", "››› full access on · this computer"]);
   // The question's answer recorded the first entry; entering again without a question still leaves a line.
   expect(notices).toEqual(["Full access: commands run on this computer without asking."]);
   await engine.dispose();
@@ -210,7 +210,7 @@ it("stays in the current mode when the operator declines Full access", async () 
 it("reminds the operator when a session opens in Full access, and says nothing otherwise", async () => {
   const full = modeEngine(async () => true, "full-access");
   full.engine.permissionMode.open("s");
-  expect(full.labels).toEqual(["full access · this computer"]);
+  expect(full.labels).toEqual(["››› full access on · this computer"]);
   expect(full.notices).toEqual([expect.stringContaining("This session is in Full access")]);
   await full.engine.dispose();
   const accept = modeEngine(async () => true);
