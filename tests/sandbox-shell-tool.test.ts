@@ -29,9 +29,12 @@ function sandbox(): { environment: ExecutionEnvironment; commands: string[] } {
     dispose: async () => {} } };
 }
 
+/** A tool call's text; a call that failed rejects, whether the tool threw or returned an error result, as Pi's bash does. */
 async function call(tool: ToolDefinition, args: Record<string, unknown>): Promise<string> {
   const result = await tool.execute("c1", args as never, new AbortController().signal, undefined, undefined as never);
-  return result.content.map((part) => part.type === "text" ? part.text : "").join("");
+  const text = result.content.map((part) => part.type === "text" ? part.text : "").join("");
+  if (result.isError === true) throw new Error(text);
+  return text;
 }
 
 it("runs the agent's bash commands in the sandbox without asking, and says where the workspace appears to them", async () => {

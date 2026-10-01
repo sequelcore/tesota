@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { createSdkMcpServer, getSessionInfo, getSessionMessages, query, tool, type CanUseTool, type HookCallback, type SDKMessage,
   type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import * as z from "zod";
 import type { ModelTarget } from "./model-session.js";
 import type { AgentActivity, ConversationEntry, TurnResult } from "./model-session-contract.js";
@@ -141,12 +141,14 @@ async function runTool(definition: ToolDefinition, args: Record<string, unknown>
     // Tesota's tools read their own workspace root; the Pi-specific context is not used by them.
     const result = await definition.execute(call, args, signal(), (partial) => {
       emit({ type: "tool_output", call, output: resultText(partial) });
-    }, undefined as unknown as ExtensionContext);
+    }, undefined as unknown as ExtensionToolContext);
     const output = resultText(result);
-    const change = definition.name === "edit" ? editChange(result) : undefined;
-    emit({ type: "tool_finished", call, failed: false, output, ...(change === undefined ? {} : { change }) });
+    // A tool may fail by returning an error result rather than throwing, as Pi's bash does for a command that fails.
+    const failed = result.isError === true;
+    const change = definition.name === "edit" && !failed ? editChange(result) : undefined;
+    emit({ type: "tool_finished", call, failed, output, ...(change === undefined ? {} : { change }) });
     if (result.terminate === true) terminate();
-    return { content: [{ type: "text" as const, text: output }] };
+    return { content: [{ type: "text" as const, text: output }], ...failed ? { isError: true } : {} };
   } catch (error) {
     const output = error instanceof Error ? error.message : "The tool failed";
     emit({ type: "tool_finished", call, failed: true, output });
