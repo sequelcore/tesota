@@ -1,6 +1,6 @@
 import { matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component } from "@earendil-works/pi-tui";
 import { bar, span, USAGE_SOURCES_NOTE, usageLines, type RouteUsage, type UsagePaint } from "./account-usage.js";
-import { type RouteStatus, SIGN_IN_NOTE, statusLines, type StatusPaint } from "./auth.js";
+import { accountNotes, type RouteStatus, SIGN_IN_NOTE, statusLines, type StatusPaint } from "./auth.js";
 import { bold, colorText, mutedText, selectedRow, surfaceText, type TesotaShellTheme } from "./tesota-shell-theme.js";
 import { meterTone } from "./verification/usage-meter-rule.js";
 
@@ -58,6 +58,8 @@ export class AccountsPanel implements Component {
   #usageReadAt: number | undefined;
   #signIns: SignIns | undefined;
   #signInsFailed = false;
+  /** Whether the Sign-ins tab shows each route's email whole; masked until the operator asks, for screens others see. */
+  #showAccounts = false;
   #roles: readonly RoleAccount[] = [];
   #selectedRole = 0;
   readonly #scroll: Record<AccountsTab, number> = { usage: 0, "sign-ins": 0, roles: 0 };
@@ -89,6 +91,7 @@ export class AccountsPanel implements Component {
   handleKey(data: string): AccountsAction {
     if (matchesKey(data, "escape")) return "close";
     if (data === "r" || data === "R") return "refresh";
+    if (this.#tab === "sign-ins" && (data === "s" || data === "S")) { this.#showAccounts = !this.#showAccounts; return undefined; }
     if (this.#switchTab(data)) return undefined;
     if (this.#tab === "roles") return this.#roleKey(data);
     this.#scrollKey(data);
@@ -187,7 +190,9 @@ export class AccountsPanel implements Component {
   #hint(): string {
     const common = "←→ tabs · r read again · Esc close";
     if (this.#tab === "roles") return `↑↓ choose · Enter change its model · ${common}`;
-    if (this.#tab === "sign-ins") return `↑↓ scroll · sign in with tesota auth login <route> · ${common}`;
+    if (this.#tab === "sign-ins") {
+      return `↑↓ scroll · s ${this.#showAccounts ? "hide" : "show"} emails · sign in with tesota auth login <route> · ${common}`;
+    }
     return `↑↓ scroll · ${common}`;
   }
 
@@ -213,7 +218,10 @@ export class AccountsPanel implements Component {
     // Twenty segments where the table fits, as Codex draws them; ten where it would not.
     const wide = usageLines(this.#usage, this.#now());
     const segments = wide.every((line) => visibleWidth(line) <= inner) ? 20 : 10;
-    return [...usageLines(this.#usage, this.#now(), { segments, paint: this.#usagePaint(), width: inner }), "",
+    // Routes on one account, known once the sign-ins are read, show one plan's limits twice (#235).
+    const shared = accountNotes(this.#signIns?.rows ?? []).flatMap((note) =>
+      wrapTextWithAnsi(note, inner).map((line) => colorText(line, this.#theme.warning)));
+    return [...usageLines(this.#usage, this.#now(), { segments, paint: this.#usagePaint(), width: inner }), "", ...shared,
       ...this.#footnote(USAGE_SOURCES_NOTE, inner)];
   }
 
@@ -223,7 +231,11 @@ export class AccountsPanel implements Component {
     if (this.#signIns === undefined) return [mutedText("Reading each route's sign-in…", this.#theme)];
     const paint: StatusPaint = { muted: (text) => mutedText(text, this.#theme), strong: bold,
       attention: (text) => colorText(text, this.#theme.warning) };
-    return [...statusLines(this.#signIns.rows, this.#signIns.usedBy, paint), "", ...this.#footnote(SIGN_IN_NOTE, inner)];
+    // Routes on one account matter to the team the operator plans, so they stand out from the notes.
+    const shared = accountNotes(this.#signIns.rows).flatMap((note) =>
+      wrapTextWithAnsi(note, inner).map((line) => colorText(line, this.#theme.warning)));
+    return [...statusLines(this.#signIns.rows, this.#signIns.usedBy, paint, this.#showAccounts), "", ...shared,
+      ...this.#footnote(SIGN_IN_NOTE, inner)];
   }
 
   /** The tightest meter of a route's account: the one with the least left, as a short bar. */

@@ -11,6 +11,8 @@ import { TesotaCredentials } from "./integrations/tesota-credentials.js";
 import { ACCOUNT_KINDS, accountRoute, type AddedRoute, addRoute, MODEL_ROLES, parseModelChoice, readAddedRoutes, readModelChoices, removeRoute,
   type RouteKind } from "./model-roles.js";
 import { windowsSystemProgram } from "./windows-system.js";
+import { routeAfter } from "./verification/route-removal-rule.js";
+import { accountText, claudeCodeAccount, codexAccount, type RouteAccount, sharedAccountNote, sharedAccounts } from "./route-accounts.js";
 
 /**
  * `tesota auth` for each route (decisions 021 and 031). Tesota stores Codex's
@@ -124,17 +126,15 @@ async function codex(action: string, credentials: TesotaCredentials, route: stri
     console.log(`${label}: local Tesota credentials removed.`);
     return 0;
   }
-  if (await credentials.read("openai-codex") !== undefined) {
-    console.log(`${label}: already logged in. To change accounts, run tesota auth logout ${route} first.`);
-    return 0;
-  }
+  // Signed in already, this signs in again, as to change accounts: the earlier login stays until the new one completes.
+  const again = await credentials.read("openai-codex") !== undefined;
   const cancel = new AbortController();
   const watchdog = setTimeout(() => process.exit(1), 185_000);
   try {
     if (await loginToCodex(deviceCodeAuth(deviceCodeTerminalRenderer(), cancel.signal), credentials) !== "succeeded") {
       throw new Error("Login did not complete");
     }
-    console.log(`${label}: login saved for future Tesota runs.`);
+    console.log(`${label}: login saved for future Tesota runs${again ? ", in place of the earlier one" : ""}.`);
     return 0;
   } finally { cancel.abort(); clearTimeout(watchdog); }
 }
@@ -205,21 +205,31 @@ function rolesOn(route: string, added: readonly AddedRoute[]): string[] {
   return MODEL_ROLES.filter((role) => parseModelChoice(choices[role], added)?.route === route);
 }
 
-/** Sign an added route in, show its status, or sign it out and remove it when no role uses it. */
+/**
+ * Sign an added route in, or in again to change its account, show its status,
+ * or sign it out: the route and the roles on it stay, as `gh auth logout`
+ * keeps a host's settings. `remove` signs it out and deletes it, never while a
+ * role uses it, so a team never changes without the operator choosing it.
+ */
 async function addedRoute(action: string, route: AddedRoute): Promise<number> {
-  if (action === "logout") {
-    const roles = rolesOn(route.name, readAddedRoutes());
-    if (roles.length > 0) {
-      console.error(`${route.name} is in use by ${roles.join(", ")}; choose other models for them with tesota roles first.`);
-      return 1;
-    }
+  const roles = action === "remove" ? rolesOn(route.name, readAddedRoutes()) : [];
+  // Proved: signing in or out keeps the route and its roles; removing deletes it, never while a role uses it.
+  const outcome = action === "login" || action === "logout" || action === "remove" ? routeAfter(action, roles.length > 0) : "keep";
+  if (outcome === "refuse") {
+    console.error(`${route.name} is in use by ${roles.join(", ")}; choose other models for them with tesota roles first, ` +
+      `or sign it in to another account with tesota auth login ${route.name}.`);
+    return 1;
   }
   if (action === "status") return statusOf([route.name], new TesotaCredentials());
-  const code = route.kind === "codex" ? await codex(action, TesotaCredentials.forRoute(route.name, "openai-codex"), route.name)
-    : await claudeCode(action, route.name);
-  if (action === "logout" && code === 0) {
+  const signInAction = action === "remove" ? "logout" : action;
+  const code = route.kind === "codex" ? await codex(signInAction, TesotaCredentials.forRoute(route.name, "openai-codex"), route.name)
+    : await claudeCode(signInAction, route.name);
+  if (outcome === "delete" && code === 0) {
     removeRoute(route.name);
     console.log(`${route.name}: route removed.`);
+  }
+  if (action === "logout" && code === 0) {
+    console.log(`${route.name}: signed out; the route and its roles stay. Sign in again with tesota auth login ${route.name}.`);
   }
   return code;
 }
@@ -229,6 +239,8 @@ export interface RouteStatus {
   readonly route: string;
   readonly kind: string;
   readonly signIn: string;
+  /** The account a signed-in route is for, as its sign-in records it (#235); absent when signed out or unrecorded. */
+  readonly account?: RouteAccount;
 }
 
 /** Each kind's name, as tables show it. */
@@ -265,9 +277,18 @@ async function signInOf(route: string, kind: string, credentials: TesotaCredenti
  * it, then what a sign-in does not show. A plan's models are known only when
  * a role uses them, so the table never claims one.
  */
-export function statusTable(rows: readonly RouteStatus[], usedBy: (route: string) => readonly string[]): string {
-  return [...statusLines(rows, usedBy), "", SIGN_IN_NOTE, ""].join("\n");
+export function statusTable(rows: readonly RouteStatus[], usedBy: (route: string) => readonly string[], showAccounts = false): string {
+  return [...statusLines(rows, usedBy, unstyled, showAccounts), "", ...accountNotes(rows), SIGN_IN_NOTE,
+    ...showAccounts ? [] : [SHOW_ACCOUNTS_NOTE], ""].join("\n");
 }
+
+/** Routes signed in to the same account, each said once under the table (#235). */
+export function accountNotes(rows: readonly RouteStatus[]): string[] {
+  return sharedAccounts(rows).map(sharedAccountNote);
+}
+
+/** How the CLI shows the emails it masks. */
+export const SHOW_ACCOUNTS_NOTE: string = "Emails are masked; tesota auth status --show-accounts shows them.";
 
 /** What a sign-in does not show, said once under the table. */
 export const SIGN_IN_NOTE: string = "A plan's models are checked when a role first uses them. Claude Code keeps its own sign-ins; Tesota keeps " +
@@ -285,20 +306,22 @@ const unstyled: StatusPaint = { muted: (text) => text, strong: (text) => text, a
 
 /** The sign-in table's lines: a heading, then each route, its kind, its sign-in and the roles that use it. */
 export function statusLines(rows: readonly RouteStatus[], usedBy: (route: string) => readonly string[],
-  paint: StatusPaint = unstyled): string[] {
+  paint: StatusPaint = unstyled, showAccounts = false): string[] {
   const width = (pick: (row: RouteStatus) => string, heading: string): number =>
     Math.max(heading.length, ...rows.map((row) => pick(row).length)) + 2;
-  const [route, kind, signIn] = [width((row) => row.route, "Route"), width((row) => row.kind, "Kind"),
-    width((row) => row.signIn, "Sign-in")];
+  const accountOf = (row: RouteStatus): string => accountText(row.account, showAccounts);
+  const [route, kind, signIn, account] = [width((row) => row.route, "Route"), width((row) => row.kind, "Kind"),
+    width((row) => row.signIn, "Sign-in"), width(accountOf, "Account")];
   // Each cell is padded before it is styled, so styles never shift the columns.
   const cell = (text: string, size: number, style: (text: string) => string): string =>
     `${style(text)}${" ".repeat(Math.max(0, size - text.length))}`;
   const needsOperator = (text: string): boolean => /^(?:signed out|no key|status unavailable)/u.test(text);
-  return [paint.muted(`${"Route".padEnd(route)}${"Kind".padEnd(kind)}${"Sign-in".padEnd(signIn)}Used by`),
+  return [paint.muted(`${"Route".padEnd(route)}${"Kind".padEnd(kind)}${"Sign-in".padEnd(signIn)}${"Account".padEnd(account)}Used by`),
     ...rows.map((row) => {
       const roles = usedBy(row.route).join(", ");
       return `${cell(row.route, route, paint.strong)}${cell(row.kind, kind, (text) => text)}${
         cell(row.signIn, signIn, needsOperator(row.signIn) ? paint.attention : (text) => text)}${
+        cell(accountOf(row), account, row.account === undefined ? paint.muted : (text) => text)}${
         roles.length > 0 ? roles : paint.muted("—")}`.trimEnd();
     })];
 }
@@ -321,13 +344,36 @@ export async function routeStatuses(names: readonly string[], credentials: Tesot
   const added = readAddedRoutes();
   return Promise.all(names.map(async (route): Promise<RouteStatus> => {
     const kind = added.find((entry) => entry.name === route)?.kind ?? route;
-    return { route, kind: kindLabels[kind] ?? kind, signIn: await signInOf(route, kind, credentials) };
+    const signIn = await signInOf(route, kind, credentials);
+    const account = signIn.startsWith("signed in") ? await accountOf(route, kind, credentials) : undefined;
+    return { route, kind: kindLabels[kind] ?? kind, signIn, ...account === undefined ? {} : { account } };
   }));
 }
 
+/** Which account a signed-in route is for, from its own sign-in; read locally, never shown whole unless asked. */
+async function accountOf(route: string, kind: string, credentials: TesotaCredentials): Promise<RouteAccount | undefined> {
+  if (kind === "codex") {
+    const store = route === "codex" ? credentials : TesotaCredentials.forRoute(route, "openai-codex");
+    return codexAccount(await store.read("openai-codex"));
+  }
+  if (kind === "claude-code") return claudeCodeAccount(route === "claude-code" ? undefined : claudeCodeRouteDirectory(route));
+  return undefined;
+}
+
+/**
+ * What `tesota usage` says under its table: the routes signed in to one account, whose meters are one reading (#235).
+ * Read from each route's own sign-in, locally; a route that cannot be read is left out.
+ */
+export async function routeAccountNotes(routes: readonly { readonly route: string; readonly kind: string }[],
+  credentials: TesotaCredentials = new TesotaCredentials()): Promise<string[]> {
+  const accounts = await Promise.all(routes.map(async (entry) =>
+    ({ route: entry.route, account: await accountOf(entry.route, entry.kind, credentials).catch(() => undefined) })));
+  return sharedAccounts(accounts).map(sharedAccountNote);
+}
+
 /** The status of these routes, every route when none is named, as one table. */
-async function statusOf(names: readonly string[], credentials: TesotaCredentials): Promise<number> {
-  process.stdout.write(statusTable(await routeStatuses(names, credentials), usedByRoute()));
+async function statusOf(names: readonly string[], credentials: TesotaCredentials, showAccounts = false): Promise<number> {
+  process.stdout.write(statusTable(await routeStatuses(names, credentials), usedByRoute(), showAccounts));
   return 0;
 }
 
@@ -355,24 +401,37 @@ export async function addAccount(kind: string, name: string): Promise<number> {
   return addedRoute("login", { name, kind: kind as RouteKind });
 }
 
+/** Every route's status, as one table; emails shown only when asked. */
+async function everyStatus(credentials: TesotaCredentials, showAccounts: boolean): Promise<number> {
+  try { return await statusOf(allRoutes().map((entry) => entry.route), credentials, showAccounts); } catch {
+    console.error("The routes' status could not be read. Credentials were not printed. Check private storage and retry.");
+    return 1;
+  }
+}
+
+/** A kind's own route is never removed, only signed out. */
+function notRemovable(route: string): number {
+  console.error(`Only an added route can be removed; ${route} is a kind's own route. Sign it out with tesota auth logout ${route}.`);
+  return 2;
+}
+
 export async function runAuthCommand(action: string, route?: string,
   credentials: TesotaCredentials = new TesotaCredentials()): Promise<number> {
-  if (action === "status" && route === undefined) {
-    try { return await statusOf(allRoutes().map((entry) => entry.route), credentials); } catch {
-      console.error("The routes' status could not be read. Credentials were not printed. Check private storage and retry.");
-      return 1;
-    }
+  if (action === "status" && (route === undefined || route === "--show-accounts")) {
+    return everyStatus(credentials, route === "--show-accounts");
   }
   const chosen = route ?? "codex";
   const added = readAddedRoutes().find((entry) => entry.name === chosen);
-  if (["login", "status", "logout"].includes(action) && added !== undefined) {
+  if (["login", "status", "logout", "remove"].includes(action) && added !== undefined) {
     try { return await addedRoute(action, added); } catch {
       console.error(`${chosen} authentication operation failed. Credentials were not printed. Check private storage or retry after resolving the failure.`);
       return 1;
     }
   }
+  if (action === "remove") return notRemovable(chosen);
   if (!["login", "status", "logout"].includes(action) || !(routes as readonly string[]).includes(chosen)) {
-    console.error(`Usage: tesota auth <login|status|logout> [${routes.join("|")}|<added route>] [--as <name>]`);
+    console.error(`Usage: tesota auth <login|status|logout> [${routes.join("|")}|<added route>] [--as <name>], ` +
+      "tesota auth remove <added route>, or tesota auth status --show-accounts");
     return 2;
   }
   if (action === "status") return statusOf([chosen], credentials);
