@@ -13,6 +13,7 @@ import { MAX_CHECK_REPORTS, normalizeReportPath } from "./test-report.js";
 import type { ApprovedCheck } from "./workspace-checks.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
 import { replacesTitle, type TitleSource } from "./verification/session-title-rule.js";
+import type { PermissionMode } from "./verification/permission-mode.js";
 import { pathKey } from "./source-shadow.js";
 
 const text = z.string().max(2_000_000);
@@ -37,21 +38,23 @@ const planSchema: z.ZodType<PlanStep[]> = z.array(z.strictObject({ step: z.strin
   .min(1).max(MAX_PLAN_STEPS);
 // `agent` is absent until the agent first starts (decision 026), `sandbox` while the session follows the operator's
 // choice (decision 030), `plan` while no work is under way (decision 033), and `isolated` unless the operator chose
-// an isolated workspace before the session's first request.
+// an isolated workspace before the session's first request. `mode` is absent from sessions saved before modes existed,
+// which run in accept edits, as they did.
+const PERMISSION_MODES = ["read-only", "accept-edits", "full-access"] as const satisfies readonly PermissionMode[];
 const sessionSchema: z.ZodType<{ id: string; title: string;
   engineId: string; entries: TranscriptEntry[];
   inspections: { title: string; summary: string; detail: string; diff?: string | undefined }[];
   workspace: string | null;
   interrupted: boolean; blocked: boolean; agent?: string | undefined; retiredEngineIds: string[];
   sandbox?: SandboxPreference | undefined; plan?: PlanStep[] | undefined; isolated?: true | undefined;
-  titleSource: TitleSource }> =
+  mode?: PermissionMode | undefined; titleSource: TitleSource }> =
     z.strictObject({ id: z.string().min(1), title: z.string().min(1).max(100),
       engineId: z.uuid(), entries: z.array(entrySchema), inspections: z.array(inspectionSchema),
       workspace: z.string().min(1).nullable(),
       interrupted: z.boolean(), blocked: z.boolean(),
       agent: agentModelSchema.optional(), retiredEngineIds: z.array(z.uuid()).max(1_000),
       sandbox: z.enum(SANDBOX_PREFERENCES).optional(), plan: planSchema.optional(), isolated: z.literal(true).optional(),
-      titleSource: z.enum(["counter", "request", "generated", "operator"]) });
+      mode: z.enum(PERMISSION_MODES).optional(), titleSource: z.enum(["counter", "request", "generated", "operator"]) });
 const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.iso.datetime(),
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
   tokens: z.number().nonnegative(), models: z.strictObject({ reviewer: z.string().min(1).max(100),
@@ -71,6 +74,8 @@ const snapshotSchema = z.strictObject({ format: z.literal("tesota-shell-sessions
       commandRules: z.array(commandRuleSchema).max(100).default([]),
       // Absent from files written before hidden files existed, which stay valid.
       checkSecrets: z.array(z.string().min(1).max(1_000)).max(50).default([]),
+      // The mode last chosen in this repository, which new sessions start in; absent from files written before modes.
+      mode: z.enum(PERMISSION_MODES).default("accept-edits"),
       reviews: z.array(measurementSchema).max(MEASUREMENTS_KEPT),
       sessions: z.array(sessionSchema) });
 export type ShellSessionRecord = z.infer<typeof sessionSchema>;
@@ -97,6 +102,10 @@ export interface ShellSessionStore {
   /** Rules the operator saved for this repository's commands on this computer (decision 049). */
   commandRules(): readonly CommandRule[];
   saveCommandRule(rule: CommandRule): void;
+  /** The permission mode last chosen in this repository, which new sessions start in. */
+  lastMode(): PermissionMode;
+  /** Switch a session's permission mode; it also becomes the mode new sessions of this repository start in. */
+  setMode(id: string, mode: PermissionMode): void;
   /** This repository's measured review steps, newest last, from which reviews are forecast. */
   reviewMeasurements(): readonly ReviewMeasurement[];
   recordReviewMeasurement(measurement: ReviewMeasurement): void;
@@ -132,7 +141,7 @@ export interface ShellSessionStore {
 
 function readSnapshot(path: string, source: string): Snapshot {
   const empty: Snapshot = { format: "tesota-shell-sessions", version: snapshotVersion, source, checks: null,
-    network: [], commandRules: [], checkSecrets: [], reviews: [], sessions: [] };
+    network: [], commandRules: [], checkSecrets: [], mode: "accept-edits", reviews: [], sessions: [] };
   if (!existsSync(path)) return empty;
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
   // Snapshots from earlier versions are discarded; the next save replaces the file.
@@ -215,6 +224,7 @@ export function openShellSessionStore(sourceDirectory: string,
     let network = snapshot.network;
     let commandRules: readonly CommandRule[] = snapshot.commandRules;
     let checkSecrets: readonly string[] = snapshot.checkSecrets;
+    let mode: PermissionMode = snapshot.mode;
     let reviews: readonly ReviewMeasurement[] = snapshot.reviews;
     let closed = false;
     const save = (): void => {
@@ -222,7 +232,7 @@ export function openShellSessionStore(sourceDirectory: string,
       const temporary = `${path}.${randomUUID()}.tmp`;
       try {
         writeFileSync(temporary, JSON.stringify({ format: "tesota-shell-sessions", version: snapshotVersion,
-          source, checks, network, commandRules, checkSecrets, reviews, sessions: [...sessions.values()] }) + "\n",
+          source, checks, network, commandRules, checkSecrets, mode, reviews, sessions: [...sessions.values()] }) + "\n",
         { encoding: "utf8", mode: 0o600 });
         renameSync(temporary, path);
       } finally { if (existsSync(temporary)) unlinkSync(temporary); }
@@ -238,7 +248,7 @@ export function openShellSessionStore(sourceDirectory: string,
         const numbers = [...sessions.values()].map((existing) => Number(/^Session (\d+)$/u.exec(existing.title)?.[1] ?? 0));
         const session = { id: randomUUID(), title: `Session ${Math.max(0, ...numbers) + 1}`,
           engineId: randomUUID(), entries: [], inspections: [], workspace: null,
-          interrupted: false, blocked: false, retiredEngineIds: [], titleSource: "counter" as const };
+          interrupted: false, blocked: false, retiredEngineIds: [], mode, titleSource: "counter" as const };
         sessions.set(session.id, session);
         try { save(); } catch (error) { sessions.delete(session.id); throw error; }
         return session;
@@ -296,6 +306,18 @@ export function openShellSessionStore(sourceDirectory: string,
         const previous = commandRules;
         commandRules = [...commandRules, saved];
         try { save(); } catch (error) { commandRules = previous; throw error; }
+      },
+      lastMode: () => mode,
+      setMode: (id, chosen) => {
+        const session = find(id);
+        const previous = { session: session.mode, mode };
+        session.mode = z.enum(PERMISSION_MODES).parse(chosen);
+        mode = session.mode;
+        try { save(); } catch (error) {
+          if (previous.session === undefined) delete session.mode; else session.mode = previous.session;
+          mode = previous.mode;
+          throw error;
+        }
       },
       reviewMeasurements: () => reviews,
       recordReviewMeasurement: (measurement) => {

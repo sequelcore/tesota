@@ -91,6 +91,8 @@ export function policyDecisions(request: string, policy: RunPolicy): SessionDeci
     command: async () => runCommandAnswer(policy.commands),
     network: async () => runNetworkAnswer(policy.network),
     site: async () => runNetworkAnswer(policy.network),
+    // A run keeps accept edits; its --commands flag decides commands that ask.
+    fullAccess: async () => false,
   };
 }
 

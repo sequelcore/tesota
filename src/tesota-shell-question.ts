@@ -22,6 +22,8 @@ export interface ShellQuestion<V extends string = string> {
   readonly title: string;
   /** Why it is asked, such as the agent's reason for a command. */
   readonly detail?: string;
+  /** A risk the operator must not miss, drawn in the theme's warning color after the detail. */
+  readonly caution?: string;
   readonly options: readonly QuestionOption<V>[];
   /** The answer Enter picks until another is chosen; the safe one. */
   readonly initial: V;
@@ -84,6 +86,8 @@ export class QuestionPanel extends VStack {
     const title = wrapTextWithAnsi(bold(safeTerminalText(this.question.title)), inner);
     const detail = this.question.detail === undefined ? [] :
       wrapTextWithAnsi(mutedText(safeTerminalText(this.question.detail), theme), inner);
-    return [...title, ...detail].map((line) => ` ${line}`);
+    const caution = this.question.caution === undefined ? [] :
+      wrapTextWithAnsi(colorText(safeTerminalText(this.question.caution), theme.warning), inner);
+    return [...title, ...detail, ...caution].map((line) => ` ${line}`);
   }
 }

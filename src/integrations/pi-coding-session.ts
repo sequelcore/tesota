@@ -11,6 +11,8 @@ import { confinesCommands, type ExecutionEnvironment } from "../execution-enviro
 import type { ReasoningLevel } from "../model-roles.js";
 import { hiddenFilesIn, isSecretPath } from "../secret-files.js";
 import type { TokenUsage } from "../token-usage.js";
+import { type CommandPlace, commandPlace, commandRunsWithoutAsking, editsAllowed, offersRule, type PermissionMode }
+  from "../verification/permission-mode.js";
 import { ADVISOR_GUIDANCE, type Advisor, advisorTool } from "./advisor.js";
 import { PLAN_GUIDANCE, planTool } from "./plan-tool.js";
 import type { WorkPlan } from "../work-plan.js";
@@ -56,6 +58,10 @@ export interface CodingSessionOptions {
   readonly commandRules?: () => readonly CommandRule[];
   /** This computer, where a sandboxed session's agent may ask to run one command (decision 049); absent where it may not. */
   readonly computer?: ExecutionEnvironment;
+  /** The operator's permission mode, read at each edit and command so a switch applies at once; accept edits when absent. */
+  readonly mode?: () => PermissionMode;
+  /** Called for each command Full access let run without asking, so the operator can be told how many did. */
+  readonly onFullAccessCommand?: () => void;
   /** Asked after a command whose network access the environment refused. */
   readonly decideNetwork?: (destinations: readonly string[]) => Promise<NetworkDecision>;
   readonly onActivity?: (activity: AgentActivity) => void;
@@ -176,20 +182,41 @@ async function answerRefusedNetwork(environment: ExecutionEnvironment,
 /** Whether a command may run: true, or false after telling the agent why not. */
 export type CommandGate = (command: string, signal: AbortSignal | undefined) => Promise<boolean>;
 
+/** The operator's permission mode now: accept edits when the session names none. */
+function modeNow(options: Pick<CodingSessionOptions, "mode">): PermissionMode { return options.mode?.() ?? "accept-edits"; }
+
 /**
- * Whether a command may run on this computer: a rule the operator saved for
- * the repository allows it, or the operator does when asked, with the agent's
- * reason and a rule to save when one may be (decision 049).
+ * Whether a command may run where `place` puts it: without asking when the
+ * permission mode lets it (proved: `commandRunsWithoutAsking`), otherwise when
+ * the operator allows it, with the agent's reason and, in accept edits, a rule
+ * to save when one may be (decision 049).
  */
-function computerGate(options: Pick<CodingSessionOptions, "approveCommand" | "commandRules">,
+function commandGate(options: Pick<CodingSessionOptions, "approveCommand" | "commandRules" | "mode" | "onFullAccessCommand">,
+  place: CommandPlace,
   request?: { readonly reason: string; readonly rule?: CommandRule | undefined }): CommandGate {
   return async (command, signal) => {
-    if (allowedByRules(command, options.commandRules?.() ?? [])) return true;
-    const rule = offeredRule(command, request?.rule);
+    const mode = modeNow(options);
+    if (commandRunsWithoutAsking(mode, place, allowedByRules(command, options.commandRules?.() ?? []))) {
+      if (mode === "full-access") options.onFullAccessCommand?.();
+      return true;
+    }
+    const rule = offersRule(mode) ? offeredRule(command, request?.rule) : undefined;
     const answer = await options.approveCommand({ command, ...request === undefined ? {} : { reason: request.reason },
       ...rule === undefined ? {} : { rule } }, signal);
     return answer !== "deny";
   };
+}
+
+/** A file tool that changes files only while the permission mode allows edits (proved: `editsAllowed`). */
+function whileEditsAllowed<P extends TSchema, D, S>(options: Pick<CodingSessionOptions, "mode">,
+  tool: ToolDefinition<P, D, S>): ToolDefinition<P, D, S> {
+  return { ...tool, execute: (id, params, signal, onUpdate, ctx) => {
+    if (!editsAllowed(modeNow(options))) {
+      throw new Error("The operator's mode is Read only: files cannot be changed. Describe the change instead; " +
+        "the operator can switch modes with Shift+Tab.");
+    }
+    return tool.execute(id, params, signal, onUpdate, ctx);
+  } };
 }
 
 /**
@@ -306,10 +333,19 @@ function piEntries(message: AgentSession["messages"][number]): ConversationEntry
   }
 }
 
-/** The agent's shell: bash, in whichever environment its commands run; on this computer, only as the operator allows. */
+/**
+ * The agent's shell: bash where the permission mode puts each command (proved:
+ * `commandPlace`), the sandbox or this computer, and only as the mode or the
+ * operator allows. A sandboxed session without this computer keeps its commands in the sandbox.
+ */
 function shellTool(root: string, options: WorkingAgentOptions): ToolDefinition {
-  const operations = environmentBash(options.environment, options.sandboxed ? undefined : computerGate(options), options.decideNetwork,
-    root);
+  const sandbox = environmentBash(options.environment, commandGate(options, options.sandboxed ? "sandbox" : "computer"),
+    options.decideNetwork, root);
+  const computer = options.sandboxed && options.computer !== undefined
+    ? environmentBash(options.computer, commandGate(options, "computer")) : undefined;
+  const operations: BashOperations = { exec: (command, cwd, execOptions) =>
+    (computer !== undefined && commandPlace(modeNow(options), options.sandboxed) === "computer" ? computer : sandbox)
+      .exec(command, cwd, execOptions) };
   return defineTool(createBashToolDefinition(root, { operations, exposeSessionEnvironment: false }));
 }
 
@@ -332,7 +368,7 @@ function computerTool(root: string, computer: ExecutionEnvironment, options: Wor
       timeout: Type.Optional(Type.Number({ description: "Seconds before the command is stopped" })),
     }),
     execute: (id, params, signal, onUpdate, context) => {
-      const gate = computerGate(options, { reason: params.reason, rule: params.rule });
+      const gate = commandGate(options, "computer", { reason: params.reason, rule: params.rule });
       const bash = createBashToolDefinition(root, { operations: environmentBash(computer, gate), exposeSessionEnvironment: false });
       return bash.execute(id, { command: params.command, ...params.timeout === undefined ? {} : { timeout: params.timeout } },
         signal, onUpdate, context);
@@ -435,7 +471,7 @@ export interface SessionStartOptions {
 
 /** What decides the working agent's tools, whichever engine runs it. */
 export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "place" | "approveCommand" |
-  "commandRules" | "computer" | "decideNetwork" | "explorers" | "web" | "advisor" | "plan">;
+  "commandRules" | "computer" | "mode" | "onFullAccessCommand" | "decideNetwork" | "explorers" | "web" | "advisor" | "plan">;
 
 /**
  * The working agent's system prompt and tools: every file tool confined to the
@@ -451,8 +487,8 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
     plan: options.plan !== undefined };
   return { systemPrompt: systemPrompt(root, options.sandboxed, options.environment, helpers, options.place ?? "copy"), tools: [
     ...readOnlyFileTools(root),
-    defineTool(confine(root, createEditToolDefinition(root), true)),
-    defineTool(confine(root, createWriteToolDefinition(root), true)),
+    defineTool(whileEditsAllowed(options, confine(root, createEditToolDefinition(root), true))),
+    defineTool(whileEditsAllowed(options, confine(root, createWriteToolDefinition(root), true))),
     shellTool(root, options),
     ...(options.sandboxed && options.computer !== undefined ? [computerTool(root, options.computer, options)] : []),
     ...(options.explorers === undefined ? [] : [exploreTool(options.explorers)]),

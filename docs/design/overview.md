@@ -166,6 +166,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `wsl-environment.ts`, `bubblewrap-sandbox.ts`, `bubblewrap-sandbox-server.ts`, `egress-proxy.ts`, `verification/setup-network-rule.ts` | The WSL sandbox: its provider on Windows, its bubblewrap process inside WSL, and the allowlist proxy its commands reach the network through, with its proved setup phase |
 | `execution-qualification.ts`, `sandbox-command.ts`, `verification/sandbox-qualification.ts` | Qualification on the operator's machine, `tesota sandbox`, and their proved rules |
 | `command-rules.ts`, `verification/command-rule.ts` | Which commands run on this computer without asking: reading a command, the rules the operator saves, and their proved match |
+| `verification/permission-mode.ts` | The operator's permission modes (Read only, Accept edits, Full access): whether edits are allowed, where commands run, when they ask, and Shift+Tab's cycle, proved |
 | `workspace-checks.ts`, `verification/oxlint*.ts`, `verification/lemmascript-verifier.ts` | Verifier results with claim and limits: approved commands, Oxlint, LemmaScript with Dafny |
 | `test-report.ts`, `verification/check-origin-rule.ts` | Reading a check's JUnit XML reports, and the proved rule for whose failure a check or test is |
 | `verification-changes.ts` | Flagging changes to tests, check configuration, CI, specifications and scripts |

@@ -19,6 +19,7 @@ import { dataNotice, offeredChoices, offeredModels, type OfferedModel, routeList
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
+import { commandPlace, needsConfirmation, nextMode, type PermissionMode } from "./verification/permission-mode.js";
 import { currentBranch } from "./repository-git.js";
 import { askExplorer, askPageReader } from "./integrations/pi-explorer.js";
 import type { WebAccess } from "./integrations/web-tools.js";
@@ -96,6 +97,16 @@ export interface SessionSandboxCommands {
   change(id: string, argument: string | undefined): Promise<void>;
 }
 
+/** The operator's permission mode for a session (Read only, Accept edits, Full access), cycled with Shift+Tab. */
+export interface PermissionModeCommands {
+  /** Switch the session to the next mode; entering Full access asks first, once per session. */
+  cycle(id: string): Promise<void>;
+  /** Show the session's mode, and where its commands run once known, under the prompt. */
+  show(id: string): void;
+  /** Show the mode of a session the shell opens, reminding the operator when it opens in Full access. */
+  open(id: string): void;
+}
+
 export interface AgentModelCommands {
   /** Show the agent's model and the offered ones, or switch to `route:model`, or `default`. */
   change(id: string, argument: string | undefined): Promise<void>;
@@ -103,10 +114,41 @@ export interface AgentModelCommands {
   handOff(id: string): Promise<void>;
 }
 
-/** Where commands run, in the operator's words: which sandbox, or "this computer" for the host. */
-function executionLabel(execution: SessionExecution): string {
-  if (execution.commands === "host") return "this computer · asks first";
-  return `sandbox · ${SANDBOX_NAMES[execution.provider.name]?.label ?? execution.provider.name}`;
+/** A permission mode in the operator's words, as the footer and notices name it. */
+const MODE_NAMES: Readonly<Record<PermissionMode, string>> = { "read-only": "read only", "accept-edits": "accept edits",
+  "full-access": "full access" };
+
+/**
+ * The footer's line: the mode, then where commands run once the session's
+ * environment is chosen, which sandbox or "this computer"; full access runs
+ * them on this computer (proved: `commandPlace`). The place is the host
+ * whenever commands reach this computer, for the footer's caution color.
+ */
+export function executionLabel(mode: PermissionMode, execution: SessionExecution | undefined):
+  { readonly label: string; readonly place: SessionExecution["commands"] } {
+  const sandboxed = execution === undefined ? mode !== "full-access" : execution.commands === "sandbox";
+  if (commandPlace(mode, sandboxed) === "computer") {
+    return { label: `${MODE_NAMES[mode]} · this computer${mode === "full-access" ? "" : " · asks first"}`, place: "host" };
+  }
+  if (execution?.commands !== "sandbox") return { label: MODE_NAMES[mode], place: "sandbox" };
+  return { label: `${MODE_NAMES[mode]} · sandbox · ${SANDBOX_NAMES[execution.provider.name]?.label ?? execution.provider.name}`,
+    place: "sandbox" };
+}
+
+/** What the agent is told when the operator's mode changes: what it may do now, and what not to try. */
+function modeNote(mode: PermissionMode, sandboxed: boolean): string {
+  if (mode === "read-only") {
+    return "Note: the user's mode is now Read only. Your edit and write tools refuse, and every command asks the user first. " +
+      "Investigate, answer and propose changes; do not try to change files another way, such as with commands.";
+  }
+  if (mode === "full-access") {
+    return "Note: the user's mode is now Full access. Your commands run on the user's computer without asking, with their " +
+      "programs, credentials and network, outside any sandbox; files hidden from your file tools are not hidden from them. " +
+      "Read hidden files only when the task needs them, and do not change anything outside this repository unless asked.";
+  }
+  return `Note: the user's mode is now Accept edits. You may edit files; ${sandboxed
+    ? "commands run in the sandbox without asking, and run_on_computer asks the user"
+    : "each command asks the user first, unless a rule they saved allows it"}.`;
 }
 
 /** Where commands run, as a phrase: "in the WSL sandbox", or "on this computer" for the host. */
@@ -237,6 +279,12 @@ class SessionState {
   readonly turnCalls: Map<string, ToolCallRecord> = new Map();
   /** The hidden files the agent was last told of, so it hears again only when they change. */
   toldHidden: string | undefined;
+  /** The mode the agent was last told of; undefined while its system prompt's, accept edits, holds. */
+  toldMode: PermissionMode | undefined;
+  /** Whether the operator confirmed Full access in this session, which is asked once. */
+  fullAccessConfirmed = false;
+  /** Commands Full access let run without asking in the current turn, which the operator is told of when it ends. */
+  fullAccessCommands = 0;
 }
 
 /** Where a session's work shows: the part of the shell's surface the engine writes to, which a run without a terminal also provides. */
@@ -253,6 +301,11 @@ export interface SessionEngineOptions {
   readonly chooseExecution: (preference: SandboxPreference) => Promise<SessionExecution>;
   /** Sessions created in this run that have not had a request, which prepare nothing until their first. */
   readonly fresh: ReadonlySet<string>;
+  /**
+   * Each session's permission mode, read at every edit and command; absent, every session runs in accept edits, as a
+   * run without a terminal does, and the mode cannot be switched.
+   */
+  readonly mode?: (id: string) => PermissionMode;
 }
 
 /** What the engine offers the shell and a run without a terminal: each session's work and the commands on it. */
@@ -261,6 +314,7 @@ export interface SessionEngine {
   readonly turnCommands: TurnCommands;
   readonly agentModel: AgentModelCommands;
   readonly sessionSandbox: SessionSandboxCommands;
+  readonly permissionMode: PermissionModeCommands;
   /** `/checks [reset]`: the repository's approved checks and the hidden files they may read. */
   showChecks(id: string, args: readonly string[]): void;
   /** Name a session from its requests in the background, as the `namer` role writes it (decision 036). */
@@ -298,7 +352,9 @@ export function sessionAgentModel(store: ShellSessionStore, id: string): string 
  * review and application, and the commands on it, writing to `output` and
  * asking `decisions`. The shell and a run without a terminal share it.
  */
-export function createSessionEngine({ cwd, store, output, decisions, chooseExecution, fresh }: SessionEngineOptions): SessionEngine {
+export function createSessionEngine({ cwd, store, output, decisions, chooseExecution, fresh, mode }: SessionEngineOptions):
+  SessionEngine {
+  const modeOf = (id: string): PermissionMode => mode?.(id) ?? "accept-edits";
   // Sessions share one choice per shell, since readiness takes some seconds; qualification is kept on disk. The
   // operator naming a sandbox with /sandbox checks again, so a sandbox that stopped being ready since is not reused.
   const executionChoices = new Map<SandboxPreference, Promise<SessionExecution>>();
@@ -377,6 +433,11 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     if (state === undefined) { state = new SessionState(); states.set(id, state); }
     return state;
   };
+  /** The session's mode and, once chosen, where its commands run, under the prompt. */
+  const showExecution = (id: string): void => {
+    const { label, place } = executionLabel(modeOf(id), states.get(id)?.execution);
+    output.setSessionExecution(id, label, place);
+  };
   /** The session that works in the operator's files; one at a time may, and others get an isolated workspace. */
   let sourceHolder: string | undefined;
   const holdsSource = (id: string): boolean => sourceHolder === id || sourceHolder === undefined &&
@@ -433,7 +494,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       output.reportFor(id, { phase: "preparing", activity: "Choosing where commands run" });
       const [workspace, execution] = await Promise.all([workspaceFor(id), executionFor(sandboxPreference(id))]);
       state.execution = execution;
-      output.setSessionExecution(id, executionLabel(execution), execution.commands);
+      showExecution(id);
       if (execution.commands === "host") {
         output.writeTo(id, "Commands ask before running and run on this computer without isolation. " +
           "Run tesota setup to see what sandboxed sessions need.", "warning");
@@ -649,6 +710,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         // A sandboxed agent may ask to run one command here, with the operator's own tools and logins (decision 049).
         ...confinesCommands(environment.guarantees) ? { computer: await hostProvider.prepare(workspace.checkout) } : {},
         commandRules: () => store.commandRules(),
+        mode: () => modeOf(id),
+        onFullAccessCommand: () => { stateFor(id).fullAccessCommands += 1; },
         approveCommand: async (request) => {
           output.reportFor(id, { phase: "awaiting_command" });
           const approval = await decisions(id).command(request);
@@ -673,6 +736,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         } }, { sessionManager, conversationId: engineId });
       consulted = agent;
       state.agent = agent;
+      // A new conversation knows only its system prompt's mode, accept edits; any other is named with the next request.
+      state.toldMode = undefined;
       await briefNewConversation(id, agent, workspace);
       return agent;
     })();
@@ -823,7 +888,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       return;
     }
     await restartEnvironment(id);
-    output.setSessionExecution(id, executionLabel(next), next.commands);
+    stateFor(id).execution = next;
+    showExecution(id);
     // The conversation remembers commands from the earlier environment: its paths and shell may no longer apply.
     const earlier = current === undefined ? "" : `; earlier commands in this conversation ran ${executionPlace(current)}, ` +
       "so their paths and tools may differ";
@@ -1131,6 +1197,46 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       "instead of working around it, such as by creating the file.";
   };
 
+  /** Tell the agent the operator's mode when it differs from the one it last heard of. */
+  const modeNotice = (id: string): string | undefined => {
+    const state = stateFor(id);
+    const current = modeOf(id);
+    if (current === (state.toldMode ?? "accept-edits")) return undefined;
+    state.toldMode = current;
+    return modeNote(current, state.execution?.commands === "sandbox");
+  };
+  /** Shift+Tab: the next mode, after the operator confirms Full access the first time in this session. */
+  const cycleMode = async (id: string): Promise<void> => {
+    if (mode === undefined) return;
+    const state = stateFor(id);
+    const next = nextMode(modeOf(id));
+    const asked = needsConfirmation(next, state.fullAccessConfirmed);
+    if (asked) {
+      if (!await decisions(id).fullAccess()) return;
+      state.fullAccessConfirmed = true;
+    }
+    store.setMode(id, next);
+    showExecution(id);
+    // The answer to the question already says so; entering Full access again in the session still leaves a line.
+    if (next === "full-access" && !asked) output.writeTo(id, "Full access: commands run on this computer without asking.", "warning");
+  };
+  /** A session opens in the mode last chosen, which can be Full access without a question: the operator is reminded. */
+  const openMode = (id: string): void => {
+    showExecution(id);
+    if (modeOf(id) === "full-access") {
+      output.replyTo(id, "This session is in Full access: commands run on this computer without asking. " +
+        "Shift+Tab switches to Read only or Accept edits.", "warning");
+    }
+  };
+  const permissionMode: PermissionModeCommands = { cycle: cycleMode, show: showExecution, open: openMode };
+  /** At a turn's end, how many commands Full access let run on this computer without asking, when any did. */
+  const noticeFullAccessCommands = (id: string): void => {
+    const unasked = stateFor(id).fullAccessCommands;
+    if (unasked === 0) return;
+    output.writeTo(id, `Full access: ${unasked} ${unasked === 1 ? "command" : "commands"} ran on this computer ` +
+      "without asking in this turn.", "warning");
+  };
+
   const sessionWork = (id: string): SessionWork => ({
     prepare: () => {
       if (fresh.has(id)) return;
@@ -1149,7 +1255,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         const work = await workspaceFor(id);
         // In the source, the turn begins now, and the operator's own edits since the agent's last turn are named to it.
         const edited = work.place === "source" ? await beginTurnIn(work) : undefined;
-        const notes = [state.note, origin === "operator" ? edited ?? await updateFromSource(id) : undefined,
+        const notes = [state.note, modeNotice(id), origin === "operator" ? edited ?? await updateFromSource(id) : undefined,
           origin === "operator" ? await hiddenNotice(id, work.checkout) : undefined]
           .filter((note) => note !== undefined);
         // A new request makes any earlier review stale, whether or not the work finishes.
@@ -1168,6 +1274,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         let result: Awaited<ReturnType<typeof coding.run>>;
         const steered: Promise<void>[] = [];
         state.running = { agent: coding, work, steered };
+        state.fullAccessCommands = 0;
         // A turn that stops or fails still ends, so what it changed can be kept or reverted.
         try { result = await coding.run(prompt, signal); }
         finally {
@@ -1176,6 +1283,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
             output.writeTo(id, "A message you sent during the turn could not be recorded, so its review does not see it.", "warning");
           }
           if (work.place === "source") ended = await endTurnIn(id, work, origin).catch(() => undefined);
+          noticeFullAccessCommands(id);
         }
         if (result.status === "unsettled") { blockSession(id); return result; }
         if (result.status !== "completed") return result;
@@ -1331,6 +1439,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     turnCommands: { keep: keepTurns, revert: revertTurn, redo: redoTurn, isolate: isolateSession },
     agentModel,
     sessionSandbox,
+    permissionMode,
     showChecks,
     name: nameInBackground,
     offered,

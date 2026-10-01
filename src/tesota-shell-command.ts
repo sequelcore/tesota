@@ -128,6 +128,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       freshSessions.add(session.id);
       surface.addSession(session.id, session.title);
       showAgentModel(session.id);
+      engine.permissionMode.open(session.id);
       surface.selectSession(session.id);
       workspaceCallbacks?.newSession(session.id);
     },
@@ -135,6 +136,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     onModel: (id, argument) => { void engine.agentModel.change(id, argument); },
     onHandoff: (id) => { void engine.agentModel.handOff(id); },
     onSandbox: (id, argument) => { void engine.sessionSandbox.change(id, argument); },
+    onCycleMode: (id) => { void engine.permissionMode.cycle(id); },
     accounts: accountsSource(),
     sandboxPicker: (id) => {
       const own = saved(id)?.sandbox;
@@ -195,8 +197,10 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     showAgentModel(session.id);
     if (session.plan !== undefined) surface.setSessionPlan(session.id, session.plan);
   }
+  // Each session keeps its own mode; a session saved before modes runs in accept edits, as it did.
   const engine = createSessionEngine({ cwd, store, output: surface, decisions: (id) => shellDecisions(surface, id),
-    chooseExecution, fresh: freshSessions });
+    chooseExecution, fresh: freshSessions, mode: (id) => saved(id)?.mode ?? "accept-edits" });
+  for (const session of store.list()) engine.permissionMode.open(session.id);
   /**
    * Close a session: its record, agent transcript and workspace are removed. A
    * session holding unapplied changes or unresolved effects needs a second
@@ -229,6 +233,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       freshSessions.add(replacement.id);
       surface.addSession(replacement.id, replacement.title);
       showAgentModel(replacement.id);
+      engine.permissionMode.open(replacement.id);
       workspaceCallbacks?.newSession(replacement.id);
     }
     workspaceCallbacks?.closed(id);

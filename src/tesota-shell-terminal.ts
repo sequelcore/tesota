@@ -51,6 +51,8 @@ export interface TesotaShellTerminalOptions {
   readonly onIsolate?: (sessionId: string) => void;
   /** `/checks [reset]`: the repository's approved checks and the hidden files they may read. */
   readonly onChecks?: (sessionId: string, args: readonly string[]) => void;
+  /** `Shift+Tab`: the selected session's next permission mode, as in Claude Code and Codex. */
+  readonly onCycleMode?: (sessionId: string) => void;
   /** `/sandbox`, with its argument when one was given (decision 030). */
   readonly onSandbox?: (sessionId: string, argument: string | undefined) => void;
   /** What the Accounts panel shows: `/accounts`, `/usage` and Alt+A (decision 051). */
@@ -794,8 +796,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     return true;
   }
 
-  /** Next, previous or numbered session; true when `data` was one of those keys, even with no session at that number. */
+  /**
+   * The selected session's next permission mode, or the next, previous or numbered session; true when `data` was one
+   * of those keys, even with no session at that number.
+   */
   private handleSessionKey(data: string): boolean {
+    if (matchesKey(data, "shift+tab")) { this.options.onCycleMode?.(this.selectedId); return true; }
     const ids = this.sessionOrder().map((session) => session.id);
     if (matchesKey(data, "ctrl+tab") || matchesKey(data, "alt+j") || matchesKey(data, "alt+k")) {
       this.selectSession(sessionBeside(ids, this.selectedId, matchesKey(data, "alt+k") ? -1 : 1));
@@ -1348,7 +1354,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         "/handoff /sandbox [where] /isolate /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
         "While it works: Enter queues · Tab sends to the agent now · Esc or Ctrl+C stops · Ctrl+C or Ctrl+D twice quits\n" +
-        "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +
+        "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close · Shift+Tab mode\n" +
         "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split · Alt+A accounts");
     },
     quit: () => { this.options.onQuit?.(); },
