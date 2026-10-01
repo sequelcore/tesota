@@ -8,7 +8,7 @@ import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgres
 import { backgroundText, bold, colorText, fadedText, mutedText, parseTesotaShellTheme, selectedRow, shellSurfaces, surfaceText, tesotaShellTheme, type ShellSurfaces, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
-import { ResultPanel } from "./tesota-shell-result.js";
+import { ResultPanel, type DiffSource, type DiffSources } from "./tesota-shell-result.js";
 import { DecisionBar, type DecisionAction, type UndecidedTurns } from "./tesota-shell-decision-bar.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
 import { ThemePicker } from "./tesota-shell-theme-picker.js";
@@ -51,6 +51,8 @@ export interface TesotaShellTerminalOptions {
   readonly onKeep?: (sessionId: string) => void;
   readonly onRevert?: (sessionId: string, args: readonly string[]) => void;
   readonly onRedo?: (sessionId: string) => void;
+  /** `/diff`: the Diff tab's live sources for a session, read when the operator asks for them. */
+  readonly diffSources?: (sessionId: string) => Promise<DiffSources>;
   /** `/isolate`: before its first request, a session works in an isolated workspace instead of the operator's files. */
   readonly onIsolate?: (sessionId: string) => void;
   /** `/checks [reset]`: the repository's approved checks and the hidden files they may read. */
@@ -199,6 +201,7 @@ const shellCommands = [
   { name: "handoff", description: "Start the agent's conversation afresh" },
   { name: "sandbox", description: "Show or switch where this session's commands run" },
   { name: "isolate", description: "Work in an isolated copy instead of your files; before the first request" },
+  { name: "diff", description: "Show the diff: everything uncommitted, the undecided turns or the reviewed result" },
   { name: "keep", description: "Keep this session's undecided turns in your files" },
   { name: "revert", description: "Undo the latest undecided turn; again steps further back" },
   { name: "redo", description: "Put the latest reverted turn back" },
@@ -465,7 +468,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       const session = this.selected();
       // Only at rest at the request prompt: never while it works, waits on a question or asks something else.
       if (session.pending === undefined || session.prompt !== "> " || session.question !== undefined) return undefined;
-      return { undecided: session.undecided, hasDiff: (session.inspections.at(-1)?.diff ?? "").trim().length > 0 };
+      return { undecided: session.undecided, hasDiff: true };
     }, (action) => { this.decide(action); });
     this.accountsPanel = new AccountsPanel(this.theme, () => this.tui.terminal.rows, this.now);
     this.editor = new PromptEditor(this.tui, this.theme);
@@ -1155,11 +1158,44 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     else if (action === "revert") this.options.onRevert?.(session.id, []);
     else if (action === "redo") this.options.onRedo?.(session.id);
     else {
-      session.selectedInspection = session.inspections.length - 1;
-      this.showResult = true;
-      this.compose();
-      this.result.choose("diff");
+      session.selectedInspection = Math.max(0, session.inspections.length - 1);
+      void this.showDiff(session, ["undecided"]);
     }
+  }
+
+  /**
+   * `/diff [source]`: the result panel on its Diff tab, read again where the session works, as Claude Code's /diff
+   * shows the current changes: everything uncommitted until a result is reviewed, then the reviewed result, and any
+   * source named. Run again on the Diff tab without a source, it hides the panel.
+   */
+  private async showDiff(session: SessionView, args: readonly string[]): Promise<void> {
+    const named = args[0];
+    const sources: Readonly<Record<string, DiffSource>> = { working: "working", undecided: "undecided", reviewed: "reviewed" };
+    const wanted = named === undefined ? undefined : sources[named];
+    if (args.length > 1 || named !== undefined && wanted === undefined) {
+      this.replyTo(session.id, "Use /diff, or /diff working, /diff undecided or /diff reviewed.", "warning");
+      return;
+    }
+    if (wanted === undefined && this.showResult && this.result.tab === "diff" && session.id === this.selectedId) {
+      this.showResult = false;
+      this.compose();
+      return;
+    }
+    const read = await this.options.diffSources?.(session.id).catch(() => ({})) ?? {};
+    if (session.id !== this.selectedId) return;
+    this.showResult = true;
+    this.compose();
+    this.result.setSources(read);
+    if (this.result.sources.length === 0) {
+      this.replyTo(session.id, "Nothing to diff: this folder is not a Git repository, and no result was reviewed.");
+      return;
+    }
+    const source = wanted ?? this.result.source;
+    if (!this.result.sources.includes(source) && wanted !== undefined) {
+      this.replyTo(session.id, `There is no ${source === "working" ? "working tree" : source} diff for this session.`, "warning");
+    }
+    this.result.chooseSource(this.result.sources.includes(source) ? source : this.result.sources[0] ?? "working");
+    this.tui.requestRender();
   }
 
   setSessionExecution(id: string, label: string, place: SessionExecution["commands"]): void {
@@ -1430,6 +1466,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     model: (session, args) => { this.changeModel(session, args); },
     roles: (session, args) => { this.changeRoleModel(session, args); },
     handoff: (session) => { this.options.onHandoff?.(session.id); },
+    diff: (session, args) => { void this.showDiff(session, args); },
     keep: (session) => { this.options.onKeep?.(session.id); },
     revert: (session, args) => { this.options.onRevert?.(session.id, args); },
     redo: (session) => { this.options.onRedo?.(session.id); },
@@ -1455,7 +1492,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     details: (session, args) => { this.toggleDetails(session, args); },
     help: (session) => {
       this.replyTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
-        "/handoff /sandbox [where] /isolate /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
+        "/handoff /sandbox [where] /isolate /diff [working|undecided|reviewed] /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
         "While it works: Enter queues · Tab sends to the agent now · Esc stops · Ctrl+C twice stops · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close · Shift+Tab mode\n" +
