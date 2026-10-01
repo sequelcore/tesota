@@ -83,7 +83,8 @@ act. Reviews never use the web. Sites that block automated requests, such as
 npm's, and pages built with JavaScript give little text.
 
 Commands run in a **sandbox** when one is ready, and on **this computer**
-otherwise, where each one asks you first; the agent's edits go to your files,
+otherwise, where each one asks you first unless you choose
+[Full access](#modes); the agent's edits go to your files,
 and each turn is recorded so you can revert it. On Windows, the **WSL
 sandbox** runs the agent's commands in a Linux shell inside WSL, in a
 distribution of Tesota's own, where they see only your project, under
@@ -198,7 +199,30 @@ since, and keeps the agent's pending changes on top. If you and the agent
 changed the same lines, Tesota leaves the copy as it was and names the files;
 apply or reject the pending changes to continue with your newer version.
 
-On this computer, Tesota asks before any shell command runs:
+### Modes
+
+`Shift+Tab` switches the selected session's **mode**, as in Claude Code and
+Codex:
+
+| Mode | Edits | Commands |
+| --- | --- | --- |
+| **Read only** | The agent changes no file | Every command asks first, even in the sandbox |
+| **Accept edits** | Yes | In the sandbox, run without asking; on this computer, ask unless a rule you saved allows them |
+| **Full access** | Yes | Run on this computer without asking, with your programs, logins and network |
+
+Use Read only to explore or plan before anything changes. The first switch to
+Full access in a session asks you to confirm it, as Codex does, and `Enter`
+cancels. A session that opens in Full access says so, each later switch to it
+leaves a line in the conversation, and a turn in which commands ran without
+asking ends with how many did. In Full access, commands run
+outside the sandbox and can reach files hidden from the agent's file tools;
+`/revert` still undoes a turn's changes in your files, but not what a command
+did elsewhere. The switch applies at once, even to work under way, and the
+agent hears of it with your next request. A new session starts in the mode you
+last chose in this repository; each saved session keeps its own. `tesota run`
+always works in Accept edits, with its `--commands` flag answering what asks.
+
+On this computer in Accept edits, Tesota asks before any shell command runs:
 
 ```text
 Run `gh pr list`?
@@ -423,8 +447,10 @@ one for commands, where `Enter` alone keeps working:
 
 - **apply** writes the changes to your repository, only if nothing in it
   changed since the result was checked. If you edited any file, even one the
-  changes do not touch, nothing is written; your next request brings your
-  edits in, and the result is checked again. Tesota keeps a copy of every file
+  changes do not touch, nothing is written, and Tesota offers to bring your
+  edits in and check again, as a pull request's "Update branch" does; no
+  agent turn runs unless the checks or the review send something back. `Enter`
+  declines, and your next request brings them in instead. Tesota keeps a copy of every file
   it replaces, never overwrites a file someone changes meanwhile, and undoes
   what it wrote if it has to stop. If it cannot undo everything, it says
   "Recovery required", and `tesota recover` in that repository lists each
@@ -513,10 +539,14 @@ automatically on a narrow terminal. `Alt+B` hides it, or opens it over the
 right side at a narrow size without taking focus from the input. `Esc` still
 stops work; it does not close the sidebar. The sidebar and the terminal
 window's title name the selected session. The prompt sits between two rules.
-The first line under it names the selected session's model, followed by the
-repository and branch while the sidebar is hidden, as in `claude-code:opus ·
-tesota · dev`. The second names where commands run: `this computer · asks
-first` in the theme's warning color, or `sandbox · …` in its success color.
+The first line under it names the selected session's model, repository and
+branch, as in `claude-code:opus · tesota · dev`. The second names the mode,
+marked with the prompt's chevron (`· read only on`, `›› accept edits on`,
+`››› full access on`), and where commands run, such as `›› accept edits on ·
+sandbox · WSL` in the theme's success color, or `››› full access on · this
+computer` in its warning color. It ends with `(shift+tab to cycle)` and, while
+the input is empty, `? for shortcuts`: as in Codex, `?` on an empty input
+shows the shortcuts, and anywhere else it is typed.
 
 A question above the prompt, such as a command waiting for your approval, is
 always shown whole, over as many lines as it needs, and so is each command the
@@ -603,10 +633,14 @@ background colors; plain conversation text still uses the terminal's foreground.
 - Copies of the files an application replaced stay in
   `~/.tesota/applications/` for 30 days, or until an unfinished application
   is settled with `tesota recover`.
-- Closing a session removes its copy, if it has one. `tesota prune` lists
+- Closing a session removes its copy, if it has one, and its agent's
+  conversations, Claude Code's included: Tesota removes those by the ids it
+  recorded, so your own Claude Code conversations in the same project stay.
+  `tesota prune` lists
   every copy with what it holds on disk, on your computer and in the WSL
   sandbox, whose installed `node_modules` are usually most of it, and the
   copies it would remove: those that no session uses and that hold no
   unapplied changes. It also lists records of sessions no saved session uses
-  (their changes stay in your files), and Tesota's records of directories
-  that no longer exist; `tesota prune --force` removes them.
+  (their changes stay in your files), Tesota's records of directories
+  that no longer exist, and Claude Code's folders of copies that no longer
+  exist, which only Tesota's sessions used; `tesota prune --force` removes them.

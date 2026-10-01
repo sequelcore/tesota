@@ -19,8 +19,8 @@ import { ACCOUNTS_PANEL_HEIGHT, ACCOUNTS_PANEL_WIDTH, ACCOUNTS_TABS, AccountsPan
 import { SessionRail, SessionSidebarHeader, SessionSidebarOverlay, sessionStateIcon, type SidebarSession } from "./tesota-shell-sidebar.js";
 import { planLines, type WorkPlan } from "./work-plan.js";
 import { WelcomeBanner } from "./tesota-shell-welcome.js";
-import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, sidebarPresentation,
-  sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarSessionState } from "./verification/sidebar-rule.js";
+import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, showWaitingInFooter,
+  sidebarGroupRank, sidebarPresentation, sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarSessionState } from "./verification/sidebar-rule.js";
 
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
@@ -51,6 +51,8 @@ export interface TesotaShellTerminalOptions {
   readonly onIsolate?: (sessionId: string) => void;
   /** `/checks [reset]`: the repository's approved checks and the hidden files they may read. */
   readonly onChecks?: (sessionId: string, args: readonly string[]) => void;
+  /** `Shift+Tab`: the selected session's next permission mode, as in Claude Code and Codex. */
+  readonly onCycleMode?: (sessionId: string) => void;
   /** `/sandbox`, with its argument when one was given (decision 030). */
   readonly onSandbox?: (sessionId: string, argument: string | undefined) => void;
   /** What the Accounts panel shows: `/accounts`, `/usage` and Alt+A (decision 051). */
@@ -153,6 +155,11 @@ interface SessionView {
   draft: string;
   pending: PendingPrompt | undefined;
   prompt: string;
+  /**
+   * The request prompt a question opened over, such as Full access's confirmation asked while the session is idle;
+   * it waits again once the question is answered or cancelled.
+   */
+  held: PendingPrompt | undefined;
   /** The question with fixed answers the pending prompt asks, drawn in place of the input. */
   question: QuestionPanel | undefined;
   /** Messages typed while the session worked, which its next request prompts take in order. */
@@ -395,17 +402,23 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly plan = new PlanPanel();
   private readonly queue = new QueuePanel();
   /**
-   * Under the prompt, as other harnesses order it: the selected session's model, joined by the repository and branch
-   * while the sidebar is hidden; then where its commands run, in the color for that place.
+   * Under the prompt, as Claude Code and Codex order it: the selected session's model, repository and branch; then its
+   * mode and where its commands run, in the color for that place, with the keys that change the mode and show the
+   * shortcuts, the latter while the input is empty, as in Codex.
    */
   private readonly footer = new LiveLines(() => {
     const { execution, model } = this.selected();
-    const workspace = sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns) !== "hidden" ? "" :
-      `${safeTerminalText(basename(this.options.cwd))}${this.branch === undefined ? "" : ` · ${safeTerminalText(this.branch)}`}`;
+    const workspace = `${safeTerminalText(basename(this.options.cwd))}${this.branch === undefined ? "" : ` · ${safeTerminalText(this.branch)}`}`;
     const identity = [model === undefined ? "" : safeTerminalText(model), workspace].filter(Boolean).join(" · ");
+    const hints = [execution === undefined ? "" : "(shift+tab to cycle)", this.editor.getText() === "" ? "? for shortcuts" : ""]
+      .filter(Boolean).join(" · ");
     const place = execution === undefined ? "" :
       colorText(execution.label, execution.place === "host" ? this.theme.warning : this.theme.success);
-    return [identity === "" ? "" : mutedText(identity, this.theme), place].filter(Boolean);
+    const mode = [place, hints === "" ? "" : mutedText(hints, this.theme)].filter(Boolean).join(" ");
+    const waiting = [...this.sessions.values()].filter((entry) => attentionSidebarState(this.sessionState(entry))).length;
+    const needs = showWaitingInFooter(sidebarPresentation(this.sidebarPreference, this.tui.terminal.columns), waiting) ?
+      colorText(`${waiting} ${waiting === 1 ? "needs" : "need"} you`, this.theme.warning) : "";
+    return [mutedText(identity, this.theme), [needs, mode].filter(Boolean).join(" · ")].filter(Boolean);
   });
   /** The selected session's waiting question, in place of the input. */
   private readonly question = new VStack();
@@ -564,10 +577,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       session.progress?.value.phase ?? "none", session.unread);
   }
 
-  /** Sessions in their visual and shortcut order: newest-created first, stable while activity changes. */
+  /** Sessions in their visual and shortcut order: those waiting on the operator first, then the rest, each newest-created first. */
   private sessionOrder(): readonly SessionView[] {
     const inserted = [...this.sessions.values()];
-    return inserted.map((_, visual) => inserted[newestFirstSourceIndex(inserted.length, visual)] as SessionView);
+    const newest = inserted.map((_, visual) => inserted[newestFirstSourceIndex(inserted.length, visual)] as SessionView);
+    const rank = new Map(newest.map((session) => [session, sidebarGroupRank(this.sessionState(session))]));
+    return newest.sort((a, b) => (rank.get(a) ?? 1) - (rank.get(b) ?? 1));
   }
 
   private updateSidebar(): void {
@@ -624,7 +639,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       scroll,
       inspections: [...inspections], restoredInspectionCount: inspections.length,
       selectedInspection: inspections.length - 1,
-      draft: "", pending: undefined, question: undefined, queued: [], progress: undefined,
+      draft: "", pending: undefined, held: undefined, question: undefined, queued: [], progress: undefined,
       prompt: "> ", unread: false, blocked: false, ended: false });
     if (this.started) this.compose();
   }
@@ -666,7 +681,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.revealSelectedSession();
     this.tui.start();
     // The opening's fades blend toward the terminal's own background; the theme's usual one serves until it answers.
-    void this.tui.queryTerminalBackgroundColor({ timeoutMs: 500 }).then((color) => {
+    void this.tui.queryTerminalColors({ timeoutMs: 500 }).then(({ background: color }) => {
       if (color === undefined) return;
       this.terminalBackground = [color.r, color.g, color.b];
       for (const session of this.sessions.values()) session.welcome?.setBackground(this.terminalBackground);
@@ -794,8 +809,14 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     return true;
   }
 
-  /** Next, previous or numbered session; true when `data` was one of those keys, even with no session at that number. */
+  /**
+   * The selected session's next permission mode, or the next, previous or numbered session; true when `data` was one
+   * of those keys, even with no session at that number.
+   */
   private handleSessionKey(data: string): boolean {
+    if (matchesKey(data, "shift+tab")) { this.options.onCycleMode?.(this.selectedId); return true; }
+    // As in Codex, `?` on an empty input shows the shortcuts; anywhere else it is typed.
+    if (data === "?" && this.editor.getText() === "") { this.commandHandlers["help"]?.(this.selected(), []); return true; }
     const ids = this.sessionOrder().map((session) => session.id);
     if (matchesKey(data, "ctrl+tab") || matchesKey(data, "alt+j") || matchesKey(data, "alt+k")) {
       this.selectSession(sessionBeside(ids, this.selectedId, matchesKey(data, "alt+k") ? -1 : 1));
@@ -1088,9 +1109,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     session.blocked = true;
     // A prompt waiting when the session is blocked, such as after a revert that needs recovery, ends with it.
     const pending = session.pending;
+    const held = session.held;
     session.pending = undefined;
+    session.held = undefined;
     session.question = undefined;
     pending?.reject(new SessionBlockedError());
+    held?.reject(new SessionBlockedError());
     this.returnQueued(session);
     this.updateSubmit(session);
     this.updateSidebar();
@@ -1103,11 +1127,14 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (this.sessions.size === 1) throw new Error("The last Tesota session cannot be removed");
     if (id === this.selectedId) this.selectSession(sessionBeside(this.sessionOrder().map((item) => item.id), id, 1));
     const pending = session.pending;
+    const held = session.held;
     session.pending = undefined;
+    session.held = undefined;
     session.question = undefined;
     this.sessions.delete(id);
     if (this.comparisonId === id) this.comparisonId = undefined;
     pending?.reject(new DOMException("closed", "AbortError"));
+    held?.reject(new DOMException("closed", "AbortError"));
     if (this.started) this.compose();
   }
 
@@ -1124,19 +1151,25 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
 
   ask(prompt: string): Promise<string> { return this.askIn(this.selectedId, prompt); }
 
-  /** The session that can be asked something now, or why it cannot. */
-  private askable(id: string): SessionView | Error {
+  /**
+   * The session that can be asked something now, or why it cannot. A question may open over the request prompt
+   * waiting while the session is idle, never over another question or prompt.
+   */
+  private askable(id: string, overRequest = false): SessionView | Error {
     const session = this.sessions.get(id);
     if (session === undefined) return new Error("Tesota session unavailable");
     if (session.blocked) return new SessionBlockedError();
     if (session.ended) return new Error("Tesota session has ended");
-    if (session.pending !== undefined) return new Error("Tesota Shell prompt already active");
+    const request = overRequest && session.prompt === "> " && session.question === undefined && session.held === undefined;
+    if (session.pending !== undefined && !request) return new Error("Tesota Shell prompt already active");
     return session;
   }
 
   chooseIn<V extends string>(id: string, question: ShellQuestion<V>): Promise<V> {
-    const session = this.askable(id);
+    const session = this.askable(id, true);
     if (session instanceof Error) return Promise.reject(session);
+    // A question asked while the session is idle sets the request prompt aside; the input keeps what was typed.
+    session.held = session.pending;
     session.prompt = question.title;
     session.question = new QuestionPanel(question, this.theme);
     const answer = new Promise<string>((resolve, reject) => { session.pending = { resolve, reject }; });
@@ -1156,7 +1189,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (picked === undefined) return false;
     if (picked !== "moved") {
       const pending = session.pending;
-      session.pending = undefined;
+      session.pending = session.held;
+      session.held = undefined;
       session.question = undefined;
       session.prompt = "> ";
       if (picked.decided !== undefined) this.writeTo(session.id, picked.decided.text, picked.decided.tone);
@@ -1348,7 +1382,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
         "/handoff /sandbox [where] /isolate /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
         "While it works: Enter queues · Tab sends to the agent now · Esc or Ctrl+C stops · Ctrl+C or Ctrl+D twice quits\n" +
-        "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close\n" +
+        "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close · Shift+Tab mode\n" +
         "View: Alt+R result · Alt+B sidebar · Alt+D details · Alt+S split · Alt+A accounts");
     },
     quit: () => { this.options.onQuit?.(); },
@@ -1418,7 +1452,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private cancelPrompt(session: SessionView): void {
     const pending = session.pending;
     if (pending === undefined) return;
-    session.pending = undefined;
+    // A question asked over the idle request prompt gives it back; the request prompt waits again.
+    session.pending = session.held;
+    session.held = undefined;
+    if (session.pending !== undefined) session.prompt = "> ";
     // A cancelled question leaves the input as it was: the operator's draft was never its answer.
     if (session.question !== undefined) session.question = undefined;
     else if (session.id === this.selectedId) this.editor.setText("");

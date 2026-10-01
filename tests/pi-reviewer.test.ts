@@ -1,7 +1,8 @@
 import { expect, it } from "vitest";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { hostProvider } from "../src/host-environment.js";
 import { reviewMessage, reviewReport, submitReviewTool } from "../src/integrations/pi-reviewer.js";
+import { actionOfFinding } from "../src/review-action.js";
 import type { Finding, ReviewInput } from "../src/review.js";
 
 const tree = "t".repeat(40);
@@ -61,7 +62,7 @@ it("records only the first submission and ends the review", async () => {
     recorded.push({ summary, findings });
     return true;
   });
-  const context = {} as ExtensionContext;
+  const context = {} as ExtensionToolContext;
   const submission = { summary: "One problem", findings: [{ severity: "high" as const, disposition: "fixable" as const,
     statement: finding.statement, reason: finding.reason }] };
   const first = await tool.execute("call-1", submission, undefined, undefined, context);
@@ -70,6 +71,22 @@ it("records only the first submission and ends the review", async () => {
   expect(second.content).toEqual([{ type: "text", text: "A review was already recorded; only the first submission counts." }]);
   expect(recorded).toEqual([{ summary: "One problem", findings: [{ severity: "high", disposition: "fixable",
     statement: finding.statement, reason: finding.reason }] }]);
+});
+
+it("makes a disputed premise the operator's call whatever disposition the reviewer gave it, so it never goes back", async () => {
+  const recorded: Finding[] = [];
+  const tool = submitReviewTool((_summary, findings) => { recorded.push(...findings); return true; });
+  const disputed = { severity: "high" as const, disposition: "fixable" as const, origin: "introduced" as const, premise: true,
+    path: "src/shipping.js", line: 3, statement: "An order of exactly 50 now ships free",
+    reason: "docs/pricing.md says an order of exactly 50 pays shipping" };
+  await tool.execute("call-1", { summary: "Premise", findings: [disputed, { ...disputed, premise: false }] }, undefined, undefined,
+    {} as ExtensionToolContext);
+  expect(recorded.map((item) => [item.disposition, item.premise])).toEqual([["operator", true], ["fixable", undefined]]);
+  const [premise] = recorded;
+  if (premise === undefined) throw new Error("no finding recorded");
+  expect(actionOfFinding({ ...premise, standing: "confirmed" })).toBe("operator");
+  expect(actionOfFinding({ ...premise, standing: "unsettled" })).toBe("operator");
+  expect(actionOfFinding({ ...premise, standing: "refuted" })).toBe("context");
 });
 
 it("reminds a reviewer that answered in prose once, and then accepts its submission", async () => {
@@ -84,7 +101,7 @@ it("reminds a reviewer that answered in prose once, and then accepts its submiss
       if (prompts.length === 2) {
         await submit?.execute("call", { summary: "Late but complete", findings: [], obligations: [{ source: "request", index: 1,
           obligation: "The discount applies", status: "met", evidence: "price.ts:3" }, { source: "request", index: 2,
-          obligation: "Prices round to cents", status: "met", evidence: "price.ts:4" }] }, undefined, undefined, {} as ExtensionContext);
+          obligation: "Prices round to cents", status: "met", evidence: "price.ts:4" }] }, undefined, undefined, {} as ExtensionToolContext);
       }
       return { status: "completed" as const, reply: "It looks fine." };
     }) } as unknown as Awaited<ReturnType<typeof CodingSession.start>>;
@@ -117,7 +134,7 @@ it("names each lens, tells it its focus, and offers the rules lens only where th
       prompt = options.systemPrompt;
       const submit = options.tools.find((tool) => tool.name === "submit_review");
       return { dispose: vi.fn(), run: vi.fn(async () => {
-        await submit?.execute("call", { summary: "Nothing", findings: [] }, undefined, undefined, {} as ExtensionContext);
+        await submit?.execute("call", { summary: "Nothing", findings: [] }, undefined, undefined, {} as ExtensionToolContext);
         return { status: "completed" as const, reply: "" };
       }) } as unknown as Awaited<ReturnType<typeof CodingSession.start>>;
     });

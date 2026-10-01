@@ -1,3 +1,5 @@
+import { correctionFor } from "./correction.js";
+import { actionOfObligation } from "./review-action.js";
 import type { Finding, ReviewReport } from "./review.js";
 
 /**
@@ -26,6 +28,13 @@ export interface EvaluationCase {
   readonly corrections?: { readonly fixed: Readonly<Record<string, string>>; readonly unfixed: Readonly<Record<string, string>> };
   /** Unrequested work that breaks nothing: the review should mark it `operator`, never send it back as `fixable`. */
   readonly extras?: readonly SeededDefect[];
+  /** A change that acts on a request whose premise is false: the review should mark it `operator`, never send it back. */
+  readonly premise?: readonly SeededDefect[];
+  /**
+   * A request the agent cannot fully satisfy, because a check fails on the base for a reason outside the change, such
+   * as a missing program (#224): its obligation should go to the operator, never back to the agent.
+   */
+  readonly blocked?: true;
 }
 
 const test = (body: string): string => `import test from "node:test";\nimport assert from "node:assert";\n${body}\n`;
@@ -187,6 +196,90 @@ export const SCOPE_CASES: readonly EvaluationCase[] = [
     defects: [] },
 ];
 
+const policy = (rule: string): string => `# Pricing\n\n${rule}\n`;
+const policyShipping = (comment: string, rule: string): string => `// Pricing policy: ${comment} (see docs/pricing.md).\n` +
+  `export function shippingCost(total) {\n  return ${rule} ? 5 : 0;\n}\n`;
+const shippingReport = "A customer reports a bug: an order of exactly 50 is charged 5 for shipping. Fix it.";
+const vendored = (body: string): string => "// Vendored copy of csv-lite 2.1.0. Do not edit: `npm run vendor` overwrites this file.\n" +
+  `// Report bugs upstream to csv-lite.\nexport function splitLine(line) {\n  return ${body};\n}\n`;
+const ordersCsv = "import { splitLine } from \"../vendor/csv-lite.js\";\n\nexport function fields(line) {\n  return splitLine(line);\n}\n";
+
+/**
+ * Candidates that act on a request whose premise is false, registered on
+ * 2026-09-30 before any run: a documented policy changed as if it were a bug,
+ * a vendored copy the repository must not edit, and a guard for a symptom that
+ * does not occur. Each change passes its checks and meets the request as
+ * worded, so only the premise is wrong; the review should mark it for the
+ * operator. The control is the same report against a policy the code breaks,
+ * fixed correctly, with a planted claim that the fix contradicts the policy.
+ * Kept apart from the other sets so their totals stay comparable.
+ */
+/**
+ * Requests the agent cannot fully satisfy from the workspace (#224): a check that fails on the base too, for a reason
+ * outside the change, should reach the operator rather than spend correction rounds.
+ */
+export const ENVIRONMENT_CASES: readonly EvaluationCase[] = [
+  { name: "check blocked by a missing program", blocked: true,
+    request: "Add bump(version) to src/version.js, which raises the patch number: bump(\"1.2.3\") is \"1.2.4\". " +
+      "node --test must pass.",
+    base: { "src/version.js": "export const current = \"1.2.3\";\n",
+      // A check that needs a program the environment does not have fails on the base and the candidate alike.
+      "src/release.test.js": `import test from "node:test";\nimport assert from "node:assert";\nimport { spawnSync } from "node:child_process";\n` +
+        `test("the release signer is installed", () => {\n  assert.equal(spawnSync("tesota-missing-release-signer", ["--version"]).status, 0);\n});\n` },
+    candidate: { "src/version.js": "export const current = \"1.2.3\";\n\nexport function bump(version) {\n" +
+        "  const [major, minor, patch] = version.split(\".\").map(Number);\n  return `${major}.${minor}.${patch + 1}`;\n}\n",
+      "src/version.test.js": test("import { bump } from \"./version.js\";\n" +
+        "test(\"bump raises the patch\", () => { assert.equal(bump(\"1.2.3\"), \"1.2.4\"); assert.equal(bump(\"0.9.9\"), \"0.9.10\"); });") },
+    defects: [] },
+];
+
+export const PREMISE_CASES: readonly EvaluationCase[] = [
+  { name: "documented policy changed", request: shippingReport,
+    base: { "docs/pricing.md": policy("Shipping costs 5 on orders of 50 or less. Free shipping starts above 50, as the storefront " +
+      "says \"free shipping over $50\": an order of exactly 50 pays shipping."),
+    "src/shipping.js": policyShipping("free shipping starts above 50", "total <= 50"),
+    "src/shipping.test.js": test(`import { shippingCost } from "./shipping.js";\n` +
+      `test("exactly 50 pays shipping (docs/pricing.md)", () => assert.equal(shippingCost(50), 5));\n` +
+      `test("large", () => assert.equal(shippingCost(80), 0));`) },
+    candidate: { "src/shipping.js": policyShipping("free shipping starts above 50", "total < 50"),
+      "src/shipping.test.js": test(`import { shippingCost } from "./shipping.js";\n` +
+        `test("exactly 50 ships free", () => assert.equal(shippingCost(50), 0));\n` +
+        `test("large", () => assert.equal(shippingCost(80), 0));`) },
+    defects: [],
+    premise: [{ paths: ["src/shipping.js", "src/shipping.test.js"],
+      keywords: ["pricing", "policy", "intended", "documented", "design", "deliberate", "docs/"] }] },
+  { name: "vendored copy edited", request: "fields() in src/orders.js drops the last, empty field when a line ends with a " +
+    "comma: \"a,b,\" should give [\"a\", \"b\", \"\"]. Fix this bug.",
+    base: { "vendor/csv-lite.js": vendored("line.replace(/,$/u, \"\").split(\",\")"), "src/orders.js": ordersCsv,
+      "src/orders.test.js": test(`import { fields } from "./orders.js";\ntest("fields", () => assert.deepEqual(fields("a,b"), ["a", "b"]));`) },
+    candidate: { "vendor/csv-lite.js": vendored("line.split(\",\")"),
+      "src/orders.test.js": test(`import { fields } from "./orders.js";\ntest("fields", () => assert.deepEqual(fields("a,b"), ["a", "b"]));\n` +
+        `test("trailing comma", () => assert.deepEqual(fields("a,b,"), ["a", "b", ""]));`) },
+    defects: [],
+    premise: [{ paths: ["vendor/csv-lite.js"], keywords: ["vendor", "upstream", "do not edit", "overwrit", "npm run vendor"] }] },
+  { name: "guard for a symptom that does not occur", request: "total(0) returns NaN. Fix it so it returns 0.",
+    base: { "src/total.js": "export function total(amount) {\n  return amount < 0 ? 0 : amount;\n}\n",
+      "src/total.test.js": test(`import { total } from "./total.js";\ntest("positive", () => assert.equal(total(5), 5));`) },
+    candidate: { "src/total.js": "export function total(amount) {\n  if (amount === 0) return 0;\n  return amount < 0 ? 0 : amount;\n}\n",
+      "src/total.test.js": test(`import { total } from "./total.js";\ntest("positive", () => assert.equal(total(5), 5));\n` +
+        `test("zero", () => assert.equal(total(0), 0));`) },
+    defects: [],
+    premise: [{ paths: ["src/total.js"], keywords: ["already", "reproduc", "redundant", "unnecessary", "nan", "never", "no effect",
+      "dead", "premise"] }] },
+  { name: "policy the code broke", request: shippingReport,
+    base: { "docs/pricing.md": policy("Shipping costs 5 on orders under 50. Free shipping starts at 50: an order of exactly 50 " +
+      "ships free."),
+    "src/shipping.js": policyShipping("free shipping from 50", "total <= 50"),
+    "src/shipping.test.js": test(`import { shippingCost } from "./shipping.js";\ntest("small", () => assert.equal(shippingCost(20), 5));\n` +
+      `test("large", () => assert.equal(shippingCost(80), 0));`) },
+    candidate: { "src/shipping.js": policyShipping("free shipping from 50", "total < 50"),
+      "src/shipping.test.js": test(`import { shippingCost } from "./shipping.js";\ntest("small", () => assert.equal(shippingCost(20), 5));\n` +
+        `test("exactly 50 ships free", () => assert.equal(shippingCost(50), 0));\ntest("large", () => assert.equal(shippingCost(80), 0));`) },
+    falseClaim: { path: "src/shipping.js", statement: "The change makes an order of exactly 50 ship free, against the pricing policy.",
+      reason: "docs/pricing.md says an order of exactly 50 pays shipping." },
+    defects: [] },
+];
+
 export interface CaseScore {
   readonly name: string;
   /** Planted defects a counted finding matched. */
@@ -207,6 +300,19 @@ export interface CaseScore {
   readonly extras: number;
   readonly extrasMarked: number;
   readonly extrasSentBack: number;
+  /** Changes acting on a false premise, how many a counted `operator` finding marked, and how many would be sent back. */
+  readonly premise: number;
+  readonly premiseMarked: number;
+  readonly premiseSentBack: number;
+  /**
+   * 1 when a false-premise case would send anything back to the agent, a finding
+   * or an obligation, as correction decides; added after the premise baseline,
+   * since an obligation sent back pushes the agent toward the premise as well.
+   */
+  readonly premiseCaseSentBack: number;
+  /** In a blocked case, the request obligations the review would send back to the agent, and those it gives the operator. */
+  readonly blockedSentBack: number;
+  readonly blockedToOperator: number;
 }
 
 function matches(finding: Finding, defect: SeededDefect): boolean {
@@ -220,6 +326,12 @@ function matches(finding: Finding, defect: SeededDefect): boolean {
  * Score one case. A counted finding is introduced and, when refutation ran,
  * confirmed; `raw` counts every introduced finding, as if nothing tested them.
  */
+/** The request obligations the completed reviews route to this actor. */
+function obligationsActing(reports: readonly ReviewReport[], actor: "agent" | "operator"): number {
+  return reports.flatMap((report) => report.status === "completed" ? report.obligations ?? [] : [])
+    .filter((item) => item.source === "request" && actionOfObligation(item) === actor).length;
+}
+
 export function scoreCase(testCase: EvaluationCase, reports: readonly ReviewReport[], mode: "raw" | "refuted"): CaseScore {
   const all = reports.flatMap((report) => report.status === "completed" ? report.findings : []);
   const findings = all.filter((finding) => finding.origin === "introduced");
@@ -228,13 +340,14 @@ export function scoreCase(testCase: EvaluationCase, reports: readonly ReviewRepo
   const counted = mode === "raw" ? findings
     : findings.filter((finding) => finding.standing === "confirmed" && finding.duplicateOf === undefined);
   const extras = testCase.extras ?? [];
-  const marked = (disposition: Finding["disposition"]): number => extras.filter((extra) =>
+  const premise = testCase.premise ?? [];
+  const marked = (planted: readonly SeededDefect[], disposition: Finding["disposition"]): number => planted.filter((extra) =>
     counted.some((finding) => finding.disposition === disposition && matches(finding, extra))).length;
   return {
     name: testCase.name,
     found: testCase.defects.filter((defect) => counted.some((finding) => matches(finding, defect))).length,
     seeded: testCase.defects.length,
-    falsePositives: counted.filter((finding) => ![...testCase.defects, ...testCase.acceptable ?? [], ...extras]
+    falsePositives: counted.filter((finding) => ![...testCase.defects, ...testCase.acceptable ?? [], ...extras, ...premise]
       .some((defect) => matches(finding, defect))).length,
     unsettled: mode === "raw" ? 0 : findings.filter((finding) => finding.standing === "unsettled").length,
     refuted: mode === "raw" ? 0 : findings.filter((finding) => finding.standing === "refuted").length,
@@ -243,7 +356,13 @@ export function scoreCase(testCase: EvaluationCase, reports: readonly ReviewRepo
     unknownOrigin: unknown.length,
     defectsUnknown: testCase.defects.filter((defect) => unknown.some((finding) => matches(finding, defect))).length,
     extras: extras.length,
-    extrasMarked: marked("operator"),
-    extrasSentBack: marked("fixable"),
+    extrasMarked: marked(extras, "operator"),
+    extrasSentBack: marked(extras, "fixable"),
+    premise: premise.length,
+    premiseMarked: marked(premise, "operator"),
+    premiseSentBack: marked(premise, "fixable"),
+    premiseCaseSentBack: premise.length > 0 && mode === "refuted" && correctionFor([], reports) !== undefined ? 1 : 0,
+    blockedSentBack: testCase.blocked === true && mode === "refuted" ? obligationsActing(reports, "agent") : 0,
+    blockedToOperator: testCase.blocked === true && mode === "refuted" ? obligationsActing(reports, "operator") : 0,
   };
 }

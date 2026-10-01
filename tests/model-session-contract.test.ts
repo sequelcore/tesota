@@ -70,7 +70,8 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
     return { tool_name: name, tool_input: call.args, tool_use_id: id,
       output: permission.behavior === "allow" && tool !== undefined ? "ran" : "refused" };
   }
-  async function* play(options: Options): AsyncGenerator<Record<string, unknown>> {
+  // An interrupt ends the turn in progress with an error result, as Claude Code does; aborting ends its process.
+  async function* play(options: Options, interrupted: AbortSignal): AsyncGenerator<Record<string, unknown>> {
     const signal = options.abortController.signal;
     remember(options);
     const hooks = options.hooks?.PostToolBatch?.flatMap((matcher) => matcher.hooks) ?? [];
@@ -79,8 +80,12 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
       sdk.calls += 1;
       calls += 1;
       if (step === "hang") {
-        await new Promise((settle) => { signal.addEventListener("abort", settle, { once: true }); });
-        throw new Error("Claude Code process aborted by user");
+        await new Promise((settle) => {
+          for (const ended of [signal, interrupted]) ended.addEventListener("abort", settle, { once: true });
+        });
+        if (signal.aborted) throw new Error("Claude Code process aborted by user");
+        yield result({ subtype: "error_during_execution", is_error: true, errors: ["[Request interrupted by user]"] }, calls);
+        return;
       }
       if ("fail" in step) { yield result({ subtype: "error_during_execution", is_error: true, errors: [step.fail] }, calls); return; }
       if ("text" in step) {
@@ -111,7 +116,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async () => {
       { type: "user", parent_tool_use_id: null, message: { role: "user", content: "The earlier request." } },
       { type: "assistant", parent_tool_use_id: null, message: { role: "assistant", content: [{ type: "text", text: "first" }] } },
     ] : [],
-    query: ({ options }: { options: Options }) => play(options),
+    query: ({ options }: { options: Options }) => {
+      const interrupt = new AbortController();
+      return Object.assign(play(options, interrupt.signal), { interrupt: async () => { interrupt.abort(); } });
+    },
   };
 });
 
@@ -210,6 +218,12 @@ function submitTool(submitted: string[]): ToolDefinition {
     } });
 }
 
+// A tool that fails by returning an error result rather than throwing, as Pi's bash does for a command that fails.
+function failingTool(): ToolDefinition {
+  return defineTool({ name: "check", label: "Check", description: "Run the check.", parameters: Type.Object({}),
+    execute: async () => ({ content: [{ type: "text", text: "Command exited with code 1" }], details: undefined, isError: true }) });
+}
+
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function checkout(): string {
@@ -254,6 +268,14 @@ describe.each([{ harness: piHarness }, { harness: claudeCodeHarness }])("the mod
       [{ tools: [{ name: "submit", args: { answer: "42" } }, { name: "read", args: { path: "a.ts" } }] }, { text: "Done." }]);
     expect(await session.run("Submit the answer.", running())).toEqual({ status: "completed", reply: "Done." });
     expect(engine.modelCalls()).toBe(2);
+  });
+
+  it(`reports a tool that returned an error result as failed, not only one that threw (${harness().engine})`, async () => {
+    const { session, observed } = await open((root) => [...readOnlyFileTools(root), failingTool()],
+      [{ tools: [{ name: "check", args: {} }] }, { text: "The check failed." }]);
+    expect((await session.run("Run the check.", running())).status).toBe("completed");
+    expect(observed.activity).toContainEqual(expect.objectContaining({ type: "tool_finished", failed: true,
+      output: "Command exited with code 1" }));
   });
 
   it(`never runs a tool it was not given (${harness().engine})`, async () => {

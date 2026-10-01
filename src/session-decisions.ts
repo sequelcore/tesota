@@ -35,6 +35,12 @@ export interface SessionDecisions {
   network(destinations: readonly string[]): Promise<NetworkDecision>;
   /** Whether the agent may read pages from a site. */
   site(host: string): Promise<NetworkDecision>;
+  /** Whether the session may enter Full access, asked the first time it would in a session. */
+  fullAccess(): Promise<boolean>;
+  /** Whether to install, in the sandbox, the tools the repository's changed toolchain files now declare. */
+  toolchain(files: readonly string[]): Promise<boolean>;
+  /** Whether to bring the repository's newer changes into the workspace and check the result again. */
+  refresh(paths: readonly string[]): Promise<boolean>;
 }
 
 /**
@@ -71,6 +77,64 @@ function networkQuestion(title: string, what: string): ShellQuestion<NetworkDeci
       { value: "deny", key: "n", label: "No", decided: { text: `✗ Declined ${what}.`, tone: "warning" } },
     ],
     initial: "deny",
+  };
+}
+
+/**
+ * Entering Full access, the first time in a session, worded as Codex words its own: what it allows, the risk in the
+ * warning color, and what still protects the operator. Enter cancels, as for every question that would widen what
+ * the agent may do.
+ */
+export const fullAccessQuestion: ShellQuestion<"allow" | "deny"> = {
+  title: "Enable Full access?",
+  detail: "In Full access, the agent's commands run on this computer without asking, outside the sandbox, with your " +
+    "programs, logins, files and network, including files hidden from its file tools such as .env. /revert still " +
+    "undoes a turn's changes in this project, but not what a command did elsewhere.",
+  caution: "This significantly increases the risk of data loss, leaked credentials or changes you did not expect.",
+  options: [
+    { value: "allow", key: "y", label: "Yes, continue anyway",
+      decided: { text: "Full access: commands run on this computer without asking.", tone: "warning" } },
+    { value: "deny", key: "n", label: "Cancel", decided: { text: "Full access was not enabled.", tone: "info" } },
+  ],
+  initial: "deny",
+};
+
+/**
+ * The question for a toolchain the repository now declares differently, as when the agent adds a tool a check needs:
+ * installing runs the sandbox's setup, which downloads only while it runs. Enter declines.
+ */
+export function toolchainQuestion(files: readonly string[]): ShellQuestion<"install" | "decline"> {
+  const named = files.map((file) => `\`${file}\``).join(", ");
+  return {
+    title: `The repository's toolchain changed (${named}). Install it in the sandbox now?`,
+    detail: "Tesota runs the sandbox's setup again. It may download from the tools' release hosts, such as GitHub, and " +
+      "from package registries, only while setup runs; the sandbox's network closes again afterwards.",
+    options: [
+      { value: "install", key: "y", label: "Yes, install it",
+        decided: { text: `✓ Installing what ${named} declares in the sandbox.`, tone: "info" } },
+      { value: "decline", key: "n", label: "No",
+        decided: { text: `✗ Not installed; the agent is told the declared tools are unavailable.`, tone: "warning" } },
+    ],
+    initial: "decline",
+  };
+}
+
+/**
+ * After an application refused because the repository changed since the check (decision 042's refresh): bring those
+ * changes in and check again, as a pull request's "Update branch" does, with no agent turn. Enter declines.
+ */
+export function refreshQuestion(paths: readonly string[]): ShellQuestion<"refresh" | "keep"> {
+  const count = paths.length;
+  return {
+    title: `Your repository changed since this result was checked${count === 0 ? "" : ` (${count} ${count === 1 ? "file" : "files"})`}. ` +
+      "Bring those changes in and check again?",
+    detail: "Tesota brings them into the workspace, runs the approved checks and the review again, and asks again. " +
+      "No agent turn runs unless the checks or the review send something back.",
+    options: [
+      { value: "refresh", key: "y", label: "Yes, bring them in and check again" },
+      { value: "keep", key: "n", label: "No, keep the result in the workspace" },
+    ],
+    initial: "keep",
   };
 }
 
@@ -135,5 +199,8 @@ export function askingDecisions(ask: (prompt: string) => Promise<string>,
       `The sandbox refused network access to ${destinations.join(", ")}. Allow it?`,
       `network access to ${destinations.join(", ")}`)),
     site: (host) => choose(networkQuestion(`Read pages from ${host}?`, `reading pages from ${host}`)),
+    fullAccess: async () => await choose(fullAccessQuestion) === "allow",
+    toolchain: async (files) => await choose(toolchainQuestion(files)) === "install",
+    refresh: async (paths) => await choose(refreshQuestion(paths)) === "refresh",
   };
 }

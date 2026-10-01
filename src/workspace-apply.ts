@@ -20,10 +20,13 @@ export const APPLICATION_RETENTION_DAYS = 30;
 /** Nothing was written to the source repository. */
 export class ApplyConflictError extends Error {
   readonly paths: readonly string[];
-  constructor(message: string, paths: readonly string[] = []) {
+  /** Refused only because the repository changed since the result was checked: bringing those changes in and checking again can settle it. */
+  readonly sourceChanged: boolean;
+  constructor(message: string, paths: readonly string[] = [], sourceChanged = false) {
     super(message);
     this.name = "ApplyConflictError";
     this.paths = paths;
+    this.sourceChanged = sourceChanged;
   }
 }
 
@@ -608,8 +611,8 @@ async function admit(workspace: Workspace, snapshot: WorkspaceSnapshot, source: 
   }
   if (admission === "stale_review") throw new ApplyConflictError("The workspace changed after review");
   if (admission === "refresh") {
-    throw new ApplyConflictError("files in your repository changed since this result was checked; continue with a " +
-      "request to bring them in, and the result is checked again", current?.paths ?? []);
+    throw new ApplyConflictError("files in your repository changed since this result was checked",
+      current?.paths ?? [], true);
   }
 }
 

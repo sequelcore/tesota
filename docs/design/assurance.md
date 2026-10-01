@@ -197,6 +197,14 @@ found it met or the refuter disproved its gap, **did not hold** only when the
 refuter confirmed the gap, and is **uncertain** otherwise, including a gap
 nobody tested or settled; that rule is `obligationOutcome` in
 `src/verification/obligation-outcome.ts`, proved by `bun run formal:check`.
+An obligation that did not hold goes back to the agent only when the agent
+can satisfy it: the reviewer gives a partial or unmet obligation a
+disposition, as it gives a finding, and one the agent cannot satisfy within
+the request, such as "the tests must pass" when a test also fails on the base
+because the environment lacks a program, goes to the operator, with no
+correction round (`obligationAction` in
+`src/verification/review-action-rule.ts`, proved). The first dogfooding
+session spent both its correction rounds on such a request.
 The operator sees how many requests held, and how many claimed plan steps
 held; each claimed step in the plan beside the prompt shows "held in
 review", "not held in review" or "review uncertain", which is a judged
@@ -299,6 +307,102 @@ fails or does not decide falls back to the full check, and
 yes-or-no pass only if, on registered cases drawn from journaled turns, it
 skips nothing the current pass checks and costs less.
 
+### The request's premise
+
+Obligations judge whether a request was done, not whether it should have
+been. A request that calls documented behavior a bug is met by changing that
+behavior: the reviewer marks the obligation met and nothing reaches the
+operator, although the premise, not the code, was wrong. Projects that triage
+reports from strangers check the premise before any fix. oh-my-pi's issue bot
+accepts a bug only when it breaks a contract, has a demonstrated impact, is
+not a deliberate tradeoff, lies in this repository and not upstream, and rests
+on claims it verified, and a maintainer's "works as designed" stops it
+([`system_append.md`](https://github.com/can1357/oh-my-pi/blob/9b9886514600f0b7b2d9afe83df46ee854e3d826/python/robomp/src/prompts/system_append.md)).
+Hermes Agent's contribution rubric names a wrong premise and intentional
+design mistaken for a gap as the most common reasons a well-written pull
+request is closed
+([`AGENTS.md`](https://github.com/NousResearch/hermes-agent/blob/9cbc6a5ac0e92423151e61f913d21904efafe0c1/AGENTS.md)).
+
+Measurement comes first. `live:agent --set=premise` and `live:review
+--set=premise` hold four false premises and a control, registered before any
+run ([evaluation method](../development.md#evaluations)): behavior a policy
+document and a test call intended, a function that does not exist, a defect
+in a vendored copy the repository must not edit, and a symptom the base does
+not show. The control makes the same report as the intended case against a
+policy the code breaks, so declining every report does not score as right.
+The baseline on 2026-09-30, on `codex:gpt-6-luna` and `claude-code:haiku`,
+shows the gap. The agent left alone 1 of 16 false premises; on the
+documented policy it named the policy in its reply every time and changed it
+anyway, and it worked around the vendored defect in the repository's own code
+in three of four runs and edited the vendored copy in the fourth. The review judged every false-premise
+request met. Only the documented policy drew a finding, on both models, and
+the refuter disproved it each time because the request states which behavior
+should change: it read the report as an authority over the documentation, not
+as a claim to check against it. On `claude-code:haiku` the main reviewer also
+reported the comment the change left stale as fixable, which would have sent
+the agent back to make the comment agree with the change. Both refuted the
+control's planted claim and raised nothing against its fix. The answer check
+had the same gap from the other side: given a turn in which the agent rightly
+declined a request about a function that does not exist, it judged the
+request unmet and sent it back every time, on both models, pushing the agent
+toward the change it was right to refuse.
+
+**What the review does now.** The main reviewer checks each request's
+premise as well as whether it was done: that the behavior called a bug is not
+documented or tested as intended, that the named code exists, that the defect
+is not in vendored or third-party code the repository says not to edit, and
+that the base does not already behave as asked. A false premise is one
+finding marked `premise`, on the change that follows it, quoting what shows
+it false; a document, comment or test that disagrees with the change only
+because the change follows the premise is that finding's evidence, not a
+defect of its own, and the request's obligation is `uncertain` rather than
+partial or unmet. Every reviewer, focused lenses included, is told that a
+change contradicting documented or tested behavior because a request asked
+for it questions the premise, not the change. Tesota makes a premise finding `operator` whatever
+disposition the reviewer gave it (`src/integrations/pi-reviewer.ts`), so the
+proved `findingAction` never sends it back: confirmed or unsettled, it needs
+the operator, who alone can say that documented behavior should change after
+all; refuted, it is context. The refuter is told what the baseline showed it
+assumed: a request that reports a bug is the user's claim about the
+repository, to be checked against its documents, tests and history, and a
+dispute is not refuted because the request asks for the change. In a turn
+that changed no files, the reviewer marks a rightly declined false premise
+`uncertain` rather than `unmet`, so the request waits for the operator
+instead of going back to the agent. The result panel labels a premise
+finding "your call, the request's premise". The first pass does not take
+this on, since settling a premise needs the repository and the first pass
+reads only the requests.
+
+**Measured** on 2026-09-30 with the premise cases and the answer case
+registered before any run, each model filling the reviewer, refuter and
+validator roles. After refutation, false premises marked for the operator
+went from 0 of 6 to 5 of 12 on `codex:gpt-6-luna` (four runs) and from 0 of 6
+to 2 of 3 on `claude-code:haiku` (one run), and no premise finding was sent
+back; before, `codex:gpt-6-luna` sent one back. The score counts a finding
+only when Tesota could establish that the change caused it, so a premise
+finding that names no file reaches the operator without counting. The
+control's planted claim was refuted every time and its fix drew nothing. A
+first version, which told only the main reviewer, let a focused lens report
+the documented policy as a defect to fix and the main reviewer mark the
+vendored request partial, and both went back to the agent on
+`claude-code:haiku`; telling every reviewer, and making such an obligation
+`uncertain`, removed both. One false-premise case still sent a finding back
+once in twelve: `codex:gpt-6-luna` reported, correctly, that the added guard
+turns `-0` into `0`. That model also usually missed the symptom that does not
+occur. `live:review`'s core cases on `codex:gpt-6-luna` kept 14 of 15 planted
+defects found over three runs, with three false positives, against 5 of 5
+and one in the run before, and every planted false claim refuted; the scope
+cases marked 5 of 6 extras. `claude-code:haiku`'s core and scope cases were
+not measured with the final prompts. `live:answer` over six runs on
+`codex:gpt-6-luna` left the declined false premise to the operator six times
+of six, against none before (four sent back, two cleared), with 55 of 60
+other verdicts right against 53 before; `claude-code:haiku` left it to the
+operator twice of two, against sent back twice. Neither the answer prompt
+nor its cases changed after that measurement.
+
+The working agent's prompt is unchanged: it acted on 15 of 16 false
+premises, and a change to it is measured on its own.
+
 ## Correction
 
 Each check, finding and assessed request or plan step has one **who acts**
@@ -390,3 +494,58 @@ requests whose ground truth is their human reviewers' comments. Tesota's
 reviewers and refuter answer each one from the benchmark's official context,
 and the benchmark's own parser, judge, scorer and report score the answers
 unchanged, before and after refutation.
+
+## Planned: contributions from others
+
+Not scheduled: this follows the release and daily use
+([roadmap](../roadmap.md)). Once others open pull requests and issues, the
+same roles apply to their work. oh-my-pi and Hermes Agent triage their
+repositories with agents: oh-my-pi's bot labels each issue, reproduces and
+fixes bugs, and ranks contributors' pull requests
+([`robomp`](https://github.com/can1357/oh-my-pi/tree/9b9886514600f0b7b2d9afe83df46ee854e3d826/python/robomp)),
+and Hermes Agent's sweeper may close a contribution only as implemented on
+`main`, not reproducible or incoherent. Both are services driven by GitHub
+events. Tesota stays a local harness: the operator starts the work, the
+findings stay local, and anything sent to GitHub is an outward action the
+operator approves, in the words they approve.
+
+### Reviewing a pull request
+
+A pull request is a candidate: its head is the tree, its base the base, and
+its title, body and linked issue the request record. `prbench-review.ts`
+already reviews a pull request from its diff and context; a `tesota review`
+of a pull request would add what that benchmark leaves out: a checkout of the
+head, the repository's approved checks with their run on the base, the flags
+and the computed depth. Two things oh-my-pi asks a model to judge, Tesota
+already settles with rules: whether a failing check came with the change is
+its origin on the base, not the agent's word that it was already there, and
+unrequested work is reported as an extra.
+
+oh-my-pi's reviewer ranks each pull request P0 to P3 by its own judgment.
+Tesota would instead compute a verdict from the review's facts, as it
+computes depth, and prove the rule: ready when nothing is left for the author
+or a maintainer and every check passes; needs the author when a confirmed
+defect or a failing check came with the change; needs a maintainer when an
+item is the operator's call, such as an extra, a flagged change, a disputed
+premise or an obligation left uncertain; incomplete when a reviewer did not
+finish. Tesota never approves, merges or pushes: it drafts one review that
+only comments, and the maintainer sends it.
+
+### Reproducing an issue
+
+An issue is a request without a candidate. The `triage` role decides its
+kind (a reported defect, a question or a proposal), as Jev already answers
+choice questions. Before any work, Tesota searches the repository's issues
+and merged pull requests for the same report and shows what it found as
+evidence. A reported defect opens a session in a workspace of its own.
+
+oh-my-pi records a reproduction as the command the agent says it ran. Tesota
+can establish it: the fix counts as reproduced only when a test the candidate
+adds or changes fails on the base and passes on the candidate. Today a check
+runs on the base only when it fails on the candidate; reproduction would also
+run a passing check there and compare that test by the check's reports, as
+`testOrigin` compares a failure. Tesota proposes closing an issue
+only for a reason it can show, as Hermes Agent's sweeper does: the base
+already behaves as the issue asks; a reproduction was attempted and did not
+fail, with what is missing; or the premise failed, with its evidence. Every
+other close is a maintainer's decision.

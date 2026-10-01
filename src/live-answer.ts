@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { QUESTION_REPOSITORY, quantile } from "./agent-evaluation.js";
 import { answerHeld, firstPass, reviewAnswer } from "./answer-check.js";
-import { ANSWER_CASES, type FirstPassOutcome, type ReviewOutcome, isCheckable, scoreFirstPass, scoreReview, tally }
-  from "./answer-evaluation.js";
+import { ANSWER_CASES, type FirstPassOutcome, type PremiseOutcome, type ReviewOutcome, isCheckable, scoreFirstPass, scorePremise,
+  scoreReview, tally } from "./answer-evaluation.js";
 import { openModelTarget } from "./integrations/model-session.js";
 import { readModelChoices } from "./model-roles.js";
 import { type TokenUsage, totalTokens } from "./token-usage.js";
 import { runsAnswerCheck } from "./verification/answer-check-rule.js";
+import { obligationOutcome } from "./verification/obligation-outcome.js";
 
 /**
  * Run the answer check's evaluation live and write one JSON record under
@@ -43,7 +44,9 @@ git(["commit", "-q", "-m", "base"]);
 const tree = git(["rev-parse", "HEAD^{tree}"]);
 
 const firstPasses: { name: string; run: number; outcome: FirstPassOutcome; reason: string; probability?: number; durationMs: number }[] = [];
-const reviews: { name: string; run: number; outcome: ReviewOutcome; tokens: number; durationMs: number; statuses: string[] }[] = [];
+const reviews: { name: string; run: number; outcome: ReviewOutcome | PremiseOutcome; tokens: number; durationMs: number;
+  statuses: string[] }[] = [];
+const premises: PremiseOutcome[] = [];
 try {
   for (let run = 1; run <= runs; run += 1) {
     for (const answer of ANSWER_CASES) {
@@ -55,7 +58,7 @@ try {
           ...(decision.probability === undefined ? {} : { probability: decision.probability }) });
         console.log(`run ${run} · first pass · ${answer.name}: ${outcome} (${decision.reason})`);
       }
-      if (stage === "first-pass" || answer.holds === undefined) continue;
+      if (stage === "first-pass" || answer.holds === undefined && answer.operator === undefined) continue;
       let tokens = 0;
       const started = Date.now();
       const reports = await reviewAnswer(async (role) => ({ target: await openModelTarget(models[role]),
@@ -63,8 +66,12 @@ try {
       { checkout: root, requests: answer.requests, snapshot: { base: tree, tree, changes: [], diff: "" }, checks: [], flags: [],
         response: answer.reply, toolCalls: answer.toolCalls }, AbortSignal.timeout(15 * 60_000));
       const main = reports.find((report) => report.status === "completed");
-      const outcome = scoreReview(answer.holds, main !== undefined, answerHeld(reports));
-      const statuses = main?.status === "completed" ? (main.obligations ?? []).map((item) => `${item.status}/${item.standing ?? "untested"}`) : [];
+      const obligations = main?.status === "completed" ? main.obligations ?? [] : [];
+      const premise = answer.operator === true ? scorePremise(main !== undefined,
+        obligations.map((item) => obligationOutcome(item.status, item.standing ?? "untested"))) : undefined;
+      if (premise !== undefined) premises.push(premise);
+      const outcome = premise ?? scoreReview(answer.holds ?? true, main !== undefined, answerHeld(reports));
+      const statuses = obligations.map((item) => `${item.status}/${item.standing ?? "untested"}`);
       reviews.push({ name: answer.name, run, outcome, tokens, durationMs: Date.now() - started, statuses });
       console.log(`run ${run} · review · ${answer.name}: ${outcome} (${statuses.join(", ") || "no verdict"}), ` +
         `${Math.round(tokens / 1000)}k tokens, ${Math.round((Date.now() - started) / 1000)} s`);
@@ -76,11 +83,15 @@ const record = { at: new Date().toISOString(), models, runs, stage,
   cases: { total: ANSWER_CASES.length, checkable: ANSWER_CASES.filter(isCheckable).length,
     withVerdict: ANSWER_CASES.filter((answer) => answer.holds !== undefined).length },
   firstPass: tally<FirstPassOutcome>(["right", "skipped checkable", "checked conversation"], firstPasses.map((entry) => entry.outcome)),
-  review: { ...tally<ReviewOutcome>(["right", "missed", "false alarm", "incomplete"], reviews.map((entry) => entry.outcome)),
+  premise: tally<PremiseOutcome>(["operator", "sent back", "cleared", "incomplete"], premises),
+  review: { ...tally<ReviewOutcome>(["right", "missed", "false alarm", "incomplete"],
+    reviews.filter((entry) => ANSWER_CASES.find((answer) => answer.name === entry.name)?.operator === undefined)
+      .map((entry) => entry.outcome as ReviewOutcome)),
     tokens: reviews.reduce((sum, entry) => sum + entry.tokens, 0),
     medianMs: quantile(reviews.map((entry) => entry.durationMs), 0.5) },
   attempts: { firstPasses, reviews } };
 mkdirSync(join("live-runs", "answer"), { recursive: true });
 const file = join("live-runs", "answer", `${record.at.replaceAll(":", "-")}.json`);
 writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
-console.log(`first pass ${JSON.stringify(record.firstPass)}\nreview ${JSON.stringify(record.review)}\nrecorded ${file}`);
+console.log(`first pass ${JSON.stringify(record.firstPass)}\nreview ${JSON.stringify(record.review)}\n` +
+  `premise ${JSON.stringify(record.premise)}\nrecorded ${file}`);

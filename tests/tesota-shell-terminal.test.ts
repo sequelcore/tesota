@@ -1,6 +1,6 @@
 import { HStack, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
-import { commandQuestion } from "../src/session-decisions.js";
+import { commandQuestion, fullAccessQuestion } from "../src/session-decisions.js";
 import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
 import type { AccountsSource } from "../src/tesota-shell-accounts.js";
 import { createTesotaShellTerminal, SessionBlockedError } from "../src/tesota-shell-terminal.js";
@@ -307,6 +307,87 @@ it("passes /model and /sandbox with their argument, and /handoff, to the shell",
   expect(onModel.mock.calls).toEqual([["default", "claude-code:opus"], ["default", undefined]]);
   expect(onHandoff).toHaveBeenCalledWith("default");
   expect(onSandbox.mock.calls).toEqual([["default", "docker"], ["default", undefined]]);
+  shell.stop();
+});
+
+it("asks before Full access with its risk in the theme's warning color, and Enter cancels", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const question = shell.chooseIn("default", fullAccessQuestion);
+  tui.renderNow(true);
+  const warning = tesotaShellTheme("tesota-dark").warning!.slice(1).match(/../gu)!
+    .map((hex) => Number.parseInt(hex, 16)).join(";");
+  expect(visible(terminal)).toContain("Enable Full access?");
+  expect(screenLine(terminal.writes.join(""), "significantly increases")).toContain(`[38;2;${warning}m`);
+  terminal.send("\r");
+  await expect(question).resolves.toBe("deny");
+  shell.stop();
+});
+
+it("asks Full access's question over the idle request prompt, which waits again with the draft kept", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const request = shell.askIn("default", "> ");
+  terminal.send("half a request");
+  // Shift+Tab while idle: the question opens over the request prompt instead of failing.
+  const allowed = shell.chooseIn("default", fullAccessQuestion);
+  terminal.send("y");
+  await expect(allowed).resolves.toBe("allow");
+  // Esc cancels a second question, and the request prompt waits again.
+  const cancelled = shell.chooseIn("default", fullAccessQuestion);
+  terminal.send("\x1b");
+  await expect(cancelled).rejects.toThrow("cancelled");
+  terminal.send(" finished");
+  terminal.send("\r");
+  await expect(request).resolves.toBe("half a request finished");
+  shell.stop();
+});
+
+it("refuses a question while another waits, and leaves the first one waiting", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  const command = shell.chooseIn("default", commandQuestion({ command: "bun test" }));
+  await expect(shell.chooseIn("default", fullAccessQuestion)).rejects.toThrow("prompt already active");
+  terminal.send("y");
+  await expect(command).resolves.toBe("once");
+  shell.stop();
+});
+
+it("shows the shortcuts for ? on an empty input, and types it anywhere else", async () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.setSessionExecution("default", "›› accept edits on · sandbox · WSL", "sandbox");
+  shell.start();
+  const request = shell.ask("> ");
+  terminal.send("?");
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("Shift+Tab mode");
+  // Once something is typed, the hint leaves the footer and ? is part of the request.
+  terminal.send("why?");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).not.toContain("? for shortcuts");
+  terminal.send("\r");
+  await expect(request).resolves.toBe("why?");
+  shell.stop();
+});
+
+it("passes Shift+Tab to the shell as the selected session's permission mode switch", () => {
+  const terminal = new TestTerminal();
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const onCycleMode = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onCycleMode });
+  shell.start();
+  shell.ask("> ").catch(() => undefined);
+  terminal.send("\x1b[Z");
+  expect(onCycleMode).toHaveBeenCalledWith("default");
   shell.stop();
 });
 
@@ -1022,7 +1103,7 @@ it("shows a command the agent runs whole in the conversation", () => {
   shell.stop();
 });
 
-it("names the model and workspace under the prompt, and where commands run on a line of their own, in its color", () => {
+it("names the model, repository and branch under the prompt, then the mode and where commands run, in its color", () => {
   const terminal = new TestTerminal();
   terminal.columns = 120;
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
@@ -1040,10 +1121,13 @@ it("names the model and workspace under the prompt, and where commands run on a 
   expect(screen).not.toContain("sandbox · Docker");
   expect(screen).toContain("tesota · dev");
   expect(screen).toContain("Session 1");
-  // The model first, as other harnesses show it; the workspace is the sidebar's while it shows.
+  // The model first, then the repository and branch, as Claude Code and Codex show them, whether or not the sidebar shows.
   const raw = terminal.writes.join("");
   const theme = tesotaShellTheme("tesota-dark");
-  expect(stripTerminalSequences(screenLine(raw, "claude-code:opus")).trim()).toBe("claude-code:opus");
+  expect(stripTerminalSequences(screenLine(raw, "claude-code:opus")).trim()).toBe("claude-code:opus · tesota · dev");
+  // The mode's line ends with the keys that cycle it and, while the input is empty, show the shortcuts.
+  expect(stripTerminalSequences(screenLine(raw, "this computer · asks first")))
+    .toContain("this computer · asks first (shift+tab to cycle) · ? for shortcuts");
   // This computer in the theme's caution color, a sandbox in its success color.
   const warning = theme.warning!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";");
   expect(screenLine(raw, "this computer · asks first")).toContain(`[38;2;${warning}mthis computer · asks first`);
@@ -1074,7 +1158,7 @@ it("names the model and workspace under the prompt, and where commands run on a 
   narrow.resizeTo(120, 24);
   narrow.writes.length = 0;
   narrowTui.renderNow(true);
-  expect(visible(narrow)).not.toContain("claude-code:opus · tesota");
+  expect(visible(narrow)).toContain("claude-code:opus · tesota · dev");
   narrowShell.stop();
 });
 
@@ -1499,6 +1583,40 @@ it("marks the title for a background session that waits, without taking the sele
   expect(terminal.titles.at(-1)).toBe("! Login fix · 2 waiting");
   shell.removeSession("second");
   expect(terminal.titles.at(-1)).toMatch(/^! (Budget totals|Docs pass) · 1 waiting$/u);
+  shell.stop();
+});
+
+it("lists sessions waiting on the operator first, keeps newest-first otherwise, and counts them in the footer when the sidebar hides", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 120;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui,
+    initialSession: { id: "default", title: "Budget totals", entries: [] } });
+  shell.addSession("second", "Login fix");
+  shell.addSession("third", "Docs pass");
+  shell.start();
+  const order = (): number[] => ["Budget totals", "Login fix", "Docs pass"].map((title) => visible(terminal).indexOf(title));
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const [budget, login, docs] = order();
+  expect(docs).toBeLessThan(login ?? 0);
+  expect(login).toBeLessThan(budget ?? 0);
+  // The oldest session waits on the operator: it rises to the top, and Alt+1 selects it.
+  shell.reportFor("default", { phase: "awaiting_decision" });
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const [waiting, second, newest] = order();
+  expect(waiting).toBeLessThan(newest ?? 0);
+  expect(newest).toBeLessThan(second ?? 0);
+  shell.selectSession("third");
+  terminal.send("1");
+  expect(terminal.titles.at(-1)).toMatch(/Budget totals/u);
+  // With the sidebar visible its marks show who waits; the footer counts them only once it hides.
+  expect(visible(terminal)).not.toContain("needs you");
+  terminal.resizeTo(70, 24);
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  expect(visible(terminal)).toContain("1 needs you");
   shell.stop();
 });
 

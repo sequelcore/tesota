@@ -106,6 +106,30 @@ lemma attentionSidebarState_ensures(state: SidebarSessionState)
 {
 }
 
+function sidebarGroupRank(state: SidebarSessionState): int
+{
+  if attentionSidebarState(state) then
+    0
+  else
+    1
+}
+
+lemma sidebarGroupRank_ensures(state: SidebarSessionState)
+  ensures (attentionSidebarState(state) ==> (sidebarGroupRank(state) == 0))
+  ensures (!(attentionSidebarState(state)) ==> (sidebarGroupRank(state) == 1))
+{
+}
+
+function showWaitingInFooter(presentation: SidebarPresentation, waiting: int): bool
+{
+  (presentation.hidden? && (waiting > 0))
+}
+
+lemma showWaitingInFooter_ensures(presentation: SidebarPresentation, waiting: int)
+  ensures (showWaitingInFooter(presentation, waiting) == (presentation.hidden? && (waiting > 0)))
+{
+}
+
 function terminalTitleMark(waiting: int, working: int): TerminalTitleMark
 {
   if (waiting > 0) then

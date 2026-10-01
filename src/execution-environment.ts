@@ -103,6 +103,13 @@ export interface ExecutionEnvironment {
   readonly preparation: readonly PreparationStep[];
   /** Present when the environment's network is an allowlist it can report on. */
   readonly network?: NetworkControl;
+  /**
+   * Plan the workspace's toolchain again and set up what it now declares, as
+   * preparing did, its download hosts open only while setup runs (decision
+   * 048); what it ran, none when nothing changed. Absent where an environment
+   * can set up only when prepared.
+   */
+  refreshToolchain?(options?: Pick<PrepareOptions, "onProgress">): Promise<readonly PreparationStep[]>;
   run(command: string, options: RunOptions): Promise<RunResult>;
   dispose(): Promise<void>;
 }

@@ -256,3 +256,17 @@ it.runIf(live)("starts a command quickly", async () => {
   process.stdout.write(`WSL sandbox command start, ms: ${timings.join(", ")}\n`);
   expect(Math.min(...timings)).toBeLessThan(1_000);
 }, 60_000);
+
+// Last: it adds a toolchain to the shared workspace (decision 048 mid-session).
+it.runIf(live)("installs a toolchain the repository declares after the sandbox was set up, then closes setup's hosts", async () => {
+  if (sandbox?.refreshToolchain === undefined) throw new Error("The sandbox cannot set up a changed toolchain");
+  expect(await sandbox.refreshToolchain()).toEqual([]);
+  await writeFile(join(workspace, "mise.toml"), "[tools]\nripgrep = \"15.1.0\"\n");
+  const steps = await sandbox.refreshToolchain();
+  expect(steps.filter((step) => step.outcome === "failed")).toEqual([]);
+  expect(steps.map((step) => step.description)).toContain("Install the tools in mise.toml");
+  expect((await run("rg --version")).output).toContain("ripgrep 15.1.0");
+  // The download hosts setup used are closed again.
+  const after = await run("curl -sS -o /dev/null --max-time 10 https://github.com/; true");
+  expect(after.refused ?? []).toContain("github.com:443");
+}, 900_000);

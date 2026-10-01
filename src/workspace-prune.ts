@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { orphanedWorkspaceTranscripts } from "./claude-code-transcripts.js";
 import { heldForWorkspace, releaseWorkspace } from "./execution-providers.js";
 import { folderSize, formatSize } from "./folder-size.js";
 import { DEFAULT_SESSION_STORE_ROOT, isRepositoryShellOpen, referencedWorkspaces } from "./shell-session-store.js";
@@ -23,6 +24,8 @@ export interface PrunePlan {
    * and removing the record only ends the chance to revert them from Tesota.
    */
   readonly sessions: readonly { readonly directory: string; readonly reason: "unused" | "unreadable" }[];
+  /** Claude Code's folders for isolated workspaces that no longer exist, holding only those workspaces' conversations. */
+  readonly transcripts: readonly string[];
 }
 
 /** Shadow repositories whose source no longer exists, or whose record is unreadable, that nothing kept needs. */
@@ -68,7 +71,8 @@ async function hasPendingChanges(directory: string): Promise<boolean> {
  */
 export async function planWorkspacePrune(workspacesRoot: string = DEFAULT_WORKSPACES_ROOT,
   storeRoot: string = DEFAULT_SESSION_STORE_ROOT, sourcesRoot: string = DEFAULT_SOURCES_ROOT,
-  sourceSessionsRoot: string = DEFAULT_SOURCE_SESSIONS_ROOT): Promise<PrunePlan> {
+  sourceSessionsRoot: string = DEFAULT_SOURCE_SESSIONS_ROOT,
+  claudeDirectories: readonly string[] = []): Promise<PrunePlan> {
   const referenced = referencedWorkspaces(storeRoot);
   const remove: { directory: string; reason: PruneReason }[] = [];
   const keep: { directory: string; reason: KeepReason }[] = [];
@@ -90,7 +94,8 @@ export async function planWorkspacePrune(workspacesRoot: string = DEFAULT_WORKSP
   for (const entry of keep) kept.add(resolve(entry.directory));
   const sourceSessions = await planSourceSessions(sourceSessionsRoot, referenced);
   for (const shadow of sourceSessions.shadows) kept.add(shadow);
-  return { remove, keep, shadows: await planShadows(sourcesRoot, kept), sessions: sourceSessions.remove };
+  return { remove, keep, shadows: await planShadows(sourcesRoot, kept), sessions: sourceSessions.remove,
+    transcripts: await orphanedWorkspaceTranscripts(workspacesRoot, claudeDirectories) };
 }
 
 export async function removeWorkspaces(plan: PrunePlan): Promise<void> {
@@ -104,6 +109,7 @@ export async function removeWorkspaces(plan: PrunePlan): Promise<void> {
     await rm(entry.directory, { recursive: true, force: true, maxRetries: 3 });
   }
   for (const entry of plan.shadows) await rm(entry.directory, { recursive: true, force: true, maxRetries: 3 });
+  for (const directory of plan.transcripts) await rm(directory, { recursive: true, force: true, maxRetries: 3 });
 }
 
 /** What a workspace holds on disk: its folder on this computer, and what each provider keeps for it elsewhere. */
@@ -139,6 +145,7 @@ export function formatPrunePlan(plan: PrunePlan, sizes: ReadonlyMap<string, Work
     ...plan.shadows.map((entry) => `remove  ${entry.directory}  (shadow repository; ${reasonText[entry.reason]})`),
     ...plan.sessions.map((entry) => `remove  ${entry.directory}  (session record; ${entry.reason === "unused"
       ? "no session uses it; its changes stay in your files" : reasonText.unreadable})`),
+    ...plan.transcripts.map((directory) => `remove  ${directory}  (Claude Code conversations of a workspace that no longer exists)`),
     ...plan.keep.map((entry) => `keep    ${entry.directory}  (${reasonText[entry.reason]}${sizeText(sizes.get(entry.directory))})`),
   ];
   return lines.length === 0 ? "No workspaces found.\n" : `${lines.join("\n")}\n`;

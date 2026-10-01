@@ -53,6 +53,11 @@ function refuterPrompt(root: string): string {
     "A finding marked as the operator's call may report work beyond the requests rather than a defect: confirm it " +
     "when the change is there and no request needs it, and refute it when a request does need it or when it is a test " +
     "of the code the change touched, a comment or an update a requested change forces on its callers.\n" +
+    "A finding marked as a premise dispute says a request rests on a false premise. A request that reports a bug " +
+    "is the user's claim about the repository, not an instruction that settles what the repository documents, " +
+    "so do not refute a dispute because the request asks for the change. Confirm it when the repository's " +
+    "documents, tests, comments or code show the premise false; refute it when nothing in the repository " +
+    "contradicts the premise.\n" +
     "- undetermined: you cannot establish either with the evidence available.\n" +
     "Do not confirm a finding because it sounds plausible or because a reviewer was confident. Correct code is " +
     "often judged non-conformant by mistake, so look for the evidence that it is correct first. Several reviewers " +
@@ -67,7 +72,7 @@ function refuterPrompt(root: string): string {
 
 function describeFinding(finding: Finding, id: number): string {
   const where = finding.path === undefined ? "" : ` at ${finding.path}${finding.line === undefined ? "" : `:${finding.line}`}`;
-  const call = finding.disposition === "operator" ? ", operator's call" : "";
+  const call = finding.premise === true ? ", premise dispute, operator's call" : finding.disposition === "operator" ? ", operator's call" : "";
   return `${id}. [${finding.severity}, ${finding.origin}${call}]${where}: ${finding.statement}\n   Reviewer's reason: ${finding.reason}`;
 }
 

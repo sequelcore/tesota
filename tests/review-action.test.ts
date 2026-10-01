@@ -28,8 +28,10 @@ it("keeps failed base checks and checks without an established cause out of corr
   }
 });
 
-it("sends only confirmed missing work back", () => {
-  expect(obligationAction("not_held")).toBe("agent");
-  expect(obligationAction("uncertain")).toBe("operator");
-  expect(obligationAction("held")).toBe("context");
+it("sends only confirmed missing work the agent can do back, and the rest to the operator", () => {
+  expect(obligationAction("not_held", "fixable")).toBe("agent");
+  // Missing work the agent cannot do, as a check failing on the base for a missing program, is the operator's (#224).
+  expect(obligationAction("not_held", "operator")).toBe("operator");
+  expect(obligationAction("uncertain", "fixable")).toBe("operator");
+  expect(obligationAction("held", "operator")).toBe("context");
 });

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -112,7 +112,7 @@ it("switches one session's sandbox, and its agent restarts with the same convers
   const { created, chosen, wsl, docker, label, said, recorded } = shell();
   await created.session("session").work("Add a retry limit.");
   expect(chosen).toHaveBeenLastCalledWith("auto");
-  expect(label).toHaveBeenLastCalledWith("session", "sandbox · WSL", "sandbox");
+  expect(label).toHaveBeenLastCalledWith("session", "›› accept edits on · sandbox · WSL", "sandbox");
   await created.sessionSandbox?.change("session", undefined);
   expect(said()).toContain("Commands in this session run in the WSL sandbox");
   expect(recorded()).not.toContain("Commands in this session run in the WSL sandbox");
@@ -121,7 +121,7 @@ it("switches one session's sandbox, and its agent restarts with the same convers
   expect(wsl.environment.dispose).toHaveBeenCalled();
   expect(agents[0]?.dispose).toHaveBeenCalled();
   expect(record.sandbox).toBe("docker");
-  expect(label).toHaveBeenLastCalledWith("session", "sandbox · Docker", "sandbox");
+  expect(label).toHaveBeenLastCalledWith("session", "›› accept edits on · sandbox · Docker", "sandbox");
   expect(said()).toContain("Commands in this session now run in Docker Sandboxes");
   expect(said()).toContain("its conversation continues");
   await created.session("session").work("Now log each retry.");
@@ -164,4 +164,50 @@ it("checks a sandbox again when the operator names it, so one that stopped being
   expect(said()).toContain("Commands in this session still run");
   expect(record.sandbox).toBe("host");
   created.dispose?.();
+});
+
+/**
+ * Decision 048 mid-session: when the agent declares a tool in the repository's toolchain, as `mise.toml`, the next
+ * sandboxed command asks the operator first, installs only on their yes, and asks once per declaration.
+ */
+it("asks before installing a toolchain the repository now declares, once per declaration, and installs only on yes", async () => {
+  const { created, wsl, said } = shell();
+  const refresh = vi.fn(async () => [{ description: "Install the tools in mise.toml", outcome: "done" as const, output: "" }]);
+  Object.assign(wsl.environment, { refreshToolchain: refresh });
+  const answers: string[] = ["decline", "install"];
+  const asked: string[] = [];
+  spies.push(vi.spyOn(created.surface, "chooseIn").mockImplementation(async (_id, question) => {
+    asked.push(question.title);
+    return answers.shift() as never;
+  }));
+  await created.session("session").work("Prove the rules.");
+  const options = mocks.startWorkingAgent.mock.calls[0]?.[1] as { beforeSandboxCommand?: () => Promise<string | undefined> };
+  const before = options.beforeSandboxCommand;
+  if (before === undefined) throw new Error("The engine gave the agent no toolchain check");
+  // Nothing changed since the sandbox was set up: no question.
+  expect(await before()).toBeUndefined();
+  // The agent declares Dafny: the operator is asked, declines, and the agent hears so; asking again waits for a new declaration.
+  mkdirSync(join(directory, "repo"), { recursive: true });
+  writeFileSync(join(directory, "repo", "mise.toml"), '[tools]\n"github:dafny-lang/dafny" = "4.11.0"\n');
+  expect(await before()).toContain("declined");
+  expect(await before()).toBeUndefined();
+  expect(refresh).not.toHaveBeenCalled();
+  // Another declaration: asked again; on yes the sandbox sets it up and the agent is told.
+  writeFileSync(join(directory, "repo", "mise.toml"), '[tools]\nripgrep = "15.1.0"\n');
+  expect(await before()).toContain("now has what the repository's toolchain declares");
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(asked).toEqual([expect.stringContaining("`mise.toml`"), expect.stringContaining("`mise.toml`")]);
+  expect(said()).toContain("Install the tools in mise.toml");
+});
+
+it("tells the agent a declared toolchain is unavailable where the sandbox sets up only when prepared, without asking", async () => {
+  const { created } = shell();
+  const choose = vi.spyOn(created.surface, "chooseIn");
+  spies.push(choose);
+  await created.session("session").work("Prove the rules.");
+  const options = mocks.startWorkingAgent.mock.calls[0]?.[1] as { beforeSandboxCommand?: () => Promise<string | undefined> };
+  mkdirSync(join(directory, "repo"), { recursive: true });
+  writeFileSync(join(directory, "repo", "mise.toml"), '[tools]\nripgrep = "15.1.0"\n');
+  expect(await options.beforeSandboxCommand?.()).toContain("not available in this session");
+  expect(choose).not.toHaveBeenCalled();
 });

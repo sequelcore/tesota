@@ -96,7 +96,9 @@ it.each([
   await writeFile(join(source, path), "the operator's edit\n");
   const attempt = applyWorkspace(workspace, snapshot);
   await expect(attempt).rejects.toBeInstanceOf(ApplyConflictError);
-  await expect(attempt).rejects.toMatchObject({ paths: [path], message: expect.stringContaining("checked again") });
+  // Only the repository's newer changes stand in the way, so bringing them in and checking again can settle it (#223).
+  await expect(attempt).rejects.toMatchObject({ paths: [path], sourceChanged: true,
+    message: expect.stringContaining("changed since this result was checked") });
   await expectOriginal(source);
   expect(existsSync(join(source, "src/tax.ts"))).toBe(false);
   expect(existsSync(applications)).toBe(false);
@@ -232,7 +234,7 @@ it("writes nothing when a recorded path leads outside the repository by the time
   const [unfinished] = await unfinishedApplications(source, applications);
   const attempt = recoverApplication(source, unfinished?.id ?? "", "undo", applications);
   await expect(attempt).rejects.toBeInstanceOf(ApplyConflictError);
-  await expect(attempt).rejects.toMatchObject({ paths: ["src/old.ts", "src/price.ts", "src/tax.ts"] });
+  await expect(attempt).rejects.toMatchObject({ paths: ["src/old.ts", "src/price.ts", "src/tax.ts"], sourceChanged: false });
   expect((await readdir(outside)).toSorted()).toEqual(["price.ts"]);
   await expect(unfinishedApplications(source, applications)).resolves.toHaveLength(1);
   const lines: string[] = [];

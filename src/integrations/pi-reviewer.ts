@@ -28,6 +28,8 @@ const findingSchema = Type.Object({
     "left column; for a problem the change causes, the changed line that causes it" })),
   statement: Type.String({ description: "The problem, in one sentence" }),
   reason: Type.String({ description: "What in the requests, the code or the checks shows it" }),
+  premise: Type.Optional(Type.Boolean({ description: "true when the finding disputes a request's premise rather than " +
+    "a defect in carrying it out; such a finding is always the user's call" })),
 });
 const obligationSchema = Type.Object({
   source: Type.Union([Type.Literal("request"), Type.Literal("plan")],
@@ -37,6 +39,10 @@ const obligationSchema = Type.Object({
   status: Type.Union([Type.Literal("met"), Type.Literal("partial"), Type.Literal("unmet"), Type.Literal("uncertain")],
     { description: "Judged against the whole result, not only the changed lines" }),
   evidence: Type.String({ description: "The code, check output or request text that shows the status, or what is missing" }),
+  disposition: Type.Optional(Type.Union([Type.Literal("fixable"), Type.Literal("operator")], { description: "For a partial " +
+    "or unmet obligation: fixable when the agent can satisfy it by changing the repository within the request; operator " +
+    "when it cannot, such as a check that also fails without the change for a reason outside it, like a program or " +
+    "service the environment lacks. Leave out for met or uncertain" })),
 });
 const submissionSchema = Type.Object({
   summary: Type.String({ description: "One paragraph: whether the result does what was asked, and how well the checks cover it" }),
@@ -46,9 +52,11 @@ const submissionSchema = Type.Object({
 });
 type Submission = Static<typeof submissionSchema>;
 
+/** A disputed premise is the operator's to settle, whatever disposition the reviewer gave it: never sent back to the agent. */
 function finding(submitted: Submission["findings"][number]): Finding {
-  return { severity: submitted.severity, disposition: submitted.disposition, origin: submitted.origin, statement: submitted.statement,
-    reason: submitted.reason,
+  const premise = submitted.premise === true;
+  return { severity: submitted.severity, disposition: premise ? "operator" : submitted.disposition, origin: submitted.origin,
+    statement: submitted.statement, reason: submitted.reason, ...(premise ? { premise: true as const } : {}),
     ...(submitted.path === undefined ? {} : { path: submitted.path }),
     ...(submitted.line === undefined ? {} : { line: submitted.line }) };
 }
@@ -92,6 +100,24 @@ export const REVIEW_LENSES: readonly ReviewLens[] = [
 ];
 
 /**
+ * The main reviewer checks each request's premise, not only whether it was
+ * done: a request that calls documented behavior a bug is met by changing it,
+ * and on the premise cases every reviewer judged such requests met.
+ */
+const premiseGuidance = " Check each request's premise as well. A request that reports a bug or names code states " +
+  "facts about the repository: that the behavior is wrong, that the named code exists, that the defect is this " +
+  "repository's. They are the user's claims, to check against the repository's documents, tests, comments and " +
+  "history. When one is false, because the behavior is documented or tested as intended, the named code does not " +
+  "exist, the defect lies in vendored or third-party code the repository says not to edit, or the starting point " +
+  "already behaves as asked, report one finding with premise set to true on the changed file and line that follow " +
+  "it, quoting what shows the premise false; the user may still want the change, so only the user can settle it. " +
+  "A document, comment or test that disagrees with the change only because the change follows that premise is " +
+  "evidence for the premise finding, not a separate defect. Judge the request's obligations on what it asks: do " +
+  "not mark one partial or unmet only because its premise is false, but uncertain, naming the premise finding. Do " +
+  "not dispute a premise the repository does not contradict: a request to change behavior that nothing documents " +
+  "as intended is the user's decision to make.";
+
+/**
  * The main reviewer also judges what the result must hold (decision 034):
  * every part of each request, and every plan step the agent claims done, on
  * the whole result, since missing work has no changed line.
@@ -100,12 +126,15 @@ const obligationGuidance = " Also list obligations: for each of the user's reque
   "for, and for each plan step the agent marked done, whether that step really happened. Judge each against the " +
   "whole result, reading unchanged files too, as met, partial, unmet or uncertain, with the evidence. A plan step " +
   "is the agent's claim, not evidence: check it in the code. An obligation is not a finding: it has no origin, and " +
-  "missing work belongs here even when no changed line shows it. Then check the other direction: for each change " +
+  "missing work belongs here even when no changed line shows it. Give a partial or unmet obligation a disposition: " +
+  "`fixable` when the agent can satisfy it by changing the repository, `operator` when it cannot, such as a check " +
+  "that also fails without the change, for a reason outside it, like a program or service the environment lacks. " +
+  "Then check the other direction: for each change " +
   "in the diff, whether a request or a claimed plan step needs it. Report each change none of them needs, such as a " +
   "refactor of unrelated code or an abstraction, option or helper beyond what the requests call for, as one " +
   "`operator` finding naming the change, since an extra may be welcome; report it as `fixable` only when it breaks " +
   "what was asked. A test of the code the change touched, edge cases included, a comment, and an update a " +
-  "requested change forces on its callers are never extras.";
+  "requested change forces on its callers are never extras." + premiseGuidance;
 
 /**
  * The main reviewer when a turn changed no files (decision 034): only
@@ -120,7 +149,13 @@ function answerPrompt(root: string): string {
     "show that code exists, so read the code. A claim in the reply that the agent read, ran, checked or changed " +
     "something holds only when Tesota's record of its tool calls shows it. You cannot change files: investigate " +
     "with the read, search and list " +
-    "tools. List obligations for every request, and for every plan step the agent marked done, as met, partial, " +
+    "tools. A request can rest on a false premise: it reports a bug in behavior the repository documents or tests " +
+    "as intended, names code that does not exist, or puts the defect in vendored or third-party code the " +
+    "repository says not to edit. When the reply declines such a request and the repository shows the premise " +
+    "false, mark its obligation uncertain, not unmet, with the evidence that shows it false: only the user can " +
+    "settle it, and sending it back would push the agent toward a change it was right to refuse. When the " +
+    "premise holds, a request the reply declines is unmet as usual. " +
+    "List obligations for every request, and for every plan step the agent marked done, as met, partial, " +
     "unmet or uncertain, with the evidence. There is no diff, so submit an empty findings list, and call " +
     "submit_review exactly once." + `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
 }
@@ -140,7 +175,9 @@ function reviewerPrompt(root: string, lens?: ReviewLens): string {
     "as altering what checks the result, say whether it weakens what is checked. Report only real problems, not " +
     "style preferences. Use disposition `operator` for an ambiguous requirement, a trade-off without one right " +
     "answer, a changed test or check whose legitimacy depends on intent, work beyond what was asked, or a " +
-    "security-sensitive choice; use `fixable` for a clear defect against the requests. When you are done, call " +
+    "security-sensitive choice; use `fixable` for a clear defect against the requests. A change that contradicts " +
+    "documented or tested behavior because a request asked for it questions the request's premise, not the change: " +
+    "report it with premise set to true, never as a defect to fix. When you are done, call " +
     "submit_review exactly once, with an empty list if you found no problems." + focus +
     `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
 }

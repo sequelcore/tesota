@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { createSdkMcpServer, getSessionInfo, getSessionMessages, query, tool, type CanUseTool, type HookCallback, type SDKMessage,
   type SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import * as z from "zod";
 import type { ModelTarget } from "./model-session.js";
 import type { AgentActivity, ConversationEntry, TurnResult } from "./model-session-contract.js";
@@ -119,30 +119,45 @@ interface ToolContext {
   readonly next: () => string;
   /** Called when the tool asks to end the turn, as Tesota's submission tools do. */
   readonly terminate: () => void;
+  /** Called with each call in progress, so a stopped turn can wait for its tools to settle. */
+  readonly track: (call: Promise<unknown>) => void;
 }
 
 /** One of Tesota's tools, run by Tesota when Claude Code calls it, reporting its activity as Pi's would. */
-function sdkTool(definition: ToolDefinition, { signal, emit, next, terminate }: ToolContext) {
-  return tool(definition.name, definition.description, toolShape(definition.parameters), async (args) => {
-    const call = next();
-    emit({ type: "tool_started", call, tool: definition.name, subject: toolSubject(definition.name, args) });
-    try {
-      // Tesota's tools read their own workspace root; the Pi-specific context is not used by them.
-      const result = await definition.execute(call, args, signal(), (partial) => {
-        emit({ type: "tool_output", call, output: resultText(partial) });
-      }, undefined as unknown as ExtensionContext);
-      const output = resultText(result);
-      const change = definition.name === "edit" ? editChange(result) : undefined;
-      emit({ type: "tool_finished", call, failed: false, output, ...(change === undefined ? {} : { change }) });
-      if (result.terminate === true) terminate();
-      return { content: [{ type: "text" as const, text: output }] };
-    } catch (error) {
-      const output = error instanceof Error ? error.message : "The tool failed";
-      emit({ type: "tool_finished", call, failed: true, output });
-      return { content: [{ type: "text" as const, text: output }], isError: true };
-    }
+function sdkTool(definition: ToolDefinition, { signal, emit, next, terminate, track }: ToolContext) {
+  return tool(definition.name, definition.description, toolShape(definition.parameters), (args) => {
+    const running = runTool(definition, args, { signal, emit, next, terminate });
+    track(running);
+    return running;
   });
 }
+
+/** One call of a Tesota tool, reported as it starts, streams and ends. */
+async function runTool(definition: ToolDefinition, args: Record<string, unknown>,
+  { signal, emit, next, terminate }: Omit<ToolContext, "track">) {
+  const call = next();
+  emit({ type: "tool_started", call, tool: definition.name, subject: toolSubject(definition.name, args) });
+  try {
+    // Tesota's tools read their own workspace root; the Pi-specific context is not used by them.
+    const result = await definition.execute(call, args, signal(), (partial) => {
+      emit({ type: "tool_output", call, output: resultText(partial) });
+    }, undefined as unknown as ExtensionToolContext);
+    const output = resultText(result);
+    // A tool may fail by returning an error result rather than throwing, as Pi's bash does for a command that fails.
+    const failed = result.isError === true;
+    const change = definition.name === "edit" && !failed ? editChange(result) : undefined;
+    emit({ type: "tool_finished", call, failed, output, ...(change === undefined ? {} : { change }) });
+    if (result.terminate === true) terminate();
+    return { content: [{ type: "text" as const, text: output }], ...failed ? { isError: true } : {} };
+  } catch (error) {
+    const output = error instanceof Error ? error.message : "The tool failed";
+    emit({ type: "tool_finished", call, failed: true, output });
+    return { content: [{ type: "text" as const, text: output }], isError: true };
+  }
+}
+
+/** How long a stopped Claude Code turn may take to end before its process is ended, as Pi's sessions wait. */
+const settlementMs = 10_000;
 
 const toolNote = "\n\nYour tools are Tesota's, named with the prefix `mcp__tesota__`: for example `read` is " +
   "`mcp__tesota__read`. No other tools are available.";
@@ -242,39 +257,61 @@ export class ClaudeCodeSession {
     return this.#conversationStarted ? { resume: id } : { sessionId: id };
   }
 
-  /** Run one request to completion, cancellation or a confirmed failure. */
+  /**
+   * Run one request to completion, cancellation or a confirmed failure. A
+   * stop ends the turn as Pi's abort does: Tesota's tools are cancelled and
+   * Claude Code is interrupted, so the model takes no step after it; only when
+   * Claude Code does not stop in time is its process ended. Anything the model
+   * still says after the stop is neither shown nor kept.
+   */
   async run(request: string, signal: AbortSignal): Promise<TurnResult> {
     if (!this.#usable) throw new Error("Coding session unavailable");
     if (signal.aborted) return { status: "cancelled" };
+    const stopped = new AbortController();
     const abort = new AbortController();
-    const stop = (): void => { abort.abort(); };
-    signal.addEventListener("abort", stop, { once: true });
-    this.#signal = abort.signal;
+    this.#signal = stopped.signal;
     this.#terminating = 0;
     this.#entries.push({ role: "user", text: request });
+    const calls = new Set<Promise<unknown>>();
     const tools = this.#options.tools.map((definition) => sdkTool(definition, { signal: () => this.#signal,
-      emit: (activity) => { this.#emit(activity); }, next: () => `claude-${++this.#calls}`,
-      terminate: () => { this.#terminating += 1; } }));
+      emit: (activity) => { if (!stopped.signal.aborted || activity.type === "tool_finished") this.#emit(activity); },
+      next: () => `claude-${++this.#calls}`, terminate: () => { this.#terminating += 1; },
+      track: (call) => { calls.add(call); void call.finally(() => calls.delete(call)); } }));
+    const run = query({ prompt: request, options: {
+      cwd: this.#root, model: this.#model, ...(this.#effort === undefined ? {} : { effort: this.#effort }), systemPrompt: this.#options.systemPrompt + toolNote,
+      tools: [], mcpServers: { [server]: createSdkMcpServer({ name: server, version: "1.0.0", tools }) },
+      // Every call goes through one gate: Tesota's tools are allowed there, and nothing else is.
+      canUseTool: onlyTesotaTools, settingSources: [], strictMcpConfig: true, skills: [],
+      hooks: { PostToolBatch: [{ hooks: [this.#afterBatch] }] }, abortController: abort,
+      env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "tesota", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+        ...this.#options.configDirectory === undefined ? {} : { CLAUDE_CONFIG_DIR: this.#options.configDirectory } },
+      ...this.#conversation(),
+    } });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stop = (): void => {
+      stopped.abort();
+      timer = setTimeout(() => { abort.abort(); }, settlementMs);
+      run.interrupt().catch(() => { abort.abort(); });
+    };
+    signal.addEventListener("abort", stop, { once: true });
     let result: SDKResultMessage | undefined;
+    // Resolves once every call still in progress has settled, as Pi waits for its tools; false when one did not in time.
+    const settled = async (): Promise<boolean> => {
+      let limit: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<false>((resolve) => { limit = setTimeout(() => { resolve(false); }, settlementMs); });
+      try { return await Promise.race([Promise.allSettled(calls).then(() => true), late]); } finally { clearTimeout(limit); }
+    };
     try {
-      for await (const message of query({ prompt: request, options: {
-        cwd: this.#root, model: this.#model, ...(this.#effort === undefined ? {} : { effort: this.#effort }), systemPrompt: this.#options.systemPrompt + toolNote,
-        tools: [], mcpServers: { [server]: createSdkMcpServer({ name: server, version: "1.0.0", tools }) },
-        // Every call goes through one gate: Tesota's tools are allowed there, and nothing else is.
-        canUseTool: onlyTesotaTools, settingSources: [], strictMcpConfig: true, skills: [],
-        hooks: { PostToolBatch: [{ hooks: [this.#afterBatch] }] }, abortController: abort,
-        env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: "tesota", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-          ...this.#options.configDirectory === undefined ? {} : { CLAUDE_CONFIG_DIR: this.#options.configDirectory } },
-        ...this.#conversation(),
-      } })) {
-        this.#observe(message);
+      for await (const message of run) {
+        if (!stopped.signal.aborted) this.#observe(message);
         if (message.type === "result") result = message;
       }
     } catch (error) {
-      if (!abort.signal.aborted) return { status: "failed", reason: error instanceof Error ? error.message : "Claude Code failed" };
-    } finally { signal.removeEventListener("abort", stop); }
+      if (!stopped.signal.aborted) return { status: "failed", reason: error instanceof Error ? error.message : "Claude Code failed" };
+    } finally { signal.removeEventListener("abort", stop); clearTimeout(timer); }
+    if (stopped.signal.aborted && !await settled()) { this.#usable = false; return { status: "unsettled" }; }
     if (result !== undefined) this.#options.onUsage?.(resultUsage(result));
-    const turn = claudeCodeTurn(result, abort.signal.aborted);
+    const turn = claudeCodeTurn(result, stopped.signal.aborted);
     if (turn.status === "completed" && this.#options.conversationId !== undefined) this.#conversationStarted = true;
     return turn;
   }

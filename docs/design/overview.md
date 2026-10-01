@@ -159,6 +159,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `source-session.ts` | A session working in the source: its turns as pairs of shadow trees, keep, and revert of the latest turn |
 | `request-record.ts` | The operator's requests behind the pending changes |
 | `workspace-apply.ts`, `verification/application-rule.ts`, `recover-command.ts`, `workspace-prune.ts` | Application with its store, journal and proved admission and outcome rules, and `tesota recover`; which workspaces `tesota prune` may remove |
+| `claude-code-transcripts.ts` | Removing a closed session's Claude Code conversations by their recorded ids, and finding Claude Code's folders of isolated workspaces that no longer exist, for `tesota prune` |
 | `repository-git.ts`, `windows-system.ts` | Git without ambient config, hooks or network; Windows' own programs, never found through PATH |
 | `execution-environment.ts`, `execution-providers.ts` | The provider-neutral execution interface, choosing a mode and provider, `tesota setup` |
 | `host-environment.ts`, `docker-sandboxes-environment.ts`, `docker-sandboxes-kit.ts`, `toolchain.ts`, `languages.ts` | The two providers, the cached sandbox image, and a repository's setup: the runtimes it pins, the languages its files show, and the stages every sandbox runs |
@@ -166,6 +167,8 @@ routing and execution permissions live in code and in Tesota's own directory
 | `wsl-environment.ts`, `bubblewrap-sandbox.ts`, `bubblewrap-sandbox-server.ts`, `egress-proxy.ts`, `verification/setup-network-rule.ts` | The WSL sandbox: its provider on Windows, its bubblewrap process inside WSL, and the allowlist proxy its commands reach the network through, with its proved setup phase |
 | `execution-qualification.ts`, `sandbox-command.ts`, `verification/sandbox-qualification.ts` | Qualification on the operator's machine, `tesota sandbox`, and their proved rules |
 | `command-rules.ts`, `verification/command-rule.ts` | Which commands run on this computer without asking: reading a command, the rules the operator saves, and their proved match |
+| `verification/permission-mode.ts` | The operator's permission modes (Read only, Accept edits, Full access): whether edits are allowed, where commands run, when they ask, and Shift+Tab's cycle, proved |
+| `verification/toolchain-refresh-rule.ts` | When a toolchain the repository declares mid-session is set up in the sandbox: only on the operator's yes, and never where the sandbox sets up only when prepared, proved |
 | `workspace-checks.ts`, `verification/oxlint*.ts`, `verification/lemmascript-verifier.ts` | Verifier results with claim and limits: approved commands, Oxlint, LemmaScript with Dafny |
 | `test-report.ts`, `verification/check-origin-rule.ts` | Reading a check's JUnit XML reports, and the proved rule for whose failure a check or test is |
 | `verification-changes.ts` | Flagging changes to tests, check configuration, CI, specifications and scripts |
