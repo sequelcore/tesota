@@ -631,10 +631,14 @@ background colors; plain conversation text still uses the terminal's foreground.
 - Copies of the files an application replaced stay in
   `~/.tesota/applications/` for 30 days, or until an unfinished application
   is settled with `tesota recover`.
-- Closing a session removes its copy, if it has one. `tesota prune` lists
+- Closing a session removes its copy, if it has one, and its agent's
+  conversations, Claude Code's included: Tesota removes those by the ids it
+  recorded, so your own Claude Code conversations in the same project stay.
+  `tesota prune` lists
   every copy with what it holds on disk, on your computer and in the WSL
   sandbox, whose installed `node_modules` are usually most of it, and the
   copies it would remove: those that no session uses and that hold no
   unapplied changes. It also lists records of sessions no saved session uses
-  (their changes stay in your files), and Tesota's records of directories
-  that no longer exist; `tesota prune --force` removes them.
+  (their changes stay in your files), Tesota's records of directories
+  that no longer exist, and Claude Code's folders of copies that no longer
+  exist, which only Tesota's sessions used; `tesota prune --force` removes them.

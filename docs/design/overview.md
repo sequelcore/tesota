@@ -159,6 +159,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `source-session.ts` | A session working in the source: its turns as pairs of shadow trees, keep, and revert of the latest turn |
 | `request-record.ts` | The operator's requests behind the pending changes |
 | `workspace-apply.ts`, `verification/application-rule.ts`, `recover-command.ts`, `workspace-prune.ts` | Application with its store, journal and proved admission and outcome rules, and `tesota recover`; which workspaces `tesota prune` may remove |
+| `claude-code-transcripts.ts` | Removing a closed session's Claude Code conversations by their recorded ids, and finding Claude Code's folders of isolated workspaces that no longer exist, for `tesota prune` |
 | `repository-git.ts`, `windows-system.ts` | Git without ambient config, hooks or network; Windows' own programs, never found through PATH |
 | `execution-environment.ts`, `execution-providers.ts` | The provider-neutral execution interface, choosing a mode and provider, `tesota setup` |
 | `host-environment.ts`, `docker-sandboxes-environment.ts`, `docker-sandboxes-kit.ts`, `toolchain.ts`, `languages.ts` | The two providers, the cached sandbox image, and a repository's setup: the runtimes it pins, the languages its files show, and the stages every sandbox runs |

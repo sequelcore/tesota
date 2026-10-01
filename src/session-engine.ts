@@ -19,6 +19,7 @@ import { dataNotice, offeredChoices, offeredModels, type OfferedModel, routeList
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
+import { removeClaudeTranscripts } from "./claude-code-transcripts.js";
 import { commandPlace, needsConfirmation, nextMode, type PermissionMode } from "./verification/permission-mode.js";
 import { installsDeclaredTools, toolchainStep } from "./verification/toolchain-refresh-rule.js";
 import { planToolchain } from "./toolchain.js";
@@ -972,6 +973,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         const transcript = SessionManager.findById(checkout, engineId, piSessionsDirectory);
         if (transcript !== undefined) await rm(transcript, { force: true });
       }
+      // On the claude-code routes, Claude Code keeps the same conversations in its own folders, by the same ids.
+      await removeClaudeTranscripts([record.engineId, ...record.retiredEngineIds ?? []]).catch(() => 0);
       if (!record.blocked) await rm(record.workspace, { recursive: true, force: true, maxRetries: 3 });
     }
     store.remove(id);
