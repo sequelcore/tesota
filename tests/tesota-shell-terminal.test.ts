@@ -1626,6 +1626,49 @@ it("steps through a result's tabs with Alt+T or a click, each keeping its own pl
   shell.stop();
 });
 
+it("offers an undecided turn's actions above the idle prompt, each chosen with a click, never with a key alone", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 100;
+  terminal.rows = 30;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const onKeep = vi.fn();
+  const onRevert = vi.fn();
+  const onRedo = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onKeep, onRevert, onRedo });
+  shell.start();
+  const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
+  shell.setSessionUndecided("default", { turns: 1, files: 2, redoable: false });
+  shell.inspect({ title: "Review · 2 files", summary: "  edit   src/a.ts", detail: "Your requests\n  1. Fix it",
+    diff: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new" });
+  // While the session works, the bar waits.
+  expect(stripTerminalSequences(render())).not.toContain("undecided");
+  shell.ask("> ").catch(() => undefined);
+  let frame = render();
+  expect(stripTerminalSequences(frame)).toContain("1 turn undecided · 2 files   Keep   Revert   Diff   or /keep /revert");
+  // A letter typed to start a request is the request's, never an action.
+  terminal.send("r");
+  terminal.send("k");
+  expect(onRevert).not.toHaveBeenCalled();
+  expect(onKeep).not.toHaveBeenCalled();
+  clickText(terminal, frame, " Keep ");
+  expect(onKeep).toHaveBeenCalledWith("default");
+  clickText(terminal, frame, " Revert ");
+  expect(onRevert).toHaveBeenCalledWith("default", []);
+  // Diff opens the result on its Diff tab, in place of the conversation on a narrow terminal.
+  clickText(terminal, frame, " Diff ");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("1 file changed +1 -1");
+  // A reverted turn can be put back.
+  shell.setSessionUndecided("default", { turns: 0, files: 0, redoable: true });
+  frame = render();
+  expect(stripTerminalSequences(frame)).toContain("Turn reverted   Redo   or /redo");
+  clickText(terminal, frame, " Redo ");
+  expect(onRedo).toHaveBeenCalledWith("default");
+  shell.setSessionUndecided("default", undefined);
+  expect(stripTerminalSequences(render())).not.toContain("Turn reverted");
+  shell.stop();
+});
+
 it("selects a session clicked in the sidebar, as Alt+J does", () => {
   const terminal = new TestTerminal();
   terminal.columns = 150;

@@ -9,6 +9,7 @@ import { bold, colorText, fadedText, mutedText, parseTesotaShellTheme, selectedR
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
 import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
 import { ResultPanel } from "./tesota-shell-result.js";
+import { DecisionBar, type DecisionAction, type UndecidedTurns } from "./tesota-shell-decision-bar.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
 import { ThemePicker } from "./tesota-shell-theme-picker.js";
 import { ChoicePicker, type ShellChoice } from "./tesota-shell-choice-picker.js";
@@ -122,6 +123,8 @@ export interface TesotaShellTerminal {
   /** The model the session's agent runs, as `route:model`, shown beside the prompt while it is selected. */
   setSessionModel(id: string, model: string): void;
   setSessionTitle(id: string, title: string): void;
+  /** A session's undecided turns in the operator's files, offered above its prompt while it is idle; undefined for none. */
+  setSessionUndecided(id: string, undecided: UndecidedTurns | undefined): void;
   blockSession(id: string): void;
   endSession(id: string): void;
   /** Remove a session from the workspace; its pending prompt fails with a closed error. */
@@ -175,6 +178,7 @@ interface SessionView {
   model?: string;
   /** Where the session's commands run, once its environment is chosen. */
   execution?: { readonly label: string; readonly place: SessionExecution["commands"] };
+  undecided?: UndecidedTurns | undefined;
   /** The agent's plan for the session's current work. */
   plan?: WorkPlan;
 }
@@ -410,6 +414,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private readonly modelPicker: ModelPicker;
   private readonly themePicker: ThemePicker;
   private readonly choicePicker: ChoicePicker;
+  private readonly decisionBar: DecisionBar;
   private readonly accountsPanel: AccountsPanel;
   /** The Accounts panel while it is open. */
   private accountsOverlay: OverlayHandle | undefined;
@@ -444,6 +449,12 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     this.modelPicker = new ModelPicker(this.theme);
     this.themePicker = new ThemePicker(this.theme);
     this.choicePicker = new ChoicePicker(this.theme);
+    this.decisionBar = new DecisionBar(this.theme, () => {
+      const session = this.selected();
+      // Only at rest at the request prompt: never while it works, waits on a question or asks something else.
+      if (session.pending === undefined || session.prompt !== "> " || session.question !== undefined) return undefined;
+      return { undecided: session.undecided, hasDiff: (session.inspections.at(-1)?.diff ?? "").trim().length > 0 };
+    }, (action) => { this.decide(action); });
     this.accountsPanel = new AccountsPanel(this.theme, () => this.tui.terminal.rows, this.now);
     this.editor = new PromptEditor(this.tui, this.theme);
     this.editor.onChange = (value) => { this.updateCommandMenu(value); };
@@ -525,7 +536,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       { component: selected.scroll, basis: 0, grow: 1, minSize: 1, visible: () => !resultInColumn() },
       { component: this.result.view, basis: 0, grow: 1, minSize: 1, visible: () => resultInColumn() },
       { component: new VStack([{ component: this.plan, basis: "auto", visible: () => this.plan.visible },
-        { component: this.queue, basis: "auto", visible: () => this.queue.visible }, this.status, this.commandMenu, this.modelPicker, this.themePicker, this.choicePicker,
+        { component: this.queue, basis: "auto", visible: () => this.queue.visible }, this.status,
+        { component: this.decisionBar, basis: "auto", visible: () => this.decisionBar.visible }, this.commandMenu, this.modelPicker, this.themePicker, this.choicePicker,
         { component: this.editor, basis: "auto", visible: () => this.selected().question === undefined },
         { component: this.question, basis: "auto", visible: () => this.selected().question !== undefined }, this.footer]),
         basis: "auto", shrink: 1, minSize: 3 },
@@ -1088,6 +1100,27 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (session === undefined) return;
     session.title = title;
     if (this.started) this.compose();
+  }
+
+  setSessionUndecided(id: string, undecided: UndecidedTurns | undefined): void {
+    const session = this.sessions.get(id);
+    if (session === undefined) return;
+    session.undecided = undecided;
+    if (this.started && id === this.selectedId) this.tui.requestRender();
+  }
+
+  /** An action chosen on the decision bar, as its command does; Diff shows the latest result's diff. */
+  private decide(action: DecisionAction): void {
+    const session = this.selected();
+    if (action === "keep") this.options.onKeep?.(session.id);
+    else if (action === "revert") this.options.onRevert?.(session.id, []);
+    else if (action === "redo") this.options.onRedo?.(session.id);
+    else {
+      session.selectedInspection = session.inspections.length - 1;
+      this.showResult = true;
+      this.compose();
+      this.result.choose("diff");
+    }
   }
 
   setSessionExecution(id: string, label: string, place: SessionExecution["commands"]): void {

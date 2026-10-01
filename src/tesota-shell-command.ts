@@ -201,6 +201,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   const engine = createSessionEngine({ cwd, store, output: surface, decisions: (id) => shellDecisions(surface, id),
     chooseExecution, fresh: freshSessions, mode: (id) => saved(id)?.mode ?? "accept-edits" });
   for (const session of store.list()) engine.permissionMode.open(session.id);
+  for (const session of savedSessions) void engine.showUndecided(session.id);
   /**
    * Close a session: its record, agent transcript and workspace are removed. A
    * session holding unapplied changes or unresolved effects needs a second
