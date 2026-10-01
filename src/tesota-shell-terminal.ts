@@ -282,7 +282,9 @@ class Line implements Component {
   setText(text: string, whole = false): void { this.#text = text; this.#whole = whole; }
   invalidate(): void {}
   render(width: number): string[] {
-    return this.#whole ? wrapTextWithAnsi(` ${this.#text}`, width) : [truncateToWidth(` ${this.#text}`, width)];
+    // One row means one row: a line break left in would push the layout below it down, out of the renderer's account.
+    return this.#whole ? wrapTextWithAnsi(` ${this.#text}`, width)
+      : [truncateToWidth(` ${this.#text.replace(/\r?\n/gu, " ")}`, width)];
   }
 }
 

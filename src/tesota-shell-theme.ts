@@ -122,8 +122,13 @@ export function mutedText(text: string, theme: TesotaShellTheme): string {
 /** A selected row, filled to the width: the theme's selection background, or reverse video when colors are the terminal's. */
 export function selectedRow(line: string, width: number, theme: TesotaShellTheme): string {
   const padded = line + " ".repeat(Math.max(0, width - visibleWidth(line)));
-  return theme.selectionBackground === null ? `\x1b[7m${padded}\x1b[27m` :
-    backgroundText(colorText(padded, theme.foreground), theme.selectionBackground);
+  // A full reset inside the row, as truncation leaves before its ellipsis, would end the selection's colors there:
+  // they are laid again after each, so the whole row stays selected.
+  const selection = theme.selectionBackground === null ? "\x1b[7m"
+    : `\x1b[48;2;${rgb(theme.selectionBackground)}m${theme.foreground === null ? "" : `\x1b[38;2;${rgb(theme.foreground)}m`}`;
+  const kept = padded.replaceAll("\x1b[0m", `\x1b[0m${selection}`);
+  return theme.selectionBackground === null ? `\x1b[7m${kept}\x1b[27m` :
+    backgroundText(colorText(kept, theme.foreground), theme.selectionBackground);
 }
 
 export const TESOTA_SHELL_THEME_DESCRIPTIONS: Readonly<Record<TesotaShellThemeName, string>> = {
