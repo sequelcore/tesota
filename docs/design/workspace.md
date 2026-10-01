@@ -196,9 +196,13 @@ in `src/verification/application-rule.ts`).
    equals what the workspace last took from it.
 
 An edit anywhere in the source, even to a file the result does not touch,
-refuses the application and names the changed files. The next request brings
-them into the workspace, and the result is checked and reviewed again, so what
-is applied is always what was checked. Each file must also still hold its
+refuses the application and names the changed files. As a pull request that
+falls behind its base offers "Update branch", Tesota then asks whether to bring
+those changes into the workspace and check again: on yes, the approved checks
+and the review run on the combined state, with no agent turn unless they send
+something back, and the result question comes back. A request brings them in
+too. Either way, what is applied is always what was checked. Changes that
+touch the result's own pending files are not brought in. Each file must also still hold its
 base content, and an added file must not exist yet. A CRLF checkout of the
 base content counts as unchanged and keeps its line endings.
 

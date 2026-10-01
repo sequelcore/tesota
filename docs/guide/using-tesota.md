@@ -447,8 +447,10 @@ one for commands, where `Enter` alone keeps working:
 
 - **apply** writes the changes to your repository, only if nothing in it
   changed since the result was checked. If you edited any file, even one the
-  changes do not touch, nothing is written; your next request brings your
-  edits in, and the result is checked again. Tesota keeps a copy of every file
+  changes do not touch, nothing is written, and Tesota offers to bring your
+  edits in and check again, as a pull request's "Update branch" does; no
+  agent turn runs unless the checks or the review send something back. `Enter`
+  declines, and your next request brings them in instead. Tesota keeps a copy of every file
   it replaces, never overwrites a file someone changes meanwhile, and undoes
   what it wrote if it has to stop. If it cannot undo everything, it says
   "Recovery required", and `tesota recover` in that repository lists each

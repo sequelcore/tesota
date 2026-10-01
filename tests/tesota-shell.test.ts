@@ -129,6 +129,36 @@ it("reports a conflict and continues without writing", async () => {
   expect(fixture.text()).toContain("Not applied: These files changed in your repository.\n  src/price.ts\nNothing was written.");
 });
 
+it("brings in the repository's newer changes and checks again when only they stood in the way, with no agent turn", async () => {
+  const sourceChanged = { status: "conflict", reason: "files in your repository changed since this result was checked",
+    paths: ["notes.png"], sourceChanged: true } as const;
+  const apply = vi.fn<() => Promise<ApplyResult>>().mockResolvedValueOnce(sourceChanged)
+    .mockResolvedValueOnce({ status: "applied", changes: [change, added] });
+  const refresh = vi.fn(async () => "updated" as const);
+  // Request, checks, apply, yes to bringing the changes in, apply again, then the end.
+  const fixture = shell(["Fix it", "", "a", "y", "a", ""], { apply, refresh });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(fixture.dependencies.review).toHaveBeenCalledTimes(2);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
+  expect(fixture.text()).toContain("Not applied: files in your repository changed since this result was checked.\n  notes.png\n");
+  expect(fixture.text()).toContain("Applied to your repository:");
+});
+
+it("keeps the result when the operator declines bringing the changes in, or they collide with it", async () => {
+  const sourceChanged = { status: "conflict", reason: "files in your repository changed since this result was checked",
+    paths: ["src/price.ts"], sourceChanged: true } as const;
+  const declined = shell(["Fix it", "", "a", "", ""], { apply: async () => sourceChanged, refresh: vi.fn(async () => "updated" as const) });
+  await runTesotaShell(declined.dependencies);
+  expect(declined.dependencies.refresh).not.toHaveBeenCalled();
+  expect(declined.dependencies.review).toHaveBeenCalledTimes(1);
+  expect(declined.text()).toContain("The changes stay in the workspace.");
+  const colliding = shell(["Fix it", "", "a", "y", ""], { apply: async () => sourceChanged, refresh: vi.fn(async () => "conflict" as const) });
+  await runTesotaShell(colliding.dependencies);
+  expect(colliding.dependencies.review).toHaveBeenCalledTimes(1);
+  expect(colliding.text()).toContain("touch files this result also changes");
+});
+
 it("says when everything written was undone", async () => {
   const fixture = shell(["Fix it", "", "a", ""], {
     apply: async () => ({ status: "conflict", reason: "a file changed while applying", paths: ["src/price.ts"],

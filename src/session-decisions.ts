@@ -39,6 +39,8 @@ export interface SessionDecisions {
   fullAccess(): Promise<boolean>;
   /** Whether to install, in the sandbox, the tools the repository's changed toolchain files now declare. */
   toolchain(files: readonly string[]): Promise<boolean>;
+  /** Whether to bring the repository's newer changes into the workspace and check the result again. */
+  refresh(paths: readonly string[]): Promise<boolean>;
 }
 
 /**
@@ -117,6 +119,25 @@ export function toolchainQuestion(files: readonly string[]): ShellQuestion<"inst
   };
 }
 
+/**
+ * After an application refused because the repository changed since the check (decision 042's refresh): bring those
+ * changes in and check again, as a pull request's "Update branch" does, with no agent turn. Enter declines.
+ */
+export function refreshQuestion(paths: readonly string[]): ShellQuestion<"refresh" | "keep"> {
+  const count = paths.length;
+  return {
+    title: `Your repository changed since this result was checked${count === 0 ? "" : ` (${count} ${count === 1 ? "file" : "files"})`}. ` +
+      "Bring those changes in and check again?",
+    detail: "Tesota brings them into the workspace, runs the approved checks and the review again, and asks again. " +
+      "No agent turn runs unless the checks or the review send something back.",
+    options: [
+      { value: "refresh", key: "y", label: "Yes, bring them in and check again" },
+      { value: "keep", key: "n", label: "No, keep the result in the workspace" },
+    ],
+    initial: "keep",
+  };
+}
+
 /** What becomes of a reviewed result; Enter keeps working, and what follows the answer says what was done. */
 const resultQuestion: ShellQuestion<ResultDecision> = {
   title: "What becomes of these changes?",
@@ -180,5 +201,6 @@ export function askingDecisions(ask: (prompt: string) => Promise<string>,
     site: (host) => choose(networkQuestion(`Read pages from ${host}?`, `reading pages from ${host}`)),
     fullAccess: async () => await choose(fullAccessQuestion) === "allow",
     toolchain: async (files) => await choose(toolchainQuestion(files)) === "install",
+    refresh: async (paths) => await choose(refreshQuestion(paths)) === "refresh",
   };
 }

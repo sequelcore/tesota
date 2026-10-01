@@ -95,6 +95,8 @@ export function policyDecisions(request: string, policy: RunPolicy): SessionDeci
     fullAccess: async () => false,
     // A run installs nothing it was not prepared with; its sandbox's toolchain is the one its session started with.
     toolchain: async () => false,
+    // A run decides once; a source that changed under it is reported, never brought in.
+    refresh: async () => false,
   };
 }
 
