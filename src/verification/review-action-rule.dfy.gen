@@ -16,6 +16,8 @@ datatype ActionCheckOrigin = introduced | preexisting | unknown | absent
 
 datatype ActionObligation = held | not_held | uncertain
 
+datatype ObligationDisposition = operator | fixable
+
 function findingAction(origin: ActionOrigin, disposition: ActionDisposition, standing: ActionStanding, duplicate: bool): ReviewAction
 {
   if ((duplicate || standing.refuted?) || origin.preexisting?) then
@@ -57,10 +59,13 @@ lemma checkAction_ensures(verifier: ActionVerifier, outcome: ActionOutcome, orig
 {
 }
 
-function obligationAction(outcome: ActionObligation): ReviewAction
+function obligationAction(outcome: ActionObligation, disposition: ObligationDisposition): ReviewAction
 {
   if outcome.not_held? then
-    ReviewAction.agent
+    if disposition.fixable? then
+      ReviewAction.agent
+    else
+      ReviewAction.operator
   else
     if outcome.uncertain? then
       ReviewAction.operator
@@ -68,9 +73,9 @@ function obligationAction(outcome: ActionObligation): ReviewAction
       ReviewAction.context
 }
 
-lemma obligationAction_ensures(outcome: ActionObligation)
-  ensures (obligationAction(outcome).agent? <==> outcome.not_held?)
-  ensures (obligationAction(outcome).operator? <==> outcome.uncertain?)
-  ensures (obligationAction(outcome).context? <==> outcome.held?)
+lemma obligationAction_ensures(outcome: ActionObligation, disposition: ObligationDisposition)
+  ensures (obligationAction(outcome, disposition).agent? <==> (outcome.not_held? && disposition.fixable?))
+  ensures (obligationAction(outcome, disposition).operator? <==> (outcome.uncertain? || (outcome.not_held? && disposition.operator?)))
+  ensures (obligationAction(outcome, disposition).context? <==> outcome.held?)
 {
 }

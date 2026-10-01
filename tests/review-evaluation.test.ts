@@ -122,5 +122,8 @@ it("counts, in a blocked case, the request obligations sent back to the agent an
   const unmet = { ...report([]), obligations: [{ source: "request" as const, index: 1, obligation: "node --test passes",
     status: "unmet" as const, evidence: "release.test.js fails on the base too: the signer is not installed", standing: "confirmed" as const }] };
   expect(scoreCase(blocked, [unmet], "refuted")).toMatchObject({ blockedSentBack: 1, blockedToOperator: 0 });
+  // Marked as the operator's, as a check failing on the base for a missing program is, it is not sent back (#224).
+  const operators = { ...unmet, obligations: [{ ...unmet.obligations[0]!, disposition: "operator" as const }] };
+  expect(scoreCase(blocked, [operators], "refuted")).toMatchObject({ blockedSentBack: 0, blockedToOperator: 1 });
   expect(scoreCase(blocked, [unmet], "raw")).toMatchObject({ blockedSentBack: 0, blockedToOperator: 0 });
 });

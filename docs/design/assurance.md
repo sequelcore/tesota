@@ -197,6 +197,14 @@ found it met or the refuter disproved its gap, **did not hold** only when the
 refuter confirmed the gap, and is **uncertain** otherwise, including a gap
 nobody tested or settled; that rule is `obligationOutcome` in
 `src/verification/obligation-outcome.ts`, proved by `bun run formal:check`.
+An obligation that did not hold goes back to the agent only when the agent
+can satisfy it: the reviewer gives a partial or unmet obligation a
+disposition, as it gives a finding, and one the agent cannot satisfy within
+the request, such as "the tests must pass" when a test also fails on the base
+because the environment lacks a program, goes to the operator, with no
+correction round (`obligationAction` in
+`src/verification/review-action-rule.ts`, proved). The first dogfooding
+session spent both its correction rounds on such a request.
 The operator sees how many requests held, and how many claimed plan steps
 held; each claimed step in the plan beside the prompt shows "held in
 review", "not held in review" or "review uncertain", which is a judged

@@ -68,6 +68,12 @@ export interface Obligation {
   readonly status: ObligationStatus;
   /** What in the code, the checks or the request shows the status. */
   readonly evidence: string;
+  /**
+   * For a partial or unmet obligation, as for a finding: `fixable` when the agent can satisfy it within the request,
+   * `operator` when it cannot, as when a check fails on the base for a reason outside the change. Absent counts as
+   * `fixable`, as reviews recorded before obligations carried one.
+   */
+  readonly disposition?: FindingDisposition;
   /** Set on a partial or unmet obligation once the refuter tested it; absent otherwise. */
   readonly standing?: FindingStanding;
   readonly refutation?: string;
