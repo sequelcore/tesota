@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { SessionRail } from "../src/tesota-shell-sidebar.js";
 import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
 import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, sidebarPresentation,
-  sidebarSessionState, terminalTitleMark,
+  sidebarSessionState, terminalTitleMark, showWaitingInFooter, sidebarGroupRank,
   type SidebarProgressPhase } from "../src/verification/sidebar-rule.js";
 
 describe("sidebar presentation", () => {
@@ -69,6 +69,16 @@ it("renders precise state labels and keeps the selected session inside an overla
   expect(all).toContain("! Needs decision");
   expect(all).toContain("! Unresolved");
   expect(stripTerminalSequences(rail.renderWindow(30, 4).join("\n"))).toContain("Oldest");
+});
+
+it("groups sessions waiting on the operator first and shows their count only with the sidebar hidden", () => {
+  expect((["unresolved", "needs_operator", "awaiting_command", "awaiting_decision"] as const).map(sidebarGroupRank))
+    .toEqual([0, 0, 0, 0]);
+  expect((["working", "unread", "ended", "idle"] as const).map(sidebarGroupRank)).toEqual([1, 1, 1, 1]);
+  expect(showWaitingInFooter("hidden", 1)).toBe(true);
+  expect(showWaitingInFooter("hidden", 0)).toBe(false);
+  expect(showWaitingInFooter("inline", 2)).toBe(false);
+  expect(showWaitingInFooter("overlay", 2)).toBe(false);
 });
 
 describe("terminal title", () => {

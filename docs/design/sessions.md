@@ -68,7 +68,9 @@ The accepted theme names are specified and proved in
 GUI's surface system: the terminal still owns the canvas and ordinary text.
 
 The sidebar's responsive mode, state precedence, moving states and
-newest-first index are pure rules in `verification/sidebar-rule.ts`, with
+newest-first index, waiting-first grouping and the footer's count of waiting
+sessions (shown only while the sidebar is hidden, as "1 needs you") are pure
+rules in `verification/sidebar-rule.ts`, with
 LemmaScript specifications proved by Dafny. Rendering belongs to
 `tesota-shell-sidebar.ts`; terminal composition and input remain in
 `tesota-shell-terminal.ts`.
