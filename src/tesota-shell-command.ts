@@ -4,11 +4,11 @@ import { ProcessTerminal } from "@earendil-works/pi-tui";
 import { chooseSessionExecution, providersFor, readSandboxPreference, SANDBOX_NAMES, SANDBOX_PREFERENCES,
   type SandboxPreference, type SessionExecution } from "./execution-providers.js";
 import { pendingUsage, readUsage, type RouteUsage } from "./account-usage.js";
-import { allRoutes, routeStatuses, usedByRoute } from "./auth.js";
+import { allRoutes, routeAccounts, routeStatuses, usedByRoute } from "./auth.js";
 import { usageSources } from "./integrations/usage-sources.js";
 import type { AccountsSource } from "./tesota-shell-accounts.js";
 import { BackdropTui, FocusReportingTerminal } from "./tesota-shell-tui.js";
-import { accountRoute, MODEL_ROLES, readAddedRoutes, readModelChoices } from "./model-roles.js";
+import { accountRoute, DEFAULT_MODELS_FILE, MODEL_ROLES, readAddedRoutes, readModelChoices } from "./model-roles.js";
 import { modelCost, rolePicker, runRolesCommand } from "./models-command.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import { openShellSessionStore, type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
@@ -151,11 +151,14 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
       ] };
     },
     onRoleModel: (id, args) => {
-      let text = "";
-      const code = runRolesCommand(args, (written) => { text += written; }, engine.offered());
-      // The agent's role sets the model new sessions start with; `/model` switches a running session's.
-      const agent = code === 0 && args[0] === "agent" ? "New sessions start with it; /model switches this one's.\n" : "";
-      surface.replyTo(id, `${text}${agent}`.trimEnd(), code === 0 ? "success" : "warning");
+      // Each route's account, read locally, tells a role that now shares one with another role's route (#235).
+      void routeAccounts(allRoutes()).catch(() => []).then((accounts) => {
+        let text = "";
+        const code = runRolesCommand(args, (written) => { text += written; }, engine.offered(), DEFAULT_MODELS_FILE, accounts);
+        // The agent's role sets the model new sessions start with; `/model` switches a running session's.
+        const agent = code === 0 && args[0] === "agent" ? "New sessions start with it; /model switches this one's.\n" : "";
+        surface.replyTo(id, `${text}${agent}`.trimEnd(), code === 0 ? "success" : "warning");
+      });
     },
     onKeep: (id) => { void engine.turnCommands.keep(id); },
     onRevert: (id, args) => { void engine.turnCommands.revert(id, args); },

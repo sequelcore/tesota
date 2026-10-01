@@ -5,8 +5,9 @@ import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
+import { type RouteAccount, sharedRoleGroups, sharedRoleNote } from "./route-accounts.js";
 import type { ModelPickerData } from "./tesota-shell-model-picker.js";
-import { chooseModel, DECISION_MODELS, isDecisionModel, isReasoningLevel, OPTIONAL_ROLES, type ReasoningLevel, ROLE_OFF, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES,
+import { accountRoute, type ModelChoices, chooseModel, DECISION_MODELS, isDecisionModel, isReasoningLevel, OPTIONAL_ROLES, type ReasoningLevel, ROLE_OFF, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES,
   type AddedRoute, ROUTE_KINDS, type ModelRole, type RouteKind, parseModelChoice, readAddedRoutes, readModelChoices, ROLE_DESCRIPTIONS,
   ROUTE_BILLING } from "./model-roles.js";
 
@@ -189,14 +190,27 @@ const offText: Partial<Record<string, string>> = { triage: "no first pass; every
   explorer: "no explorers; choose a model to turn them on",
   advisor: "no advisor; choose a model to turn it on" };
 
-function rolesListing(offered: readonly OfferedModel[], path: string): string {
+/** Each route's account, as its sign-in records it, for telling roles that draw on one account. */
+export type RouteAccounts = readonly { readonly route: string; readonly account?: RouteAccount | undefined }[];
+
+/** Where roles on different routes draw on one account (#235); with a role, only the note naming its route. */
+function roleAccountNotes(choices: ModelChoices, accounts: RouteAccounts, added: readonly AddedRoute[], role?: ModelRole): string[] {
+  const usedBy = (route: string): ModelRole[] =>
+    MODEL_ROLES.filter((each) => choices[each] !== ROLE_OFF && accountRoute(choices[each], added) === route);
+  const route = role === undefined ? undefined : accountRoute(choices[role], added);
+  return sharedRoleGroups(accounts, usedBy).filter((group) => role === undefined || route !== undefined && group.includes(route))
+    .map((group) => sharedRoleNote(group, usedBy));
+}
+
+function rolesListing(offered: readonly OfferedModel[], path: string, accounts: RouteAccounts, added: readonly AddedRoute[]): string {
   const choices = readModelChoices(path);
   const rows = MODEL_ROLES.map((role) => {
     const detail = choices[role] === ROLE_OFF ? offText[role] ?? "off" : isDecisionModel(choices[role]) ? DECISION_COST
       : modelCost(offered.find((model) => model.id === choices[role]?.split("@")[0]));
     return `  ${role.padEnd(10)}${choices[role].padEnd(30)}${detail}\n  ${"".padEnd(10)}${ROLE_DESCRIPTIONS[role]}`;
   });
-  const warnings = describeJudgeWarnings(judgeWarnings(choices));
+  const warnings = [describeJudgeWarnings(judgeWarnings(choices)), ...roleAccountNotes(choices, accounts, added)]
+    .filter((text) => text !== "").join("\n");
   return `Models by role (${path}):\n${rows.join("\n")}\n${warnings === "" ? "" : `\n${warnings}\n`}` +
     "\nChange one with tesota roles <role> <route:model>; default restores that role's built-in choice. " +
     "tesota roles triage off checks every answer in full. " +
@@ -246,8 +260,9 @@ export function runModelsCommand(args: readonly string[], write: (text: string) 
 
 /** The model each Tesota role uses across sessions. */
 export function runRolesCommand(args: readonly string[], write: (text: string) => void,
-  offered: readonly OfferedModel[] = offeredModels(), path: string = DEFAULT_MODELS_FILE): number {
-  if (args.length === 0) { write(rolesListing(offered, path)); return 0; }
+  offered: readonly OfferedModel[] = offeredModels(), path: string = DEFAULT_MODELS_FILE, accounts: RouteAccounts = [],
+  added: readonly AddedRoute[] = readAddedRoutes()): number {
+  if (args.length === 0) { write(rolesListing(offered, path, accounts, added)); return 0; }
   const [role, model] = args;
   if (args.length !== 2 || role === undefined || model === undefined || !isModelRole(role)) {
     write(`Usage: tesota roles [<${MODEL_ROLES.join("|")}> <route:model|default|off>]\n`);
@@ -266,6 +281,7 @@ export function runRolesCommand(args: readonly string[], write: (text: string) =
     }
     const warnings = describeJudgeWarnings(judgeWarnings(choices).filter((warning) => warning.author === role || warning.judge === role));
     if (warnings !== "") write(`${warnings}\n`);
+    for (const note of roleAccountNotes(choices, accounts, added, role)) write(`${note}\n`);
     return 0;
   } catch (error) {
     write(`${error instanceof Error ? error.message : "The choice could not be saved"}.\n`);

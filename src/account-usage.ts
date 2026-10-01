@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { allRoutes, kindLabels } from "./auth.js";
 import { creditPercent, filledSegments, type MeterTone, meterTone, remainingPercent } from "./verification/usage-meter-rule.js";
+import { usageReader } from "./verification/usage-reader-rule.js";
 
 /** One window or credit of an account: the whole percent left, when it resets, and the amounts behind a credit. */
 export interface UsageMeter {
@@ -22,16 +23,18 @@ export interface UsageReading {
 
 /**
  * A route's usage in `tesota usage`: read now, the last reading of the past
- * hour when this read failed, or why there is none.
+ * hour when this read failed, or why there is none. A route signed in to the
+ * same account as an earlier route shows that route's reading, and names it
+ * (#235).
  */
-export type RouteUsage =
+export type RouteUsage = { readonly sameAccountAs?: string } & (
   | { readonly route: string; readonly kind: string; readonly state: "read"; readonly reading: UsageReading }
   | { readonly route: string; readonly kind: string; readonly state: "last_known"; readonly reading: UsageReading;
     readonly readAt: number; readonly problem: string }
   | { readonly route: string; readonly kind: string; readonly state: "unavailable"; readonly problem: string }
   /** Being read, with the last reading of the past hour, if any, shown meanwhile. */
   | { readonly route: string; readonly kind: string; readonly state: "reading";
-    readonly last?: { readonly reading: UsageReading; readonly readAt: number } };
+    readonly last?: { readonly reading: UsageReading; readonly readAt: number } });
 
 /** A provider's answer to a usage request. */
 export interface UsageResponse {
@@ -50,6 +53,8 @@ export interface UsageSources {
   /** Claude Code's own report for the account in this configuration folder, the default one when undefined. */
   readonly claudeCode: (configDirectory: string | undefined) => Promise<unknown>;
   readonly claudeCodeDirectory: (route: string) => string;
+  /** Which account a route is signed in to, read locally from its sign-in; undefined when it records none. */
+  readonly account: (route: string, kind: string) => Promise<string | undefined>;
   readonly userAgent: string;
 }
 
@@ -249,28 +254,44 @@ export function pendingUsage(routes: readonly { readonly route: string; readonly
 }
 
 /**
- * Read these routes' usage at once. Each reading is saved with its time; a
- * failed read shows the last reading of the past hour, or why there is none.
+ * Read these routes' usage at once, each account once: a route signed in to
+ * the same account as an earlier route shows that route's reading, so their
+ * meters cannot disagree. Each reading is saved with its time under every
+ * route on its account; a failed read shows the account's last reading of the
+ * past hour, or why there is none.
  */
 export async function readUsage(routes: readonly { readonly route: string; readonly kind: string }[], sources: UsageSources,
   { path = DEFAULT_USAGE_FILE, now = Date.now, onEach }: UsageOptions = {}): Promise<RouteUsage[]> {
   const saved = readSaved(path);
   const fresh: Record<string, { readAt: number; reading: UsageReading }> = {};
-  const readOne = async (route: string, kind: string): Promise<RouteUsage> => {
+  // An account that cannot be read leaves its route to be read by itself.
+  const accounts = await Promise.all(routes.map(async ({ route, kind }) => await sources.account(route, kind).catch(() => undefined) ?? ""));
+  const readers = routes.map((_, index) => usageReader(accounts, index));
+  const sharing = (reader: number): string[] => routes.filter((_, index) => readers[index] === reader).map((entry) => entry.route);
+  const readOne = async (reader: number): Promise<RouteUsage> => {
+    const { route, kind } = routes[reader] ?? { route: "", kind: "" };
     try {
       const outcome = await readRoute(route, kind, sources);
       if ("none" in outcome) return { route, kind, state: "unavailable", problem: outcome.none };
-      fresh[route] = { readAt: now(), reading: outcome.reading };
+      const readAt = now();
+      for (const each of sharing(reader)) fresh[each] = { readAt, reading: outcome.reading };
       return { route, kind, state: "read", reading: outcome.reading };
     } catch (error) {
-      const last = saved[route];
+      // The newest reading saved under any route on the account, which every route on it shows.
+      const last = sharing(reader).map((each) => saved[each]).filter((entry) => entry !== undefined)
+        .reduce<SavedUsage[string] | undefined>((newest, entry) => newest === undefined || entry.readAt > newest.readAt ? entry : newest, undefined);
       return last !== undefined && now() - last.readAt <= LAST_KNOWN_MS
         ? { route, kind, state: "last_known", reading: last.reading, readAt: last.readAt, problem: failure(error) }
         : { route, kind, state: "unavailable", problem: `unknown: ${failure(error)}` };
     }
   };
-  const usage = await Promise.all(routes.map(async ({ route, kind }) => {
-    const one = await readOne(route, kind);
+  const reads = new Map<number, Promise<RouteUsage>>();
+  const usage = await Promise.all(routes.map(async ({ route, kind }, index) => {
+    const reader = readers[index] ?? index;
+    const read = reads.get(reader) ?? readOne(reader);
+    reads.set(reader, read);
+    const outcome = await read;
+    const one: RouteUsage = reader === index ? outcome : { ...outcome, route, kind, sameAccountAs: outcome.route };
     onEach?.(one);
     return one;
   }));
@@ -335,6 +356,11 @@ function routeRows(entry: RouteUsage, now: number, segments: number, paint: Usag
   const kind = kindLabels[entry.kind] ?? entry.kind;
   const reading = entry.state === "read" || entry.state === "last_known" ? entry.reading : entry.state === "reading" ? entry.last?.reading : undefined;
   const account = reading?.plan === undefined ? kind : `${kind} ${reading.plan}`;
+  const lead: Cell[] = [{ text: entry.route, paint: paint.strong }, { text: account }];
+  // A route on an account read through an earlier route points to that reading instead of drawing it again.
+  if (entry.sameAccountAs !== undefined && entry.state !== "reading") {
+    return [{ cells: lead, note: { text: `same account as ${entry.sameAccountAs}: one reading, above`, paint: paint.muted } }];
+  }
   const rows = reading === undefined ? [] : meterRows(reading, now, segments, paint, entry.state === "reading");
   if (entry.state === "unavailable") rows.push({ cells: [], note: { text: entry.problem, paint: paint.muted } });
   if (entry.state === "last_known") {
@@ -343,7 +369,6 @@ function routeRows(entry: RouteUsage, now: number, segments: number, paint: Usag
   // A saved reading shows faded while its route is read again; a route with none says it is being read.
   if (entry.state === "reading" && entry.last === undefined) rows.push({ cells: [], note: { text: "reading…", paint: paint.muted } });
   const [first, ...rest] = rows;
-  const lead: Cell[] = [{ text: entry.route, paint: paint.strong }, { text: account }];
   return [{ ...first, cells: [...lead, ...first?.cells ?? []] },
     ...rest.map((row) => ({ ...row, cells: [{ text: "" }, { text: "" }, ...row.cells] }))];
 }

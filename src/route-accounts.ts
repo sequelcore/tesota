@@ -78,3 +78,19 @@ export function sharedAccounts(routes: readonly { readonly route: string; readon
 export function sharedAccountNote(group: readonly string[]): string {
   return `${group.join(" and ")} are signed in to the same account: their limits are one plan's, and their meters one reading.`;
 }
+
+/**
+ * Where roles spread across routes still draw on one account (#235): each
+ * group of routes on one account that more than one gives a role to. A route
+ * no role uses changes nothing.
+ */
+export function sharedRoleGroups(routes: readonly { readonly route: string; readonly account?: RouteAccount | undefined }[],
+  usedBy: (route: string) => readonly string[]): string[][] {
+  return sharedAccounts(routes.filter((entry) => usedBy(entry.route).length > 0));
+}
+
+/** What a group of routes on one account means for the roles on them, said with the roles on each route. */
+export function sharedRoleNote(group: readonly string[], usedBy: (route: string) => readonly string[]): string {
+  return `Roles on ${group.map((route) => `${route} (${usedBy(route).join(", ")})`).join(" and ")} share one plan's limits: ` +
+    `${group.length === 2 ? "both" : "these"} routes are signed in to the same account.`;
+}

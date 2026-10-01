@@ -1,10 +1,20 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
-import { chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
+import { addRoute, chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, rolePicker, runModelsCommand, runRolesCommand,
   type OfferedModel } from "../src/models-command.js";
+
+// A home of the test's own, so the routes it adds are never the operator's, and the operator's never reach it.
+vi.mock("node:os", async (original) => {
+  const os = await original<typeof import("node:os")>();
+  const { mkdtempSync: temporary } = await import("node:fs");
+  const path = await import("node:path");
+  const home = temporary(path.join(os.tmpdir(), "tesota-home-"));
+  return { ...os, homedir: () => home };
+});
+afterAll(() => { rmSync(homedir(), { recursive: true, force: true }); });
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -217,4 +227,33 @@ it("offers /roles a role, then that role's models with default and, when it can 
   expect(reviewer).not.toContain("off");
   expect(rolePicker("/roles nobody ", offered, path)).toBeUndefined();
   expect(rolePicker("/models ", offered, path)).toBeUndefined();
+});
+
+it("says when roles spread across routes draw on one account, under the listing and after a choice that makes it so", () => {
+  const path = file();
+  const added = addRoute("claude-2", "claude-code");
+  const withSecond: OfferedModel[] = [...offered, { id: "claude-2:opus", route: "claude-2", kind: "claude-code", name: "Claude Code's opus",
+    reasoning: all }];
+  const ours = { id: "45e4b49f" };
+  const accounts = [{ route: "claude-code", account: ours }, { route: "claude-2", account: ours }, { route: "codex", account: { id: "plus" } }];
+  let output = "";
+  const write = (text: string): void => { output += text; };
+  expect(runRolesCommand(["agent", "claude-code:opus"], write, withSecond, path, accounts, added)).toBe(0);
+  expect(output).not.toContain("share one plan's limits");
+  output = "";
+  expect(runRolesCommand(["advisor", "claude-2:opus"], write, withSecond, path, accounts, added)).toBe(0);
+  const note = "Roles on claude-code (agent) and claude-2 (advisor) share one plan's limits: both routes are signed in to the same account.";
+  expect(output).toContain(`${note}\n`);
+  output = "";
+  expect(runRolesCommand([], write, withSecond, path, accounts, added)).toBe(0);
+  expect(output).toContain(note);
+  // A choice on a route of its own account says nothing of the others.
+  output = "";
+  expect(runRolesCommand(["refuter", "codex:gpt-6-sol"], write, withSecond, path, accounts, added)).toBe(0);
+  expect(output).not.toContain("share one plan's limits");
+  // Signed in to different accounts, the same roles share nothing.
+  output = "";
+  expect(runRolesCommand([], write, withSecond, path, [{ route: "claude-code", account: ours }, { route: "claude-2", account: { id: "b7" } }],
+    added)).toBe(0);
+  expect(output).not.toContain("share one plan's limits");
 });
