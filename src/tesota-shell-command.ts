@@ -224,7 +224,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
     const record = saved(id);
     if (record === undefined) return;
     if (engine.busy(id)) {
-      surface.replyTo(id, "Stop the current work with Ctrl+C before closing this session.");
+      surface.replyTo(id, "Stop the current work with Esc before closing this session.");
       return;
     }
     if (awaitingConfirmation(id, record, await engine.pendingChanges(id))) return;

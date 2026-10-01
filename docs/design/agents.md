@@ -109,7 +109,7 @@ told to treat the answer as a lead to check, not as fact.
 | Output | Advice to the agent | Findings that decide correction and inform the operator |
 
 Explorers are bounded: at most three run at once and eight per request, each
-has a five-minute limit and stops with its turn on `Ctrl+C`, and its answer is
+has a five-minute limit and stops with its turn on `Esc`, and its answer is
 cut at a fixed length. An unfinished or empty reply is never presented as an
 answer, and the per-request allowance is a proved rule
 (`src/verification/helper-answer.ts`). Each call shows in the conversation
@@ -389,7 +389,7 @@ a stream quiet for five minutes and retries three times; Claude Code waits up
 to 180 seconds for the first byte and five minutes for a quiet stream, and
 retries ten times. Retried stalls can therefore last far longer than one
 timer, which is what the limit bounds. The working agent has no limit: the
-operator is present, and `Ctrl+C` stops it.
+operator is present, and `Esc` stops it.
 
 Forecasts and summaries compare token totals, and `live:review` records the
 kinds, since a cache read costs a fraction of fresh input.

@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { Editor, HStack, ScrollView, Text, VStack, isKeyRelease, matchesKey, truncateToWidth, wrapTextWithAnsi,
-  type Component, type EditorTheme, type OverlayHandle, type ViewportTUI } from "@earendil-works/pi-tui";
+  type Component, type EditorTheme, type TuiAltScreen, type OverlayHandle, type ViewportTUI } from "@earendil-works/pi-tui";
 import type { SessionExecution } from "./execution-providers.js";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
@@ -22,10 +22,13 @@ import { WelcomeBanner } from "./tesota-shell-welcome.js";
 import { animatedSidebarState, attentionSidebarState, newestFirstSourceIndex, otherSessionsWaiting, showWaitingInFooter,
   sidebarGroupRank, sidebarPresentation, sidebarSessionState, terminalTitleMark, type SidebarPreference, type SidebarSessionState } from "./verification/sidebar-rule.js";
 
+/** pi-tui's own text selection on the alternate screen, which takes the mouse from the terminal's. */
+type TextSelection = Pick<TuiAltScreen, "hasActiveSelection" | "copyActiveSelectionToClipboard">;
+
 export interface TesotaShellTerminalOptions {
   readonly cwd: string;
   /** The shell's TUI; one with a backdrop fades the layout beneath an open panel. */
-  readonly tui: ViewportTUI & Partial<Backdrop>;
+  readonly tui: ViewportTUI & Partial<Backdrop> & Partial<TextSelection>;
   readonly now?: () => number;
   readonly interrupt?: (sessionId: string) => void;
   /** `Tab` while a session works: send a message to its agent now; false when the agent cannot take it, and it is queued. */
@@ -131,7 +134,7 @@ export interface ShellInspection {
   readonly summary: string;
   /**
    * Sections under unindented headings; nested lines are indented and may
-   * start with a mark (✓ ✗ ⚠ ? ·) or, for command output, a │ gutter.
+   * start with a mark (✓ ✗ ! ? ·) or, for command output, a │ gutter.
    */
   readonly detail: string;
   /** The candidate's unified diff, drawn as a diff view below `detail`; absent from results recorded before it was kept apart. */
@@ -357,7 +360,7 @@ function busy(progress: TesotaShellProgress | undefined): boolean {
 }
 
 class PersistentTesotaShellTerminal implements TesotaShellTerminal {
-  private readonly tui: ViewportTUI & Partial<Backdrop>;
+  private readonly tui: ViewportTUI & Partial<Backdrop> & Partial<TextSelection>;
   private readonly now: () => number;
   private readonly interrupt: () => void;
   private readonly options: TesotaShellTerminalOptions;
@@ -419,8 +422,11 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   private welcomeFrame: ReturnType<typeof setTimeout> | undefined;
   private removeInputListener: (() => void) | undefined;
   private started = false;
-  /** The quit key pressed once, and when; a second press of it within the confirmation window quits. */
-  private quitArmed: Readonly<{ key: "Ctrl+C" | "Ctrl+D"; at: number }> | undefined;
+  /**
+   * A key pressed once that acts when pressed again within the confirmation window, and when: Ctrl+C stops running
+   * work, and Ctrl+C or Ctrl+D quits.
+   */
+  private armed: Readonly<{ action: "stop" | "quit"; key: "Ctrl+C" | "Ctrl+D"; at: number }> | undefined;
 
   constructor(options: TesotaShellTerminalOptions) {
     this.tui = options.tui;
@@ -717,8 +723,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   /**
-   * `Esc` and `Ctrl+C` stop the selected session's work: they cancel the
-   * question it is waiting on, or interrupt what is running. False when it is
+   * `Esc`, and `Ctrl+C` pressed twice, stop the selected session's work: they
+   * cancel the question it is waiting on, or interrupt what is running. False when it is
    * idle at its request prompt, or has ended, so there is nothing to stop.
    */
   private stopWork(): boolean {
@@ -766,22 +772,46 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   }
 
   /**
-   * As in Claude Code, Pi and Gemini CLI: `Ctrl+C` stops work first; with
-   * nothing to stop it clears the input, and `Ctrl+D` works on an empty one.
-   * Either then quits when pressed again within the confirmation window. The
+   * `Ctrl+C` copies selected text, as a terminal does; otherwise it stops work first, running work only when pressed
+   * again within the confirmation window, since one stray press, often a copy from habit, would lose a turn under way;
+   * `Esc` stops it at once. A question it waits on is cancelled at the first press. With nothing to stop, `Ctrl+C`
+   * clears the input, and `Ctrl+D` works on an empty one; either then quits when pressed again within the window. The
    * session itself never ends this way. False when there was nothing to do.
    */
+  /** What a key pressed once will do when pressed again, while the confirmation window lasts. */
+  private armedText(session: SessionView): string | undefined {
+    const armed = this.armed;
+    if (armed === undefined || this.now() - armed.at > CONFIRMATION_WINDOW_MS) return undefined;
+    if (armed.action === "stop") {
+      return this.working(session) ? colorText(`Press ${armed.key} again to stop · Esc stops now`, this.theme.warning) : undefined;
+    }
+    const working = [...this.sessions.values()].some((entry) => busy(entry.progress?.value));
+    return working ? colorText(`Press ${armed.key} again to quit. Running work stops; its changes stay where it made them.`,
+      this.theme.warning) : mutedText(`Press ${armed.key} again to quit. Sessions are restored next time.`, this.theme);
+  }
+
   private stopOrQuit(key: "Ctrl+C" | "Ctrl+D"): boolean {
+    if (key === "Ctrl+C" && this.tui.hasActiveSelection?.() === true) {
+      void this.tui.copyActiveSelectionToClipboard?.();
+      return true;
+    }
+    const now = this.now();
+    const again = (action: "stop" | "quit"): boolean =>
+      this.armed?.action === action && this.armed.key === key && now - this.armed.at <= CONFIRMATION_WINDOW_MS;
+    if (key === "Ctrl+C" && this.working(this.selected())) {
+      if (again("stop")) { this.armed = undefined; this.stopWork(); } else this.armed = { action: "stop", key, at: now };
+      this.refreshElapsed();
+      return true;
+    }
     if (key === "Ctrl+C" && this.stopWork()) return true;
     if (key === "Ctrl+D" && this.selected().pending !== undefined && this.selected().prompt !== "> ") return false;
     this.editor.setText("");
-    const now = this.now();
-    if (this.quitArmed?.key === key && now - this.quitArmed.at <= CONFIRMATION_WINDOW_MS) {
-      this.quitArmed = undefined;
+    if (again("quit")) {
+      this.armed = undefined;
       this.options.onQuit?.();
       return true;
     }
-    this.quitArmed = { key, at: now };
+    this.armed = { action: "quit", key, at: now };
     this.refreshElapsed();
     return true;
   }
@@ -1235,12 +1265,9 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const progress = session.progress;
     let text: string;
     let whole = false;
-    const quit = this.quitArmed;
-    if (quit !== undefined && this.now() - quit.at <= CONFIRMATION_WINDOW_MS) {
-      const working = [...this.sessions.values()].some((entry) => busy(entry.progress?.value));
-      text = working ? colorText(`Press ${quit.key} again to quit. Running work stops; its changes stay where it made them.`,
-        this.theme.warning) : mutedText(`Press ${quit.key} again to quit. Sessions are restored next time.`, this.theme);
-    } else if (session.blocked) text = colorText("Unresolved effects. Run tesota recover before new work.", this.theme.warning);
+    const armed = this.armedText(session);
+    if (armed !== undefined) text = armed;
+    else if (session.blocked) text = colorText("Unresolved effects. Run tesota recover before new work.", this.theme.warning);
     else if (session.ended) text = mutedText("Session ended. Ctrl+N starts a new one; Ctrl+W closes this one.", this.theme);
     else if (session.question !== undefined) text = bold(colorText("Waiting for your decision", this.theme.warning));
     else if (session.pending !== undefined && session.prompt !== "> ") {
@@ -1358,7 +1385,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
       this.replyTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
         "/handoff /sandbox [where] /isolate /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
-        "While it works: Enter queues · Tab sends to the agent now · Esc or Ctrl+C stops · Ctrl+C or Ctrl+D twice quits\n" +
+        "While it works: Enter queues · Tab sends to the agent now · Esc stops · Ctrl+C twice stops · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close · Shift+Tab mode\n" +
         "View: Alt+R result · Alt+T result tab · Alt+B sidebar · Alt+D details · Alt+S split · Alt+A accounts");
     },

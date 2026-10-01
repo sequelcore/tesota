@@ -11,7 +11,7 @@ const check = { verifier: "command" as const, claim: "exits 0", limits: "only wh
 it("lists changes to what gets checked as the operator's decision, and the requests behind the result", () => {
   const review = inspectReview({ snapshot, checks: [check], requests: ["Charge over $100 less", "Keep the old test"],
     flags: [{ path: "src/price.test.ts", status: "modified", kind: "test" }], reviews: [] });
-  expect(review.summary).toContain("Needs you\n  ⚠ edited test: src/price.test.ts");
+  expect(review.summary).toContain("Needs you\n  ! edited test: src/price.test.ts");
   expect(review.summary).toContain("For context\n  ✓ bun run check");
   expect(review.summary).toContain("only you can tell whether that is legitimate");
   expect(review.detail).toMatch(/^Your requests\n {2}1\. Charge over \$100 less\n {2}2\. Keep the old test\n/u);
@@ -27,7 +27,7 @@ it("keeps the diff apart from the record, for the result panel to draw as a diff
 
 it("says nothing about flags when no check-affecting file changed", () => {
   const review = inspectReview({ snapshot, checks: [check], requests: ["Fix it"], flags: [], reviews: [] });
-  expect(review.summary).not.toContain("⚠");
+  expect(review.summary).not.toContain("! ");
   expect(review.detail).not.toContain("Changes to how the result is checked");
 });
 
@@ -83,9 +83,9 @@ it("shows a finding whose cause Tesota could not establish as the operator's cal
     { reviewer: "Tesota reviewer", tree: snapshot.tree, status: "completed", summary: "One unclear.", findings: [
       { severity: "high", disposition: "fixable", origin: "unknown", originNote: note, path: "src/tax.ts", line: 9,
         statement: "Tax ignores refunds", reason: "r", standing: "confirmed" }] }] });
-  expect(review.summary).toContain("  ⚠ high · cause unclear · src/tax.ts:9 — Tax ignores refunds");
+  expect(review.summary).toContain("  ! high · cause unclear · src/tax.ts:9 — Tax ignores refunds");
   expect(review.summary).not.toContain("no problems introduced");
-  expect(review.detail).toContain(`    ⚠ high, fixable: src/tax.ts:9 — Tax ignores refunds\n      r\n      Next: needs your decision\n      Cause: unclear. ${note}\n      Second check: confirmed`);
+  expect(review.detail).toContain(`    ! high, fixable: src/tax.ts:9 — Tax ignores refunds\n      r\n      Next: needs your decision\n      Cause: unclear. ${note}\n      Second check: confirmed`);
 });
 
 it("nests a check's claim, limits and output under it, with the output behind a gutter", () => {

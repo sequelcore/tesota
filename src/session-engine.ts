@@ -1041,7 +1041,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
   const pathList = (paths: readonly string[]): string => paths.map((path) => `  ${path}`).join("\n");
   /** A session's work in the source for the turn commands, or why they do not apply to it now; never creates work. */
   const turnsOf = async (id: string): Promise<SourceSession | string> => {
-    if (activeOperations.has(id) || applying.has(id)) return "Wait for the current work to finish, or stop it with Ctrl+C.";
+    if (activeOperations.has(id) || applying.has(id)) return "Wait for the current work to finish, or stop it with Esc.";
     const directory = saved(id)?.workspace;
     if (states.get(id)?.workspace === undefined && (directory === null || directory === undefined)) return "This session has no turns yet.";
     const work = await workspaceFor(id);
