@@ -1651,7 +1651,7 @@ it("steps through a result's tabs with Alt+T or a click, each keeping its own pl
   shell.stop();
 });
 
-it("offers an undecided turn's actions above the idle prompt, each chosen with a click, never with a key alone", () => {
+it("offers an undecided turn's actions above the idle prompt, each chosen with a click, never with a key alone", async () => {
   const terminal = new TestTerminal();
   terminal.columns = 100;
   terminal.rows = 30;
@@ -1659,7 +1659,9 @@ it("offers an undecided turn's actions above the idle prompt, each chosen with a
   const onKeep = vi.fn();
   const onRevert = vi.fn();
   const onRedo = vi.fn();
-  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onKeep, onRevert, onRedo });
+  const undecided = "diff --git a/src/b.ts b/src/b.ts\n--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1 +1,2 @@\n-one\n+two\n+three";
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onKeep, onRevert, onRedo,
+    diffSources: async () => ({ undecided }) });
   shell.start();
   const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
   shell.setSessionUndecided("default", { turns: 1, files: 2, redoable: false });
@@ -1680,9 +1682,12 @@ it("offers an undecided turn's actions above the idle prompt, each chosen with a
   clickText(terminal, frame, " Revert ");
   expect(onRevert).toHaveBeenCalledWith("default", []);
   // Diff opens the result on its Diff tab, in place of the conversation on a narrow terminal.
+  // Diff opens the undecided turns together, which Keep and Revert act on, in place of the conversation on a narrow terminal.
   clickText(terminal, frame, " Diff ");
+  await new Promise((resolve) => setTimeout(resolve, 0));
   frame = stripTerminalSequences(render());
-  expect(frame).toContain("1 file changed +1 -1");
+  expect(frame).toContain("1 file changed +2 -1");
+  expect(frame).toContain("source: Undecided ▾");
   // A reverted turn can be put back.
   shell.setSessionUndecided("default", { turns: 0, files: 0, redoable: true });
   frame = render();
@@ -1748,6 +1753,63 @@ it("draws the sidebar over a narrow conversation on the side surface, its whole 
   const rows = frameRows(terminal.writes.join(""));
   expect(rows.filter((row) => stripTerminalSequences(row ?? "")[55] === "│")).toHaveLength(24);
   expect(stripTerminalSequences(rows.join("\n"))).toContain("Session 1");
+  shell.stop();
+});
+
+it("shows the diff with /diff: everything uncommitted before a review, each source chosen by name or a click, hidden again", async () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 150;
+  terminal.rows = 30;
+  const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
+  const file = (path: string, added: string): string =>
+    `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+${added}`;
+  let sources: { working?: string; undecided?: string } = { working: file("notes.md", "mine") };
+  const asked = vi.fn();
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui,
+    diffSources: async (id) => { asked(id); return sources; } });
+  shell.start();
+  const render = (): string => { terminal.writes.length = 0; tui.renderNow(true); return terminal.writes.join(""); };
+  const settle = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
+  const command = async (text: string): Promise<void> => {
+    const answer = shell.ask("> ");
+    terminal.send(text);
+    terminal.send("\r");
+    terminal.send("\r");
+    await answer.catch(() => undefined);
+    await settle();
+  };
+  // Before any review, as Claude Code's /diff, the current changes, read when asked.
+  await command("/diff");
+  let frame = stripTerminalSequences(render());
+  expect(asked).toHaveBeenCalledWith("default");
+  expect(frame).toContain("notes.md");
+  expect(frame).toContain("source: Working tree");
+  expect(frame).not.toContain("source: Working tree ▾");
+  // Run again on the Diff tab, it hides the panel.
+  await command("/diff");
+  expect(stripTerminalSequences(render())).not.toContain("source: Working tree");
+  // After a review, the reviewed result first; the other sources by name or by clicking the source.
+  sources = { working: file("notes.md", "mine"), undecided: file("src/a.ts", "turns") };
+  shell.inspect({ title: "Review · 1 file", summary: "  edit   src/a.ts", detail: "Your requests\n  1. Fix it",
+    diff: file("src/a.ts", "reviewed") });
+  await command("/diff");
+  frame = render();
+  expect(stripTerminalSequences(frame)).toContain("source: Reviewed ▾");
+  expect(stripTerminalSequences(frame)).toContain("+ reviewed");
+  clickText(terminal, frame, "source: Reviewed");
+  frame = render();
+  expect(stripTerminalSequences(frame)).toContain("source: Undecided ▾");
+  expect(stripTerminalSequences(frame)).toContain("+ turns");
+  await command("/diff working");
+  frame = stripTerminalSequences(render());
+  expect(frame).toContain("source: Working tree ▾");
+  expect(frame).toContain("+ mine");
+  // Nothing uncommitted says so, and an unknown source is refused.
+  sources = { working: "" };
+  await command("/diff working");
+  expect(stripTerminalSequences(render())).toContain("No changes in the working tree.");
+  await command("/diff everything");
+  expect(stripTerminalSequences(render())).toContain("Use /diff, or /diff working, /diff undecided or /diff reviewed.");
   shell.stop();
 });
 

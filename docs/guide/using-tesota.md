@@ -427,7 +427,25 @@ the review; Checks; and Diff. An answer that changed no files has only its
 review. `Alt+T`, or a click or tap on a tab, chooses one, and each tab keeps
 its own scroll position; a new result opens on Review. A click or tap on a
 session in the sidebar selects it too, as `Alt+J` and `Alt+K` do, so a phone
-over SSH reaches both without those keys. Under Checks, what each check
+over SSH reaches both without those keys.
+
+The Diff tab shows one source at a time, named at the right of the tabs;
+click the name to step to the next:
+
+- **Reviewed**: the result the checks and review describe, the default once
+  a result is reviewed.
+- **Undecided**: every undecided turn in your files together, which Keep and
+  Revert act on.
+- **Working tree**: everything uncommitted where the session works, your own
+  edits and untracked files included, read again each time you ask.
+
+`/diff` opens the Diff tab, as Claude Code's `/diff` does, whether or not a
+result exists: on the working tree before a review, then on the source last
+shown. Run again on the Diff tab, it hides the panel. `/diff working`,
+`/diff undecided` and `/diff reviewed` choose a source. Tesota reads the
+working tree with Git into a temporary index of its own, so your
+repository's `.git` is never written, and repository-local Git programs are
+refused as they are for every snapshot. Under Checks, what each check
 shows and does not show, and its output, sit beneath it, the output
 behind a `│` and without its colors. The diff lists the changed files with
 their added and removed lines, then shows each change with line numbers,
@@ -439,7 +457,7 @@ In your project, the turn then stays undecided: Tesota never holds the
 session for a decision, and a new request continues on top of it. Decide
 whenever the session is idle. Above the prompt, a bar says how many turns
 and files are undecided and offers **Keep**, **Revert** and **Diff**, or
-**Redo** after a revert; click or tap one. Diff opens the result on its Diff
+**Redo** after a revert; click or tap one. Diff opens the undecided turns on the Diff
 tab. No key alone acts on the bar, so a letter typed to start a request never
 keeps or reverts anything. The commands do the same:
 

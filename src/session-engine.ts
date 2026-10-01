@@ -1,3 +1,5 @@
+import type { DiffSources } from "./tesota-shell-result.js";
+import { workingTreeDiff } from "./working-diff.js";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -323,6 +325,8 @@ export interface SessionEngine {
   readonly turnCommands: TurnCommands;
   /** Show a restored session's undecided turns in the operator's files, read from its record without starting work. */
   showUndecided(id: string): Promise<void>;
+  /** The Diff tab's live sources for a session, read without starting work. */
+  diffSources(id: string): Promise<DiffSources>;
   readonly agentModel: AgentModelCommands;
   readonly sessionSandbox: SessionSandboxCommands;
   readonly permissionMode: PermissionModeCommands;
@@ -1051,6 +1055,24 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     output.setSessionUndecided(id, { turns: work.turns.length, redoable: work.redoable !== undefined,
       files: first === undefined || last === undefined ? 0 : work.compare(first.before, last.after).changes.length });
   };
+  /**
+   * Where the session works, everything uncommitted and its undecided turns together. A session in a copy has the
+   * copy's changes, which nothing in the operator's files holds yet; one with no work yet, the repository's own.
+   */
+  const diffSources = async (id: string): Promise<DiffSources> => {
+    const directory = saved(id)?.workspace;
+    const loaded = states.get(id)?.workspace;
+    let work: Work | undefined;
+    if (loaded !== undefined || (directory !== null && directory !== undefined)) {
+      try { work = await (loaded ?? openWork(directory ?? "")); } catch { work = undefined; }
+    }
+    if (work !== undefined && work.place !== "source") return { working: work.snapshot().diff };
+    const working = sourceKind === "repository" ? workingTreeDiff(cwd) : undefined;
+    const first = work?.turns[0];
+    const last = work?.turns.at(-1);
+    return { working, undecided: work === undefined || first === undefined || last === undefined ? undefined
+      : work.compare(first.before, last.after).diff };
+  };
   const showUndecided = async (id: string): Promise<void> => {
     const directory = saved(id)?.workspace;
     const loaded = states.get(id)?.workspace;
@@ -1523,6 +1545,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     session: sessionWork,
     turnCommands: { keep: keepTurns, revert: revertTurn, redo: redoTurn, isolate: isolateSession },
     showUndecided,
+    diffSources,
     agentModel,
     sessionSandbox,
     permissionMode,
