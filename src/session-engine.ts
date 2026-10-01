@@ -34,7 +34,7 @@ import { consultAdvisor } from "./integrations/advisor-session.js";
 import { Semaphore } from "./semaphore.js";
 import { type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
 import { type SessionDecisions } from "./session-decisions.js";
-import { type AnswerResult, type ApplyResult, type RequestOrigin, type ReviewResult, type TesotaShellDependencies,
+import { type AnswerResult, type ApplyResult, type RefreshResult, type RequestOrigin, type ReviewResult, type TesotaShellDependencies,
   type WorkPlace, type WorkResult } from "./tesota-shell.js";
 import { inspectAnswer, inspectReview } from "./tesota-shell-inspection.js";
 import { runsAnswerCheck } from "./verification/answer-check-rule.js";
@@ -984,26 +984,29 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
    * Bring the operator's newer repository state into the workspace before a
    * request, and return what the agent should be told about it.
    */
-  const updateFromSource = async (id: string): Promise<string | undefined> => {
+  const updateFromSource = async (id: string): Promise<string | undefined> => (await bringInSource(id)).note;
+  /** Bring the operator's newer repository state into a workspace, and what the agent should be told of it. */
+  const bringInSource = async (id: string): Promise<{ status: RefreshResult; note?: string }> => {
     const work = await workspaceFor(id);
     // Working in the source, there is nothing to bring in; the turn names the operator's own edits instead.
-    if (work.place === "source") return undefined;
+    if (work.place === "source") return { status: "current" };
     let update: WorkspaceUpdate;
     try { update = await work.update(); } catch (error) {
       output.writeTo(id, "Could not bring your latest repository changes into the workspace" +
         `${error instanceof UnsupportedSourceChange ? `: ${error.message}` : ""}. The agent works on the earlier state.`, "warning");
-      return undefined;
+      return { status: "failed" };
     }
-    if (update.status === "current") return undefined;
+    if (update.status === "current") return { status: "current" };
     if (update.status === "conflict") {
       output.writeTo(id, "Your repository changed in files that also have pending changes in this workspace:\n" +
         `${update.paths.map((path) => `  ${path}`).join("\n")}\nThe workspace was not updated; apply or reject the pending changes first.`, "warning");
-      return undefined;
+      return { status: "conflict" };
     }
     const files = update.changes.map((change) => `  ${change.status} ${change.path}`).join("\n");
     output.writeTo(id, `Brought ${update.changes.length} newer ${update.changes.length === 1 ? "change" : "changes"} ` +
       `from your repository into the workspace:\n${files}`);
-    return `Note: the user changed these files in their repository since your last turn; the workspace now includes them:\n${files}`;
+    return { status: "updated",
+      note: `Note: the user changed these files in their repository since your last turn; the workspace now includes them:\n${files}` };
   };
 
   /**
@@ -1443,6 +1446,13 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       await journal(id, workspace, reviewEntry(snapshot, requests, [], [], reports));
       return { status: "assessed", reviews: reports, requests };
     }),
+    // Decision 042's refresh, without an agent turn: the agent hears of the changes with its next request.
+    refresh: () => runOperation(id, async (): Promise<RefreshResult> => {
+      const brought = await bringInSource(id);
+      const state = stateFor(id);
+      if (brought.note !== undefined) state.note = [state.note, brought.note].filter((note) => note !== undefined).join("\n\n");
+      return brought.status;
+    }),
     apply: () => serialized(async (): Promise<ApplyResult> => {
       const state = stateFor(id);
       const reviewed = state.reviewed;
@@ -1460,7 +1470,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       } catch (error) {
         if (error instanceof ApplyConflictError) {
           await journal(id, workspace, decisionEntry(reviewed.tree, "application_conflict"));
-          return { status: "conflict", reason: error.message, paths: error.paths };
+          return { status: "conflict", reason: error.message, paths: error.paths, ...error.sourceChanged ? { sourceChanged: true } : {} };
         }
         if (error instanceof ApplyRolledBackError) {
           await journal(id, workspace, decisionEntry(reviewed.tree, "application_rolled_back"));

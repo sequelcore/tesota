@@ -23,11 +23,17 @@ export type AnswerResult =
   | Readonly<{ status: "assessed"; reviews: readonly ReviewReport[]; requests: readonly string[] }>
   | Readonly<{ status: "cancelled" }>;
 
+/** How bringing the repository's newer changes into the workspace ended. */
+export type RefreshResult = "updated" | "current" | "conflict" | "failed";
+
 export type ApplyResult =
   /** `alsoChanged` names source files outside the result that changed while it was applied. */
   | Readonly<{ status: "applied"; changes: readonly WorkspaceChange[]; alsoChanged?: readonly string[] }>
-  /** Nothing was written, or everything written was undone (`rolledBack`). */
-  | Readonly<{ status: "conflict"; reason: string; paths: readonly string[]; rolledBack?: boolean }>
+  /**
+   * Nothing was written, or everything written was undone (`rolledBack`); `sourceChanged` when only the repository's
+   * newer changes stood in the way (decision 042's refresh), which bringing them in and checking again can settle.
+   */
+  | Readonly<{ status: "conflict"; reason: string; paths: readonly string[]; rolledBack?: boolean; sourceChanged?: true }>
   /** A partial effect remains (decision 042); `tesota recover` undoes or finishes application `id`. */
   | Readonly<{ status: "recovery_required"; id: string; paths: readonly ApplicationPathState[] }>;
 
@@ -81,6 +87,11 @@ export interface TesotaShellDependencies {
    */
   readonly review: (checks: readonly ApprovedCheck[], correction?: CorrectionContext) => Promise<ReviewResult>;
   readonly apply: () => Promise<ApplyResult>;
+  /**
+   * Bring the repository's newer changes into the workspace, without an agent turn, so the result can be checked
+   * again; the agent hears of them with its next request. Absent where nothing can be brought in.
+   */
+  readonly refresh?: () => Promise<RefreshResult>;
   readonly reject: () => Promise<void>;
   /** Where the session works; an isolated workspace when absent. Known once its first request starts. */
   readonly place?: () => WorkPlace;
@@ -176,6 +187,31 @@ function placeOf(dependencies: TesotaShellDependencies): string {
 
 async function reviewChanges(dependencies: TesotaShellDependencies,
   report: (progress: TesotaShellProgress) => void): Promise<boolean> {
+  for (;;) {
+    const outcome = await reviewAndDecide(dependencies, report);
+    if (outcome !== "refreshed") return outcome;
+  }
+}
+
+/**
+ * Bring the repository's newer changes in and check again, when the operator chooses to, after an application refused
+ * only because the repository changed since the check (decision 042's refresh); true when the result is checked again.
+ */
+async function refreshAndRecheck(dependencies: TesotaShellDependencies, paths: readonly string[],
+  report: (progress: TesotaShellProgress) => void): Promise<boolean> {
+  if (dependencies.refresh === undefined || !await dependencies.decisions.refresh(paths)) return false;
+  report({ phase: "preparing", activity: "Bringing in your repository's changes" });
+  const refreshed = await dependencies.refresh();
+  if (refreshed === "updated" || refreshed === "current") return true;
+  dependencies.write(refreshed === "conflict"
+    ? "Your newer changes touch files this result also changes, so they were not brought in. The changes stay in the " +
+      "workspace; reject them, or continue with a request.\n"
+    : "Your newer changes could not be brought in. The changes stay in the workspace; continue with a request.\n", "warning");
+  return false;
+}
+
+async function reviewAndDecide(dependencies: TesotaShellDependencies,
+  report: (progress: TesotaShellProgress) => void): Promise<boolean | "refreshed"> {
   const assessment = await assess(dependencies, report);
   if (assessment === "unsettled") {
     dependencies.write(`The agent did not stop cleanly. This session is closed; check ${dependencies.place?.() === "source"
@@ -203,6 +239,12 @@ async function reviewChanges(dependencies: TesotaShellDependencies,
     dependencies.write("Changes discarded. Your repository was not touched.\n");
     return true;
   }
+  return applyResult(dependencies, report);
+}
+
+/** Apply a reviewed result and say what happened; "refreshed" when the repository's newer changes were brought in to check again. */
+async function applyResult(dependencies: TesotaShellDependencies,
+  report: (progress: TesotaShellProgress) => void): Promise<boolean | "refreshed"> {
   report({ phase: "applying" });
   const applied = await dependencies.apply();
   if (applied.status === "applied") {
@@ -212,6 +254,14 @@ async function reviewChanges(dependencies: TesotaShellDependencies,
       dependencies.write("These files in your repository also changed while it was applied; the next request " +
         `brings them in:\n${others.map((path) => `  ${path}`).join("\n")}\n`, "warning");
     }
+    return true;
+  }
+  if (applied.status === "conflict" && applied.sourceChanged === true) {
+    dependencies.write(`Not applied: ${applied.reason}.\n` +
+      (applied.paths.length > 0 ? `${applied.paths.map((path) => `  ${path}`).join("\n")}\n` : "") + "Nothing was written.\n",
+    "warning");
+    if (await refreshAndRecheck(dependencies, applied.paths, report)) return "refreshed";
+    dependencies.write("The changes stay in the workspace.\n");
     return true;
   }
   if (applied.status === "conflict") {
