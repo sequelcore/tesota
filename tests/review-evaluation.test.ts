@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
 import type { Finding, ReviewReport } from "../src/review.js";
-import { EVALUATION_CASES, PREMISE_CASES, SCOPE_CASES, scoreCase } from "../src/review-evaluation.js";
+import { ENVIRONMENT_CASES, EVALUATION_CASES, PREMISE_CASES, SCOPE_CASES, scoreCase } from "../src/review-evaluation.js";
 
 const boundary = EVALUATION_CASES.find((entry) => entry.name === "boundary")!;
 const control = EVALUATION_CASES.find((entry) => entry.name === "correct control")!;
@@ -26,9 +26,11 @@ it("counts a matched planted defect once and every other counted finding as a fa
     reason: "Unclear", standing: "confirmed" }), finding({ standing: "refuted" }), finding({ origin: "preexisting" })])];
   // The thin-tests finding is a real secondary problem: neither a hit nor a false positive.
   expect(scoreCase(boundary, reports, "raw")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 0, duplicates: 0, shown: 4,
-    unknownOrigin: 0, defectsUnknown: 0, extras: 0, extrasMarked: 0, extrasSentBack: 0, premise: 0, premiseMarked: 0, premiseSentBack: 0, premiseCaseSentBack: 0 });
+    unknownOrigin: 0, defectsUnknown: 0, extras: 0, extrasMarked: 0, extrasSentBack: 0, premise: 0, premiseMarked: 0, premiseSentBack: 0, premiseCaseSentBack: 0,
+    blockedSentBack: 0, blockedToOperator: 0 });
   expect(scoreCase(boundary, reports, "refuted")).toEqual({ name: "boundary", found: 1, seeded: 1, falsePositives: 1, unsettled: 0, refuted: 1, duplicates: 0, shown: 3,
-    unknownOrigin: 0, defectsUnknown: 0, extras: 0, extrasMarked: 0, extrasSentBack: 0, premise: 0, premiseMarked: 0, premiseSentBack: 0, premiseCaseSentBack: 0 });
+    unknownOrigin: 0, defectsUnknown: 0, extras: 0, extrasMarked: 0, extrasSentBack: 0, premise: 0, premiseMarked: 0, premiseSentBack: 0, premiseCaseSentBack: 0,
+    blockedSentBack: 0, blockedToOperator: 0 });
 });
 
 it("scores a refuted or unsettled finding on a control as removed, not as a false positive", () => {
@@ -113,4 +115,12 @@ it("keeps each scope and premise case's base and candidate passing their own tes
       }
     }
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it("counts, in a blocked case, the request obligations sent back to the agent and those given to the operator", () => {
+  const blocked = ENVIRONMENT_CASES.find((entry) => entry.name === "check blocked by a missing program")!;
+  const unmet = { ...report([]), obligations: [{ source: "request" as const, index: 1, obligation: "node --test passes",
+    status: "unmet" as const, evidence: "release.test.js fails on the base too: the signer is not installed", standing: "confirmed" as const }] };
+  expect(scoreCase(blocked, [unmet], "refuted")).toMatchObject({ blockedSentBack: 1, blockedToOperator: 0 });
+  expect(scoreCase(blocked, [unmet], "raw")).toMatchObject({ blockedSentBack: 0, blockedToOperator: 0 });
 });
