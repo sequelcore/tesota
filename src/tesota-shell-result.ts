@@ -61,14 +61,19 @@ export class ResultPanel {
   /** Where each tab's label was drawn in the tab row, for a click to choose it. */
   #labels: { tab: ResultTab; start: number; end: number }[] = [];
   #tabRow: number | undefined;
+  /** The width the panel was last drawn at, for the surface laid under its column. */
+  #width: number | undefined;
 
   constructor(theme: TesotaShellTheme, onChange: () => void) {
     this.#theme = theme;
     this.#onChange = onChange;
     this.diff = new DiffView(theme);
+    // Each section is a block under a rule, as each file is in the diff.
     const record = (text: () => string) => new TabBody((width) => {
       const inner = Math.max(1, width - 2);
-      return text().length === 0 ? [] : recordRows(text(), inner, this.#theme, true).map((row) => ` ${row}`);
+      const rule = mutedText("─".repeat(width), this.#theme);
+      return text().length === 0 ? [] : text().split(/\n\n(?=\S)/u).flatMap((section, index) =>
+        [...index === 0 ? [] : [""], rule, ...recordRows(section, inner, this.#theme, true).map((row) => ` ${row}`)]);
     });
     const bodies = { review: record(() => this.#sections.review), checks: record(() => this.#sections.checks),
       diff: new TabBody((width) => this.diff.render(width)) };
@@ -83,6 +88,7 @@ export class ResultPanel {
   }
 
   get tab(): ResultTab { return this.#tab; }
+  get width(): number | undefined { return this.#width; }
 
   /** The tabs this result has: Review always, Checks when checks ran, and Diff when it changed files. */
   get tabs(): readonly ResultTab[] {
@@ -119,6 +125,7 @@ export class ResultPanel {
   }
 
   #header(width: number): string[] {
+    this.#width = width;
     const inner = Math.max(1, width - 2);
     const lines = wrapTextWithAnsi(this.#heading, inner).map((row) => ` ${row}`);
     const tabs = this.tabs;

@@ -14,8 +14,23 @@ ended sessions and unresolved effects; only executing phases move. On a wide
 terminal the sidebar is inline, while an explicit open on a narrow terminal is
 a non-capturing pi-tui overlay, so the editor keeps focus and `Esc` keeps its
 stop-work meaning. The sidebar and the terminal's title name the selected
-session; no heading sits over the conversation. A rule above and below the
-input sets it apart. Under it, as Claude Code and Codex order it, the selected
+session; no heading sits over the conversation.
+
+Surfaces are layered by role, with hue kept for meaning. The conversation, the
+main content, stays on the terminal's own background. The inline sidebar and
+the result panel beside the conversation sit on one side surface, a neutral
+step from that background toward the text color, mixed in sRGB from the
+background the terminal reports, so it is even on any terminal; a `│` rule
+in a stronger step stands in the gap between each and the conversation, and
+the sidebar over a narrow conversation carries both too. Tesota's TUI lays
+them after the layout is drawn, beneath any background the content sets
+itself, as a selected row or a diff tint. The input sits on the operator's own
+background, as their sent messages do; without colors, as the terminal theme,
+only the rules show, and the input keeps a rule above and below. Each theme's
+contrast tests cover the side surface: its text colors at 4.5:1, a selected
+row and the rule visible on it, and it apart from the canvas. In the result
+panel, each record section and each file of the diff is a block under a rule.
+Under the input, as Claude Code and Codex order it, the selected
 model comes first with the repository and branch, and the mode and execution
 location have a line of their own in its color, followed by the keys that
 cycle the mode and show the shortcuts ([using Tesota](../guide/using-tesota.md)

@@ -1,7 +1,7 @@
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { expect, it } from "vitest";
 import { acceptsShellTheme } from "../src/verification/shell-theme-rule.js";
-import { bold, parseTesotaShellTheme, selectedRow, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES } from "../src/tesota-shell-theme.js";
+import { bold, parseTesotaShellTheme, selectedRow, shellSurfaces, tesotaShellTheme, TESOTA_SHELL_THEME_NAMES } from "../src/tesota-shell-theme.js";
 
 function luminance(hex: string): number {
   const channels = [1, 3, 5].map((start) => {
@@ -35,7 +35,7 @@ it.each(TESOTA_SHELL_THEME_NAMES.filter((name) => name !== "terminal"))(
     for (const background of [theme.userBackground, theme.selectionBackground, theme.addedBackground, theme.removedBackground]) {
       expect(contrast(foreground, background ?? ""), `${name}: foreground on ${background}`).toBeGreaterThanOrEqual(4.5);
     }
-    const canvas = name === "automata" ? "#ccc8b1" : theme.appearance === "light" ? "#edede5" : "#202020";
+    const canvas = theme.canvas ?? "";
     for (const color of [theme.muted, theme.accent, theme.success, theme.warning, theme.error]) {
       expect(contrast(color ?? "", canvas), `${name}: ${color} on ${canvas}`).toBeGreaterThanOrEqual(4.5);
     }
@@ -49,8 +49,30 @@ it.each(TESOTA_SHELL_THEME_NAMES.filter((name) => name !== "terminal"))(
     expect(theme.accent).not.toBe(theme.success);
     expect(theme.accent).not.toBe(theme.warning);
     expect(selectedRow("selected", 20, theme)).toContain("\x1b[38;2;");
+    // The side surface under the sidebar and the result panel stands apart from the conversation's canvas, keeps every
+    // color of its text legible and a selected row visible, and its rule shows against it.
+    const { side, rule } = shellSurfaces(theme);
+    expect(contrast(side ?? "", canvas), `${name}: side surface on canvas`).toBeGreaterThanOrEqual(1.1);
+    for (const color of [theme.foreground, theme.muted, theme.accent, theme.success, theme.warning, theme.error]) {
+      expect(contrast(color ?? "", side ?? ""), `${name}: ${color} on the side surface ${side}`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrast(theme.selectionBackground ?? "", side ?? ""), `${name}: selection on the side surface`).toBeGreaterThanOrEqual(1.2);
+    expect(contrast(rule ?? "", side ?? ""), `${name}: rule on the side surface`).toBeGreaterThanOrEqual(1.4);
+    // The input and the operator's messages are filled with their background, which must show on the canvas.
+    expect(contrast(theme.userBackground ?? "", canvas), `${name}: the operator's background on canvas`).toBeGreaterThanOrEqual(1.05);
   },
 );
+
+it("steps the side surface from the terminal's own background once it is known, toward the text, and leaves none without colors", () => {
+  const dark = tesotaShellTheme("tesota-dark");
+  const reported = shellSurfaces(dark, "#0c0c0c").side ?? "";
+  expect(reported).not.toBe(shellSurfaces(dark).side);
+  expect(contrast(reported, "#0c0c0c")).toBeGreaterThanOrEqual(1.1);
+  expect(luminance(reported)).toBeGreaterThan(luminance("#0c0c0c"));
+  const light = tesotaShellTheme("tesota-light");
+  expect(luminance(shellSurfaces(light).side ?? "")).toBeLessThan(luminance(light.canvas ?? ""));
+  expect(shellSurfaces(tesotaShellTheme("terminal"))).toEqual({ side: null, rule: null });
+});
 
 it("keeps a truncated row selected to its end, past the reset truncation leaves before its ellipsis", () => {
   const theme = tesotaShellTheme("tesota-dark");

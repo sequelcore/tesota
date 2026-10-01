@@ -1,4 +1,4 @@
-import { HStack, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
+import { HStack, sliceByColumn, stripTerminalSequences, TuiAltScreen, type Terminal } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
 import { commandQuestion, fullAccessQuestion } from "../src/session-decisions.js";
 import { SHELL_SPINNER_FRAMES } from "../src/shell-progress.js";
@@ -6,7 +6,7 @@ import type { AccountsSource } from "../src/tesota-shell-accounts.js";
 import { CONFIRMATION_WINDOW_MS, createTesotaShellTerminal, SessionBlockedError } from "../src/tesota-shell-terminal.js";
 import { BackdropTui, FocusReportingTerminal } from "../src/tesota-shell-tui.js";
 import { SessionRail } from "../src/tesota-shell-sidebar.js";
-import { tesotaShellTheme } from "../src/tesota-shell-theme.js";
+import { shellSurfaces, tesotaShellTheme } from "../src/tesota-shell-theme.js";
 import { WelcomeBanner } from "../src/tesota-shell-welcome.js";
 import type { TranscriptEntry } from "../src/tesota-shell-transcript.js";
 
@@ -554,7 +554,7 @@ it("filters slash commands before dispatching a typed command", async () => {
 
 it.each([
   { theme: "tesota-dark" as const, highlight: "\x1b[48;2;75;61;83m" },
-  { theme: "tesota-light" as const, highlight: "\x1b[48;2;226;214;232m" },
+  { theme: "tesota-light" as const, highlight: "\x1b[48;2;211;194;220m" },
   { theme: "terminal" as const, highlight: "\x1b[7m" },
 ])("highlights the entire selected command row in $theme", ({ theme, highlight }) => {
   const terminal = new TestTerminal();
@@ -698,8 +698,9 @@ it("renders Tesota Shell as one persistent terminal surface", async () => {
   expect(screen).toContain("Explain the shell");
   expect(screen).toContain("Ready");
   expect(screen).toContain("›");
-  // A rule above and below the input sets it apart.
-  expect(screen).toContain("─".repeat(20));
+  // The input sits on the operator's own background, as their sent messages do, rather than between rules.
+  expect(screen).not.toContain("─".repeat(20));
+  expect(screenLine(terminal.writes.join(""), "›")).toContain("\x1b[48;2;47;42;53m");
   shell.stop();
   expect(terminal.started).toBe(false);
 });
@@ -1184,8 +1185,8 @@ it("names the model, repository and branch under the prompt, then the mode and w
   // This computer in the theme's caution color, a sandbox in its success color.
   const warning = theme.warning!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";");
   expect(screenLine(raw, "this computer · asks first")).toContain(`[38;2;${warning}mthis computer · asks first`);
-  // The input stands between two rules.
-  expect(screen.match(/─{20,}/gu)?.length).toBe(2);
+  // The input is filled with the operator's background, with no rules around it.
+  expect(screen.match(/─{20,}/gu)).toBeNull();
   terminal.writes.length = 0;
   terminal.send("b");
   tui.renderNow(true);
@@ -1570,6 +1571,30 @@ function frameRows(frame: string): string[] {
   return rows;
 }
 
+/** Each cell's background in a drawn row, as a terminal applies it: an SGR sequence sets or ends it, and other sequences take no cell. */
+function cellBackgrounds(row: string): (string | undefined)[] {
+  const cells: (string | undefined)[] = [];
+  let background: string | undefined;
+  const escape = String.fromCharCode(27);
+  for (let index = 0; index < row.length;) {
+    if (row[index] === escape) {
+      if (row[index + 1] === "]") { index = row.indexOf(String.fromCharCode(7), index) + 1; continue; }
+      const end = row.slice(index + 2).search(/[A-Za-z]/u) + index + 2;
+      if (row[end] === "m") {
+        const codes = row.slice(index + 2, end);
+        if (codes === "0" || codes === "" || codes === "49") background = undefined;
+        else if (codes.startsWith("48;2;")) background = codes;
+      }
+      index = end + 1;
+      continue;
+    }
+    const character = row.codePointAt(index) ?? 0;
+    cells.push(background);
+    index += character > 0xffff ? 2 : 1;
+  }
+  return cells;
+}
+
 /** Click the first drawn `text` with the left button, as a terminal or a phone's SSH client reports a tap. */
 function clickText(terminal: TestTerminal, frame: string, text: string): void {
   const rows = frameRows(frame).map((row) => stripTerminalSequences(row ?? ""));
@@ -1666,6 +1691,63 @@ it("offers an undecided turn's actions above the idle prompt, each chosen with a
   expect(onRedo).toHaveBeenCalledWith("default");
   shell.setSessionUndecided("default", undefined);
   expect(stripTerminalSequences(render())).not.toContain("Turn reverted");
+  shell.stop();
+});
+
+it("lays the sidebar and the result beside the conversation on the side surface, each behind a rule, the conversation on the canvas", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 150;
+  terminal.rows = 30;
+  const tui = new BackdropTui(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  shell.inspect({ title: "Review · 1 file", summary: "  edit   src/a.ts", detail: "Your requests\n  1. Fix it",
+    diff: "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new" });
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const rows = frameRows(terminal.writes.join(""));
+  const side = `48;2;${shellSurfaces(tesotaShellTheme()).side!.slice(1).match(/../gu)!.map((hex) => Number.parseInt(hex, 16)).join(";")}`;
+  const plain = rows.map((row) => stripTerminalSequences(row ?? ""));
+  // The sidebar's rule runs the whole height beside it, and the result's beside the result.
+  expect(plain.every((row) => row[25] === "│")).toBe(true);
+  const ruled = Array.from({ length: 150 }, (_, column) => column).filter((column) => column > 26 &&
+    plain.every((row) => row[column] === "│"));
+  expect(ruled).toHaveLength(1);
+  const [resultRule = 0] = ruled;
+  // Every cell of a side column is filled, by the side surface or by a background its content sets, as a selected
+  // session's; the conversation between them is never on the side surface.
+  const cells = rows.map((row) => cellBackgrounds(row ?? ""));
+  for (const row of cells) {
+    expect(row.slice(0, 25)).not.toContain(undefined);
+    expect(row.slice(resultRule + 1, 150)).not.toContain(undefined);
+    expect(row.slice(26, resultRule)).not.toContain(side);
+  }
+  expect(cells.filter((row) => row.slice(0, 25).every((cell) => cell === side)).length).toBeGreaterThan(20);
+  expect(cells.filter((row) => row.slice(resultRule + 1, 150).every((cell) => cell === side)).length).toBeGreaterThan(20);
+  // The diff's file is a block between rules.
+  terminal.send("\x1bt");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const diff = frameRows(terminal.writes.join("")).map((row) => stripTerminalSequences(sliceByColumn(row ?? "", resultRule + 1, 150)));
+  const header = diff.findIndex((row) => row.trim() === "src/a.ts");
+  expect(diff[header - 1]?.trim()).toMatch(/^─+$/u);
+  expect(diff[header + 1]?.trim()).toMatch(/^─+$/u);
+  shell.stop();
+});
+
+it("draws the sidebar over a narrow conversation on the side surface, its whole height, behind a rule", () => {
+  const terminal = new TestTerminal();
+  terminal.columns = 80;
+  terminal.rows = 24;
+  const tui = new BackdropTui(terminal, false, undefined, { mouse: false });
+  const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui });
+  shell.start();
+  terminal.send("\x1bb");
+  terminal.writes.length = 0;
+  tui.renderNow(true);
+  const rows = frameRows(terminal.writes.join(""));
+  expect(rows.filter((row) => stripTerminalSequences(row ?? "")[55] === "│")).toHaveLength(24);
+  expect(stripTerminalSequences(rows.join("\n"))).toContain("Session 1");
   shell.stop();
 });
 
