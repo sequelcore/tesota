@@ -1,10 +1,20 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
-import { chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
+import { afterAll, afterEach, expect, it, vi } from "vitest";
+import { addRoute, chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
 import { dataNotice, modelCost, offeredChoices, offeredModels, rolePicker, runModelsCommand, runRolesCommand,
   type OfferedModel } from "../src/models-command.js";
+
+// A home of the test's own, so the routes it adds are never the operator's, and the operator's never reach it.
+vi.mock("node:os", async (original) => {
+  const os = await original<typeof import("node:os")>();
+  const { mkdtempSync: temporary } = await import("node:fs");
+  const path = await import("node:path");
+  const home = temporary(path.join(os.tmpdir(), "tesota-home-"));
+  return { ...os, homedir: () => home };
+});
+afterAll(() => { rmSync(homedir(), { recursive: true, force: true }); });
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -221,7 +231,7 @@ it("offers /roles a role, then that role's models with default and, when it can 
 
 it("says when roles spread across routes draw on one account, under the listing and after a choice that makes it so", () => {
   const path = file();
-  const added = [{ name: "claude-2", kind: "claude-code" }] as const;
+  const added = addRoute("claude-2", "claude-code");
   const withSecond: OfferedModel[] = [...offered, { id: "claude-2:opus", route: "claude-2", kind: "claude-code", name: "Claude Code's opus",
     reasoning: all }];
   const ours = { id: "45e4b49f" };
