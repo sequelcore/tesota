@@ -79,6 +79,18 @@ export interface Obligation {
   readonly refutation?: string;
 }
 
+/**
+ * A message the reviewer judged part of an earlier request rather than a
+ * request of its own (#253), such as "continue" or "ask again": it has no
+ * obligations, and whatever it adds is judged under the request it continues.
+ */
+export interface Continuation {
+  /** The 1-based number of the message. */
+  readonly index: number;
+  /** The 1-based number of the earlier request it continues. */
+  readonly continues: number;
+}
+
 /** A plan step the agent marked done, given to the reviewer as a claim to check. */
 export interface ClaimedStep {
   readonly index: number;
@@ -133,6 +145,8 @@ export type ReviewReport =
   | Readonly<{ reviewer: string; tree: string; status: "completed"; summary: string; findings: readonly Finding[];
       /** The main reviewer's obligations; focused reviewers and ClaimCheck report none. */
       obligations?: readonly Obligation[];
+      /** The main reviewer's messages that continue an earlier request, which count as no request of their own. */
+      continuations?: readonly Continuation[];
       /** The model that wrote the report, and the refuter's when it tested the report's findings or obligations. */
       model?: string; refuter?: string }>
   | Readonly<{ reviewer: string; tree: string; status: "incomplete"; reason: string; model?: string }>;

@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { QUESTION_REPOSITORY, quantile } from "./agent-evaluation.js";
 import { answerHeld, firstPass, reviewAnswer } from "./answer-check.js";
-import { ANSWER_CASES, type FirstPassOutcome, type PremiseOutcome, type ReviewOutcome, isCheckable, scoreFirstPass, scorePremise,
-  scoreReview, tally } from "./answer-evaluation.js";
+import { ANSWER_CASES, type CountOutcome, type FirstPassOutcome, type PremiseOutcome, type ReviewOutcome, isCheckable, scoreCount,
+  scoreFirstPass, scorePremise, scoreReview, tally } from "./answer-evaluation.js";
 import { openModelTarget } from "./integrations/model-session.js";
 import { readModelChoices } from "./model-roles.js";
 import { type TokenUsage, totalTokens } from "./token-usage.js";
@@ -45,8 +45,9 @@ const tree = git(["rev-parse", "HEAD^{tree}"]);
 
 const firstPasses: { name: string; run: number; outcome: FirstPassOutcome; reason: string; probability?: number; durationMs: number }[] = [];
 const reviews: { name: string; run: number; outcome: ReviewOutcome | PremiseOutcome; tokens: number; durationMs: number;
-  statuses: string[] }[] = [];
+  statuses: string[]; count?: CountOutcome }[] = [];
 const premises: PremiseOutcome[] = [];
+const counts: CountOutcome[] = [];
 try {
   for (let run = 1; run <= runs; run += 1) {
     for (const answer of ANSWER_CASES) {
@@ -72,8 +73,14 @@ try {
       if (premise !== undefined) premises.push(premise);
       const outcome = premise ?? scoreReview(answer.holds ?? true, main !== undefined, answerHeld(reports));
       const statuses = obligations.map((item) => `${item.status}/${item.standing ?? "untested"}`);
-      reviews.push({ name: answer.name, run, outcome, tokens, durationMs: Date.now() - started, statuses });
-      console.log(`run ${run} · review · ${answer.name}: ${outcome} (${statuses.join(", ") || "no verdict"}), ` +
+      // The verdict counts the requests its obligations name, as "Your requests: N of M done" does.
+      const count = answer.counted === undefined || main === undefined ? undefined
+        : scoreCount(answer.counted, new Set(obligations.filter((item) => item.source === "request").map((item) => item.index)).size);
+      if (count !== undefined) counts.push(count);
+      reviews.push({ name: answer.name, run, outcome, tokens, durationMs: Date.now() - started, statuses,
+        ...(count === undefined ? {} : { count }) });
+      console.log(`run ${run} · review · ${answer.name}: ${outcome} (${statuses.join(", ") || "no verdict"})` +
+        `${count === undefined ? "" : `, count ${count}`}, ` +
         `${Math.round(tokens / 1000)}k tokens, ${Math.round((Date.now() - started) / 1000)} s`);
     }
   }
@@ -84,6 +91,7 @@ const record = { at: new Date().toISOString(), models, runs, stage,
     withVerdict: ANSWER_CASES.filter((answer) => answer.holds !== undefined).length },
   firstPass: tally<FirstPassOutcome>(["right", "skipped checkable", "checked conversation"], firstPasses.map((entry) => entry.outcome)),
   premise: tally<PremiseOutcome>(["operator", "sent back", "cleared", "incomplete"], premises),
+  count: tally<CountOutcome>(["right", "too many", "too few"], counts),
   review: { ...tally<ReviewOutcome>(["right", "missed", "false alarm", "incomplete"],
     reviews.filter((entry) => ANSWER_CASES.find((answer) => answer.name === entry.name)?.operator === undefined)
       .map((entry) => entry.outcome as ReviewOutcome)),
@@ -94,4 +102,4 @@ mkdirSync(join("live-runs", "answer"), { recursive: true });
 const file = join("live-runs", "answer", `${record.at.replaceAll(":", "-")}.json`);
 writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
 console.log(`first pass ${JSON.stringify(record.firstPass)}\nreview ${JSON.stringify(record.review)}\n` +
-  `premise ${JSON.stringify(record.premise)}\nrecorded ${file}`);
+  `premise ${JSON.stringify(record.premise)}\ncount ${JSON.stringify(record.count)}\nrecorded ${file}`);

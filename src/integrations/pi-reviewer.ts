@@ -2,7 +2,8 @@ import { realpathSync } from "node:fs";
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@earendil-works/pi-ai";
 import { numberedDiff } from "../diff-lines.js";
-import type { Finding, Obligation, ReviewInput, ReviewReport, Reviewer, ToolCallRecord } from "../review.js";
+import type { Continuation, Finding, Obligation, ReviewInput, ReviewReport, Reviewer, ToolCallRecord } from "../review.js";
+import { continuationAccepted } from "../verification/continuation-rule.js";
 import { describeBase } from "../workspace-checks.js";
 import { type ModelAccess, startModelSession } from "./model-session.js";
 import { type AgentActivity, type LimitedTurnResult, REVIEW_TIME_LIMIT_MS, runWithTimeLimit } from "./model-session-contract.js";
@@ -44,11 +45,18 @@ const obligationSchema = Type.Object({
     "when it cannot, such as a check that also fails without the change for a reason outside it, like a program or " +
     "service the environment lacks. Leave out for met or uncertain" })),
 });
+const continuationSchema = Type.Object({
+  index: Type.Integer({ minimum: 2, description: "The message's number, as listed" }),
+  continues: Type.Integer({ minimum: 1, description: "The number of the earlier request it continues" }),
+});
 const submissionSchema = Type.Object({
   summary: Type.String({ description: "One paragraph: whether the result does what was asked, and how well the checks cover it" }),
   findings: Type.Array(findingSchema, { description: "Every real problem; an empty list when there are none" }),
   obligations: Type.Optional(Type.Array(obligationSchema, { description: "Main review: at least one for every request " +
-    "and one for every plan step the agent marked done. Focused reviews: leave out" })),
+    "not listed in continuations, and one for every plan step the agent marked done. Focused reviews: leave out" })),
+  continuations: Type.Optional(Type.Array(continuationSchema, { description: "Main review: each of the user's messages " +
+    "that asks for nothing new but continues an earlier request; it has no obligations of its own. Focused reviews: " +
+    "leave out" })),
 });
 type Submission = Static<typeof submissionSchema>;
 
@@ -63,13 +71,14 @@ function finding(submitted: Submission["findings"][number]): Finding {
 
 /** The reviewer's only way to report: one structured submission, after which the review ends. */
 export function submitReviewTool(record: (summary: string, findings: readonly Finding[],
-  obligations: readonly Obligation[]) => boolean): ToolDefinition {
+  obligations: readonly Obligation[], continuations: readonly Continuation[]) => boolean): ToolDefinition {
   return defineTool({
     name: "submit_review", label: "Submit review",
     description: "Submit your review once you have finished investigating. Call it exactly once.",
     parameters: submissionSchema,
     execute: async (_id, submission) => {
-      const accepted = record(submission.summary, submission.findings.map(finding), submission.obligations ?? []);
+      const accepted = record(submission.summary, submission.findings.map(finding), submission.obligations ?? [],
+        submission.continuations ?? []);
       return { content: [{ type: "text", text: accepted ? "Review recorded." :
         "A review was already recorded; only the first submission counts." }], details: undefined, terminate: true };
     },
@@ -118,6 +127,20 @@ const premiseGuidance = " Check each request's premise as well. A request that r
   "as intended is the user's decision to make.";
 
 /**
+ * A message that only steers the work on an earlier request is no request of
+ * its own (#253). The reviewer attaches it to that request, and attaches it
+ * when unsure too: its words are then judged under that request, so nothing it
+ * asks is dropped and only the count of requests changes.
+ */
+const continuationGuidance = " Some of the user's messages ask for nothing new and only steer the work on an " +
+  "earlier request: they resume or continue it, as after a stopped turn, retry it, or ask again for an approval " +
+  "that was declined, such as 'continue', 'go on', 'try again' or 'ask again', in any language. List each such " +
+  "message in continuations with the earlier request it continues, give it no obligations of its own, and judge " +
+  "that request together with the message, so anything the message adds becomes part of that request's " +
+  "obligations. When you are unsure whether a message asks for new work or continues an earlier request, treat it " +
+  "as continuing it.";
+
+/**
  * The main reviewer also judges what the result must hold (decision 034):
  * every part of each request, and every plan step the agent claims done, on
  * the whole result, since missing work has no changed line.
@@ -134,7 +157,7 @@ const obligationGuidance = " Also list obligations: for each of the user's reque
   "refactor of unrelated code or an abstraction, option or helper beyond what the requests call for, as one " +
   "`operator` finding naming the change, since an extra may be welcome; report it as `fixable` only when it breaks " +
   "what was asked. A test of the code the change touched, edge cases included, a comment, and an update a " +
-  "requested change forces on its callers are never extras." + premiseGuidance;
+  "requested change forces on its callers are never extras." + continuationGuidance + premiseGuidance;
 
 /**
  * The main reviewer when a turn changed no files (decision 034): only
@@ -156,8 +179,8 @@ function answerPrompt(root: string): string {
     "settle it, and sending it back would push the agent toward a change it was right to refuse. When the " +
     "premise holds, a request the reply declines is unmet as usual. " +
     "List obligations for every request, and for every plan step the agent marked done, as met, partial, " +
-    "unmet or uncertain, with the evidence. There is no diff, so submit an empty findings list, and call " +
-    "submit_review exactly once." + `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
+    "unmet or uncertain, with the evidence." + continuationGuidance + " There is no diff, so submit an empty " +
+    "findings list, and call submit_review exactly once." + `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
 }
 
 function reviewerPrompt(root: string, lens?: ReviewLens): string {
@@ -246,10 +269,13 @@ export function reviewMessage(input: ReviewInput): string {
 
 /**
  * Why a main review's obligations do not cover what it had to assess: every
- * request and every claimed plan step, and nothing that does not exist.
- * Undefined when they do; a review that misses one is incomplete, never clean.
+ * request and every claimed plan step, and nothing that does not exist. A
+ * message attached to an earlier request needs no obligations of its own
+ * (#253). Undefined when they do; a review that misses one is incomplete,
+ * never clean.
  */
-export function missingAssessments(input: ReviewInput, obligations: readonly Obligation[]): string | undefined {
+export function missingAssessments(input: ReviewInput, obligations: readonly Obligation[],
+  continuations: readonly Continuation[] = []): string | undefined {
   const steps = (input.claimedSteps ?? []).map((step) => step.index);
   const known = (item: Obligation): boolean => item.source === "request"
     ? item.index <= input.requests.length : steps.includes(item.index);
@@ -257,16 +283,25 @@ export function missingAssessments(input: ReviewInput, obligations: readonly Obl
   if (unknown !== undefined) {
     return `the reviewer assessed ${unknown.source === "request" ? "request" : "plan step"} ${unknown.index}, which does not exist`;
   }
-  const request = input.requests.findIndex((_, index) => !obligations.some((item) => item.source === "request" && item.index === index + 1));
+  const attached = new Set(acceptedContinuations(input.requests.length, obligations, continuations).map((item) => item.index));
+  const request = input.requests.findIndex((_, index) => !attached.has(index + 1) &&
+    !obligations.some((item) => item.source === "request" && item.index === index + 1));
   if (request >= 0) return `the reviewer did not assess request ${request + 1}`;
   const step = steps.find((index) => !obligations.some((item) => item.source === "plan" && item.index === index));
   return step === undefined ? undefined : `the reviewer did not assess plan step ${step}`;
 }
 
+/** The continuations that stand under #253's rule; any other is dropped, and its message counts as a request. */
+export function acceptedContinuations(requests: number, obligations: readonly Obligation[],
+  continuations: readonly Continuation[]): Continuation[] {
+  const own = (index: number): number => obligations.filter((item) => item.source === "request" && item.index === index).length;
+  return continuations.filter((item) => continuationAccepted(item.index, item.continues, requests, own(item.index)));
+}
+
 /** A review counts only when the reviewer submitted it and was not stopped. */
 export function reviewReport(tree: string, turn: LimitedTurnResult,
   submitted: { readonly summary: string; readonly findings: readonly Finding[];
-    readonly obligations?: readonly Obligation[] } | undefined): ReviewReport {
+    readonly obligations?: readonly Obligation[]; readonly continuations?: readonly Continuation[] } | undefined): ReviewReport {
   const incomplete = (reason: string): ReviewReport => ({ reviewer: REVIEWER, tree, status: "incomplete", reason });
   if (turn.status === "cancelled") return incomplete("the review was stopped");
   if (turn.status === "unsettled") return incomplete("the reviewer did not stop cleanly");
@@ -301,13 +336,17 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
     name,
     async review(input, signal) {
       const root = realpathSync(input.checkout);
-      let submitted: { summary: string; findings: readonly Finding[]; obligations?: readonly Obligation[] } | undefined;
+      let submitted: { summary: string; findings: readonly Finding[]; obligations?: readonly Obligation[];
+        continuations?: readonly Continuation[] } | undefined;
       const session = await startModelSession(options, { cwd: root,
         systemPrompt: input.response === undefined ? reviewerPrompt(root, options.lens) : answerPrompt(root),
-        tools: [...readOnlyFileTools(root), submitReviewTool((summary, findings, obligations) => {
+        tools: [...readOnlyFileTools(root), submitReviewTool((summary, findings, obligations, continuations) => {
           if (submitted !== undefined) return false;
           // Only the main reviewer judges obligations; a focused one keeps to its lens.
-          submitted = options.lens === undefined ? { summary, findings, obligations } : { summary, findings };
+          const attached = acceptedContinuations(input.requests.length, obligations, continuations);
+          submitted = options.lens === undefined
+            ? { summary, findings, obligations, ...(attached.length === 0 ? {} : { continuations: attached }) }
+            : { summary, findings };
           return true;
         })],
         ...(options.onActivity === undefined ? {} : { onActivity: options.onActivity }) });
@@ -317,7 +356,7 @@ export function createPiReviewer(options: PiReviewerOptions): Reviewer {
         if (turn.status === "completed" && submitted === undefined) turn = await runWithTimeLimit(session, submissionReminder, signal, REVIEW_TIME_LIMIT_MS);
         const report = { ...reviewReport(input.snapshot.tree, turn, submitted), reviewer: name };
         const missing = options.lens === undefined && report.status === "completed"
-          ? missingAssessments(input, report.obligations ?? []) : undefined;
+          ? missingAssessments(input, report.obligations ?? [], report.continuations) : undefined;
         return missing === undefined ? report : { reviewer: name, tree: input.snapshot.tree, status: "incomplete", reason: missing };
       } finally { session.dispose(); }
     },
