@@ -199,8 +199,35 @@ it("runs a failing check again on the base, and sends back only a failure the ca
   expect(existsSync(join(workspace.checkout, "node_modules/dep.js"))).toBe(true);
   // A correction round on the same base does not pay for the base again.
   commands.length = 0;
-  await runChecks(counted, workspace, snapshot, plain(onBase, broken), new AbortController().signal, { baseRuns });
+  expect(results.map((result) => typeof result.baseDurationMs)).toEqual(["number", "number", "undefined"]);
+  const again = await runChecks(counted, workspace, snapshot, plain(onBase, broken), new AbortController().signal, { baseRuns });
   expect(commands).toEqual([onBase, broken]);
+  expect(again.map((result) => result.baseDurationMs)).toEqual([undefined, undefined]);
+});
+
+it("runs a related form for the changed files and judges its failure by the whole command on the base", async () => {
+  const { workspace } = await fixture();
+  await changeEverything(workspace);
+  const snapshot = workspace.snapshot();
+  const environment = await hostProvider.prepare(workspace.checkout);
+  const commands: string[] = [];
+  const counted = { ...environment, run: (command: string, options: Parameters<typeof environment.run>[1]) => {
+    commands.push(command);
+    return environment.run(command, options);
+  } };
+  // The related form fails on the candidate; the whole command passes on the base, so the failure comes with the changes.
+  const check: ApprovedCheck = { command: "node -e \"process.exit(0)\"", reports: [],
+    related: { command: "node -e \"process.exit(3)\" {files}", reports: [] } };
+  const files = snapshot.changes.filter((item) => item.status !== "deleted").map((item) => item.path);
+  const [result] = await runChecks(counted, workspace, snapshot, [check], new AbortController().signal, { relatedFiles: files });
+  expect(commands).toEqual([`node -e "process.exit(3)" ${files.map((path) => `'${path}'`).join(" ")}`, check.command]);
+  expect(result).toMatchObject({ outcome: "failed", relatedTo: check.command,
+    claim: `The tests \`${check.command}\` relates to the ${files.length} changed files pass on this tree`,
+    base: { outcome: "passed", origin: "introduced" } });
+  // Without changed files to select by, the whole command runs and makes the usual claim.
+  const [whole] = await runChecks(environment, workspace, snapshot, [check], new AbortController().signal);
+  expect(whole).toMatchObject({ outcome: "passed", command: check.command });
+  expect(whole?.relatedTo).toBeUndefined();
 });
 
 it("leaves the cause unknown when the base run changes files, and removes what it added", async () => {

@@ -352,6 +352,14 @@ example `bun run check`); press Enter to accept, type your own separated by
 command you may name the JUnit XML reports it writes, in paths your
 `.gitignore` covers, so its failures are compared test by test:
 `bun run check => test-reports/unit.xml, test-reports/workspace.xml`.
+When a check takes long, follow it with a related form, a command where
+`{files}` stands for the changed files:
+`bun run check; related: bunx vitest related --run --passWithNoTests {files}`.
+Each round of checks and correction then runs only the tests related to the
+changed files, and the whole check runs once more before you decide, so a
+result is never presented on related tests alone. A round that deletes a
+file, changes what checks the result, or is the last that can send work back
+runs the whole check.
 Checks do not see the hidden files either; when your project has some,
 Tesota lists them with the checks and asks which ones the checks may read,
 such as a `.env` your tests load, and remembers it with the checks. Each
@@ -407,9 +415,13 @@ authority-sensitive files, change existing tests or what checks the result,
 leave a verifier failing, or are large. The review then says why, and focused
 reviewers for correctness, security and authority, and your repository's
 `AGENTS.md` or `CLAUDE.md` rules join in; findings several of them report are
-merged before you see them. Before a thorough review starts, a line says why
-it is thorough, how many reviewers will work, and how long comparable reviews
-have taken once three have been measured; the result then shows its time and tokens.
+merged before you see them. Name your repository's sensitive files in
+`.tesota/sensitive-paths`, one glob per line, such as `src/auth/**`; Tesota
+reads the list as it was before the changes, so the agent cannot shorten it.
+Beyond the list, names such as auth or credentials count too. Before a
+thorough review starts, a line says why it is thorough, how many reviewers
+will work, and how long comparable reviews have taken once three have been
+measured; the result then shows its time and tokens.
 It asks for nothing; `Esc` stops it.
 
 When LemmaScript proved contracts in the changes, an extra review checks

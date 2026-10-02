@@ -1,3 +1,5 @@
+import { matchesGlob } from "node:path";
+import { sensitivePath } from "./verification/sensitive-path-rule.js";
 import type { VerificationChange } from "./verification-changes.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
 import type { CheckResult } from "./workspace-checks.js";
@@ -17,9 +19,23 @@ export interface DepthDecision {
 /** Changed lines above this count a change as large; Codex's own review guidance splits complex changes above 500. */
 export const LARGE_CHANGE_LINES = 400;
 
-const sensitivePath = new RegExp("(^|/)(auth|authn|authz|security|permissions?|polic(y|ies)|acl|access|crypto|secrets?|" +
-  "credentials?|tokens?|sessions?|login|passwords?|payments?|billing|migrations?|infra)(/|\\.|_|-|$)", "iu");
-const sensitiveFile = /(^|\/)(Dockerfile[^/]*|[^/]+\.tf|\.github\/workflows\/[^/]+)$/iu;
+/** Terms that name security or authority wherever they appear in a path, part of a longer name included. */
+const unambiguousTerm = new RegExp("(^|/)(auth|authn|authz|oauth|security|permissions?|polic(y|ies)|acl|crypto|secrets?|" +
+  "credentials?|login|passwords?|payments?|billing|migrations?|infra)(/|\\.|_|-|$)", "iu");
+/** Terms that also name ordinary things, as a usage token or a chat session: they count only as a whole folder or file name. */
+const wholeAmbiguousTerm = /(^|\/)(tokens?|sessions?|access)(\/|\.[^/.]+$)/iu;
+const infrastructureFile = /(^|\/)(Dockerfile[^/]*|[^/]+\.tf|\.github\/workflows\/[^/]+)$/iu;
+
+/** Where a repository declares the paths whose changes always get a thorough review (decision 053). */
+export const SENSITIVE_PATHS_FILE = ".tesota/sensitive-paths";
+const maxDeclaredPaths = 200;
+
+/** The globs a sensitive-paths file declares, one per line, without blank lines and `#` comments. */
+export function parseSensitivePaths(text: string | undefined): readonly string[] {
+  if (text === undefined) return [];
+  return text.split(/\r?\n/u).map((line) => line.trim().replace(/^\.?\//u, ""))
+    .filter((line) => line.length > 0 && !line.startsWith("#")).slice(0, maxDeclaredPaths);
+}
 
 /** Lines the diff adds or removes, not counting its headers. */
 function changedLines(diff: string): number {
@@ -41,11 +57,21 @@ function changedTests(diff: string, flags: readonly VerificationChange[]): strin
   return [...changed];
 }
 
+/**
+ * `declared` holds the globs of the repository's sensitive-paths file as the
+ * candidate's base holds it, never the candidate's own, which the agent wrote.
+ */
 export function reviewDepth(snapshot: Pick<WorkspaceSnapshot, "changes" | "diff">, flags: readonly VerificationChange[],
-  checks: readonly CheckResult[]): DepthDecision {
+  checks: readonly CheckResult[], declared: readonly string[] = []): DepthDecision {
   const reasons: string[] = [];
-  const sensitive = snapshot.changes.filter((change) => sensitivePath.test(change.path) || sensitiveFile.test(change.path));
-  if (sensitive.length > 0) reasons.push(`touches security- or authority-sensitive files (${sensitive.map((change) => change.path).join(", ")})`);
+  const isDeclared = (path: string): boolean => declared.some((glob) => matchesGlob(path, glob));
+  const sensitive = snapshot.changes.map((change) => change.path).filter((path) => sensitivePath(isDeclared(path),
+    flags.some((flag) => flag.path === path && flag.kind === "test"), unambiguousTerm.test(path),
+    wholeAmbiguousTerm.test(path), infrastructureFile.test(path)));
+  const marked = sensitive.filter(isDeclared);
+  const named = sensitive.filter((path) => !isDeclared(path));
+  if (marked.length > 0) reasons.push(`touches paths this repository marks sensitive (${marked.join(", ")})`);
+  if (named.length > 0) reasons.push(`touches security- or authority-sensitive files (${named.join(", ")})`);
   const tests = changedTests(snapshot.diff, flags);
   if (tests.length > 0) reasons.push(`changes existing tests (${tests.join(", ")})`);
   const other = flags.filter((flag) => flag.kind !== "test");

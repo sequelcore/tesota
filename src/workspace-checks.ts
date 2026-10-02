@@ -42,7 +42,18 @@ export type VerifierKind = "command" | "oxlint" | "lemmascript";
 export interface ApprovedCheck {
   readonly command: string;
   readonly reports: readonly string[];
+  /**
+   * The command's related form (decision 052): a command with `{files}`, which Tesota
+   * replaces with the candidate's changed files, that runs only the tests
+   * related to them. Rounds may run it in place of the command, which still
+   * runs before the operator decides.
+   */
+  readonly related?: Readonly<{ command: string; reports: readonly string[] }> | undefined;
 }
+
+/** Where a related form's command takes the changed files. */
+export const RELATED_FILES = "{files}";
+const relatedPrefix = "related:";
 
 /**
  * A check as the operator types it: the command, then optionally ` => ` and
@@ -68,9 +79,50 @@ export function parseApprovedCheck(text: string): ApprovedCheck | string {
   return { command, reports };
 }
 
+/**
+ * Checks as the operator types them, separated by `;`: an item that starts
+ * with `related:` is the related form of the check before it, and names
+ * where the changed files go with `{files}`. A reason instead when one cannot
+ * be used.
+ */
+export function parseApprovedChecks(answer: string): ApprovedCheck[] | string {
+  const checks: ApprovedCheck[] = [];
+  for (const text of answer.split(";").filter((part) => part.trim().length > 0)) {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith(relatedPrefix)) {
+      const check = parseApprovedCheck(text);
+      if (typeof check === "string") return check;
+      checks.push(check);
+      continue;
+    }
+    const previous = checks.at(-1);
+    if (previous === undefined) return "A related: form follows the check it stands for, as `bun run test; related: bunx vitest related --run {files}`.";
+    if (previous.related !== undefined) return `\`${previous.command}\` already has a related form.`;
+    const related = parseApprovedCheck(trimmed.slice(relatedPrefix.length));
+    if (typeof related === "string") return related;
+    if (!related.command.includes(RELATED_FILES)) return `A related form names where the changed files go with ${RELATED_FILES}.`;
+    checks[checks.length - 1] = { ...previous, related };
+  }
+  return checks;
+}
+
+function checkText(check: Pick<ApprovedCheck, "command" | "reports">): string {
+  return check.reports.length === 0 ? check.command : `${check.command} => ${check.reports.join(", ")}`;
+}
+
 /** A check as the operator reads and types it. */
 export function approvedCheckText(check: ApprovedCheck): string {
-  return check.reports.length === 0 ? check.command : `${check.command} => ${check.reports.join(", ")}`;
+  return check.related === undefined ? checkText(check) : `${checkText(check)}; ${relatedPrefix} ${checkText(check.related)}`;
+}
+
+/** Paths as one shell word each, for the POSIX shell every environment runs commands in. */
+function shellWords(paths: readonly string[]): string {
+  return paths.map((path) => `'${path.replaceAll("'", "'\\''")}'`).join(" ");
+}
+
+/** A related form's command for these changed files. */
+export function relatedCommand(template: string, files: readonly string[]): string {
+  return template.replaceAll(RELATED_FILES, shellWords(files));
 }
 
 /**
@@ -94,6 +146,10 @@ export interface CheckResult {
   readonly output: string;
   /** For a command that failed or timed out: how it ended on the candidate's base, and so whose failure it is (decision 039). */
   readonly base?: BaseCheck;
+  /** How long this round's base run took; absent when none ran or an earlier round's run was reused. */
+  readonly baseDurationMs?: number;
+  /** For a related form's run: the full command it stood in for, which still runs before the operator decides. */
+  readonly relatedTo?: string;
 }
 
 /** One command's run on the candidate's base, in the same environment. */
@@ -231,12 +287,15 @@ async function attributeFailures(environment: ExecutionEnvironment, target: Chec
   const missing = runs.filter((run) => failing(run.result.outcome) && !baseRuns.has(key(run.check)));
   // An environment that cannot show another folder at the checkout's path leaves the base unknown, never guessed.
   const reachable = !target.basesInOtherFolder || environment.runsInOtherFolders === true;
+  const ranMs = new Map<string, number>();
   if (missing.length > 0 && !signal.aborted && reachable) {
     await target.atBase(snapshot, async (base) => {
       const place: RunPlace = { checkout: target.checkout, directory: base.directory, root: base.root, hidden };
       for (const { check } of missing) {
         if (signal.aborted) return;
+        const started = Date.now();
         const run = await runReported(environment, place, check, signal, timeoutSeconds, () => base.intact());
+        ranMs.set(key(check), Date.now() - started);
         // The base's reports would read as the candidate's to the agent; the next run removes any left.
         clearTestReports(base.directory, check.reports);
         // A cancelled or unconfirmed run says nothing about the base, so it is not remembered.
@@ -252,9 +311,10 @@ async function attributeFailures(environment: ExecutionEnvironment, target: Chec
     if (!failing(result.outcome)) return result;
     const base = baseRuns.get(key(check)) ?? { outcome: "not_started" as const, exitCode: null };
     const introduced = introducedTests(tests, base.tests);
+    const ran = ranMs.get(key(check));
     return { ...result, base: { outcome: base.outcome, exitCode: base.exitCode,
       origin: checkOrigin(result.outcome, base.outcome, introduced.length),
-      ...introduced.length === 0 ? {} : { introducedTests: introduced } } };
+      ...introduced.length === 0 ? {} : { introducedTests: introduced } }, ...ran === undefined ? {} : { baseDurationMs: ran } };
   });
 }
 
@@ -266,6 +326,8 @@ export interface CheckOptions {
   readonly readsHidden?: readonly string[];
   /** Base runs to reuse and extend; without it, each call runs the base afresh. */
   readonly baseRuns?: BaseRuns;
+  /** The candidate's changed files, given when checks with a related form run that form for them instead. */
+  readonly relatedFiles?: readonly string[];
 }
 
 /**
@@ -284,20 +346,27 @@ export async function runChecks(environment: ExecutionEnvironment, target: Check
   const place: RunPlace = { checkout: target.checkout, directory: target.checkout, hidden };
   const runs: CandidateRun[] = [];
   for (const check of checks) {
-    const { command } = check;
+    const files = options.relatedFiles;
+    // A related form runs in the command's place; a failure is still judged against the command's own run on the base.
+    const ran = check.related === undefined || files === undefined ? check
+      : { command: relatedCommand(check.related.command, files), reports: check.related.reports };
+    const { command } = ran;
     const read = options.readsHidden ?? [];
-    const described = { verifier: "command" as const, command, claim: `\`${command}\` exits with code 0 on this tree`,
-      limits: `Establishes only what the command itself tests.${read.length === 0 ? ""
-        : ` It could read hidden files the operator allowed: ${read.join(", ")}.`}`, tree: snapshot.tree, environment: environment.provider,
-      guarantees: environment.guarantees };
-    const tracked = check.reports.filter((path) => !target.ignores(path));
+    const hiddenRead = read.length === 0 ? "" : ` It could read hidden files the operator allowed: ${read.join(", ")}.`;
+    const described = { verifier: "command" as const, command, tree: snapshot.tree, environment: environment.provider,
+      guarantees: environment.guarantees, ...ran === check
+        ? { claim: `\`${command}\` exits with code 0 on this tree`, limits: `Establishes only what the command itself tests.${hiddenRead}` }
+        : { relatedTo: check.command, claim: `The tests \`${check.command}\` relates to the ${files?.length ?? 0} changed ` +
+            "files pass on this tree", limits: `Runs only the tests its related form selects; \`${check.command}\` itself runs ` +
+            `before you decide.${hiddenRead}` } };
+    const tracked = ran.reports.filter((path) => !target.ignores(path));
     if (tracked.length > 0) {
       runs.push({ check, result: { ...described, outcome: "not_started", exitCode: null, durationMs: 0,
         output: `Not run: Git does not ignore its report ${tracked.join(", ")}, so writing it would change the reviewed files.` } });
       continue;
     }
     const started = Date.now();
-    const run = await runReported(environment, place, check, signal, timeoutSeconds,
+    const run = await runReported(environment, place, ran, signal, timeoutSeconds,
       () => target.currentTree() === snapshot.tree);
     runs.push({ check, tests: run.tests, result: { ...described, outcome: run.outcome, exitCode: run.exitCode,
       durationMs: Date.now() - started, output: terminalOutputText(run.output) } });

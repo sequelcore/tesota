@@ -25,12 +25,23 @@ export type AssuranceDecision = "applied" | "rejected" | "application_conflict" 
   "application_recovery_required" | "kept" | "reverted" | "revert_conflict" | "revert_rolled_back" | "revert_recovery_required" |
   "redone" | "redo_conflict" | "redo_rolled_back" | "redo_recovery_required";
 
+type JournaledCheck = Readonly<Pick<CheckResult, "verifier" | "command" | "claim" | "limits" | "environment" | "outcome" |
+  "exitCode" | "durationMs" | "output" | "base" | "baseDurationMs" | "relatedTo">>;
+
+function journaledCheck(check: CheckResult): JournaledCheck {
+  return { verifier: check.verifier, command: check.command, claim: check.claim,
+    limits: check.limits, environment: check.environment, outcome: check.outcome, exitCode: check.exitCode,
+    durationMs: check.durationMs, ...(check.base === undefined ? {} : { base: check.base }),
+    ...(check.baseDurationMs === undefined ? {} : { baseDurationMs: check.baseDurationMs }),
+    ...(check.relatedTo === undefined ? {} : { relatedTo: check.relatedTo }), output: check.output.slice(-outputTail) };
+}
+
 export type AssuranceEntry =
   | Readonly<{ kind: "review"; at: string; base: string; tree: string; requests: readonly string[];
-      checks: readonly Readonly<Pick<CheckResult, "verifier" | "command" | "claim" | "limits" | "environment" | "outcome" |
-        "exitCode" | "output" | "base">>[];
+      checks: readonly JournaledCheck[];
       flags: readonly VerificationChange[]; reviews: readonly ReviewReport[]; depth?: DepthDecision;
       measurement?: ReviewMeasurement }>
+  | Readonly<{ kind: "checks"; at: string; base: string; tree: string; checks: readonly JournaledCheck[] }>
   | Readonly<{ kind: "decision"; at: string; tree: string; decision: AssuranceDecision }>
   | Readonly<{ kind: "triage"; at: string; tree: string; requests: readonly string[]; model: string;
       decided: boolean; checkable: boolean; probability?: number; reason: string; runsCheck: boolean;
@@ -41,9 +52,12 @@ export function reviewEntry(snapshot: WorkspaceSnapshot, requests: readonly stri
   measurement?: ReviewMeasurement): AssuranceEntry {
   return { kind: "review", at: new Date().toISOString(), base: snapshot.base, tree: snapshot.tree, requests, flags, reviews,
     ...(depth === undefined ? {} : { depth }), ...(measurement === undefined ? {} : { measurement }),
-    checks: checks.map((check) => ({ verifier: check.verifier, command: check.command, claim: check.claim,
-      limits: check.limits, environment: check.environment, outcome: check.outcome, exitCode: check.exitCode,
-      ...(check.base === undefined ? {} : { base: check.base }), output: check.output.slice(-outputTail) })) };
+    checks: checks.map(journaledCheck) };
+}
+
+/** The whole approved commands' run on a reviewed candidate, after its rounds ran only their related forms. */
+export function checksEntry(snapshot: WorkspaceSnapshot, checks: readonly CheckResult[]): AssuranceEntry {
+  return { kind: "checks", at: new Date().toISOString(), base: snapshot.base, tree: snapshot.tree, checks: checks.map(journaledCheck) };
 }
 
 export function decisionEntry(tree: string, decision: AssuranceDecision): AssuranceEntry {
@@ -78,6 +92,7 @@ const journaledReport = z.discriminatedUnion("status", [
 const journaledEntry = z.discriminatedUnion("kind", [
   z.looseObject({ kind: z.literal("review"), tree: z.string(), reviews: z.array(journaledReport) }),
   z.looseObject({ kind: z.literal("decision"), tree: z.string(), decision: z.string() }),
+  z.looseObject({ kind: z.literal("checks") }),
   z.looseObject({ kind: z.literal("triage") }),
 ]);
 

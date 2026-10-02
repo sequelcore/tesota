@@ -9,7 +9,7 @@ import { runTesotaShell } from "./tesota-shell.js";
 import type { ShellInspection } from "./tesota-shell-terminal.js";
 import type { NoticeTone } from "./tesota-shell-transcript.js";
 import type { WorkPlan } from "./work-plan.js";
-import { type ApprovedCheck, parseApprovedCheck } from "./workspace-checks.js";
+import { type ApprovedCheck, parseApprovedChecks } from "./workspace-checks.js";
 import { runCommandAnswer, runExitCode, runNetworkAnswer, type RunStatus } from "./verification/run-policy-rule.js";
 
 /**
@@ -57,12 +57,8 @@ export function parseRunArgs(args: readonly string[]): RunOptions | string {
     else if (argument.startsWith("--checks=")) {
       const value = argument.slice("--checks=".length).trim();
       if (value === "none") { checks = []; continue; }
-      const parsed: ApprovedCheck[] = [];
-      for (const text of value.split(";").filter((part) => part.trim().length > 0)) {
-        const check = parseApprovedCheck(text);
-        if (typeof check === "string") return check;
-        parsed.push(check);
-      }
+      const parsed = parseApprovedChecks(value);
+      if (typeof parsed === "string") return parsed;
       if (parsed.length === 0) return "Name the checks with --checks=<command;…>, or --checks=none.";
       checks = parsed;
     } else return `Unknown option ${argument}. Usage: ${RUN_USAGE}`;

@@ -15,7 +15,7 @@ it("appends each reviewed candidate and the operator's decision, with the eviden
   const snapshot = { base: "b".repeat(40), tree, diff: "not journaled", changes: [{ status: "modified" as const, path: "src/a.ts" }] };
   const check = { verifier: "command" as const, command: "bun run check", claim: "exits 0", limits: "only its tests", tree,
     environment: "host", guarantees: hostProvider.guarantees, outcome: "failed" as const, exitCode: 1, durationMs: 3,
-    output: `${"x".repeat(5_000)}END` };
+    base: { outcome: "passed" as const, exitCode: 0, origin: "introduced" as const }, baseDurationMs: 7, output: `${"x".repeat(5_000)}END` };
   await appendAssurance(directory, reviewEntry(snapshot, ["Fix a"], [check], [{ path: "src/a.test.ts", status: "modified", kind: "test" }],
     [{ reviewer: "Tesota reviewer", tree, status: "incomplete", reason: "stopped" }]));
   await appendAssurance(directory, decisionEntry(tree, "rejected"));
@@ -23,7 +23,8 @@ it("appends each reviewed candidate and the operator's decision, with the eviden
   expect(lines).toHaveLength(2);
   expect(lines[0]).toMatchObject({ kind: "review", base: snapshot.base, tree, requests: ["Fix a"],
     flags: [{ path: "src/a.test.ts", kind: "test" }], reviews: [{ status: "incomplete", reason: "stopped" }],
-    checks: [{ verifier: "command", command: "bun run check", claim: "exits 0", outcome: "failed", exitCode: 1 }] });
+    checks: [{ verifier: "command", command: "bun run check", claim: "exits 0", outcome: "failed", exitCode: 1, durationMs: 3,
+      base: { outcome: "passed" }, baseDurationMs: 7 }] });
   const checks = lines[0]?.["checks"] as { output: string }[] | undefined;
   const journaled = checks?.[0]?.output ?? "";
   expect(journaled.endsWith("END")).toBe(true);

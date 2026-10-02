@@ -10,7 +10,7 @@ import { MAX_PLAN_STEPS, PLAN_STATUSES, type PlanStep } from "./work-plan.js";
 import { parseModelChoice } from "./model-roles.js";
 import { MEASUREMENTS_KEPT, type ReviewMeasurement, withMeasurement } from "./review-forecast.js";
 import { MAX_CHECK_REPORTS, normalizeReportPath } from "./test-report.js";
-import type { ApprovedCheck } from "./workspace-checks.js";
+import { type ApprovedCheck, RELATED_FILES } from "./workspace-checks.js";
 import type { TranscriptEntry } from "./tesota-shell-transcript.js";
 import { replacesTitle, type TitleSource } from "./verification/session-title-rule.js";
 import type { PermissionMode } from "./verification/permission-mode.js";
@@ -61,10 +61,13 @@ const measurementSchema: z.ZodType<ReviewMeasurement> = z.strictObject({ at: z.i
   depth: z.enum(["standard", "deep"]), correction: z.boolean(), durationMs: z.number().nonnegative(),
   tokens: z.number().nonnegative(), models: z.strictObject({ reviewer: z.string().min(1).max(100),
     refuter: z.string().min(1).max(100), validator: z.string().min(1).max(100) }).optional() });
-const checkSchema: z.ZodType<{ command: string; reports: string[] }> = z.strictObject({
-  command: z.string().min(1).max(1000),
-  reports: z.array(z.string().refine((path) => normalizeReportPath(path) === path, "not a report path"))
-    .max(MAX_CHECK_REPORTS) });
+const reportsSchema = z.array(z.string().refine((path) => normalizeReportPath(path) === path, "not a report path"))
+  .max(MAX_CHECK_REPORTS);
+const checkSchema: z.ZodType<{ command: string; reports: string[]; related?: { command: string; reports: string[] } | undefined }> =
+  z.strictObject({ command: z.string().min(1).max(1000), reports: reportsSchema,
+    // Absent from files written before related forms existed, which stay valid.
+    related: z.strictObject({ command: z.string().min(1).max(1000).refine((command) => command.includes(RELATED_FILES),
+      "a related form names {files}"), reports: reportsSchema }).optional() });
 // Version 8 drops the native sandbox from a session's sandbox choice (decision 047).
 const snapshotVersion = 8;
 /** A saved rule for commands on this computer (decision 049), only one the operator may save. */
@@ -279,7 +282,8 @@ export function openShellSessionStore(sourceDirectory: string,
       checks: () => checks,
       setChecks: (approved) => {
         const previous = checks;
-        checks = z.array(checkSchema).max(20).parse(approved.map((check) => ({ command: check.command, reports: [...check.reports] })));
+        checks = z.array(checkSchema).max(20).parse(approved.map((check) => ({ command: check.command, reports: [...check.reports],
+          ...check.related === undefined ? {} : { related: { command: check.related.command, reports: [...check.related.reports] } } })));
         try { save(); } catch (error) { checks = previous; throw error; }
       },
       checkSecrets: () => checkSecrets,
