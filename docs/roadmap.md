@@ -69,6 +69,13 @@ record of that use starts on 2026-10-01; what it surfaced is in
   for a round with no code, correction rounds reviewed by what they changed,
   and a light review only for a change with no code.
   [Assurance](design/assurance.md#planned-verification-in-proportion-to-the-change)
+- Consider a Proposals tab in the result panel for repository settings
+  Tesota can suggest: the sensitive paths, from names and imports, and a
+  related form for a check typed without one. Asking before the first review
+  was tried and dropped: it listed about forty files and held the session for
+  what the default already covers. Build it only if journaled reviews show
+  the default's noise costs enough to matter.
+  [Assurance](design/assurance.md#planned-proposals-the-operator-confirms)
 - Consider scope as a first-pass question: whether a turn's changes stay
   within what was asked. The reviewer judges scope growth today, as an
   operator disposition measured by `live:review --set=scope`; a typed

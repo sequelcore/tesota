@@ -139,44 +139,59 @@ security- or authority-sensitive paths, changes or deletes existing tests,
 changes what checks it, leaves a verifier failing, or changes more than 400
 lines; otherwise it is **standard**.
 
-**Sensitive paths** (decision 053) come first from what the repository and
-the operator declare:
+**Sensitive paths** (decision 053) come first from the repository:
 `.tesota/sensitive-paths` lists globs, one per line, as GitHub's CODEOWNERS
 and Chromium's OWNERS name what needs a qualified reviewer. Tesota reads the
 file as the candidate's base holds it, as GitHub takes CODEOWNERS from the
 base branch, so a change cannot drop its own paths, and a change to the file
-is flagged as Tesota setup and reviewed deeply. A repository without the
-file is not left to guess: before its first review Tesota proposes a list,
-the files outside the tests whose names or imports mark them, and the
-operator accepts it with Enter, removes globs with `-glob`, adds others, or
-answers `none`, once per repository, beside the checks; `/checks` shows the
-list and `/checks reset` asks again. `tesota run`, with nobody to ask, keeps
-the proposal. Developers mostly keep a security tool's defaults: in a survey
-of 1,263, 54% of those who used static analysis tools had not configured them
-([Bennett et al., 2024](https://doi.org/10.1145/3674805.3690750)), so a
-declaration nobody is asked for would mostly not exist; Renovate onboards a
-repository the same way, with a proposed configuration to accept, and
-GitHub's code scanning detects what to scan before anyone configures it. A
-declared or confirmed path counts whatever it is, a test included. Beyond
-the list, a path's name counts, but only by terms that cannot mean anything else, such as auth,
-credentials, crypto or migrations, plus infrastructure files such as a
-Dockerfile. Terms that also name ordinary things, token, session and access,
-count only as a whole folder or file name: `src/session/` and `tokens.ts`
-do, `session-title.ts` and `token-usage.ts` do not. Until the operator
-confirms a list or the repository declares one, code that imports process,
-cryptography or network APIs counts too, on either side of the change, so a
-repository nobody configured leans toward the thorough review. A test file
-never counts by name or imports, since changing an existing test is a reason
-of its own
-(`sensitivePath` in `src/verification/sensitive-path-rule.ts`, proved by
-`bun run formal:check`). Names guess in both directions: on Tesota's own
-history the name rule alone missed its command rules, egress proxy and
-sandboxes, and caught usage formatting and session titles. On Tesota, the
-proposal finds 11 of the 23 files its own declaration names, where names
-alone found 5; the rest are pure decision rules, such as its command and
-approval rules, which no name or import reveals, which is why the operator
-confirms the list rather than Tesota deciding it. Meta's RADAR orders its gates the same way, the
-repository's and the change's metadata before any model score.
+is flagged as Tesota setup and reviewed deeply. A declared path counts
+whatever it is, a test included. Beyond the declaration, a path's name
+counts, but only by terms that cannot mean anything else, such as auth,
+credentials, crypto, sandbox or migrations, plus infrastructure files such
+as a Dockerfile. Terms that also name ordinary things, token, session and
+access, count only as a whole folder or file name: `src/session/` and
+`tokens.ts` do, `session-title.ts` and `token-usage.ts` do not. Until the
+repository declares a list, code that imports process, cryptography or
+network APIs counts too, on either side of the change, so a repository
+nobody configured leans toward the thorough review and is never asked
+anything. A test file never counts by name or imports, since changing an
+existing test is a reason of its own (`sensitivePath` in
+`src/verification/sensitive-path-rule.ts`, proved by `bun run formal:check`).
+Names guess in both directions: on Tesota's own history the old name rule
+missed its command rules, egress proxy and sandboxes, and caught usage
+formatting and session titles. Meta's RADAR orders its gates the same way,
+the repository's and the change's metadata before any model score.
+
+### Planned: proposals the operator confirms
+
+A declaration nobody is asked for mostly never exists: in a survey of 1,263
+developers, 54% of those who used static analysis tools had not configured
+them ([Bennett et al., 2024](https://doi.org/10.1145/3674805.3690750)).
+Renovate onboards a repository with a proposed configuration to accept, and
+GitHub's code scanning detects what to scan before anyone configures it.
+Tesota could propose its repository settings the same way: the sensitive
+paths, from the files outside the tests whose names or imports mark them,
+and a related form for a check the operator typed without one.
+
+Measured on Tesota, such a proposal finds 11 of the 23 files its own
+declaration names, where names alone find 5, and adds noise, such as its
+evaluation scripts, which import process APIs. What it misses are pure
+decision rules, such as the command and approval rules, which no name or
+import reveals; only the operator can add them. A first version asked once,
+before the first review, and listed about forty files: too long to read, and
+a question that held the session for what the default already covers,
+since an unconfirmed repository already counts names and imports.
+
+The proposal belongs instead in a **Proposals** tab of the result panel,
+beside Review, Checks and Diff, as Tesota decides other things by command at
+any time rather than by a prompt that holds the session. It appears only
+while something waits, with a count; groups the files by folder with why
+each was proposed; and accepts, trims with `-glob` or extends with a glob
+from the tab. The proposals belong to the repository and stay until
+decided. A review made thorough only by an unconfirmed proposal says so in
+its reason, so the cost is seen when it is paid. It is built only if
+journaled reviews show that unconfirmed noise costs enough to matter, and
+with more than one kind of proposal to hold.
 
 ### Reviewers
 

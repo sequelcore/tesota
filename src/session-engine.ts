@@ -56,9 +56,8 @@ import { flagVerificationChanges } from "./verification-changes.js";
 import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
 import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
 import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.js";
-import { importsAuthority, parseSensitivePaths, proposeSensitivePaths, reviewDepth, SENSITIVE_PATHS_FILE,
-  type DepthDecision, type Sensitivity } from "./review-depth.js";
-import { repositoryFiles } from "./repository-files.js";
+import { importsAuthority, parseSensitivePaths, reviewDepth, SENSITIVE_PATHS_FILE, type DepthDecision,
+  type Sensitivity } from "./review-depth.js";
 import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
 import { applyRefutation, hasClaimsToTest, refuteFindings } from "./integrations/pi-refuter.js";
 import { attributeOrigins } from "./finding-origin.js";
@@ -1000,12 +999,11 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
   /**
    * What marks a candidate's paths sensitive (decision 053): the repository's
    * file as the candidate's base declares it, so a change cannot remove its
-   * own paths, with the list the operator confirmed.
+   * own paths.
    */
   const sensitivityOf = (snapshot: WorkspaceSnapshot, read: (revision: string, path: string) => string | undefined): Sensitivity => {
     const declared = read(snapshot.base, SENSITIVE_PATHS_FILE);
-    const confirmed = store.sensitivePaths();
-    return { declared: [...parseSensitivePaths(declared), ...confirmed ?? []], confirmed: declared !== undefined || confirmed !== null,
+    return { declared: parseSensitivePaths(declared), confirmed: declared !== undefined,
       // Either side counts, so removing an import cannot make a change look less sensitive.
       importsAuthority: (path) => importsAuthority(read(snapshot.base, path)) || importsAuthority(read(snapshot.tree, path)) };
   };
@@ -1300,16 +1298,11 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     } catch (error) { await turnWriteFailure(id, session, turn.before, error, changed, "redo"); }
     finally { applying.delete(id); }
   });
-  const sensitiveText = (paths: readonly string[] | null): string => paths === null
-    ? "Sensitive paths are not chosen yet; until then, names and imports decide which changes get a thorough review."
-    : paths.length === 0 ? "You chose no sensitive paths; names alone decide which changes get a thorough review."
-    : `Changes to these always get a thorough review:\n${pathList(paths)}`;
   /** `/checks`: the repository's approved checks and the hidden files they may read; `/checks reset` chooses them again. */
   const showChecks = (id: string, args: readonly string[]): void => {
     if (args.length === 1 && args[0] === "reset") {
       store.resetChecks();
-      output.writeTo(id, "The next review asks for the checks again, which hidden files they may read, and which paths " +
-        "always get a thorough review.");
+      output.writeTo(id, "The next review asks for the checks again, and which hidden files they may read.");
       return;
     }
     if (args.length > 0) { output.replyTo(id, "Use /checks or /checks reset.", "warning"); return; }
@@ -1318,7 +1311,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     output.replyTo(id, [checks === null ? "No checks are chosen yet; the first review asks for them."
       : checks.length === 0 ? "No checks run after a change." : `Checks:\n${pathList(checks.map(approvedCheckText))}`,
     allowed.length === 0 ? "The checks read no hidden files." : `Hidden files the checks may read:\n${pathList(allowed)}`,
-    sensitiveText(store.sensitivePaths()), "/checks reset chooses them again at the next review."].join("\n"));
+    "/checks reset chooses them again at the next review."].join("\n"));
   };
 
   /**
@@ -1480,13 +1473,6 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     checks: () => store.checks(),
     suggestChecks: () => suggestChecks(checksRoot(id)),
     setChecks: (commands) => { store.setChecks(commands); },
-    proposeSensitivePaths: async () => {
-      if (store.sensitivePaths() !== null) return null;
-      const root = checksRoot(id);
-      if (existsSync(join(root, SENSITIVE_PATHS_FILE))) return null;
-      return proposeSensitivePaths(repositoryFiles(root));
-    },
-    setSensitivePaths: (paths) => { store.setSensitivePaths(paths); },
     hiddenFiles: async () => hiddenFilesIn((await workspaceFor(id)).checkout),
     allowForChecks: (paths) => { store.setCheckSecrets([...store.checkSecrets(), ...paths]); },
     place: () => stateFor(id).place ?? "workspace",

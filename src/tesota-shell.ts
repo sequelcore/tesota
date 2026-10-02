@@ -91,13 +91,6 @@ export interface TesotaShellDependencies {
   readonly checks: () => readonly ApprovedCheck[] | null;
   readonly suggestChecks: () => readonly string[];
   readonly setChecks: (checks: readonly ApprovedCheck[]) => void;
-  /**
-   * The sensitive paths Tesota proposes when the repository declares none and
-   * the operator has not chosen yet, or null when nothing needs choosing; with
-   * `setSensitivePaths`, which remembers the choice (decision 053).
-   */
-  readonly proposeSensitivePaths?: () => Promise<readonly string[] | null>;
-  readonly setSensitivePaths?: (paths: readonly string[]) => void;
   /** Files hidden from the agent and its checks, relative with forward slashes; none when absent. */
   readonly hiddenFiles?: () => Promise<readonly string[]>;
   /** Let the repository's checks read these hidden files, which they need. */
@@ -142,14 +135,6 @@ async function chooseChecks(dependencies: TesotaShellDependencies): Promise<read
   return chosen;
 }
 
-/** Ask once per repository which paths always get a thorough review, from Tesota's proposal (decision 053). */
-async function chooseSensitivePaths(dependencies: TesotaShellDependencies): Promise<void> {
-  const { proposeSensitivePaths, setSensitivePaths } = dependencies;
-  if (proposeSensitivePaths === undefined || setSensitivePaths === undefined) return;
-  const proposed = await proposeSensitivePaths();
-  if (proposed !== null) setSensitivePaths(await dependencies.decisions.sensitivePaths(proposed));
-}
-
 /**
  * Hidden files stay hidden from checks too, unless the operator lets the
  * repository's checks read the ones they need, asked once with the checks.
@@ -184,7 +169,6 @@ function queuedFirst(dependencies: TesotaShellDependencies, count: number): bool
 async function assess(dependencies: TesotaShellDependencies,
   report: (progress: TesotaShellProgress) => void): Promise<Assessment> {
   const checks = await chooseChecks(dependencies);
-  await chooseSensitivePaths(dependencies);
   const { checkWhole } = dependencies;
   let previousTree: string | undefined;
   let context: CorrectionContext | undefined;

@@ -56,41 +56,10 @@ export function importsAuthority(text: string | undefined): boolean {
 }
 
 /**
- * The sensitive paths Tesota proposes for a repository that declares none:
- * every file outside the tests that its name or its imports mark, which the
- * operator confirms, trims or extends once.
- */
-export function proposeSensitivePaths(files: readonly Readonly<{ path: string; text: string | undefined; test: boolean }>[]):
-  readonly string[] {
-  return files.filter((file) => sensitivePath(false, false, file.test, unambiguousTerm.test(file.path),
-    wholeAmbiguousTerm.test(file.path), infrastructureFile.test(file.path), importsAuthority(file.text)))
-    .map((file) => file.path).slice(0, maxDeclaredPaths);
-}
-
-/**
- * The operator's answer to a proposal, items separated by `;`: Enter keeps
- * it, `none` keeps nothing, an item starting with `-` removes what its glob
- * matches, and any other item adds a glob.
- */
-export function answerSensitivePaths(answer: string, proposed: readonly string[]): readonly string[] {
-  const trimmed = answer.trim();
-  if (trimmed.toLowerCase() === "none") return [];
-  let chosen = [...proposed];
-  for (const item of trimmed.split(";").map((part) => part.trim()).filter((part) => part.length > 0)) {
-    if (item.startsWith("-")) {
-      const removed = glob(item.slice(1));
-      chosen = chosen.filter((path) => path !== removed && !matchesGlob(path, removed));
-    } else if (!chosen.includes(glob(item))) chosen.push(glob(item));
-  }
-  return chosen.slice(0, maxDeclaredPaths);
-}
-
-/**
  * What marks a path sensitive: the globs the repository's file declares, as
- * the candidate's base holds it, with those the operator confirmed; whether
- * the operator confirmed a list, after which imports no longer count; and
- * whether a changed file imports process, cryptography or network APIs, on
- * either side of the change.
+ * the candidate's base holds it; whether the repository declares a list,
+ * after which imports no longer count; and whether a changed file imports
+ * process, cryptography or network APIs, on either side of the change.
  */
 export interface Sensitivity {
   readonly declared: readonly string[];

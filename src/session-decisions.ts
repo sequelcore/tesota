@@ -1,7 +1,6 @@
 import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
 import type { ShellQuestion } from "./tesota-shell-question.js";
 import type { NoticeTone } from "./tesota-shell-transcript.js";
-import { answerSensitivePaths } from "./review-depth.js";
 import { type ApprovedCheck, parseApprovedChecks, RELATED_FILES } from "./workspace-checks.js";
 
 /** What becomes of a result worked on in a copy: applied to the source, discarded, or kept pending. */
@@ -26,11 +25,6 @@ export interface SessionDecisions {
   queued(): boolean;
   /** The commands to run after each change, chosen once per repository from those suggested. */
   checks(suggested: readonly string[]): Promise<readonly ApprovedCheck[]>;
-  /**
-   * The paths whose changes always get a thorough review, from those Tesota
-   * proposes for a repository that declares none (decision 053).
-   */
-  sensitivePaths(proposed: readonly string[]): Promise<readonly string[]>;
   /** Which of the hidden files the chosen checks may read. */
   checkSecrets(hidden: readonly string[]): Promise<readonly string[]>;
   /** What becomes of a reviewed result in a copy. */
@@ -187,15 +181,6 @@ export function askingDecisions(ask: (prompt: string) => Promise<string>,
         if (typeof chosen !== "string") return chosen;
         write(`${chosen}\n`, "warning");
       }
-    },
-    sensitivePaths: async (proposed) => {
-      write(proposed.length === 0
-        ? "Tesota found no files whose changes need a thorough review by their names or what they import.\n"
-        : "Changes to these files will always get a thorough review, proposed from their names and from code that " +
-          `runs programs, handles cryptography or reaches the network:\n${proposed.map((path) => `  ${path}`).join("\n")}\n`);
-      const answer = await ask("Enter to use these, or change them (separate with ;): a glob adds, -glob removes, " +
-        "'none' keeps none: ");
-      return answerSensitivePaths(answer, proposed);
     },
     checkSecrets: async (hidden) => {
       write(`Hidden from the agent and its checks, since they may hold credentials:\n${hidden.map((path) => `  ${path}`).join("\n")}\n`);

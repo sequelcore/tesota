@@ -87,8 +87,6 @@ export function policyDecisions(request: string, policy: RunPolicy): SessionDeci
       const parsed = parseApprovedChecks(suggested.join("; "));
       return typeof parsed === "string" ? [] : parsed;
     },
-    // Nobody is at the keyboard: the proposal stands, as suggested checks do.
-    sensitivePaths: async (proposed) => proposed,
     checkSecrets: async () => [],
     result: async () => policy.apply ? "apply" : "keep",
     command: async () => runCommandAnswer(policy.commands),

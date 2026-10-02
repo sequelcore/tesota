@@ -79,8 +79,6 @@ const snapshotSchema = z.strictObject({ format: z.literal("tesota-shell-sessions
       commandRules: z.array(commandRuleSchema).max(100).default([]),
       // Absent from files written before hidden files existed, which stay valid.
       checkSecrets: z.array(z.string().min(1).max(1_000)).max(50).default([]),
-      // Null until the operator confirms a list, and in files written before sensitive paths existed (decision 053).
-      sensitivePaths: z.array(z.string().min(1).max(1_000)).max(200).nullable().default(null),
       // The mode last chosen in this repository, which new sessions start in; absent from files written before modes.
       mode: z.enum(PERMISSION_MODES).default("accept-edits"),
       reviews: z.array(measurementSchema).max(MEASUREMENTS_KEPT),
@@ -101,10 +99,7 @@ export interface ShellSessionStore {
   /** Files hidden from the agent that the operator let this repository's checks read, relative with forward slashes. */
   checkSecrets(): readonly string[];
   setCheckSecrets(paths: readonly string[]): void;
-  /** The sensitive paths the operator confirmed for this repository, or null before they were asked (decision 053). */
-  sensitivePaths(): readonly string[] | null;
-  setSensitivePaths(paths: readonly string[]): void;
-  /** Forget the approved checks, the hidden files they may read and the sensitive paths, so the next review asks again. */
+  /** Forget the approved checks and the hidden files they may read, so the next review asks again. */
   resetChecks(): void;
   /** Network destinations the operator allowed for every session of this repository. */
   allowedNetwork(): readonly string[];
@@ -151,7 +146,7 @@ export interface ShellSessionStore {
 
 function readSnapshot(path: string, source: string): Snapshot {
   const empty: Snapshot = { format: "tesota-shell-sessions", version: snapshotVersion, source, checks: null,
-    network: [], commandRules: [], checkSecrets: [], sensitivePaths: null, mode: "accept-edits", reviews: [], sessions: [] };
+    network: [], commandRules: [], checkSecrets: [], mode: "accept-edits", reviews: [], sessions: [] };
   if (!existsSync(path)) return empty;
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
   // Snapshots from earlier versions are discarded; the next save replaces the file.
@@ -234,7 +229,6 @@ export function openShellSessionStore(sourceDirectory: string,
     let network = snapshot.network;
     let commandRules: readonly CommandRule[] = snapshot.commandRules;
     let checkSecrets: readonly string[] = snapshot.checkSecrets;
-    let sensitivePaths: readonly string[] | null = snapshot.sensitivePaths;
     let mode: PermissionMode = snapshot.mode;
     let reviews: readonly ReviewMeasurement[] = snapshot.reviews;
     let closed = false;
@@ -243,7 +237,7 @@ export function openShellSessionStore(sourceDirectory: string,
       const temporary = `${path}.${randomUUID()}.tmp`;
       try {
         writeFileSync(temporary, JSON.stringify({ format: "tesota-shell-sessions", version: snapshotVersion,
-          source, checks, network, commandRules, checkSecrets, sensitivePaths, mode, reviews, sessions: [...sessions.values()] }) + "\n",
+          source, checks, network, commandRules, checkSecrets, mode, reviews, sessions: [...sessions.values()] }) + "\n",
         { encoding: "utf8", mode: 0o600 });
         renameSync(temporary, path);
       } finally { if (existsSync(temporary)) unlinkSync(temporary); }
@@ -293,18 +287,11 @@ export function openShellSessionStore(sourceDirectory: string,
         try { save(); } catch (error) { checks = previous; throw error; }
       },
       checkSecrets: () => checkSecrets,
-      sensitivePaths: () => sensitivePaths,
-      setSensitivePaths: (paths) => {
-        const previous = sensitivePaths;
-        sensitivePaths = z.array(z.string().min(1).max(1_000)).max(200).parse([...new Set(paths)]);
-        try { save(); } catch (error) { sensitivePaths = previous; throw error; }
-      },
       resetChecks: () => {
-        const previous = { checks, checkSecrets, sensitivePaths };
+        const previous = { checks, checkSecrets };
         checks = null;
         checkSecrets = [];
-        sensitivePaths = null;
-        try { save(); } catch (error) { ({ checks, checkSecrets, sensitivePaths } = previous); throw error; }
+        try { save(); } catch (error) { ({ checks, checkSecrets } = previous); throw error; }
       },
       setCheckSecrets: (paths) => {
         const previous = checkSecrets;

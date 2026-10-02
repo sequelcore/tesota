@@ -416,15 +416,13 @@ authority-sensitive files, change existing tests or what checks the result,
 leave a verifier failing, or are large. The review then says why, and focused
 reviewers for correctness, security and authority, and your repository's
 `AGENTS.md` or `CLAUDE.md` rules join in; findings several of them report are
-merged before you see them. Before the first review in a repository, Tesota
-proposes the files whose changes always get a thorough review, from their
-names and from code that runs programs, handles cryptography or reaches the
-network. Press Enter to accept, type `-glob` to remove and a glob to add,
-separated by `;`, or `none`. Add what no name reveals, such as the code that
-decides approvals. `/checks` shows the list. To share it with your team,
-commit it as `.tesota/sensitive-paths`, one glob per line; Tesota then asks
-nothing and reads the file as it was before the changes, so the agent cannot
-shorten it. Beyond the list, names such as auth or credentials count too. Before a
+merged before you see them. Without configuration, Tesota counts names such
+as auth or credentials, and code that runs programs, handles cryptography or
+reaches the network. To decide yourself, commit `.tesota/sensitive-paths`,
+one glob per line, such as `src/auth/**`, and add what no name reveals, such
+as the code that decides approvals; Tesota then reads that list, as it was
+before the changes so the agent cannot shorten it, with names still counting
+beyond it. Before a
 thorough review starts, a line says why it is thorough, how many reviewers
 will work, and how long comparable reviews have taken once three have been
 measured; the result then shows its time and tokens.
