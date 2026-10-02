@@ -12,7 +12,7 @@ import { readSandboxPreference, releaseWorkspace, repositoryKey, SANDBOX_NAMES, 
 import { hostProvider } from "./host-environment.js";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { type ModelAccess, type ModelTarget, openModelTarget, sameAccount, startWorkingAgent, type WorkingAgent } from "./integrations/model-session.js";
-import { ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
+import { HOSTED_SEARCH_KINDS, ROLE_OFF, type ModelRole, parseModelChoice, readModelChoices, ROUTE_ENGINE } from "./model-roles.js";
 import { type WorkPlan, withReview } from "./work-plan.js";
 import { isGitRepository, largeUntrackedFiles, largeUntrackedWarning, pathKey } from "./source-shadow.js";
 import { hiddenFilesIn } from "./secret-files.js";
@@ -29,7 +29,8 @@ import { currentBranch } from "./repository-git.js";
 import { askExplorer, askPageReader } from "./integrations/pi-explorer.js";
 import type { WebAccess } from "./integrations/web-tools.js";
 import { fetchPage, pinnedGet, resolveHost } from "./web-fetch.js";
-import { readWebSearch, type WebSearch } from "./web-search.js";
+import { DEFAULT_WEB_CONFIG, readWebSearch, type WebSearch } from "./web-search.js";
+import { hostedSearch } from "./integrations/hosted-search.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
 import { Advisor } from "./integrations/advisor.js";
 import { consultAdvisor } from "./integrations/advisor-session.js";
@@ -679,8 +680,13 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       state.webAllowed.add(host);
       return "allowed";
     };
+    // The searcher's own search, when its route has one; it reads its model when a search starts.
+    const searcher = readModelChoices().searcher;
+    const searcherKind = parseModelChoice(searcher)?.kind;
+    const hosted = searcherKind !== undefined && HOSTED_SEARCH_KINDS.includes(searcherKind)
+      ? hostedSearch(searcher, (signal) => openModel(signal, "searcher")) : undefined;
     let search: WebSearch;
-    try { search = readWebSearch(); } catch (error) {
+    try { search = readWebSearch(DEFAULT_WEB_CONFIG, hosted); } catch (error) {
       const detail = error instanceof Error ? error.message : "~/.tesota/web.json cannot be read";
       search = { search: async () => ({ status: "failed", error: "provider_not_configured", detail }) };
     }

@@ -61,8 +61,20 @@ it("reads a reasoning level after the model, and offers only the levels each mod
 
 it("gives every role the default until the operator chooses, with explorers and the advisor off", () => {
   expect(readModelChoices(file())).toEqual({ agent: DEFAULT_MODEL, explorer: "off", advisor: "off", reviewer: DEFAULT_MODEL,
-    refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL, namer: "codex:gpt-6-luna@low" });
+    refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL, namer: "codex:gpt-6-luna@low",
+    searcher: DEFAULT_MODEL });
   expect(DEFAULT_MODEL).toBe("codex:gpt-6-luna");
+});
+
+it("gives the searcher only routes whose provider searches itself, or off", () => {
+  const path = file();
+  expect(chooseModel("searcher", "claude-code:haiku", ids, path).searcher).toBe("claude-code:haiku");
+  expect(chooseModel("searcher", "off", ids, path).searcher).toBe("off");
+  expect(() => chooseModel("searcher", "anthropic:claude-opus-5-5", ids, path)).toThrow("its provider's own search");
+  const searcher = rolePicker("/roles searcher ", offered, path)?.entries.map((entry) => entry.id) ?? [];
+  expect(searcher.length).toBeGreaterThan(2);
+  expect(searcher.filter((id) => id !== "default" && id !== "off").every((id) => /^(codex|claude-code):/u.test(id))).toBe(true);
+  expect(searcher.slice(-2)).toEqual(["default", "off"]);
 });
 
 it("turns the answer check's first pass off, so every answer gets the full check, and back to its default", () => {
@@ -218,7 +230,7 @@ it("offers /roles a role, then that role's models with default and, when it can 
   const roles = rolePicker("/roles ", offered, path);
   expect(roles?.completes).toBe(true);
   expect(roles?.entries.map((entry) => entry.id)).toEqual(["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage",
-    "namer"]);
+    "namer", "searcher"]);
   const triage = rolePicker("/roles triage ", offered, path)?.entries.map((entry) => entry.id) ?? [];
   expect(triage[0]).toBe("typesafe:jev-1.13.0");
   expect(triage.slice(-2)).toEqual(["default", "off"]);
