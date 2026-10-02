@@ -132,8 +132,10 @@ export interface ReviewInput {
 export type ReviewReport =
   | Readonly<{ reviewer: string; tree: string; status: "completed"; summary: string; findings: readonly Finding[];
       /** The main reviewer's obligations; focused reviewers and ClaimCheck report none. */
-      obligations?: readonly Obligation[] }>
-  | Readonly<{ reviewer: string; tree: string; status: "incomplete"; reason: string }>;
+      obligations?: readonly Obligation[];
+      /** The model that wrote the report, and the refuter's when it tested the report's findings or obligations. */
+      model?: string; refuter?: string }>
+  | Readonly<{ reviewer: string; tree: string; status: "incomplete"; reason: string; model?: string }>;
 
 export interface Reviewer {
   readonly name: string;

@@ -160,6 +160,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
         surface.replyTo(id, `${text}${agent}`.trimEnd(), code === 0 ? "success" : "warning");
       });
     },
+    onVerify: (id) => { void engine.turnCommands.verify(id); },
     onKeep: (id) => { void engine.turnCommands.keep(id); },
     onRevert: (id, args) => { void engine.turnCommands.revert(id, args); },
     diffSources: (id) => engine.diffSources(id),

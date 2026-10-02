@@ -1,3 +1,4 @@
+import type { TriageVerdict } from "./tesota-shell-transcript.js";
 import type { AgentActivity } from "./integrations/model-session-contract.js";
 import type { SessionDecisions } from "./session-decisions.js";
 import { chooseSessionExecution, providersFor } from "./execution-providers.js";
@@ -164,6 +165,10 @@ export class RunOutput implements SessionOutput {
   }
 
   setSessionExecution(_id: string, label: string): void { this.record.execution = label; }
+  /** The first pass's verdict, kept among the run's notices. */
+  showTriage(_id: string, verdict: TriageVerdict): void {
+    this.record.notices.push({ text: `First pass (triage ${verdict.model}): ${verdict.outcome}. ${verdict.reason}`, tone: "info" });
+  }
   /** A run decides its result itself, so it shows no decision bar. */
   setSessionUndecided(): void {}
   setSessionPlan(_id: string, plan: WorkPlan | undefined): void { this.record.plan = plan; }

@@ -32,12 +32,12 @@ export async function firstPass(choice: string, requests: readonly string[], rep
 
 /** The full check: the main reviewer, then the refuter on any gap; never throws, and an error leaves it incomplete. */
 export async function reviewAnswer(open: (role: "reviewer" | "refuter") => Promise<ModelAccess>, input: ReviewInput,
-  signal: AbortSignal, onPhase: (activity: string) => void = () => undefined): Promise<ReviewReport[]> {
-  onPhase("Checking the answer against your requests");
+  signal: AbortSignal, onPhase: (activity: string, role: "reviewer" | "refuter") => void = () => undefined): Promise<ReviewReport[]> {
+  onPhase("Checking the answer against your requests", "reviewer");
   try {
     const reports = [await createPiReviewer(await open("reviewer")).review(input, signal)];
     if (signal.aborted || !hasClaimsToTest(reports)) return reports;
-    onPhase("Testing each gap");
+    onPhase("Testing each gap", "refuter");
     return await refuteFindings(await open("refuter"), input, reports, signal)
       .catch(() => applyRefutation(reports, undefined));
   } catch (error) {

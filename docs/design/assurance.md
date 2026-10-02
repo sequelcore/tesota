@@ -241,6 +241,15 @@ claim about the code; when unsure it says checkable
 the first pass decided that nothing is checkable; one that failed, timed out
 or never decided runs it (`runsAnswerCheck` in
 `src/verification/answer-check-rule.ts`, proved by `bun run formal:check`).
+The verdict is never silent: the conversation records it as its own entry,
+with the triage model and its reason, as checked, skipped or undecided
+(`triageOutcome`, proved to say skipped exactly when the full check does not
+run), and `/verify` runs the full check on a skipped answer until the next
+turn. Every review report records the model that wrote it, and the refuter's
+when it tested that report's findings or obligations
+(`src/review-attribution.ts`); the record and the line under each review
+name them, and the status line names each step's role and model, so who
+verified a turn is part of its evidence.
 The first pass takes about two seconds; the full check is one reviewer
 session, and the refuter's when there are gaps. This is the discretionary
 review triage issue #124 asked a consumer for. The `triage` role may instead

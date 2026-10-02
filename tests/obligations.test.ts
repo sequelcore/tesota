@@ -112,7 +112,7 @@ it("gives the reviewer the agent's reply as an untrusted answer when no files ch
   expect(inspection.detail).not.toContain("First pass");
   const screened = inspectAnswer(answer.requests, [report],
     { model: "typesafe:jev-1.13.0", decision: { decided: true, checkable: true, probability: 0.75, reason: "Jev: 0.75 checkable" } });
-  expect(screened.detail).toContain("First pass\n  typesafe:jev-1.13.0 found something to check: Jev: 0.75 checkable\n\nReview");
+  expect(screened.detail).toContain("First pass\n  triage typesafe:jev-1.13.0 found something to check: Jev: 0.75 checkable\n\nReview");
   expect(inspectAnswer(answer.requests, [report], { model: "off", decision: { decided: false, checkable: true,
     reason: "the first pass is off" } }).detail).toContain("off decided nothing, so the full check ran: the first pass is off");
 });

@@ -163,7 +163,20 @@ in which the agent changes no files gets an "Answer check" too: a question
 can be answered, but a reply that only says the work is done, when the code
 is not there, is caught and sent back. A quick first pass, on your
 `triage` model, skips the check for greetings, thanks and small talk;
-`tesota roles triage off` checks every answer in full instead.
+`tesota roles triage off` checks every answer in full instead. Its verdict
+always shows under the agent's reply, with the model that made it and why:
+`· First pass · triage codex:gpt-6-luna · sent to the full check: the reply
+says how orderTotal rounds`, or `nothing to check`, or `could not decide`.
+When it skips the check, `/verify` runs the full check on that answer
+anyway, until your next request.
+
+Each step names the role and model doing it. While Tesota works, the status
+line reads `Reviewing · reviewer codex:gpt-6.1-sol`, `Testing each finding
+and gap · refuter …` or `Checking each fix · validator …`; a call to the
+advisor, an explorer or the page reader shows its model beside it, as
+`• Advisor · claude-2:opus`. A review ends with who verified it,
+`Reviewed by codex:gpt-6.1-sol; findings tested by claude-2:opus.`, and its
+record names each report's model and the refuter on each second check.
 
 The agent reads, searches, edits, creates and deletes files in your project.
 In the sandbox its shell commands run without asking, inside a sandbox that
