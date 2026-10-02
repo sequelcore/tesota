@@ -495,8 +495,39 @@ other verdicts right against 53 before; `claude-code:haiku` left it to the
 operator twice of two, against sent back twice. Neither the answer prompt
 nor its cases changed after that measurement.
 
-The working agent's prompt is unchanged: it acted on 15 of 16 false
-premises, and a change to it is measured on its own.
+**What the working agent does now.** Its prompt tells it that a request
+reporting a bug or a symptom, or naming code, makes claims to check in the
+code, its documents and tests before it changes anything. When a claim is
+false (the behavior is documented or tested as intended, the code does not
+exist, the defect lies in vendored code the repository says not to edit, even
+where it shows through the repository's own code, or the symptom does not
+occur), it changes nothing, a workaround included, and says which claim failed
+and what shows it. Leaving the premise to the operator is named as the right
+result, and a request that plainly asks for different behavior is made. The
+wording follows what other agents and studies found. Claude Code's system
+prompt asks the agent to investigate before "instinctively confirming the
+user's beliefs"
+([system prompts](https://github.com/Piebald-AI/claude-code-system-prompts)).
+oh-my-pi's merit gate, cited above, names the same four failures. Gloaguen et
+al. found that agents edit already-fixed code in 35 to 65% of cases. Telling
+them to reproduce first did not help, and naming abstention as a valid
+outcome raised correct abstention by 15 to 28 points. The same instruction
+made them decline partly fixed code that still needed work, so `live:agent`'s
+partly fixed case guards that here
+([*Coding Agents Don't Know When to Act*](https://arxiv.org/abs/2605.07769), 2026).
+
+**Measured** on 2026-10-02 with `live:agent --set=all`, two runs before and
+two after on each model, every case registered on 2026-09-30.
+`codex:gpt-6-luna` left alone 7 of 8 false premises against 0 of 8, and said
+why in 8 against 3. `codex:gpt-6.1-sol` left alone 8 of 8 against 4 of 8. Before,
+sol had worked around the vendored defect in the repository's own code and
+rewritten the pricing document and its test to agree with the report. On both
+models the control stayed resolved, the fix cases stayed resolved (the partly
+fixed one included), every scope case stayed in scope, and the questions
+stated as many facts (34 of 34 on luna, 32 of 34 on sol). A first wording
+without the clause on the repository's own code left luna's vendored case
+acting in both runs. With the clause it acted in one of two, the only false
+premise still acted on.
 
 ## Correction
 

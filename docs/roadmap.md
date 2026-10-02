@@ -49,12 +49,11 @@ record of that use starts on 2026-10-01; what it surfaced is in
   [Issue #165](https://github.com/sequelcore/tesota/issues/165)
 - Requests whose premise is false: behavior documented as intended, code
   that does not exist, a vendored defect, a symptom that does not occur. The
-  review now reports a false premise to the operator and never sends it back
-  to the agent, and the answer check leaves a rightly declined one to the
-  operator. The working agent still acts on them (15 of 16 in the
-  2026-09-30 baseline, on `codex:gpt-6-luna` and `claude-code:haiku`); a
-  change to its prompt is next, measured with `live:agent --set=premise`
-  against the fix, scope and question results.
+  working agent checks a request's claims and leaves a false premise to the
+  operator (7 of 8 on `codex:gpt-6-luna` and 8 of 8 on `codex:gpt-6.1-sol`
+  on 2026-10-02, from 0 and 4), the review reports one and never sends it
+  back, and the answer check leaves a rightly declined one to the operator.
+  Revisit with false premises drawn from daily use.
   [Assurance](design/assurance.md#the-requests-premise)
 - Route the answer check by what a turn holds. Jev's first pass already
   decides the request's kind from the requests alone; add journaled real turns

@@ -108,3 +108,12 @@ it("tells the agent whether it works in the user's own project or in a copy, and
   expect(inCopy).toContain("working in a private copy of the user's repository.");
   expect(inCopy).toContain("the user applies or rejects them.");
 });
+
+it("tells the agent to check a request's claims first and to leave a false premise to the user", async () => {
+  const { root } = await fixture();
+  const prompt = workingAgentSetup({ cwd: root, environment: await hostProvider.prepare(root), sandboxed: false,
+    approveCommand: async () => "deny" }).systemPrompt;
+  expect(prompt).toContain("makes claims about the repository: check them before you change anything");
+  expect(prompt).toContain("change nothing, a workaround included, and say which claim failed and what shows it");
+  expect(prompt).toContain("A request that plainly asks for different behavior is not a claim to check: make the change.");
+});
