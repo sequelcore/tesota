@@ -40,15 +40,18 @@ record of that use starts on 2026-10-01; what it surfaced is in
   project next. Base checks outside the WSL sandbox wait until real use shows
   they matter.
   [Workspace](design/workspace.md#planned)
-- Let the working agent run LemmaScript proofs during its turn, as
-  LemmaScript's own loop and Midspiral's lemmafit do. Today a proof runs only
-  after the turn, as one of Tesota's checks, and a failure comes back as raw
-  output within the two correction rounds set for model review. Register
-  cases that change a function with `//@` contracts, one of them tempting the
-  agent to weaken the contract, and compare an in-turn proof tool with
-  today's loop on the same model: verified at the end of the turn, rounds,
-  time, tokens and contracts weakened. What the agent runs stays feedback;
-  Tesota's run on the candidate stays the evidence.
+- The working agent proves LemmaScript contracts during its turn, as
+  LemmaScript's own loop and Midspiral's lemmafit do: in a repository with
+  `//@` files it gets `prove` and guidance to keep contracts provable. On
+  2026-10-02, on six registered cases, Sonnet and GPT-6 Luna left the proof
+  failing on 29 of 30 invariant cases without either, Sonnet proved all with
+  the guidance alone, and Luna proved all only with the tool, for about 5k
+  more tokens per turn. Next: measure GPT-6.1 Sol after its weekly limit
+  resets, add a case that tempts weakening a contract, and measure whether the
+  agent should add contracts where the repository's instructions ask for
+  them. What the agent proves stays feedback; Tesota's run on the candidate
+  stays the evidence.
+  [Agents](design/agents.md#proofs-while-it-works)
   [Issue #294](https://github.com/sequelcore/tesota/issues/294)
 - Scope behavior was measured on cases that tempt the agent to make unrelated
   changes, registered before any run: five temptations and a control in

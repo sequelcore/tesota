@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import { workingAgentSetup } from "../src/integrations/pi-coding-session.js";
+import { hasContracts } from "../src/integrations/prove-tool.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -57,3 +58,17 @@ it.runIf(dafny)("reports a proved contract and a failing obligation, leaving the
   expect(await call(tools, "bad.ts")).toMatch(/^Not proved: an obligation in bad\.ts failed\./u);
   expect(readdirSync(root).sort()).toEqual(["bad.ts", "good.ts"]);
 }, 120_000);
+
+it("turns proofs on only for a repository with annotated TypeScript outside dependency and build folders", () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-contracts-"));
+  roots.push(root);
+  mkdirSync(join(root, "src"));
+  mkdirSync(join(root, "node_modules", "lib"), { recursive: true });
+  writeFileSync(join(root, "src", "plain.ts"), "export const a = 1;\n");
+  writeFileSync(join(root, "node_modules", "lib", "rule.ts"), "//@ ensures \result >= 0\nexport function f(): number { return 0; }\n");
+  writeFileSync(join(root, "src", "notes.md"), "//@ ensures in a document\n");
+  expect(hasContracts(root)).toBe(false);
+  writeFileSync(join(root, "src", "rule.ts"), "//@ ensures \result >= 0\nexport function f(): number { return 0; }\n");
+  expect(hasContracts(root)).toBe(true);
+  expect(hasContracts(join(root, "missing"))).toBe(false);
+});

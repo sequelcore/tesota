@@ -79,7 +79,7 @@ export interface CodingSessionOptions {
   readonly advisor?: Advisor;
   /**
    * The agent's own LemmaScript proof run with its guidance (#294), or the contract guidance alone, which exists so
-   * the measurement can tell the two apart; off unless set, until that measurement decides.
+   * the measurement can tell the two apart; off unless set. Sessions set the tool where the repository has contracts.
    */
   readonly proofs?: "tool" | "guidance";
   /** Shows the agent's plan to the person (decision 033); absent where nobody watches, as in evaluations. */

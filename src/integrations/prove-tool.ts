@@ -1,5 +1,6 @@
+import { type Dirent, readdirSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { basename, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { type ToolDefinition, defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "@earendil-works/pi-ai";
 import { annotations, dafnyInstalled, proveSource } from "../verification/lemmascript-verifier.js";
@@ -30,6 +31,38 @@ export const PROVE_GUIDANCE: string = "prove runs LemmaScript with Dafny on a Ty
   "reports whether its contracts hold for every input they admit. After you change such a file, run prove and " +
   "work until it passes. A failure points at an obligation: the code may be wrong, or the proof may need a loop " +
   "invariant or an assertion. " + contractGuidance + "If you cannot make it pass, say which obligation still fails. ";
+
+const skippedFolders = new Set(["node_modules", ".git", "dist", "build", "out", "coverage", ".tesota"]);
+const scanLimit = 20_000;
+const fileLimit = 1024 * 1024;
+
+/**
+ * Whether the repository has a TypeScript file with `//@` annotations, which
+ * turns on `prove` and its guidance (#294). It walks at most `scanLimit`
+ * entries, skipping dependency, build and hidden folders, and reads only
+ * TypeScript files under a megabyte; a repository it cannot read has none.
+ */
+export function hasContracts(root: string): boolean {
+  const folders = [root];
+  let seen = 0;
+  while (folders.length > 0 && seen < scanLimit) {
+    const folder = folders.pop() ?? root;
+    let entries: Dirent[];
+    try { entries = readdirSync(folder, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      seen += 1;
+      const path = join(folder, entry.name);
+      if (entry.isDirectory()) {
+        if (!skippedFolders.has(entry.name) && !entry.name.startsWith(".")) folders.push(path);
+      } else if (entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) {
+        try {
+          if (statSync(path).size <= fileLimit && annotations(readFileSync(path, "utf8")).length > 0) return true;
+        } catch { /* An unreadable file has no annotations Tesota could prove. */ }
+      }
+    }
+  }
+  return false;
+}
 
 function text(content: string): { content: { type: "text"; text: string }[]; details: undefined } {
   return { content: [{ type: "text", text: content }], details: undefined };
