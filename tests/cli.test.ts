@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 const entry = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
 const packagePath = fileURLToPath(new URL("../package.json", import.meta.url));
@@ -10,13 +10,16 @@ for (const key of ["PATH", "Path", "SystemRoot", "SYSTEMROOT", "WINDIR", "TEMP",
   const value = process.env[key];
   if (value !== undefined) env[key] = value;
 }
+// Each process takes about half a second, but a busy Windows runner has taken ten times that; a hang still fails.
+const processLimitMs = 30_000;
+vi.setConfig({ testTimeout: processLimitMs + 5_000 });
 
 function run(args: readonly string[]) {
   const result = spawnSync("bun", ["--no-env-file", entry, ...args], {
     encoding: "utf8",
     windowsHide: true,
     shell: false,
-    timeout: 5000,
+    timeout: processLimitMs,
     maxBuffer: 64 * 1024,
     env,
   });
