@@ -22,6 +22,8 @@ it("restores recorded conversation without treating it as task authority", () =>
   first.append(session.id, { kind: "tool", tool: "bash", subject: "bun test", failed: false });
   const change = { added: 1, removed: 1, lines: ["@@ -1 +1 @@", "-old", "+new"] };
   first.append(session.id, { kind: "tool", tool: "edit", subject: "src/a.ts", failed: false, change });
+  first.append(session.id, { kind: "tool", tool: "advisor", subject: "Which order?", failed: false, by: "claude:opus" });
+  first.append(session.id, { kind: "triage", model: "codex:luna", outcome: "skipped", reason: "it explains a concept" });
   first.markActive(session.id, true);
   expect(() => openShellSessionStore(source, root)).toThrow(/already has an open/);
   first.close();
@@ -31,6 +33,8 @@ it("restores recorded conversation without treating it as task authority", () =>
     { kind: "user", text: "Inspect the repo" }, { kind: "agent", text: "One answer with limits" },
     { kind: "tool", tool: "bash", subject: "bun test", failed: false },
     { kind: "tool", tool: "edit", subject: "src/a.ts", failed: false, change },
+    { kind: "tool", tool: "advisor", subject: "Which order?", failed: false, by: "claude:opus" },
+    { kind: "triage", model: "codex:luna", outcome: "skipped", reason: "it explains a concept" },
   ], interrupted: true }]);
   reopened.close();
 });

@@ -86,6 +86,32 @@ it("names the key to the full record under the latest review only, and only whil
   expect(screen()).toContain("Alt+R shows the full record, its checks and the diff.");
 });
 
+it("shows the first pass's verdict with its model and reason every time, and how to check a skipped answer anyway", () => {
+  initTheme("dark");
+  const transcript = new Transcript(tesotaShellTheme("tesota-dark"));
+  const screen = (): string => stripTerminalSequences(transcript.container.render(160).join("\n"));
+  transcript.add({ kind: "triage", model: "codex:luna", outcome: "checked", reason: "the reply says how orderTotal rounds" });
+  expect(screen()).toContain("· First pass · triage codex:luna · sent to the full check: the reply says how orderTotal rounds");
+  expect(screen()).not.toContain("/verify");
+  transcript.add({ kind: "triage", model: "codex:luna", outcome: "skipped", reason: "it explains a concept" });
+  expect(screen()).toContain("· First pass · triage codex:luna · nothing to check: it explains a concept");
+  expect(screen()).toContain("/verify runs the full check anyway.");
+  transcript.add({ kind: "triage", model: "codex:luna", outcome: "undecided", reason: "the first pass timed out" });
+  expect(screen()).toContain("could not decide, so the full check runs: the first pass timed out");
+});
+
+it("names the model a helper tool runs on beside the tool, live and restored", () => {
+  initTheme("dark");
+  const transcript = new Transcript(tesotaShellTheme("tesota-dark"));
+  transcript.activity({ type: "tool_started", call: "1", tool: "advisor", subject: "Should the discount apply before tax?", by: "claude:opus" });
+  const entry = transcript.activity({ type: "tool_finished", call: "1", failed: false, output: "" });
+  expect(entry).toMatchObject({ kind: "tool", tool: "advisor", by: "claude:opus" });
+  expect(stripTerminalSequences(transcript.container.render(100).join("\n"))).toContain("• Advisor · claude:opus Should the discount apply");
+  const restored = new Transcript(tesotaShellTheme("tesota-dark"));
+  restored.add(entry!);
+  expect(stripTerminalSequences(restored.container.render(100).join("\n"))).toContain("• Advisor · claude:opus Should the discount apply");
+});
+
 it("shows a command's colored output as plain text", () => {
   initTheme("dark");
   const transcript = new Transcript(tesotaShellTheme("tesota-dark"));

@@ -13,7 +13,9 @@ import { limitedTurnStatus } from "../verification/turn-time-limit.js";
  */
 export type AgentActivity =
   | Readonly<{ type: "reply"; message: number; text: string; final: boolean }>
-  | Readonly<{ type: "tool_started"; call: string; tool: string; subject: string }>
+  | Readonly<{ type: "tool_started"; call: string; tool: string; subject: string;
+      /** The model a helper tool runs on, as the advisor's, which Tesota names where it acts. */
+      by?: string }>
   | Readonly<{ type: "tool_output"; call: string; output: string }>
   | Readonly<{ type: "tool_finished"; call: string; failed: boolean; output: string; change?: AgentChange }>;
 
