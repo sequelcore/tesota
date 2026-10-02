@@ -7,7 +7,7 @@ import { afterEach, expect, it } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import { Workspace } from "../src/workspace.js";
 import { applyWorkspace, ApplyConflictError } from "../src/workspace-apply.js";
-import { type ApprovedCheck, runChecks, suggestChecks } from "../src/workspace-checks.js";
+import { type ApprovedCheck, parseApprovedChecks, runChecks, suggestChecks } from "../src/workspace-checks.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -199,8 +199,35 @@ it("runs a failing check again on the base, and sends back only a failure the ca
   expect(existsSync(join(workspace.checkout, "node_modules/dep.js"))).toBe(true);
   // A correction round on the same base does not pay for the base again.
   commands.length = 0;
-  await runChecks(counted, workspace, snapshot, plain(onBase, broken), new AbortController().signal, { baseRuns });
+  expect(results.map((result) => typeof result.baseDurationMs)).toEqual(["number", "number", "undefined"]);
+  const again = await runChecks(counted, workspace, snapshot, plain(onBase, broken), new AbortController().signal, { baseRuns });
   expect(commands).toEqual([onBase, broken]);
+  expect(again.map((result) => result.baseDurationMs)).toEqual([undefined, undefined]);
+});
+
+it("runs a related form for the changed files and judges its failure by the whole command on the base", async () => {
+  const { workspace } = await fixture();
+  await changeEverything(workspace);
+  const snapshot = workspace.snapshot();
+  const environment = await hostProvider.prepare(workspace.checkout);
+  const commands: string[] = [];
+  const counted = { ...environment, run: (command: string, options: Parameters<typeof environment.run>[1]) => {
+    commands.push(command);
+    return environment.run(command, options);
+  } };
+  // The related form fails on the candidate; the whole command passes on the base, so the failure comes with the changes.
+  const check: ApprovedCheck = { command: "node -e \"process.exit(0)\"", reports: [],
+    related: { command: "node -e \"process.exit(3)\" {files}", reports: [] } };
+  const files = snapshot.changes.filter((item) => item.status !== "deleted").map((item) => item.path);
+  const [result] = await runChecks(counted, workspace, snapshot, [check], new AbortController().signal, { relatedFiles: files });
+  expect(commands).toEqual([`node -e "process.exit(3)" ${files.map((path) => `'${path}'`).join(" ")}`, check.command]);
+  expect(result).toMatchObject({ outcome: "failed", relatedTo: check.command,
+    claim: `The tests \`${check.command}\` relates to the ${files.length} changed files pass on this tree`,
+    base: { outcome: "passed", origin: "introduced" } });
+  // Without changed files to select by, the whole command runs and makes the usual claim.
+  const [whole] = await runChecks(environment, workspace, snapshot, [check], new AbortController().signal);
+  expect(whole).toMatchObject({ outcome: "passed", command: check.command });
+  expect(whole?.relatedTo).toBeUndefined();
 });
 
 it("leaves the cause unknown when the base run changes files, and removes what it added", async () => {
@@ -364,6 +391,17 @@ it("suggests the repository's own check script", async () => {
   await writeFile(join(workspace.checkout, "bun.lock"), "");
   await writeFile(join(workspace.checkout, "package.json"), JSON.stringify({ scripts: { check: "all", test: "vitest" } }));
   expect(suggestChecks(workspace.checkout)).toEqual(["bun run check"]);
+  // A test runner that selects tests by changed files comes with the related form, ready to accept with Enter.
+  await writeFile(join(workspace.checkout, "package.json"),
+    JSON.stringify({ scripts: { check: "all" }, devDependencies: { vitest: "4.1.11" } }));
+  expect(suggestChecks(workspace.checkout)).toEqual(["bun run check; related: bunx vitest related --run --passWithNoTests {files}"]);
+  await rm(join(workspace.checkout, "bun.lock"));
+  await writeFile(join(workspace.checkout, "package.json"),
+    JSON.stringify({ scripts: { lint: "eslint", test: "jest" }, devDependencies: { jest: "30.0.0" } }));
+  expect(suggestChecks(workspace.checkout)).toEqual(["npm run lint",
+    "npm run test; related: npx jest --findRelatedTests --passWithNoTests {files}"]);
+  expect(parseApprovedChecks(suggestChecks(workspace.checkout).join("; "))).toEqual([{ command: "npm run lint", reports: [] },
+    { command: "npm run test", reports: [], related: { command: "npx jest --findRelatedTests --passWithNoTests {files}", reports: [] } }]);
 });
 
 it("keeps the requests behind the pending changes outside the checkout, starting over when nothing is pending", async () => {

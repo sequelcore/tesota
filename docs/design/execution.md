@@ -119,7 +119,9 @@ operator's files, credentials and network, and files hidden from the agent's
 file tools are not hidden from its commands. A turn's changes to the project
 can still be reverted, but not what a command did elsewhere. Unlike Claude
 Code's auto mode or Codex's auto-review, no classifier judges commands yet;
-a reviewer-model mode between Accept edits and Full access is planned.
+an Auto mode between Accept edits and Full access is planned, judged by a
+reviewer model or a typed decision model such as Jev, whichever registered
+command cases favor.
 
 On this computer an approved command runs with the operator's permissions,
 files, network and credentials; it works on any machine with no setup.

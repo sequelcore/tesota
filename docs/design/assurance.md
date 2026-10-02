@@ -58,6 +58,23 @@ the report would change the reviewed files, and is reported as not started. A ch
 the candidate must be reviewed again. The working agent may run the same tools
 while it works; those runs are feedback, not evidence.
 
+**A check may have a related form** (decision 052), typed after it as
+`command; related: other {files}`, where Tesota puts the candidate's changed
+files, each quoted as one shell word. A round runs the related form in the
+command's place only when the candidate changed files, deletes none, whose
+dependents a related form cannot find from a path that is gone, does not
+change what checks it, and the round can still send work back
+(`runsRelatedForm` in `src/verification/check-scope-rule.ts`, proved by
+`bun run formal:check`). Its claim is that the tests the command relates to
+the changed files pass, never that the command passes. A related form's
+failure is judged by the whole command on the base, so a new test missing
+there cannot make it `preexisting`. Every way a round can end the work, a
+clean review, the operator's queued message or a correction that changed
+nothing, first runs the whole commands when the round ran only related forms
+(`owesWholeCommand`); the result panel then shows them, the journal records
+them as a `checks` entry, and a failure that comes with the candidate goes
+back to the agent while a round remains.
+
 **A failing check runs again on the base**, as a commit queue
 retries a failure without the patch: Chromium's CQ fails a change only for
 tests that fail with it and pass without it. When a check command fails or
@@ -121,6 +138,60 @@ from a model, and shows why. A review is **deep** when the candidate touches
 security- or authority-sensitive paths, changes or deletes existing tests,
 changes what checks it, leaves a verifier failing, or changes more than 400
 lines; otherwise it is **standard**.
+
+**Sensitive paths** (decision 053) come first from the repository:
+`.tesota/sensitive-paths` lists globs, one per line, as GitHub's CODEOWNERS
+and Chromium's OWNERS name what needs a qualified reviewer. Tesota reads the
+file as the candidate's base holds it, as GitHub takes CODEOWNERS from the
+base branch, so a change cannot drop its own paths, and a change to the file
+is flagged as Tesota setup and reviewed deeply. A declared path counts
+whatever it is, a test included. Beyond the declaration, a path's name
+counts, but only by terms that cannot mean anything else, such as auth,
+credentials, crypto, sandbox or migrations, plus infrastructure files such
+as a Dockerfile. Terms that also name ordinary things, token, session and
+access, count only as a whole folder or file name: `src/session/` and
+`tokens.ts` do, `session-title.ts` and `token-usage.ts` do not. Until the
+repository declares a list, code that imports process, cryptography or
+network APIs counts too, on either side of the change, so a repository
+nobody configured leans toward the thorough review and is never asked
+anything. A test file never counts by name or imports, since changing an
+existing test is a reason of its own (`sensitivePath` in
+`src/verification/sensitive-path-rule.ts`, proved by `bun run formal:check`).
+Names guess in both directions: on Tesota's own history the old name rule
+missed its command rules, egress proxy and sandboxes, and caught usage
+formatting and session titles. Meta's RADAR orders its gates the same way,
+the repository's and the change's metadata before any model score.
+
+### Planned: proposals the operator confirms
+
+A declaration nobody is asked for mostly never exists: in a survey of 1,263
+developers, 54% of those who used static analysis tools had not configured
+them ([Bennett et al., 2024](https://doi.org/10.1145/3674805.3690750)).
+Renovate onboards a repository with a proposed configuration to accept, and
+GitHub's code scanning detects what to scan before anyone configures it.
+Tesota could propose its repository settings the same way: the sensitive
+paths, from the files outside the tests whose names or imports mark them,
+and a related form for a check the operator typed without one.
+
+Measured on Tesota, such a proposal finds 11 of the 23 files its own
+declaration names, where names alone find 5, and adds noise, such as its
+evaluation scripts, which import process APIs. What it misses are pure
+decision rules, such as the command and approval rules, which no name or
+import reveals; only the operator can add them. A first version asked once,
+before the first review, and listed about forty files: too long to read, and
+a question that held the session for what the default already covers,
+since an unconfirmed repository already counts names and imports.
+
+The proposal belongs instead in a **Proposals** tab of the result panel,
+beside Review, Checks and Diff, as Tesota decides other things by command at
+any time rather than by a prompt that holds the session. It appears only
+while something waits, with a count; groups the files by folder with why
+each was proposed; and accepts, trims with `-glob` or extends with a glob
+from the tab. The proposals belong to the repository and stay until
+decided. A review made thorough only by an unconfirmed proposal says so in
+its reason, so the cost is seen when it is paid. It is built only if
+journaled reviews show that unconfirmed noise costs enough to matter, and
+with more than one kind of proposal to hold.
 
 ### Reviewers
 
@@ -480,7 +551,8 @@ holding the operator less.
 
 Each session keeps an append-only **assurance journal**, `assurance.jsonl`
 beside its record: for every reviewed candidate, the requests, each
-verifier's claim and outcome, the flags, the depth, each reviewer's findings,
+verifier's claim, outcome and duration, how long a failing command's base
+run took when that round made one, the flags, the depth, each reviewer's findings,
 what the review step cost, and the operator's decision; for a turn that
 changed no files, the answer check's first pass.
 
@@ -518,6 +590,53 @@ requests whose ground truth is their human reviewers' comments. Tesota's
 reviewers and refuter answer each one from the benchmark's official context,
 and the benchmark's own parser, judge, scorer and report score the answers
 unchanged, before and after refutation.
+
+## Planned: verification in proportion to the change
+
+Every candidate runs every approved check command and at least a standard
+review, whatever it changed. Dogfooding on 2026-10-01 and 10-02 measured
+what that costs: 19 of 22 reviews were deep, a median of 83 s and 144k
+tokens each, and 5 of the 11 deep reviews with full records found nothing in
+any of their four reviewers. On Tesota, typecheck, build and lint take about
+5 s and the tests about seven minutes. On the last 60 commits, the static import
+graph links a median of 14.5 of 108 test files to a commit's changed files,
+21 s of the 321 s the test files take, though the slow workspace tests are
+linked in 40 of the 50 commits that change code, and the four test files
+that run the compiled CLI are not linked at all.
+
+Larger systems run fewer tests early and all of them before the change lands:
+Meta's predictive selection runs a third of the dependent tests and still
+reports over 99.9% of faulty changes
+([Machalica et al., 2019](https://arxiv.org/abs/1810.05286)); Develocity runs
+relevant tests in early, frequent stages and the remaining ones later, always
+runs new, changed and recently flaky tests, and runs everything when it lacks
+data. Review scales the same way, but not to zero: Claude Code's review gives
+pull requests under 50 lines a lighter pass, and still finds something in 31%
+of them.
+
+The first part is built: related tests in each round and the whole command
+before the decision, described under Verifiers. Each remaining part is
+adopted only when journaled turns show it saves time or tokens without
+missing what the full pass finds:
+
+- **Related tests the import graph misses.** A related form selects what its
+  runner can see; tests that run the compiled program, and new, changed or
+  recently failed tests, could join every related run, as Develocity always
+  runs new, changed and recently flaky tests.
+- **No related tests for a change with no code.** A round that changes
+  only documentation, decided from paths and never from a model, runs no
+  related tests and says so; the full command still runs before the
+  decision, since a repository's check may read its documentation.
+- **Correction rounds review what the round changed.** The fix validator and
+  the reviewers read the round's change against the reviewed tree, and report
+  only new findings that block the result, as Claude Code's re-review
+  convergence does.
+- **A light review only for a change with no code.** Any code change keeps at
+  least a standard review. A typed decision model may make a review deeper,
+  never lighter: the diff is the agent's text.
+
+A step that fails or does not decide runs the full check, as the answer
+check's first pass does.
 
 ## Planned: contributions from others
 

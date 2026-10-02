@@ -62,21 +62,45 @@ record of that use starts on 2026-10-01; what it surfaced is in
   settles it. A cheaper reviewer tier needs escalation that never trusts its
   clean verdicts, and a measured saving.
   [Assurance](design/assurance.md#planned-routing-the-answer-check)
+- Verify in proportion to the change. Related tests in each round, with
+  the whole check before the operator's decision, are built; the journal
+  records each check's duration and its base run's. Measure the saving on
+  journaled turns, then add tests the related form misses, no related tests
+  for a round with no code, correction rounds reviewed by what they changed,
+  and a light review only for a change with no code.
+  [Assurance](design/assurance.md#planned-verification-in-proportion-to-the-change)
+- Consider a Proposals tab in the result panel for repository settings
+  Tesota can suggest: the sensitive paths, from names and imports, and a
+  related form for a check typed without one. Asking before the first review
+  was tried and dropped: it listed about forty files and held the session for
+  what the default already covers. Build it only if journaled reviews show
+  the default's noise costs enough to matter.
+  [Assurance](design/assurance.md#planned-proposals-the-operator-confirms)
 - Consider scope as a first-pass question: whether a turn's changes stay
   within what was asked. The reviewer judges scope growth today, as an
   operator disposition measured by `live:review --set=scope`; a typed
   decision model could flag it in a fraction of a second, but only if, on
   registered cases, it flags what the reviewer flags and costs less.
+- Consider flagging a turn whose agent is stuck: repeating the same tool
+  calls or failing the same command without progress. Tesota already records
+  each tool call and its outcome, the evidence such a judge reads; a typed
+  decision model could judge it while the turn runs and tell the operator,
+  never stop the agent on its own. Register cases from stuck turns seen in
+  daily use before choosing a judge or a threshold.
 - Run checks and review beside the agent's next request, on a frozen copy of
   the candidate, so a queued message no longer waits for them. Measure it on
   journaled sessions first. [Assurance](design/assurance.md#planned-review-beside-the-next-request)
 - Add an Auto mode between Accept edits and Full access, as Claude Code's
-  auto mode and Codex's auto-review do: a reviewer model allows commands on
-  this computer and asks the operator about risky ones. Register safe and
-  risky command cases first, and offer it only when it asks for every risky
-  case and saves approvals on safe ones; its allowed commands never count as
-  the operator's. Custom behavior modes, such as a grilling or triage mode,
-  wait for daily use, under workflow profiles.
+  auto mode and Codex's auto-review do: a judge allows commands on this
+  computer and asks the operator about risky ones. Fixed rules for risky
+  command patterns come first and only ever ask. Compare two judges on the
+  same registered safe and risky command cases: a reviewer model, and Jev,
+  which agent harnesses already use for this gate in about a tenth of a
+  second, where a reviewer session takes seconds. Offer the mode only with a
+  judge that asks for every risky case and saves approvals on safe ones; a
+  judge that fails, times out or does not decide asks. Its allowed commands
+  never count as the operator's. Custom behavior modes, such as a grilling
+  or triage mode, wait for daily use, under workflow profiles.
   [Execution](design/execution.md#where-commands-run)
 - Put the sessions that wait on the operator, for an approval or an answer,
   first in the sidebar, as Codex's agents view groups "Needs input" first,
