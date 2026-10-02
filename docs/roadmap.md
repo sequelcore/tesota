@@ -50,8 +50,8 @@ record of that use starts on 2026-10-01; what it surfaced is in
 - Requests whose premise is false: behavior documented as intended, code
   that does not exist, a vendored defect, a symptom that does not occur. The
   working agent checks a request's claims and leaves a false premise to the
-  operator (7 of 8 on `codex:gpt-6-luna` and 8 of 8 on `codex:gpt-6.1-sol`
-  on 2026-10-02, from 0 and 4), the review reports one and never sends it
+  operator (8 of 8 on `codex:gpt-6-luna` and on `codex:gpt-6.1-sol` on
+  2026-10-02, from 0 and 4), the review reports one and never sends it
   back, and the answer check leaves a rightly declined one to the operator.
   Revisit with false premises drawn from daily use.
   [Assurance](design/assurance.md#the-requests-premise)

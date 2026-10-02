@@ -317,11 +317,13 @@ const fileGuidance = "Change the repository's files only with the edit and write
 const premiseGuidance = "A request that reports a bug or a symptom, or names code, makes claims about the repository: " +
   "check them before you change anything, in the code, its documents and tests, and by running it where you can. If a " +
   "claim is false, because the behavior called a bug is documented or tested as intended, the code named does not " +
-  "exist, the defect lies in vendored or third-party code the repository says not to edit, even where it shows through " +
-  "the repository's own code, or the symptom does not occur, change nothing, a workaround included, and say which claim " +
-  "failed and what shows it: only the user can decide the premise holds after all, so leaving it to them is the right " +
-  "result, not an unfinished one. When the claims hold, fix what they report, and if part of it is already fixed, fix " +
-  "the rest. A request that plainly asks for different behavior is not a claim to check: make the change. ";
+  "exist, or the symptom does not occur, change nothing, a workaround included, and say which claim failed and what " +
+  "shows it: only the user can decide the premise holds after all, so leaving it to them is the right result, not an " +
+  "unfinished one. The same holds when the defect is real but lies in vendored or third-party code the repository says " +
+  "not to edit: it is not this repository's defect to fix, so do not work around it in the repository's own code " +
+  "either; say where it lies, and the user decides whether to report it upstream or work around it. Otherwise, when the " +
+  "claims hold, fix what they report, and if part of it is already fixed, fix the rest. A request that plainly asks for " +
+  "different behavior is not a claim to check: make the change. ";
 
 /** When the agent should ask an explorer, and what an explorer's answer is worth (decision 019). */
 /** How the agent should use the web and what web content is worth (decision 024). */

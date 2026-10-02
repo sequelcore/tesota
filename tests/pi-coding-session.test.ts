@@ -115,5 +115,6 @@ it("tells the agent to check a request's claims first and to leave a false premi
     approveCommand: async () => "deny" }).systemPrompt;
   expect(prompt).toContain("makes claims about the repository: check them before you change anything");
   expect(prompt).toContain("change nothing, a workaround included, and say which claim failed and what shows it");
+  expect(prompt).toContain("it is not this repository's defect to fix, so do not work around it in the repository's own code either");
   expect(prompt).toContain("A request that plainly asks for different behavior is not a claim to check: make the change.");
 });
