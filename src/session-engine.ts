@@ -39,7 +39,8 @@ import { type SessionDecisions } from "./session-decisions.js";
 import { type AnswerResult, type ApplyResult, type RefreshResult, type RequestOrigin, type ReviewResult, type TesotaShellDependencies,
   type WorkPlace, type WorkResult } from "./tesota-shell.js";
 import { inspectAnswer, inspectReview } from "./tesota-shell-inspection.js";
-import { runsAnswerCheck } from "./verification/answer-check-rule.js";
+import { runsAnswerCheck, triageOutcome } from "./verification/answer-check-rule.js";
+import { activityBy, attributed } from "./review-attribution.js";
 import type { TriageDecision } from "./integrations/answer-triage.js";
 import { answerHeld, firstPass, reviewAnswer } from "./answer-check.js";
 import { nameSession } from "./integrations/session-namer.js";
@@ -95,6 +96,8 @@ export interface TurnCommands {
   redo(id: string): Promise<void>;
   /** Work in an isolated workspace instead of the operator's files; only before the session has work. */
   isolate(id: string): Promise<void>;
+  /** `/verify`: the full check of the latest answer the first pass skipped, as the operator asks. */
+  verify(id: string): Promise<void>;
 }
 
 export interface SessionSandboxCommands {
@@ -283,6 +286,8 @@ class SessionState {
   note: string | undefined;
   /** The agent's last reply, which the answer check reads when a turn changes no files (decision 034). */
   lastReply: string | undefined;
+  /** The latest answer the first pass skipped, which `/verify` checks in full until a new turn begins. */
+  unverified: Readonly<{ input: ReviewInput; requests: readonly string[]; triage: Readonly<{ model: string; decision: TriageDecision }> }> | undefined;
   /** The latest turn's tool calls by call id, as Tesota saw them, for the answer check to hold the reply to. */
   readonly turnCalls: Map<string, ToolCallRecord> = new Map();
   /** The hidden files the agent was last told of, so it hears again only when they change. */
@@ -300,7 +305,7 @@ class SessionState {
 /** Where a session's work shows: the part of the shell's surface the engine writes to, which a run without a terminal also provides. */
 export type SessionOutput = Pick<TesotaShellTerminal, "writeTo" | "replyTo" | "reportFor" | "clearProgressFor" | "inspectFor" |
   "showActivity" | "setSessionExecution" | "setSessionPlan" | "setBranch" | "setSessionModel" | "setSessionTitle" | "blockSession" |
-  "setSessionUndecided">;
+  "setSessionUndecided" | "showTriage">;
 
 export interface SessionEngineOptions {
   readonly cwd: string;
@@ -560,12 +565,26 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     output.setSessionTitle(id, seed);
     nameInBackground(id, [request], "generated");
   };
+  /**
+   * The model a helper tool of the agent runs on, read when it starts, as each helper reads its own: the advisor, the
+   * explorers, and the page reader, which runs on the explorers' model when they are on and the agent's otherwise.
+   */
+  const helperModel = (tool: string): string | undefined => {
+    try {
+      const choices = readModelChoices();
+      if (tool === "advisor") return choices.advisor;
+      if (tool === "explore") return choices.explorer;
+      if (tool === "web_read") return choices.explorer === ROLE_OFF ? choices.agent : choices.explorer;
+    } catch { return undefined; }
+    return undefined;
+  };
   /** The first pass on the triage role's current choice, with the model it used. */
-  const firstPassNow = async (requests: readonly string[], reply: string, signal: AbortSignal):
+  const firstPassNow = async (id: string, requests: readonly string[], reply: string, signal: AbortSignal):
     Promise<Readonly<{ model: string; decision: TriageDecision }>> => {
     let model = "unknown";
     try { model = readModelChoices().triage; } catch { return { model, decision: { decided: false, checkable: true,
       reason: "the first pass failed" } }; }
+    output.reportFor(id, { phase: "reviewing", activity: activityBy("Deciding whether the answer needs checking", "triage", model) });
     return { model, decision: await firstPass(model, requests, reply, signal) };
   };
   /** The model for one of the review step's sessions, counting its tokens toward the step. */
@@ -575,9 +594,9 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
   const validateCorrection = async (run: ReviewRun): Promise<ReviewReport | undefined> => {
     const sentBack = run.input.correction?.sentBack ?? [];
     if (sentBack.length === 0) return undefined;
-    output.reportFor(run.id, { phase: "reviewing", activity: "Checking each fix" });
+    output.reportFor(run.id, { phase: "reviewing", activity: activityBy("Checking each fix", "validator", run.models.validator) });
     try {
-      return await validateFixes(await modelFor(run, "validator"), run.input, sentBack, run.signal);
+      return { ...await validateFixes(await modelFor(run, "validator"), run.input, sentBack, run.signal), model: run.models.validator };
     } catch {
       return validationReport(run.input.snapshot.tree, sentBack, { status: "cancelled" }, undefined);
     }
@@ -603,7 +622,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
    */
   const reviewAndRefute = async (run: ReviewRun, plan: ReviewPlan): Promise<ReviewReport[]> => {
     const { id, input, signal } = run;
-    output.reportFor(id, { phase: "reviewing", activity: plan.depth === "deep" ? "Deep review" : "Reviewing" });
+    output.reportFor(id, { phase: "reviewing",
+      activity: activityBy(plan.depth === "deep" ? "Deep review" : "Reviewing", "reviewer", run.models.reviewer) });
     const reviewers: Reviewer[] = [];
     try {
       const access = await modelFor(run, "reviewer");
@@ -616,13 +636,14 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       return [{ reviewer: "Tesota reviewer", tree: input.snapshot.tree, status: "incomplete",
         reason: error instanceof Error ? error.message : "the reviewer could not start" }];
     }
-    const reports = attributeOrigins(await Promise.all(reviewers.map((reviewer) => reviewer.review(input, signal)
+    const reports = attributed(attributeOrigins(await Promise.all(reviewers.map((reviewer) => reviewer.review(input, signal)
       .catch((error: unknown): ReviewReport => ({ reviewer: reviewer.name, tree: input.snapshot.tree, status: "incomplete",
-        reason: error instanceof Error ? error.message : "the reviewer failed" })))), run.candidate);
+        reason: error instanceof Error ? error.message : "the reviewer failed" })))), run.candidate), { reviewer: run.models.reviewer });
     if (signal.aborted || !hasClaimsToTest(reports)) return reports;
-    output.reportFor(id, { phase: "reviewing", activity: "Testing each finding and gap" });
+    output.reportFor(id, { phase: "reviewing", activity: activityBy("Testing each finding and gap", "refuter", run.models.refuter) });
     try {
-      return await refuteFindings(await modelFor(run, "refuter"), input, reports, signal);
+      return attributed(await refuteFindings(await modelFor(run, "refuter"), input, reports, signal),
+        { reviewer: run.models.reviewer, refuter: run.models.refuter });
     } catch {
       // A refuter that could not run leaves every finding unsettled, never confirmed.
       return applyRefutation(reports, undefined);
@@ -749,7 +770,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
           if (activity.type === "tool_started" && activity.tool === "plan") planCalls.add(activity.call);
           if ("call" in activity && planCalls.has(activity.call)) return;
           recordCall(stateFor(id).turnCalls, activity);
-          output.showActivity(id, activity);
+          const by = activity.type === "tool_started" ? helperModel(activity.tool) : undefined;
+          output.showActivity(id, by === undefined || activity.type !== "tool_started" ? activity : { ...activity, by });
         } }, { sessionManager, conversationId: engineId });
       consulted = agent;
       state.agent = agent;
@@ -937,10 +959,36 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
   };
   /** The answer check's full review, showing its progress in the session. */
   const reviewAnswerIn = async (id: string, input: ReviewInput, signal: AbortSignal): Promise<ReviewReport[]> => {
+    const { reviewer, refuter } = readModelChoices();
+    const models = { reviewer, refuter };
     try {
-      return await reviewAnswer(async (role) => ({ target: await openModel(signal, role) }), input, signal,
-        (activity) => { output.reportFor(id, { phase: "reviewing", activity }); });
+      return attributed(await reviewAnswer(async (role) => ({ target: await openModel(signal, role) }), input, signal,
+        (activity, role) => { output.reportFor(id, { phase: "reviewing", activity: activityBy(activity, role, models[role]) }); }),
+      models);
     } finally { output.clearProgressFor(id, "reviewing"); }
+  };
+  /** `/verify`: the full check of the latest answer the first pass skipped, which a new turn makes stale. */
+  const verifyAnswer = async (id: string): Promise<void> => {
+    if (activeOperations.has(id) || applying.has(id)) {
+      output.replyTo(id, "Wait for the current work to finish, or stop it with Esc.", "warning");
+      return;
+    }
+    const pending = states.get(id)?.unverified;
+    if (pending === undefined) {
+      output.replyTo(id, "Nothing to verify: /verify runs the full check of the latest answer the first pass skipped.");
+      return;
+    }
+    await runOperation(id, async (signal) => {
+      const workspace = await workspaceFor(id);
+      const reports = await reviewAnswerIn(id, pending.input, signal);
+      if (signal.aborted) return;
+      stateFor(id).unverified = undefined;
+      workspace.keepRequestsOpen(!answerHeld(reports));
+      output.inspectFor(id, inspectAnswer(pending.requests, reports, { ...pending.triage, requested: true }));
+      await journal(id, workspace, reviewEntry(pending.input.snapshot, pending.requests, [], [], reports));
+    }).catch((error: unknown) => {
+      if (!isAbort(error)) output.replyTo(id, `The full check could not run: ${error instanceof Error ? error.message : "unknown error"}.`, "warning");
+    });
   };
   const blockSession = (id: string): void => { store.block(id); output.blockSession(id); };
   /** Evidence that could not be recorded is reported, never dropped silently. */
@@ -1388,6 +1436,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         if (result.status === "unsettled") { blockSession(id); return result; }
         if (result.status !== "completed") return result;
         state.lastReply = result.reply;
+        state.unverified = undefined;
         return { status: "completed", changes: ended?.changed ?? work.snapshot().changes };
       } catch (error) {
         if (signal.aborted || isAbort(error)) return { status: "cancelled" };
@@ -1469,14 +1518,17 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         response: state.lastReply ?? "", toolCalls: [...state.turnCalls.values()],
         ...(claimedSteps.length === 0 ? {} : { claimedSteps }) };
       // A cheap first pass spares the reviewer a turn with nothing to check (decision 034); off, every answer is checked.
-      output.reportFor(id, { phase: "reviewing", activity: "Deciding whether the answer needs checking" });
-      const triage = await firstPassNow(requests, state.lastReply ?? "", signal);
+      const triage = await firstPassNow(id, requests, state.lastReply ?? "", signal);
       if (signal.aborted) { output.clearProgressFor(id, "reviewing"); return { status: "cancelled" }; }
       const runsCheck = runsAnswerCheck(triage.decision.decided, triage.decision.checkable);
       await journal(id, workspace, triageEntry(snapshot.tree, requests, triage.model, triage.decision, runsCheck, input.toolCalls));
+      // The verdict always shows, so an answer is never left unchecked without the operator seeing why.
+      output.showTriage(id, { model: triage.model, outcome: triageOutcome(triage.decision.decided, triage.decision.checkable),
+        reason: triage.decision.reason });
       if (!runsCheck) {
         output.clearProgressFor(id, "reviewing");
         workspace.keepRequestsOpen(false);
+        state.unverified = { input, requests, triage };
         return { status: "assessed", reviews: [], requests };
       }
       const reports = await reviewAnswerIn(id, input, signal);
@@ -1543,7 +1595,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
 
   return {
     session: sessionWork,
-    turnCommands: { keep: keepTurns, revert: revertTurn, redo: redoTurn, isolate: isolateSession },
+    turnCommands: { keep: keepTurns, revert: revertTurn, redo: redoTurn, isolate: isolateSession, verify: verifyAnswer },
     showUndecided,
     diffSources,
     agentModel,

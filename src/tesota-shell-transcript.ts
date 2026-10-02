@@ -1,3 +1,4 @@
+import type { TriageOutcome } from "./verification/answer-check-rule.js";
 import { highlightCode } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Markdown, Spacer, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component,
   type MarkdownTheme } from "@earendil-works/pi-tui";
@@ -12,8 +13,16 @@ export type TranscriptEntry =
   | Readonly<{ kind: "user"; text: string }>
   | Readonly<{ kind: "agent"; text: string }>
   | Readonly<{ kind: "notice"; text: string; tone: NoticeTone }>
-  | Readonly<{ kind: "tool"; tool: string; subject: string; failed: boolean; change?: AgentChange | undefined }>
-  | Readonly<{ kind: "review"; title: string; text: string }>;
+  | Readonly<{ kind: "tool"; tool: string; subject: string; failed: boolean; change?: AgentChange | undefined; by?: string | undefined }>
+  | Readonly<{ kind: "review"; title: string; text: string }>
+  | Readonly<{ kind: "triage" } & TriageVerdict>;
+
+/** The answer check's first pass, as the conversation shows it every time: its model, what it decided, and why. */
+export interface TriageVerdict {
+  readonly model: string;
+  readonly outcome: TriageOutcome;
+  readonly reason: string;
+}
 
 /** Escape control characters so recorded or model text cannot drive the terminal. */
 export function safeTerminalText(text: string): string {
@@ -50,7 +59,7 @@ function markdownTheme(theme: TesotaShellTheme): MarkdownTheme {
 
 const toolNames: Readonly<Record<string, string>> = { bash: "Run", read: "Read", edit: "Edit", write: "Write",
   grep: "Search", find: "Find", ls: "List", web_search: "Web search", web_read: "Read page", web_fetch: "Fetch page",
-  advisor: "Advisor" };
+  advisor: "Advisor", explore: "Explore" };
 /** Output lines kept under a command, as Claude Code and Codex show a command's tail. */
 const outputTail = 4;
 
@@ -63,11 +72,14 @@ class ToolBlock implements Component {
   private readonly theme: TesotaShellTheme;
   readonly tool: string;
   readonly subject: string;
+  /** The model a helper tool runs on, as the advisor's, named beside the tool. */
+  readonly by: string | undefined;
 
-  constructor(theme: TesotaShellTheme, tool: string, subject: string) {
+  constructor(theme: TesotaShellTheme, tool: string, subject: string, by?: string) {
     this.theme = theme;
     this.tool = tool;
     this.subject = subject;
+    this.by = by;
   }
 
   /** The lines last drawn and their width: a finished call no longer changes, and every frame asks for it again. */
@@ -99,7 +111,7 @@ class ToolBlock implements Component {
       this.#state === "stopped" ? this.theme.warning : this.theme.accent;
     const name = toolNames[this.tool] ?? this.tool;
     const counts = this.#change === undefined ? "" : ` (+${this.#change.added} −${this.#change.removed})`;
-    const lead = ` ${colorText("•", color)} ${bold(name)} `;
+    const lead = ` ${colorText("•", color)} ${bold(name)}${this.by === undefined ? "" : mutedText(` · ${safeTerminalText(this.by)}`, this.theme)} `;
     const tail = colorText(counts, this.theme.success) + (this.#state === "stopped" ? mutedText(" (stopped)", this.theme) : "");
     const subject = mutedText(safeTerminalText(this.subject), this.theme);
     // A command is shown whole, its continuation under its first word; any other subject, a path, fits one row.
@@ -178,17 +190,60 @@ class ReviewBlock implements Component {
   readonly #title: string;
   readonly #text: string;
   readonly #theme: TesotaShellTheme;
-  #cached: { width: number; lines: string[] } | undefined;
-  constructor(title: string, text: string, theme: TesotaShellTheme) { this.#title = title; this.#text = text; this.#theme = theme; }
+  /** The key to the full record, when it is useful: under the latest review only, while the record is not shown. */
+  readonly #hint: () => string | undefined;
+  #cached: { width: number; hint: string | undefined; lines: string[] } | undefined;
+  constructor(title: string, text: string, theme: TesotaShellTheme, hint: () => string | undefined) {
+    this.#title = title;
+    this.#text = text;
+    this.#theme = theme;
+    this.#hint = hint;
+  }
   invalidate(): void { this.#cached = undefined; }
   render(width: number): string[] {
-    if (this.#cached?.width === width) return this.#cached.lines;
+    const hint = this.#hint();
+    if (this.#cached?.width === width && this.#cached.hint === hint) return this.#cached.lines;
     const theme = this.#theme;
     const rule = ` ${colorText("┃", theme.accent)} `;
     const inner = Math.max(1, width - visibleWidth(rule));
     const lines = [...wrapTextWithAnsi(bold(colorText(safeTerminalText(this.#title), theme.accent)), inner),
-      ...recordRows(`${this.#text}\nAlt+R shows or hides the full diff and check output.`, inner, theme, false)]
+      ...recordRows(hint === undefined ? this.#text : `${this.#text}\n${hint}`, inner, theme, false)]
       .map((row) => rule + row);
+    this.#cached = { width, hint, lines };
+    return lines;
+  }
+}
+
+/** The latest review's key to its full record, while the result panel is hidden. */
+const RECORD_HINT = "Alt+R shows the full record, its checks and the diff.";
+
+const triageWords: Readonly<Record<TriageOutcome, string>> = {
+  checked: "sent to the full check", skipped: "nothing to check", undecided: "could not decide, so the full check runs",
+};
+
+/**
+ * The first pass's verdict on an answer, under the agent's reply: which model
+ * decided, what, and its reason, so an answer is never checked or left
+ * unchecked without the operator seeing why. When it skips the full check,
+ * the line names the command that runs it anyway.
+ */
+class TriageLine implements Component {
+  readonly #verdict: TriageVerdict;
+  readonly #theme: TesotaShellTheme;
+  #cached: { width: number; lines: string[] } | undefined;
+  constructor(verdict: TriageVerdict, theme: TesotaShellTheme) { this.#verdict = verdict; this.#theme = theme; }
+  invalidate(): void { this.#cached = undefined; }
+  render(width: number): string[] {
+    if (this.#cached?.width === width) return this.#cached.lines;
+    const theme = this.#theme;
+    const { model, outcome, reason } = this.#verdict;
+    const color = outcome === "checked" ? theme.accent : outcome === "undecided" ? theme.warning : theme.muted;
+    const head = `${mutedText(`· First pass · triage ${safeTerminalText(model)} · `, theme)}${colorText(triageWords[outcome], color)}`;
+    const why = safeTerminalText(reason.trim());
+    const text = [`${head}${why.length === 0 ? "" : mutedText(`: ${why}`, theme)}`,
+      ...outcome === "skipped" ? [mutedText("  /verify runs the full check anyway.", theme)] : []];
+    const lines = text.flatMap((line) => wrapTextWithAnsi(line, Math.max(1, width - 3)).map((row, index) =>
+      ` ${index === 0 ? "" : "  "}${row}`));
     this.#cached = { width, lines };
     return lines;
   }
@@ -228,17 +283,22 @@ export class Transcript {
   readonly #replies = new Map<number, Markdown>();
   readonly #tools = new Map<string, ToolBlock>();
   readonly #notices: ExpandableNotice[] = [];
+  /** Whether the result panel shows, so the latest review names its key only while it does not. */
+  readonly #resultShown: () => boolean;
+  #latestReview: TranscriptEntry | undefined;
   #last = "";
 
-  constructor(theme: TesotaShellTheme) {
+  constructor(theme: TesotaShellTheme, resultShown: () => boolean = () => false) {
     this.#theme = theme;
     this.#markdown = markdownTheme(theme);
+    this.#resultShown = resultShown;
   }
 
   /** The plain text of the latest agent reply or notice, to leave on screen when the shell exits. */
   get lastMessage(): string { return this.#last; }
 
   add(entry: TranscriptEntry): void {
+    if (entry.kind === "review") this.#latestReview = entry;
     const component = this.#render(entry);
     if (entry.kind === "user" || entry.kind === "review" || entry.kind === "notice" && !(component instanceof ExpandableNotice)) {
       let shown: Component | undefined = component;
@@ -268,7 +328,7 @@ export class Transcript {
     switch (activity.type) {
       case "reply": return this.#reply(activity.message, activity.text, activity.final);
       case "tool_started": {
-        const block = new ToolBlock(this.#theme, activity.tool, activity.subject);
+        const block = new ToolBlock(this.#theme, activity.tool, activity.subject, activity.by);
         this.#tools.set(activity.call, block);
         this.#append(block);
         return undefined;
@@ -281,7 +341,7 @@ export class Transcript {
         if (block === undefined) return undefined;
         block.finish(activity.failed, activity.output, activity.change);
         this.#tools.delete(activity.call);
-        return { kind: "tool", tool: block.tool, subject: block.subject, failed: activity.failed,
+        return { kind: "tool", tool: block.tool, subject: block.subject, failed: activity.failed, ...block.by === undefined ? {} : { by: block.by },
           ...(activity.change === undefined ? {} : { change: activity.change }) };
       }
     }
@@ -327,12 +387,14 @@ export class Transcript {
         return new Text(entry.tone === "warning" ? colorText(text, theme.warning) :
           entry.tone === "success" ? colorText(text, theme.success) : mutedText(text, theme), 1, 0);
       }
+      case "triage": return new TriageLine(entry, theme);
       case "tool": {
-        const block = new ToolBlock(theme, entry.tool, entry.subject);
+        const block = new ToolBlock(theme, entry.tool, entry.subject, entry.by);
         block.finish(entry.failed, "", entry.change);
         return block;
       }
-      case "review": return new ReviewBlock(entry.title, entry.text, theme);
+      case "review": return new ReviewBlock(entry.title, entry.text, theme,
+        () => entry === this.#latestReview && !this.#resultShown() ? RECORD_HINT : undefined);
     }
   }
 

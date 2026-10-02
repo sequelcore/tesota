@@ -65,9 +65,51 @@ it("sets a review apart from the agent's replies and wraps each line under its o
     " ┃   ✗ high · src/price.ts:3 — Exactly",
     " ┃     one hundred dollars is discounted",
     " ┃     as well",
-    " ┃ Alt+R shows or hides the full diff",
-    " ┃ and check output.",
+    " ┃ Alt+R shows the full record, its",
+    " ┃ checks and the diff.",
   ]);
+});
+
+it("names the key to the full record under the latest review only, and only while the record is not shown", () => {
+  initTheme("dark");
+  let shown = false;
+  const transcript = new Transcript(tesotaShellTheme("tesota-dark"), () => shown);
+  transcript.add({ kind: "review", title: "Review · 1 file", text: "  edit   src/price.ts" });
+  transcript.add({ kind: "review", title: "Review · 2 files", text: "  edit   src/price.ts\n  edit   src/tax.ts" });
+  const screen = (): string => stripTerminalSequences(transcript.container.render(80).join("\n"));
+  expect(screen().split("Alt+R shows the full record").length - 1).toBe(1);
+  expect(screen().indexOf("Alt+R")).toBeGreaterThan(screen().indexOf("Review · 2 files"));
+  // Once the record shows beside the conversation, the key would only repeat what is on screen.
+  shown = true;
+  expect(screen()).not.toContain("Alt+R");
+  shown = false;
+  expect(screen()).toContain("Alt+R shows the full record, its checks and the diff.");
+});
+
+it("shows the first pass's verdict with its model and reason every time, and how to check a skipped answer anyway", () => {
+  initTheme("dark");
+  const transcript = new Transcript(tesotaShellTheme("tesota-dark"));
+  const screen = (): string => stripTerminalSequences(transcript.container.render(160).join("\n"));
+  transcript.add({ kind: "triage", model: "codex:luna", outcome: "checked", reason: "the reply says how orderTotal rounds" });
+  expect(screen()).toContain("· First pass · triage codex:luna · sent to the full check: the reply says how orderTotal rounds");
+  expect(screen()).not.toContain("/verify");
+  transcript.add({ kind: "triage", model: "codex:luna", outcome: "skipped", reason: "it explains a concept" });
+  expect(screen()).toContain("· First pass · triage codex:luna · nothing to check: it explains a concept");
+  expect(screen()).toContain("/verify runs the full check anyway.");
+  transcript.add({ kind: "triage", model: "codex:luna", outcome: "undecided", reason: "the first pass timed out" });
+  expect(screen()).toContain("could not decide, so the full check runs: the first pass timed out");
+});
+
+it("names the model a helper tool runs on beside the tool, live and restored", () => {
+  initTheme("dark");
+  const transcript = new Transcript(tesotaShellTheme("tesota-dark"));
+  transcript.activity({ type: "tool_started", call: "1", tool: "advisor", subject: "Should the discount apply before tax?", by: "claude:opus" });
+  const entry = transcript.activity({ type: "tool_finished", call: "1", failed: false, output: "" });
+  expect(entry).toMatchObject({ kind: "tool", tool: "advisor", by: "claude:opus" });
+  expect(stripTerminalSequences(transcript.container.render(100).join("\n"))).toContain("• Advisor · claude:opus Should the discount apply");
+  const restored = new Transcript(tesotaShellTheme("tesota-dark"));
+  restored.add(entry!);
+  expect(stripTerminalSequences(restored.container.render(100).join("\n"))).toContain("• Advisor · claude:opus Should the discount apply");
 });
 
 it("shows a command's colored output as plain text", () => {

@@ -8,6 +8,30 @@ const snapshot: WorkspaceSnapshot = { base: "b".repeat(40), tree: "t".repeat(40)
 const check = { verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command: "bun run check", tree: snapshot.tree, environment: "host", guarantees: hostProvider.guarantees,
   outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" };
 
+it("names each report's model in the record, the refuter on each second check, and who verified it under the review", () => {
+  const review = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
+    { reviewer: "Tesota reviewer", tree: snapshot.tree, status: "completed", summary: "One problem.", model: "codex:sol",
+      refuter: "claude:opus", findings: [{ severity: "high", disposition: "fixable", origin: "introduced", path: "src/a.ts",
+        statement: "Off by one", reason: "r", standing: "confirmed" }] }] });
+  expect(review.detail).toContain("  Tesota reviewer · codex:sol\n    One problem.");
+  expect(review.detail).toContain("      Second check (refuter claude:opus): confirmed");
+  expect(review.summary.split("\n").at(-1)).toBe("Reviewed by codex:sol; findings tested by claude:opus.");
+  const earlier = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
+    { reviewer: "Tesota reviewer", tree: snapshot.tree, status: "completed", summary: "Fine.", findings: [] }] });
+  expect(earlier.summary).not.toContain("Reviewed by");
+  expect(earlier.detail).toContain("  Tesota reviewer\n    Fine.");
+});
+
+it("says where the checks ran by the sandbox's own name, or on this computer without isolation", () => {
+  const where = (environment: string, filesystem: "workspace" | "host"): string => inspectReview({ snapshot, requests: [], flags: [],
+    reviews: [], checks: [{ ...check, environment, guarantees: { ...hostProvider.guarantees, filesystem } }] }).summary;
+  expect(where("wsl", "workspace")).toContain("Checks ran on this exact content in the WSL sandbox.");
+  expect(where("docker-sandboxes", "workspace")).toContain("Checks ran on this exact content in Docker Sandboxes.");
+  expect(where("host", "host")).toContain("Checks ran on this exact content on this computer, without isolation.");
+  expect(where("vm", "workspace")).toContain("Checks ran on this exact content in the isolated vm environment.");
+  expect(inspectReview({ snapshot, requests: [], flags: [], reviews: [], checks: [] }).summary).toContain("No checks ran.");
+});
+
 it("keeps each line of a request of several lines under its number, so none reads as a section of the record", () => {
   const review = inspectReview({ snapshot, checks: [check], flags: [], reviews: [],
     requests: ["Redesign the explorer.\nTarget design:\n\n- Header line: the path\nAcceptance", "Run it"] });

@@ -7,7 +7,7 @@ import type { AgentActivity } from "./integrations/model-session-contract.js";
 import { SHELL_SPINNER_FRAMES, tesotaShellProgressLabel, type TesotaShellProgress } from "./shell-progress.js";
 import { backgroundText, bold, colorText, fadedText, mutedText, parseTesotaShellTheme, selectedRow, shellSurfaces, surfaceText, tesotaShellTheme, type ShellSurfaces, TESOTA_SHELL_THEME_NAMES, type TesotaShellTheme,
   type TesotaShellThemeName } from "./tesota-shell-theme.js";
-import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry } from "./tesota-shell-transcript.js";
+import { safeTerminalText, Transcript, type NoticeTone, type TranscriptEntry, type TriageVerdict } from "./tesota-shell-transcript.js";
 import { ResultPanel, type DiffSource, type DiffSources } from "./tesota-shell-result.js";
 import { DecisionBar, type DecisionAction, type UndecidedTurns } from "./tesota-shell-decision-bar.js";
 import { ModelPicker, type ModelPickerData } from "./tesota-shell-model-picker.js";
@@ -47,6 +47,8 @@ export interface TesotaShellTerminalOptions {
   /** `/rename <name>` names the session; `/rename` alone asks for a title from its requests (decision 036). */
   readonly onRename?: (sessionId: string, name: string | undefined) => void;
   readonly onHandoff?: (sessionId: string) => void;
+  /** `/verify`: the full check of the session's latest answer, which the first pass skipped. */
+  readonly onVerify?: (sessionId: string) => void;
   /** `/keep`, `/revert [all|agent]` and `/redo`: decide a session's turns in the operator's files at any time. */
   readonly onKeep?: (sessionId: string) => void;
   readonly onRevert?: (sessionId: string, args: readonly string[]) => void;
@@ -125,6 +127,8 @@ export interface TesotaShellTerminal {
   /** The model the session's agent runs, as `route:model`, shown beside the prompt while it is selected. */
   setSessionModel(id: string, model: string): void;
   setSessionTitle(id: string, title: string): void;
+  /** The answer check's first pass on a session's latest answer, recorded in its conversation. */
+  showTriage(id: string, verdict: TriageVerdict): void;
   /** A session's undecided turns in the operator's files, offered above its prompt while it is idle; undefined for none. */
   setSessionUndecided(id: string, undecided: UndecidedTurns | undefined): void;
   blockSession(id: string): void;
@@ -202,6 +206,7 @@ const shellCommands = [
   { name: "sandbox", description: "Show or switch where this session's commands run" },
   { name: "isolate", description: "Work in an isolated copy instead of your files; before the first request" },
   { name: "diff", description: "Show the diff: everything uncommitted, the undecided turns or the reviewed result" },
+  { name: "verify", description: "Run the full check on the latest answer the first pass skipped" },
   { name: "keep", description: "Keep this session's undecided turns in your files" },
   { name: "revert", description: "Undo the latest undecided turn; again steps further back" },
   { name: "redo", description: "Put the latest reverted turn back" },
@@ -652,7 +657,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   addSession(id: string, title: string, entries: readonly TranscriptEntry[] = [],
     inspections: readonly ShellInspection[] = [], fresh = entries.length === 0): void {
     if (this.sessions.has(id)) throw new Error("Tesota session already exists");
-    const transcript = new Transcript(this.theme);
+    const transcript = new Transcript(this.theme, () => this.showResult);
     const scroll = new ScrollView(transcript.container, { follow: "end", primary: true, scrollbar: "auto" });
     const welcome = fresh && entries.length === 0 ? new WelcomeBanner(this.options.cwd, this.theme, {
       viewportHeight: () => scroll.viewportHeight,
@@ -1109,7 +1114,8 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     const current = session.progress;
     if (activity.type === "tool_started") {
       session.progress = { value: { phase: "working", activity: `${activity.tool === "bash" ? "Running" : "Using"} ` +
-        (activity.subject || activity.tool) }, startedAt: current?.startedAt ?? this.now() };
+        (activity.subject || activity.tool) + (activity.by === undefined ? "" : ` · ${activity.tool} ${activity.by}`) },
+        startedAt: current?.startedAt ?? this.now() };
     } else if (activity.type === "tool_finished" && current?.value.phase === "working") {
       session.progress = { value: { phase: "working" }, startedAt: current.startedAt };
     }
@@ -1142,6 +1148,10 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     if (session === undefined) return;
     session.title = title;
     if (this.started) this.compose();
+  }
+
+  showTriage(id: string, verdict: TriageVerdict): void {
+    this.record(this.find(id), { kind: "triage", ...verdict }, true);
   }
 
   setSessionUndecided(id: string, undecided: UndecidedTurns | undefined): void {
@@ -1467,6 +1477,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     roles: (session, args) => { this.changeRoleModel(session, args); },
     handoff: (session) => { this.options.onHandoff?.(session.id); },
     diff: (session, args) => { void this.showDiff(session, args); },
+    verify: (session) => { this.options.onVerify?.(session.id); },
     keep: (session) => { this.options.onKeep?.(session.id); },
     revert: (session, args) => { this.options.onRevert?.(session.id, args); },
     redo: (session) => { this.options.onRedo?.(session.id); },
@@ -1492,7 +1503,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
     details: (session, args) => { this.toggleDetails(session, args); },
     help: (session) => {
       this.replyTo(session.id, "Commands: /new /next /previous /close /rename [name] /model [route:model] /roles [role] [route:model|default|off] " +
-        "/handoff /sandbox [where] /isolate /diff [working|undecided|reviewed] /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
+        "/handoff /sandbox [where] /isolate /diff [working|undecided|reviewed] /verify /keep /revert [all|agent] /redo /checks [reset] /accounts [tab] /usage /result /sidebar /themes [name] " +
         "/details [number] /help /quit\n" +
         "While it works: Enter queues · Tab sends to the agent now · Esc stops · Ctrl+C twice stops · Ctrl+C or Ctrl+D twice quits\n" +
         "Sessions: Ctrl+N new · Alt+J next · Alt+K previous · Alt+1…9 by position · Ctrl+W close · Shift+Tab mode\n" +

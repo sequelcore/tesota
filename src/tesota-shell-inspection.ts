@@ -5,6 +5,8 @@ import { type ObligationOutcome, obligationOutcome } from "./verification/obliga
 import type { ReviewAction } from "./verification/review-action-rule.js";
 import type { DepthDecision } from "./review-depth.js";
 import { costText, type ReviewMeasurement } from "./review-forecast.js";
+import { SANDBOX_NAMES } from "./execution-providers.js";
+import { verifiedBy } from "./review-attribution.js";
 import type { ShellInspection } from "./tesota-shell-terminal.js";
 import type { VerificationChange } from "./verification-changes.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
@@ -157,12 +159,13 @@ function causeWords(finding: Finding): string {
   return finding.origin === "introduced" ? "this change" : finding.origin === "preexisting" ? "already there before" : "unclear";
 }
 
-function findingDetail(finding: Finding): string {
+function findingDetail(finding: Finding, refuter?: string): string {
   const action = actionOfFinding(finding);
   const mark = finding.standing === "refuted" || finding.duplicateOf !== undefined ? "·" : findingMark(finding, action);
   const who = finding.premise === true ? "your call, the request's premise" : finding.disposition === "operator" ? "your call" : "fixable";
   const second = finding.standing === undefined ? "" :
-    `\n      Second check: ${standingWords[finding.standing]}${finding.refutation === undefined ? "" : `. ${finding.refutation}`}`;
+    `\n      Second check${refuter === undefined ? "" : ` (refuter ${refuter})`}: ${standingWords[finding.standing]}` +
+    `${finding.refutation === undefined ? "" : `. ${finding.refutation}`}`;
   return `\n\n    ${mark} ${finding.severity}, ${who}: ${location(finding)}${finding.statement}\n      ${finding.reason}` +
     `\n      Next: ${nextWords[action]}\n      Cause: ${causeWords(finding)}` +
     `${finding.originNote === undefined ? "" : `. ${finding.originNote}`}${second}` +
@@ -171,8 +174,9 @@ function findingDetail(finding: Finding): string {
 
 /** One reviewer: its name, then its summary and each finding and request nested under it. */
 function reviewDetail(report: ReviewReport): string {
-  if (report.status === "incomplete") return `  ✗ ${report.reviewer} did not finish (${report.reason})`;
-  return `  ${report.reviewer}\n    ${report.summary}` + report.findings.map(findingDetail).join("") +
+  const by = report.model === undefined ? "" : ` · ${report.model}`;
+  if (report.status === "incomplete") return `  ✗ ${report.reviewer}${by} did not finish (${report.reason})`;
+  return `  ${report.reviewer}${by}\n    ${report.summary}` + report.findings.map((finding) => findingDetail(finding, report.refuter)).join("") +
     (report.obligations === undefined || report.obligations.length === 0 ? ""
       : `\n\n    What was asked\n${report.obligations.map(obligationDetail).join("\n")}`);
 }
@@ -206,22 +210,35 @@ function requestedDetail(requests: readonly string[]): string {
  * held against the repository and the agent's reply; there is nothing to apply.
  */
 export function inspectAnswer(requests: readonly string[], reviews: readonly ReviewReport[],
-  triage?: Readonly<{ model: string; decision: TriageDecision }>): ShellInspection {
+  triage?: Readonly<{ model: string; decision: TriageDecision; requested?: boolean }>): ShellInspection {
   const groups: Groups = { agent: [], operator: [], context: [] };
   addReviews(groups, reviews, false);
   return {
     title: "Answer check",
     summary: [...grouped(groups), ...progressLines(reviews),
-      "No files changed. The reviewer checked your requests against the repository and the agent's reply."].join("\n"),
-    detail: `${requestedDetail(requests)}${triage === undefined ? "" : `\n\n${firstPassDetail(triage.model, triage.decision)}`}` +
+      "No files changed. The reviewer checked your requests against the repository and the agent's reply.",
+      ...[verifiedBy(reviews)].filter((line) => line !== undefined)].join("\n"),
+    detail: `${requestedDetail(requests)}${triage === undefined ? "" :
+      `\n\n${firstPassDetail(triage.model, triage.decision, triage.requested === true)}`}` +
       `\n\nReview\n${reviews.map(reviewDetail).join("\n\n") || "  None"}`,
   };
 }
 
-/** Why the full check ran: the first pass found something checkable, or decided nothing. */
-function firstPassDetail(model: string, decision: TriageDecision): string {
-  const outcome = decision.decided ? "found something to check" : "decided nothing, so the full check ran";
-  return `First pass\n  ${model} ${outcome}: ${decision.reason}`;
+/** Why the full check ran: the first pass found something checkable, decided nothing, or the operator asked for it. */
+function firstPassDetail(model: string, decision: TriageDecision, requested: boolean): string {
+  const outcome = requested ? "found nothing to check; you asked for the full check with /verify"
+    : decision.decided ? "found something to check" : "decided nothing, so the full check ran";
+  return `First pass\n  triage ${model} ${outcome}: ${decision.reason}`;
+}
+
+/**
+ * Where a check ran, as the operator names it: a sandbox as the footer and
+ * setup describe it, or this computer, without isolation. A provider Tesota
+ * has no name for keeps its own.
+ */
+function checkPlace(check: CheckResult): string {
+  if (check.guarantees.filesystem === "host") return "on this computer, without isolation";
+  return `in ${SANDBOX_NAMES[check.environment]?.described ?? `the isolated ${check.environment} environment`}`;
 }
 
 const verbs: Readonly<Record<WorkspaceSnapshot["changes"][number]["status"], string>> =
@@ -236,9 +253,7 @@ const flagVerbs: Readonly<Record<VerificationChange["status"], string>> =
  */
 export function inspectReview({ snapshot, checks, flags, requests, reviews, depth, measurement }: ReviewRecord): ShellInspection {
   const first = checks[0];
-  const where = first === undefined ? "No checks ran." : first.guarantees.filesystem === "host"
-    ? `Checks ran on this exact content on this computer (${first.environment}), without isolation.`
-    : `Checks ran on this exact content in the isolated ${first.environment} environment.`;
+  const where = first === undefined ? "No checks ran." : `Checks ran on this exact content ${checkPlace(first)}.`;
   const groups: Groups = { agent: [], operator: [], context: [] };
   for (const check of checks) {
     const action = actionOfCheck(check);
@@ -256,7 +271,8 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews, dept
   return {
     title: `Review · ${snapshot.changes.length} ${snapshot.changes.length === 1 ? "file" : "files"}`,
     summary: [...snapshot.changes.map((change) => `  ${verbs[change.status]} ${change.path}`), ...grouped(groups),
-      ...progressLines(reviews), `${where} Checks and review do not replace reading the change.`].join("\n"),
+      ...progressLines(reviews), `${where} Checks and review do not replace reading the change.`,
+      ...[verifiedBy(reviews)].filter((line) => line !== undefined)].join("\n"),
     detail: `${requestedDetail(requests)}` +
       `\n\nFiles\n${snapshot.changes.map((change) => `  ${change.status} ${change.path}`).join("\n")}` +
       (flags.length === 0 ? "" : `\n\nChanges to how the result is checked\n${flags.map((flag) =>
