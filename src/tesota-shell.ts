@@ -5,6 +5,7 @@ import type { NoticeTone } from "./tesota-shell-transcript.js";
 import type { WorkspaceChange } from "./workspace.js";
 import type { ApplicationPathState } from "./workspace-apply.js";
 import type { SessionDecisions } from "./session-decisions.js";
+import { owesWholeCommand } from "./verification/check-scope-rule.js";
 import type { ApprovedCheck, CheckResult } from "./workspace-checks.js";
 
 export type WorkResult =
@@ -17,6 +18,21 @@ export type ReviewResult =
   | Readonly<{ status: "ready"; tree: string; changes: readonly WorkspaceChange[]; checks: readonly CheckResult[];
       reviews: readonly ReviewReport[]; requests: readonly string[] }>
   | Readonly<{ status: "cancelled" }>;
+
+/** The whole approved commands' run on the candidate, after rounds that ran only their related forms. */
+export type WholeChecksResult =
+  | Readonly<{ status: "ready"; tree: string; checks: readonly CheckResult[] }>
+  | Readonly<{ status: "cancelled" }>;
+
+/**
+ * How a round runs the approved checks: `related` lets checks with a related
+ * form run only the tests related to the changed files, and `lastRound` says
+ * no correction can follow, so the whole commands run.
+ */
+export interface ReviewScope {
+  readonly related: boolean;
+  readonly lastRound: boolean;
+}
 
 /** The check of a turn that changed no files (decision 034): the main review of its requests, or a stop. */
 export type AnswerResult =
@@ -40,7 +56,11 @@ export type ApplyResult =
 /** Where a session works: in the operator's own files, or in an isolated workspace it applies from. */
 export type WorkPlace = "source" | "workspace";
 
-/** The result a correction round started from, and the findings it sent back. */
+/**
+ * The reviewed result a correction round sends back, and the findings it
+ * sends. It is journaled when sent, so the next review of changes judges the
+ * correction from that result, even after a stop or a restart (#249).
+ */
 export interface CorrectionContext {
   readonly previousTree: string;
   readonly sentBack: readonly Finding[];
@@ -63,9 +83,10 @@ export interface TesotaShellDependencies {
   /**
    * Run one request in the workspace, showing the agent's work as it happens,
    * and report the pending changes. Only the operator's own requests join the
-   * request record; Tesota's correction messages do not.
+   * request record; Tesota's correction messages do not. A correction of a
+   * reviewed result names it in `correction`.
    */
-  readonly work: (request: string, origin?: RequestOrigin) => Promise<WorkResult>;
+  readonly work: (request: string, origin?: RequestOrigin, correction?: CorrectionContext) => Promise<WorkResult>;
   /**
    * Check a turn that changed no files against its requests and the agent's
    * reply, and present it (decision 034); absent where nothing checks answers.
@@ -80,12 +101,17 @@ export interface TesotaShellDependencies {
   /** Let the repository's checks read these hidden files, which they need. */
   readonly allowForChecks?: (paths: readonly string[]) => void;
   /**
-   * Snapshot the pending changes, run the approved checks on them and present
-   * the review, once. After a correction round, `correction` names the result
-   * sent back and what was sent, so only the correction is reviewed and the
-   * sent-back findings are validated (decision 016).
+   * Snapshot the changes since the last review, run the approved checks on
+   * them and present the review, once. After a correction was sent, only the
+   * correction is reviewed and the findings it sent are validated (decision
+   * 016), whether or not its round was stopped.
    */
-  readonly review: (checks: readonly ApprovedCheck[], correction?: CorrectionContext) => Promise<ReviewResult>;
+  readonly review: (checks: readonly ApprovedCheck[], scope?: ReviewScope) => Promise<ReviewResult>;
+  /**
+   * Run the whole approved commands on the reviewed candidate and show them
+   * beside its review; absent where every round runs them whole.
+   */
+  readonly checkWhole?: (checks: readonly ApprovedCheck[]) => Promise<WholeChecksResult>;
   readonly apply: () => Promise<ApplyResult>;
   /**
    * Bring the repository's newer changes into the workspace, without an agent turn, so the result can be checked
@@ -148,29 +174,49 @@ function queuedFirst(dependencies: TesotaShellDependencies, count: number): bool
 async function assess(dependencies: TesotaShellDependencies,
   report: (progress: TesotaShellProgress) => void): Promise<Assessment> {
   const checks = await chooseChecks(dependencies);
+  const { checkWhole } = dependencies;
   let previousTree: string | undefined;
-  let context: CorrectionContext | undefined;
   for (let round = 0; ; round++) {
     report({ phase: "checking" });
-    const review = context === undefined ? await dependencies.review(checks) : await dependencies.review(checks, context);
+    const lastRound = round >= MAX_CORRECTION_ROUNDS;
+    const review = await dependencies.review(checks, { related: checkWhole !== undefined, lastRound });
     if (review.status === "cancelled") {
       dependencies.write(`Checks cancelled. The changes stay ${placeOf(dependencies)}.\n`);
       return "stopped";
     }
-    const correction = correctionFor(review.checks, review.reviews);
-    if (correction === undefined || round >= MAX_CORRECTION_ROUNDS) return "ready";
-    if (queuedFirst(dependencies, problemCount(correction))) return "ready";
+    // A round that ran only related tests never ends the work: the whole commands run before the operator decides.
+    let owed = owesWholeCommand(review.checks.some((check) => check.relatedTo !== undefined));
+    const whole = async (): Promise<WholeChecksResult | undefined> => {
+      if (!owed || checkWhole === undefined) return undefined;
+      owed = false;
+      report({ phase: "checking" });
+      return checkWhole(checks);
+    };
+    const ending = async (): Promise<Assessment> => {
+      if ((await whole())?.status !== "cancelled") return "ready";
+      dependencies.write(`Checks cancelled. The changes stay ${placeOf(dependencies)}.\n`);
+      return "stopped";
+    };
+    let correction = correctionFor(review.checks, review.reviews);
+    if (correction === undefined) {
+      const ran = await whole();
+      if (ran?.status === "cancelled") return ending();
+      correction = ran === undefined ? undefined : correctionFor(ran.checks, []);
+      if (correction === undefined) return "ready";
+    }
+    if (lastRound) return ending();
+    if (queuedFirst(dependencies, problemCount(correction))) return ending();
     if (review.tree === previousTree) {
       dependencies.write("The agent's correction changed nothing; the remaining problems are yours to judge.\n", "warning");
-      return "ready";
+      return ending();
     }
     previousTree = review.tree;
-    context = { previousTree: review.tree, sentBack: correction.findings };
     const count = problemCount(correction);
     dependencies.write(`Sending ${count} ${count === 1 ? "item" : "items"} back to the agent to fix ` +
       `(attempt ${round + 1} of ${MAX_CORRECTION_ROUNDS}).\n`);
     report({ phase: "working" });
-    const result = await dependencies.work(correctionPrompt(review.requests, correction), "tesota");
+    const result = await dependencies.work(correctionPrompt(review.requests, correction), "tesota",
+      { previousTree: review.tree, sentBack: correction.findings });
     if (result.status === "unsettled") return "unsettled";
     if (result.status !== "completed") {
       dependencies.write(`The agent's fix ${result.status === "cancelled" ? "was stopped" : `failed: ${result.reason}`}. ` +

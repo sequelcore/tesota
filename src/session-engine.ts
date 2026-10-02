@@ -36,9 +36,10 @@ import { consultAdvisor } from "./integrations/advisor-session.js";
 import { Semaphore } from "./semaphore.js";
 import { type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
 import { type SessionDecisions } from "./session-decisions.js";
-import { type AnswerResult, type ApplyResult, type RefreshResult, type RequestOrigin, type ReviewResult, type TesotaShellDependencies,
-  type WorkPlace, type WorkResult } from "./tesota-shell.js";
-import { inspectAnswer, inspectReview } from "./tesota-shell-inspection.js";
+import { type AnswerResult, type ApplyResult, type CorrectionContext, type RefreshResult, type RequestOrigin, type ReviewResult, type TesotaShellDependencies,
+  type WholeChecksResult, type WorkPlace, type WorkResult } from "./tesota-shell.js";
+import { inspectAnswer, inspectReview, type ReviewRecord } from "./tesota-shell-inspection.js";
+import { runsRelatedForm } from "./verification/check-scope-rule.js";
 import { runsAnswerCheck, triageOutcome } from "./verification/answer-check-rule.js";
 import { activityBy, attributed } from "./review-attribution.js";
 import type { TriageDecision } from "./integrations/answer-triage.js";
@@ -50,12 +51,13 @@ import { UnsupportedSourceChange } from "./source-snapshot.js";
 import { Workspace, type WorkspaceSnapshot, type WorkspaceUpdate } from "./workspace.js";
 import { applyWorkspace, type ApplicationPathState, ApplyConflictError, ApplyRecoveryError, ApplyRolledBackError,
   unfinishedApplications } from "./workspace-apply.js";
-import { approvedCheckText, type BaseRuns, runChecks, suggestChecks } from "./workspace-checks.js";
+import { approvedCheckText, type BaseRuns, type CheckOptions, runChecks, suggestChecks } from "./workspace-checks.js";
 import { flagVerificationChanges } from "./verification-changes.js";
 import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
 import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
 import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.js";
-import { reviewDepth, type DepthDecision } from "./review-depth.js";
+import { importsAuthority, parseSensitivePaths, reviewDepth, SENSITIVE_PATHS_FILE, type DepthDecision,
+  type Sensitivity } from "./review-depth.js";
 import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
 import { applyRefutation, hasClaimsToTest, refuteFindings } from "./integrations/pi-refuter.js";
 import { attributeOrigins } from "./finding-origin.js";
@@ -64,7 +66,8 @@ import { countsAsMeasurement } from "./verification/review-estimate.js";
 import { formatTokens, type TokenUsage, totalTokens } from "./token-usage.js";
 import { validateFixes, validationReport } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput, ReviewReport, Reviewer, ToolCallRecord } from "./review.js";
-import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry, triageEntry, type AssuranceEntry } from "./assurance-journal.js";
+import { appendAssurance, checksEntry, correctionEntry, decisionEntry, openAssurance, reviewEntry, triageEntry,
+  type AssuranceEntry, type OpenAssurance } from "./assurance-journal.js";
 
 export type SessionWork = Omit<TesotaShellDependencies, "write" | "decisions" | "report">;
 
@@ -247,6 +250,11 @@ function openWork(directory: string): Promise<Work> {
   return existsSync(join(directory, "session.json")) ? SourceSession.open(directory) : Workspace.open(directory);
 }
 
+/** What a review judges: every pending change in a workspace; in the source, the turns since the last review of changes (#249). */
+function candidateIn(work: Work, open: OpenAssurance): WorkspaceSnapshot {
+  return work.place === "source" ? work.candidate(open.reviewed) : work.snapshot();
+}
+
 /** The paths the agent's own file tools wrote, relative to `root` with forward slashes. */
 export function agentWrites(calls: Iterable<ToolCallRecord>, root: string): string[] {
   const written = new Set<string>();
@@ -280,6 +288,8 @@ class SessionState {
   readonly webAllowed: Set<string> = new Set();
   readonly webDenied: Set<string> = new Set();
   reviewed: WorkspaceSnapshot | undefined;
+  /** The latest review as its panel shows it, so the whole commands' run can take the place of their related forms. */
+  lastReview: ReviewRecord | undefined;
   /** How failing checks ended on the base, so correction rounds on the same base do not run it again (decision 039). */
   readonly baseRuns: BaseRuns = new Map();
   /** Context the agent needs with the next request, such as a rejected change. */
@@ -686,7 +696,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     const snapshot = workspace.snapshot();
     let review: SessionHistory["review"];
     try {
-      const open = await lastOpenReview(workspace.directory);
+      const open = (await openAssurance(workspace.directory)).review;
       if (open !== undefined) review = { current: open.tree === snapshot.tree, findings: openFindings(open.reviews) };
     } catch {
       output.writeTo(id, "Tesota could not read the last review from the workspace's journal; the brief leaves its findings out.", "warning");
@@ -985,17 +995,56 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       stateFor(id).unverified = undefined;
       workspace.keepRequestsOpen(!answerHeld(reports));
       output.inspectFor(id, inspectAnswer(pending.requests, reports, { ...pending.triage, requested: true }));
-      await journal(id, workspace, reviewEntry(pending.input.snapshot, pending.requests, [], [], reports));
+      await journal(id, workspace, reviewEntry("answer", pending.input.snapshot, pending.requests, [], [], reports));
     }).catch((error: unknown) => {
       if (!isAbort(error)) output.replyTo(id, `The full check could not run: ${error instanceof Error ? error.message : "unknown error"}.`, "warning");
     });
   };
   const blockSession = (id: string): void => { store.block(id); output.blockSession(id); };
+  /**
+   * What marks a candidate's paths sensitive (decision 053): the repository's
+   * file as the candidate's base declares it, so a change cannot remove its
+   * own paths.
+   */
+  const sensitivityOf = (snapshot: WorkspaceSnapshot, read: (revision: string, path: string) => string | undefined): Sensitivity => {
+    const declared = read(snapshot.base, SENSITIVE_PATHS_FILE);
+    return { declared: parseSensitivePaths(declared), confirmed: declared !== undefined,
+      // Either side counts, so removing an import cannot make a change look less sensitive.
+      importsAuthority: (path) => importsAuthority(read(snapshot.base, path)) || importsAuthority(read(snapshot.tree, path)) };
+  };
+  /** Where the repository's files are read for suggestions: the source, or an isolated session's copy. */
+  const checksRoot = (id: string): string => {
+    const directory = saved(id)?.workspace;
+    return directory === null || directory === undefined || existsSync(join(directory, "session.json")) ? cwd : join(directory, "repo");
+  };
+  /** Checks are commands the operator approved: they read the hidden files the operator named, and their results say so. */
+  const checkOptions = async (id: string, checkout: string): Promise<CheckOptions> => {
+    const every = await hiddenFilesIn(checkout);
+    const readsHidden = store.checkSecrets().filter((path) => every.includes(path));
+    return { baseRuns: stateFor(id).baseRuns, hidden: every.filter((path) => !readsHidden.includes(path)), readsHidden };
+  };
   /** Evidence that could not be recorded is reported, never dropped silently. */
   const journal = async (id: string, workspace: Work, entry: AssuranceEntry): Promise<void> => {
     try { await appendAssurance(workspace.directory, entry); } catch (error) {
       output.writeTo(id, `Tesota could not record this in the workspace's assurance journal: ${error instanceof Error ? error.message : "unknown error"}.`, "warning");
     }
+  };
+
+  /**
+   * What the journal holds open of the pending changes. One that cannot be
+   * read leaves no review known, so the next review covers every undecided
+   * turn and judges no correction.
+   */
+  const openAssuranceIn = async (id: string, workspace: Work): Promise<OpenAssurance> => {
+    try { return await openAssurance(workspace.directory); } catch {
+      output.writeTo(id, "Tesota could not read the last review from the workspace's journal; this review covers every " +
+        "undecided change and judges no earlier correction.", "warning");
+      return {};
+    }
+  };
+  /** A correction is journaled before the agent starts, so a review after a stop still judges what was sent back (#249). */
+  const journalCorrection = async (id: string, workspace: Work, correction: CorrectionContext | undefined): Promise<void> => {
+    if (correction !== undefined) await journal(id, workspace, correctionEntry(correction));
   };
 
   /** Pending changes in a session's existing workspace; never creates one. */
@@ -1393,7 +1442,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         if (states.has(id) && !isAbort(error)) output.writeTo(id, `${error instanceof Error ? error.message : "The environment could not start."}`, "warning");
       });
     },
-    work: (request, origin = "operator") => runOperation(id, async (signal): Promise<WorkResult> => {
+    work: (request, origin = "operator", correction) => runOperation(id, async (signal): Promise<WorkResult> => {
       output.setBranch(sourceBranch());
       try {
         const coding = await codingFor(id, signal);
@@ -1401,6 +1450,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         // A correction keeps the base the candidate was checked on, so its review sees only the agent's own
         // correction; the operator's newer repository state arrives with their next request (decision 039).
         const work = await workspaceFor(id);
+        await journalCorrection(id, work, correction);
         // In the source, the turn begins now, and the operator's own edits since the agent's last turn are named to it.
         const edited = work.place === "source" ? await beginTurnIn(work) : undefined;
         const notes = [state.note, modeNotice(id), origin === "operator" ? edited ?? await updateFromSource(id) : undefined,
@@ -1444,35 +1494,35 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       }
     }),
     checks: () => store.checks(),
-    suggestChecks: () => {
-      const directory = saved(id)?.workspace;
-      return suggestChecks(directory === null || directory === undefined || existsSync(join(directory, "session.json"))
-        ? cwd : join(directory, "repo"));
-    },
+    suggestChecks: () => suggestChecks(checksRoot(id)),
     setChecks: (commands) => { store.setChecks(commands); },
     hiddenFiles: async () => hiddenFilesIn((await workspaceFor(id)).checkout),
     allowForChecks: (paths) => { store.setCheckSecrets([...store.checkSecrets(), ...paths]); },
     place: () => stateFor(id).place ?? "workspace",
-    review: (commands, correction) => runOperation(id, async (signal): Promise<ReviewResult> => {
+    review: (commands, rounds) => runOperation(id, async (signal): Promise<ReviewResult> => {
       const workspace = await workspaceFor(id);
       const state = stateFor(id);
       state.reviewed = undefined;
-      const snapshot = workspace.snapshot();
+      state.lastReview = undefined;
+      const open = await openAssuranceIn(id, workspace);
+      const snapshot = candidateIn(workspace, open);
+      const { correction } = open;
       const read = (revision: string, path: string): string | undefined => workspace.contentAt(revision, path);
-      // Checks are commands the operator approved: they read the hidden files the operator named, and their results say so.
-      const every = await hiddenFilesIn(workspace.checkout);
-      const readsHidden = store.checkSecrets().filter((path) => every.includes(path));
-      const hidden = every.filter((path) => !readsHidden.includes(path));
+      const flags = flagVerificationChanges(snapshot, read);
+      // A round may run only the tests related to the candidate's changed files; the whole commands run before the decision.
+      const related = runsRelatedForm(rounds?.related === true && commands.some((check) => check.related !== undefined),
+        snapshot.changes.length > 0, snapshot.changes.some((change) => change.status === "deleted"),
+        flags.some((flag) => flag.kind !== "test"), rounds?.lastRound !== false);
       const checks = [...await runChecks(await environmentFor(id), workspace, snapshot, commands, signal,
-        { baseRuns: state.baseRuns, hidden, readsHidden }),
+        { ...await checkOptions(id, workspace.checkout),
+          ...related ? { relatedFiles: snapshot.changes.map((change) => change.path) } : {} }),
         ...await runOxlintVerifier(snapshot, read), ...await runLemmaScriptVerifier(snapshot, read, signal)];
       if (signal.aborted) return { status: "cancelled" };
-      const flags = flagVerificationChanges(snapshot, read);
       const requests = await workspace.requests();
       // A correction round reviews only the correction; the verifiers above always cover the whole candidate.
       const scope = correction === undefined ? snapshot
         : { ...snapshot, base: correction.previousTree, ...workspace.compare(correction.previousTree, snapshot.tree) };
-      const depth = reviewDepth(scope, flags, checks);
+      const depth = reviewDepth(scope, flags, checks, sensitivityOf(snapshot, read));
       const started = Date.now();
       let tokens = 0;
       const { reviewer, refuter, validator } = readModelChoices();
@@ -1499,12 +1549,31 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       const reviews: ReviewReport[] = unchanged ? reports : reports.map((report) => ({ reviewer: report.reviewer,
         tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" }));
       if (unchanged) state.reviewed = snapshot;
+      state.lastReview = { snapshot, checks, flags, requests, reviews, depth, measurement };
       // Each claimed step shows what the review found of it, a judged check, beside the prompt.
       const main = reviews.find((report) => report.status === "completed" && report.obligations !== undefined);
       if (plan !== undefined && main?.status === "completed") showPlan(id, withReview(plan, main.obligations ?? []));
       output.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews, depth, measurement }));
-      await journal(id, workspace, reviewEntry(snapshot, requests, checks, flags, reviews, depth, measurement));
+      await journal(id, workspace, reviewEntry("changes", snapshot, requests, checks, flags, reviews, depth, measurement));
       return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews, requests };
+    }),
+    checkWhole: (commands) => runOperation(id, async (signal): Promise<WholeChecksResult> => {
+      const workspace = await workspaceFor(id);
+      const state = stateFor(id);
+      // The candidate the review just judged, since that review is now the last one.
+      const snapshot = candidateIn(workspace, await openAssuranceIn(id, workspace));
+      const checks = await runChecks(await environmentFor(id), workspace, snapshot, commands, signal,
+        await checkOptions(id, workspace.checkout));
+      if (signal.aborted) return { status: "cancelled" };
+      await journal(id, workspace, checksEntry(snapshot, checks));
+      if (workspace.currentTree() !== snapshot.tree) state.reviewed = undefined;
+      // The review's panel shows the whole commands in place of their related forms, beside the verifiers that ran.
+      const record = state.lastReview;
+      if (record?.snapshot.tree === snapshot.tree) {
+        state.lastReview = { ...record, checks: [...checks, ...record.checks.filter((check) => check.verifier !== "command")] };
+        output.inspectFor(id, inspectReview(state.lastReview));
+      }
+      return { status: "ready", tree: snapshot.tree, checks };
     }),
     assessAnswer: () => runOperation(id, async (signal): Promise<AnswerResult> => {
       const workspace = await workspaceFor(id);
@@ -1538,7 +1607,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       workspace.keepRequestsOpen(!answerHeld(reports));
       if (plan !== undefined && main?.status === "completed") showPlan(id, withReview(plan, main.obligations ?? []));
       output.inspectFor(id, inspectAnswer(requests, reports, triage));
-      await journal(id, workspace, reviewEntry(snapshot, requests, [], [], reports));
+      await journal(id, workspace, reviewEntry("answer", snapshot, requests, [], [], reports));
       return { status: "assessed", reviews: reports, requests };
     }),
     // Decision 042's refresh, without an agent turn: the agent hears of the changes with its next request.

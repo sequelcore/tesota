@@ -3,9 +3,10 @@ import { appendFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
 import type { TriageDecision } from "./integrations/answer-triage.js";
-import type { ReviewReport, ToolCallRecord } from "./review.js";
+import type { Finding, ReviewReport, ToolCallRecord } from "./review.js";
 import type { DepthDecision } from "./review-depth.js";
 import type { ReviewMeasurement } from "./review-forecast.js";
+import type { CorrectionContext } from "./tesota-shell.js";
 import type { VerificationChange } from "./verification-changes.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
 import type { CheckResult } from "./workspace-checks.js";
@@ -13,8 +14,8 @@ import type { CheckResult } from "./workspace-checks.js";
 /**
  * The workspace's assurance journal (decision 015): one line per reviewed
  * candidate, with what was asked, what each verifier claimed and observed,
- * what each reviewer found, and the operator's decision, and one per answer
- * check's first pass. It sits beside the
+ * what each reviewer found, and the operator's decision, one per correction
+ * sent back to the agent, and one per answer check's first pass. It sits beside the
  * checkout, out of the agent's reach, and is only ever appended to.
  */
 const journalFile = "assurance.jsonl";
@@ -25,25 +26,48 @@ export type AssuranceDecision = "applied" | "rejected" | "application_conflict" 
   "application_recovery_required" | "kept" | "reverted" | "revert_conflict" | "revert_rolled_back" | "revert_recovery_required" |
   "redone" | "redo_conflict" | "redo_rolled_back" | "redo_recovery_required";
 
+type JournaledCheck = Readonly<Pick<CheckResult, "verifier" | "command" | "claim" | "limits" | "environment" | "outcome" |
+  "exitCode" | "durationMs" | "output" | "base" | "baseDurationMs" | "relatedTo">>;
+
+function journaledCheck(check: CheckResult): JournaledCheck {
+  return { verifier: check.verifier, command: check.command, claim: check.claim,
+    limits: check.limits, environment: check.environment, outcome: check.outcome, exitCode: check.exitCode,
+    durationMs: check.durationMs, ...(check.base === undefined ? {} : { base: check.base }),
+    ...(check.baseDurationMs === undefined ? {} : { baseDurationMs: check.baseDurationMs }),
+    ...(check.relatedTo === undefined ? {} : { relatedTo: check.relatedTo }), output: check.output.slice(-outputTail) };
+}
+
+/** What a review judged: a candidate's changes, or an answer from a turn that changed no files (decision 034). */
+export type ReviewSubject = "changes" | "answer";
+
 export type AssuranceEntry =
-  | Readonly<{ kind: "review"; at: string; base: string; tree: string; requests: readonly string[];
-      checks: readonly Readonly<Pick<CheckResult, "verifier" | "command" | "claim" | "limits" | "environment" | "outcome" |
-        "exitCode" | "output" | "base">>[];
+  | Readonly<{ kind: "review"; subject: ReviewSubject; at: string; base: string; tree: string; requests: readonly string[];
+      checks: readonly JournaledCheck[];
       flags: readonly VerificationChange[]; reviews: readonly ReviewReport[]; depth?: DepthDecision;
       measurement?: ReviewMeasurement }>
+  | Readonly<{ kind: "checks"; at: string; base: string; tree: string; checks: readonly JournaledCheck[] }>
+  | Readonly<{ kind: "correction"; at: string; tree: string; sentBack: readonly Finding[] }>
   | Readonly<{ kind: "decision"; at: string; tree: string; decision: AssuranceDecision }>
   | Readonly<{ kind: "triage"; at: string; tree: string; requests: readonly string[]; model: string;
       decided: boolean; checkable: boolean; probability?: number; reason: string; runsCheck: boolean;
       toolCalls: readonly ToolCallRecord[] }>;
 
-export function reviewEntry(snapshot: WorkspaceSnapshot, requests: readonly string[], checks: readonly CheckResult[],
-  flags: readonly VerificationChange[], reviews: readonly ReviewReport[], depth?: DepthDecision,
+export function reviewEntry(subject: ReviewSubject, snapshot: WorkspaceSnapshot, requests: readonly string[],
+  checks: readonly CheckResult[], flags: readonly VerificationChange[], reviews: readonly ReviewReport[], depth?: DepthDecision,
   measurement?: ReviewMeasurement): AssuranceEntry {
-  return { kind: "review", at: new Date().toISOString(), base: snapshot.base, tree: snapshot.tree, requests, flags, reviews,
+  return { kind: "review", subject, at: new Date().toISOString(), base: snapshot.base, tree: snapshot.tree, requests, flags, reviews,
     ...(depth === undefined ? {} : { depth }), ...(measurement === undefined ? {} : { measurement }),
-    checks: checks.map((check) => ({ verifier: check.verifier, command: check.command, claim: check.claim,
-      limits: check.limits, environment: check.environment, outcome: check.outcome, exitCode: check.exitCode,
-      ...(check.base === undefined ? {} : { base: check.base }), output: check.output.slice(-outputTail) })) };
+    checks: checks.map(journaledCheck) };
+}
+
+/** The whole approved commands' run on a reviewed candidate, after its rounds ran only their related forms. */
+export function checksEntry(snapshot: WorkspaceSnapshot, checks: readonly CheckResult[]): AssuranceEntry {
+  return { kind: "checks", at: new Date().toISOString(), base: snapshot.base, tree: snapshot.tree, checks: checks.map(journaledCheck) };
+}
+
+/** A correction sent back to the agent: the reviewed tree it corrects and the findings it was sent. */
+export function correctionEntry(correction: CorrectionContext): AssuranceEntry {
+  return { kind: "correction", at: new Date().toISOString(), tree: correction.previousTree, sentBack: correction.sentBack };
 }
 
 export function decisionEntry(tree: string, decision: AssuranceDecision): AssuranceEntry {
@@ -66,7 +90,7 @@ export async function appendAssurance(workspaceDirectory: string, entry: Assuran
   await appendFile(join(workspaceDirectory, journalFile), `${JSON.stringify(entry)}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
-// Only what a reader of the last review needs; the journal holds more, which these schemas pass over.
+// Only what a reader of the open entries needs; the journal holds more, which these schemas pass over.
 const journaledFinding = z.looseObject({ severity: z.enum(["high", "medium", "low"]), statement: z.string(),
   path: z.string().optional(), line: z.number().int().optional(), standing: z.enum(["confirmed", "refuted", "unsettled"]).optional(),
   duplicateOf: z.string().optional() });
@@ -76,28 +100,53 @@ const journaledReport = z.discriminatedUnion("status", [
   z.looseObject({ reviewer: z.string(), tree: z.string(), status: z.literal("incomplete"), reason: z.string() }),
 ]);
 const journaledEntry = z.discriminatedUnion("kind", [
-  z.looseObject({ kind: z.literal("review"), tree: z.string(), reviews: z.array(journaledReport) }),
+  z.looseObject({ kind: z.literal("review"), subject: z.enum(["changes", "answer"]), base: z.string(), tree: z.string(),
+    reviews: z.array(journaledReport) }),
+  z.looseObject({ kind: z.literal("correction"), tree: z.string(), sentBack: z.array(journaledFinding) }),
   z.looseObject({ kind: z.literal("decision"), tree: z.string(), decision: z.string() }),
+  z.looseObject({ kind: z.literal("checks") }),
   z.looseObject({ kind: z.literal("triage") }),
 ]);
+type JournaledEntry = z.infer<typeof journaledEntry>;
+
+/** Decisions that settle what was reviewed before them; a redo after a revert puts the reviewed turn back. */
+const settlingDecisions: ReadonlySet<string> = new Set(["applied", "rejected", "kept", "reverted", "redone"]);
+
+/** What the journal holds of the pending changes, read once (#249). */
+export interface OpenAssurance {
+  /** The last review, of changes or of an answer, with what it found. */
+  readonly review?: Readonly<{ tree: string; reviews: readonly ReviewReport[] }>;
+  /** The candidate the last review of changes judged, where the next review begins. */
+  readonly reviewed?: Pick<WorkspaceSnapshot, "base" | "tree">;
+  /** A correction sent back after that review that no review has judged, after a stop or a restart too. */
+  readonly correction?: CorrectionContext;
+}
 
 /**
- * The last review of the pending changes: the journal's last review, unless
- * the operator has since applied, rejected, kept or reverted what it
- * reviewed; a redo after a revert puts the reviewed turn back, so its review
- * is open again.
+ * What is still open in the journal: an entry stays open until the operator
+ * applies, rejects, keeps or reverts what it concerns, and a later redo
+ * reopens it.
  */
-export async function lastOpenReview(workspaceDirectory: string):
-  Promise<Readonly<{ tree: string; reviews: readonly ReviewReport[] }> | undefined> {
+export async function openAssurance(workspaceDirectory: string): Promise<OpenAssurance> {
   const path = join(workspaceDirectory, journalFile);
-  if (!existsSync(path)) return undefined;
+  if (!existsSync(path)) return {};
   const entries = (await readFile(path, "utf8")).split("\n").filter((line) => line.length > 0)
     .map((line) => journaledEntry.parse(JSON.parse(line)));
-  const index = entries.findLastIndex((entry) => entry.kind === "review");
-  const review = entries[index];
-  if (review?.kind !== "review") return undefined;
-  const last = entries.slice(index + 1).findLast((entry) => entry.kind === "decision" &&
-    ["applied", "rejected", "kept", "reverted", "redone"].includes(entry.decision));
-  const settled = last?.kind === "decision" && last.decision !== "redone";
-  return settled ? undefined : { tree: review.tree, reviews: review.reviews as unknown as ReviewReport[] };
+  const openAt = (index: number): JournaledEntry | undefined => {
+    if (index < 0) return undefined;
+    const last = entries.slice(index + 1).findLast((entry) => entry.kind === "decision" && settlingDecisions.has(entry.decision));
+    return last?.kind !== "decision" || last.decision === "redone" ? entries[index] : undefined;
+  };
+  const changesAt = entries.findLastIndex((entry) => entry.kind === "review" && entry.subject === "changes");
+  const correctionAt = entries.findLastIndex((entry) => entry.kind === "correction");
+  const review = openAt(entries.findLastIndex((entry) => entry.kind === "review"));
+  const changes = openAt(changesAt);
+  // Only a correction sent after the last review of changes is still to be judged.
+  const correction = correctionAt > changesAt ? openAt(correctionAt) : undefined;
+  return {
+    ...review?.kind === "review" ? { review: { tree: review.tree, reviews: review.reviews as unknown as ReviewReport[] } } : {},
+    ...changes?.kind === "review" ? { reviewed: { base: changes.base, tree: changes.tree } } : {},
+    ...correction?.kind === "correction"
+      ? { correction: { previousTree: correction.tree, sentBack: correction.sentBack as unknown as Finding[] } } : {},
+  };
 }

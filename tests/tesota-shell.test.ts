@@ -5,9 +5,9 @@ import { optionForKey, type ShellQuestion } from "../src/tesota-shell-question.j
 import type { TesotaShellProgress } from "../src/shell-progress.js";
 import type { Finding, Obligation, ReviewReport } from "../src/review.js";
 import { runTesotaShell, type AnswerResult, type ApplyResult, type ReviewResult, type TesotaShellDependencies,
-  type WorkResult } from "../src/tesota-shell.js";
+  type WholeChecksResult, type WorkResult } from "../src/tesota-shell.js";
 import type { WorkspaceChange } from "../src/workspace.js";
-import type { ApprovedCheck } from "../src/workspace-checks.js";
+import type { ApprovedCheck, CheckResult } from "../src/workspace-checks.js";
 
 const change: WorkspaceChange = { status: "modified", path: "src/price.ts" };
 const added: WorkspaceChange = { status: "added", path: "src/tax.ts" };
@@ -73,7 +73,8 @@ it("chooses checks once, reviews the changes and applies them on request", async
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
   expect(fixture.dependencies.setChecks).toHaveBeenCalledTimes(1);
   expect(fixture.dependencies.setChecks).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }]);
-  expect(fixture.dependencies.review).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }]);
+  expect(fixture.dependencies.review).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }],
+    { related: false, lastRound: false });
   expect(fixture.dependencies.apply).toHaveBeenCalledTimes(2);
   // The review itself is presented once, by the review dependency; the loop only reports what was applied.
   expect(fixture.text()).not.toContain("Checks:");
@@ -93,7 +94,7 @@ it.each([
   const fixture = shell(["Fix it", answer, "k", ""]);
   await runTesotaShell(fixture.dependencies);
   expect(fixture.dependencies.setChecks).toHaveBeenCalledWith(expected);
-  expect(fixture.dependencies.review).toHaveBeenCalledWith(expected);
+  expect(fixture.dependencies.review).toHaveBeenCalledWith(expected, { related: false, lastRound: false });
 });
 
 it.each(["bun run test => ../outside.xml", "bun run test => C:\\reports\\unit.xml", "bun run test => .git/unit.xml",
@@ -221,16 +222,77 @@ it("sends fixable findings back with the unchanged requests, then asks the opera
     { review: reviews({ tree: "1".repeat(40), findings: [fixable] }, { tree: "2".repeat(40), findings: [] }) });
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
   expect(fixture.dependencies.work).toHaveBeenNthCalledWith(1, "Charge over $100 less");
+  // The correction names the result it corrects and what was sent back, so its review, after a stop too, judges only it.
   expect(fixture.dependencies.work).toHaveBeenNthCalledWith(2,
-    expect.stringContaining("The user's requests, unchanged:\n1. Charge over $100 less"), "tesota");
+    expect.stringContaining("The user's requests, unchanged:\n1. Charge over $100 less"), "tesota",
+    { previousTree: "1".repeat(40), sentBack: [fixable] });
   expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
   expect(fixture.dependencies.review).toHaveBeenCalledTimes(2);
-  // The second review knows the result it corrects and what was sent back, so it can review only the correction.
-  const approved = [{ command: "bun run check", reports: [] }];
-  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(1, approved);
-  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(2, approved, { previousTree: "1".repeat(40), sentBack: [fixable] });
+  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(2, [{ command: "bun run check", reports: [] }],
+    { related: false, lastRound: false });
   expect(fixture.text()).toContain("Sending 1 item back to the agent to fix (attempt 1 of 2).");
   expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);
+});
+
+/** A command check as a round reports it: its related form's run when `related`, or the whole command's. */
+function commandResult(tree: string, outcome: "passed" | "failed", related: boolean): CheckResult {
+  return { verifier: "command", claim: "exits 0", limits: "only what it tests", command: related ? "vitest related 'src/price.ts'"
+    : "bun run check", tree, environment: "host", guarantees: hostProvider.guarantees, outcome, exitCode: outcome === "passed" ? 0 : 1,
+    durationMs: 1, output: "", ...related ? { relatedTo: "bun run check" } : {},
+    ...outcome === "failed" ? { base: { outcome: "passed" as const, exitCode: 0, origin: "introduced" as const } } : {} };
+}
+
+/** Rounds whose checks ran only related forms, each with its review's findings. */
+function relatedReviews(...rounds: { tree: string; findings: readonly Finding[] }[]): TesotaShellDependencies["review"] {
+  return vi.fn(async (): Promise<ReviewResult> => {
+    const round = rounds.shift() ?? { tree: "z".repeat(40), findings: [] };
+    return { status: "ready", tree: round.tree, changes: [change], requests: ["Charge over $100 less"],
+      checks: [commandResult(round.tree, "passed", true)],
+      reviews: [{ reviewer: "Tesota reviewer", tree: round.tree, status: "completed", summary: "", findings: round.findings }] };
+  });
+}
+
+function wholeRuns(...outcomes: ("passed" | "failed")[]): NonNullable<TesotaShellDependencies["checkWhole"]> {
+  return vi.fn(async (): Promise<WholeChecksResult> => {
+    const tree = "w".repeat(40);
+    return { status: "ready", tree, checks: [commandResult(tree, outcomes.shift() ?? "passed", false)] };
+  });
+}
+
+it("runs the whole checks before the decision when a round ran only related tests", async () => {
+  const fixture = shell(["Charge over $100 less", "", "a", ""],
+    { review: relatedReviews({ tree: "1".repeat(40), findings: [] }), checkWhole: wholeRuns("passed") });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.review).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }],
+    { related: true, lastRound: false });
+  expect(fixture.dependencies.checkWhole).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);
+});
+
+it("sends a failure only the whole checks found back to the agent, and runs them again on its correction", async () => {
+  const fixture = shell(["Charge over $100 less", "", "a", ""], { review: relatedReviews(
+    { tree: "1".repeat(40), findings: [] }, { tree: "2".repeat(40), findings: [] }), checkWhole: wholeRuns("failed", "passed") });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
+  expect(fixture.dependencies.work).toHaveBeenNthCalledWith(2, expect.stringContaining("`bun run check` failed"), "tesota",
+    { previousTree: "1".repeat(40), sentBack: [] });
+  expect(fixture.dependencies.checkWhole).toHaveBeenCalledTimes(2);
+});
+
+it("runs the whole checks once before the decision when the operator's next message goes first", async () => {
+  const fixture = shell(["Charge over $100 less", "", ""],
+    { review: relatedReviews({ tree: "1".repeat(40), findings: [fixable] }), checkWhole: wholeRuns("passed") });
+  fixture.typed.queued = true;
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
+  expect(fixture.dependencies.checkWhole).toHaveBeenCalledTimes(1);
+});
+
+it("never runs the whole checks again after a round that already ran them", async () => {
+  const fixture = shell(["Charge over $100 less", "", "a", ""], { checkWhole: wholeRuns() });
+  await runTesotaShell(fixture.dependencies);
+  expect(fixture.dependencies.checkWhole).not.toHaveBeenCalled();
 });
 
 it("stops correcting after two rounds and leaves the rest to the operator", async () => {

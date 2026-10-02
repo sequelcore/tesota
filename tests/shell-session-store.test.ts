@@ -72,7 +72,10 @@ it("persists session workspaces, the repository's approved checks and engine ide
   store.setWorkspace(session.id, join(root, "workspace"));
   expect(store.checks()).toBeNull();
   expect(() => store.setChecks([{ command: "bun run test", reports: ["../outside.xml"] }])).toThrow();
-  store.setChecks([{ command: "bun run check", reports: ["test-reports/unit.xml", "test-reports/workspace.xml"] },
+  expect(() => store.setChecks([{ command: "bun run test", reports: [], related: { command: "vitest related", reports: [] } }]))
+    .toThrow();
+  const related = { command: "bunx vitest related --run {files}", reports: ["test-reports/related.xml"] };
+  store.setChecks([{ command: "bun run check", reports: ["test-reports/unit.xml", "test-reports/workspace.xml"], related },
     { command: "bun run lint", reports: [] }]);
   const previousEngine = session.engineId;
   const nextEngine = store.rotateEngine(session.id);
@@ -80,8 +83,8 @@ it("persists session workspaces, the repository's approved checks and engine ide
   store.close();
   const reopened = openShellSessionStore(source, root);
   expect(reopened.list()[0]).toMatchObject({ workspace: join(root, "workspace"), engineId: nextEngine });
-  expect(reopened.checks()).toEqual([{ command: "bun run check", reports: ["test-reports/unit.xml", "test-reports/workspace.xml"] },
-    { command: "bun run lint", reports: [] }]);
+  expect(reopened.checks()).toEqual([{ command: "bun run check", reports: ["test-reports/unit.xml", "test-reports/workspace.xml"],
+    related }, { command: "bun run lint", reports: [] }]);
   reopened.close();
 });
 

@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { appendAssurance, correctionEntry, openAssurance, reviewEntry } from "../src/assurance-journal.js";
 import { SourceSession } from "../src/source-session.js";
 
 /**
@@ -206,4 +207,64 @@ it("redoes the latest reverted turn, never replacing a file edited since, until 
   await session.endTurn();
   expect(session.redoable).toBeUndefined();
   expect(await session.redo(applications)).toBeUndefined();
+});
+
+it("reviews the fix made before a stopped correction round, with the turn that resumed it (#249)", async () => {
+  const { source, create } = await fixture();
+  const session = await create();
+  await session.beginTurn();
+  await writeFile(join(source, "src", "price.ts"), "export const price = 2;\n");
+  await session.endTurn();
+  const reviewed = session.candidate((await openAssurance(session.directory)).reviewed);
+  await appendAssurance(session.directory, reviewEntry("changes", reviewed, ["Read the setting"], [], [], []));
+  // The correction is journaled as it is sent, then the agent edits a file and the operator stops the round.
+  await appendAssurance(session.directory, correctionEntry({ previousTree: reviewed.tree, sentBack: [] }));
+  await session.beginTurn();
+  await writeFile(join(source, "src", "registry.ts"), "export const key = \"HKCU\";\n");
+  await session.endTurn({ continues: true });
+  // "continue i stopped by accident" is the operator's own turn.
+  await session.beginTurn();
+  await writeFile(join(source, "src", "registry.test.ts"), "test(\"key\");\n");
+  await session.endTurn();
+  expect(session.turns).toHaveLength(2);
+  expect(session.snapshot().diff).not.toContain("HKCU");
+  const open = await openAssurance(session.directory);
+  const candidate = session.candidate(open.reviewed);
+  expect(candidate.base).toBe(reviewed.base);
+  expect(candidate.changes.map((change) => change.path)).toEqual(["src/price.ts", "src/registry.test.ts", "src/registry.ts"]);
+  // The review judges the correction from the result it was sent from: the edit before the stop and the turn after it.
+  expect(open.correction?.previousTree).toBe(reviewed.tree);
+  const correction = session.compare(reviewed.tree, candidate.tree);
+  expect(correction.changes.map((change) => change.path)).toEqual(["src/registry.test.ts", "src/registry.ts"]);
+  expect(correction.diff).toContain("+export const key = \"HKCU\";");
+  // The whole commands that follow the review check the candidate it judged.
+  await appendAssurance(session.directory, reviewEntry("changes", candidate, [], [], [], []));
+  expect(session.candidate((await openAssurance(session.directory)).reviewed)).toEqual(candidate);
+});
+
+it("reviews a turn after the last reviewed one alone, and a stopped turn no review saw with the turn after it", async () => {
+  const { source, create } = await fixture();
+  const session = await create();
+  await session.beginTurn();
+  await writeFile(join(source, "src", "price.ts"), "export const price = 2;\n");
+  await session.endTurn();
+  const first = session.candidate(undefined);
+  await appendAssurance(session.directory, reviewEntry("changes", first, [], [], [], []));
+  // The operator stops the next turn before its review; the one after it continues the work.
+  await session.beginTurn();
+  await writeFile(join(source, "src", "tax.ts"), "export const tax = 0.2;\n");
+  await session.endTurn();
+  const stopped = session.turns.at(-1);
+  await session.beginTurn();
+  await writeFile(join(source, "src", "tax.test.ts"), "test(\"tax\");\n");
+  await session.endTurn();
+  const candidate = session.candidate((await openAssurance(session.directory)).reviewed);
+  expect(candidate.base).toBe(stopped?.before);
+  expect(candidate.changes.map((change) => change.path)).toEqual(["src/tax.test.ts", "src/tax.ts"]);
+  // Once reviewed, the next turn is reviewed alone.
+  await appendAssurance(session.directory, reviewEntry("changes", candidate, [], [], [], []));
+  await session.beginTurn();
+  await writeFile(join(source, "src", "old.ts"), "export const old = false;\n");
+  await session.endTurn();
+  expect(session.candidate((await openAssurance(session.directory)).reviewed)).toEqual(session.snapshot());
 });

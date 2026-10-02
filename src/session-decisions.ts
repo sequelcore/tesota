@@ -1,7 +1,7 @@
 import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
 import type { ShellQuestion } from "./tesota-shell-question.js";
 import type { NoticeTone } from "./tesota-shell-transcript.js";
-import { type ApprovedCheck, parseApprovedCheck } from "./workspace-checks.js";
+import { type ApprovedCheck, parseApprovedChecks, RELATED_FILES } from "./workspace-checks.js";
 
 /** What becomes of a result worked on in a copy: applied to the source, discarded, or kept pending. */
 export type ResultDecision = "apply" | "reject" | "keep";
@@ -150,17 +150,6 @@ const resultQuestion: ShellQuestion<ResultDecision> = {
   initial: "keep",
 };
 
-/** The checks an answer names, or the reason one of them cannot be used. */
-function parseChecks(answer: string): readonly ApprovedCheck[] | string {
-  const checks: ApprovedCheck[] = [];
-  for (const text of answer.split(";").filter((part) => part.trim().length > 0)) {
-    const check = parseApprovedCheck(text);
-    if (typeof check === "string") return check;
-    checks.push(check);
-  }
-  return checks;
-}
-
 /**
  * The operator's decisions: requests and checks typed at the shell's prompt,
  * and questions with fixed answers picked with `choose`; `write` shows what a
@@ -180,12 +169,15 @@ export function askingDecisions(ask: (prompt: string) => Promise<string>,
       write("To compare failures test by test with the repository as it was, follow a command with " +
         "=> and the JUnit XML reports it writes, in paths Git ignores" +
         (suggested.length === 0 ? "\n" : `: ${suggested[0]} => reports/unit.xml, reports/e2e.xml\n`));
+      write("To run only the tests related to the changed files in each round, and the whole command before you decide, " +
+        `follow a command with ; related: and a command where ${RELATED_FILES} stands for those files, as ` +
+        `bun run test; related: bunx vitest related --run --passWithNoTests ${RELATED_FILES}\n`);
       for (;;) {
         const answer = (await ask(suggested.length === 0
           ? "Commands to run after each change (separate with ;), or Enter for none: "
           : "Enter to use these, type other commands (separate with ;), or 'none': ")).trim();
-        const chosen = answer.length === 0 ? suggested.map((command) => ({ command, reports: [] }))
-          : answer.toLowerCase() === "none" ? [] : parseChecks(answer);
+        const chosen = answer.length === 0 ? parseApprovedChecks(suggested.join("; "))
+          : answer.toLowerCase() === "none" ? [] : parseApprovedChecks(answer);
         if (typeof chosen !== "string") return chosen;
         write(`${chosen}\n`, "warning");
       }
