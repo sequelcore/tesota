@@ -129,8 +129,11 @@ operator's own programs and logins, where Claude Code and Codex read the
 host's, so in a sandboxed session the agent may ask to run one command here
 with `run_on_computer`, giving its reason, as Codex's escalation and Claude
 Code's retry outside the sandbox do. It runs as Pi's bash in the session's
-copy of the repository, with the operator's environment. The operator is
-asked, as for any command on this computer, unless a saved rule allows it.
+copy of the repository, with the operator's environment. On Windows that
+bash is Git Bash, which expands `$` before PowerShell sees it, so the tool's
+description gives a quoted heredoc that passes PowerShell through unchanged.
+The operator is asked, as for any command on this computer, unless a saved
+rule allows it.
 A rule is a command's leading words, such as `gh pr`, saved for the
 repository with its approved checks and network (`src/command-rules.ts`).
 A command runs without asking only when it reads as plain words joined by
