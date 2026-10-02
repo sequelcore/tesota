@@ -4,7 +4,13 @@
 your project, and reverts one without overwriting your own edits.** It records
 the exact content of each turn, runs your checks and its own verifiers on it,
 and presents the diff with an independent review; you keep the turn or
-revert it. A folder of documents, a second session, or any session that asks,
+revert it. Checking is proportional, and errs toward checking: a turn that
+changes files is always checked and reviewed, more deeply when it touches
+tests, what checks it, sensitive files or much code; a turn that only answers
+gets a fast first pass, on a typed decision model such as Jev or on any
+model, that decides whether its answer needs the full check, and a first pass
+that cannot decide runs it, so nothing goes unchecked without you seeing why.
+A folder of documents, a second session, or any session that asks,
 works in a separate copy that changes nothing until you apply it. Software development
 is its first proving ground; work beyond code is planned.
 

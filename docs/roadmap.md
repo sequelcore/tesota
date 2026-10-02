@@ -60,6 +60,11 @@ the workflow and limits.
   settles it. A cheaper reviewer tier needs escalation that never trusts its
   clean verdicts, and a measured saving.
   [Assurance](design/assurance.md#planned-routing-the-answer-check)
+- Consider scope as a first-pass question: whether a turn's changes stay
+  within what was asked. The reviewer judges scope growth today, as an
+  operator disposition measured by `live:review --set=scope`; a typed
+  decision model could flag it in a fraction of a second, but only if, on
+  registered cases, it flags what the reviewer flags and costs less.
 - Run checks and review beside the agent's next request, on a frozen copy of
   the candidate, so a queued message no longer waits for them. Measure it on
   journaled sessions first. [Assurance](design/assurance.md#planned-review-beside-the-next-request)
