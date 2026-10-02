@@ -106,12 +106,13 @@ export const fullAccessQuestion: ShellQuestion<"allow" | "deny"> = {
 export function toolchainQuestion(files: readonly string[]): ShellQuestion<"install" | "decline"> {
   const named = files.map((file) => `\`${file}\``).join(", ");
   return {
-    title: `The repository's toolchain changed (${named}). Install it in the sandbox now?`,
+    title: `The repository's toolchain changed${files.length === 0 ? "" : ` (${named})`}. Install it in the sandbox now?`,
     detail: "Tesota runs the sandbox's setup again. It may download from the tools' release hosts, such as GitHub, and " +
       "from package registries, only while setup runs; the sandbox's network closes again afterwards.",
     options: [
       { value: "install", key: "y", label: "Yes, install it",
-        decided: { text: `✓ Installing what ${named} declares in the sandbox.`, tone: "info" } },
+        decided: { text: files.length === 0 ? "✓ Installing the declared tools in the sandbox."
+          : `✓ Installing what ${named} ${files.length === 1 ? "declares" : "declare"} in the sandbox.`, tone: "info" } },
       { value: "decline", key: "n", label: "No",
         decided: { text: `✗ Not installed; the agent is told the declared tools are unavailable.`, tone: "warning" } },
     ],
@@ -177,7 +178,8 @@ export function askingDecisions(ask: (prompt: string) => Promise<string>,
         ? "No checks were found for this repository.\n"
         : `Suggested checks:\n${suggested.map((command) => `  ${command}`).join("\n")}\n`);
       write("To compare failures test by test with the repository as it was, follow a command with " +
-        "=> and the JUnit XML reports it writes, in paths Git ignores: bun run test => reports/unit.xml, reports/e2e.xml\n");
+        "=> and the JUnit XML reports it writes, in paths Git ignores" +
+        (suggested.length === 0 ? "\n" : `: ${suggested[0]} => reports/unit.xml, reports/e2e.xml\n`));
       for (;;) {
         const answer = (await ask(suggested.length === 0
           ? "Commands to run after each change (separate with ;), or Enter for none: "
