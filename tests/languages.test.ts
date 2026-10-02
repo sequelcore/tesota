@@ -83,4 +83,8 @@ it("installs Java from Temurin, and gives each language's tools what they need i
   // Maven's proxy protocol is the proxy's own, HTTP, for every destination.
   expect(stages[2]?.script).toContain("<protocol>http</protocol><host>127.0.0.1</host><port>3128</port>");
   expect(stages[2]?.script).toContain("systemProp.https.proxyPort=3128");
+  // Maven fetches a prefixes file only from Central, not from each repository a POM declares, which the proxy would refuse.
+  expect(stages[2]?.script).toContain("<aether.remoteRepositoryFilter.prefixes.resolvePrefixFiles>false<");
+  expect(stages[2]?.script).toContain("<aether.remoteRepositoryFilter.prefixes.resolvePrefixFiles.central>true<");
+  expect(stages[2]?.script).toContain("<activeProfile>tesota</activeProfile>");
 });
