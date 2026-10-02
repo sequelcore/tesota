@@ -48,34 +48,31 @@ agent decides when to consult it; you can ask for it in a request. Each
 consult shows in the conversation with the agent's question.
 
 The agent and explorers can **search the web and read pages**, with nothing
-to set up when you are signed in to Codex or Claude Code: the `searcher`
-role's model searches with its provider's own search, `codex:gpt-6-luna` by
-default (`tesota roles searcher <route:model>` chooses another on those
-routes). Each search names who searched and what it took. The findings come
-with the pages they cite; a page the search did not find is marked as not
-confirmed, and the agent reads a page before relying on it. A search on a
-plan counts against that plan, as any role's work does.
+to set up. Signed in to Codex or Claude Code, the `searcher` role's model
+searches with its provider's own search, `codex:gpt-6-luna` by default
+(`tesota roles searcher <route:model>` chooses another on those routes). Each
+search names who searched and what it took. The findings come with the pages
+they cite; a page the search did not find is marked as not confirmed, and the
+agent reads a page before relying on it. A search on a plan counts against
+that plan, as any role's work does.
 
-To search with your own [SearXNG](https://docs.searxng.org/) instead, run it
-on this computer with its JSON format allowed in its `settings.yml`:
-
-```yaml
-use_default_settings: true
-server:
-  secret_key: "<a long random value>"
-  limiter: false
-search:
-  formats: [html, json]
-```
+When the searcher cannot search, Tesota can use Exa or Parallel, which search
+free without an account. They receive the search's words, so Tesota asks
+first:
 
 ```text
-docker run -d --name tesota-searxng --restart unless-stopped -p 127.0.0.1:8888:8080 -v <folder with settings.yml>:/etc/searxng searxng/searxng
+Search the web with Exa or Parallel?
+
+  y  Yes, this session
+  a  Always
+→ n  No
 ```
 
-and name it in `~/.tesota/web.json`: `{ "searxng": "http://127.0.0.1:8888" }`.
-Tesota then tries it first and falls back to the searcher when it fails; add
-`"search": "searxng"` to use it alone, or `"search": "hosted"` to use only the
-searcher.
+**Always** is saved in `~/.tesota/web.json` as `"keyless": "allowed"`; delete
+it to be asked again. `"search": "hosted"`, `"exa"` or `"parallel"` in the same
+file uses that provider alone. `tesota run` never asks, and searches with Exa
+or Parallel only when **Always** was chosen.
+
 Before a page is read from a site you have not allowed, Tesota asks, as for
 the sandbox's network:
 

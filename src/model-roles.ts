@@ -212,7 +212,7 @@ export const DEFAULT_NAMER: string = `${DEFAULT_MODEL}@low`;
  * off, every turn that changes no files gets the full check. The namer
  * (decision 036) is on by default; off, a session keeps its first request,
  * shortened, as its name. The searcher (issue #295) is on by default; off,
- * only a SearXNG named in `~/.tesota/web.json` searches.
+ * only the keyless providers search, with the operator's consent.
  */
 export const ROLE_OFF = "off";
 export const OPTIONAL_ROLES: readonly ModelRole[] = ["explorer", "advisor", "triage", "namer", "searcher"];

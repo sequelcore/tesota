@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { askingDecisions, toolchainQuestion } from "../src/session-decisions.js";
+import { askingDecisions, keylessSearchQuestion, toolchainQuestion } from "../src/session-decisions.js";
 
 const decided = (files: readonly string[]): string | undefined => toolchainQuestion(files).options[0]?.decided?.text;
 
@@ -31,4 +31,13 @@ it("gives the JUnit example with the repository's own check, or none", async () 
   expect(without).not.toContain("=>  ");
   expect(without).not.toContain("reports/");
   expect(without).not.toContain("bun");
+});
+
+it("names who receives a keyless search and what they receive, and declines on Enter", () => {
+  const question = keylessSearchQuestion(["Exa", "Parallel"]);
+  expect(question.title).toBe("Search the web with Exa or Parallel?");
+  expect(question.detail).toContain("search's words");
+  expect(question.detail).toContain("network address");
+  expect(question.options.map((option) => `${option.key}:${option.value}`)).toEqual(["y:session", "a:always", "n:no"]);
+  expect(question.initial).toBe("no");
 });

@@ -16,7 +16,7 @@ for sign-in and [agents](../design/agents.md#model-routes) for the route contrac
 | `validator` | Checks whether a correction resolved a finding | After correction |
 | `triage` | Decides whether a turn with no file changes needs a full check | On those turns; `off` always runs the full check |
 | `namer` | Writes a short session title | At session start; `off` keeps the request as the title |
-| `searcher` | Searches the web for the agent and explorers with its provider's own search; Codex and Claude Code routes only | When the agent or an explorer searches; `off` leaves search to a SearXNG you run |
+| `searcher` | Searches the web for the agent and explorers with its provider's own search; Codex and Claude Code routes only | When the agent or an explorer searches; `off` leaves search to Exa and Parallel, which search without an account |
 
 The built-in model choice is `codex:gpt-6-luna`. `tesota roles` lists the
 current choice for every role, its account and who pays. An unreadable role

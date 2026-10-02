@@ -92,6 +92,8 @@ export function policyDecisions(request: string, policy: RunPolicy): SessionDeci
     command: async () => runCommandAnswer(policy.commands),
     network: async () => runNetworkAnswer(policy.network),
     site: async () => runNetworkAnswer(policy.network),
+    // A run never sends searches somewhere new; keyless search is used only when ~/.tesota/web.json already allows it.
+    keylessSearch: async () => "no",
     // A run keeps accept edits; its --commands flag decides commands that ask.
     fullAccess: async () => false,
     // A run installs nothing it was not prepared with; its sandbox's toolchain is the one its session started with.
