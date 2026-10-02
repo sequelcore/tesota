@@ -18,7 +18,7 @@
       "devDependencies": {
         "@types/html-to-text": "9.0.4",
         "@types/node": "24.10.0",
-        "lemmascript": "0.6.1",
+        "lemmascript": "0.6.4",
         "oxlint": "1.82.0",
         "typescript": "7.0.2",
         "vitest": "4.1.11",
@@ -664,7 +664,7 @@
 
     "leac": ["leac@0.7.0", "", {}, "sha512-qMrZeyEekgdRQ9o6a4NAB2EQZrv827GJdn1vnapwSJ90hWRB4TzUSunvacPkxQ2TnNqHNI1/zSt0hlo0crG8Jw=="],
 
-    "lemmascript": ["lemmascript@0.6.1", "", { "dependencies": { "lemmascript-claimcheck": "^0.2.0", "ts-morph": "^25.0.0" }, "bin": { "lsc": "tools/dist/lsc.js" } }, "sha512-gOVHBDmB7vQo0u/r3i6Z1CrpxO/LjTVmuo3XndjSUl+NMK/ssdAqZF5yZlORSKvfJuXztDZdzCrtbH43Y6OAPQ=="],
+    "lemmascript": ["lemmascript@0.6.4", "", { "dependencies": { "lemmascript-claimcheck": "^0.2.0", "ts-morph": "^25.0.0" }, "bin": { "lsc": "tools/dist/lsc.js" } }, "sha512-rnAnCt36hmAhu7RjlbrY6ky5kDcTfk9Tv1q+0rxaVJJqiQ7uH5fgYgNuyA0MXmeujuegCsm2OWrc99fwJunhAg=="],
 
     "lemmascript-claimcheck": ["lemmascript-claimcheck@0.2.0", "", { "dependencies": { "claimcheck": "^0.6.0" }, "peerDependencies": { "lemmascript": ">=0.5.7" }, "bin": { "lemmascript-claimcheck": "dist/cli.js" } }, "sha512-O5Sbsq75XHdq1OZ45mnvro4jdRfd2d/LuxDBAJMgATWuY654EuQZZUhmJzCRx/3NWtwNlfVgRy75LIFgbwuG+Q=="],
 
