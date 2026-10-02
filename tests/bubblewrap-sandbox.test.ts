@@ -123,11 +123,6 @@ it.runIf(process.platform !== "win32")("guards only plain files inside the works
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
 
-it("keeps node_modules in the workspace when the workspace is no JavaScript package", () => {
-  const { modules: _modules, ...plain } = layout;
-  expect(bubblewrapArguments(plain, layout.workspace, "true", "agent").join(" ")).not.toContain("node_modules");
-});
-
 it("lets only setup write the repository's toolchain folder; every other command reads it", () => {
   const mount = (phase: "setup" | "agent"): string | undefined => {
     const args = bubblewrapArguments(layout, layout.workspace, "true", phase);

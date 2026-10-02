@@ -32,7 +32,8 @@ beforeAll(async () => {
   workspace = join(root, "workspace");
   await mkdir(workspace);
   await writeFile(join(workspace, "hello.txt"), "inside\n");
-  await writeFile(join(workspace, "package.json"), "{}\n");
+  // Bun for the package-script control, which writes its own package.json.
+  await writeFile(join(workspace, ".bun-version"), "1.4.2\n");
   await writeFile(join(root, "outside.txt"), "OUTSIDE-SENTINEL\n");
   await mkdir(join(root, "outside"));
   await writeSetupProbe(workspace, "https://github.com/");
@@ -76,6 +77,7 @@ it.runIf(live)("confines root inside the sandbox the same way", async () => {
   expect(blocked.output).not.toContain("200");
 }, 120_000);
 
+// The workspace is no JavaScript package, so an install in one that becomes one mid-session stays in the sandbox too (#245).
 it.runIf(live)("keeps node_modules on the sandbox's own disk", async () => {
   expect(await run("echo kept > node_modules/probe.txt && cat node_modules/probe.txt"))
     .toMatchObject({ outcome: "exited", exitCode: 0, output: expect.stringContaining("kept") });

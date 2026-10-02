@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rmdir } from "node:fs/promises";
 import { cpus, totalmem } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import * as z from "zod";
@@ -10,7 +10,7 @@ import { type EnvironmentGuarantees, type ExecutionEnvironment, type ExecutionPr
   type NetworkControl, PACKAGE_REGISTRY_HOSTS, type PrepareOptions, type PreparationStep, type ProviderReadiness, type RunOptions,
   type RunResult, type SetupStep } from "./execution-environment.js";
 import { DEPENDENCIES_ARGUMENT, KIT_RUNTIMES, kitRuntimes, writeToolchainKit } from "./docker-sandboxes-kit.js";
-import { hasNodeModules, type MiseUse, needsDownloadHosts, needsSetup, planToolchain, setupStages, TOOLCHAIN_HOSTS,
+import { type MiseUse, needsDownloadHosts, needsSetup, planToolchain, setupStages, TOOLCHAIN_HOSTS,
   type ToolchainPlan } from "./toolchain.js";
 
 /**
@@ -346,21 +346,20 @@ export const dockerSandboxesProvider: ExecutionProvider = {
     const plan = planToolchain(workspace);
     const runtimes = kitRuntimes(plan);
     const kit = await writeToolchainKit(runtimes);
-    const dependencies = hasNodeModules(workspace);
-    const name = `${sandboxPrefix(workspace)}${kit.id.slice(0, 8)}${dependencies ? "-deps" : ""}`;
+    const name = `${sandboxPrefix(workspace)}${kit.id.slice(0, 8)}`;
     const listed = await invoke(sbx, ["ls"]);
     if (listed.status !== 0) throw new Error("Docker Sandboxes is not signed in");
     const existing = listedSandboxes(listed.stdout).filter((sandbox) => sandbox.startsWith(sandboxPrefix(workspace)));
     for (const stale of existing.filter((sandbox) => sandbox !== name)) await invoke(sbx, ["rm", "--force", stale]);
     // A sandbox is kept and reused by name, so a stop between steps leaves nothing that its workspace's release does not remove.
     options.signal?.throwIfAborted();
+    // Every sandbox keeps node_modules on its own disk, so an install never writes Linux packages into the operator's
+    // checkout, even one that becomes a JavaScript package mid-session; the startup bind mount lands on this folder on every start.
+    await mkdir(join(workspace, "node_modules"), { recursive: true });
     if (!existing.includes(name)) {
       const tools = Object.entries(runtimes).map(([tool, version]) => `${tool} ${version}`).join(", ");
       onProgress(`Creating the sandbox${tools.length === 0 ? "" : ` with ${tools}`}`);
-      // The mount point must exist in the shared workspace for the startup bind mount to land on it.
-      if (dependencies) await mkdir(join(workspace, "node_modules"), { recursive: true });
-      await createSandbox(sbx, name, workspace, kit.directory,
-        dependencies ? [`${DEPENDENCIES_ARGUMENT}=${sandboxPath(resolve(workspace))}/node_modules`] : []);
+      await createSandbox(sbx, name, workspace, kit.directory, [`${DEPENDENCIES_ARGUMENT}=${sandboxPath(resolve(workspace))}/node_modules`]);
     }
     options.signal?.throwIfAborted();
     const allowed = [...plan.registries.map((host) => `${host}:443`), ...options.allowed ?? []];
@@ -376,5 +375,7 @@ export const dockerSandboxesProvider: ExecutionProvider = {
     for (const sandbox of listedSandboxes(listed.stdout).filter((entry) => entry.startsWith(sandboxPrefix(workspace)))) {
       await invoke(sbx, ["rm", "--force", sandbox]);
     }
+    // The node_modules mount point, removed only while empty, so nothing the operator put there is lost.
+    await rmdir(join(workspace, "node_modules")).catch(() => undefined);
   },
 };

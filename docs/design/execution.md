@@ -200,9 +200,12 @@ sandbox's rule list back before the agent runs, and deletes the sandbox if it
 cannot confirm they are gone; the WSL sandbox's own proxy holds them for
 setup alone and confirms them closed ([WSL sandbox](#wsl-sandbox)). Docker
 bakes the pinned runtimes into a sandbox kit that `sbx` builds once per set
-of versions and reuses for later sessions, and a JavaScript repository's
+of versions and reuses for later sessions, and the workspace's
 `node_modules` lives on the sandbox's own disk rather than the slower
-workspace mount, in both. A failed step stops setup but not the session, and
+workspace mount, in both. It does for every workspace, not only one that is
+a JavaScript package when the session starts, so a package created and
+installed mid-session never writes Linux binaries into the operator's
+checkout. A failed step stops setup but not the session, and
 the operator and agent are told what failed; a fingerprint of the setup
 inputs skips setup when nothing changed.
 
@@ -308,8 +311,9 @@ own home, mounted at the account's own home path so that programs asking the
 system for the home, as Java does, find the same folder as `HOME` (Maven
 otherwise misses its settings and loses its downloads after each command),
 a temporary folder at `/tmp`, and, on WSL's own disk, the repository's
-package caches and, for a JavaScript package, the workspace's `node_modules`,
-as Docker Sandboxes keeps it. Nothing else of WSL or Windows is in it. A command
+package caches and the workspace's `node_modules`, as Docker Sandboxes
+keeps it; the empty folder it mounts over is removed when the session ends
+if the sandbox created it. Nothing else of WSL or Windows is in it. A command
 runs in `/bin/sh` and gets only its `PATH`, its home, the proxy and what it
 was given.
 
@@ -393,7 +397,11 @@ installed 21.0.2 from January 2024. A Java repository without a Maven or
 Gradle wrapper gets Maven or Gradle too, and a stage writes Maven's
 `settings.xml` and Gradle's `gradle.properties` in the home with the
 sandbox's proxy, since Java ignores proxy variables (Claude Code issues
-13372 and 16222). Each language's tools get what they need: rustup's homes
+13372 and 16222). The settings also let Maven fetch its prefixes file
+only from Maven Central: Maven Resolver 2 otherwise asks every repository
+a POM declares, such as the snapshot repository in Apache's parent POM,
+from which a release build downloads nothing, and the proxy reports each
+refusal. Each language's tools get what they need: rustup's homes
 in the toolchain folder, gems in the home, since Ruby's own folder is
 read-only to commands, and NuGet's revocation checks offline and .NET's
 telemetry off, since both would reach hosts over plain HTTP. The

@@ -673,9 +673,12 @@ background colors; plain conversation text still uses the terminal's foreground.
   with their first request so unused sessions create no workspace. The status
   line shows preparation. Installed `node_modules` stay inside the sandbox,
   mounted over your project's own `node_modules`, which keeps its Windows
-  binaries; in a JavaScript project without one, the sandbox creates the
-  empty folder to mount over. The sandbox's installs belong to your project
-  and are reused by its next session. Dev Container definitions are not read yet.
+  binaries, in every project, so an install in one that becomes a
+  JavaScript project during the session stays in the sandbox too. Where your
+  project has no `node_modules`, the sandbox creates the empty folder to
+  mount over: the WSL sandbox removes it when the session ends, and Docker
+  Sandboxes when its sandbox is removed. The sandbox's installs belong to
+  your project and are reused by its next session. Dev Container definitions are not read yet.
 - Copies of the files an application replaced stay in
   `~/.tesota/applications/` for 30 days, or until an unfinished application
   is settled with `tesota recover`.

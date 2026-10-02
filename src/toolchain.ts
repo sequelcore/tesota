@@ -87,11 +87,6 @@ function runtimeVersions(checkout: string, sources: string[]): Record<string, st
   return tools;
 }
 
-/** Whether the checkout's root is a JavaScript package, whose installs land in its node_modules. */
-export function hasNodeModules(checkout: string): boolean {
-  return existsSync(join(checkout, "package.json"));
-}
-
 /** The package manager whose lockfile the checkout commits, which installs exactly what that lockfile names. */
 export function lockfileManager(checkout: string): { readonly manager: "bun" | "npm"; readonly lockfile: string } | null {
   for (const lockfile of ["bun.lock", "bun.lockb"]) if (existsSync(join(checkout, lockfile))) return { manager: "bun", lockfile };
@@ -189,13 +184,20 @@ export interface CommandProxy {
 /**
  * Shell that points Maven and Gradle at the sandbox's proxy in the sandbox's
  * home: Java ignores proxy variables, so both would otherwise fail to reach
- * their registries (Claude Code issues 13372 and 16222).
+ * their registries (Claude Code issues 13372 and 16222). Maven also asks only
+ * Central for its prefixes file: Maven Resolver 2 asks every repository a
+ * POM declares, such as Apache's parent POM's snapshot repository, from
+ * which a release build downloads nothing, and the proxy refuses each.
  */
 function jvmProxyScript(proxy: CommandProxy): string {
   const schemes = ["https", "http"];
   // Maven's `protocol` is the proxy's own, which is HTTP for every destination, HTTPS ones tunnelled through it.
   const maven = "<settings><proxies><proxy><id>tesota</id><active>true</active><protocol>http</protocol>" +
-    `<host>${proxy.host}</host><port>${proxy.port}</port><nonProxyHosts>localhost|127.0.0.1</nonProxyHosts></proxy></proxies></settings>`;
+    `<host>${proxy.host}</host><port>${proxy.port}</port><nonProxyHosts>localhost|127.0.0.1</nonProxyHosts></proxy></proxies>` +
+    "<profiles><profile><id>tesota</id><properties>" +
+    "<aether.remoteRepositoryFilter.prefixes.resolvePrefixFiles>false</aether.remoteRepositoryFilter.prefixes.resolvePrefixFiles>" +
+    "<aether.remoteRepositoryFilter.prefixes.resolvePrefixFiles.central>true</aether.remoteRepositoryFilter.prefixes.resolvePrefixFiles.central>" +
+    "</properties></profile></profiles><activeProfiles><activeProfile>tesota</activeProfile></activeProfiles></settings>";
   const gradle = [...schemes.flatMap((scheme) => [`systemProp.${scheme}.proxyHost=${proxy.host}`,
     `systemProp.${scheme}.proxyPort=${proxy.port}`]), "systemProp.http.nonProxyHosts=localhost|127.0.0.1"].join("\n");
   return ["set -eu", 'mkdir -p "$HOME/.m2" "$HOME/.gradle"',
