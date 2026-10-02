@@ -33,6 +33,7 @@ import { DEFAULT_WEB_CONFIG, readWebSearch, type WebSearch } from "./web-search.
 import { hostedSearch } from "./integrations/hosted-search.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
 import { Advisor } from "./integrations/advisor.js";
+import { hasContracts } from "./integrations/prove-tool.js";
 import { consultAdvisor } from "./integrations/advisor-session.js";
 import { Semaphore } from "./semaphore.js";
 import { type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
@@ -759,6 +760,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       state.advisor = advisor;
       const agent = await startWorkingAgent({ target }, { cwd: workspace.checkout, environment, web,
         ...(explorers === undefined ? {} : { explorers }), ...(advisor === undefined ? {} : { advisor }),
+        // Measured in #294: the guidance and `prove` let the agent finish with its contracts proved.
+        ...hasContracts(workspace.checkout) ? { proofs: "tool" as const } : {},
         sandboxed: confinesCommands(environment.guarantees), place: workspace.place === "source" ? "source" : "copy",
         // A sandboxed agent may ask to run one command here, with the operator's own tools and logins (decision 049).
         ...confinesCommands(environment.guarantees) ? { computer: await hostProvider.prepare(workspace.checkout) } : {},

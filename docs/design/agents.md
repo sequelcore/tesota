@@ -92,6 +92,51 @@ of each: "held in review", "not held in review" or "review uncertain".
 Planned: a step whose check is a gate shows "verified" when
 that gate passes on the result.
 
+### Proofs while it works
+
+The `prove` tool (`src/integrations/prove-tool.ts`, issue
+[#294](https://github.com/sequelcore/tesota/issues/294)) runs LemmaScript with
+Dafny on one TypeScript file with `//@` annotations, with its `.dfy`
+companion, and returns whether its contracts hold or which obligation fails.
+It runs on a private copy, as Tesota's verifier does, so it changes no file
+and needs no command approval. Its guidance tells the agent to work until the
+proof passes, to change a contract only when the request asks for different
+behavior and say so, and never to remove or loosen one, or add `//@ assume`,
+to make a proof pass. LemmaScript's own loop and Midspiral's lemmafit put the
+verifier inside the agent's work in the same way.
+
+What the agent proves is feedback, never evidence: Tesota still proves the
+candidate after the turn ([assurance](assurance.md)). A session gives the
+agent `prove` and its guidance when the repository has a TypeScript file with
+`//@` annotations outside dependency and build folders (`hasContracts`);
+otherwise its prompt and tools are unchanged.
+
+**Measured on 2026-10-02** with `live:agent --set=proofs`, six registered
+cases, five runs each, in three arms: neither, the contract guidance alone
+(`--proofs=guidance`), and `prove` with its guidance (`--proofs=tool`).
+Every turn in every arm passed its hidden test; only the proof told them
+apart.
+
+| Model | Arm | Proved | Proved, invariant cases | Tokens per turn | Time per turn |
+| --- | --- | --- | --- | --- | --- |
+| `claude-2:sonnet` | neither | 16/30 | 1/15 | 12.3k | 5.1 s |
+| | guidance | 30/30 | 15/15 | 12.7k | 5.8 s |
+| | `prove` | 30/30 | 15/15 | 13.4k | 7.4 s |
+| `codex-free2:gpt-6-luna` | neither | 15/30 | 0/15 | 8.0k | 10.2 s |
+| | guidance | 23/30 | 8/15 | 7.7k | 10.9 s |
+| | `prove` | 30/30 | 15/15 | 13.3k | 15.0 s |
+
+Without either, both models fixed the code and left a loop invariant
+missing, so the proof after the turn would fail and start a correction
+round. The guidance alone was enough for Sonnet, which ran `prove` once per
+case and passed each time; Luna needed the tool, running it about twice on
+each invariant case and repairing the proof after the first failure. No
+contract was weakened in any arm, but the cases did not tempt that, so the
+measurement says nothing about weakening under pressure. GPT-6.1 Sol was not
+measured: free ChatGPT accounts do not serve it, and the Plus account's
+weekly limit was nearly spent. Whether the agent should add contracts to code
+that has none is a separate question, not measured here.
+
 ## Explorers
 
 With `explore`, the working agent asks a read-only **explorer** one question.

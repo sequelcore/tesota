@@ -17,6 +17,7 @@ import { ADVISOR_GUIDANCE, type Advisor, advisorTool } from "./advisor.js";
 import { PLAN_GUIDANCE, planTool } from "./plan-tool.js";
 import type { WorkPlan } from "../work-plan.js";
 import { exploreTool, type ExplorerPool } from "./pi-explore.js";
+import { CONTRACT_GUIDANCE, PROVE_GUIDANCE, proveTool } from "./prove-tool.js";
 import { type WebAccess, webReadTool, webSearchTool } from "./web-tools.js";
 import type { ModelTarget } from "./model-session.js";
 import type { AgentActivity, AgentChange, ConversationEntry, TurnResult } from "./model-session-contract.js";
@@ -76,6 +77,11 @@ export interface CodingSessionOptions {
   readonly web?: WebAccess;
   /** The advisor the agent may consult (decision 027); absent when it is off. */
   readonly advisor?: Advisor;
+  /**
+   * The agent's own LemmaScript proof run with its guidance (#294), or the contract guidance alone, which exists so
+   * the measurement can tell the two apart; off unless set. Sessions set the tool where the repository has contracts.
+   */
+  readonly proofs?: "tool" | "guidance";
   /** Shows the agent's plan to the person (decision 033); absent where nobody watches, as in evaluations. */
   readonly plan?: (plan: WorkPlan) => void;
   /** Called with the tokens of each finished model response, as the provider reported them. */
@@ -336,7 +342,10 @@ const explorerGuidance = "The explore tool asks a read-only explorer one questio
   "does not see this conversation, so each question must stand on its own. Treat its answer as a lead to check, " +
   "not as fact, and never use it to change files. ";
 
-interface Helpers { readonly explorers: boolean; readonly web: boolean; readonly advisor: boolean; readonly plan: boolean }
+interface Helpers { readonly explorers: boolean; readonly web: boolean; readonly advisor: boolean; readonly plan: boolean;
+  readonly proofs: "tool" | "guidance" | undefined }
+
+const proofGuidance = { tool: PROVE_GUIDANCE, guidance: CONTRACT_GUIDANCE, off: "" } as const;
 
 /** Where the agent works and what becomes of its changes: kept or reverted in the user's project, or applied from a copy. */
 const placeGuidance = {
@@ -351,7 +360,7 @@ function systemPrompt(root: string, sandboxed: boolean, environment: ExecutionEn
   return placeGuidance[place].where +
     "Read, search, edit, create and delete files as the task needs. " + fileGuidance + commandGuidance(sandboxed, environment) +
     (helpers.explorers ? explorerGuidance : "") + (helpers.web ? webGuidance : "") + (helpers.advisor ? ADVISOR_GUIDANCE : "") +
-    (helpers.plan ? PLAN_GUIDANCE : "") + premiseGuidance + "Do not commit, push or change Git " +
+    (helpers.plan ? PLAN_GUIDANCE : "") + proofGuidance[helpers.proofs ?? "off"] + premiseGuidance + "Do not commit, push or change Git " +
     "history: when you finish, Tesota shows the user your changes, runs the repository's checks and a review, and " +
     `${placeGuidance[place].after}. End each turn with a short summary of what you changed and anything ` +
     "the user should verify. If a request needs no changes, just answer it. Lead with the answer or the result, and " +
@@ -526,7 +535,7 @@ export interface SessionStartOptions {
 
 /** What decides the working agent's tools, whichever engine runs it. */
 export type WorkingAgentOptions = Pick<CodingSessionOptions, "cwd" | "environment" | "sandboxed" | "place" | "approveCommand" |
-  "commandRules" | "computer" | "mode" | "onFullAccessCommand" | "beforeSandboxCommand" | "decideNetwork" | "explorers" | "web" | "advisor" | "plan">;
+  "commandRules" | "computer" | "mode" | "onFullAccessCommand" | "beforeSandboxCommand" | "decideNetwork" | "explorers" | "web" | "advisor" | "plan" | "proofs">;
 
 /**
  * The working agent's system prompt and tools: every file tool confined to the
@@ -539,7 +548,7 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
   }
   const root = realpathSync(options.cwd);
   const helpers = { explorers: options.explorers !== undefined, web: options.web !== undefined, advisor: options.advisor !== undefined,
-    plan: options.plan !== undefined };
+    plan: options.plan !== undefined, proofs: options.proofs };
   return { systemPrompt: systemPrompt(root, options.sandboxed, options.environment, helpers, options.place ?? "copy"), tools: [
     ...readOnlyFileTools(root),
     defineTool(whileEditsAllowed(options, confine(root, createEditToolDefinition(root), true))),
@@ -550,6 +559,7 @@ export function workingAgentSetup(options: WorkingAgentOptions): { systemPrompt:
     ...(options.web === undefined ? [] : [webSearchTool(options.web), webReadTool(options.web)]),
     ...(options.advisor === undefined ? [] : [advisorTool(options.advisor)]),
     ...(options.plan === undefined ? [] : [planTool(options.plan)]),
+    ...(options.proofs === "tool" ? [defineTool(confine(root, proveTool(root), false))] : []),
   ] };
 }
 
