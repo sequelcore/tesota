@@ -92,6 +92,24 @@ of each: "held in review", "not held in review" or "review uncertain".
 Planned: a step whose check is a gate shows "verified" when
 that gate passes on the result.
 
+### Proofs while it works (being measured)
+
+The `prove` tool (`src/integrations/prove-tool.ts`, issue
+[#294](https://github.com/sequelcore/tesota/issues/294)) runs LemmaScript with
+Dafny on one TypeScript file with `//@` annotations, with its `.dfy`
+companion, and returns whether its contracts hold or which obligation fails.
+It runs on a private copy, as Tesota's verifier does, so it changes no file
+and needs no command approval. Its guidance tells the agent to work until the
+proof passes, to change a contract only when the request asks for different
+behavior and say so, and never to remove or loosen one, or add `//@ assume`,
+to make a proof pass. LemmaScript's own loop and Midspiral's lemmafit put the
+verifier inside the agent's work in the same way.
+
+What the agent proves is feedback, never evidence: Tesota still proves the
+candidate after the turn ([assurance](assurance.md)). The tool is off in
+sessions until `live:agent --set=proofs`, run with and without `--prove` on
+the same model, shows a benefit ([evaluations](../development.md#evaluations)).
+
 ## Explorers
 
 With `explore`, the working agent asks a read-only **explorer** one question.

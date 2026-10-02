@@ -42,11 +42,42 @@ function lscEntry(): string {
   return join(dirname(require.resolve("lemmascript/package.json")), "tools", "dist", "lsc.js");
 }
 
+/** Whether Dafny answers on this computer, which every LemmaScript proof needs. */
+export async function dafnyInstalled(signal: AbortSignal): Promise<boolean> {
+  return (await run("dafny", ["--version"], tmpdir(), signal)).status === 0;
+}
+
+/** One `lsc check` of one file: how it ended, and the end of what it printed. */
+export interface ProofRun {
+  readonly outcome: "passed" | "failed" | "timed_out" | "cancelled" | "not_started";
+  readonly exitCode: number | null;
+  readonly output: string;
+  readonly durationMs: number;
+}
+
+/**
+ * LemmaScript with Dafny on one TypeScript source, with its `.dfy` companion
+ * when there is one. Both are copied to a private directory, because `lsc`
+ * writes generated proof files next to its input, so the caller's files never
+ * change.
+ */
+export async function proveSource(name: string, source: string, companion: string | undefined,
+  signal: AbortSignal): Promise<ProofRun> {
+  const started = Date.now();
+  const directory = await mkdtemp(join(tmpdir(), "tesota-lemmascript-"));
+  try {
+    await writeFile(join(directory, name), source, { mode: 0o600 });
+    if (companion !== undefined) await writeFile(join(directory, name.replace(/\.ts$/u, ".dfy")), companion, { mode: 0o600 });
+    const proof = await run(process.execPath, [lscEntry(), "check", "--backend=dafny", name], directory, signal);
+    const outcome = signal.aborted ? "cancelled" : proof.timedOut ? "timed_out" : proof.error ? "not_started" :
+      proof.status === 0 ? "passed" : "failed";
+    return { outcome, exitCode: proof.status, output: proof.output, durationMs: Date.now() - started };
+  } finally { await rm(directory, { recursive: true, force: true }); }
+}
+
 /**
  * LemmaScript with Dafny on the candidate's added and modified TypeScript
- * files that carry `//@` annotations. Each file, with its `.dfy` companion
- * when the tree has one, is copied to a private directory, because `lsc`
- * writes generated proof files next to its input.
+ * files that carry `//@` annotations, each proved by `proveSource`.
  */
 export async function runLemmaScriptVerifier(snapshot: WorkspaceSnapshot, read: ContentReader,
   signal: AbortSignal): Promise<CheckResult[]> {
@@ -56,30 +87,20 @@ export async function runLemmaScriptVerifier(snapshot: WorkspaceSnapshot, read: 
     return source !== undefined && annotations(source).length > 0 ? [{ path: change.path, source }] : [];
   });
   if (targets.length === 0) return [];
-  const dafny = await run("dafny", ["--version"], tmpdir(), signal);
-  const entry = lscEntry();
+  const installed = await dafnyInstalled(signal);
   const results: CheckResult[] = [];
   for (const target of targets) {
-    const started = Date.now();
     const proved = annotations(target.source);
     const base = { verifier: "lemmascript" as const, command: `lemmascript ${target.path}`, tree: snapshot.tree, limits,
       claim: `LemmaScript and Dafny prove these annotations of ${target.path}:\n${proved.map((line) => `  ${line}`).join("\n")}`,
       environment: "host", guarantees: hostProvider.guarantees, exitCode: null };
-    if (dafny.status !== 0) {
+    if (!installed) {
       results.push({ ...base, outcome: "not_started", durationMs: 0, output: "Dafny is not installed, so nothing was proved." });
       continue;
     }
-    const directory = await mkdtemp(join(tmpdir(), "tesota-lemmascript-"));
-    try {
-      const name = basename(target.path);
-      await writeFile(join(directory, name), target.source, { mode: 0o600 });
-      const companion = read(snapshot.tree, target.path.replace(/\.ts$/u, ".dfy"));
-      if (companion !== undefined) await writeFile(join(directory, name.replace(/\.ts$/u, ".dfy")), companion, { mode: 0o600 });
-      const proof = await run(process.execPath, [entry, "check", "--backend=dafny", name], directory, signal);
-      const outcome = signal.aborted ? "cancelled" : proof.timedOut ? "timed_out" : proof.error ? "not_started" :
-        proof.status === 0 ? "passed" : "failed";
-      results.push({ ...base, outcome, exitCode: proof.status, durationMs: Date.now() - started, output: proof.output });
-    } finally { await rm(directory, { recursive: true, force: true }); }
+    const companion = read(snapshot.tree, target.path.replace(/\.ts$/u, ".dfy"));
+    const proof = await proveSource(basename(target.path), target.source, companion, signal);
+    results.push({ ...base, ...proof });
     if (signal.aborted) break;
   }
   return results;

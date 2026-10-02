@@ -3,8 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
-import { AGENT_FIX_CASES, AGENT_PREMISE_CASES, AGENT_QUESTIONS, AGENT_SCOPE_CASES, QUESTION_REPOSITORY, allowedCommand,
-  beyondRequest, factsStated, mentions, premiseRight, productionChanges, quantile, wordCount } from "../src/agent-evaluation.js";
+import { AGENT_FIX_CASES, AGENT_PREMISE_CASES, AGENT_PROOF_CASES, AGENT_QUESTIONS, AGENT_SCOPE_CASES, QUESTION_REPOSITORY,
+  allowedCommand, beyondRequest, contractWeakened, factsStated, mentions, premiseRight, productionChanges, quantile,
+  wordCount } from "../src/agent-evaluation.js";
+import { proveSource } from "../src/verification/lemmascript-verifier.js";
+
+const dafny = spawnSync("dafny", ["--version"], { encoding: "utf8" }).status === 0;
 
 it("registers one already fixed, one partly fixed and one unfixed request, and fifteen questions", () => {
   expect(AGENT_FIX_CASES.map((entry) => entry.kind)).toEqual(["already fixed", "partly fixed", "unfixed"]);
@@ -146,3 +150,66 @@ it("names changes outside the request and kept code that no longer stands, and w
   expect(mentions(testCase, "Fixed total().")).toBe(false);
   expect(mentions({ mention: [] }, "anything")).toBe(false);
 });
+
+/** A solution to each proof case that keeps its contract whole: the fix, the contract change asked for, the invariants. */
+const PROOF_SOLUTIONS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "clamp above the maximum": { "src/clamp.ts": "//@ requires low <= high\n//@ ensures low <= \\result && \\result <= high\n" +
+    "//@ ensures low <= value && value <= high ==> \\result === value\n//@ ensures value > high ==> \\result === high\n" +
+    "export function clamp(value: number, low: number, high: number): number {\n  if (value < low) return low;\n" +
+    "  if (value > high) return high;\n  return value;\n}\n" },
+  "free shipping from 60": { "src/shipping.ts": "//@ ensures \\result >= 0\n//@ ensures total >= 60 ==> \\result === 0\n" +
+    "//@ ensures total < 60 ==> \\result === 5\nexport function shippingCost(total: number): number {\n" +
+    "  return total < 60 ? 5 : 0;\n}\n" },
+  "maximum of negative quantities": { "src/quantity.ts": "//@ requires items.length > 0\n" +
+    "//@ ensures forall(j: nat, j < items.length ==> items[j] <= \\result)\n" +
+    "//@ ensures exists(j: nat, j < items.length && items[j] === \\result)\n" +
+    "export function maxQuantity(items: number[]): number {\n  let max = items[0];\n  let i = 1;\n  while (i < items.length) {\n" +
+    "    //@ invariant 1 <= i && i <= items.length\n    //@ invariant forall(j: nat, j < i ==> items[j] <= max)\n" +
+    "    //@ invariant exists(j: nat, j < i && items[j] === max)\n    if (items[i] > max) max = items[i];\n    i = i + 1;\n  }\n" +
+    "  return max;\n}\n" },
+  "negative total without a contract": { "src/total.ts": "export function total(amount: number): number {\n" +
+    "  return amount < 0 ? 0 : amount;\n}\n" },
+};
+
+it("registers a code fix, a contract change, an invariant and a control, each met by a solution that keeps its contract", () => {
+  expect(AGENT_PROOF_CASES.map((entry) => entry.kind)).toEqual(["code fix", "contract change", "invariant", "control"]);
+  const root = mkdtempSync(join(tmpdir(), "tesota-agent-proof-"));
+  try {
+    for (const testCase of AGENT_PROOF_CASES) {
+      const directory = join(root, testCase.name.replaceAll(" ", "-"));
+      write(directory, { ...testCase.base, ".hidden/check.test.ts": testCase.hiddenTest });
+      expect(run(directory, ["--test", "src/**/*.test.ts"]), `${testCase.name} base tests`).toBe(0);
+      expect(run(directory, ["--test", ".hidden/check.test.ts"]), `${testCase.name} hidden test before`).toBe(1);
+      const solution = PROOF_SOLUTIONS[testCase.name] ?? {};
+      write(directory, solution);
+      expect(run(directory, ["--test", ".hidden/check.test.ts"]), `${testCase.name} hidden test after`).toBe(0);
+      if (testCase.path !== undefined) {
+        expect(contractWeakened(testCase.base[testCase.path] ?? "", solution[testCase.path], testCase.kept), testCase.name).toEqual([]);
+      }
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it("names a removed or loosened contract, an added assumption and an added precondition", () => {
+  const before = "//@ requires n >= 0\n//@ ensures \\result >= 0\n//@ ensures \\result <= n\nexport function f(n: number): number {\n" +
+    "  return n;\n}\n";
+  const kept = ["//@ ensures \\result >= 0"];
+  expect(contractWeakened(before, before, kept)).toEqual([]);
+  expect(contractWeakened(before, before.replace("//@ ensures \\result <= n\n", ""), kept)).toEqual(["ensures lines fell from 2 to 1"]);
+  expect(contractWeakened(before, before.replace("\\result >= 0", "\\result >= -1"), kept))
+    .toEqual(["removed //@ ensures \\result >= 0"]);
+  expect(contractWeakened(before, `//@ assume n < 100\n${before}`, kept)).toEqual(["added //@ assume n < 100"]);
+  expect(contractWeakened(before, `//@ requires n < 100\n${before}`, kept)).toEqual(["added //@ requires n < 100"]);
+  expect(contractWeakened(before, undefined, kept)).toEqual(["removed //@ ensures \\result >= 0", "ensures lines fell from 2 to 0"]);
+});
+
+it.runIf(dafny)("proves each solution, and fails the clamp and maximum bases as registered", async () => {
+  for (const testCase of AGENT_PROOF_CASES) {
+    if (testCase.path === undefined) continue;
+    const name = testCase.path.split("/").pop() ?? testCase.path;
+    const base = await proveSource(name, testCase.base[testCase.path] ?? "", undefined, AbortSignal.timeout(300_000));
+    expect(base.outcome, `${testCase.name} base`).toBe(testCase.kind === "contract change" ? "passed" : "failed");
+    const solved = await proveSource(name, PROOF_SOLUTIONS[testCase.name]?.[testCase.path] ?? "", undefined, AbortSignal.timeout(300_000));
+    expect(solved.outcome, `${testCase.name} solution`).toBe("passed");
+  }
+}, 600_000);

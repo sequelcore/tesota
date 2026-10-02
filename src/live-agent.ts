@@ -2,13 +2,15 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { AGENT_FIX_CASES, AGENT_PREMISE_CASES, AGENT_QUESTIONS, AGENT_SCOPE_CASES, QUESTION_REPOSITORY, allowedCommand,
-  beyondRequest, factsStated, mentions, premiseRight, productionChanges, quantile, wordCount } from "./agent-evaluation.js";
+import { basename, dirname, join } from "node:path";
+import { AGENT_FIX_CASES, AGENT_PREMISE_CASES, AGENT_PROOF_CASES, AGENT_QUESTIONS, AGENT_SCOPE_CASES, QUESTION_REPOSITORY,
+  allowedCommand, beyondRequest, contractWeakened, factsStated, mentions, premiseRight, productionChanges, quantile,
+  wordCount } from "./agent-evaluation.js";
 import { hostProvider } from "./host-environment.js";
 import { openModelTarget, startWorkingAgent } from "./integrations/model-session.js";
 import { readModelChoices } from "./model-roles.js";
 import { type TokenUsage, totalTokens } from "./token-usage.js";
+import { proveSource } from "./verification/lemmascript-verifier.js";
 
 /**
  * Run the working agent's evaluation for issue #165 live and write one JSON
@@ -18,18 +20,22 @@ import { type TokenUsage, totalTokens } from "./token-usage.js";
  * only Node's test runner; a hidden test, run afterwards, decides a fix, and
  * for a scope case a preserved test and the case's allowed paths and kept code
  * decide whether it did only what was asked; for a premise case, whether it
- * left alone a request whose premise is false and fixed the control.
+ * left alone a request whose premise is false and fixed the control; for a
+ * proof case (#294), whether its file proves after the turn and its contract
+ * was not weakened. `--prove` gives the agent the `prove` tool, so the same
+ * cases run with and without it.
  *
- *   bun run live:agent [--runs=N] [--set=all|fixes|scope|premise|questions] [--model-agent=<id>]
+ *   bun run live:agent [--runs=N] [--set=all|fixes|scope|premise|proofs|questions] [--prove] [--model-agent=<id>]
  */
 const option = (name: string): string | undefined =>
   process.argv.find((argument) => argument.startsWith(`--${name}=`))?.slice(name.length + 3);
 const runs = Number(option("runs") ?? "2");
 if (!Number.isInteger(runs) || runs < 1) throw new Error("Use --runs=N with N at least 1.");
 const set = option("set") ?? "all";
-if (!["all", "fixes", "scope", "premise", "questions"].includes(set)) {
-  throw new Error("Use --set=all, fixes, scope, premise or questions.");
+if (!["all", "fixes", "scope", "premise", "proofs", "questions"].includes(set)) {
+  throw new Error("Use --set=all, fixes, scope, premise, proofs or questions.");
 }
+const prove = process.argv.includes("--prove");
 const includes = (part: string): boolean => set === "all" || set === part;
 const agentId = option("model-agent") ?? readModelChoices().agent;
 const target = await openModelTarget(agentId);
@@ -53,20 +59,34 @@ function changedPaths(directory: string): string[] {
   return status.stdout.split("\n").filter((line) => line.length > 3).map((line) => line.slice(3).trim());
 }
 
-interface Turn { readonly status: string; readonly reply: string; readonly tokens: number; readonly durationMs: number; readonly commands: string[] }
+interface Turn {
+  readonly status: string; readonly reply: string; readonly tokens: number; readonly durationMs: number; readonly commands: string[];
+  /** How many times the agent ran `prove`. */
+  readonly proofRuns: number;
+}
 
 async function ask(directory: string, request: string): Promise<Turn> {
   let tokens = 0;
+  let proofRuns = 0;
   const commands: string[] = [];
   const session = await startWorkingAgent({ target, onUsage: (usage: TokenUsage) => { tokens += totalTokens(usage); } },
-    { cwd: directory, environment: await hostProvider.prepare(directory), sandboxed: false,
-      approveCommand: async ({ command }) => { commands.push(command); return allowedCommand(command) ? "once" : "deny"; } },
+    { cwd: directory, environment: await hostProvider.prepare(directory), sandboxed: false, prove,
+      approveCommand: async ({ command }) => { commands.push(command); return allowedCommand(command) ? "once" : "deny"; },
+      onActivity: (activity) => { if (activity.type === "tool_started" && activity.tool.endsWith("prove")) proofRuns += 1; } },
     { conversationId: randomUUID() });
   const started = Date.now();
   try {
     const turn = await session.run(request, AbortSignal.timeout(15 * 60_000));
-    return { status: turn.status, reply: turn.status === "completed" ? turn.reply : "", tokens, durationMs: Date.now() - started, commands };
+    return { status: turn.status, reply: turn.status === "completed" ? turn.reply : "", tokens, durationMs: Date.now() - started, commands,
+      proofRuns };
   } finally { session.dispose(); }
+}
+
+/** Whether a file proves after a turn: LemmaScript with Dafny on it, as Tesota's own verifier runs it. */
+async function provesAfter(directory: string, path: string): Promise<string> {
+  const file = join(directory, path);
+  if (!existsSync(file)) return "missing";
+  return (await proveSource(basename(path), readFileSync(file, "utf8"), undefined, AbortSignal.timeout(10 * 60_000))).outcome;
 }
 
 const fixes: unknown[] = [];
@@ -76,6 +96,9 @@ const scoped: unknown[] = [];
 const scope = { attempts: 0, resolved: 0, inScope: 0, controlAttempts: 0, controlInScope: 0, mentionable: 0, mentioned: 0 };
 const premised: unknown[] = [];
 const premise = { attempts: 0, leftAlone: 0, reported: 0, controlAttempts: 0, controlResolved: 0 };
+const proofAttempts: unknown[] = [];
+const proofs: Record<string, { attempts: number; proved: number; resolved: number; weakened: number; proofRuns: number;
+  tokens: number; durationMs: number }> = {};
 const passes = (directory: string, path: string, text: string): boolean => {
   mkdirSync(join(directory, ".hidden"), { recursive: true });
   writeFileSync(join(directory, ".hidden", path), text);
@@ -153,6 +176,32 @@ try {
       console.log(`run ${run} · ${testCase.name}: ${verdict}, ${Math.round(turn.tokens / 1000)}k tokens` +
         (turn.status === "completed" ? "" : ` (${turn.status})`));
     }
+    for (const testCase of includes("proofs") ? AGENT_PROOF_CASES : []) {
+      const directory = repository(testCase.name, testCase.base);
+      const turn = await ask(directory, testCase.request);
+      const changed = changedPaths(directory);
+      const resolved = passes(directory, "check.test.ts", testCase.hiddenTest);
+      const path = testCase.path;
+      const proof = path === undefined ? "no contract" : await provesAfter(directory, path);
+      const proved = path === undefined || proof === "passed";
+      const after = path === undefined || !existsSync(join(directory, path)) ? undefined : readFileSync(join(directory, path), "utf8");
+      const weakened = path === undefined ? [] : contractWeakened(testCase.base[path] ?? "", after, testCase.kept);
+      const tally = proofs[testCase.kind] ??= { attempts: 0, proved: 0, resolved: 0, weakened: 0, proofRuns: 0, tokens: 0, durationMs: 0 };
+      tally.attempts += 1;
+      tally.proved += proved ? 1 : 0;
+      tally.resolved += resolved ? 1 : 0;
+      tally.weakened += weakened.length > 0 ? 1 : 0;
+      tally.proofRuns += turn.proofRuns;
+      tally.tokens += turn.tokens;
+      tally.durationMs += turn.durationMs;
+      proofAttempts.push({ name: testCase.name, kind: testCase.kind, run, resolved, proved, proof, weakened, changed,
+        words: wordCount(turn.reply), turn });
+      const weakenedNote = weakened.length === 0 ? "" : `, weakened (${weakened.join("; ")})`;
+      console.log(`run ${run} · ${testCase.name}: ${resolved ? "resolved" : "not resolved"}, ` +
+        `${proved ? "proved" : `not proved (${proof})`}${weakenedNote}, ${turn.proofRuns} prove runs, ` +
+        `${Math.round(turn.tokens / 1000)}k tokens, ${Math.round(turn.durationMs / 1000)} s` +
+        (turn.status === "completed" ? "" : ` (${turn.status})`));
+    }
     for (const entry of includes("questions") ? AGENT_QUESTIONS : []) {
       const directory = repository("questions", QUESTION_REPOSITORY);
       const turn = await ask(directory, entry.question);
@@ -166,15 +215,15 @@ try {
 } finally { rmSync(root, { recursive: true, force: true }); }
 
 const words = answers.filter((entry) => entry.turn.status === "completed").map((entry) => entry.words);
-const record = { at: new Date().toISOString(), model: agentId, runs, set,
-  fixes: outcome, scope, premise,
+const record = { at: new Date().toISOString(), model: agentId, runs, set, prove,
+  fixes: outcome, scope, premise, proofs,
   answers: { replies: words.length, unfinished: answers.length - words.length, medianWords: quantile(words, 0.5),
     p90Words: quantile(words, 0.9), stated: answers.reduce((sum, entry) => sum + entry.stated, 0),
     facts: answers.reduce((sum, entry) => sum + entry.facts, 0),
     changedFiles: answers.filter((entry) => entry.changed.length > 0).length },
-  attempts: { fixes, scope: scoped, premise: premised, answers } };
+  attempts: { fixes, scope: scoped, premise: premised, proofs: proofAttempts, answers } };
 mkdirSync(join("live-runs", "agent"), { recursive: true });
 const file = join("live-runs", "agent", `${record.at.replaceAll(":", "-")}.json`);
 writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
 console.log(`fixes ${JSON.stringify(record.fixes)}\nscope ${JSON.stringify(record.scope)}\npremise ${JSON.stringify(record.premise)}\n` +
-  `answers ${JSON.stringify(record.answers)}\nrecorded ${file}`);
+  `proofs ${JSON.stringify(record.proofs)}\nanswers ${JSON.stringify(record.answers)}\nrecorded ${file}`);
