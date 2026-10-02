@@ -129,3 +129,25 @@ it("checks the repository's declared toolchain before each sandboxed command, an
   expect(order).toEqual(["check before 0"]);
   expect(setup.systemPrompt).toContain("declare it in the repository's mise.toml");
 });
+
+it("tells the agent to change files with its file tools and to keep scratch files out of the repository", () => {
+  const setup = workingAgentSetup({ cwd: workspace(), environment: sandbox().environment, sandboxed: true,
+    approveCommand: async () => "deny" });
+  expect(setup.systemPrompt).toContain("Change the repository's files only with the edit and write tools, never with shell commands");
+  expect(setup.systemPrompt).toContain("Do not leave scratch files, such as probes or one-off scripts, in the repository");
+});
+
+it.runIf(process.platform === "win32")("passes PowerShell through bash on this computer unchanged, as run_on_computer describes", async () => {
+  const root = workspace();
+  const setup = workingAgentSetup({ cwd: root, environment: sandbox().environment, sandboxed: true,
+    computer: await hostProvider.prepare(root), approveCommand: async () => "once" });
+  const tool = setup.tools.find((candidate) => candidate.name === "run_on_computer");
+  if (tool === undefined) throw new Error("No run_on_computer tool");
+  // The form the description gives, with PowerShell that bash would otherwise expand: $ variables and both quotes.
+  const form = /powershell\.exe .*?\n<PowerShell commands>\nPS\n\)"/su.exec(tool.description)?.[0];
+  expect(form).toBeDefined();
+  const script = "$items = @('a', 'b')\n\"count=$($items.Count)\"\nif ($items.Count -gt 1) {\n  'more than one'\n}";
+  const output = await call(tool, { command: form?.replace("<PowerShell commands>", script), reason: "Your PowerShell." });
+  expect(output).toContain("count=2");
+  expect(output).toContain("more than one");
+}, 30_000);
