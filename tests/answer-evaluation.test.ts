@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { QUESTION_REPOSITORY } from "../src/agent-evaluation.js";
-import { ANSWER_CASES, isCheckable, scoreFirstPass, scorePremise, scoreReview, tally } from "../src/answer-evaluation.js";
+import { ANSWER_CASES, isCheckable, scoreCount, scoreFirstPass, scorePremise, scoreReview, tally } from "../src/answer-evaluation.js";
 
 /**
  * The answer check's registered evaluation: its cases must stay what they
@@ -45,6 +45,18 @@ it("scores a request judged held that did not hold as missed, the reverse as a f
   expect(scoreReview(false, true, false)).toBe("right");
   expect(scoreReview(false, false, false)).toBe("incomplete");
   expect(tally(["right", "missed"], ["right", "right"])).toEqual({ right: 2, missed: 0 });
+});
+
+it("registers resumes and retries that count as no request, beside requests that each count (#253)", () => {
+  const counted = ANSWER_CASES.filter((answer) => answer.counted !== undefined);
+  expect(counted.map((answer) => [answer.name, answer.counted])).toEqual([["follow-up claimed, not made", 1],
+    ["resumed and asked again, claimed, not made", 1], ["Spanish resumed and asked again, claimed, not made", 1],
+    ["two questions answered", 2]]);
+  // Each needs a review verdict, or the live run never counts its requests.
+  expect(counted.every((answer) => answer.holds !== undefined)).toBe(true);
+  expect(scoreCount(1, 1)).toBe("right");
+  expect(scoreCount(1, 3)).toBe("too many");
+  expect(scoreCount(2, 1)).toBe("too few");
 });
 
 it("registers a declined false premise and scores it right only when the operator is left to settle it", () => {

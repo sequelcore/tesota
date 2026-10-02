@@ -191,6 +191,21 @@ unassessed, or assesses one that does not exist, is incomplete
 (`missingAssessments` in `src/integrations/pi-reviewer.ts`); focused lenses
 and ClaimCheck report none.
 
+**A message that only steers is no request of its own.** Each message is
+recorded verbatim, but "continue" after a stopped turn, "try again", or "ask
+again" after a declined command asks for nothing new. The reviewer lists such
+a message as a **continuation** of the earlier request, gives it no
+obligations, and judges that request together with it, so anything it adds
+becomes part of that request; when unsure, it attaches the message too, which
+changes only the count. An attachment stands only to an earlier request that
+exists and when the message has no obligations of its own
+(`continuationAccepted` in `src/verification/continuation-rule.ts`, proved);
+otherwise the message is a request to assess. In the session that showed
+the problem, "continue i stopped by accident" and "ask again" made one piece
+of work read "1 of 3 done, 2 unclear"
+([#253](https://github.com/sequelcore/tesota/issues/253)). `live:answer`
+scores how many requests each verdict counts on cases registered for it.
+
 Every **gap**, a partial or unmet obligation, faces the refuter with the
 findings, numbered after them. An obligation **held** when the reviewer
 found it met or the refuter disproved its gap, **did not hold** only when the
