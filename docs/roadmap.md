@@ -13,9 +13,11 @@ the operator keep, revert or redo the turn with `/keep`, `/revert` and
 workspace and applies or rejects. On Windows, commands can run
 in a qualified WSL sandbox; otherwise host commands ask for approval.
 `Shift+Tab` switches between Read only, Accept edits and Full access. The
-complete loop has run on throwaway and evaluation repositories. Daily use on a
-real project has not started. See the [user guide](guide/using-tesota.md) for
-the workflow and limits.
+complete loop has run on throwaway and evaluation repositories, and in daily
+use on an outside Windows project and on Tesota's own issues. The current
+record of that use starts on 2026-10-01; what it surfaced is in
+[issue #243](https://github.com/sequelcore/tesota/issues/243). See the
+[user guide](guide/using-tesota.md) for the workflow and limits.
 
 ## Next
 

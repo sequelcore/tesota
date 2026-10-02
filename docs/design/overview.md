@@ -204,4 +204,5 @@ routing and execution permissions live in code and in Tesota's own directory
 - Without a sandbox, approved commands run on the host without isolation.
 - At most two sessions work at once; model rate-limit errors are not retried.
 - The complete loop with review and correction has run on throwaway and
-  evaluation repositories, not yet in daily use on a real project.
+  evaluation repositories, and in daily use on real projects on Windows; the
+  current record of that use starts on 2026-10-01.
