@@ -652,7 +652,7 @@ class PersistentTesotaShellTerminal implements TesotaShellTerminal {
   addSession(id: string, title: string, entries: readonly TranscriptEntry[] = [],
     inspections: readonly ShellInspection[] = [], fresh = entries.length === 0): void {
     if (this.sessions.has(id)) throw new Error("Tesota session already exists");
-    const transcript = new Transcript(this.theme);
+    const transcript = new Transcript(this.theme, () => this.showResult);
     const scroll = new ScrollView(transcript.container, { follow: "end", primary: true, scrollbar: "auto" });
     const welcome = fresh && entries.length === 0 ? new WelcomeBanner(this.options.cwd, this.theme, {
       viewportHeight: () => scroll.viewportHeight,

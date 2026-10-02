@@ -5,6 +5,7 @@ import { type ObligationOutcome, obligationOutcome } from "./verification/obliga
 import type { ReviewAction } from "./verification/review-action-rule.js";
 import type { DepthDecision } from "./review-depth.js";
 import { costText, type ReviewMeasurement } from "./review-forecast.js";
+import { SANDBOX_NAMES } from "./execution-providers.js";
 import type { ShellInspection } from "./tesota-shell-terminal.js";
 import type { VerificationChange } from "./verification-changes.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
@@ -224,6 +225,16 @@ function firstPassDetail(model: string, decision: TriageDecision): string {
   return `First pass\n  ${model} ${outcome}: ${decision.reason}`;
 }
 
+/**
+ * Where a check ran, as the operator names it: a sandbox as the footer and
+ * setup describe it, or this computer, without isolation. A provider Tesota
+ * has no name for keeps its own.
+ */
+function checkPlace(check: CheckResult): string {
+  if (check.guarantees.filesystem === "host") return "on this computer, without isolation";
+  return `in ${SANDBOX_NAMES[check.environment]?.described ?? `the isolated ${check.environment} environment`}`;
+}
+
 const verbs: Readonly<Record<WorkspaceSnapshot["changes"][number]["status"], string>> =
   { added: "add   ", modified: "edit  ", deleted: "delete" };
 const flagVerbs: Readonly<Record<VerificationChange["status"], string>> =
@@ -236,9 +247,7 @@ const flagVerbs: Readonly<Record<VerificationChange["status"], string>> =
  */
 export function inspectReview({ snapshot, checks, flags, requests, reviews, depth, measurement }: ReviewRecord): ShellInspection {
   const first = checks[0];
-  const where = first === undefined ? "No checks ran." : first.guarantees.filesystem === "host"
-    ? `Checks ran on this exact content on this computer (${first.environment}), without isolation.`
-    : `Checks ran on this exact content in the isolated ${first.environment} environment.`;
+  const where = first === undefined ? "No checks ran." : `Checks ran on this exact content ${checkPlace(first)}.`;
   const groups: Groups = { agent: [], operator: [], context: [] };
   for (const check of checks) {
     const action = actionOfCheck(check);

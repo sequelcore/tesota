@@ -65,9 +65,25 @@ it("sets a review apart from the agent's replies and wraps each line under its o
     " ┃   ✗ high · src/price.ts:3 — Exactly",
     " ┃     one hundred dollars is discounted",
     " ┃     as well",
-    " ┃ Alt+R shows or hides the full diff",
-    " ┃ and check output.",
+    " ┃ Alt+R shows the full record, its",
+    " ┃ checks and the diff.",
   ]);
+});
+
+it("names the key to the full record under the latest review only, and only while the record is not shown", () => {
+  initTheme("dark");
+  let shown = false;
+  const transcript = new Transcript(tesotaShellTheme("tesota-dark"), () => shown);
+  transcript.add({ kind: "review", title: "Review · 1 file", text: "  edit   src/price.ts" });
+  transcript.add({ kind: "review", title: "Review · 2 files", text: "  edit   src/price.ts\n  edit   src/tax.ts" });
+  const screen = (): string => stripTerminalSequences(transcript.container.render(80).join("\n"));
+  expect(screen().split("Alt+R shows the full record").length - 1).toBe(1);
+  expect(screen().indexOf("Alt+R")).toBeGreaterThan(screen().indexOf("Review · 2 files"));
+  // Once the record shows beside the conversation, the key would only repeat what is on screen.
+  shown = true;
+  expect(screen()).not.toContain("Alt+R");
+  shown = false;
+  expect(screen()).toContain("Alt+R shows the full record, its checks and the diff.");
 });
 
 it("shows a command's colored output as plain text", () => {
