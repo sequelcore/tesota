@@ -1,5 +1,6 @@
 import { truncateToWidth, visibleWidth, type Component, type TuiMouseEvent, type TuiMouseEventResult } from "@earendil-works/pi-tui";
 import { bold, colorText, mutedText, selectedRow, type TesotaShellTheme } from "./tesota-shell-theme.js";
+import { decisionLevel } from "./verification/decision-bar-rule.js";
 
 /** A session's turns in the operator's files that are neither kept nor reverted, and whether a reverted one can be put back. */
 export interface UndecidedTurns {
@@ -16,6 +17,24 @@ export function decisionActions(undecided: UndecidedTurns | undefined, hasDiff: 
   if (undecided === undefined) return [];
   const turns: DecisionAction[] = undecided.turns > 0 ? ["keep", "revert", ...hasDiff ? ["diff" as const] : []] : [];
   return [...turns, ...undecided.redoable ? ["redo" as const] : []];
+}
+
+/**
+ * The bar's words for a width: its actions always whole, so each stays a
+ * target to click, and as room runs out first a shorter hint, then none,
+ * then the count without its files, rather than a line cut mid-word.
+ */
+export function decisionLayout(undecided: UndecidedTurns, actions: readonly DecisionAction[], width: number):
+  Readonly<{ summary: string; hint: string }> {
+  const turns = undecided.turns === 0 ? "Turn reverted" : `${undecided.turns} ${undecided.turns === 1 ? "turn" : "turns"} undecided`;
+  const files = undecided.turns === 0 ? turns : `${turns} · ${undecided.files} ${undecided.files === 1 ? "file" : "files"}`;
+  const [full, short] = actions.includes("keep") ? ["or /keep /revert · a new request continues on top", "or /keep /revert"]
+    : ["or /redo", "or /redo"];
+  // Each action is drawn as ` Label `, one column apart; the summary and a hint stand two apart from them.
+  const buttons = actions.reduce((sum, action) => sum + actionLabels[action].length + 3, 0) - 1;
+  const needs = (summary: string, hint: string): number => 1 + summary.length + 2 + buttons + (hint === "" ? 0 : 2 + hint.length);
+  const layouts = [{ summary: files, hint: full }, { summary: files, hint: short }, { summary: files, hint: "" }, { summary: turns, hint: "" }];
+  return layouts[decisionLevel(width, needs(files, full), needs(files, short), needs(files, ""))] ?? { summary: turns, hint: "" };
 }
 
 /**
@@ -53,8 +72,7 @@ export class DecisionBar implements Component {
     this.#labels = [];
     const undecided = this.#state()?.undecided;
     if (actions.length === 0 || undecided === undefined) return [];
-    const summary = undecided.turns === 0 ? "Turn reverted" :
-      `${undecided.turns} ${undecided.turns === 1 ? "turn" : "turns"} undecided · ${undecided.files} ${undecided.files === 1 ? "file" : "files"}`;
+    const { summary, hint } = decisionLayout(undecided, actions, width);
     let column = 1 + visibleWidth(summary) + 2;
     const buttons = actions.map((action) => {
       const label = ` ${actionLabels[action]} `;
@@ -62,8 +80,8 @@ export class DecisionBar implements Component {
       column += label.length + 1;
       return bold(selectedRow(label, label.length, this.#theme));
     });
-    const hint = mutedText(actions.includes("keep") ? "or /keep /revert · a new request continues on top" : "or /redo", this.#theme);
-    return [truncateToWidth(` ${colorText(summary, this.#theme.warning)}  ${buttons.join(" ")}  ${hint}`, width)];
+    const line = ` ${colorText(summary, this.#theme.warning)}  ${buttons.join(" ")}${hint === "" ? "" : `  ${mutedText(hint, this.#theme)}`}`;
+    return [truncateToWidth(line, width)];
   }
 
   /** A press on an action's label is taken, so the click that follows it reaches here and acts. */

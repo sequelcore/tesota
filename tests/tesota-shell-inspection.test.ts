@@ -8,6 +8,16 @@ const snapshot: WorkspaceSnapshot = { base: "b".repeat(40), tree: "t".repeat(40)
 const check = { verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command: "bun run check", tree: snapshot.tree, environment: "host", guarantees: hostProvider.guarantees,
   outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" };
 
+it("says where the checks ran by the sandbox's own name, or on this computer without isolation", () => {
+  const where = (environment: string, filesystem: "workspace" | "host"): string => inspectReview({ snapshot, requests: [], flags: [],
+    reviews: [], checks: [{ ...check, environment, guarantees: { ...hostProvider.guarantees, filesystem } }] }).summary;
+  expect(where("wsl", "workspace")).toContain("Checks ran on this exact content in the WSL sandbox.");
+  expect(where("docker-sandboxes", "workspace")).toContain("Checks ran on this exact content in Docker Sandboxes.");
+  expect(where("host", "host")).toContain("Checks ran on this exact content on this computer, without isolation.");
+  expect(where("vm", "workspace")).toContain("Checks ran on this exact content in the isolated vm environment.");
+  expect(inspectReview({ snapshot, requests: [], flags: [], reviews: [], checks: [] }).summary).toContain("No checks ran.");
+});
+
 it("keeps each line of a request of several lines under its number, so none reads as a section of the record", () => {
   const review = inspectReview({ snapshot, checks: [check], flags: [], reviews: [],
     requests: ["Redesign the explorer.\nTarget design:\n\n- Header line: the path\nAcceptance", "Run it"] });

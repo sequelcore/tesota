@@ -178,21 +178,32 @@ class ReviewBlock implements Component {
   readonly #title: string;
   readonly #text: string;
   readonly #theme: TesotaShellTheme;
-  #cached: { width: number; lines: string[] } | undefined;
-  constructor(title: string, text: string, theme: TesotaShellTheme) { this.#title = title; this.#text = text; this.#theme = theme; }
+  /** The key to the full record, when it is useful: under the latest review only, while the record is not shown. */
+  readonly #hint: () => string | undefined;
+  #cached: { width: number; hint: string | undefined; lines: string[] } | undefined;
+  constructor(title: string, text: string, theme: TesotaShellTheme, hint: () => string | undefined) {
+    this.#title = title;
+    this.#text = text;
+    this.#theme = theme;
+    this.#hint = hint;
+  }
   invalidate(): void { this.#cached = undefined; }
   render(width: number): string[] {
-    if (this.#cached?.width === width) return this.#cached.lines;
+    const hint = this.#hint();
+    if (this.#cached?.width === width && this.#cached.hint === hint) return this.#cached.lines;
     const theme = this.#theme;
     const rule = ` ${colorText("┃", theme.accent)} `;
     const inner = Math.max(1, width - visibleWidth(rule));
     const lines = [...wrapTextWithAnsi(bold(colorText(safeTerminalText(this.#title), theme.accent)), inner),
-      ...recordRows(`${this.#text}\nAlt+R shows or hides the full diff and check output.`, inner, theme, false)]
+      ...recordRows(hint === undefined ? this.#text : `${this.#text}\n${hint}`, inner, theme, false)]
       .map((row) => rule + row);
-    this.#cached = { width, lines };
+    this.#cached = { width, hint, lines };
     return lines;
   }
 }
+
+/** The latest review's key to its full record, while the result panel is hidden. */
+const RECORD_HINT = "Alt+R shows the full record, its checks and the diff.";
 
 /** Keep routine multi-line notices readable without losing their recorded detail. */
 class ExpandableNotice implements Component {
@@ -228,17 +239,22 @@ export class Transcript {
   readonly #replies = new Map<number, Markdown>();
   readonly #tools = new Map<string, ToolBlock>();
   readonly #notices: ExpandableNotice[] = [];
+  /** Whether the result panel shows, so the latest review names its key only while it does not. */
+  readonly #resultShown: () => boolean;
+  #latestReview: TranscriptEntry | undefined;
   #last = "";
 
-  constructor(theme: TesotaShellTheme) {
+  constructor(theme: TesotaShellTheme, resultShown: () => boolean = () => false) {
     this.#theme = theme;
     this.#markdown = markdownTheme(theme);
+    this.#resultShown = resultShown;
   }
 
   /** The plain text of the latest agent reply or notice, to leave on screen when the shell exits. */
   get lastMessage(): string { return this.#last; }
 
   add(entry: TranscriptEntry): void {
+    if (entry.kind === "review") this.#latestReview = entry;
     const component = this.#render(entry);
     if (entry.kind === "user" || entry.kind === "review" || entry.kind === "notice" && !(component instanceof ExpandableNotice)) {
       let shown: Component | undefined = component;
@@ -332,7 +348,8 @@ export class Transcript {
         block.finish(entry.failed, "", entry.change);
         return block;
       }
-      case "review": return new ReviewBlock(entry.title, entry.text, theme);
+      case "review": return new ReviewBlock(entry.title, entry.text, theme,
+        () => entry === this.#latestReview && !this.#resultShown() ? RECORD_HINT : undefined);
     }
   }
 
