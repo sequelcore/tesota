@@ -29,7 +29,8 @@ import { currentBranch } from "./repository-git.js";
 import { askExplorer, askPageReader } from "./integrations/pi-explorer.js";
 import type { WebAccess } from "./integrations/web-tools.js";
 import { fetchPage, pinnedGet, resolveHost } from "./web-fetch.js";
-import { DEFAULT_WEB_CONFIG, readWebSearch, type WebSearch } from "./web-search.js";
+import { readWebSearch, type WebSearch } from "./web-search.js";
+import { KEYLESS_SEARCH } from "./integrations/keyless-search.js";
 import { hostedSearch } from "./integrations/hosted-search.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
 import { Advisor } from "./integrations/advisor.js";
@@ -687,7 +688,12 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     const hosted = searcherKind !== undefined && HOSTED_SEARCH_KINDS.includes(searcherKind)
       ? hostedSearch(searcher, (signal) => openModel(signal, "searcher")) : undefined;
     let search: WebSearch;
-    try { search = readWebSearch(DEFAULT_WEB_CONFIG, hosted); } catch (error) {
+    // The first search that would go to a keyless provider asks, as a site does before its first page.
+    const ask = async (providers: readonly string[]) => {
+      output.reportFor(id, { phase: "awaiting_command" });
+      try { return await decisions(id).keylessSearch(providers); } finally { output.reportFor(id, { phase: "working" }); }
+    };
+    try { search = readWebSearch({ hosted, keyless: KEYLESS_SEARCH, ask }); } catch (error) {
       const detail = error instanceof Error ? error.message : "~/.tesota/web.json cannot be read";
       search = { search: async () => ({ status: "failed", error: "provider_not_configured", detail }) };
     }

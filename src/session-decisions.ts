@@ -1,6 +1,7 @@
 import type { CommandApproval, CommandRequest, NetworkDecision } from "./integrations/pi-coding-session.js";
 import type { ShellQuestion } from "./tesota-shell-question.js";
 import type { NoticeTone } from "./tesota-shell-transcript.js";
+import type { KeylessAnswer } from "./web-search.js";
 import { type ApprovedCheck, parseApprovedChecks, RELATED_FILES } from "./workspace-checks.js";
 
 /** What becomes of a result worked on in a copy: applied to the source, discarded, or kept pending. */
@@ -35,6 +36,8 @@ export interface SessionDecisions {
   network(destinations: readonly string[]): Promise<NetworkDecision>;
   /** Whether the agent may read pages from a site. */
   site(host: string): Promise<NetworkDecision>;
+  /** Whether searches may go to providers that search without an account, which receive the search's words. */
+  keylessSearch(providers: readonly string[]): Promise<KeylessAnswer>;
   /** Whether the session may enter Full access, asked the first time it would in a session. */
   fullAccess(): Promise<boolean>;
   /** Whether to install, in the sandbox, the tools the repository's changed toolchain files now declare. */
@@ -77,6 +80,29 @@ function networkQuestion(title: string, what: string): ShellQuestion<NetworkDeci
       { value: "deny", key: "n", label: "No", decided: { text: `✗ Declined ${what}.`, tone: "warning" } },
     ],
     initial: "deny",
+  };
+}
+
+/**
+ * The question before the first search that would go to a provider without an
+ * account (issue #295): it names who receives the search's words, and Enter
+ * declines, as for every question that would send something somewhere new.
+ */
+export function keylessSearchQuestion(providers: readonly string[]): ShellQuestion<KeylessAnswer> {
+  const named = providers.join(" or ");
+  return {
+    title: `Search the web with ${named}?`,
+    detail: `${named} search free, without an account. The one that searches receives the search's words, which the ` +
+      "agent writes from your request, and this computer's network address, as any site does; not an account, session " +
+      "or model name. Without them, search needs the searcher role on a Codex or Claude Code route.",
+    options: [
+      { value: "session", key: "y", label: "Yes, this session",
+        decided: { text: `✓ Searches may go to ${named} this session.`, tone: "info" } },
+      { value: "always", key: "a", label: "Always",
+        decided: { text: `✓ Searches may go to ${named} from now on; ~/.tesota/web.json keeps this.`, tone: "info" } },
+      { value: "no", key: "n", label: "No", decided: { text: `✗ Searches will not go to ${named} this session.`, tone: "warning" } },
+    ],
+    initial: "no",
   };
 }
 
@@ -193,6 +219,7 @@ export function askingDecisions(ask: (prompt: string) => Promise<string>,
       `The sandbox refused network access to ${destinations.join(", ")}. Allow it?`,
       `network access to ${destinations.join(", ")}`)),
     site: (host) => choose(networkQuestion(`Read pages from ${host}?`, `reading pages from ${host}`)),
+    keylessSearch: (providers) => choose(keylessSearchQuestion(providers)),
     fullAccess: async () => await choose(fullAccessQuestion) === "allow",
     toolchain: async (files) => await choose(toolchainQuestion(files)) === "install",
     refresh: async (paths) => await choose(refreshQuestion(paths)) === "refresh",

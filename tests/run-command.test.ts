@@ -51,6 +51,8 @@ it("answers its one request and then ends, and every other decision only as its 
   expect(await open.command({ command: "gh pr list", rule: ["gh", "pr"] })).toBe("once");
   expect(await open.network(["example.com:443"])).toBe("session");
   expect(await open.site("example.com")).toBe("session");
+  // Not even --allow-network sends searches somewhere new: keyless search needs the operator's saved consent.
+  expect(await open.keylessSearch(["Exa", "Parallel"])).toBe("no");
   expect(await open.result()).toBe("apply");
   expect(await open.checks(["bun run check"])).toEqual([]);
   // Nobody is at the keyboard: suggested checks keep their related form.

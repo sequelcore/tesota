@@ -48,8 +48,8 @@ and compare its failures with the base test by test. The opt-in
 `TESOTA_LIVE_WSL=1` the WSL sandbox on Windows, or its Linux side directly
 where bubblewrap runs, after `bun run build`, and
 `TESOTA_LIVE_WEB=1` reads a real page and checks that a public name resolving
-to this computer is refused; add `TESOTA_LIVE_WEB_SEARCH=1` to search through
-the SearXNG in `~/.tesota/web.json`, or `TESOTA_LIVE_HOSTED_SEARCH=1` to search
+to this computer is refused; add `TESOTA_LIVE_WEB_SEARCH=1` to search with Exa
+and Parallel without an account, or `TESOTA_LIVE_HOSTED_SEARCH=1` to search
 with the searcher role's model, which must cite a page its search found.
 
 A change to an engine adapter or to the model-session contract passes

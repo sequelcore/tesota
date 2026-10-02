@@ -189,7 +189,7 @@ const offText: Partial<Record<string, string>> = { triage: "no first pass; every
   namer: "no titles; a session keeps its first request as its name",
   explorer: "no explorers; choose a model to turn them on",
   advisor: "no advisor; choose a model to turn it on",
-  searcher: "no hosted search; only a SearXNG in ~/.tesota/web.json searches" };
+  searcher: "no hosted search; only Exa and Parallel, with your consent, search" };
 
 /** Each route's account, as its sign-in records it, for telling roles that draw on one account. */
 export type RouteAccounts = readonly { readonly route: string; readonly account?: RouteAccount | undefined }[];

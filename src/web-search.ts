@@ -1,18 +1,19 @@
-import { existsSync, readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import * as z from "zod";
 import type { TokenUsage } from "./token-usage.js";
-import { searchContinues, searchStep } from "./verification/search-provider-rule.js";
+import { type SearchConsent, searchContinues, searchStep } from "./verification/search-provider-rule.js";
 
 /**
  * Web search behind one seam (decision 024), so the tool is the same whoever
- * answers it. The providers, in order: a SearXNG instance the operator runs,
- * named in `~/.tesota/web.json`, and the `searcher` role's model searching
- * with its provider's own search (issue #295), which needs no setup. A
- * provider pinned in `web.json` is the only one used (`searchStep`, proved).
- * SearXNG is the operator's own choice, so it is not held to the
- * public-address rule that pages are.
+ * answers it, with nothing to set up (issue #295). The providers, in order:
+ * `hosted`, the `searcher` role's model searching with its provider's own
+ * search, then Exa and Parallel, which search without any account. A keyless
+ * provider receives the search's words, so it is used only once the operator
+ * allowed it, asked the first time it would be; a provider pinned in
+ * `~/.tesota/web.json` is the only one used (`searchStep`, proved).
  */
 
 export interface WebSearchResult {
@@ -24,7 +25,7 @@ export interface WebSearchResult {
 export type WebSearchOutcome =
   | Readonly<{
     status: "ok";
-    /** Who answered: `searxng`, or the searcher's `route:model`. */
+    /** Who answered: a keyless provider's name, or the searcher's `route:model`. */
     provider: string;
     results: readonly WebSearchResult[];
     /** A searching model's answer, from the pages its search found. */
@@ -39,68 +40,56 @@ export interface WebSearch {
   search(query: string, limit: number, signal: AbortSignal, onUsage?: (usage: TokenUsage) => void): Promise<WebSearchOutcome>;
 }
 
-export const SEARCH_PROVIDERS = ["searxng", "hosted"] as const;
+export const SEARCH_PROVIDERS = ["hosted", "exa", "parallel"] as const;
 export type SearchProviderName = typeof SEARCH_PROVIDERS[number];
+/** The providers that search without any account of the operator's, as the consent question names them. */
+export const KEYLESS_PROVIDERS: Readonly<Partial<Record<SearchProviderName, string>>> = { exa: "Exa", parallel: "Parallel" };
 
 /** A provider in the order, when it can be used at all. */
 export interface SearchProvider extends WebSearch {
   readonly name: SearchProviderName;
 }
 
-export const DEFAULT_WEB_CONFIG: string = join(homedir(), ".tesota", "web.json");
-export const WEB_SEARCH_TIME_LIMIT_MS: number = 30_000;
+/** The operator's answer to keyless search: always, saved in `web.json`; this session; or not this session. */
+export type KeylessAnswer = "always" | "session" | "no";
 
-const configSchema = z.strictObject({ searxng: z.url({ protocol: /^https?$/u }).optional(), search: z.enum(SEARCH_PROVIDERS).optional() })
-  .refine((config) => config.search !== "searxng" || config.searxng !== undefined, "search is searxng without a searxng address");
-const searxngResponse = z.object({ results: z.array(z.object({ title: z.string().default(""), url: z.string(),
-  content: z.string().default("") })) });
+export const DEFAULT_WEB_CONFIG: string = join(homedir(), ".tesota", "web.json");
+
+const configSchema = z.strictObject({ search: z.enum(SEARCH_PROVIDERS).optional(), keyless: z.literal("allowed").optional() });
+type WebConfig = z.infer<typeof configSchema>;
 
 const NOT_CONFIGURED = "No search provider: sign in to Codex or Claude Code for the searcher role (tesota roles), " +
-  "or set searxng in ~/.tesota/web.json to your SearXNG address";
+  "or allow keyless search when Tesota asks";
 
-function searxng(base: string): SearchProvider {
-  return {
-    name: "searxng",
-    async search(query, limit, signal) {
-      const url = new URL("search", base.endsWith("/") ? base : `${base}/`);
-      url.searchParams.set("q", query);
-      url.searchParams.set("format", "json");
-      try {
-        const response = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(WEB_SEARCH_TIME_LIMIT_MS)]),
-          headers: { accept: "application/json" } });
-        if (!response.ok) {
-          return { status: "failed", error: "provider_failed", detail: `SearXNG answered ${response.status}; is its json format enabled?` };
-        }
-        const parsed = searxngResponse.safeParse(await response.json());
-        if (!parsed.success) return { status: "failed", error: "provider_failed", detail: "SearXNG answered in an unexpected shape" };
-        // Only web pages: a result that is not an http or https address cannot be read.
-        const results = parsed.data.results.filter((result) => /^https?:\/\//iu.test(result.url))
-          .slice(0, limit).map((result) => ({ title: result.title, url: result.url, snippet: result.content }));
-        return { status: "ok", provider: "searxng", results };
-      } catch (error) {
-        if (signal.aborted) throw error;
-        return { status: "failed", error: "provider_failed", detail: error instanceof Error ? error.message : "SearXNG did not answer" };
-      }
-    },
-  };
+/** Whether a keyless provider may be used, and how to ask the operator when nobody has answered yet. */
+export interface SearchConsentSource {
+  current(): SearchConsent;
+  ask(): Promise<SearchConsent>;
 }
+
+const NO_CONSENT: SearchConsentSource = { current: () => "denied", ask: async () => "denied" };
 
 /**
  * The providers in order, each used as `searchStep` says: a pinned provider
- * alone, and without a pin each available one until one answers. A failure
- * names every provider tried; nothing tried is `provider_not_configured`.
+ * alone; without a pin each available one until one answers, a keyless one
+ * only with the operator's consent. A failure names every provider tried;
+ * nothing tried is `provider_not_configured`.
  */
-export function searchInOrder(providers: readonly SearchProvider[], pinned?: SearchProviderName): WebSearch {
+export function searchInOrder(providers: readonly SearchProvider[], pinned?: SearchProviderName,
+  consent: SearchConsentSource = NO_CONSENT): WebSearch {
   return {
     async search(query, limit, signal, onUsage) {
       const failures: string[] = [];
       for (const name of SEARCH_PROVIDERS) {
         const provider = providers.find((candidate) => candidate.name === name);
-        const step = searchStep(pinned !== undefined, pinned === name, provider !== undefined);
-        if (step === "fail") {
+        const step = (answer: SearchConsent) => searchStep(pinned !== undefined, pinned === name, provider !== undefined,
+          KEYLESS_PROVIDERS[name] !== undefined, answer);
+        let next = step(consent.current());
+        if (next === "ask") next = step(await consent.ask());
+        if (next === "fail") {
           return { status: "failed", error: "provider_not_configured", detail: `The pinned search provider ${name} is not available` };
         }
-        if (step === "skip" || provider === undefined) continue;
+        if (next !== "use" || provider === undefined) continue;
         const outcome = await provider.search(query, limit, signal, onUsage);
         if (outcome.status === "ok") return outcome;
         failures.push(`${name}: ${outcome.detail}`);
@@ -112,22 +101,53 @@ export function searchInOrder(providers: readonly SearchProvider[], pinned?: Sea
   };
 }
 
+function readConfig(path: string): WebConfig {
+  if (!existsSync(path)) return {};
+  const parsed = configSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+  if (!parsed.success) throw new Error(`${path} is not a valid web.json; fix or delete it`);
+  return parsed.data;
+}
+
+/** Remember that the operator allowed keyless search; the file is replaced whole, so a failed write leaves it as it was. */
+export function allowKeylessSearch(path: string = DEFAULT_WEB_CONFIG): void {
+  const config: WebConfig = { ...readConfig(path), keyless: "allowed" };
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    renameSync(temporary, path);
+  } finally { if (existsSync(temporary)) unlinkSync(temporary); }
+}
+
 /**
- * The search the agent and explorers use: the operator's SearXNG from
- * `~/.tesota/web.json`, then `hosted`, the searcher's own search when its
- * route has one. An unreadable file is an error, not a silent default.
+ * One session's search: `hosted` when the searcher's route has its own
+ * search, then the keyless providers. Keyless search is allowed when
+ * `web.json` says so; otherwise `ask` asks the operator the first time a
+ * search would use it, and the answer holds for the session, "always" also
+ * saved. Without `ask`, as in `tesota run`, keyless search stays off unless
+ * allowed. An unreadable file is an error, not a silent default.
  */
-export function readWebSearch(path: string = DEFAULT_WEB_CONFIG, hosted?: WebSearch): WebSearch {
-  let config: z.infer<typeof configSchema> = {};
-  if (existsSync(path)) {
-    const parsed = configSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
-    if (!parsed.success) throw new Error(`${path} is not a valid web.json; fix or delete it`);
-    config = parsed.data;
-  }
+export function readWebSearch(options: { path?: string; hosted?: WebSearch | undefined; keyless: readonly SearchProvider[];
+  ask?: (providers: readonly string[]) => Promise<KeylessAnswer> }): WebSearch {
+  const path = options.path ?? DEFAULT_WEB_CONFIG;
+  const config = readConfig(path);
   const providers: SearchProvider[] = [];
-  if (config.searxng !== undefined) providers.push(searxng(config.searxng));
+  const hosted = options.hosted;
   if (hosted !== undefined) providers.push({ name: "hosted", search: (...args) => hosted.search(...args) });
-  return searchInOrder(providers, config.search);
+  providers.push(...options.keyless);
+  let session: SearchConsent = config.keyless === "allowed" ? "allowed" : "unasked";
+  let asking: Promise<SearchConsent> | undefined;
+  const ask = options.ask;
+  return searchInOrder(providers, config.search, {
+    current: () => session,
+    // Searches running at once share one question.
+    ask: () => asking ??= (async () => {
+      if (ask === undefined) return session = "denied";
+      const answer = await ask(options.keyless.map((provider) => KEYLESS_PROVIDERS[provider.name] ?? provider.name));
+      if (answer === "always") allowKeylessSearch(path);
+      return session = answer === "no" ? "denied" : "allowed";
+    })(),
+  });
 }
 
 /**
