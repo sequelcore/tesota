@@ -309,6 +309,22 @@ const fileGuidance = "Change the repository's files only with the edit and write
   "or a package install. Do not leave scratch files, such as probes or one-off scripts, in the repository: pass them to " +
   "the interpreter directly, such as node -e, or keep them in the system's temporary folder. ";
 
+/**
+ * A request whose premise may be false (docs/design/assurance.md#the-requests-premise): agents act on
+ * mistaken reports unless declining is named as a right result, and reproducing first does not stop them
+ * alone (Gloaguen et al., "Coding Agents Don't Know When to Act", 2026).
+ */
+const premiseGuidance = "A request that reports a bug or a symptom, or names code, makes claims about the repository: " +
+  "check them before you change anything, in the code, its documents and tests, and by running it where you can. If a " +
+  "claim is false, because the behavior called a bug is documented or tested as intended, the code named does not " +
+  "exist, or the symptom does not occur, change nothing, a workaround included, and say which claim failed and what " +
+  "shows it: only the user can decide the premise holds after all, so leaving it to them is the right result, not an " +
+  "unfinished one. The same holds when the defect is real but lies in vendored or third-party code the repository says " +
+  "not to edit: it is not this repository's defect to fix, so do not work around it in the repository's own code " +
+  "either; say where it lies, and the user decides whether to report it upstream or work around it. Otherwise, when the " +
+  "claims hold, fix what they report, and if part of it is already fixed, fix the rest. A request that plainly asks for " +
+  "different behavior is not a claim to check: make the change. ";
+
 /** When the agent should ask an explorer, and what an explorer's answer is worth (decision 019). */
 /** How the agent should use the web and what web content is worth (decision 024). */
 const webGuidance = "web_search finds pages and web_read answers a question about one page through a separate reader; " +
@@ -335,7 +351,7 @@ function systemPrompt(root: string, sandboxed: boolean, environment: ExecutionEn
   return placeGuidance[place].where +
     "Read, search, edit, create and delete files as the task needs. " + fileGuidance + commandGuidance(sandboxed, environment) +
     (helpers.explorers ? explorerGuidance : "") + (helpers.web ? webGuidance : "") + (helpers.advisor ? ADVISOR_GUIDANCE : "") +
-    (helpers.plan ? PLAN_GUIDANCE : "") + "Do not commit, push or change Git " +
+    (helpers.plan ? PLAN_GUIDANCE : "") + premiseGuidance + "Do not commit, push or change Git " +
     "history: when you finish, Tesota shows the user your changes, runs the repository's checks and a review, and " +
     `${placeGuidance[place].after}. End each turn with a short summary of what you changed and anything ` +
     "the user should verify. If a request needs no changes, just answer it. Lead with the answer or the result, and " +
