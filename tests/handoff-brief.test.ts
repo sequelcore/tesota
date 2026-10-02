@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { appendAssurance, decisionEntry, lastOpenReview, reviewEntry, triageEntry } from "../src/assurance-journal.js";
+import { appendAssurance, decisionEntry, openAssurance, reviewEntry, triageEntry } from "../src/assurance-journal.js";
 import { HANDOFF_REPLY_LIMIT, handoffBrief, hasHistory, openFindings } from "../src/handoff-brief.js";
 import type { Finding, ReviewReport } from "../src/review.js";
 
@@ -64,27 +64,27 @@ afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root,
 it("reads the last review of the pending changes from the journal, until the operator decided on it", async () => {
   const directory = await mkdtemp(join(tmpdir(), "tesota-journal-"));
   roots.push(directory);
-  expect(await lastOpenReview(directory)).toBeUndefined();
+  expect((await openAssurance(directory)).review).toBeUndefined();
   const snapshot = (tree: string) => ({ base: "b".repeat(40), tree, diff: "", changes: [] });
   const report = (tree: string, statement: string): ReviewReport =>
     ({ reviewer: "r", tree, status: "completed", summary: "", findings: [finding({ statement, path: "a.ts", line: 3 })] });
-  await appendAssurance(directory, reviewEntry(snapshot("1"), [], [], [], [report("1", "first")]));
-  await appendAssurance(directory, reviewEntry(snapshot("2"), [], [], [], [report("2", "second")]));
-  expect(await lastOpenReview(directory)).toEqual({ tree: "2", reviews: [expect.objectContaining({ status: "completed",
+  await appendAssurance(directory, reviewEntry("changes", snapshot("1"), [], [], [], [report("1", "first")]));
+  await appendAssurance(directory, reviewEntry("changes", snapshot("2"), [], [], [], [report("2", "second")]));
+  expect((await openAssurance(directory)).review).toEqual({ tree: "2", reviews: [expect.objectContaining({ status: "completed",
     findings: [expect.objectContaining({ statement: "second", path: "a.ts", line: 3, severity: "medium" })] })] });
   await appendAssurance(directory, triageEntry("2", ["thanks"], "typesafe:jev-1.13.0",
     { decided: true, checkable: false, probability: 0.05, reason: "Jev: 0.05 checkable" }, false, []));
-  expect((await lastOpenReview(directory))?.tree).toBe("2");
+  expect((await openAssurance(directory)).review?.tree).toBe("2");
   await appendAssurance(directory, decisionEntry("2", "application_conflict"));
-  expect((await lastOpenReview(directory))?.tree).toBe("2");
+  expect((await openAssurance(directory)).review?.tree).toBe("2");
   await appendAssurance(directory, decisionEntry("2", "rejected"));
-  expect(await lastOpenReview(directory)).toBeUndefined();
+  expect((await openAssurance(directory)).review).toBeUndefined();
   // In the operator's files, a reverted turn settles its review, and redoing the turn opens it again.
-  await appendAssurance(directory, reviewEntry(snapshot("3"), [], [], [], [report("3", "third")]));
+  await appendAssurance(directory, reviewEntry("changes", snapshot("3"), [], [], [], [report("3", "third")]));
   await appendAssurance(directory, decisionEntry("3", "reverted"));
-  expect(await lastOpenReview(directory)).toBeUndefined();
+  expect((await openAssurance(directory)).review).toBeUndefined();
   await appendAssurance(directory, decisionEntry("3", "redone"));
-  expect((await lastOpenReview(directory))?.tree).toBe("3");
+  expect((await openAssurance(directory)).review?.tree).toBe("3");
   await appendAssurance(directory, decisionEntry("3", "kept"));
-  expect(await lastOpenReview(directory)).toBeUndefined();
+  expect((await openAssurance(directory)).review).toBeUndefined();
 });

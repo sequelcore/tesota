@@ -8,6 +8,7 @@ import { RequestRecord } from "./request-record.js";
 import { DEFAULT_SOURCES_ROOT, isGitRepository, openShadow, shadowEnvironment, sourceRoot, type SourceKind }
   from "./source-shadow.js";
 import { SourceSnapshot } from "./source-snapshot.js";
+import { candidateStart } from "./verification/review-start-rule.js";
 import { parseChanges, type WorkspaceChange, type WorkspaceSnapshot } from "./workspace.js";
 import { DEFAULT_APPLICATIONS_ROOT, gitTreeReader, writeTreeWhereUnchanged } from "./workspace-apply.js";
 import type { BasePlace, CheckTarget } from "./workspace-checks.js";
@@ -219,6 +220,22 @@ export class SourceSession implements CheckTarget {
     const turn = this.#record.turns.at(-1);
     if (turn === undefined) return { base: this.#record.base, tree: this.#record.base, changes: [], diff: "" };
     return { base: turn.before, tree: turn.after, ...this.compare(turn.before, turn.after) };
+  }
+
+  /**
+   * What a review judges (#249): the undecided turns from the first one the
+   * last review of changes, `reviewed`, did not cover whole, so a stopped turn
+   * or the part of one a stopped correction left is never passed over; every
+   * undecided turn when no review is known.
+   */
+  candidate(reviewed: Pick<WorkspaceSnapshot, "base" | "tree"> | undefined): WorkspaceSnapshot {
+    const turns = this.#record.turns;
+    const latest = turns.at(-1);
+    if (latest === undefined) return this.snapshot();
+    const start = candidateStart(turns.length, turns.findLastIndex((turn) => turn.after === reviewed?.tree),
+      turns.findLastIndex((turn) => turn.before === reviewed?.base));
+    const base = turns[start]?.before ?? latest.before;
+    return { base, tree: latest.after, ...this.compare(base, latest.after) };
   }
 
   /** The changes and diff between two trees, such as one candidate and its correction. */

@@ -56,7 +56,11 @@ export type ApplyResult =
 /** Where a session works: in the operator's own files, or in an isolated workspace it applies from. */
 export type WorkPlace = "source" | "workspace";
 
-/** The result a correction round started from, and the findings it sent back. */
+/**
+ * The reviewed result a correction round sends back, and the findings it
+ * sends. It is journaled when sent, so the next review of changes judges the
+ * correction from that result, even after a stop or a restart (#249).
+ */
 export interface CorrectionContext {
   readonly previousTree: string;
   readonly sentBack: readonly Finding[];
@@ -79,9 +83,10 @@ export interface TesotaShellDependencies {
   /**
    * Run one request in the workspace, showing the agent's work as it happens,
    * and report the pending changes. Only the operator's own requests join the
-   * request record; Tesota's correction messages do not.
+   * request record; Tesota's correction messages do not. A correction of a
+   * reviewed result names it in `correction`.
    */
-  readonly work: (request: string, origin?: RequestOrigin) => Promise<WorkResult>;
+  readonly work: (request: string, origin?: RequestOrigin, correction?: CorrectionContext) => Promise<WorkResult>;
   /**
    * Check a turn that changed no files against its requests and the agent's
    * reply, and present it (decision 034); absent where nothing checks answers.
@@ -96,12 +101,12 @@ export interface TesotaShellDependencies {
   /** Let the repository's checks read these hidden files, which they need. */
   readonly allowForChecks?: (paths: readonly string[]) => void;
   /**
-   * Snapshot the pending changes, run the approved checks on them and present
-   * the review, once. After a correction round, `correction` names the result
-   * sent back and what was sent, so only the correction is reviewed and the
-   * sent-back findings are validated (decision 016).
+   * Snapshot the changes since the last review, run the approved checks on
+   * them and present the review, once. After a correction was sent, only the
+   * correction is reviewed and the findings it sent are validated (decision
+   * 016), whether or not its round was stopped.
    */
-  readonly review: (checks: readonly ApprovedCheck[], correction?: CorrectionContext, scope?: ReviewScope) => Promise<ReviewResult>;
+  readonly review: (checks: readonly ApprovedCheck[], scope?: ReviewScope) => Promise<ReviewResult>;
   /**
    * Run the whole approved commands on the reviewed candidate and show them
    * beside its review; absent where every round runs them whole.
@@ -171,11 +176,10 @@ async function assess(dependencies: TesotaShellDependencies,
   const checks = await chooseChecks(dependencies);
   const { checkWhole } = dependencies;
   let previousTree: string | undefined;
-  let context: CorrectionContext | undefined;
   for (let round = 0; ; round++) {
     report({ phase: "checking" });
     const lastRound = round >= MAX_CORRECTION_ROUNDS;
-    const review = await dependencies.review(checks, context, { related: checkWhole !== undefined, lastRound });
+    const review = await dependencies.review(checks, { related: checkWhole !== undefined, lastRound });
     if (review.status === "cancelled") {
       dependencies.write(`Checks cancelled. The changes stay ${placeOf(dependencies)}.\n`);
       return "stopped";
@@ -207,12 +211,12 @@ async function assess(dependencies: TesotaShellDependencies,
       return ending();
     }
     previousTree = review.tree;
-    context = { previousTree: review.tree, sentBack: correction.findings };
     const count = problemCount(correction);
     dependencies.write(`Sending ${count} ${count === 1 ? "item" : "items"} back to the agent to fix ` +
       `(attempt ${round + 1} of ${MAX_CORRECTION_ROUNDS}).\n`);
     report({ phase: "working" });
-    const result = await dependencies.work(correctionPrompt(review.requests, correction), "tesota");
+    const result = await dependencies.work(correctionPrompt(review.requests, correction), "tesota",
+      { previousTree: review.tree, sentBack: correction.findings });
     if (result.status === "unsettled") return "unsettled";
     if (result.status !== "completed") {
       dependencies.write(`The agent's fix ${result.status === "cancelled" ? "was stopped" : `failed: ${result.reason}`}. ` +

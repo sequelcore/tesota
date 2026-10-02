@@ -73,7 +73,7 @@ it("chooses checks once, reviews the changes and applies them on request", async
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
   expect(fixture.dependencies.setChecks).toHaveBeenCalledTimes(1);
   expect(fixture.dependencies.setChecks).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }]);
-  expect(fixture.dependencies.review).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }], undefined,
+  expect(fixture.dependencies.review).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }],
     { related: false, lastRound: false });
   expect(fixture.dependencies.apply).toHaveBeenCalledTimes(2);
   // The review itself is presented once, by the review dependency; the loop only reports what was applied.
@@ -94,7 +94,7 @@ it.each([
   const fixture = shell(["Fix it", answer, "k", ""]);
   await runTesotaShell(fixture.dependencies);
   expect(fixture.dependencies.setChecks).toHaveBeenCalledWith(expected);
-  expect(fixture.dependencies.review).toHaveBeenCalledWith(expected, undefined, { related: false, lastRound: false });
+  expect(fixture.dependencies.review).toHaveBeenCalledWith(expected, { related: false, lastRound: false });
 });
 
 it.each(["bun run test => ../outside.xml", "bun run test => C:\\reports\\unit.xml", "bun run test => .git/unit.xml",
@@ -222,15 +222,14 @@ it("sends fixable findings back with the unchanged requests, then asks the opera
     { review: reviews({ tree: "1".repeat(40), findings: [fixable] }, { tree: "2".repeat(40), findings: [] }) });
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
   expect(fixture.dependencies.work).toHaveBeenNthCalledWith(1, "Charge over $100 less");
+  // The correction names the result it corrects and what was sent back, so its review, after a stop too, judges only it.
   expect(fixture.dependencies.work).toHaveBeenNthCalledWith(2,
-    expect.stringContaining("The user's requests, unchanged:\n1. Charge over $100 less"), "tesota");
+    expect.stringContaining("The user's requests, unchanged:\n1. Charge over $100 less"), "tesota",
+    { previousTree: "1".repeat(40), sentBack: [fixable] });
   expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
   expect(fixture.dependencies.review).toHaveBeenCalledTimes(2);
-  // The second review knows the result it corrects and what was sent back, so it can review only the correction.
-  const approved = [{ command: "bun run check", reports: [] }];
-  const scope = { related: false, lastRound: false };
-  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(1, approved, undefined, scope);
-  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(2, approved, { previousTree: "1".repeat(40), sentBack: [fixable] }, scope);
+  expect(fixture.dependencies.review).toHaveBeenNthCalledWith(2, [{ command: "bun run check", reports: [] }],
+    { related: false, lastRound: false });
   expect(fixture.text()).toContain("Sending 1 item back to the agent to fix (attempt 1 of 2).");
   expect(fixture.dependencies.apply).toHaveBeenCalledTimes(1);
 });
@@ -264,7 +263,7 @@ it("runs the whole checks before the decision when a round ran only related test
   const fixture = shell(["Charge over $100 less", "", "a", ""],
     { review: relatedReviews({ tree: "1".repeat(40), findings: [] }), checkWhole: wholeRuns("passed") });
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
-  expect(fixture.dependencies.review).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }], undefined,
+  expect(fixture.dependencies.review).toHaveBeenCalledWith([{ command: "bun run check", reports: [] }],
     { related: true, lastRound: false });
   expect(fixture.dependencies.checkWhole).toHaveBeenCalledTimes(1);
   expect(fixture.dependencies.work).toHaveBeenCalledTimes(1);
@@ -276,7 +275,8 @@ it("sends a failure only the whole checks found back to the agent, and runs them
     { tree: "1".repeat(40), findings: [] }, { tree: "2".repeat(40), findings: [] }), checkWhole: wholeRuns("failed", "passed") });
   await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
   expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
-  expect(fixture.dependencies.work).toHaveBeenNthCalledWith(2, expect.stringContaining("`bun run check` failed"), "tesota");
+  expect(fixture.dependencies.work).toHaveBeenNthCalledWith(2, expect.stringContaining("`bun run check` failed"), "tesota",
+    { previousTree: "1".repeat(40), sentBack: [] });
   expect(fixture.dependencies.checkWhole).toHaveBeenCalledTimes(2);
 });
 
