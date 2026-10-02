@@ -295,6 +295,19 @@ it("never runs the whole checks again after a round that already ran them", asyn
   expect(fixture.dependencies.checkWhole).not.toHaveBeenCalled();
 });
 
+it("asks once which paths always get a thorough review, from Tesota's proposal, before the first review", async () => {
+  const chosen: (readonly string[])[] = [];
+  let remembered: readonly string[] | null = null;
+  const fixture = shell(["Fix the discount", "", "-src/live-*.ts; src/session-decisions.ts", "a", "Fix it again", "a", ""], {
+    proposeSensitivePaths: async () => remembered === null ? ["src/egress.ts", "src/live-review.ts"] : null,
+    setSensitivePaths: (paths) => { chosen.push(paths); remembered = paths; },
+  });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(chosen).toEqual([["src/egress.ts", "src/session-decisions.ts"]]);
+  expect(fixture.text()).toContain("Changes to these files will always get a thorough review");
+  expect(fixture.dependencies.review).toHaveBeenCalledTimes(2);
+});
+
 it("stops correcting after two rounds and leaves the rest to the operator", async () => {
   const fixture = shell(["Charge over $100 less", "", "k", ""], { review: reviews(
     { tree: "1".repeat(40), findings: [fixable] }, { tree: "2".repeat(40), findings: [fixable] },

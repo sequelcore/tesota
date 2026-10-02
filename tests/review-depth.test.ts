@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
-import { parseSensitivePaths, reviewDepth } from "../src/review-depth.js";
+import { answerSensitivePaths, importsAuthority, parseSensitivePaths, proposeSensitivePaths,
+  reviewDepth } from "../src/review-depth.js";
 import type { CheckResult } from "../src/workspace-checks.js";
 
 const passed: CheckResult = { verifier: "command", command: "npm test", claim: "exits 0", limits: "its tests", tree: "t".repeat(40),
@@ -57,10 +58,43 @@ it("goes deep for any path the repository declares sensitive, a test included, a
   const decision = reviewDepth({ changes: [{ status: "modified", path: "src/session-decisions.ts" },
     { status: "modified", path: "src/bubblewrap-sandbox.ts" }, { status: "added", path: "tests/security/escape.test.ts" },
     { status: "modified", path: "src/auth.ts" }, { status: "modified", path: "src/price.ts" }], diff: "" },
-  [{ path: "tests/security/escape.test.ts", status: "added", kind: "test" }], [], declared);
+  [{ path: "tests/security/escape.test.ts", status: "added", kind: "test" }], [],
+  { declared, confirmed: true, importsAuthority: () => false });
   expect(decision.reasons).toEqual([
     "touches paths this repository marks sensitive (src/session-decisions.ts, src/bubblewrap-sandbox.ts, tests/security/escape.test.ts)",
     "touches security- or authority-sensitive files (src/auth.ts)",
   ]);
   expect(parseSensitivePaths(undefined)).toEqual([]);
+});
+
+it("counts code that runs programs, handles cryptography or reaches the network until the operator confirms a list", () => {
+  const change = { changes: [{ status: "modified" as const, path: "src/runner.ts" }], diff: "" };
+  const imports = (path: string): boolean => path === "src/runner.ts";
+  expect(reviewDepth(change, [], [], { declared: [], confirmed: false, importsAuthority: imports }).reasons)
+    .toEqual(["touches security- or authority-sensitive files (src/runner.ts)"]);
+  // Once confirmed, the list decides: a file the operator left out is no longer sensitive by its imports alone.
+  expect(reviewDepth(change, [], [], { declared: [], confirmed: true, importsAuthority: imports }).depth).toBe("standard");
+});
+
+it("recognizes process, cryptography and network imports across languages, and not ordinary ones", () => {
+  expect(["import { spawn } from \"node:child_process\";", "const net = require('net');", "import socket",
+    "from subprocess import run", "import (\n  \"os/exec\"\n)", "use std::process::Command;"].map(importsAuthority))
+    .toEqual([true, true, true, true, true, true]);
+  expect(["import { join } from \"node:path\";", "import json", "\"fmt\"", undefined].map(importsAuthority))
+    .toEqual([false, false, false, false]);
+});
+
+it("proposes what names and imports mark, never a test, and lets the operator trim or extend it", () => {
+  const proposed = proposeSensitivePaths([
+    { path: "src/egress.ts", text: "import { connect } from \"node:net\";", test: false },
+    { path: "src/sandbox-command.ts", text: "", test: false },
+    { path: "src/price.ts", text: "export const price = 1;", test: false },
+    { path: "tests/egress.test.ts", text: "import { connect } from \"node:net\";", test: true },
+    { path: "src/live-review.ts", text: "import { spawn } from \"node:child_process\";", test: false },
+  ]);
+  expect(proposed).toEqual(["src/egress.ts", "src/sandbox-command.ts", "src/live-review.ts"]);
+  expect(answerSensitivePaths("", proposed)).toEqual(proposed);
+  expect(answerSensitivePaths("-src/live-*.ts; src/session-decisions.ts", proposed))
+    .toEqual(["src/egress.ts", "src/sandbox-command.ts", "src/session-decisions.ts"]);
+  expect(answerSensitivePaths(" None ", proposed)).toEqual([]);
 });

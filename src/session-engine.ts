@@ -56,7 +56,9 @@ import { flagVerificationChanges } from "./verification-changes.js";
 import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
 import { runOxlintVerifier } from "./verification/oxlint-verifier.js";
 import { applicableLenses, createPiReviewer } from "./integrations/pi-reviewer.js";
-import { parseSensitivePaths, reviewDepth, SENSITIVE_PATHS_FILE, type DepthDecision } from "./review-depth.js";
+import { importsAuthority, parseSensitivePaths, proposeSensitivePaths, reviewDepth, SENSITIVE_PATHS_FILE,
+  type DepthDecision, type Sensitivity } from "./review-depth.js";
+import { repositoryFiles } from "./repository-files.js";
 import { createClaimCheckReviewer } from "./integrations/pi-claimcheck.js";
 import { applyRefutation, hasClaimsToTest, refuteFindings } from "./integrations/pi-refuter.js";
 import { attributeOrigins } from "./finding-origin.js";
@@ -995,6 +997,23 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     });
   };
   const blockSession = (id: string): void => { store.block(id); output.blockSession(id); };
+  /**
+   * What marks a candidate's paths sensitive (decision 053): the repository's
+   * file as the candidate's base declares it, so a change cannot remove its
+   * own paths, with the list the operator confirmed.
+   */
+  const sensitivityOf = (snapshot: WorkspaceSnapshot, read: (revision: string, path: string) => string | undefined): Sensitivity => {
+    const declared = read(snapshot.base, SENSITIVE_PATHS_FILE);
+    const confirmed = store.sensitivePaths();
+    return { declared: [...parseSensitivePaths(declared), ...confirmed ?? []], confirmed: declared !== undefined || confirmed !== null,
+      // Either side counts, so removing an import cannot make a change look less sensitive.
+      importsAuthority: (path) => importsAuthority(read(snapshot.base, path)) || importsAuthority(read(snapshot.tree, path)) };
+  };
+  /** Where the repository's files are read for suggestions: the source, or an isolated session's copy. */
+  const checksRoot = (id: string): string => {
+    const directory = saved(id)?.workspace;
+    return directory === null || directory === undefined || existsSync(join(directory, "session.json")) ? cwd : join(directory, "repo");
+  };
   /** Checks are commands the operator approved: they read the hidden files the operator named, and their results say so. */
   const checkOptions = async (id: string, checkout: string): Promise<CheckOptions> => {
     const every = await hiddenFilesIn(checkout);
@@ -1281,11 +1300,16 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     } catch (error) { await turnWriteFailure(id, session, turn.before, error, changed, "redo"); }
     finally { applying.delete(id); }
   });
+  const sensitiveText = (paths: readonly string[] | null): string => paths === null
+    ? "Sensitive paths are not chosen yet; until then, names and imports decide which changes get a thorough review."
+    : paths.length === 0 ? "You chose no sensitive paths; names alone decide which changes get a thorough review."
+    : `Changes to these always get a thorough review:\n${pathList(paths)}`;
   /** `/checks`: the repository's approved checks and the hidden files they may read; `/checks reset` chooses them again. */
   const showChecks = (id: string, args: readonly string[]): void => {
     if (args.length === 1 && args[0] === "reset") {
       store.resetChecks();
-      output.writeTo(id, "The next review asks for the checks again, and which hidden files they may read.");
+      output.writeTo(id, "The next review asks for the checks again, which hidden files they may read, and which paths " +
+        "always get a thorough review.");
       return;
     }
     if (args.length > 0) { output.replyTo(id, "Use /checks or /checks reset.", "warning"); return; }
@@ -1294,7 +1318,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     output.replyTo(id, [checks === null ? "No checks are chosen yet; the first review asks for them."
       : checks.length === 0 ? "No checks run after a change." : `Checks:\n${pathList(checks.map(approvedCheckText))}`,
     allowed.length === 0 ? "The checks read no hidden files." : `Hidden files the checks may read:\n${pathList(allowed)}`,
-    "/checks reset chooses them again at the next review."].join("\n"));
+    sensitiveText(store.sensitivePaths()), "/checks reset chooses them again at the next review."].join("\n"));
   };
 
   /**
@@ -1454,12 +1478,15 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       }
     }),
     checks: () => store.checks(),
-    suggestChecks: () => {
-      const directory = saved(id)?.workspace;
-      return suggestChecks(directory === null || directory === undefined || existsSync(join(directory, "session.json"))
-        ? cwd : join(directory, "repo"));
-    },
+    suggestChecks: () => suggestChecks(checksRoot(id)),
     setChecks: (commands) => { store.setChecks(commands); },
+    proposeSensitivePaths: async () => {
+      if (store.sensitivePaths() !== null) return null;
+      const root = checksRoot(id);
+      if (existsSync(join(root, SENSITIVE_PATHS_FILE))) return null;
+      return proposeSensitivePaths(repositoryFiles(root));
+    },
+    setSensitivePaths: (paths) => { store.setSensitivePaths(paths); },
     hiddenFiles: async () => hiddenFilesIn((await workspaceFor(id)).checkout),
     allowForChecks: (paths) => { store.setCheckSecrets([...store.checkSecrets(), ...paths]); },
     place: () => stateFor(id).place ?? "workspace",
@@ -1484,8 +1511,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       // A correction round reviews only the correction; the verifiers above always cover the whole candidate.
       const scope = correction === undefined ? snapshot
         : { ...snapshot, base: correction.previousTree, ...workspace.compare(correction.previousTree, snapshot.tree) };
-      // The repository's sensitive paths as the candidate's base declares them, so a change cannot remove its own.
-      const depth = reviewDepth(scope, flags, checks, parseSensitivePaths(read(snapshot.base, SENSITIVE_PATHS_FILE)));
+      const depth = reviewDepth(scope, flags, checks, sensitivityOf(snapshot, read));
       const started = Date.now();
       let tokens = 0;
       const { reviewer, refuter, validator } = readModelChoices();

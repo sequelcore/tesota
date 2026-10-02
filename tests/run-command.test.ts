@@ -53,6 +53,11 @@ it("answers its one request and then ends, and every other decision only as its 
   expect(await open.site("example.com")).toBe("session");
   expect(await open.result()).toBe("apply");
   expect(await open.checks(["bun run check"])).toEqual([]);
+  // Nobody is at the keyboard: suggested checks keep their related form, and the proposed sensitive paths stand.
+  const suggested = policyDecisions("Fix", policy());
+  expect(await suggested.checks(["bun run check; related: bunx vitest related --run {files}"])).toEqual([{ command: "bun run check",
+    reports: [], related: { command: "bunx vitest related --run {files}", reports: [] } }]);
+  expect(await suggested.sensitivePaths(["src/egress.ts"])).toEqual(["src/egress.ts"]);
 });
 
 const change: WorkspaceChange = { status: "modified", path: "src/parser.ts" };

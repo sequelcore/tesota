@@ -7,7 +7,7 @@ import { afterEach, expect, it } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import { Workspace } from "../src/workspace.js";
 import { applyWorkspace, ApplyConflictError } from "../src/workspace-apply.js";
-import { type ApprovedCheck, runChecks, suggestChecks } from "../src/workspace-checks.js";
+import { type ApprovedCheck, parseApprovedChecks, runChecks, suggestChecks } from "../src/workspace-checks.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -391,6 +391,17 @@ it("suggests the repository's own check script", async () => {
   await writeFile(join(workspace.checkout, "bun.lock"), "");
   await writeFile(join(workspace.checkout, "package.json"), JSON.stringify({ scripts: { check: "all", test: "vitest" } }));
   expect(suggestChecks(workspace.checkout)).toEqual(["bun run check"]);
+  // A test runner that selects tests by changed files comes with the related form, ready to accept with Enter.
+  await writeFile(join(workspace.checkout, "package.json"),
+    JSON.stringify({ scripts: { check: "all" }, devDependencies: { vitest: "4.1.11" } }));
+  expect(suggestChecks(workspace.checkout)).toEqual(["bun run check; related: bunx vitest related --run --passWithNoTests {files}"]);
+  await rm(join(workspace.checkout, "bun.lock"));
+  await writeFile(join(workspace.checkout, "package.json"),
+    JSON.stringify({ scripts: { lint: "eslint", test: "jest" }, devDependencies: { jest: "30.0.0" } }));
+  expect(suggestChecks(workspace.checkout)).toEqual(["npm run lint",
+    "npm run test; related: npx jest --findRelatedTests --passWithNoTests {files}"]);
+  expect(parseApprovedChecks(suggestChecks(workspace.checkout).join("; "))).toEqual([{ command: "npm run lint", reports: [] },
+    { command: "npm run test", reports: [], related: { command: "npx jest --findRelatedTests --passWithNoTests {files}", reports: [] } }]);
 });
 
 it("keeps the requests behind the pending changes outside the checkout, starting over when nothing is pending", async () => {

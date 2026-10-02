@@ -39,6 +39,19 @@ it("restores recorded conversation without treating it as task authority", () =>
   reopened.close();
 });
 
+it("remembers the sensitive paths the operator confirmed, and asks again after the checks are reset", () => {
+  const { root, source } = fixture();
+  const store = openShellSessionStore(source, root);
+  expect(store.sensitivePaths()).toBeNull();
+  store.setSensitivePaths(["src/auth.ts", "src/*sandbox*.ts", "src/auth.ts"]);
+  store.close();
+  const reopened = openShellSessionStore(source, root);
+  expect(reopened.sensitivePaths()).toEqual(["src/auth.ts", "src/*sandbox*.ts"]);
+  reopened.resetChecks();
+  expect(reopened.sensitivePaths()).toBeNull();
+  reopened.close();
+});
+
 it("keeps a result's diff, and reopens a result recorded before results had one", () => {
   const { root, source } = fixture();
   const first = openShellSessionStore(source, root);

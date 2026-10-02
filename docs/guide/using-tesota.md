@@ -352,8 +352,9 @@ example `bun run check`); press Enter to accept, type your own separated by
 command you may name the JUnit XML reports it writes, in paths your
 `.gitignore` covers, so its failures are compared test by test:
 `bun run check => test-reports/unit.xml, test-reports/workspace.xml`.
-When a check takes long, follow it with a related form, a command where
-`{files}` stands for the changed files:
+When your repository uses Vitest or Jest, the suggested check already comes
+with a related form, a command where `{files}` stands for the changed files,
+and Enter accepts both; you can also type one:
 `bun run check; related: bunx vitest related --run --passWithNoTests {files}`.
 Each round of checks and correction then runs only the tests related to the
 changed files, and the whole check runs once more before you decide, so a
@@ -415,10 +416,15 @@ authority-sensitive files, change existing tests or what checks the result,
 leave a verifier failing, or are large. The review then says why, and focused
 reviewers for correctness, security and authority, and your repository's
 `AGENTS.md` or `CLAUDE.md` rules join in; findings several of them report are
-merged before you see them. Name your repository's sensitive files in
-`.tesota/sensitive-paths`, one glob per line, such as `src/auth/**`; Tesota
-reads the list as it was before the changes, so the agent cannot shorten it.
-Beyond the list, names such as auth or credentials count too. Before a
+merged before you see them. Before the first review in a repository, Tesota
+proposes the files whose changes always get a thorough review, from their
+names and from code that runs programs, handles cryptography or reaches the
+network. Press Enter to accept, type `-glob` to remove and a glob to add,
+separated by `;`, or `none`. Add what no name reveals, such as the code that
+decides approvals. `/checks` shows the list. To share it with your team,
+commit it as `.tesota/sensitive-paths`, one glob per line; Tesota then asks
+nothing and reads the file as it was before the changes, so the agent cannot
+shorten it. Beyond the list, names such as auth or credentials count too. Before a
 thorough review starts, a line says why it is thorough, how many reviewers
 will work, and how long comparable reviews have taken once three have been
 measured; the result then shows its time and tokens.

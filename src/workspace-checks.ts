@@ -199,22 +199,43 @@ function packageRunner(checkout: string): string {
   return "npm run";
 }
 
-function packageScripts(checkout: string): readonly string[] {
+/** The package manager's way to run a dependency's own command. */
+const packageExec: Readonly<Record<string, string>> = { "bun run": "bunx", "pnpm run": "pnpm exec", "yarn run": "yarn", "npm run": "npx" };
+
+function packageManifest(checkout: string): Readonly<{ scripts: readonly string[]; dependencies: readonly string[] }> {
   try {
     const manifest: unknown = JSON.parse(readFileSync(join(checkout, "package.json"), "utf8"));
-    if (typeof manifest !== "object" || manifest === null || !("scripts" in manifest)) return [];
-    const scripts = manifest.scripts;
-    return typeof scripts === "object" && scripts !== null ? Object.keys(scripts) : [];
-  } catch { return []; }
+    const keys = (field: string): string[] => {
+      const value: unknown = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, field) : undefined;
+      return typeof value === "object" && value !== null ? Object.keys(value) : [];
+    };
+    return { scripts: keys("scripts"), dependencies: [...keys("dependencies"), ...keys("devDependencies")] };
+  } catch { return { scripts: [], dependencies: [] }; }
 }
 
-/** Commands the repository appears to use for checking itself. The operator approves or replaces them. */
+/** A related form for the repository's test runner, when it has one that selects tests by changed files. */
+function relatedForm(runner: string, dependencies: readonly string[]): string | undefined {
+  const exec = packageExec[runner] ?? "npx";
+  if (dependencies.includes("vitest")) return `${exec} vitest related --run --passWithNoTests ${RELATED_FILES}`;
+  if (dependencies.includes("jest")) return `${exec} jest --findRelatedTests --passWithNoTests ${RELATED_FILES}`;
+  return undefined;
+}
+
+/**
+ * Commands the repository appears to use for checking itself, as the operator
+ * types them. The command that runs the tests comes with a related form when
+ * the repository's test runner can select tests by changed files (decision
+ * 052). The operator approves or replaces them.
+ */
 export function suggestChecks(checkout: string): readonly string[] {
-  const scripts = packageScripts(checkout);
+  const { scripts, dependencies } = packageManifest(checkout);
   if (scripts.length > 0) {
     const runner = packageRunner(checkout);
-    if (scripts.includes("check")) return [`${runner} check`];
-    return ["typecheck", "lint", "test"].filter((name) => scripts.includes(name)).map((name) => `${runner} ${name}`);
+    const related = relatedForm(runner, dependencies);
+    const withRelated = (command: string): string => related === undefined ? command : `${command}; ${relatedPrefix} ${related}`;
+    if (scripts.includes("check")) return [withRelated(`${runner} check`)];
+    return ["typecheck", "lint", "test"].filter((name) => scripts.includes(name))
+      .map((name) => name === "test" ? withRelated(`${runner} ${name}`) : `${runner} ${name}`);
   }
   if (existsSync(join(checkout, "Cargo.toml"))) return ["cargo test"];
   if (existsSync(join(checkout, "go.mod"))) return ["go test ./..."];

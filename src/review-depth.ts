@@ -20,7 +20,7 @@ export interface DepthDecision {
 export const LARGE_CHANGE_LINES = 400;
 
 /** Terms that name security or authority wherever they appear in a path, part of a longer name included. */
-const unambiguousTerm = new RegExp("(^|/)(auth|authn|authz|oauth|security|permissions?|polic(y|ies)|acl|crypto|secrets?|" +
+const unambiguousTerm = new RegExp("(^|/)(auth|authn|authz|oauth|security|permissions?|polic(y|ies)|acl|crypto|secrets?|sandbox(es)?|" +
   "credentials?|login|passwords?|payments?|billing|migrations?|infra)(/|\\.|_|-|$)", "iu");
 /** Terms that also name ordinary things, as a usage token or a chat session: they count only as a whole folder or file name. */
 const wholeAmbiguousTerm = /(^|\/)(tokens?|sessions?|access)(\/|\.[^/.]+$)/iu;
@@ -30,12 +30,75 @@ const infrastructureFile = /(^|\/)(Dockerfile[^/]*|[^/]+\.tf|\.github\/workflows
 export const SENSITIVE_PATHS_FILE = ".tesota/sensitive-paths";
 const maxDeclaredPaths = 200;
 
+function glob(text: string): string { return text.trim().replace(/^\.?\//u, ""); }
+
 /** The globs a sensitive-paths file declares, one per line, without blank lines and `#` comments. */
 export function parseSensitivePaths(text: string | undefined): readonly string[] {
   if (text === undefined) return [];
-  return text.split(/\r?\n/u).map((line) => line.trim().replace(/^\.?\//u, ""))
-    .filter((line) => line.length > 0 && !line.startsWith("#")).slice(0, maxDeclaredPaths);
+  return text.split(/\r?\n/u).map(glob).filter((line) => line.length > 0 && !line.startsWith("#")).slice(0, maxDeclaredPaths);
 }
+
+/**
+ * Imports of process, cryptography and network APIs, in JavaScript and
+ * TypeScript, Python, Go and Rust: code that can run programs, hold secrets or
+ * reach the network, as static analysis treats them as sinks.
+ */
+const authorityImport = new RegExp([
+  "(from\\s+|require\\(\\s*|import\\s+)[\"'](node:)?(child_process|crypto|net|tls|http|https|http2|vm|worker_threads)[\"']",
+  "^\\s*(import|from)\\s+(subprocess|socket|ssl|hashlib|hmac|secrets|ctypes)\\b",
+  "\"(os/exec|net|net/http|crypto/[a-z0-9/]+|syscall)\"",
+  "\\b(std::process|std::net|openssl|rustls|ring::)",
+].join("|"), "mu");
+
+/** Whether code imports process, cryptography or network APIs. */
+export function importsAuthority(text: string | undefined): boolean {
+  return text !== undefined && authorityImport.test(text);
+}
+
+/**
+ * The sensitive paths Tesota proposes for a repository that declares none:
+ * every file outside the tests that its name or its imports mark, which the
+ * operator confirms, trims or extends once.
+ */
+export function proposeSensitivePaths(files: readonly Readonly<{ path: string; text: string | undefined; test: boolean }>[]):
+  readonly string[] {
+  return files.filter((file) => sensitivePath(false, false, file.test, unambiguousTerm.test(file.path),
+    wholeAmbiguousTerm.test(file.path), infrastructureFile.test(file.path), importsAuthority(file.text)))
+    .map((file) => file.path).slice(0, maxDeclaredPaths);
+}
+
+/**
+ * The operator's answer to a proposal, items separated by `;`: Enter keeps
+ * it, `none` keeps nothing, an item starting with `-` removes what its glob
+ * matches, and any other item adds a glob.
+ */
+export function answerSensitivePaths(answer: string, proposed: readonly string[]): readonly string[] {
+  const trimmed = answer.trim();
+  if (trimmed.toLowerCase() === "none") return [];
+  let chosen = [...proposed];
+  for (const item of trimmed.split(";").map((part) => part.trim()).filter((part) => part.length > 0)) {
+    if (item.startsWith("-")) {
+      const removed = glob(item.slice(1));
+      chosen = chosen.filter((path) => path !== removed && !matchesGlob(path, removed));
+    } else if (!chosen.includes(glob(item))) chosen.push(glob(item));
+  }
+  return chosen.slice(0, maxDeclaredPaths);
+}
+
+/**
+ * What marks a path sensitive: the globs the repository's file declares, as
+ * the candidate's base holds it, with those the operator confirmed; whether
+ * the operator confirmed a list, after which imports no longer count; and
+ * whether a changed file imports process, cryptography or network APIs, on
+ * either side of the change.
+ */
+export interface Sensitivity {
+  readonly declared: readonly string[];
+  readonly confirmed: boolean;
+  importsAuthority(path: string): boolean;
+}
+
+const namesOnly: Sensitivity = { declared: [], confirmed: true, importsAuthority: () => false };
 
 /** Lines the diff adds or removes, not counting its headers. */
 function changedLines(diff: string): number {
@@ -58,16 +121,16 @@ function changedTests(diff: string, flags: readonly VerificationChange[]): strin
 }
 
 /**
- * `declared` holds the globs of the repository's sensitive-paths file as the
- * candidate's base holds it, never the candidate's own, which the agent wrote.
+ * `sensitivity.declared` holds the repository's file as the candidate's base
+ * holds it, never the candidate's own, which the agent wrote.
  */
 export function reviewDepth(snapshot: Pick<WorkspaceSnapshot, "changes" | "diff">, flags: readonly VerificationChange[],
-  checks: readonly CheckResult[], declared: readonly string[] = []): DepthDecision {
+  checks: readonly CheckResult[], sensitivity: Sensitivity = namesOnly): DepthDecision {
   const reasons: string[] = [];
-  const isDeclared = (path: string): boolean => declared.some((glob) => matchesGlob(path, glob));
+  const isDeclared = (path: string): boolean => sensitivity.declared.some((pattern) => matchesGlob(path, pattern));
   const sensitive = snapshot.changes.map((change) => change.path).filter((path) => sensitivePath(isDeclared(path),
-    flags.some((flag) => flag.path === path && flag.kind === "test"), unambiguousTerm.test(path),
-    wholeAmbiguousTerm.test(path), infrastructureFile.test(path)));
+    sensitivity.confirmed, flags.some((flag) => flag.path === path && flag.kind === "test"), unambiguousTerm.test(path),
+    wholeAmbiguousTerm.test(path), infrastructureFile.test(path), sensitivity.importsAuthority(path)));
   const marked = sensitive.filter(isDeclared);
   const named = sensitive.filter((path) => !isDeclared(path));
   if (marked.length > 0) reasons.push(`touches paths this repository marks sensitive (${marked.join(", ")})`);

@@ -58,10 +58,15 @@ function annotatedPaths(diff: string): ReadonlySet<string> {
   return paths;
 }
 
+/** Whether a path is a test, as every rule that treats tests apart reads it. */
+export function isTestPath(path: string): boolean {
+  return testPaths.some((pattern) => pattern.test(path));
+}
+
 function kindOf(change: WorkspaceChange, snapshot: WorkspaceSnapshot, annotated: ReadonlySet<string>,
   read: RevisionReader): VerificationChangeKind | undefined {
   const { path } = change;
-  if (testPaths.some((pattern) => pattern.test(path))) return "test";
+  if (isTestPath(path)) return "test";
   if (path.startsWith(".tesota/")) return "Tesota setup";
   if (ciPaths.some((pattern) => pattern.test(path))) return "CI workflow";
   if (checkConfigurationNames.test(basename(path))) return "check configuration";

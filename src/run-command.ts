@@ -82,7 +82,13 @@ export function policyDecisions(request: string, policy: RunPolicy): SessionDeci
       return request;
     },
     queued: () => false,
-    checks: async (suggested) => policy.checks === "suggested" ? suggested.map((command) => ({ command, reports: [] })) : policy.checks,
+    checks: async (suggested) => {
+      if (policy.checks !== "suggested") return policy.checks;
+      const parsed = parseApprovedChecks(suggested.join("; "));
+      return typeof parsed === "string" ? [] : parsed;
+    },
+    // Nobody is at the keyboard: the proposal stands, as suggested checks do.
+    sensitivePaths: async (proposed) => proposed,
     checkSecrets: async () => [],
     result: async () => policy.apply ? "apply" : "keep",
     command: async () => runCommandAnswer(policy.commands),
