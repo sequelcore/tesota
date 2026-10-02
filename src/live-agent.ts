@@ -22,10 +22,11 @@ import { proveSource } from "./verification/lemmascript-verifier.js";
  * decide whether it did only what was asked; for a premise case, whether it
  * left alone a request whose premise is false and fixed the control; for a
  * proof case (#294), whether its file proves after the turn and its contract
- * was not weakened. `--prove` gives the agent the `prove` tool, so the same
- * cases run with and without it.
+ * was not weakened. `--proofs=guidance` gives the agent the contract
+ * guidance, and `--proofs=tool` the `prove` tool with its guidance, so the
+ * same cases run in each arm.
  *
- *   bun run live:agent [--runs=N] [--set=all|fixes|scope|premise|proofs|questions] [--prove] [--model-agent=<id>]
+ *   bun run live:agent [--runs=N] [--set=all|fixes|scope|premise|proofs|questions] [--proofs=off|guidance|tool] [--model-agent=<id>]
  */
 const option = (name: string): string | undefined =>
   process.argv.find((argument) => argument.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -35,7 +36,9 @@ const set = option("set") ?? "all";
 if (!["all", "fixes", "scope", "premise", "proofs", "questions"].includes(set)) {
   throw new Error("Use --set=all, fixes, scope, premise, proofs or questions.");
 }
-const prove = process.argv.includes("--prove");
+const armOption = option("proofs") ?? "off";
+if (armOption !== "off" && armOption !== "guidance" && armOption !== "tool") throw new Error("Use --proofs=off, guidance or tool.");
+const arm: "off" | "guidance" | "tool" = armOption;
 const includes = (part: string): boolean => set === "all" || set === part;
 const agentId = option("model-agent") ?? readModelChoices().agent;
 const target = await openModelTarget(agentId);
@@ -70,7 +73,7 @@ async function ask(directory: string, request: string): Promise<Turn> {
   let proofRuns = 0;
   const commands: string[] = [];
   const session = await startWorkingAgent({ target, onUsage: (usage: TokenUsage) => { tokens += totalTokens(usage); } },
-    { cwd: directory, environment: await hostProvider.prepare(directory), sandboxed: false, prove,
+    { cwd: directory, environment: await hostProvider.prepare(directory), sandboxed: false, ...arm === "off" ? {} : { proofs: arm },
       approveCommand: async ({ command }) => { commands.push(command); return allowedCommand(command) ? "once" : "deny"; },
       onActivity: (activity) => { if (activity.type === "tool_started" && activity.tool.endsWith("prove")) proofRuns += 1; } },
     { conversationId: randomUUID() });
@@ -186,7 +189,7 @@ try {
       const proved = path === undefined || proof === "passed";
       const after = path === undefined || !existsSync(join(directory, path)) ? undefined : readFileSync(join(directory, path), "utf8");
       const weakened = path === undefined ? [] : contractWeakened(testCase.base[path] ?? "", after, testCase.kept);
-      const tally = proofs[testCase.kind] ??= { attempts: 0, proved: 0, resolved: 0, weakened: 0, proofRuns: 0, tokens: 0, durationMs: 0 };
+      const tally = proofs[testCase.name] ??= { attempts: 0, proved: 0, resolved: 0, weakened: 0, proofRuns: 0, tokens: 0, durationMs: 0 };
       tally.attempts += 1;
       tally.proved += proved ? 1 : 0;
       tally.resolved += resolved ? 1 : 0;
@@ -215,7 +218,7 @@ try {
 } finally { rmSync(root, { recursive: true, force: true }); }
 
 const words = answers.filter((entry) => entry.turn.status === "completed").map((entry) => entry.words);
-const record = { at: new Date().toISOString(), model: agentId, runs, set, prove,
+const record = { at: new Date().toISOString(), model: agentId, runs, set, arm,
   fixes: outcome, scope, premise, proofs,
   answers: { replies: words.length, unfinished: answers.length - words.length, medianWords: quantile(words, 0.5),
     p90Words: quantile(words, 0.9), stated: answers.reduce((sum, entry) => sum + entry.stated, 0),

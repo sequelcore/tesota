@@ -167,12 +167,22 @@ const PROOF_SOLUTIONS: Readonly<Record<string, Readonly<Record<string, string>>>
     "    //@ invariant 1 <= i && i <= items.length\n    //@ invariant forall(j: nat, j < i ==> items[j] <= max)\n" +
     "    //@ invariant exists(j: nat, j < i && items[j] === max)\n    if (items[i] > max) max = items[i];\n    i = i + 1;\n  }\n" +
     "  return max;\n}\n" },
+  "first negative index": { "src/orders.ts": "//@ ensures \\result === -1 ==> forall(j: nat, j < items.length ==> items[j] >= 0)\n" +
+    "//@ ensures \\result >= 0 ==> \\result < items.length && items[\\result] < 0\n" +
+    "//@ ensures \\result >= 0 ==> forall(j: nat, j < \\result ==> items[j] >= 0)\n" +
+    "export function firstNegative(items: number[]): number {\n  let i = 0;\n  while (i < items.length) {\n" +
+    "    //@ invariant 0 <= i && i <= items.length\n    //@ invariant forall(j: nat, j < i ==> items[j] >= 0)\n" +
+    "    if (items[i] < 0) return i;\n    i = i + 1;\n  }\n  return -1;\n}\n" },
+  "repeat total off by one": { "src/multiply.ts": "//@ requires times >= 0\n//@ ensures \\result === times * amount\n" +
+    "export function repeatTotal(amount: number, times: number): number {\n  let total = 0;\n  let i = 0;\n" +
+    "  while (i < times) {\n    //@ invariant 0 <= i && i <= times\n    //@ invariant total === i * amount\n" +
+    "    total = total + amount;\n    i = i + 1;\n  }\n  return total;\n}\n" },
   "negative total without a contract": { "src/total.ts": "export function total(amount: number): number {\n" +
     "  return amount < 0 ? 0 : amount;\n}\n" },
 };
 
 it("registers a code fix, a contract change, an invariant and a control, each met by a solution that keeps its contract", () => {
-  expect(AGENT_PROOF_CASES.map((entry) => entry.kind)).toEqual(["code fix", "contract change", "invariant", "control"]);
+  expect(AGENT_PROOF_CASES.map((entry) => entry.kind)).toEqual(["code fix", "contract change", "invariant", "invariant", "invariant", "control"]);
   const root = mkdtempSync(join(tmpdir(), "tesota-agent-proof-"));
   try {
     for (const testCase of AGENT_PROOF_CASES) {

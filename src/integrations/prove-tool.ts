@@ -13,13 +13,23 @@ import { annotations, dafnyInstalled, proveSource } from "../verification/lemmas
  * refuses hidden files.
  */
 
+/** What changing a file with `//@` contracts asks of the agent, with or without `prove`. */
+const contractGuidance = "Change a contract only when the request asks for different behavior, and say so in your " +
+  "summary; never remove or loosen a contract, or add //@ assume, to make a proof pass. ";
+
+/**
+ * The contract guidance alone, without the tool, so a measurement can tell
+ * the tool's effect from the guidance's.
+ */
+export const CONTRACT_GUIDANCE: string = "TypeScript files with //@ annotations carry LemmaScript contracts, which " +
+  "Tesota proves with Dafny after your turn. When you change such a file, keep its contracts provable: the code must " +
+  "meet them, and a loop needs //@ invariant lines strong enough to prove them. " + contractGuidance;
+
 /** How the agent should use `prove`, and what a pass is worth. */
 export const PROVE_GUIDANCE: string = "prove runs LemmaScript with Dafny on a TypeScript file with //@ annotations and " +
   "reports whether its contracts hold for every input they admit. After you change such a file, run prove and " +
   "work until it passes. A failure points at an obligation: the code may be wrong, or the proof may need a loop " +
-  "invariant or an assertion. Change a contract only when the request asks for different behavior, and say so in " +
-  "your summary; never remove or loosen a contract, or add //@ assume, to make a proof pass. If you cannot make " +
-  "it pass, say which obligation still fails. ";
+  "invariant or an assertion. " + contractGuidance + "If you cannot make it pass, say which obligation still fails. ";
 
 function text(content: string): { content: { type: "text"; text: string }[]; details: undefined } {
   return { content: [{ type: "text", text: content }], details: undefined };
