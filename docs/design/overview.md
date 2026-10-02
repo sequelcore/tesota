@@ -28,6 +28,13 @@ siblings describe what is built unless a section explicitly says planned.
 5. Model output and check results never grant authority. The operator
    approves commands, or sets a sandbox that makes approval unnecessary, and
    keeps, reverts or applies changes.
+6. Verification is proportional and errs toward checking. Each turn gets the
+   cheapest check that can settle it: one that changes files always gets
+   checks and review, at a depth set by what it changes; one that only
+   answers gets a first pass that decides whether the full check is needed.
+   A step that fails or cannot decide runs the full check, and every skip is
+   recorded and shown with its reason
+   ([depth](assurance.md#depth), [first pass](assurance.md#obligations)).
 
 ## Flow
 
@@ -36,8 +43,11 @@ request
   -> working agent        Pi session in the project, or in a copy for a second session; file
                           tools confined to it, commands in the session's execution environment
   -> snapshot             the turn as the trees before and after it: changed paths, diff and tree id
+  -> first pass           a turn that changed no files: does its answer need the full check?
+                          a typed decision model such as Jev, or a model; undecided runs it
   -> checks and verifiers approved commands, Oxlint and LemmaScript on that tree
-  -> review               reviewers, origin check, refuter; a forecast first when deep
+  -> review               reviewers, origin check, refuter; deeper when the turn touches tests,
+                          what checks it, sensitive files or much code, with a forecast first
   -> correction           failed checks and confirmed fixable findings go back, at most twice
   -> decision             /keep | /revert | /redo, at any time      (apply | reject | continue in a copy)
        keep:   the turn's tree becomes the base
