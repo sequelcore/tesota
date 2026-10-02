@@ -272,7 +272,8 @@ function commandGuidance(sandboxed: boolean, environment: ExecutionEnvironment):
       "network access is limited to package registries and hosts the user allowed. When a command reaches " +
       "another host, the user is asked whether to allow it and you are told the answer. " + COMPUTER_GUIDANCE
     : "Every shell command asks the user for approval first; prefer the file tools for reading and editing, " +
-      "and run commands when they are worth an approval, such as installing dependencies or running tests. ";
+      "and run commands when they are worth an approval, such as installing dependencies or running tests. " +
+      computerShell;
   return environment.commandRoot === undefined ? where
     : `${where}In commands the workspace is ${environment.commandRoot}; the file tools keep its real path. `;
 }
@@ -284,6 +285,29 @@ const COMPUTER_GUIDANCE = "When a check needs a tool the sandbox lacks, declare 
   "sandbox, such as gh, aws or docker, run it with run_on_computer, saying why; the user is asked unless a rule they saved " +
   "allows it. It runs in this repository with the user's own tools and credentials, so never use it to get " +
   "around the sandbox, and suggest a rule only of a program and its subcommand, such as [\"gh\", \"pr\"]. ";
+
+/**
+ * The shell that runs a command on this computer, as Pi chooses it: bash, which
+ * on Windows is Git Bash or the first bash.exe on PATH. Bash expands `$`,
+ * backquotes and double-quoted text before PowerShell sees them, so PowerShell
+ * goes through a quoted heredoc, which bash passes on unchanged.
+ */
+const computerShell = process.platform === "win32"
+  ? "On the user's computer commands run in bash (Git Bash), not PowerShell or cmd, and bash expands $, backquotes " +
+    "and double-quoted text first. Pass PowerShell through a quoted heredoc, which bash leaves unchanged:\n" +
+    "powershell.exe -NoProfile -NonInteractive -Command \"$(cat <<'PS'\n<PowerShell commands>\nPS\n)\"\n"
+  : "On the user's computer commands run in bash; single-quote text that must reach a program unexpanded. ";
+
+/**
+ * Where the agent changes files and leaves scratch work (#256): its file tools
+ * record each change, so a revert can tell the agent's edits from the
+ * operator's; a command's writes look like either.
+ */
+const fileGuidance = "Change the repository's files only with the edit and write tools, never with shell commands such " +
+  "as sed -i, heredocs, redirection or scripts: Tesota records what the file tools change, so the user can revert your " +
+  "changes without touching theirs. Commands may still change files as their job, such as a formatter, a code generator " +
+  "or a package install. Do not leave scratch files, such as probes or one-off scripts, in the repository: pass them to " +
+  "the interpreter directly, such as node -e, or keep them in the system's temporary folder. ";
 
 /** When the agent should ask an explorer, and what an explorer's answer is worth (decision 019). */
 /** How the agent should use the web and what web content is worth (decision 024). */
@@ -309,7 +333,7 @@ const placeGuidance = {
 function systemPrompt(root: string, sandboxed: boolean, environment: ExecutionEnvironment, helpers: Helpers,
   place: "source" | "copy"): string {
   return placeGuidance[place].where +
-    "Read, search, edit, create and delete files as the task needs. " + commandGuidance(sandboxed, environment) +
+    "Read, search, edit, create and delete files as the task needs. " + fileGuidance + commandGuidance(sandboxed, environment) +
     (helpers.explorers ? explorerGuidance : "") + (helpers.web ? webGuidance : "") + (helpers.advisor ? ADVISOR_GUIDANCE : "") +
     (helpers.plan ? PLAN_GUIDANCE : "") + "Do not commit, push or change Git " +
     "history: when you finish, Tesota shows the user your changes, runs the repository's checks and a review, and " +
@@ -373,9 +397,10 @@ function computerTool(root: string, computer: ExecutionEnvironment, options: Wor
   return defineTool({
     name: "run_on_computer", label: "Run on this computer",
     description: "Run one shell command on the user's computer instead of the sandbox, in this repository, " +
-      "with the user's own programs and credentials. The user is asked, with your reason, unless a rule they saved allows it.",
+      "with the user's own programs and credentials. The user is asked, with your reason, unless a rule they saved allows it. " +
+      computerShell,
     parameters: Type.Object({
-      command: Type.String({ description: "The command, for the user's POSIX shell" }),
+      command: Type.String({ description: "The command, for bash on the user's computer" }),
       reason: Type.String({ description: "Why it needs the user's computer, as a short question to the user" }),
       rule: Type.Optional(Type.Array(Type.String(), { description: "The leading words the user could allow for later " +
         "commands, a program and its subcommand, such as [\"gh\", \"pr\"]" })),
