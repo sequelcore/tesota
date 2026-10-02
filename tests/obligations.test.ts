@@ -1,8 +1,9 @@
 import { expect, it } from "vitest";
 import { correctionFor, correctionPrompt } from "../src/correction.js";
 import { applyRefutation, refutationMessage } from "../src/integrations/pi-refuter.js";
-import { missingAssessments, reviewMessage } from "../src/integrations/pi-reviewer.js";
-import type { Obligation, ReviewInput, ReviewReport, ToolCallRecord } from "../src/review.js";
+import type { ExtensionToolContext } from "@earendil-works/pi-coding-agent";
+import { acceptedContinuations, missingAssessments, reviewMessage, submitReviewTool } from "../src/integrations/pi-reviewer.js";
+import type { Continuation, Obligation, ReviewInput, ReviewReport, ToolCallRecord } from "../src/review.js";
 import { recordCall } from "../src/session-engine.js";
 import { inspectAnswer, inspectReview } from "../src/tesota-shell-inspection.js";
 import { obligationOutcome } from "../src/verification/obligation-outcome.js";
@@ -115,6 +116,37 @@ it("gives the reviewer the agent's reply as an untrusted answer when no files ch
   expect(screened.detail).toContain("First pass\n  triage typesafe:jev-1.13.0 found something to check: Jev: 0.75 checkable\n\nReview");
   expect(inspectAnswer(answer.requests, [report], { model: "off", decision: { decided: false, checkable: true,
     reason: "the first pass is off" } }).detail).toContain("off decided nothing, so the full check ran: the first pass is off");
+});
+
+it("counts a message that only resumes or asks again as part of the request it continues, never as a request (#253)", async () => {
+  const resumed: ReviewInput = { checkout: ".", requests: ["Make shipping free from 40", "continue i stopped by accident", "ask again"],
+    snapshot: { base: "t", tree: "t", changes: [], diff: "" }, checks: [], flags: [], response: "Done." };
+  const met = [obligation("request", 1, "met", "orders of 40 ship free")];
+  // Message 3 continues message 2, which continues request 1: the chain ends at an assessed request.
+  const continuations = [{ index: 2, continues: 1 }, { index: 3, continues: 2 }];
+  expect(missingAssessments(resumed, met, continuations)).toBeUndefined();
+  expect(missingAssessments(resumed, met)).toBe("the reviewer did not assess request 2");
+  // An attachment that does not stand leaves its message a request to assess.
+  expect(acceptedContinuations(3, met, [{ index: 2, continues: 2 }, { index: 1, continues: 1 }, { index: 4, continues: 1 }])).toEqual([]);
+  expect(missingAssessments(resumed, met, [{ index: 2, continues: 3 }, { index: 3, continues: 1 }]))
+    .toBe("the reviewer did not assess request 2");
+  // A message the reviewer both attached and judged on its own counts as a request.
+  const judged = [...met, obligation("request", 3, "uncertain", "the declined command is asked again")];
+  expect(acceptedContinuations(3, judged, continuations)).toEqual([{ index: 2, continues: 1 }]);
+
+  let recorded: readonly Continuation[] = [];
+  const tool = submitReviewTool((_summary, _findings, _obligations, attached) => { recorded = attached; return true; });
+  await tool.execute("call-1", { summary: "s", findings: [], obligations: met, continuations }, undefined, undefined,
+    {} as ExtensionToolContext);
+  expect(recorded).toEqual(continuations);
+
+  const report: ReviewReport = { reviewer: "Tesota reviewer", tree: "t", status: "completed", summary: "s", findings: [],
+    obligations: met, continuations };
+  const inspection = inspectAnswer(resumed.requests, [report]);
+  expect(inspection.summary).toContain("Your requests: 1 of 1 done");
+  expect(inspection.summary).not.toContain("unclear");
+  expect(inspection.detail).toContain("    · Message 2 continues request 1, so it is judged as part of it\n" +
+    "    · Message 3 continues request 2, so it is judged as part of it");
 });
 
 it("holds the reply's claims about the agent's own actions to Tesota's record of the turn's tool calls", () => {

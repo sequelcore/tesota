@@ -178,7 +178,8 @@ function reviewDetail(report: ReviewReport): string {
   if (report.status === "incomplete") return `  ✗ ${report.reviewer}${by} did not finish (${report.reason})`;
   return `  ${report.reviewer}${by}\n    ${report.summary}` + report.findings.map((finding) => findingDetail(finding, report.refuter)).join("") +
     (report.obligations === undefined || report.obligations.length === 0 ? ""
-      : `\n\n    What was asked\n${report.obligations.map(obligationDetail).join("\n")}`);
+      : `\n\n    What was asked\n${[...report.obligations.map(obligationDetail), ...(report.continuations ?? []).map((item) =>
+        `    · Message ${item.index} continues request ${item.continues}, so it is judged as part of it`)].join("\n")}`);
 }
 
 /** A check with what a pass shows and does not show beneath it, and its output behind a gutter so it never reads as part of the record. */
