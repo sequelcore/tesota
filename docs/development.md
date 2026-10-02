@@ -144,6 +144,15 @@ kept behind aliases or compatibility paths. Pure decision rules that can be
 stated precisely, such as permissions, budgets and finding origins, carry
 LemmaScript specifications and are proved by `bun run formal:check`.
 
+A rule's proof lives in its `.dfy`: the program LemmaScript generates, kept
+also as `.dfy.gen`, plus any proof added by hand. When a specified function
+changes, run `lsc regen --backend=dafny <file>.ts` before `lsc check`. Regen
+generates the program again, keeps the proof additions, refuses a `.dfy`
+whose generated lines were edited, and verifies the result. Running `check`
+first rewrites the `.dfy.gen` that regen compares against, and regen then
+refuses; restore the committed `.dfy.gen` with Git and run regen again. Never
+delete a `.dfy` to regenerate it: that discards its proof additions.
+
 Changes to verification rules, evidence formats, permissions or acceptance
 criteria need rationale and checks at the affected boundary. A change must not
 appear successful because it removed the condition that detected a failure.

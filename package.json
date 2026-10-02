@@ -33,7 +33,7 @@
   "devDependencies": {
     "@types/html-to-text": "9.0.4",
     "@types/node": "24.10.0",
-    "lemmascript": "0.6.1",
+    "lemmascript": "0.6.4",
     "oxlint": "1.82.0",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
