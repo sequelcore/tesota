@@ -3,7 +3,7 @@ import { judgeWarnings, sameModel } from "../src/judge-warnings.js";
 
 const choices = (overrides: Record<string, string>) => ({ agent: "codex:gpt-6-luna", explorer: "off", advisor: "off",
   reviewer: "codex:gpt-6-luna", refuter: "codex:gpt-6-luna", validator: "codex:gpt-6-luna", triage: "codex:gpt-6-luna",
-  namer: "codex:gpt-6-luna@low", ...overrides });
+  namer: "codex:gpt-6-luna@low", searcher: "codex:gpt-6-luna", ...overrides });
 
 it("treats a Claude Code alias and the model of its family on either Claude route as the same model", () => {
   expect(sameModel("claude-code:opus", "claude-code:opus")).toBe(true);

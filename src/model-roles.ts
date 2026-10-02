@@ -109,6 +109,13 @@ export const ROUTE_ENGINE: Readonly<Record<RouteKind, ModelEngine>> = { codex: "
   openrouter: "pi", opencode: "pi", "opencode-go": "pi" };
 
 /**
+ * The kinds whose provider searches the web itself, exercised live for the
+ * searcher (issue #295): Codex's Responses `web_search` and Claude Code's
+ * `WebSearch`. The Anthropic API's search has not been exercised.
+ */
+export const HOSTED_SEARCH_KINDS: readonly RouteKind[] = ["codex", "claude-code"];
+
+/**
  * How much a model reasons (decision 029): the effort levels both engines
  * share. Pi calls it the thinking level, Claude Code the effort.
  */
@@ -178,7 +185,7 @@ export function accountRoute(choice: string, added: readonly AddedRoute[] = read
   return route === "opencode-go" ? "opencode" : route;
 }
 
-export const MODEL_ROLES = ["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage", "namer"] as const;
+export const MODEL_ROLES = ["agent", "explorer", "advisor", "reviewer", "refuter", "validator", "triage", "namer", "searcher"] as const;
 export type ModelRole = typeof MODEL_ROLES[number];
 
 export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
@@ -190,6 +197,7 @@ export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
   validator: "the fix validator in correction rounds",
   triage: "the first pass that decides whether an answer needs the full check",
   namer: "writes a short title for each new session from its first request",
+  searcher: "searches the web for the agent and explorers with its provider's own search",
 };
 
 /** The model every role uses until the operator chooses another: the cheapest on the Codex route. */
@@ -203,12 +211,14 @@ export const DEFAULT_NAMER: string = `${DEFAULT_MODEL}@low`;
  * it helps. The answer check's first pass (decision 034) is on by default;
  * off, every turn that changes no files gets the full check. The namer
  * (decision 036) is on by default; off, a session keeps its first request,
- * shortened, as its name.
+ * shortened, as its name. The searcher (issue #295) is on by default; off,
+ * only a SearXNG named in `~/.tesota/web.json` searches.
  */
 export const ROLE_OFF = "off";
-export const OPTIONAL_ROLES: readonly ModelRole[] = ["explorer", "advisor", "triage", "namer"];
+export const OPTIONAL_ROLES: readonly ModelRole[] = ["explorer", "advisor", "triage", "namer", "searcher"];
 const defaults: Readonly<Record<ModelRole, string>> = { agent: DEFAULT_MODEL, explorer: ROLE_OFF, advisor: ROLE_OFF,
-  reviewer: DEFAULT_MODEL, refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL, namer: DEFAULT_NAMER };
+  reviewer: DEFAULT_MODEL, refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL, namer: DEFAULT_NAMER,
+  searcher: DEFAULT_MODEL };
 export const DEFAULT_MODELS_FILE: string = join(homedir(), ".tesota", "models.json");
 
 export type ModelChoices = Readonly<Record<ModelRole, string>>;
@@ -217,7 +227,7 @@ const modelId = z.string().max(120).refine((value) => value === ROLE_OFF || pars
 const triageId = z.string().max(120).refine((value) => value === ROLE_OFF || isDecisionModel(value) || parseModelChoice(value) !== undefined);
 const choicesSchema = z.strictObject({ agent: modelId.optional(), explorer: modelId.optional(), advisor: modelId.optional(),
   reviewer: modelId.optional(), refuter: modelId.optional(), validator: modelId.optional(), triage: triageId.optional(),
-  namer: modelId.optional() });
+  namer: modelId.optional(), searcher: modelId.optional() });
 type StoredChoices = z.infer<typeof choicesSchema>;
 
 export function isModelRole(value: string): value is ModelRole {
@@ -245,6 +255,10 @@ export function readModelChoices(path: string = DEFAULT_MODELS_FILE): ModelChoic
 export function chooseModel(role: ModelRole, model: string, available: readonly string[],
   path: string = DEFAULT_MODELS_FILE): ModelChoices {
   const choices: Record<string, string | undefined> = { ...stored(path) };
+  const kind = parseModelChoice(model)?.kind;
+  if (role === "searcher" && kind !== undefined && !HOSTED_SEARCH_KINDS.includes(kind)) {
+    throw new Error(`The searcher uses its provider's own search, which ${HOSTED_SEARCH_KINDS.join(" and ")} routes have`);
+  }
   if (model === "default") delete choices[role];
   else if (available.includes(model) && (!isDecisionModel(model) || role === "triage") ||
     OPTIONAL_ROLES.includes(role) && model === ROLE_OFF) choices[role] = model;

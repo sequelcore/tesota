@@ -167,6 +167,7 @@ off until the operator chooses a model for it (`tesota roles advisor
 | `validator` | The fix validator |
 | `triage` | The answer check's first pass; it may also use Jev, a typed decision model, and `off` sends every answer to the full check |
 | `namer` | Writes a short title for each new session from its first request; `codex:gpt-6-luna@low` by default, and `off` keeps the request as the name |
+| `searcher` | Searches the web for the agent and explorers with its provider's own search; only Codex and Claude Code routes, and `off` leaves search to a SearXNG in `~/.tesota/web.json` |
 
 Each role uses the model the operator chose in `~/.tesota/models.json`,
 written as `route:model`, and `codex:gpt-6-luna`, the cheapest on the Codex
@@ -415,7 +416,8 @@ against the code, and a review must give the same verdict on the same
 candidate later.
 
 - **Tools** (`src/integrations/web-tools.ts`). `web_search` returns titles,
-  addresses and snippets. The agent reads a page with `web_read`, giving an
+  addresses and snippets, or a searching model's findings with the pages
+  they came from, and names who searched. The agent reads a page with `web_read`, giving an
   address and a question: Tesota fetches the page, and a fresh session with
   no tools, on the explorers' model when they are on and the agent's
   otherwise, receives its text and answers with quotes; the agent receives
@@ -423,11 +425,34 @@ candidate later.
   page's text to itself, since an explorer cannot write or run commands. Page
   text therefore reaches only sessions that cannot act. The tools are
   Tesota's own, so every engine has the same ones.
-- **Search** (`src/web-search.ts`) sits behind one seam, first implemented
-  for a SearXNG instance the operator runs, named in `~/.tesota/web.json`;
-  without it, or with an unreadable file, search reports
-  `provider_not_configured`. Another provider is another implementation
-  behind the same tool.
+- **Search** (`src/web-search.ts`) sits behind one seam with providers in
+  order: a SearXNG instance the operator runs, named in
+  `~/.tesota/web.json`, then `hosted`, the `searcher` role's model searching
+  with its provider's own search, which needs no setup (issue #295). Without
+  a pin, each available provider is tried until one answers, and a failure
+  names every provider tried; `"search": "searxng"` or `"search": "hosted"`
+  in `web.json` pins one, which is then the only one used, never replaced
+  when unavailable and never followed by another when it fails
+  (`searchStep` in `src/verification/search-provider-rule.ts`, proved by
+  `bun run formal:check`). With no provider, or with an unreadable file,
+  search reports `provider_not_configured`.
+- **Hosted search** (`src/integrations/hosted-search.ts`) runs on the
+  routes whose provider searches itself, Codex and Claude Code
+  (`HOSTED_SEARCH_KINDS`); the Anthropic API's search has not been
+  exercised. Its session has no Tesota tools, only the provider's search:
+  Codex on Pi with the Responses `web_search` tool, Claude Code with
+  `WebSearch` alone. The searcher answers with findings and their pages, so
+  web content again reaches only a session that cannot act. Pi keeps only a
+  response's text, so the Codex search reads the pages its search found or
+  opened and its `url_citation`s from the provider's events
+  (`onProviderStreamEvent`); Claude Code's `WebSearch` result lists its
+  pages. A page the findings cite counts as a source only when the search
+  found or opened it, compared without tracking parameters (`sourceKey`);
+  the tool names the others as not confirmed. Findings are a lead: two live
+  searches on 2026-10-02 gave one release two different years, so the agent
+  reads a page with `web_read` before relying on it. Live, on the same
+  question, Codex's `gpt-6-luna` took 5 s and about 9k tokens, and Claude
+  Code's `haiku` 22 s and about 61k, most of them Claude Code's own prompt.
 - **Authority.** A page is read only from a host the operator allowed: for
   the session, for the repository in the same list the sandbox's network uses
   (`host:443`), or when asked, with the same question and answers as a

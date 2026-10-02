@@ -7,7 +7,7 @@ import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { type RouteAccount, sharedRoleGroups, sharedRoleNote } from "./route-accounts.js";
 import type { ModelPickerData } from "./tesota-shell-model-picker.js";
-import { accountRoute, type ModelChoices, chooseModel, DECISION_MODELS, isDecisionModel, isReasoningLevel, OPTIONAL_ROLES, type ReasoningLevel, ROLE_OFF, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES,
+import { accountRoute, HOSTED_SEARCH_KINDS, type ModelChoices, chooseModel, DECISION_MODELS, isDecisionModel, isReasoningLevel, OPTIONAL_ROLES, type ReasoningLevel, ROLE_OFF, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES,
   type AddedRoute, ROUTE_KINDS, type ModelRole, type RouteKind, parseModelChoice, readAddedRoutes, readModelChoices, ROLE_DESCRIPTIONS,
   ROUTE_BILLING } from "./model-roles.js";
 
@@ -188,7 +188,8 @@ function modelsOf(route: string, offered: readonly OfferedModel[]): string {
 const offText: Partial<Record<string, string>> = { triage: "no first pass; every answer gets the full check",
   namer: "no titles; a session keeps its first request as its name",
   explorer: "no explorers; choose a model to turn them on",
-  advisor: "no advisor; choose a model to turn it on" };
+  advisor: "no advisor; choose a model to turn it on",
+  searcher: "no hosted search; only a SearXNG in ~/.tesota/web.json searches" };
 
 /** Each route's account, as its sign-in records it, for telling roles that draw on one account. */
 export type RouteAccounts = readonly { readonly route: string; readonly account?: RouteAccount | undefined }[];
@@ -234,7 +235,9 @@ export function rolePicker(prefix: string, offered: readonly OfferedModel[], pat
   if (!isModelRole(role)) return undefined;
   return { title: `The ${role}'s model, for every session`, current: choices[role], entries: [
     ...role === "triage" ? DECISION_MODELS.map((id) => ({ id, detail: DECISION_COST, reasoning: [] })) : [],
-    ...offered.map((model) => ({ id: model.id, detail: modelCost(model), reasoning: model.reasoning })),
+    // The searcher needs a provider that searches itself.
+    ...offered.filter((model) => role !== "searcher" || HOSTED_SEARCH_KINDS.includes(model.kind))
+      .map((model) => ({ id: model.id, detail: modelCost(model), reasoning: model.reasoning })),
     { id: "default", detail: "Tesota's default for this role", reasoning: [] },
     ...OPTIONAL_ROLES.includes(role) ? [{ id: ROLE_OFF, detail: offText[role] ?? "off", reasoning: [] }] : [],
   ] };

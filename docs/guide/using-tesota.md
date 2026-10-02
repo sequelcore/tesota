@@ -47,9 +47,17 @@ plan, a correction or a reason to stop, at most three times a request. The
 agent decides when to consult it; you can ask for it in a request. Each
 consult shows in the conversation with the agent's question.
 
-The agent and explorers can **search the web and read pages** when you give
-Tesota a search provider. Run [SearXNG](https://docs.searxng.org/) on this
-computer, with its JSON format allowed in its `settings.yml`:
+The agent and explorers can **search the web and read pages**, with nothing
+to set up when you are signed in to Codex or Claude Code: the `searcher`
+role's model searches with its provider's own search, `codex:gpt-6-luna` by
+default (`tesota roles searcher <route:model>` chooses another on those
+routes). Each search names who searched and what it took. The findings come
+with the pages they cite; a page the search did not find is marked as not
+confirmed, and the agent reads a page before relying on it. A search on a
+plan counts against that plan, as any role's work does.
+
+To search with your own [SearXNG](https://docs.searxng.org/) instead, run it
+on this computer with its JSON format allowed in its `settings.yml`:
 
 ```yaml
 use_default_settings: true
@@ -65,6 +73,9 @@ docker run -d --name tesota-searxng --restart unless-stopped -p 127.0.0.1:8888:8
 ```
 
 and name it in `~/.tesota/web.json`: `{ "searxng": "http://127.0.0.1:8888" }`.
+Tesota then tries it first and falls back to the searcher when it fails; add
+`"search": "searxng"` to use it alone, or `"search": "hosted"` to use only the
+searcher.
 Before a page is read from a site you have not allowed, Tesota asks, as for
 the sandbox's network:
 
