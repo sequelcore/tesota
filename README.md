@@ -1,5 +1,10 @@
 # Tesota
 
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-welcome-light.png">
+  <img alt="Tesota's welcome screen in a terminal: the palo fierro tree drawn in braille characters, above the words Tesota, the project path, and 'Every turn is reviewed; reverting never overwrites your edits.', then the prompt and the footer naming the model, the repository and branch, and the permission mode." src="docs/assets/tesota-welcome-dark.png">
+</picture>
+
 **Tesota is an open-source coding agent that reviews every turn it takes in
 your project, and reverts one without overwriting your own edits.** It records
 the exact content of each turn, runs your checks and its own verifiers on it,
