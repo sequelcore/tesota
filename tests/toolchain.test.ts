@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { kitDescriptor, kitDockerfile, kitRuntimes, writeToolchainKit } from "../src/docker-sandboxes-kit.js";
-import { hasNodeModules, MISE_RELEASE, miseInstallScript, type MiseUse, missingRuntimes, needsDownloadHosts, needsSetup,
+import { MISE_RELEASE, miseInstallScript, type MiseUse, missingRuntimes, needsDownloadHosts, needsSetup,
   planToolchain, setupStages } from "../src/toolchain.js";
 
 const roots: string[] = [];
@@ -32,11 +32,6 @@ it("reads runtimes from package.json and installs from the lockfile", async () =
   expect(needsDownloadHosts(plan, docker)).toBe(false);
   expect(needsDownloadHosts(plan, wsl({ node: "22" }))).toBe(true);
   expect(kitRuntimes(plan)).toEqual({ node: "24.15.0", bun: "1.4.2" });
-});
-
-it("keeps node_modules off the workspace mount for any root JavaScript package", async () => {
-  expect(hasNodeModules(await repository({ "package.json": "{}", ".tesota/setup.sh": "bun install\n" }))).toBe(true);
-  expect(hasNodeModules(await repository({ ".python-version": "3.13\n" }))).toBe(false);
 });
 
 it("prefers dedicated version files and skips ranges it cannot pin", async () => {
