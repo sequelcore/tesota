@@ -532,6 +532,22 @@ the correction's diff holds only the agent's work; with an update in between,
 the operator's own edits would read as the agent's correction. That state
 arrives with the operator's next request, which starts a new cycle.
 
+**A review begins where the last one ended**, never at a turn or a stop
+(#249). Codex reviews only Git-anchored targets, gentle-pi makes every
+reviewed boundary the next base, and Claude Code's `Stop` hook does not fire
+on an interrupt, so a gate tied to the turn or to the stop passes over what a
+stopped turn changed. A correction is journaled as it is sent, with the
+reviewed tree it corrects and the findings it sends, and stays open until a
+review of changes judges it or the operator decides. When the operator stops
+a round and resumes it with a message, the next review is that correction's:
+it reviews the diff from the reviewed tree, the edit before the stop
+included, and the fix validator judges each finding sent. In the source, the
+candidate begins at the first undecided turn the last review of changes did
+not cover whole (`candidateStart` in
+`src/verification/review-start-rule.ts`, proved), so a turn stopped before
+its review is reviewed with the next one. Edits the operator makes between
+the stop and the resume fall inside that range, as in any range review.
+
 ### Planned: review beside the next request
 
 Checks and review still run before the next request, so a queued message
@@ -553,8 +569,10 @@ Each session keeps an append-only **assurance journal**, `assurance.jsonl`
 beside its record: for every reviewed candidate, the requests, each
 verifier's claim, outcome and duration, how long a failing command's base
 run took when that round made one, the flags, the depth, each reviewer's findings,
-what the review step cost, and the operator's decision; for a turn that
-changed no files, the answer check's first pass.
+what the review step cost, and the operator's decision; each correction sent
+back, with the tree it corrects and its findings; for a turn that changed no
+files, the answer check's first pass. Each review names its subject, changes
+or an answer, so only a review of changes moves where the next one begins.
 
 ## Forecast
 

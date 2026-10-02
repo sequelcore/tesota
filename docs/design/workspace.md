@@ -68,7 +68,10 @@ stopped or failed still ends, so what it changed can be decided on. The
 trees are pinned by refs in the shadow while the session lasts. Checks,
 review and correction refer to those tree ids, so evidence stays bound to
 exact content, and a correction round reviews only the tree the correction
-changed. The agent is told that it works in the operator's own project and
+changed. A review judges the undecided turns from the first one the last
+review of changes did not cover whole, usually the latest turn alone, so a
+stopped turn is reviewed with the turn after it
+([assurance](assurance.md#correction)). The agent is told that it works in the operator's own project and
 that the operator keeps or reverts its turns, where an agent in a copy is told
 its result is applied or rejected, and it is told the files the operator
 changed since its last turn.

@@ -166,7 +166,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `terminal-output.ts` | What a command's output reads as once drawn: no colors, cursor sequences or redrawn progress |
 | `shell-session-store.ts` | Saved sessions, approved checks, allowed network destinations and measured review costs per repository |
 | `source-shadow.ts`, `workspace-checkout.ts`, `source-snapshot.ts`, `workspace.ts` | The shadow repository of every source, independent clones of it, capturing the source's changes, snapshots and updates |
-| `source-session.ts` | A session working in the source: its turns as pairs of shadow trees, keep, and revert of the latest turn |
+| `source-session.ts`, `verification/review-start-rule.ts` | A session working in the source: its turns as pairs of shadow trees, keep, revert of the latest turn, and the turns a review judges, from the first one the last review did not cover whole, proved |
 | `request-record.ts` | The operator's requests behind the pending changes |
 | `workspace-apply.ts`, `verification/application-rule.ts`, `recover-command.ts`, `workspace-prune.ts` | Application with its store, journal and proved admission and outcome rules, and `tesota recover`; which workspaces `tesota prune` may remove |
 | `route-accounts.ts`, `verification/route-removal-rule.ts`, `verification/usage-reader-rule.ts` | Which account each route is signed in to, masked unless asked, routes sharing one, and roles spread across routes that draw on one; which route reads a shared account's usage, and what signing a route in, out or removing it does to the route and its roles, both proved |
@@ -187,7 +187,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `integrations/pi-refuter.ts`, `integrations/pi-fix-validator.ts` | The refuter and the fix validator |
 | `diff-lines.ts`, `finding-origin.ts`, `verification/finding-origin-rule.ts` | Reading changed lines, checking each finding's origin, and the proved rule |
 | `review-depth.ts`, `review-forecast.ts`, `verification/review-estimate.ts` | Review depth, measured costs and the forecast, and its proved rules |
-| `correction.ts`, `assurance-journal.ts` | What goes back to the agent, and the per-workspace assurance journal |
+| `correction.ts`, `assurance-journal.ts` | What goes back to the agent, and the per-workspace assurance journal, which also holds where the next review begins and a correction sent that no review has judged |
 | `integrations/pi-coding-session.ts` | Pi sessions, confined tools, command approval, cancellation, activity and token counts |
 | `secret-files.ts` | Which files are hidden from the agent's tools and sandboxed commands |
 | `integrations/pi-explorer.ts`, `integrations/pi-explore.ts`, `verification/helper-answer.ts` | Read-only explorers, the `explore` tool, the page reader, and the proved rules for helpers' answers and allowances |
