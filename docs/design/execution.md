@@ -397,7 +397,11 @@ installed 21.0.2 from January 2024. A Java repository without a Maven or
 Gradle wrapper gets Maven or Gradle too, and a stage writes Maven's
 `settings.xml` and Gradle's `gradle.properties` in the home with the
 sandbox's proxy, since Java ignores proxy variables (Claude Code issues
-13372 and 16222). Each language's tools get what they need: rustup's homes
+13372 and 16222). The settings also let Maven fetch its prefixes file
+only from Maven Central: Maven Resolver 2 otherwise asks every repository
+a POM declares, such as the snapshot repository in Apache's parent POM,
+from which a release build downloads nothing, and the proxy reports each
+refusal. Each language's tools get what they need: rustup's homes
 in the toolchain folder, gems in the home, since Ruby's own folder is
 read-only to commands, and NuGet's revocation checks offline and .NET's
 telemetry off, since both would reach hosts over plain HTTP. The
