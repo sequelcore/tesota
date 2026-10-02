@@ -1,7 +1,7 @@
 import { type ChildProcess, execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, readlinkSync, statSync } from "node:fs";
-import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import { constants, homedir, release } from "node:os";
 import { posix } from "node:path";
 import { createInterface } from "node:readline";
@@ -66,8 +66,12 @@ export interface SandboxLayout {
   readonly cache: string;
   /** The repository's installed tools, on WSL's own disk: writable during setup, read-only to every other command. */
   readonly toolchains: string;
-  /** A folder on WSL's own disk mounted as the workspace's `node_modules`, for a JavaScript package. */
-  readonly modules?: string;
+  /**
+   * A folder on WSL's own disk mounted as the workspace's `node_modules`, for
+   * every workspace, so an install never writes Linux packages into the
+   * operator's checkout, even one that becomes a JavaScript package mid-session.
+   */
+  readonly modules: string;
   readonly relay: string;
   readonly socket: string;
   /** An empty file mounted read-only over each file hidden from commands. */
@@ -253,14 +257,13 @@ export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command:
   guarded: GuardedPaths = { readOnly: [], hidden: [] }, mounted: string = layout.workspace): string[] {
   const system = layout.system.flatMap((folder) => folder.link === undefined ? ["--ro-bind", folder.path, folder.path]
     : ["--symlink", folder.link, folder.path]);
-  const modules = layout.modules === undefined ? [] : ["--bind", layout.modules, join(layout.workspace, "node_modules")];
   // The home comes before what lies inside the account's home, such as tool folders and Tesota's own state, which overlay it.
   return ["--unshare-all", "--die-with-parent", "--new-session", ...system, "--bind", layout.home, layout.account,
     ...layout.tools.flatMap((folder) => ["--ro-bind-try", folder, folder]),
     "--proc", "/proc", "--dev", "/dev", "--bind", layout.temp, "/tmp",
     "--bind", layout.cache, layout.cache,
     phase === "setup" ? "--bind" : "--ro-bind", layout.toolchains, layout.toolchains,
-    "--bind", mounted, layout.workspace, ...modules,
+    "--bind", mounted, layout.workspace, "--bind", layout.modules, join(layout.workspace, "node_modules"),
     ...guarded.readOnly.flatMap((path) => ["--ro-bind", join(mounted, path), join(layout.workspace, path)]),
     ...guarded.hidden.flatMap((path) => ["--ro-bind", layout.mask, join(layout.workspace, path)]),
     "--ro-bind", layout.relay, layout.relay, "--bind", layout.socket, layout.socket,
@@ -539,7 +542,7 @@ class SandboxServer {
     const cwd = resolve(layout.workspace, execution.cwd);
     if (!within(cwd, layout.workspace)) return { outcome: "not_started", exitCode: null, refused: [] };
     const mounted = execution.root ?? layout.workspace;
-    if (execution.root !== undefined && layout.modules !== undefined) await mkdir(join(mounted, "node_modules"), { recursive: true });
+    if (execution.root !== undefined) await mkdir(join(mounted, "node_modules"), { recursive: true });
     const guarded = await guardedPaths(mounted, execution.hidden ?? []);
     const started = new Date();
     const path = [...this.#toolFolders, this.#parts.path].filter((entry) => entry.length > 0).join(delimiter);
@@ -622,15 +625,16 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   const state = stateFolder(workspace);
   const shared = options.repository === undefined ? state : repositoryFolder(options.repository);
   const layout: SandboxLayout = { workspace, home: join(state, "home"), account: homedir(), temp: join(state, "tmp"),
-    cache: join(shared, "cache"), toolchains: join(shared, "toolchains"),
-    ...existsSync(join(workspace, "package.json")) ? { modules: join(state, "node_modules") } : {},
+    cache: join(shared, "cache"), toolchains: join(shared, "toolchains"), modules: join(state, "node_modules"),
     relay: join(state, "relay.cjs"), socket: join(state, "proxy.sock"), mask: join(state, "hidden"), runtime: process.execPath,
     system: systemFolders(), tools: toolsOnThisMachine() };
   for (const folder of [layout.home, layout.temp, join(layout.cache, "npm"), join(layout.cache, "bun"), layout.toolchains, layout.modules]) {
-    if (folder !== undefined) await mkdir(folder, { recursive: true });
+    await mkdir(folder, { recursive: true });
   }
-  // The mount point for the workspace's own node_modules, as Docker Sandboxes makes it.
-  if (layout.modules !== undefined) await mkdir(join(workspace, "node_modules"), { recursive: true });
+  // The mount point for the workspace's own node_modules, as Docker Sandboxes makes it, removed at the end if it was made here and stayed empty.
+  const mountPoint = join(workspace, "node_modules");
+  const made = !existsSync(mountPoint);
+  await mkdir(mountPoint, { recursive: true });
   await writeFile(layout.relay, RELAY_SOURCE, "utf8");
   // Read-only, so an earlier start left one that cannot be written again.
   await rm(layout.mask, { force: true });
@@ -646,6 +650,8 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
     if (parsed?.success === true) void server.handle(parsed.data).catch(() => undefined);
   }
   await server.close();
+  // Removes only an empty folder, so nothing the operator put there is lost.
+  if (made) await rmdir(mountPoint).catch(() => undefined);
 }
 
 /** Remove what a workspace's sandbox kept on WSL's disk. */

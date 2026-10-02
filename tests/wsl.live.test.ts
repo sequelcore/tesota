@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -216,6 +216,26 @@ it.runIf(live)("keeps a repository's package cache on the sandbox's own disk, sh
       await wslProvider.releaseRepository?.(key);
     }
   }
+}, 300_000);
+
+it.runIf(live)("keeps an install out of the operator's checkout when the repository becomes a JavaScript package mid-session", async () => {
+  // Issue #245: an install wrote Linux packages into the operator's Windows checkout.
+  const checkout = join(root, "becomes-package");
+  await mkdir(checkout);
+  await writeFile(join(checkout, "README.md"), "no package yet\n");
+  const environment = windows ? await wslProvider.prepare(checkout) : await bubblewrapEnvironment(direct, checkout);
+  try {
+    let output = "";
+    const result = await environment.run("npm init -y >/dev/null && npm install --no-audit --no-fund is-number@7.0.0 >/dev/null && " +
+      "node -e \"console.log(require('is-number')(5))\"", { cwd: checkout, onOutput: (chunk) => { output += chunk.toString(); } });
+    expect(result.exitCode).toBe(0);
+    expect(output).toContain("true");
+    expect(existsSync(join(checkout, "package.json"))).toBe(true);
+    expect(readdirSync(join(checkout, "node_modules"))).toEqual([]);
+  } finally { await environment.dispose(); }
+  // The empty folder the sandbox mounted over is gone once the session ends.
+  expect(existsSync(join(checkout, "node_modules"))).toBe(false);
+  if (windows) await wslProvider.release(checkout);
 }, 300_000);
 
 it.runIf(live)("installs the languages a repository's own files show, and their registries answer through the proxy", async () => {

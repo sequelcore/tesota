@@ -87,11 +87,6 @@ function runtimeVersions(checkout: string, sources: string[]): Record<string, st
   return tools;
 }
 
-/** Whether the checkout's root is a JavaScript package, whose installs land in its node_modules. */
-export function hasNodeModules(checkout: string): boolean {
-  return existsSync(join(checkout, "package.json"));
-}
-
 /** The package manager whose lockfile the checkout commits, which installs exactly what that lockfile names. */
 export function lockfileManager(checkout: string): { readonly manager: "bun" | "npm"; readonly lockfile: string } | null {
   for (const lockfile of ["bun.lock", "bun.lockb"]) if (existsSync(join(checkout, lockfile))) return { manager: "bun", lockfile };
