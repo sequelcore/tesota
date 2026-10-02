@@ -40,6 +40,16 @@ record of that use starts on 2026-10-01; what it surfaced is in
   project next. Base checks outside the WSL sandbox wait until real use shows
   they matter.
   [Workspace](design/workspace.md#planned)
+- Let the working agent run LemmaScript proofs during its turn, as
+  LemmaScript's own loop and Midspiral's lemmafit do. Today a proof runs only
+  after the turn, as one of Tesota's checks, and a failure comes back as raw
+  output within the two correction rounds set for model review. Register
+  cases that change a function with `//@` contracts, one of them tempting the
+  agent to weaken the contract, and compare an in-turn proof tool with
+  today's loop on the same model: verified at the end of the turn, rounds,
+  time, tokens and contracts weakened. What the agent runs stays feedback;
+  Tesota's run on the candidate stays the evidence.
+  [Issue #294](https://github.com/sequelcore/tesota/issues/294)
 - Scope behavior was measured on cases that tempt the agent to make unrelated
   changes, registered before any run: five temptations and a control in
   `live:agent`. On 2026-09-30, `claude-code:sonnet` kept all 10 tempted runs in
