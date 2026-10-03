@@ -1,4 +1,5 @@
 import type { ObligationStatus } from "./verification/obligation-outcome.js";
+import type { Recheck } from "./verification/recheck-rule.js";
 import type { VerificationChange } from "./verification-changes.js";
 import type { WorkspaceSnapshot } from "./workspace.js";
 import type { CheckResult } from "./workspace-checks.js";
@@ -46,6 +47,13 @@ export interface Finding {
   readonly standing?: FindingStanding;
   /** The refuter's evidence for its verdict. */
   readonly refutation?: string;
+  /**
+   * How a finding sent back to the agent stood when re-judged against the
+   * content after the correction (#250); absent on a finding this review
+   * reported first. A resolved one is kept to be shown as resolved, never sent
+   * back.
+   */
+  readonly recheck?: Recheck;
   /**
    * Set when another reviewer's finding already reports the same problem: the
    * reviewer and statement of that finding. A duplicate is kept in the

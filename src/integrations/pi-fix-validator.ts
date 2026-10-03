@@ -4,6 +4,7 @@ import { numberedDiff } from "../diff-lines.js";
 import type { Finding, ReviewInput, ReviewReport } from "../review.js";
 import { type ModelAccess, startModelSession } from "./model-session.js";
 import { type LimitedTurnResult, REVIEW_TIME_LIMIT_MS, runWithTimeLimit } from "./model-session-contract.js";
+import { recheckOf } from "../verification/recheck-rule.js";
 import { readOnlyFileTools, repositoryInstructions } from "./pi-coding-session.js";
 
 /**
@@ -62,23 +63,30 @@ export function validationMessage(input: ReviewInput, sentBack: readonly Finding
 }
 
 /**
- * A report of what the correction left: unresolved findings stay confirmed,
- * undetermined or unanswered ones become unsettled, resolved ones are only
- * counted. A validator that did not finish leaves every finding unsettled.
+ * A report of what the correction left, each finding sent back marked as
+ * re-judged (#250): one still present stays confirmed, one not re-checked
+ * becomes unsettled, and one resolved is kept as ruled out, to be shown as
+ * resolved. A validator that did not finish re-checked nothing. A correction
+ * that changed nothing, `changed` false, leaves every finding present with no
+ * validator asked.
  */
 export function validationReport(tree: string, sentBack: readonly Finding[], turn: LimitedTurnResult,
-  verdicts: readonly FixVerdict[] | undefined): ReviewReport {
+  verdicts: readonly FixVerdict[] | undefined, changed = true): ReviewReport {
   const finished = turn.status !== "cancelled" && turn.status !== "unsettled" && turn.status !== "timed_out"
     ? verdicts : undefined;
-  let resolved = 0;
-  const findings = sentBack.flatMap((finding, index): Finding[] => {
-    const verdict = finished?.find((entry) => entry.id === index + 1);
-    if (verdict?.verdict === "resolved") { resolved += 1; return []; }
-    return [{ ...finding, standing: verdict?.verdict === "unresolved" ? "confirmed" : "unsettled",
-      ...(verdict === undefined ? {} : { refutation: `After the correction: ${verdict.evidence}` }) }];
+  const findings = sentBack.map((finding, index): Finding => {
+    const verdict = changed ? finished?.find((entry) => entry.id === index + 1) : undefined;
+    const recheck = recheckOf(changed, verdict?.verdict ?? "none");
+    const evidence = !changed ? "the correction changed nothing, so the content is as it was when this was sent back"
+      : verdict?.evidence;
+    return { ...finding, recheck, standing: recheck === "resolved" ? "refuted" : recheck === "present" ? "confirmed" : "unsettled",
+      ...(evidence === undefined ? {} : { refutation: `After the correction: ${evidence}` }) };
   });
+  const resolved = findings.filter((finding) => finding.recheck === "resolved").length;
   return { reviewer: VALIDATOR, tree, status: "completed", findings,
-    summary: `${resolved} of ${sentBack.length} findings sent back ${resolved === 1 ? "is" : "are"} resolved.` };
+    summary: changed ? `${resolved} of ${sentBack.length} findings sent back ${resolved === 1 ? "is" : "are"} resolved.`
+      : `The correction changed nothing, so the ${sentBack.length === 1 ? "finding" : `${sentBack.length} findings`} ` +
+        `sent back ${sentBack.length === 1 ? "is" : "are"} still present.` };
 }
 
 export type FixValidatorOptions = ModelAccess;

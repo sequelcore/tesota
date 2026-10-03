@@ -188,7 +188,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `test-report.ts`, `verification/check-origin-rule.ts` | Reading a check's JUnit XML reports, and the proved rule for whose failure a check or test is |
 | `verification-changes.ts` | Flagging changes to tests, check configuration, CI, specifications and scripts |
 | `review.ts`, `integrations/pi-reviewer.ts`, `integrations/pi-claimcheck.ts` | The reviewer contract, Tesota's reviewer and lenses, and ClaimCheck's method |
-| `integrations/pi-refuter.ts`, `integrations/pi-fix-validator.ts` | The refuter and the fix validator |
+| `integrations/pi-refuter.ts`, `integrations/pi-fix-validator.ts`, `verification/recheck-rule.ts` | The refuter and the fix validator, with how each finding sent back stands after a correction, proved |
 | `diff-lines.ts`, `finding-origin.ts`, `verification/finding-origin-rule.ts` | Reading changed lines, checking each finding's origin, and the proved rule |
 | `review-depth.ts`, `review-forecast.ts`, `verification/review-estimate.ts` | Review depth, measured costs and the forecast, and its proved rules |
 | `correction.ts`, `assurance-journal.ts` | What goes back to the agent, and the per-workspace assurance journal, which also holds where the next review begins and a correction sent that no review has judged |

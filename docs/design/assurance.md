@@ -620,6 +620,17 @@ correction ([Tang et al., 2026](https://arxiv.org/abs/2605.29442)). Operator fin
 failures the base shares or that could not be compared with it, incomplete
 reviews and checks that could not run never go back to the agent.
 
+**A finding sent back is re-judged, never repeated or dropped unjudged**
+(#250). The next review marks each one, from the fix validator's verdict on
+the current content, as resolved, still present or not re-checked
+(`recheckOf` in `src/verification/recheck-rule.ts`, proved). A correction
+that changed nothing resolved nothing: every finding it was sent stays
+present, and no validator is asked, since one told of an empty diff can only
+guess. A resolved finding is shown as resolved under context, never sent back;
+one still present keeps its place, labeled as carried with the validator's
+evidence; one not re-checked, because the validator could not decide or did
+not finish, is the operator's, never shown for the agent as if it were new.
+
 **The base stays fixed through the rounds**. A correction continues the turn
 it corrects, and in a workspace it does not bring the operator's newer
 repository state in, so

@@ -75,7 +75,7 @@ async function measureCorrections(ai: RoleAccess,
     const validation = await validateFixes(ai.validator, correctionInput, sentBack, signal);
     const delta = await refuteFindings(ai.refuter, correctionInput,
       attributeOrigins([await createPiReviewer(ai.reviewer).review(correctionInput, signal)], corrected), signal);
-    const remaining = validation.status === "completed" ? validation.findings : [];
+    const remaining = validation.status === "completed" ? validation.findings.filter((finding) => finding.recheck !== "resolved") : [];
     results[variant] = { sentBack: sentBack.length, resolved: sentBack.length - remaining.length,
       unresolved: remaining.filter((finding) => finding.standing === "confirmed").length,
       newConfirmed: delta.flatMap((report) => report.status === "completed" ? report.findings : [])
