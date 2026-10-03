@@ -548,7 +548,9 @@ correction, with nobody at the keyboard. `tesota run -` reads the request from
 standard input. The agent's reply goes to standard output and Tesota's notices
 and progress to standard error; `--json` prints one record of the run
 instead: its session, how the turn ended, the reply of its latest round, the
-notices and results. The exit code is 0 when the turn completed, 130 when it
+replies of every round, the notices and results. A correction's reply covers
+what it corrected, so a caveat from the first answer may be only in the
+earlier replies. The exit code is 0 when the turn completed, 130 when it
 was stopped and 1 otherwise.
 
 A run allows only what its flags say, for that run alone, and never saves a

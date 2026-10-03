@@ -110,6 +110,11 @@ export interface RunRecord {
   exitCode: number;
   /** The agent's replies in the turn's latest round, after any correction. */
   reply: string;
+  /**
+   * The agent's replies in each round, first answer first and the latest
+   * last, so what an earlier round said is kept after a correction replaces it.
+   */
+  replies: string[];
   notices: { text: string; tone: NoticeTone }[];
   results: ShellInspection[];
   execution: string | undefined;
@@ -134,8 +139,8 @@ export class RunOutput implements SessionOutput {
     this.#json = json;
     this.#out = out;
     this.#err = err;
-    this.record = { session, status: "not_started", exitCode: 0, reply: "", notices: [], results: [], execution: undefined,
-      model: undefined, plan: undefined, blocked: false };
+    this.record = { session, status: "not_started", exitCode: 0, reply: "", replies: [], notices: [], results: [],
+      execution: undefined, model: undefined, plan: undefined, blocked: false };
   }
 
   writeTo(_id: string, text: string, tone: NoticeTone = "info"): void {
@@ -163,6 +168,8 @@ export class RunOutput implements SessionOutput {
     if (activity.type === "tool_started") this.#err(`· ${activity.tool} ${activity.subject}`.trimEnd() + "\n");
     if (activity.type !== "reply" || !activity.final || activity.text.length === 0) return;
     this.record.reply = this.record.reply.length === 0 ? activity.text : `${this.record.reply}\n\n${activity.text}`;
+    if (this.record.replies.length === 0) this.record.replies.push("");
+    this.record.replies[this.record.replies.length - 1] = this.record.reply;
     if (!this.#json) this.#out(`${activity.text}\n`);
   }
 
@@ -193,8 +200,10 @@ export async function runTesotaRun(id: string, decisions: SessionDecisions,
     loop = await runTesotaShell({
       ...work,
       work: async (request, origin) => {
-        // The record keeps the reply of the latest round, so a correction's answer replaces the one it corrected.
+        // `reply` is the latest round's, so a correction's answer replaces the one it corrected;
+        // `replies` keeps every round's.
         output.record.reply = "";
+        output.record.replies.push("");
         const result = await work.work(request, origin);
         output.record.status = result.status;
         return result;
