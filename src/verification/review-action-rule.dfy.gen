@@ -59,6 +59,31 @@ lemma checkAction_ensures(verifier: ActionVerifier, outcome: ActionOutcome, orig
 {
 }
 
+function roundStarts(failedCheck: bool, unmetObligation: bool, significantFinding: bool): bool
+{
+  ((failedCheck || unmetObligation) || significantFinding)
+}
+
+lemma roundStarts_ensures(failedCheck: bool, unmetObligation: bool, significantFinding: bool)
+  ensures (roundStarts(failedCheck, unmetObligation, significantFinding) == ((failedCheck || unmetObligation) || significantFinding))
+{
+}
+
+function severityAction(action: ReviewAction, low: bool, roundIsStarting: bool): ReviewAction
+{
+  if ((action.agent? && low) && !(roundIsStarting)) then
+    ReviewAction.operator
+  else
+    action
+}
+
+lemma severityAction_ensures(action: ReviewAction, low: bool, roundIsStarting: bool)
+  ensures (severityAction(action, low, roundIsStarting).agent? <==> (action.agent? && (!(low) || roundIsStarting)))
+  ensures (severityAction(action, low, roundIsStarting).operator? <==> (action.operator? || ((action.agent? && low) && !(roundIsStarting))))
+  ensures (severityAction(action, low, roundIsStarting).context? <==> action.context?)
+{
+}
+
 function obligationAction(outcome: ActionObligation, disposition: ObligationDisposition): ReviewAction
 {
   if outcome.not_held? then

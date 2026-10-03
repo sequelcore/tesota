@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { correctionFor, correctionPrompt } from "../src/correction.js";
 import { hostProvider } from "../src/host-environment.js";
-import type { ReviewReport } from "../src/review.js";
+import type { Finding, ReviewReport } from "../src/review.js";
 import type { CheckResult } from "../src/workspace-checks.js";
 
 const tree = "t".repeat(40);
@@ -68,6 +68,23 @@ it("never sends back a problem the candidate did not introduce, or one whose cau
   expect(correctionFor([check("passed")], [old])).toBeUndefined();
   const unclear: ReviewReport = { ...review, findings: [{ ...review.findings[0]!, origin: "unknown" }] };
   expect(correctionFor([check("passed")], [unclear])).toBeUndefined();
+});
+
+const low: Finding = { severity: "low", disposition: "fixable", origin: "introduced", standing: "confirmed", path: "src/price.ts",
+  line: 5, statement: "A comment is stale", reason: "It describes the old rule" };
+const medium: Finding = { ...low, severity: "medium", statement: "Cents are dropped" };
+
+it("starts no round for a review whose only items for the agent are low-severity findings (#254)", () => {
+  expect(correctionFor([check("passed")], [{ ...review, findings: [low] }])).toBeUndefined();
+});
+
+it("sends a low finding back with a medium one", () => {
+  expect(correctionFor([check("passed")], [{ ...review, findings: [low, medium] }])?.findings).toEqual([low, medium]);
+});
+
+it("sends a low finding back with a failed check", () => {
+  expect(correctionFor([check("failed")], [{ ...review, findings: [low] }])).toEqual({
+    failedChecks: [check("failed")], findings: [low], obligations: [] });
 });
 
 it("asks for no correction when only the operator can settle what is left", () => {

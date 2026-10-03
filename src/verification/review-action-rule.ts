@@ -50,6 +50,27 @@ export function checkAction(verifier: ActionVerifier, outcome: ActionOutcome, or
   return "operator";
 }
 
+/**
+ * Whether a correction round starts: a failed check the change caused, an obligation that did not hold, or a
+ * finding of medium severity or higher that is for the agent. Findings of low severity alone never start one (#254).
+ */
+//@ ensures \result === (failedCheck || unmetObligation || significantFinding)
+export function roundStarts(failedCheck: boolean, unmetObligation: boolean, significantFinding: boolean): boolean {
+  return failedCheck || unmetObligation || significantFinding;
+}
+
+/**
+ * Who acts on a finding once its severity counts (#254): a low-severity finding that `findingAction` sends to the
+ * agent goes only with a round that starts for another reason, and otherwise to the operator, who can send it back.
+ * Severity changes nothing else.
+ */
+//@ ensures \result === "agent" <==> action === "agent" && (!low || roundIsStarting)
+//@ ensures \result === "operator" <==> action === "operator" || (action === "agent" && low && !roundIsStarting)
+//@ ensures \result === "context" <==> action === "context"
+export function severityAction(action: ReviewAction, low: boolean, roundIsStarting: boolean): ReviewAction {
+  return action === "agent" && low && !roundIsStarting ? "operator" : action;
+}
+
 export type ActionObligation = "held" | "not_held" | "uncertain";
 
 export type ObligationDisposition = "fixable" | "operator";

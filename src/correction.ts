@@ -1,5 +1,5 @@
 import type { Finding, Obligation, ReviewReport } from "./review.js";
-import { actionOfCheck, actionOfFinding, actionOfObligation } from "./review-action.js";
+import { actionOfCheck, actionOfFinding, actionOfObligation, reviewRoundStarts } from "./review-action.js";
 import { type CheckResult, testList } from "./workspace-checks.js";
 
 /** Rounds in which Tesota sends problems back to the working agent before the operator decides (decision 015). */
@@ -19,12 +19,14 @@ export interface CorrectionRound {
  * action is the agent's (decision 041). The rest is the operator's or context:
  * a repeat, a problem that was already there, an unclear cause, a trade-off, a
  * check that could not run, and an unfinished review, which the agent cannot
- * or should not settle.
+ * or should not settle. Low-severity findings alone start no round; they go to
+ * the operator, or travel with a round that starts for another reason (#254).
  */
 export function correctionFor(checks: readonly CheckResult[], reviews: readonly ReviewReport[]): CorrectionRound | undefined {
   const failedChecks = checks.filter((check) => actionOfCheck(check) === "agent");
   const completed = reviews.flatMap((report) => report.status === "completed" ? [report] : []);
-  const findings = completed.flatMap((report) => report.findings.filter((finding) => actionOfFinding(finding) === "agent"));
+  const starts = reviewRoundStarts(checks, reviews);
+  const findings = completed.flatMap((report) => report.findings.filter((finding) => actionOfFinding(finding, starts) === "agent"));
   const obligations = completed.flatMap((report) => (report.obligations ?? []).filter((item) => actionOfObligation(item) === "agent"));
   return failedChecks.length === 0 && findings.length === 0 && obligations.length === 0 ? undefined
     : { failedChecks, findings, obligations };

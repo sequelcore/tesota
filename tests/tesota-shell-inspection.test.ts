@@ -110,6 +110,19 @@ it("shows each finding once, marks the operator's calls, and never shows an unfi
   expect(context.summary).toContain("  ✓ The reviewers found no problem this change caused\n  · already there before · src/tax.ts — Tax ignores refunds");
 });
 
+it("shows a low finding alone as the operator's to send back, and as the agent's when a round starts anyway (#254)", () => {
+  const low = { severity: "low" as const, disposition: "fixable" as const, origin: "introduced" as const, standing: "confirmed" as const,
+    path: "src/price.ts", line: 5, statement: "A comment is stale", reason: "It describes the old rule" };
+  const reviews = [{ reviewer: "Tesota reviewer", tree: snapshot.tree, status: "completed" as const, summary: "", findings: [low] }];
+  const alone = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews });
+  expect(alone.summary).toContain("Needs you\n  ! low · sent back only with other problems · src/price.ts:5 — A comment is stale");
+  expect(alone.summary).not.toContain("For the agent to fix");
+  const failed = { ...check, outcome: "failed" as const, exitCode: 1,
+    base: { outcome: "passed" as const, exitCode: 0, origin: "introduced" as const } };
+  expect(inspectReview({ snapshot, checks: [failed], requests: [], flags: [], reviews }).summary)
+    .toContain("  ✗ low · src/price.ts:5 — A comment is stale");
+});
+
 it("shows a finding whose cause Tesota could not establish as the operator's call, with the reason in the detail", () => {
   const note = "The reviewer said this change caused it, but this change does not touch src/tax.ts.";
   const review = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
