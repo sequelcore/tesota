@@ -3,9 +3,12 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { AGENT_FIX_CASES, AGENT_PREMISE_CASES, AGENT_PROOF_CASES, AGENT_QUESTIONS, AGENT_SCOPE_CASES, QUESTION_REPOSITORY,
-  allowedCommand, beyondRequest, contractWeakened, factsStated, mentions, premiseRight, productionChanges, quantile,
-  wordCount } from "./agent-evaluation.js";
+import { AGENT_FIX_CASES, AGENT_PREMISE_CASES, AGENT_PROOF_CASES, AGENT_QUESTIONS, AGENT_SCOPE_CASES, AGENT_STRENGTHEN_CASES,
+  QUESTION_REPOSITORY, allowedCommand, beyondRequest, contractWeakened, factsStated, mentions, premiseRight, productionChanges,
+  quantile, withBuggyBody, wordCount } from "./agent-evaluation.js";
+import { correctionPrompt } from "./correction.js";
+import { contracts } from "./integrations/pi-claimcheck.js";
+import { bodyEnd } from "./proof-guarantees.js";
 import { hostProvider } from "./host-environment.js";
 import { openModelTarget, startWorkingAgent } from "./integrations/model-session.js";
 import { readModelChoices } from "./model-roles.js";
@@ -24,18 +27,24 @@ import { proveSource } from "./verification/lemmascript-verifier.js";
  * proof case (#294), whether its file proves after the turn and its contract
  * was not weakened. `--proofs=guidance` gives the agent the contract
  * guidance, and `--proofs=tool` the `prove` tool with its guidance, so the
- * same cases run in each arm.
+ * same cases run in each arm. The strengthen set sends the correction Tesota
+ * would build for a bug a proved contract allowed, with `--strengthen=on`
+ * adding the request to strengthen the contract, and records whether the
+ * contract the turn left rules the bug out.
  *
- *   bun run live:agent [--runs=N] [--set=all|fixes|scope|premise|proofs|questions] [--proofs=off|guidance|tool] [--model-agent=<id>]
+ *   bun run live:agent [--runs=N] [--set=all|fixes|scope|premise|proofs|strengthen|questions]
+ *     [--proofs=off|guidance|tool] [--strengthen=off|on] [--model-agent=<id>]
  */
 const option = (name: string): string | undefined =>
   process.argv.find((argument) => argument.startsWith(`--${name}=`))?.slice(name.length + 3);
 const runs = Number(option("runs") ?? "2");
 if (!Number.isInteger(runs) || runs < 1) throw new Error("Use --runs=N with N at least 1.");
 const set = option("set") ?? "all";
-if (!["all", "fixes", "scope", "premise", "proofs", "questions"].includes(set)) {
-  throw new Error("Use --set=all, fixes, scope, premise, proofs or questions.");
+if (!["all", "fixes", "scope", "premise", "proofs", "strengthen", "questions"].includes(set)) {
+  throw new Error("Use --set=all, fixes, scope, premise, proofs, strengthen or questions.");
 }
+const strengthen = option("strengthen") ?? "off";
+if (strengthen !== "off" && strengthen !== "on") throw new Error("Use --strengthen=off or on.");
 const armOption = option("proofs") ?? "off";
 if (armOption !== "off" && armOption !== "guidance" && armOption !== "tool") throw new Error("Use --proofs=off, guidance or tool.");
 const arm: "off" | "guidance" | "tool" = armOption;
@@ -100,6 +109,9 @@ const scope = { attempts: 0, resolved: 0, inScope: 0, controlAttempts: 0, contro
 const premised: unknown[] = [];
 const premise = { attempts: 0, leftAlone: 0, reported: 0, controlAttempts: 0, controlResolved: 0 };
 const proofAttempts: unknown[] = [];
+const strengthenAttempts: unknown[] = [];
+const strengthened: Record<string, { attempts: number; resolved: number; proved: number; rulesOut: number; weakened: number;
+  tokens: number; durationMs: number }> = {};
 const proofs: Record<string, { attempts: number; proved: number; resolved: number; weakened: number; proofRuns: number;
   tokens: number; durationMs: number }> = {};
 const passes = (directory: string, path: string, text: string): boolean => {
@@ -205,6 +217,42 @@ try {
         `${Math.round(turn.tokens / 1000)}k tokens, ${Math.round(turn.durationMs / 1000)} s` +
         (turn.status === "completed" ? "" : ` (${turn.status})`));
     }
+    for (const testCase of set === "strengthen" ? AGENT_STRENGTHEN_CASES : []) {
+      const directory = repository(testCase.name, testCase.base);
+      const base = testCase.base[testCase.path] ?? "";
+      const contract = contracts(testCase.path, base).find((item) => item.name === testCase.function);
+      const proved = contract === undefined || strengthen === "off" ? [] : [{ path: testCase.path,
+        lines: Array.from({ length: bodyEnd(base, contract.endLine) - contract.endLine + 1 }, (_value, index) => contract.endLine + index),
+        contracts: [contract.text] }];
+      const request = correctionPrompt([testCase.request], { failedChecks: [], obligations: [],
+        findings: [{ severity: "high", disposition: "fixable", origin: "introduced", path: testCase.path, ...testCase.finding }] }, proved);
+      const turn = await ask(directory, request);
+      const resolved = passes(directory, "check.test.ts", testCase.hiddenTest);
+      const proof = await provesAfter(directory, testCase.path);
+      const file = join(directory, testCase.path);
+      const after = existsSync(file) ? readFileSync(file, "utf8") : undefined;
+      const buggy = after === undefined ? undefined : withBuggyBody(base, after, testCase.path, testCase.function);
+      const bugProof = buggy === undefined ? undefined
+        : (await proveSource(basename(testCase.path), buggy, undefined, AbortSignal.timeout(10 * 60_000))).outcome;
+      const rulesOut = bugProof === "failed";
+      const weakened = contractWeakened(base, after, testCase.kept);
+      const tally = strengthened[testCase.name] ??= { attempts: 0, resolved: 0, proved: 0, rulesOut: 0, weakened: 0, tokens: 0,
+        durationMs: 0 };
+      tally.attempts += 1;
+      tally.resolved += resolved ? 1 : 0;
+      tally.proved += proof === "passed" ? 1 : 0;
+      tally.rulesOut += rulesOut ? 1 : 0;
+      tally.weakened += weakened.length > 0 ? 1 : 0;
+      tally.tokens += turn.tokens;
+      tally.durationMs += turn.durationMs;
+      strengthenAttempts.push({ name: testCase.name, run, resolved, proof, bugProof, rulesOut, weakened, after, turn });
+      console.log(`run ${run} · ${testCase.name}: ${resolved ? "resolved" : "not resolved"}, ` +
+        `${proof === "passed" ? "proved" : `not proved (${proof})`}, ${rulesOut ? "contract rules the bug out" :
+          `contract still allows the bug (${bugProof ?? "function missing"})`}` +
+        `${weakened.length === 0 ? "" : `, weakened (${weakened.join("; ")})`}, ${turn.proofRuns} prove runs, ` +
+        `${Math.round(turn.tokens / 1000)}k tokens, ${Math.round(turn.durationMs / 1000)} s` +
+        (turn.status === "completed" ? "" : ` (${turn.status})`));
+    }
     for (const entry of includes("questions") ? AGENT_QUESTIONS : []) {
       const directory = repository("questions", QUESTION_REPOSITORY);
       const turn = await ask(directory, entry.question);
@@ -219,14 +267,15 @@ try {
 
 const words = answers.filter((entry) => entry.turn.status === "completed").map((entry) => entry.words);
 const record = { at: new Date().toISOString(), model: agentId, runs, set, arm,
-  fixes: outcome, scope, premise, proofs,
+  fixes: outcome, scope, premise, proofs, strengthen: { arm: strengthen, cases: strengthened },
   answers: { replies: words.length, unfinished: answers.length - words.length, medianWords: quantile(words, 0.5),
     p90Words: quantile(words, 0.9), stated: answers.reduce((sum, entry) => sum + entry.stated, 0),
     facts: answers.reduce((sum, entry) => sum + entry.facts, 0),
     changedFiles: answers.filter((entry) => entry.changed.length > 0).length },
-  attempts: { fixes, scope: scoped, premise: premised, proofs: proofAttempts, answers } };
+  attempts: { fixes, scope: scoped, premise: premised, proofs: proofAttempts, strengthen: strengthenAttempts, answers } };
 mkdirSync(join("live-runs", "agent"), { recursive: true });
 const file = join("live-runs", "agent", `${record.at.replaceAll(":", "-")}.json`);
 writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`);
 console.log(`fixes ${JSON.stringify(record.fixes)}\nscope ${JSON.stringify(record.scope)}\npremise ${JSON.stringify(record.premise)}\n` +
-  `proofs ${JSON.stringify(record.proofs)}\nanswers ${JSON.stringify(record.answers)}\nrecorded ${file}`);
+  `proofs ${JSON.stringify(record.proofs)}\nstrengthen ${JSON.stringify(record.strengthen)}\n` +
+  `answers ${JSON.stringify(record.answers)}\nrecorded ${file}`);

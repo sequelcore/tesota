@@ -50,18 +50,40 @@ function checkProblem(check: CheckResult): string {
   return `- The check \`${check.command}\` ${how}.${introduced}${output}`;
 }
 
-function findingProblem(finding: Finding): string {
-  const where = finding.path === undefined ? "" : ` ${finding.path}${finding.line === undefined ? "" : `:${finding.line}`}`;
-  return `- [${finding.severity}]${where}: ${finding.statement}\n  Why: ${finding.reason}`;
+/** Changed lines a proof covers, by file, with the contracts that cover them, as `proofGuarantees` records them. */
+export type ProvedLines = readonly { readonly path: string; readonly lines: readonly number[]; readonly contracts: readonly string[] }[];
+
+/**
+ * A finding on a proved line means its contract allowed the behavior
+ * (docs/design/proofs.md, "Where each problem goes"), so the agent is asked to
+ * fix the code and strengthen that contract, which its next proof then checks.
+ */
+function strengthenNote(finding: Finding, proved: ProvedLines): string {
+  const entry = proved.find((item) => finding.line !== undefined && finding.path?.replaceAll("\\", "/") === item.path &&
+    item.lines.includes(finding.line));
+  if (entry === undefined) return "";
+  return `\n  This line is proved, so its contract allowed this behavior:\n${entry.contracts.map((contract) =>
+    contract.split("\n").map((line) => `    ${line}`).join("\n")).join("\n")}\n  Fix the code, and strengthen that ` +
+    "contract so its proof rules this behavior out; keep it provable. Do not loosen anything else in it.";
 }
 
-/** The message for a correction round: the user's requests unchanged, then each problem with its evidence. */
-export function correctionPrompt(requests: readonly string[], round: CorrectionRound): string {
+function findingProblem(finding: Finding, proved: ProvedLines): string {
+  const where = finding.path === undefined ? "" : ` ${finding.path}${finding.line === undefined ? "" : `:${finding.line}`}`;
+  return `- [${finding.severity}]${where}: ${finding.statement}\n  Why: ${finding.reason}${strengthenNote(finding, proved)}`;
+}
+
+/**
+ * The message for a correction round: the user's requests unchanged, then each
+ * problem with its evidence. With `proved`, a finding on a proved line also
+ * asks for its contract to be strengthened.
+ */
+export function correctionPrompt(requests: readonly string[], round: CorrectionRound, proved: ProvedLines = []): string {
   return "Tesota review of your changes (not written by the user). Tesota ran the repository's checks on your " +
     "result, and an independent reviewer compared it with the user's requests.\n\n" +
     `The user's requests, unchanged:\n${requests.map((request, index) => `${index + 1}. ${request}`).join("\n") ||
       "(not recorded)"}\n\n` +
-    `Problems to fix:\n${[...round.failedChecks.map(checkProblem), ...round.findings.map(findingProblem),
+    `Problems to fix:\n${[...round.failedChecks.map(checkProblem),
+      ...round.findings.map((finding) => findingProblem(finding, proved)),
       ...round.obligations.map(obligationProblem)].join("\n")}\n\n` +
     "Fix these problems in the workspace; a request for a change is met only by the change itself, and a question " +
     "by a correct answer. Do not weaken, skip or delete tests or checks to make them pass. If a " +

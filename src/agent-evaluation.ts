@@ -1,3 +1,6 @@
+import { contracts } from "./integrations/pi-claimcheck.js";
+import { bodyEnd } from "./proof-guarantees.js";
+
 /**
  * The working agent's evaluation for issue #165, registered before any run:
  * requests already fixed, partly fixed and not fixed, where the right result
@@ -404,6 +407,87 @@ export function contractWeakened(before: string, after: string | undefined, kept
     ...now.filter((line) => line.startsWith("//@ assume") && !was.includes(line)).map((line) => `added ${line}`),
     ...now.filter((line) => line.startsWith("//@ requires") && !was.includes(line)).map((line) => `added ${line}`),
   ];
+}
+
+/**
+ * Corrections of a bug a proved contract allowed, for the rule that sends
+ * such a finding back to fix the code and strengthen the contract
+ * (docs/design/proofs.md, "Where each problem goes"), registered on 2026-10-03
+ * before any run. Each base proves while its function does what the request
+ * rules out; the correction names the bug at its line, as a reviewer would.
+ * Checked with `lsc check` first: each base proves, a reference fix with a
+ * stronger contract proves, and the base's buggy body fails under that
+ * stronger contract. A turn resolves the case when the hidden test passes,
+ * proves when its file does, and rules the bug out when the base's buggy body
+ * fails the proof under the contract the turn left (`withBuggyBody`).
+ */
+export interface AgentStrengthenCase {
+  readonly name: string;
+  /** The user's request behind the change, as the correction repeats it. */
+  readonly request: string;
+  readonly base: Readonly<Record<string, string>>;
+  /** The file with the proved function, and the function's name. */
+  readonly path: string;
+  readonly function: string;
+  /** The reviewer's finding the correction sends back, at the buggy line. */
+  readonly finding: Readonly<{ line: number; statement: string; reason: string }>;
+  readonly hiddenTest: string;
+  /** Contract lines the correction must keep verbatim. */
+  readonly kept: readonly string[];
+}
+
+const clampWeak = "//@ requires low <= high\n//@ ensures low <= \\result && \\result <= high\n" +
+  "export function clamp(value: number, low: number, high: number): number {\n  if (value < low) return high;\n" +
+  "  if (value > high) return high;\n  return value;\n}\n";
+const discountWeak = "//@ requires price >= 0\n//@ ensures \\result <= price\nexport function discounted(price: number): number {\n" +
+  "  return price >= 100 ? price - 10 : price;\n}\n";
+const maximumWeak = "//@ requires items.length > 0\n//@ ensures \\result >= items[0]\n" +
+  "export function maxQuantity(items: number[]): number {\n  return items[0];\n}\n";
+
+export const AGENT_STRENGTHEN_CASES: readonly AgentStrengthenCase[] = [
+  { name: "clamp below the minimum", path: "src/clamp.ts", function: "clamp",
+    request: "Add clamp(value, low, high) in src/clamp.ts: values below low become low, values above high become high, " +
+      "and values in between are unchanged.",
+    base: { "src/clamp.ts": clampWeak,
+      "src/clamp.test.ts": test(`import { clamp } from "./clamp.ts";\ntest("inside", () => assert.equal(clamp(5, 0, 10), 5));`) },
+    finding: { line: 4, statement: "Values below low return high instead of low.",
+      reason: "The request says values below low become low; clamp(-5, 0, 10) returns 10." },
+    hiddenTest: test(`import { clamp } from "../src/clamp.ts";\ntest("clamp", () => {\n  assert.equal(clamp(-5, 0, 10), 0);\n` +
+      `  assert.equal(clamp(15, 0, 10), 10);\n  assert.equal(clamp(5, 0, 10), 5);\n});`),
+    kept: ["//@ requires low <= high", "//@ ensures low <= \\result && \\result <= high"] },
+  { name: "discount at exactly 100", path: "src/discount.ts", function: "discounted",
+    request: "Orders over 100 get 10 off in discounted() in src/discount.ts; orders of 100 or less pay the full price.",
+    base: { "src/discount.ts": discountWeak,
+      "src/discount.test.ts": test(`import { discounted } from "./discount.ts";\ntest("large", () => assert.equal(discounted(150), 140));`) },
+    finding: { line: 4, statement: "An order of exactly 100 gets the discount.",
+      reason: "The request gives it only to orders over 100; discounted(100) returns 90." },
+    hiddenTest: test(`import { discounted } from "../src/discount.ts";\ntest("discount", () => {\n` +
+      `  assert.equal(discounted(100), 100);\n  assert.equal(discounted(150), 140);\n  assert.equal(discounted(40), 40);\n});`),
+    kept: ["//@ requires price >= 0", "//@ ensures \\result <= price"] },
+  { name: "maximum returns the first item", path: "src/quantity.ts", function: "maxQuantity",
+    request: "maxQuantity(items) in src/quantity.ts returns the largest quantity in a non-empty list.",
+    base: { "src/quantity.ts": maximumWeak,
+      "src/quantity.test.ts": test(`import { maxQuantity } from "./quantity.ts";\ntest("one", () => assert.equal(maxQuantity([4]), 4));`) },
+    finding: { line: 4, statement: "maxQuantity returns the first quantity, not the largest.",
+      reason: "maxQuantity([2, 9, 4]) returns 2; the request asks for the largest." },
+    hiddenTest: test(`import { maxQuantity } from "../src/quantity.ts";\ntest("maximum", () => {\n` +
+      `  assert.equal(maxQuantity([2, 9, 4]), 9);\n  assert.equal(maxQuantity([-3, -1, -7]), -1);\n  assert.equal(maxQuantity([4]), 4);\n});`),
+    kept: ["//@ requires items.length > 0", "//@ ensures \\result >= items[0]"] },
+];
+
+/**
+ * The base's buggy function under the contract the turn left: its `//@` lines
+ * from `after`, then the base's declaration and body. When this fails the
+ * proof, the new contract rules the bug out; undefined when the function is
+ * gone from either.
+ */
+export function withBuggyBody(base: string, after: string, path: string, name: string): string | undefined {
+  const contract = contracts(path, after).find((item) => item.name === name);
+  const original = contracts(path, base).find((item) => item.name === name);
+  if (contract === undefined || original === undefined) return undefined;
+  const lines = base.split("\n");
+  const body = lines.slice(original.endLine - 1, bodyEnd(base, original.endLine)).join("\n");
+  return `${contract.text.split("\n").filter((line) => line.startsWith("//@")).join("\n")}\n${body}\n`;
 }
 
 /** A small shop repository the questions are asked about. */
