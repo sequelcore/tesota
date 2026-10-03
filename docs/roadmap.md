@@ -52,12 +52,19 @@ record of that use starts on 2026-10-01; what it surfaced is in
   unproved obligation in the other two, after one failed run. A note in the
   failed tool reply that the work is not finished raised that case from 9 to
   15 of 20 and ended single-attempt stops, consistently over two rounds but
-  not yet established (p ≈ 0.10); confirm it on real sessions. Next: measure
-  whether the agent should add contracts where the repository's instructions
-  ask for them. What the agent proves stays feedback; Tesota's run on the
-  candidate stays the evidence.
+  not yet established (p ≈ 0.10); confirm it on real sessions. What the agent
+  proves stays feedback; Tesota's run on the candidate stays the evidence.
   [Agents](design/agents.md#proofs-while-it-works)
   [Issue #294](https://github.com/sequelcore/tesota/issues/294)
+- Make the prover the authority for proved code after the turn, in this
+  order, each on its own measurement: `proofCovered`, the proved rule for
+  which changed lines a proof covers; a Guarantees view of each contract, its
+  plain restatement and what it assumes; proof-based mutation, which reports
+  behavior a changed contract does not constrain; review that leaves
+  proof-covered lines to the proof and routes findings on them to the
+  contract; and the agent adding contracts where the request or the
+  repository's instructions ask.
+  [Assurance](design/assurance.md#planned-proofs-as-the-authority-for-proved-code)
 - Scope behavior was measured on cases that tempt the agent to make unrelated
   changes, registered before any run: five temptations and a control in
   `live:agent`. On 2026-09-30, `claude-code:sonnet` kept all 10 tempted runs in
