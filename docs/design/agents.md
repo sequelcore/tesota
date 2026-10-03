@@ -146,9 +146,20 @@ neither, 10/15 with the guidance, 15/15 with the tool. The open point is the
 agent giving up after one failed proof, honestly but with the work
 unfinished.
 
-GPT-6.1 Sol was not measured: free ChatGPT accounts do not serve it, and the
-Plus account's weekly limit was nearly spent. Whether the agent should add
-contracts to code that has none is a separate question, not measured here.
+**GPT-6.1 Sol** (2026-10-03, `codex:gpt-6.1-sol`, all seven cases, five runs
+per arm) behaved as Sonnet did. With neither it proved 15 of 35, none of the
+invariant cases and none of the even-power runs. With the guidance alone it
+proved all 35, the even-power case included, without any feedback; with the
+tool it also proved all 35, for about 3k more tokens and 5 s per turn (17.8k
+and 36 s against 14.5k and 30 s). No contract was weakened in any arm.
+
+Across the three models, then, the guidance is what lets the agent finish
+with its contracts proved, and the tool is what a weaker model needs to get
+there; for a stronger one it confirms a proof the guidance already produced.
+Sessions give both wherever there are contracts, since choosing by model
+would save a few thousand tokens per turn at the cost of a rule that has to
+follow every model change. Whether the agent should add contracts to code
+that has none is a separate question, not measured here.
 
 ## Explorers
 
