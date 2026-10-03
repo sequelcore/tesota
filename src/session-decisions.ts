@@ -165,9 +165,12 @@ export function refreshQuestion(paths: readonly string[]): ShellQuestion<"refres
   };
 }
 
-/** What becomes of a reviewed result; Enter keeps working, and what follows the answer says what was done. */
+/**
+ * What becomes of a reviewed result in a copy, which is not in the operator's files until applied (#246); Enter keeps
+ * working, and what follows the answer says what was done.
+ */
 const resultQuestion: ShellQuestion<ResultDecision> = {
-  title: "What becomes of these changes?",
+  title: "These changes are in this session's copy, not in your files. What becomes of them?",
   options: [
     { value: "apply", key: "a", label: "Apply them to your repository" },
     { value: "reject", key: "r", label: "Reject them" },

@@ -279,7 +279,8 @@ async function reviewAndDecide(dependencies: TesotaShellDependencies,
   if (!queued) report({ phase: "awaiting_decision" });
   const decision = queued ? "keep" : await dependencies.decisions.result();
   if (decision === "keep") {
-    dependencies.write("The changes stay in the workspace. Continue with another request.\n");
+    dependencies.write("The changes are not in your files: they stay in this session's copy until you apply them. " +
+      "The review of your next request ends with this choice again; choose Apply (a) there.\n");
     return true;
   }
   if (decision === "reject") {

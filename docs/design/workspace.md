@@ -132,13 +132,24 @@ source's path for that run; it is made only when a check fails and removed
 afterwards, and the operator's files are never touched.
 
 **One session at a time, and repositories only.** Only one session of a shell
-works in a repository in place; another, while it does, gets an isolated
-workspace and says so, and the session store already allows one shell per
-repository. Any session may choose an isolated workspace with `/isolate`
+has turns in a repository in place at a time, since a turn records the whole
+source before and after it, and another session's edits during it or between
+its undecided turns would count as its own. A session holds the operator's
+files while it is taking them, or works in them and has a turn running or one
+not yet kept or reverted; one that is idle with every turn decided holds
+nothing (`src/verification/source-holder-rule.ts`, proved). A new session's
+first request works in the operator's files unless another session holds
+them; then it gets an isolated workspace and names that session and what
+frees the files, keeping or reverting its turns there. A session already
+working in place whose next request finds another holding the files is told
+the same and does not start, rather than mixing turns. The session store
+already allows one shell per repository. Any session may choose an isolated workspace with `/isolate`
 before its first request, as Claude Code's `--worktree` chooses one at
 start; the choice is saved with the session, and a session keeps where it
 works for its whole life, so undecided turns never move between the source
-and a workspace. It keeps the earlier promise, reviewed before anything
+and a workspace. A result in a workspace is not in the operator's files
+until applied: the decision says so, and keeping working says that the next
+request's review offers Apply again. It keeps the earlier promise, reviewed before anything
 reaches the operator's files, for an operator who wants it or keeps editing
 while the agent works. A plain folder always gets an isolated workspace: its people are
 often not developers, who were promised that nothing in the folder changes
