@@ -58,31 +58,35 @@ lemma testOrigin_ensures(candidate: TestStatus, base: TestStatus)
 {
 }
 
-function checkOrigin(candidate: CheckOutcome, base: CheckOutcome, introducedTests: int): CheckOrigin
+function checkOrigin(candidate: CheckOutcome, base: CheckOutcome, introducedTests: int, sameConditions: bool): CheckOrigin
   requires (introducedTests >= 0)
 {
   if ((!candidate.failed?) && (!candidate.timed_out?)) then
     CheckOrigin.unknown
   else
-    if base.passed? then
-      CheckOrigin.introduced
+    if !(sameConditions) then
+      CheckOrigin.unknown
     else
-      if ((introducedTests > 0) && (base.failed? || base.timed_out?)) then
+      if base.passed? then
         CheckOrigin.introduced
       else
-        if (base == candidate) then
-          CheckOrigin.preexisting
+        if ((introducedTests > 0) && (base.failed? || base.timed_out?)) then
+          CheckOrigin.introduced
         else
-          CheckOrigin.unknown
+          if (base == candidate) then
+            CheckOrigin.preexisting
+          else
+            CheckOrigin.unknown
 }
 
-lemma checkOrigin_ensures(candidate: CheckOutcome, base: CheckOutcome, introducedTests: int)
+lemma checkOrigin_ensures(candidate: CheckOutcome, base: CheckOutcome, introducedTests: int, sameConditions: bool)
   requires (introducedTests >= 0)
-  ensures (!((candidate.failed? || candidate.timed_out?)) ==> checkOrigin(candidate, base, introducedTests).unknown?)
-  ensures ((candidate.failed? || candidate.timed_out?) ==> base.passed? ==> checkOrigin(candidate, base, introducedTests).introduced?)
-  ensures ((candidate.failed? || candidate.timed_out?) ==> (introducedTests > 0) ==> (base.failed? || base.timed_out?) ==> checkOrigin(candidate, base, introducedTests).introduced?)
-  ensures ((candidate.failed? || candidate.timed_out?) ==> (introducedTests == 0) ==> (base == candidate) ==> checkOrigin(candidate, base, introducedTests).preexisting?)
-  ensures (checkOrigin(candidate, base, introducedTests).introduced? ==> (base.passed? || ((introducedTests > 0) && (base.failed? || base.timed_out?))))
-  ensures (checkOrigin(candidate, base, introducedTests).preexisting? ==> (((base == candidate) && (!candidate.passed?)) && (introducedTests == 0)))
+  ensures (!((candidate.failed? || candidate.timed_out?)) ==> checkOrigin(candidate, base, introducedTests, sameConditions).unknown?)
+  ensures (!(sameConditions) ==> checkOrigin(candidate, base, introducedTests, sameConditions).unknown?)
+  ensures (sameConditions ==> (candidate.failed? || candidate.timed_out?) ==> base.passed? ==> checkOrigin(candidate, base, introducedTests, sameConditions).introduced?)
+  ensures (sameConditions ==> (candidate.failed? || candidate.timed_out?) ==> (introducedTests > 0) ==> (base.failed? || base.timed_out?) ==> checkOrigin(candidate, base, introducedTests, sameConditions).introduced?)
+  ensures (sameConditions ==> (candidate.failed? || candidate.timed_out?) ==> (introducedTests == 0) ==> (base == candidate) ==> checkOrigin(candidate, base, introducedTests, sameConditions).preexisting?)
+  ensures (checkOrigin(candidate, base, introducedTests, sameConditions).introduced? ==> (sameConditions && (base.passed? || ((introducedTests > 0) && (base.failed? || base.timed_out?)))))
+  ensures (checkOrigin(candidate, base, introducedTests, sameConditions).preexisting? ==> (((sameConditions && (base == candidate)) && (!candidate.passed?)) && (introducedTests == 0)))
 {
 }

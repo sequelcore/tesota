@@ -37,9 +37,18 @@ it("lets tests make a failure introduced, never already there, and only against 
     for (const base of outcomes) {
       const failing = candidate === "failed" || candidate === "timed_out";
       const byOutcome = !failing ? "unknown" : base === "passed" ? "introduced" : base === candidate ? "preexisting" : "unknown";
-      expect(checkOrigin(candidate, base, 0), `${candidate} on ${base}`).toBe(byOutcome);
+      expect(checkOrigin(candidate, base, 0, true), `${candidate} on ${base}`).toBe(byOutcome);
       const withTests = failing && (base === "failed" || base === "timed_out") ? "introduced" : byOutcome;
-      expect(checkOrigin(candidate, base, 2), `${candidate} on ${base} with tests`).toBe(withTests);
+      expect(checkOrigin(candidate, base, 2, true), `${candidate} on ${base} with tests`).toBe(withTests);
+    }
+  }
+});
+
+it("never names the cause of a failure when the two runs differed in their conditions (#267)", () => {
+  for (const candidate of outcomes) {
+    for (const base of outcomes) {
+      expect(checkOrigin(candidate, base, 0, false), `${candidate} on ${base}`).toBe("unknown");
+      expect(checkOrigin(candidate, base, 2, false), `${candidate} on ${base} with tests`).toBe("unknown");
     }
   }
 });

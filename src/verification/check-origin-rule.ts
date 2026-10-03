@@ -58,17 +58,22 @@ export function testOrigin(candidate: TestStatus, base: TestStatus): CheckOrigin
  * could not start, was stopped or changed files, leaves the cause unknown.
  * Tests can only make a failure introduced, never already there, since a
  * report does not cover the rest of what a command checks. Only an introduced
- * failure goes back to the working agent.
+ * failure goes back to the working agent. Two runs compare only under the same
+ * conditions (#267): when they differed in something a command can depend on,
+ * such as whether its folder is a Git repository, the cause is unknown.
  */
 //@ requires introducedTests >= 0
 //@ ensures !(candidate === "failed" || candidate === "timed_out") ==> \result === "unknown"
-//@ ensures (candidate === "failed" || candidate === "timed_out") && base === "passed" ==> \result === "introduced"
-//@ ensures (candidate === "failed" || candidate === "timed_out") && introducedTests > 0 && (base === "failed" || base === "timed_out") ==> \result === "introduced"
-//@ ensures (candidate === "failed" || candidate === "timed_out") && introducedTests === 0 && base === candidate ==> \result === "preexisting"
-//@ ensures \result === "introduced" ==> base === "passed" || (introducedTests > 0 && (base === "failed" || base === "timed_out"))
-//@ ensures \result === "preexisting" ==> base === candidate && candidate !== "passed" && introducedTests === 0
-export function checkOrigin(candidate: CheckOutcome, base: CheckOutcome, introducedTests: number): CheckOrigin {
+//@ ensures !sameConditions ==> \result === "unknown"
+//@ ensures sameConditions && (candidate === "failed" || candidate === "timed_out") && base === "passed" ==> \result === "introduced"
+//@ ensures sameConditions && (candidate === "failed" || candidate === "timed_out") && introducedTests > 0 && (base === "failed" || base === "timed_out") ==> \result === "introduced"
+//@ ensures sameConditions && (candidate === "failed" || candidate === "timed_out") && introducedTests === 0 && base === candidate ==> \result === "preexisting"
+//@ ensures \result === "introduced" ==> sameConditions && (base === "passed" || (introducedTests > 0 && (base === "failed" || base === "timed_out")))
+//@ ensures \result === "preexisting" ==> sameConditions && base === candidate && candidate !== "passed" && introducedTests === 0
+export function checkOrigin(candidate: CheckOutcome, base: CheckOutcome, introducedTests: number,
+  sameConditions: boolean): CheckOrigin {
   if (candidate !== "failed" && candidate !== "timed_out") return "unknown";
+  if (!sameConditions) return "unknown";
   if (base === "passed") return "introduced";
   if (introducedTests > 0 && (base === "failed" || base === "timed_out")) return "introduced";
   if (base === candidate) return "preexisting";

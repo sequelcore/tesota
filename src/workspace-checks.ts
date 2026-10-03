@@ -159,14 +159,18 @@ export interface BaseCheck {
   readonly origin: CheckOrigin;
   /** Tests in the check's reports that fail with the changes and pass, or have no result, without them (decision 040). */
   readonly introducedTests?: readonly string[];
+  /** How the base run's conditions differed from the candidate's run, which leaves the origin unknown (#267). */
+  readonly differs?: string;
 }
 
 /**
  * Base runs already made, by command, reports, base and environment: the base
  * does not change between correction rounds, so a round does not pay for it
- * again. A failing run keeps the tests its reports named.
+ * again. A failing run keeps the tests its reports named, and whether its
+ * folder was a Git repository to the command (`seesRepository`).
  */
-export type BaseRuns = Map<string, Pick<BaseCheck, "outcome" | "exitCode"> & { readonly tests?: TestResults }>;
+export type BaseRuns = Map<string, Pick<BaseCheck, "outcome" | "exitCode"> & { readonly tests?: TestResults;
+  readonly repository?: boolean }>;
 
 const testsNamed = 10;
 
@@ -186,6 +190,10 @@ export function describeBase(base: BaseCheck): string {
   }
   if (base.origin === "introduced") return "passes without these changes, so the failure comes with them";
   if (base.origin === "preexisting") return `also ${ended} without these changes, so it does not come from them`;
+  if (base.differs !== undefined) {
+    return `without these changes: ${ended}, but the two runs differed: ${base.differs}; so whether the failure comes with ` +
+      "these changes is unknown";
+  }
   return `without these changes: ${ended}, so whether the failure comes with these changes is unknown`;
 }
 
@@ -295,23 +303,52 @@ async function runReported(environment: ExecutionEnvironment, place: RunPlace, c
   return tests === undefined ? run : { ...run, tests };
 }
 
+/** The command that asks whether a place is a Git repository to the commands run there. */
+export const REPOSITORY_PROBE = "git rev-parse --is-inside-work-tree";
+const repositoryProbeSeconds = 30;
+
+/**
+ * Whether commands in this place see a Git repository, asked as Git documents
+ * it (`git rev-parse --is-inside-work-tree`) in the environment that runs them.
+ * A worktree's or a submodule's `.git` file names a Git directory outside the
+ * checkout, which a sandbox that shows only the checkout cannot reach (#267).
+ */
+async function seesRepository(environment: ExecutionEnvironment, place: RunPlace, signal: AbortSignal): Promise<boolean> {
+  const run = await runCommand(environment, place, REPOSITORY_PROBE, signal, repositoryProbeSeconds, () => true);
+  return run.outcome === "passed" && run.output.trim() === "true";
+}
+
+/** How a base run's conditions differed from the candidate run's, if they did. */
+function conditionsDiffer(candidateRepository: boolean | undefined, baseRepository: boolean | undefined): string | undefined {
+  if (candidateRepository === undefined || baseRepository === undefined || candidateRepository === baseRepository) return undefined;
+  return candidateRepository
+    ? "the folder was a Git repository to the command on this run, not on the run without the changes"
+    : "the folder was not a Git repository to the command on this run, as when its .git names a Git directory the " +
+      "environment cannot reach, such as a worktree's in a sandbox, while it was one on the run without the changes";
+}
+
 /**
  * Run each failing command again on the base, as a commit queue retries a
  * failure without the patch, and record whose failure it is, test by test
  * when the check names reports. The base is checked out only once, for all
- * of them, and only if a run is not known yet.
+ * of them, and only if a run is not known yet. Both places are asked whether
+ * they are a Git repository, so a failure is never blamed on the changes when
+ * only the two runs' conditions differed (#267).
  */
 async function attributeFailures(environment: ExecutionEnvironment, target: CheckTarget, snapshot: WorkspaceSnapshot,
   runs: readonly CandidateRun[], signal: AbortSignal, timeoutSeconds: number, baseRuns: BaseRuns,
-  hidden: readonly string[]): Promise<CheckResult[]> {
+  candidate: RunPlace): Promise<CheckResult[]> {
   const key = (check: ApprovedCheck): string => JSON.stringify([environment.provider, snapshot.base, check.command, check.reports]);
   const missing = runs.filter((run) => failing(run.result.outcome) && !baseRuns.has(key(run.check)));
   // An environment that cannot show another folder at the checkout's path leaves the base unknown, never guessed.
   const reachable = !target.basesInOtherFolder || environment.runsInOtherFolders === true;
   const ranMs = new Map<string, number>();
+  const candidateRepository = runs.some((run) => failing(run.result.outcome)) && !signal.aborted
+    ? await seesRepository(environment, candidate, signal) : undefined;
   if (missing.length > 0 && !signal.aborted && reachable) {
     await target.atBase(snapshot, async (base) => {
-      const place: RunPlace = { checkout: target.checkout, directory: base.directory, root: base.root, hidden };
+      const place: RunPlace = { checkout: target.checkout, directory: base.directory, root: base.root, hidden: candidate.hidden };
+      const repository = await seesRepository(environment, place, signal);
       for (const { check } of missing) {
         if (signal.aborted) return;
         const started = Date.now();
@@ -321,7 +358,8 @@ async function attributeFailures(environment: ExecutionEnvironment, target: Chec
         clearTestReports(base.directory, check.reports);
         // A cancelled or unconfirmed run says nothing about the base, so it is not remembered.
         if (run.outcome !== "cancelled" && run.outcome !== "unconfirmed") {
-          baseRuns.set(key(check), { outcome: run.outcome, exitCode: run.exitCode, ...run.tests === undefined ? {} : { tests: run.tests } });
+          baseRuns.set(key(check), { outcome: run.outcome, exitCode: run.exitCode, repository,
+            ...run.tests === undefined ? {} : { tests: run.tests } });
         }
         // Later commands would run on a changed base; they stay unknown.
         if (run.outcome === "changed_files") return;
@@ -333,9 +371,11 @@ async function attributeFailures(environment: ExecutionEnvironment, target: Chec
     const base = baseRuns.get(key(check)) ?? { outcome: "not_started" as const, exitCode: null };
     const introduced = introducedTests(tests, base.tests);
     const ran = ranMs.get(key(check));
+    const differs = conditionsDiffer(candidateRepository, base.repository);
     return { ...result, base: { outcome: base.outcome, exitCode: base.exitCode,
-      origin: checkOrigin(result.outcome, base.outcome, introduced.length),
-      ...introduced.length === 0 ? {} : { introducedTests: introduced } }, ...ran === undefined ? {} : { baseDurationMs: ran } };
+      origin: checkOrigin(result.outcome, base.outcome, introduced.length, differs === undefined),
+      ...introduced.length === 0 ? {} : { introducedTests: introduced }, ...differs === undefined ? {} : { differs } },
+      ...ran === undefined ? {} : { baseDurationMs: ran } };
   });
 }
 
@@ -393,5 +433,5 @@ export async function runChecks(environment: ExecutionEnvironment, target: Check
       durationMs: Date.now() - started, output: terminalOutputText(run.output) } });
     if (run.outcome === "cancelled" || run.outcome === "unconfirmed" || run.outcome === "changed_files") break;
   }
-  return attributeFailures(environment, target, snapshot, runs, signal, timeoutSeconds, options.baseRuns ?? new Map(), hidden);
+  return attributeFailures(environment, target, snapshot, runs, signal, timeoutSeconds, options.baseRuns ?? new Map(), place);
 }

@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { appendAssurance, correctionEntry, openAssurance, reviewEntry } from "../src/assurance-journal.js";
 import { SourceSession } from "../src/source-session.js";
@@ -135,13 +135,13 @@ it("pins every tree it names in the shadow, and reopens with its undecided turns
 it("runs a failing check again on the tree before the turn, in a checkout of its own, never in the source", async () => {
   const { source, create } = await fixture();
   const { hostProvider } = await import("../src/host-environment.js");
-  const { runChecks } = await import("../src/workspace-checks.js");
+  const { REPOSITORY_PROBE, runChecks } = await import("../src/workspace-checks.js");
   const host = await hostProvider.prepare(source);
   const seen: string[] = [];
   // An environment that shows another folder at the source's path, as the WSL sandbox mounts one.
   const mounting = { ...host, runsInOtherFolders: true,
     run: (command: string, options: Parameters<typeof host.run>[1]) => {
-      seen.push(options.root === undefined ? "source" : "base");
+      if (command !== REPOSITORY_PROBE) seen.push(options.root === undefined ? "source" : "base");
       const { root, ...rest } = options;
       return host.run(command, { ...rest, cwd: root ?? options.cwd });
     } };
@@ -160,6 +160,45 @@ it("runs a failing check again on the tree before the turn, in a checkout of its
   // An environment that cannot leaves whose failure it is unknown, never guessed.
   const [unknown] = await runChecks(host, session, session.snapshot(), [check], new AbortController().signal);
   expect(unknown?.base).toMatchObject({ outcome: "not_started", origin: "unknown" });
+});
+
+it("never blames the changes for a failure that comes from where the runs happened, and sends it to no one (#267)", async () => {
+  const { root, source, create } = await fixture();
+  const { hostProvider } = await import("../src/host-environment.js");
+  const { runChecks } = await import("../src/workspace-checks.js");
+  const { correctionFor } = await import("../src/correction.js");
+  const host = await hostProvider.prepare(source);
+  // As the WSL sandbox shows a Git worktree: its files, but not the Git directory its .git file names elsewhere.
+  const view = join(root, "view");
+  const sandboxed = { ...host, runsInOtherFolders: true,
+    run: async (command: string, options: Parameters<typeof host.run>[1]) => {
+      const { root: base, ...rest } = options;
+      if (base !== undefined) return host.run(command, { ...rest, cwd: base });
+      await rm(view, { recursive: true, force: true });
+      await cp(source, view, { recursive: true, filter: (path) => basename(path) !== ".git" });
+      // Git stops looking at the fixture's root, so a repository above the temporary folder, as on a CI runner, is not found.
+      return host.run(command, { ...rest, cwd: view, env: { ...rest.env, GIT_CEILING_DIRECTORIES: root } });
+    } };
+  const session = await create();
+  await session.beginTurn();
+  await writeFile(join(source, "src", "price.ts"), "export const price = 2;\n");
+  await session.endTurn();
+  // Fails only where the folder is not a Git repository, whatever the changes.
+  const check = { command: "git status --porcelain", reports: [] };
+  const [result] = await runChecks(sandboxed, session, session.snapshot(), [check], new AbortController().signal);
+  expect(result).toMatchObject({ outcome: "failed", base: { outcome: "passed", origin: "unknown" } });
+  expect(result?.base?.differs).toContain("not a Git repository to the command on this run");
+  expect(correctionFor(result === undefined ? [] : [result], [])).toBeUndefined();
+
+  // Under the same conditions, the same failure is the changes' again.
+  const [same] = await runChecks({ ...host, runsInOtherFolders: true, run: (command: string, options: Parameters<typeof host.run>[1]) => {
+    const { root: base, ...rest } = options;
+    return host.run(command, { ...rest, cwd: base ?? options.cwd });
+  } }, session, session.snapshot(),
+  [{ command: "node -e \"process.exit(require('fs').readFileSync('src/price.ts','utf8').includes('2') ? 1 : 0)\"", reports: [] }],
+  new AbortController().signal);
+  expect(same?.base).toMatchObject({ outcome: "passed", origin: "introduced" });
+  expect(same?.base?.differs).toBeUndefined();
 });
 
 it("counts a correction as part of the turn it corrects, and names files the agent's own tools did not write", async () => {
