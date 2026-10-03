@@ -46,7 +46,8 @@ Three principles follow from the sources:
 `//@` lines, the working agent gets the `prove` tool and guidance to keep
 contracts provable: loops need invariants; a contract changes only when the
 request asks for different behavior, and the agent says so; never remove or
-loosen one, or add `//@ assume`, to make a proof pass
+loosen one, or add `//@ assume`, to make a proof pass; and LemmaScript's
+annotation syntax, from [its specification](https://docs.lemmascript.org/spec/)
 ([agents](agents.md#proofs-while-it-works)). A failed `prove` ends with a note
 that the work is not finished, at the moment the agent reads the failure.
 This is LemmaScript's own loop and Midspiral's lemmafit, which runs the
@@ -133,12 +134,12 @@ Each kind of problem has one destination, chosen by which gap it lies in:
 | A proof fails during the turn | `prove` | The agent, in the same turn (built) |
 | A proof fails after the turn | Tesota's LemmaScript run | The agent, in a correction round with the failing obligation, within the round limit; then the operator (built) |
 | A contract was weakened, an `assume` added, or a `requires` added to an existing contract | Flags and fixed rules | The operator (flag built; the rules in sessions planned) |
-| Code on proved lines does what a clear request rules out | Review | **The agent: fix the code and strengthen the contract** (planned) |
+| Code on proved lines does what a clear request rules out | Review | **The agent: fix the code and strengthen the contract** (built) |
 | A contract may not say what was asked, and the request does not settle it | Review or ClaimCheck marking intent | The operator (built) |
 | A contract leaves behavior unconstrained | Mutation survivors | Shown to the operator in Guarantees (built) |
 | Anything in code no proof covers | Checks and review | As for any finding (built) |
 
-**Fix the code and strengthen the contract** (*planned*). A defect on a
+**Fix the code and strengthen the contract** (*built*). A defect on a
 proved line means the contract allowed it. When the request rules the
 behavior out, the agent can repair both. LemmaScript's loop already treats
 either side as adjustable, "adjust one of them, re-run, repeat"
@@ -148,12 +149,37 @@ as the code; the agent now proves as it works. Repair tools that use the
 specification as the oracle assume it is right
 ([Dafny APR, 2025](https://arxiv.org/abs/2507.03659)), which is exactly what a
 defect on a proved line shows it is not. So a fixable finding on a proof-covered
-line goes back with a fixed addition to its correction: the contract allowed
-this; strengthen it so the proof rules it out, and keep it provable. The
-strengthened contract is then flagged as a formal-specification change, proved
-by the agent, mutated, and compared by ClaimCheck, and the operator sees it at
-the decision. The finding stays the operator's only when the reviewer marks
-the intent itself unclear.
+line goes back with a fixed addition to its correction (`correctionPrompt`
+in `src/correction.ts`): the contract that allowed it, verbatim, and a request
+to fix the code and strengthen that contract so its proof rules the behavior
+out, keeping it provable and loosening nothing else. The strengthened contract
+is then flagged as a formal-specification change, proved by the agent,
+mutated, and compared by ClaimCheck, and the operator sees it at the decision.
+The finding stays the operator's only when the reviewer marks the intent
+itself unclear.
+
+Measured with `live:agent --set=strengthen` on GPT-6 Luna: three corrections
+of a bug a proved contract allowed (a clamp below its minimum, a discount at
+exactly 100, a maximum that returned the first item), five runs each, the
+agent with `prove` as in a session. Each is judged by the prover: the
+contract is **strengthened** when the agent's file proves and the base's
+buggy body fails under the new contract, and the original **promise is kept**
+when the agent's code proves under the original contract.
+
+| | Without the addition | With the addition |
+| --- | --- | --- |
+| Code fixed (hidden test) | 15/15 | 15/15 |
+| Contract strengthened | 0/15 | 14/15 |
+| Original promise kept | 13/15 | 14/15 |
+
+The first run of the addition strengthened the clamp and discount every time
+but never the maximum: Luna wrote quantifiers LemmaScript rejects, such as
+`forall (i: number, …)`, so its proof did not parse. Adding LemmaScript's
+syntax to the guidance raised the maximum from 0 to 4 of 5, and the earlier
+proof cases, run again with it, proved all 35 times. A text rule had also
+flagged one discount turn as weakening when it had replaced
+`\result <= price` with the exact result, which implies it; the prover-based
+promise check judges that correctly, so the strengthen set uses it.
 
 This replaces an earlier plan that routed every finding on a proof-covered
 line to the operator. Its measurement (`live:review --set=proofs`, Luna, three
@@ -201,9 +227,7 @@ agent is told to add any.
 
 ## Order
 
-1. Fix the code and strengthen the contract: the routing rule and the fixed
-   addition to the correction, measured on `live:review --set=proofs` and a
-   correction case where the agent must strengthen the contract.
+1. Fix the code and strengthen the contract. Built.
 2. Proof in place of the correctness lens, on deep-depth cases.
 3. Counterexamples in `prove`'s feedback, on the `live:agent` proof cases.
 4. ClaimCheck's restatement in the Guarantees tab.

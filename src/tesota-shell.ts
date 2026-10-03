@@ -1,4 +1,4 @@
-import { correctionFor, correctionPrompt, MAX_CORRECTION_ROUNDS, problemCount } from "./correction.js";
+import { correctionFor, correctionPrompt, MAX_CORRECTION_ROUNDS, problemCount, type ProvedLines } from "./correction.js";
 import type { Finding, ReviewReport } from "./review.js";
 import type { TesotaShellProgress } from "./shell-progress.js";
 import type { NoticeTone } from "./tesota-shell-transcript.js";
@@ -16,7 +16,9 @@ export type WorkResult =
 
 export type ReviewResult =
   | Readonly<{ status: "ready"; tree: string; changes: readonly WorkspaceChange[]; checks: readonly CheckResult[];
-      reviews: readonly ReviewReport[]; requests: readonly string[] }>
+      reviews: readonly ReviewReport[]; requests: readonly string[];
+      /** Changed lines a proof covers, with their contracts, so a correction can ask to strengthen one that allowed a bug. */
+      proved?: ProvedLines }>
   | Readonly<{ status: "cancelled" }>;
 
 /** The whole approved commands' run on the candidate, after rounds that ran only their related forms. */
@@ -215,7 +217,7 @@ async function assess(dependencies: TesotaShellDependencies,
     dependencies.write(`Sending ${count} ${count === 1 ? "item" : "items"} back to the agent to fix ` +
       `(attempt ${round + 1} of ${MAX_CORRECTION_ROUNDS}).\n`);
     report({ phase: "working" });
-    const result = await dependencies.work(correctionPrompt(review.requests, correction), "tesota",
+    const result = await dependencies.work(correctionPrompt(review.requests, correction, review.proved), "tesota",
       { previousTree: review.tree, sentBack: correction.findings });
     if (result.status === "unsettled") return "unsettled";
     if (result.status !== "completed") {

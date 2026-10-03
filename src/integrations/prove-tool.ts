@@ -15,8 +15,16 @@ import { annotations, dafnyInstalled, proveSource } from "../verification/lemmas
  */
 
 /** What changing a file with `//@` contracts asks of the agent, with or without `prove`. */
-const contractGuidance = "Change a contract only when the request asks for different behavior, and say so in your " +
-  "summary; never remove or loosen a contract, or add //@ assume, to make a proof pass. ";
+/**
+ * LemmaScript's annotation syntax, from its specification (docs.lemmascript.org/spec): GPT-6 Luna, asked to
+ * strengthen a contract with a quantifier, wrote `forall (i: number, …)` and `\\forall i :: …`, which LemmaScript
+ * rejects, so the proof never ran.
+ */
+const syntaxGuidance = "LemmaScript syntax: //@ requires P and //@ ensures P above the function, with \\result for " +
+  "its return value; //@ invariant P as the first lines inside a loop; forall(j: nat, j < items.length ==> P) and " +
+  "exists(j: nat, j < items.length && P); ==> for implication and === for equality. ";
+const contractGuidance = syntaxGuidance + "Change a contract only when the request asks for different behavior, and say " +
+  "so in your summary; never remove or loosen a contract, or add //@ assume, to make a proof pass. ";
 
 /**
  * The contract guidance alone, without the tool, so a measurement can tell
