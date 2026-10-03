@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { lstatSync, readFileSync } from "node:fs";
 import { lstat, mkdir, open, readFile, realpath, rename, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -82,6 +83,21 @@ async function readRecord(directory: string): Promise<SessionRecord> {
   const parsed = recordSchema.safeParse(JSON.parse(await readFile(path, "utf8")));
   if (!parsed.success) throw new Error("Invalid session record");
   return parsed.data;
+}
+
+/**
+ * Whether the session saved in `directory` has a turn begun or undecided, read
+ * at once so a new session can be placed before any wait; a record that cannot
+ * be read counts as undecided, so its turns are never taken for decided.
+ */
+export function hasUndecidedTurns(directory: string): boolean {
+  try {
+    const path = join(directory, recordFile);
+    const metadata = lstatSync(path);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > 1_048_576) return true;
+    const parsed = recordSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
+    return !parsed.success || parsed.data.turns.length > 0 || parsed.data.started !== undefined;
+  } catch { return true; }
 }
 
 export class SourceSession implements CheckTarget {

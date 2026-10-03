@@ -38,8 +38,9 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-/** A repository with one commit, whose shell's store holds `record`, and whose agent runs `run`. */
-async function openShell(record: ShellSessionRecord, run: () => Promise<{ status: "completed"; reply: string }>,
+/** A repository with one commit, whose shell's store holds `record` (or several, the shell resuming "session"), and whose agent runs `run`. */
+async function openShell(record: ShellSessionRecord | readonly ShellSessionRecord[],
+  run: () => Promise<{ status: "completed"; reply: string }>,
   activity: (listener: (activity: AgentActivity) => void) => void = () => {}) {
   const root = await mkdtemp(join(tmpdir(), "tesota-turns-"));
   roots.push(root);
@@ -54,9 +55,11 @@ async function openShell(record: ShellSessionRecord, run: () => Promise<{ status
   git("add", "--all");
   git("commit", "--quiet", "-m", "Fixture");
 
-  mocks.openStore.mockReturnValue({ list: () => [record], append: () => {}, block: () => {},
-    setWorkspace: (_id: string, directory: string) => { record.workspace = directory; }, setTitle: () => false,
-    setIsolated: () => { record.isolated = true; },
+  const records = Array.isArray(record) ? record : [record];
+  const find = (id: string): ShellSessionRecord => records.find((entry) => entry.id === id) ?? records[0];
+  mocks.openStore.mockReturnValue({ list: () => records, append: () => {}, block: () => {},
+    setWorkspace: (id: string, directory: string) => { find(id).workspace = directory; }, setTitle: () => false,
+    setIsolated: (id: string) => { find(id).isolated = true; },
     setAgentModel: () => {}, allowedNetwork: () => [], markActive: () => {}, close: () => {} } as unknown as ShellSessionStore);
   // The real session and workspace, kept in this test's folders rather than the operator's ~/.tesota.
   const create = SourceSession.create.bind(SourceSession);
@@ -87,7 +90,7 @@ async function openShell(record: ShellSessionRecord, run: () => Promise<{ status
   return { source, shell, notices, replies, turns };
 }
 
-const newRecord = (): ShellSessionRecord => ({ id: "session", title: "Session 1", engineId: "engine", workspace: null,
+const newRecord = (id = "session", title = "Session 1"): ShellSessionRecord => ({ id, title, engineId: `engine-${id}`, workspace: null,
   entries: [], inspections: [], interrupted: false, blocked: false, retiredEngineIds: [], titleSource: "counter" });
 
 it("reverts a turn only after the operator says what to do with files its tools did not write, and redoes it", async () => {
@@ -184,3 +187,50 @@ it("keeps a session that already works in the operator's files there when it ask
     await shell.dispose?.();
   }
 });
+
+it("works in the operator's files once the session that worked there is idle with its turns decided, and names a session that holds them (#246)", async () => {
+  let source = "";
+  let edits = 0;
+  // Every turn but the isolated session's writes the operator's files; that one's agent works in its copy.
+  const writesSource = [true, false, true, true];
+  const run = vi.fn(async () => {
+    if (writesSource[run.mock.calls.length - 1] === true) {
+      edits += 1;
+      await writeFile(join(source, "price.ts"), `export const price = ${edits + 1};\n`);
+    }
+    return { status: "completed" as const, reply: "Changed the price." };
+  });
+  // Opened in this order, as the operator opens one session after another.
+  const opened = await openShell([newRecord("first", "Session 1"), newRecord("session", "Session 2"),
+    newRecord("third", "Session 3")], run);
+  source = opened.source;
+  const { shell, notices, turns } = opened;
+  try {
+    expect(await shell.session("first").work("Raise the price")).toMatchObject({ status: "completed" });
+    expect(shell.session("first").place?.()).toBe("source");
+
+    // Session 1's turn is undecided, so Session 2 works in a copy and is told which session holds the files and why.
+    expect(await shell.session("session").work("Lower the price")).toMatchObject({ status: "completed" });
+    expect(shell.session("session").place?.()).toBe("workspace");
+    expect(notices).toContain("Session 1 has undecided turns in your files, so this session works in an isolated copy: " +
+      "nothing in your files changes until you apply its reviewed result. A new session works in your files once you " +
+      "keep or revert those turns in Session 1 (/keep or /revert).");
+
+    // Kept, Session 1 is idle and holds nothing: the next new session works in the operator's files.
+    await turns.keep("first");
+    expect(await shell.session("third").work("Raise it again")).toMatchObject({ status: "completed" });
+    expect(shell.session("third").place?.()).toBe("source");
+    expect(await readFile(join(source, "price.ts"), "utf8")).toBe("export const price = 3;\n");
+
+    // Session 3's turn is undecided now, so Session 1 waits for it rather than mixing turns in the same files.
+    expect(await shell.session("first").work("And again")).toEqual({ status: "failed", reason: "Session 3 has undecided " +
+      "turns in your files, so this session can work there again once you keep or revert those turns in Session 3 " +
+      "(/keep or /revert). Then send your request again." });
+    expect(run).toHaveBeenCalledTimes(3);
+    await turns.revert("third", ["all"]);
+    expect(await shell.session("first").work("And again")).toMatchObject({ status: "completed" });
+    expect(run).toHaveBeenCalledTimes(4);
+  } finally {
+    await shell.dispose?.();
+  }
+}, 30_000);

@@ -16,11 +16,12 @@ import { HOSTED_SEARCH_KINDS, ROLE_OFF, type ModelRole, parseModelChoice, readMo
 import { type WorkPlan, withReview } from "./work-plan.js";
 import { isGitRepository, largeUntrackedFiles, largeUntrackedWarning, pathKey } from "./source-shadow.js";
 import { hiddenFilesIn } from "./secret-files.js";
-import { type RevertedTurn, SourceSession } from "./source-session.js";
+import { hasUndecidedTurns, type RevertedTurn, SourceSession } from "./source-session.js";
 import { dataNotice, offeredChoices, offeredModels, type OfferedModel, routeListing } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
+import { holdsSourceFiles, worksInSourceFiles } from "./verification/source-holder-rule.js";
 import { removeClaudeTranscripts } from "./claude-code-transcripts.js";
 import { commandPlace, needsConfirmation, nextMode, type PermissionMode } from "./verification/permission-mode.js";
 import { installsDeclaredTools, toolchainStep } from "./verification/toolchain-refresh-rule.js";
@@ -489,14 +490,42 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     const { label, place } = executionLabel(modeOf(id), states.get(id)?.execution);
     output.setSessionExecution(id, label, place);
   };
-  /** The session that works in the operator's files; one at a time may, and others get an isolated workspace. */
-  let sourceHolder: string | undefined;
-  const holdsSource = (id: string): boolean => sourceHolder === id || sourceHolder === undefined &&
-    !store.list().some((session) => session.id !== id && session.workspace !== null && existsSync(join(session.workspace, "session.json")));
+  /** Sessions taking the operator's files whose record does not say so yet, so two starting together cannot both take them. */
+  const starting = new Set<string>();
+  /**
+   * The other session that holds the operator's files now, and how (#246): one taking them, or one working in them
+   * with a turn running or undecided. An idle one whose turns were all kept or reverted holds nothing.
+   */
+  const sourceHeldBy = (id: string): Readonly<{ title: string; running: boolean }> | undefined => {
+    for (const session of store.list()) {
+      if (session.id === id) continue;
+      const inSource = session.workspace !== null && existsSync(join(session.workspace, "session.json"));
+      const running = activeOperations.has(session.id) || applying.has(session.id);
+      if (holdsSourceFiles(starting.has(session.id), inSource, running,
+        inSource && !running && hasUndecidedTurns(session.workspace ?? ""))) {
+        return { title: session.title, running: running || starting.has(session.id) };
+      }
+    }
+    return undefined;
+  };
+  /** What holds the operator's files, and when another session may work in them. */
+  const heldText = (holder: Readonly<{ title: string; running: boolean }>): string => holder.running
+    ? `${holder.title} is working in your files` : `${holder.title} has undecided turns in your files`;
+  const freedText = (holder: Readonly<{ title: string; running: boolean }>): string => holder.running
+    ? `once its turn ends and you keep or revert it in ${holder.title} (/keep or /revert)`
+    : `once you keep or revert those turns in ${holder.title} (/keep or /revert)`;
+  /** One session at a time has turns in the operator's files: a request waits while another that took them since holds them. */
+  const refuseWhereHeld = (id: string, work: Work): void => {
+    const holder = work.place === "source" ? sourceHeldBy(id) : undefined;
+    if (holder !== undefined) {
+      throw new Error(`${heldText(holder)}, so this session can work there again ${freedText(holder)}. Then send your request again.`);
+    }
+  };
   /** Why a session works in a copy: a folder always does, and a repository's session by choice or because another holds it. */
-  const whyCopy = (chosen: boolean): string => sourceKind === "folder" ? "Tesota works on a copy of this folder"
-    : chosen ? "This session works in an isolated copy, as you chose"
-      : "Another session works in your files, so this one works in an isolated copy";
+  const whyCopy = (chosen: boolean, holder: Readonly<{ title: string; running: boolean }> | undefined): string =>
+    sourceKind === "folder" ? "Tesota works on a copy of this folder"
+      : chosen || holder === undefined ? "This session works in an isolated copy, as you chose"
+        : `${heldText(holder)}, so this session works in an isolated copy`;
   const workspaceFor = (id: string): Promise<Work> => {
     const state = stateFor(id);
     if (state.workspace !== undefined) return state.workspace;
@@ -506,7 +535,6 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         try {
           const work = await openWork(directory);
           state.place = work.place === "source" ? "source" : "workspace";
-          if (work.place === "source") sourceHolder = id;
           return work;
         } catch { store.rotateEngine(id); }
       }
@@ -514,14 +542,19 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       // locks open files. A repository works in place, one session at a time, unless the session chose isolation.
       // Decided before any wait, so two sessions starting together cannot both take the operator's files.
       const chosen = saved(id)?.isolated === true;
-      const inSource = sourceKind === "repository" && !chosen && holdsSource(id);
-      if (inSource) sourceHolder = id;
-      const work = inSource ? await SourceSession.create(cwd, undefined, { kind: sourceKind })
-        : await Workspace.create(cwd, undefined, { kind: sourceKind });
+      const holder = sourceKind === "repository" && !chosen ? sourceHeldBy(id) : undefined;
+      const inSource = worksInSourceFiles(sourceKind === "repository", chosen, holder !== undefined);
+      if (inSource) starting.add(id);
+      let work: Work;
+      try {
+        work = inSource ? await SourceSession.create(cwd, undefined, { kind: sourceKind })
+          : await Workspace.create(cwd, undefined, { kind: sourceKind });
+        store.setWorkspace(id, work.directory);
+      } finally { starting.delete(id); }
       state.place = work.place === "source" ? "source" : "workspace";
-      store.setWorkspace(id, work.directory);
       if (!inSource) {
-        output.writeTo(id, `${whyCopy(chosen)}: nothing in your files changes until you apply its reviewed result.`);
+        output.writeTo(id, `${whyCopy(chosen, holder)}: nothing in your files changes until you apply its reviewed result.` +
+          (holder === undefined ? "" : ` A new session works in your files ${freedText(holder)}.`));
       }
       const workspace = work;
       if (workspace.place !== "source" && workspace.included.length > 0) {
@@ -1094,7 +1127,6 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     const state = states.get(id);
     states.delete(id);
     if (state !== undefined) await release(state);
-    if (sourceHolder === id) sourceHolder = undefined;
     if (record.workspace !== null) {
       let checkout = join(record.workspace, "repo");
       if (existsSync(join(record.workspace, "session.json"))) {
@@ -1483,6 +1515,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         // A correction keeps the base the candidate was checked on, so its review sees only the agent's own
         // correction; the operator's newer repository state arrives with their next request (decision 039).
         const work = await workspaceFor(id);
+        refuseWhereHeld(id, work);
         await journalCorrection(id, work, correction);
         // In the source, the turn begins now, and the operator's own edits since the agent's last turn are named to it.
         const edited = work.place === "source" ? await beginTurnIn(work) : undefined;

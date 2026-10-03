@@ -120,7 +120,9 @@ it("keeps changes in the workspace when the operator wants more work", async () 
   await runTesotaShell(fixture.dependencies);
   expect(fixture.dependencies.apply).not.toHaveBeenCalled();
   expect(fixture.dependencies.reject).not.toHaveBeenCalled();
-  expect(fixture.text()).toContain("The changes stay in the workspace.");
+  // Said plainly, with how to apply them later (#246).
+  expect(fixture.text()).toContain("The changes are not in your files: they stay in this session's copy until you apply them. " +
+    "The review of your next request ends with this choice again; choose Apply (a) there.");
 });
 
 it("reports a conflict and continues without writing", async () => {
@@ -353,7 +355,7 @@ it("lets a request the operator already typed go before a correction round and t
   expect(fixture.text()).toContain("Your next message goes first. The item for the agent to fix was not sent; it stays in the review.");
   // Typing on is "keep working": the changes stay pending, and nothing asks for the decision.
   expect(fixture.progress.map((event) => event.phase)).not.toContain("awaiting_decision");
-  expect(fixture.text()).toContain("The changes stay in the workspace.");
+  expect(fixture.text()).toContain("The changes are not in your files");
   expect(fixture.dependencies.apply).not.toHaveBeenCalled();
 });
 
