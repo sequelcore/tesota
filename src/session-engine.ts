@@ -36,6 +36,7 @@ import { ExplorerPool } from "./integrations/pi-explore.js";
 import { Advisor } from "./integrations/advisor.js";
 import { hasContracts } from "./integrations/prove-tool.js";
 import { proofGuarantees } from "./proof-guarantees.js";
+import { type MutationResult, mutateContracts } from "./proof-mutation.js";
 import { consultAdvisor } from "./integrations/advisor-session.js";
 import { Semaphore } from "./semaphore.js";
 import { type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
@@ -1550,6 +1551,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         { ...await checkOptions(id, workspace.checkout),
           ...related ? { relatedFiles: snapshot.changes.map((change) => change.path) } : {} }),
         ...await runOxlintVerifier(snapshot, read), ...await runLemmaScriptVerifier(snapshot, read, signal)];
+      // Proof-based mutation of each changed, proved contract runs beside the review; it only adds to the Guarantees view.
+      const mutation = mutateContracts(snapshot, checks, read, signal).catch(() => new Map<string, MutationResult>());
       if (signal.aborted) return { status: "cancelled" };
       const requests = await workspace.requests();
       // A correction round reviews only the correction; the verifiers above always cover the whole candidate.
@@ -1582,7 +1585,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       const reviews: ReviewReport[] = unchanged ? reports : reports.map((report) => ({ reviewer: report.reviewer,
         tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" }));
       if (unchanged) state.reviewed = snapshot;
-      const guarantees = proofGuarantees(snapshot, checks, reviews, read);
+      const guarantees = proofGuarantees(snapshot, checks, reviews, read, await mutation);
       state.lastReview = { snapshot, checks, flags, requests, reviews, depth, measurement, guarantees };
       // Each claimed step shows what the review found of it, a judged check, beside the prompt.
       const main = reviews.find((report) => report.status === "completed" && report.obligations !== undefined);

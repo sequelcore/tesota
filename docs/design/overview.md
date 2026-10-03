@@ -183,6 +183,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `workspace-checks.ts`, `verification/oxlint*.ts`, `verification/lemmascript-verifier.ts` | Verifier results with claim and limits: approved commands, Oxlint, LemmaScript with Dafny |
 | `integrations/prove-tool.ts` | The working agent's own LemmaScript proof run, feedback while it works, on in a repository with `//@` files |
 | `proof-guarantees.ts`, `verification/proof-cover-rule.ts` | What a candidate's contracts guarantee, for the Guarantees tab, and the proved rule for which changed lines a proof covers |
+| `proof-mutation.ts` | Proof-based mutation of each changed, proved contract, reported in the Guarantees tab |
 | `test-report.ts`, `verification/check-origin-rule.ts` | Reading a check's JUnit XML reports, and the proved rule for whose failure a check or test is |
 | `verification-changes.ts` | Flagging changes to tests, check configuration, CI, specifications and scripts |
 | `review.ts`, `integrations/pi-reviewer.ts`, `integrations/pi-claimcheck.ts` | The reviewer contract, Tesota's reviewer and lenses, and ClaimCheck's method |

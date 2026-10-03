@@ -46,7 +46,7 @@ verifier is never reported as passed.
 | --- | --- |
 | Approved check commands | The command exits with code 0 on this tree |
 | Tesota's Oxlint profile | Changed JavaScript and TypeScript files introduce no diagnostics the profile rejects, such as a new `any` or a comment that silences a check |
-| LemmaScript with Dafny | The `//@` properties of changed annotated files are proved; it runs on a private copy, and says nothing was proved when Dafny is missing |
+| LemmaScript with Dafny | The `//@` properties of changed annotated files are proved; it runs on a private copy, and says nothing was proved when Dafny is missing, or when it verified nothing in the file |
 
 The operator approves check commands once per repository; Tesota suggests the
 repository's `check` script, or its `typecheck`, `lint` and `test` scripts,
@@ -763,7 +763,7 @@ names. This section designs the rest from three principles in the sources:
 | --- | --- | --- |
 | Does the proved function meet its contract? | The proof | Built |
 | Did the agent weaken a contract? | Flags, and `contractWeakened`'s fixed rules | Flags built; the rules exist in `live:agent` only |
-| Does the contract constrain the behavior it names? | Proof-based mutation | Planned |
+| Does the contract constrain the behavior it names? | Proof-based mutation | Built |
 | Does the contract say what was asked? | ClaimCheck, then the operator | Built: ClaimCheck, and its verdict in the Guarantees tab |
 | Is the code a proof does not cover right? | Review, as today | Built |
 
@@ -802,19 +802,31 @@ cost fewer tokens.
 
 ### Checking the contract itself
 
-**Proof-based mutation.** For each contract the candidate added or changed,
-Tesota mutates the function body with fixed operators (a comparison flipped,
-a constant moved by one, a branch's result swapped, a statement dropped) and
-proves each mutant. A mutant that still proves is behavior the contract does
-not constrain, and is reported by line and operator. This is Lahiri's
-completeness metric, the share of buggy mutations a specification rejects
+**Proof-based mutation** (`src/proof-mutation.ts`). For each contract the
+candidate added or changed and proved, Tesota changes the function body in
+one place at a time and proves each change: a returned value swapped for
+another the function returns, as a branch with its result swapped; a
+comparison flipped (`<` and `<=`, `===` and `!==`); a number moved by one; `+`
+and `-` swapped. It takes the operators in turn, at most eight mutants per
+contract, beside the review so the operator does not wait for it. A mutant
+that still proves is behavior the contract does not rule out, and the
+Guarantees tab lists it by line. This is Lahiri's completeness metric, the
+share of buggy mutations a specification rejects
 ([FMCAD 2024](https://arxiv.org/abs/2406.09757)), and nl2postcond's
 discriminative power ([Endres et al., FSE 2024](https://nl2postcond.github.io/)),
-with the prover in place of tests: no model decides it. A surviving mutant
-may be equivalent to the original, so the report says a mutant survived,
-never that the contract is wrong, and a mutant whose proof times out counts
-as neither rejected nor surviving. Each mutant is one Dafny run of seconds, so
-mutants are capped per function and run only for contracts that changed.
+with the prover in place of tests: no model decides it.
+
+A survivor may behave the same as the original, so the report says it
+survived, never that the contract is wrong; a mutant whose proof timed out,
+or verified nothing, counts as neither. Mutants run without the file's `.dfy`
+proof additions, which belong to the original's generated code, so a
+rejection may also mean a proof step is missing, while a survivor proved
+without any and is real. On a clamp function, a contract that also states the
+in-range and above-maximum results rejected 2 of 5 mutants, both result
+swaps it covers, and kept one real gap: it never says a value below the
+minimum returns the minimum. A contract stating only that the result is in
+range rejected none of the same 5. The comparison flips survived under both;
+there they behave the same, which is why result swaps come first.
 
 **ClaimCheck stays the intent comparison**, and stays evidence. Its authors
 measured 96.3% accuracy over 108 comparisons, roughly one wrong in 27, and
@@ -836,10 +848,10 @@ narrows the proof; and ClaimCheck's verdict, labeled as a model's comparison
 and not a proof, or that ClaimCheck did not compare it. Apart, it lists the
 changed lines in those files no proof covers, which are left to review.
 Dafny's output stays in the Checks tab, for the agent and for debugging; the
-operator sees what was promised, not how it was proved. Still planned:
+operator sees what was promised, not how it was proved. For a contract the
+change added or edited, it also shows what mutation found. Still planned:
 ClaimCheck's plain restatement of each contract, which its first pass writes
-but the review record does not keep yet, and surviving mutants, once
-mutation is built.
+but the review record does not keep yet.
 
 ### Adding contracts
 
@@ -872,7 +884,7 @@ one reads the earlier:
 1. `proofCovered`, specified and proved. Built.
 2. The Guarantees view, which changes what the operator sees and nothing
    else. Built, without the restatement and mutants named above.
-3. Proof-based mutation, deterministic evidence about each changed contract.
+3. Proof-based mutation, deterministic evidence about each changed contract. Built.
 4. Narrowed review of proof-covered code, behind its `live:review` cases.
 5. Adding contracts, behind its `live:agent` cases.
 

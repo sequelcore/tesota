@@ -1,5 +1,6 @@
 import { candidateLines } from "./diff-lines.js";
 import { contracts } from "./integrations/pi-claimcheck.js";
+import type { MutationResult } from "./proof-mutation.js";
 import type { ReviewReport } from "./review.js";
 import { proofCovered } from "./verification/proof-cover-rule.js";
 import type { ContentReader } from "./verification/oxlint-verifier.js";
@@ -31,6 +32,8 @@ export interface ContractGuarantee {
   readonly mismatch?: string;
   /** Whether ClaimCheck compared this contract with the requests. */
   readonly compared: boolean;
+  /** Proof-based mutation, for a contract the candidate added or changed and proved; absent otherwise. */
+  readonly mutation?: MutationResult;
 }
 
 export interface Guarantees {
@@ -41,7 +44,7 @@ export interface Guarantees {
 
 const assumptionLine = /^\/\/@\s+(requires|assume)\b/u;
 
-/** The line after the closing brace of the function declared at `declaration` (1-based); the declaration line when none closes. */
+/** The line of the brace that closes the function declared on line `declaration` (both 1-based); the declaration line when none closes. */
 export function bodyEnd(source: string, declaration: number): number {
   const lines = source.split(/\r?\n/u);
   let depth = 0;
@@ -72,9 +75,13 @@ function proofOutcome(checks: readonly CheckResult[], path: string): ProofOutcom
   return check === undefined ? "not run" : check.outcome === "passed" ? "proved" : check.outcome === "failed" ? "not proved" : "not run";
 }
 
-/** Each contract in the candidate's changed annotated TypeScript files, and the changed lines in them no proof covers. */
+/**
+ * Each contract in the candidate's changed annotated TypeScript files, and the
+ * changed lines in them no proof covers; `mutation` holds `mutateContracts`'
+ * results, keyed `path:name`.
+ */
 export function proofGuarantees(snapshot: WorkspaceSnapshot, checks: readonly CheckResult[], reviews: readonly ReviewReport[],
-  read: ContentReader): Guarantees {
+  read: ContentReader, mutation: ReadonlyMap<string, MutationResult> = new Map()): Guarantees {
   const changed = candidateLines(snapshot);
   const claimcheck = reviews.find((report) => report.reviewer === "ClaimCheck method");
   const found: ContractGuarantee[] = [];
@@ -97,9 +104,10 @@ export function proofGuarantees(snapshot: WorkspaceSnapshot, checks: readonly Ch
       const added = assumes.filter((line) => !before.has(line));
       const finding = claimcheck?.status === "completed"
         ? claimcheck.findings.find((entry) => entry.path === item.path && entry.line === item.line) : undefined;
+      const mutated = mutation.get(`${item.path}:${item.name}`);
       found.push({ path: item.path, name: item.name, lines, outcome, assumes, narrowed: added,
         ...(finding === undefined ? {} : { mismatch: `${finding.statement} ${finding.reason}` }),
-        compared: claimcheck?.status === "completed" });
+        compared: claimcheck?.status === "completed", ...(mutated === undefined ? {} : { mutation: mutated }) });
       starts.push(item.endLine);
       ends.push(bodyEnd(source, item.endLine));
       proved.push(outcome === "proved");
@@ -128,6 +136,23 @@ export function lineRanges(lines: readonly number[]): string {
 
 const outcomeWords: Readonly<Record<ProofOutcome, string>> = { proved: "✓ proved", "not proved": "✗ not proved", "not run": "· not run" };
 
+/**
+ * What mutation found about one contract. A survivor proved after the change,
+ * so the contract does not rule that behavior out; it may also behave the same
+ * as the original, so it is reported, never called a defect.
+ */
+function mutationLines(result: MutationResult): string[] {
+  const tried = result.rejected + result.survived.length + result.inconclusive;
+  if (tried === 0) return ["    Mutation: no change to try in its body"];
+  const unsettled = result.inconclusive === 0 ? "" : `; ${result.inconclusive} could not be decided`;
+  if (result.survived.length === 0) {
+    return [`    Mutation: all ${result.rejected} decided changes to its code made the proof fail${unsettled}`];
+  }
+  return [`    ! Mutation: ${result.survived.length} of ${tried} changes to its code still proved, so the contract does not ` +
+    `rule them out (one may behave the same as the original)${unsettled}:`,
+  ...result.survived.map((mutant) => `      line ${mutant.line}: ${mutant.before} became ${mutant.after}`)];
+}
+
 /** The Guarantees section of a review record; undefined when the candidate touched no contract. */
 export function guaranteesDetail(guarantees: Guarantees): string | undefined {
   if (guarantees.contracts.length === 0) return undefined;
@@ -139,6 +164,7 @@ export function guaranteesDetail(guarantees: Guarantees): string | undefined {
     contract.mismatch !== undefined ? `    ! ClaimCheck: ${contract.mismatch}`
       : contract.compared ? "    ClaimCheck found it expresses what was asked (a model's comparison, not a proof)"
         : "    ClaimCheck did not compare it",
+    ...contract.mutation === undefined ? [] : mutationLines(contract.mutation),
   ].join("\n"));
   const uncovered = guarantees.uncovered.length === 0 ? "  Every changed line in these files is inside a proved function."
     : guarantees.uncovered.map((entry) => `  ${entry.path}: lines ${lineRanges(entry.lines)}`).join("\n");
