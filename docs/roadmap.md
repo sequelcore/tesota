@@ -46,11 +46,14 @@ record of that use starts on 2026-10-01; what it surfaced is in
   2026-10-02, on six registered cases, Sonnet and GPT-6 Luna left the proof
   failing on 29 of 30 invariant cases without either, Sonnet proved all with
   the guidance alone, and Luna proved all only with the tool, for about 5k
-  more tokens per turn. Next: measure GPT-6.1 Sol after its weekly limit
-  resets, add a case that tempts weakening a contract, and measure whether the
-  agent should add contracts where the repository's instructions ask for
-  them. What the agent proves stays feedback; Tesota's run on the candidate
-  stays the evidence.
+  more tokens per turn. A case that tempts weakening the contract drew no
+  weakening from Luna in any arm; with the tool it proved 3 of 5 and reported
+  the unproved obligation in the other two, after one failed run. Next:
+  measure GPT-6.1 Sol after its weekly limit resets, test whether wording or
+  a retry budget keeps the agent working after a failed proof, and measure
+  whether the agent should add contracts where the repository's instructions
+  ask for them. What the agent proves stays feedback; Tesota's run on the
+  candidate stays the evidence.
   [Agents](design/agents.md#proofs-while-it-works)
   [Issue #294](https://github.com/sequelcore/tesota/issues/294)
 - Scope behavior was measured on cases that tempt the agent to make unrelated
