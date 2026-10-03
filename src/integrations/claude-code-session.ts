@@ -6,6 +6,7 @@ import * as z from "zod";
 import type { ModelTarget } from "./model-session.js";
 import type { AgentActivity, ConversationEntry, TurnResult } from "./model-session-contract.js";
 import { editChange, resultText, textOf, toolSubject } from "./pi-coding-session.js";
+import { webEvidence } from "./web-tools.js";
 import type { ReasoningLevel } from "../model-roles.js";
 import { NO_TOKENS, type TokenUsage, addTokens } from "../token-usage.js";
 
@@ -146,7 +147,9 @@ async function runTool(definition: ToolDefinition, args: Record<string, unknown>
     // A tool may fail by returning an error result rather than throwing, as Pi's bash does for a command that fails.
     const failed = result.isError === true;
     const change = definition.name === "edit" && !failed ? editChange(result) : undefined;
-    emit({ type: "tool_finished", call, failed, output, ...(change === undefined ? {} : { change }) });
+    const evidence = failed ? undefined : webEvidence(definition.name, result);
+    emit({ type: "tool_finished", call, failed, output, ...(change === undefined ? {} : { change }),
+      ...(evidence === undefined ? {} : { evidence }) });
     if (result.terminate === true) terminate();
     return { content: [{ type: "text" as const, text: output }], ...failed ? { isError: true } : {} };
   } catch (error) {

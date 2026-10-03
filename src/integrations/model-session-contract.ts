@@ -1,3 +1,4 @@
+import type { WebEvidence } from "../review.js";
 import { limitedTurnStatus } from "../verification/turn-time-limit.js";
 
 /**
@@ -17,7 +18,9 @@ export type AgentActivity =
       /** The model a helper tool runs on, as the advisor's, which Tesota names where it acts. */
       by?: string }>
   | Readonly<{ type: "tool_output"; call: string; output: string }>
-  | Readonly<{ type: "tool_finished"; call: string; failed: boolean; output: string; change?: AgentChange }>;
+  | Readonly<{ type: "tool_finished"; call: string; failed: boolean; output: string; change?: AgentChange;
+      /** What a web call returned that its review may hold the reply to (issue #300). */
+      evidence?: WebEvidence }>;
 
 export interface AgentChange {
   readonly added: number;

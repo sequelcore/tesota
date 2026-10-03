@@ -12,6 +12,7 @@ import { type AgentActivity, type ConversationEntry, type ModelSession, type Tur
 import type { ModelTarget } from "../src/integrations/model-session.js";
 import { CodingSession, readOnlyFileTools } from "../src/integrations/pi-coding-session.js";
 import { NO_TOKENS, type TokenUsage, addTokens } from "../src/token-usage.js";
+import { type WebAccess, webReadTool } from "../src/integrations/web-tools.js";
 
 /**
  * The model-session contract (decision 022), held against every engine. Each
@@ -276,6 +277,18 @@ describe.each([{ harness: piHarness }, { harness: claudeCodeHarness }])("the mod
     expect((await session.run("Run the check.", running())).status).toBe("completed");
     expect(observed.activity).toContainEqual(expect.objectContaining({ type: "tool_finished", failed: true,
       output: "Command exited with code 1" }));
+  });
+
+  it(`reports what a web read returned with the call, for its review (${harness().engine})`, async () => {
+    const page = { url: "https://bun.sh/blog", finalUrl: "https://bun.sh/blog", contentType: "text/html", text: "Bun v1.4.2 is out." };
+    const web: WebAccess = { search: { search: async () => ({ status: "ok", provider: "exa", results: [] }) },
+      fetch: async () => ({ status: "ok", page }),
+      read: async () => ({ status: "answered", answer: "Version 1.4.2.\n> Bun v1.4.2 is out." }) };
+    const { session, observed } = await open((root) => [...readOnlyFileTools(root), webReadTool(web)],
+      [{ tools: [{ name: "web_read", args: { url: "https://bun.sh/blog", question: "Which version?" } }] }, { text: "1.4.2." }]);
+    expect((await session.run("Which Bun version is out?", running())).status).toBe("completed");
+    expect(observed.activity).toContainEqual(expect.objectContaining({ type: "tool_finished", failed: false,
+      evidence: { kind: "page", url: "https://bun.sh/blog", quotes: ["Bun v1.4.2 is out."], unfound: 0 } }));
   });
 
   it(`never runs a tool it was not given (${harness().engine})`, async () => {

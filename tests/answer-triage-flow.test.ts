@@ -9,7 +9,7 @@ import type { AgentActivity } from "../src/integrations/model-session-contract.j
 import type { ExecutionEnvironment } from "../src/execution-environment.js";
 import type { SessionExecution } from "../src/execution-providers.js";
 import { hostProvider } from "../src/host-environment.js";
-import type { ReviewReport } from "../src/review.js";
+import type { ReviewInput, ReviewReport, ToolCallRecord, WebEvidence } from "../src/review.js";
 import type { ShellSessionRecord, ShellSessionStore } from "../src/shell-session-store.js";
 import { SourceSession } from "../src/source-session.js";
 import { Workspace } from "../src/workspace.js";
@@ -156,6 +156,62 @@ it("sends a checkable answer to the full check, says so, and leaves nothing for 
     expect(mocks.reviewAnswer).toHaveBeenCalledOnce();
     await turns.verify("session");
     expect(notices.at(-1)).toContain("Nothing to verify");
+  } finally {
+    await shell.dispose?.();
+  }
+});
+
+it("checks a research answer against what every round of its request searched and read, so the loop ends (#300)", async () => {
+  // The rounds observed on 2026-10-02: pages read first, a search in the correction, a new question afterwards.
+  const rounds: (readonly Readonly<{ tool: string; subject: string; evidence: WebEvidence }>[])[] = [
+    [{ tool: "web_read", subject: "https://github.com/oven-sh/bun/releases/latest", evidence: { kind: "page",
+      url: "https://github.com/oven-sh/bun/releases/tag/bun-v1.4.2", quotes: ["Bun v1.4.2 Latest Sep 5, 2026"], unfound: 0 } }],
+    [{ tool: "web_search", subject: "Bun latest stable release version", evidence: { kind: "search",
+      sources: [{ url: "https://bun.sh/blog/bun-v1.4.2", title: "Bun v1.4.2" }] } }],
+    [{ tool: "web_search", subject: "Deno latest release", evidence: { kind: "search", sources: [] } }],
+  ];
+  let listener: ((activity: AgentActivity) => void) | undefined;
+  let round = 0;
+  const run = vi.fn(async () => {
+    for (const [index, call] of (rounds[round] ?? []).entries()) {
+      listener?.({ type: "tool_started", call: `r${round}-${index}`, tool: call.tool, subject: call.subject });
+      listener?.({ type: "tool_finished", call: `r${round}-${index}`, failed: false, output: "", evidence: call.evidence });
+    }
+    round += 1;
+    return { status: "completed" as const, reply: "Bun v1.4.2, released on 5 September 2026 (GitHub releases, the Bun blog)." };
+  });
+  const { shell } = await openShell(newRecord(), run, (onActivity) => { listener = onActivity; });
+  mocks.firstPass.mockResolvedValue({ decided: true, checkable: true, reason: "the reply states a release and its date" });
+  // The reviewer as it behaved then: the answer holds only with both a search and a page reading on record.
+  const seen: (readonly ToolCallRecord[])[] = [];
+  mocks.reviewAnswer.mockImplementation(async (_open: unknown, input: ReviewInput) => {
+    const calls = input.toolCalls ?? [];
+    seen.push(calls);
+    const searched = calls.some((call) => call.evidence?.kind === "search" && call.evidence.sources.length > 0);
+    const read = calls.some((call) => call.evidence?.kind === "page" && call.evidence.quotes.length > 0);
+    const status = searched && read ? "met" as const : "unmet" as const;
+    return [{ reviewer: "Tesota reviewer", tree: "t", status: "completed", summary: status, findings: [],
+      obligations: [{ source: "request", index: 1, obligation: "Name the latest Bun release and its date, with sources",
+        status, evidence: searched ? "no page reading is recorded" : "no web search is recorded",
+        ...(status === "unmet" ? { disposition: "fixable" as const } : {}) }] } satisfies ReviewReport];
+  });
+  try {
+    const session = shell.session("session");
+    const verdict = async (): Promise<string | undefined> => {
+      const assessed = await session.assessAnswer?.();
+      const report = assessed?.status === "assessed" ? assessed.reviews[0] : undefined;
+      return report?.status === "completed" ? report.summary : undefined;
+    };
+    await session.work("What is the latest stable release of Bun, and on what date was it released? Cite sources.");
+    expect(await verdict()).toBe("unmet");
+    // The correction searches; the pages the first round read still count, so the second review holds the answer.
+    await session.work("Search the web for the release.", "tesota");
+    expect(await verdict()).toBe("met");
+    expect(seen[1]?.map((call) => call.tool)).toEqual(["web_read", "web_search"]);
+    // A new request, once the earlier one held, starts its record over.
+    await session.work("And Deno's?");
+    await session.assessAnswer?.();
+    expect(seen[2]?.map((call) => call.subject)).toEqual(["Deno latest release"]);
   } finally {
     await shell.dispose?.();
   }
