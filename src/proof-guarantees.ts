@@ -9,8 +9,8 @@ import type { CheckResult } from "./workspace-checks.js";
 
 /**
  * What the candidate's LemmaScript contracts guarantee, for the result
- * panel's Guarantees view (docs/design/assurance.md, "Showing what was
- * guaranteed"): each contract in a changed annotated file as written, whether
+ * panel's Guarantees view (docs/design/proofs.md, "What the operator
+ * sees"): each contract in a changed annotated file as written, whether
  * it proved, what it assumes, what the candidate added to its assumptions,
  * how ClaimCheck compared it with the requests, and, apart, the changed lines
  * no proof covers (`proofCovered`).
@@ -26,7 +26,7 @@ export interface ContractGuarantee {
   readonly outcome: ProofOutcome;
   /** Its `requires` and `assume` lines: what it takes as given. */
   readonly assumes: readonly string[];
-  /** The `requires` and `assume` lines the candidate added, which narrow what was proved. */
+  /** What the candidate added that narrows what was proved: any `assume`, and a `requires` added to a contract that existed. */
   readonly narrowed: readonly string[];
   /** ClaimCheck's statement when it found the contract says less or other than was asked; undefined when it found nothing. */
   readonly mismatch?: string;
@@ -40,6 +40,8 @@ export interface Guarantees {
   readonly contracts: readonly ContractGuarantee[];
   /** Changed TypeScript lines no proof covers, by file, for the annotated files only. */
   readonly uncovered: readonly { readonly path: string; readonly lines: readonly number[] }[];
+  /** Changed lines a proof covers, by file, with the proved contracts that cover them, as written; absent in earlier records. */
+  readonly covered?: readonly { readonly path: string; readonly lines: readonly number[]; readonly contracts: readonly string[] }[];
 }
 
 const assumptionLine = /^\/\/@\s+(requires|assume)\b/u;
@@ -86,13 +88,17 @@ export function proofGuarantees(snapshot: WorkspaceSnapshot, checks: readonly Ch
   const claimcheck = reviews.find((report) => report.reviewer === "ClaimCheck method");
   const found: ContractGuarantee[] = [];
   const uncovered: { path: string; lines: number[] }[] = [];
+  const covered: { path: string; lines: number[]; contracts: string[] }[] = [];
   for (const change of snapshot.changes) {
     if (change.status === "deleted" || !change.path.endsWith(".ts")) continue;
     const source = read(snapshot.tree, change.path);
     if (source === undefined) continue;
     const items = contracts(change.path, source);
     if (items.length === 0) continue;
-    const before = new Set((read(snapshot.base, change.path) ?? "").split(/\r?\n/u).map((line) => line.trim()));
+    const baseSource = read(snapshot.base, change.path) ?? "";
+    const before = new Set(baseSource.split(/\r?\n/u).map((line) => line.trim()));
+    // A contract new to this change states its own preconditions; only an existing one is narrowed by an added `requires`.
+    const existing = new Set(contracts(change.path, baseSource).map((item) => item.name));
     const outcome = proofOutcome(checks, change.path);
     const starts: number[] = [];
     const ends: number[] = [];
@@ -101,7 +107,7 @@ export function proofGuarantees(snapshot: WorkspaceSnapshot, checks: readonly Ch
     for (const item of items) {
       const lines = item.text.split("\n").filter((line) => line.startsWith("//@"));
       const assumes = lines.filter((line) => assumptionLine.test(line));
-      const added = assumes.filter((line) => !before.has(line));
+      const added = assumes.filter((line) => !before.has(line) && (existing.has(item.name) || line.startsWith("//@ assume")));
       const finding = claimcheck?.status === "completed"
         ? claimcheck.findings.find((entry) => entry.path === item.path && entry.line === item.line) : undefined;
       const mutated = mutation.get(`${item.path}:${item.name}`);
@@ -113,11 +119,16 @@ export function proofGuarantees(snapshot: WorkspaceSnapshot, checks: readonly Ch
       proved.push(outcome === "proved");
       narrowed.push(added.length > 0);
     }
-    const lines = [...changed.get(change.path)?.added ?? []].sort((a, b) => a - b)
-      .filter((line) => !proofCovered(line, starts, ends, proved, narrowed));
+    const added = [...changed.get(change.path)?.added ?? []].sort((a, b) => a - b);
+    const lines = added.filter((line) => !proofCovered(line, starts, ends, proved, narrowed));
     if (lines.length > 0) uncovered.push({ path: change.path, lines });
+    const inside = added.filter((line) => proofCovered(line, starts, ends, proved, narrowed));
+    if (inside.length > 0) {
+      covered.push({ path: change.path, lines: inside,
+        contracts: items.filter((_item, index) => proved[index] === true && narrowed[index] === false).map((item) => item.text) });
+    }
   }
-  return { contracts: found, uncovered };
+  return { contracts: found, uncovered, covered };
 }
 
 /** Line numbers as short ranges: 3, 5-8, 12. */
