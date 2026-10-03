@@ -110,7 +110,7 @@ const premised: unknown[] = [];
 const premise = { attempts: 0, leftAlone: 0, reported: 0, controlAttempts: 0, controlResolved: 0 };
 const proofAttempts: unknown[] = [];
 const strengthenAttempts: unknown[] = [];
-const strengthened: Record<string, { attempts: number; resolved: number; proved: number; rulesOut: number; weakened: number;
+const strengthened: Record<string, { attempts: number; resolved: number; proved: number; rulesOut: number; keptPromise: number;
   tokens: number; durationMs: number }> = {};
 const proofs: Record<string, { attempts: number; proved: number; resolved: number; weakened: number; proofRuns: number;
   tokens: number; durationMs: number }> = {};
@@ -231,25 +231,28 @@ try {
       const proof = await provesAfter(directory, testCase.path);
       const file = join(directory, testCase.path);
       const after = existsSync(file) ? readFileSync(file, "utf8") : undefined;
-      const buggy = after === undefined ? undefined : withBuggyBody(base, after, testCase.path, testCase.function);
-      const bugProof = buggy === undefined ? undefined
-        : (await proveSource(basename(testCase.path), buggy, undefined, AbortSignal.timeout(10 * 60_000))).outcome;
-      const rulesOut = bugProof === "failed";
-      const weakened = contractWeakened(base, after, testCase.kept);
-      const tally = strengthened[testCase.name] ??= { attempts: 0, resolved: 0, proved: 0, rulesOut: 0, weakened: 0, tokens: 0,
+      const prove = async (source: string | undefined): Promise<string | undefined> => source === undefined ? undefined
+        : (await proveSource(basename(testCase.path), source, undefined, AbortSignal.timeout(10 * 60_000))).outcome;
+      // Both judged by the prover, and only on a contract that proves: one that does not parse fails every body.
+      const bugProof = after === undefined ? undefined : await prove(withBuggyBody(base, after, testCase.path, testCase.function));
+      const rulesOut = proof === "passed" && bugProof === "failed";
+      // The new code under the original contract: it keeps the original promise unless the turn loosened it.
+      const keptProof = after === undefined ? undefined : await prove(withBuggyBody(after, base, testCase.path, testCase.function));
+      const keptPromise = proof === "passed" && keptProof === "passed";
+      const tally = strengthened[testCase.name] ??= { attempts: 0, resolved: 0, proved: 0, rulesOut: 0, keptPromise: 0, tokens: 0,
         durationMs: 0 };
       tally.attempts += 1;
       tally.resolved += resolved ? 1 : 0;
       tally.proved += proof === "passed" ? 1 : 0;
       tally.rulesOut += rulesOut ? 1 : 0;
-      tally.weakened += weakened.length > 0 ? 1 : 0;
+      tally.keptPromise += keptPromise ? 1 : 0;
       tally.tokens += turn.tokens;
       tally.durationMs += turn.durationMs;
-      strengthenAttempts.push({ name: testCase.name, run, resolved, proof, bugProof, rulesOut, weakened, after, turn });
+      strengthenAttempts.push({ name: testCase.name, run, resolved, proof, bugProof, rulesOut, keptProof, keptPromise, after, turn });
       console.log(`run ${run} · ${testCase.name}: ${resolved ? "resolved" : "not resolved"}, ` +
         `${proof === "passed" ? "proved" : `not proved (${proof})`}, ${rulesOut ? "contract rules the bug out" :
-          `contract still allows the bug (${bugProof ?? "function missing"})`}` +
-        `${weakened.length === 0 ? "" : `, weakened (${weakened.join("; ")})`}, ${turn.proofRuns} prove runs, ` +
+          "contract does not rule the bug out"}, ${keptPromise ? "keeps the original promise" : "does not keep the original promise"}` +
+        `, ${turn.proofRuns} prove runs, ` +
         `${Math.round(turn.tokens / 1000)}k tokens, ${Math.round(turn.durationMs / 1000)} s` +
         (turn.status === "completed" ? "" : ` (${turn.status})`));
     }

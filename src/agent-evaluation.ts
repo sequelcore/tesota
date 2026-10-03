@@ -432,8 +432,6 @@ export interface AgentStrengthenCase {
   /** The reviewer's finding the correction sends back, at the buggy line. */
   readonly finding: Readonly<{ line: number; statement: string; reason: string }>;
   readonly hiddenTest: string;
-  /** Contract lines the correction must keep verbatim. */
-  readonly kept: readonly string[];
 }
 
 const clampWeak = "//@ requires low <= high\n//@ ensures low <= \\result && \\result <= high\n" +
@@ -453,8 +451,7 @@ export const AGENT_STRENGTHEN_CASES: readonly AgentStrengthenCase[] = [
     finding: { line: 4, statement: "Values below low return high instead of low.",
       reason: "The request says values below low become low; clamp(-5, 0, 10) returns 10." },
     hiddenTest: test(`import { clamp } from "../src/clamp.ts";\ntest("clamp", () => {\n  assert.equal(clamp(-5, 0, 10), 0);\n` +
-      `  assert.equal(clamp(15, 0, 10), 10);\n  assert.equal(clamp(5, 0, 10), 5);\n});`),
-    kept: ["//@ requires low <= high", "//@ ensures low <= \\result && \\result <= high"] },
+      `  assert.equal(clamp(15, 0, 10), 10);\n  assert.equal(clamp(5, 0, 10), 5);\n});`) },
   { name: "discount at exactly 100", path: "src/discount.ts", function: "discounted",
     request: "Orders over 100 get 10 off in discounted() in src/discount.ts; orders of 100 or less pay the full price.",
     base: { "src/discount.ts": discountWeak,
@@ -462,8 +459,7 @@ export const AGENT_STRENGTHEN_CASES: readonly AgentStrengthenCase[] = [
     finding: { line: 4, statement: "An order of exactly 100 gets the discount.",
       reason: "The request gives it only to orders over 100; discounted(100) returns 90." },
     hiddenTest: test(`import { discounted } from "../src/discount.ts";\ntest("discount", () => {\n` +
-      `  assert.equal(discounted(100), 100);\n  assert.equal(discounted(150), 140);\n  assert.equal(discounted(40), 40);\n});`),
-    kept: ["//@ requires price >= 0", "//@ ensures \\result <= price"] },
+      `  assert.equal(discounted(100), 100);\n  assert.equal(discounted(150), 140);\n  assert.equal(discounted(40), 40);\n});`) },
   { name: "maximum returns the first item", path: "src/quantity.ts", function: "maxQuantity",
     request: "maxQuantity(items) in src/quantity.ts returns the largest quantity in a non-empty list.",
     base: { "src/quantity.ts": maximumWeak,
@@ -471,8 +467,7 @@ export const AGENT_STRENGTHEN_CASES: readonly AgentStrengthenCase[] = [
     finding: { line: 4, statement: "maxQuantity returns the first quantity, not the largest.",
       reason: "maxQuantity([2, 9, 4]) returns 2; the request asks for the largest." },
     hiddenTest: test(`import { maxQuantity } from "../src/quantity.ts";\ntest("maximum", () => {\n` +
-      `  assert.equal(maxQuantity([2, 9, 4]), 9);\n  assert.equal(maxQuantity([-3, -1, -7]), -1);\n  assert.equal(maxQuantity([4]), 4);\n});`),
-    kept: ["//@ requires items.length > 0", "//@ ensures \\result >= items[0]"] },
+      `  assert.equal(maxQuantity([2, 9, 4]), 9);\n  assert.equal(maxQuantity([-3, -1, -7]), -1);\n  assert.equal(maxQuantity([4]), 4);\n});`) },
 ];
 
 /**
