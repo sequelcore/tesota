@@ -346,20 +346,24 @@ export const dockerSandboxesProvider: ExecutionProvider = {
     const plan = planToolchain(workspace);
     const runtimes = kitRuntimes(plan);
     const kit = await writeToolchainKit(runtimes);
-    const name = `${sandboxPrefix(workspace)}${kit.id.slice(0, 8)}`;
+    const modules = ["", ...plan.packages].map((folder) => join(workspace, folder, "node_modules"));
+    // The mounts are fixed when the sandbox is created, so a new set of packages makes a new sandbox.
+    const name = `${sandboxPrefix(workspace)}${createHash("sha256").update(JSON.stringify([kit.id, plan.packages])).digest("hex").slice(0, 8)}`;
     const listed = await invoke(sbx, ["ls"]);
     if (listed.status !== 0) throw new Error("Docker Sandboxes is not signed in");
     const existing = listedSandboxes(listed.stdout).filter((sandbox) => sandbox.startsWith(sandboxPrefix(workspace)));
     for (const stale of existing.filter((sandbox) => sandbox !== name)) await invoke(sbx, ["rm", "--force", stale]);
     // A sandbox is kept and reused by name, so a stop between steps leaves nothing that its workspace's release does not remove.
     options.signal?.throwIfAborted();
-    // Every sandbox keeps node_modules on its own disk, so an install never writes Linux packages into the operator's
-    // checkout, even one that becomes a JavaScript package mid-session; the startup bind mount lands on this folder on every start.
-    await mkdir(join(workspace, "node_modules"), { recursive: true });
+    // Every sandbox keeps node_modules on its own disk, the root's and each package's, so an install never writes Linux
+    // packages into the operator's checkout, even one that becomes a JavaScript package mid-session; the startup bind
+    // mounts land on these folders on every start.
+    for (const folder of modules) await mkdir(folder, { recursive: true });
     if (!existing.includes(name)) {
       const tools = Object.entries(runtimes).map(([tool, version]) => `${tool} ${version}`).join(", ");
       onProgress(`Creating the sandbox${tools.length === 0 ? "" : ` with ${tools}`}`);
-      await createSandbox(sbx, name, workspace, kit.directory, [`${DEPENDENCIES_ARGUMENT}=${sandboxPath(resolve(workspace))}/node_modules`]);
+      await createSandbox(sbx, name, workspace, kit.directory,
+        [`${DEPENDENCIES_ARGUMENT}=${modules.map((folder) => sandboxPath(resolve(folder))).join(":")}`]);
     }
     options.signal?.throwIfAborted();
     const allowed = [...plan.registries.map((host) => `${host}:443`), ...options.allowed ?? []];
@@ -375,7 +379,7 @@ export const dockerSandboxesProvider: ExecutionProvider = {
     for (const sandbox of listedSandboxes(listed.stdout).filter((entry) => entry.startsWith(sandboxPrefix(workspace)))) {
       await invoke(sbx, ["rm", "--force", sandbox]);
     }
-    // The node_modules mount point, removed only while empty, so nothing the operator put there is lost.
-    await rmdir(join(workspace, "node_modules")).catch(() => undefined);
+    // The node_modules mount points, removed only while empty, so nothing the operator put there is lost.
+    for (const folder of ["", ...planToolchain(workspace).packages]) await rmdir(join(workspace, folder, "node_modules")).catch(() => undefined);
   },
 };

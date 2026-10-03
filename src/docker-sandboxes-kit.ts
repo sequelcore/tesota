@@ -13,17 +13,18 @@ import { MISE_RELEASE, type ToolchainPlan } from "./toolchain.js";
  *
  * Writing node_modules through the workspace mount is about twenty times
  * slower than the sandbox's own disk, so the kit also declares a volume and a
- * startup hook that bind-mounts it over the workspace's node_modules on every
- * start. The path arrives as a create-phase environment variable, never
- * spliced into the command.
+ * startup hook that bind-mounts a folder of it over each of the workspace's
+ * node_modules, the root's and each package's, on every start. The paths
+ * arrive as a create-phase environment variable, never spliced into the
+ * command.
  */
 export const KIT_RUNTIMES = ["node", "bun", "python"] as const;
 export type KitRuntime = typeof KIT_RUNTIMES[number];
 
 const DEFAULT_KITS_ROOT: string = join(homedir(), ".tesota", "kits");
 
-/** The create-time argument naming the in-sandbox path of the workspace's node_modules. */
-export const DEPENDENCIES_ARGUMENT = "dependenciesPath";
+/** The create-time argument naming the in-sandbox paths of the workspace's node_modules, separated by `:`. */
+export const DEPENDENCIES_ARGUMENT = "dependenciesPaths";
 const dependenciesVolume = "/home/agent/.tesota-dependencies";
 
 const versionPattern = "^([0-9]+(\\.[0-9]+){0,2})?$";
@@ -47,9 +48,9 @@ export function kitDescriptor(tools: Readonly<Partial<Record<KitRuntime, string>
     ...args,
     `  ${DEPENDENCIES_ARGUMENT}:`,
     '    default: ""',
-    "    pattern: '^(/.*/node_modules)?$'",
-    "    description: Path of the workspace's node_modules, kept on the sandbox's own disk",
-    "    env: TESOTA_DEPENDENCIES_PATH",
+    "    pattern: '^(/[^:]*/node_modules(:/[^:]*/node_modules)*)?$'",
+    "    description: Paths of the workspace's node_modules, separated by colons, kept on the sandbox's own disk",
+    "    env: TESOTA_DEPENDENCIES_PATHS",
     "capabilities:",
     "  - type: com.docker.sandbox/sbx@1",
     "  - type: com.docker.sandbox/volume@1",
@@ -62,9 +63,9 @@ export function kitDescriptor(tools: Readonly<Partial<Record<KitRuntime, string>
     "        - command:",
     "            - sh",
     "            - -c",
-    `            - '[ -z "$TESOTA_DEPENDENCIES_PATH" ] || { mkdir -p ${dependenciesVolume}/node_modules && ` +
-      `chown 1000:1000 ${dependenciesVolume}/node_modules && ` +
-      `mount --bind ${dependenciesVolume}/node_modules "$TESOTA_DEPENDENCIES_PATH"; }'`,
+    // Each path's folder in the volume mirrors the path, so every package keeps its own.
+    `            - 'set -f; IFS=:; for target in $TESOTA_DEPENDENCIES_PATHS; do mkdir -p "${dependenciesVolume}$target" && ` +
+      `chown 1000:1000 "${dependenciesVolume}$target" && mount --bind "${dependenciesVolume}$target" "$target" || exit 1; done'`,
     '          user: "0"',
     "          background: false",
     "          description: Keep installed dependencies on the sandbox's own disk",

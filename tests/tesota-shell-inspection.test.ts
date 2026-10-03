@@ -33,6 +33,16 @@ it("says where the checks ran by the sandbox's own name, or on this computer wit
   expect(inspectReview({ snapshot, requests: [], flags: [], reviews: [], checks: [] }).summary).toContain("No checks ran.");
 });
 
+it("says beside the verdict when no check command ran, even when another verifier did", () => {
+  const clean = [{ reviewer: "Tesota reviewer", tree: snapshot.tree, status: "completed" as const, summary: "Fine.", findings: [] }];
+  const lint = { ...check, verifier: "oxlint" as const, command: "oxlint src/price.ts" };
+  const unchecked = inspectReview({ snapshot, requests: [], flags: [], reviews: clean, checks: [lint] }).summary;
+  expect(unchecked).toContain("  ✓ The reviewers found no problem this change caused\n" +
+    "  · No check command ran: no build or test verified this change");
+  expect(inspectReview({ snapshot, requests: [], flags: [], reviews: clean, checks: [check, lint] }).summary)
+    .not.toContain("No check command ran");
+});
+
 it("keeps each line of a request of several lines under its number, so none reads as a section of the record", () => {
   const review = inspectReview({ snapshot, checks: [check], flags: [], reviews: [],
     requests: ["Redesign the explorer.\nTarget design:\n\n- Header line: the path\nAcceptance", "Run it"] });

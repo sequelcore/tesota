@@ -1,10 +1,8 @@
-import { readdirSync } from "node:fs";
-
 /**
  * The languages a sandbox recognizes from files their projects already have
  * (decision 049), so a repository that declares nothing still gets its
  * language, as it would on the operator's own machine. Each entry says which
- * files at the repository's root show the language, how those files state a
+ * files in a project's folder (`src/projects.ts`) show the language, how those files state a
  * version, which release to install when none does, and which registries its
  * packages come from. A new language is one more entry.
  *
@@ -20,7 +18,7 @@ export interface ToolPlaces {
   readonly home: string;
 }
 
-/** Reads a file at the repository's root, or null when it is absent. */
+/** Reads a file in a project's folder, or null when it is absent. */
 export type ReadFile = (path: string) => string | null;
 
 /** A version a language's files state, with the file it came from. */
@@ -32,16 +30,16 @@ export interface StatedVersion {
 export interface Language {
   /** mise's name for the tool. */
   readonly tool: string;
-  /** Files at the root whose presence shows the language; a name starting with `*` matches that ending. */
+  /** Files in a project's folder whose presence shows the language; a name starting with `*` matches that ending. */
   readonly markers: readonly string[];
   /** The version the repository's files state, if any. */
-  readonly stated: (read: ReadFile, root: readonly string[]) => StatedVersion | null;
+  readonly stated: (read: ReadFile, entries: readonly string[]) => StatedVersion | null;
   /** The release installed when no file states one. */
   readonly fallback: string;
   /** Registries its packages download from, over HTTPS, while setup runs and for the agent's commands. */
   readonly registries: readonly string[];
-  /** Build tools to install beside it when the repository has no wrapper of its own. */
-  readonly buildTools?: (root: readonly string[]) => Readonly<Record<string, string>>;
+  /** Build tools to install beside it when the project has no wrapper of its own. */
+  readonly buildTools?: (entries: readonly string[]) => Readonly<Record<string, string>>;
   /** Variables its tools need, given where things are: while setup installs them, and for every command after. */
   readonly variables?: (places: ToolPlaces) => Readonly<{ setup: Readonly<Record<string, string>>;
     commands: Readonly<Record<string, string>> }>;
@@ -75,6 +73,16 @@ function javaRelease(found: StatedVersion | null): StatedVersion | null {
   return found === null ? null : { ...found, version: found.version.replace(/^1\.(\d+)$/u, "$1") };
 }
 
+/** Whether a folder holds a Gradle build. */
+export function gradleBuild(entries: readonly string[]): boolean {
+  return entries.some((name) => name.startsWith("build.gradle") || name.startsWith("settings.gradle"));
+}
+
+/** Whether a folder holds a Maven build. */
+export function mavenBuild(entries: readonly string[]): boolean {
+  return entries.includes("pom.xml");
+}
+
 const java: Language = {
   tool: "java",
   markers: ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", ".java-version", ".sdkmanrc"],
@@ -88,10 +96,9 @@ const java: Language = {
   fallback: "21",
   registries: ["repo.maven.apache.org", "repo1.maven.org", "services.gradle.org", "downloads.gradle.org",
     "plugins.gradle.org", "plugins-artifacts.gradle.org"],
-  buildTools: (root) => ({
-    ...root.includes("pom.xml") && !root.includes("mvnw") ? { maven: "latest" } : {},
-    ...root.some((name) => name.startsWith("build.gradle") || name.startsWith("settings.gradle")) && !root.includes("gradlew")
-      ? { gradle: "latest" } : {},
+  buildTools: (entries) => ({
+    ...mavenBuild(entries) && !entries.includes("mvnw") ? { maven: "latest" } : {},
+    ...gradleBuild(entries) && !entries.includes("gradlew") ? { gradle: "latest" } : {},
   }),
 };
 
@@ -142,9 +149,9 @@ const ruby: Language = {
 };
 
 /** The highest `netN.M` a project file targets, as .NET's release `N`. */
-function dotnetTarget(read: ReadFile, root: readonly string[]): StatedVersion | null {
+function dotnetTarget(read: ReadFile, entries: readonly string[]): StatedVersion | null {
   let best: StatedVersion | null = null;
-  for (const file of root.filter((name) => /\.(?:cs|fs|vb)proj$/u.test(name))) {
+  for (const file of entries.filter((name) => /\.(?:cs|fs|vb)proj$/u.test(name))) {
     for (const match of (read(file) ?? "").matchAll(/net(\d+)\.\d+/gu)) {
       const major = Number(match[1]);
       if (best === null || major > Number(best.version)) best = { version: String(major), source: file };
@@ -156,9 +163,9 @@ function dotnetTarget(read: ReadFile, root: readonly string[]): StatedVersion | 
 const dotnet: Language = {
   tool: "dotnet",
   markers: ["global.json", "*.csproj", "*.fsproj", "*.vbproj", "*.sln", "*.slnx"],
-  stated: (read, root) => firstStated(
+  stated: (read, entries) => firstStated(
     firstMatch(read, "global.json", [/"version"\s*:\s*"(\d+(?:\.\d+){0,2})"/u]),
-    dotnetTarget(read, root)),
+    dotnetTarget(read, entries)),
   fallback: "10",
   registries: ["api.nuget.org"],
   // NuGet checks certificate revocation over plain HTTP, which the sandbox refuses, and the CLI sends telemetry.
@@ -187,13 +194,8 @@ export function languageVariables(tools: Readonly<Record<string, string>>, place
     .map((language) => language.variables?.(places)[phase] ?? {}));
 }
 
-/** The file names at a repository's root, for matching markers. */
-export function rootEntries(checkout: string): string[] {
-  try { return readdirSync(checkout); } catch { return []; }
-}
-
-/** Whether any of a language's markers is at the root. */
-export function presentIn(language: Language, root: readonly string[]): boolean {
-  return language.markers.some((marker) => marker.startsWith("*") ? root.some((name) => name.endsWith(marker.slice(1)))
-    : root.includes(marker));
+/** Whether any of a language's markers is among a folder's names. */
+export function presentIn(language: Language, entries: readonly string[]): boolean {
+  return language.markers.some((marker) => marker.startsWith("*") ? entries.some((name) => name.endsWith(marker.slice(1)))
+    : entries.includes(marker));
 }

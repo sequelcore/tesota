@@ -1,13 +1,21 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { LANGUAGES, miseSpec, presentIn, rootEntries } from "./languages.js";
+import { LANGUAGES, miseSpec } from "./languages.js";
+import { findProjects, inFolder, inProject, type Project } from "./projects.js";
+
+/** A lockfile install, run from its project's folder. */
+export interface DependencyInstall {
+  readonly folder: string;
+  readonly command: string;
+}
 
 /**
  * What a repository needs inside an isolated environment before the agent
  * starts: runtimes pinned by files it already commits, the languages its
- * project files show (decision 049), tools declared in mise's own files, an
- * optional `.tesota/setup.sh`, and its dependency install.
+ * projects' files show (decision 049), at the root or in folders below it
+ * (#318), tools declared in mise's own files, an optional
+ * `.tesota/setup.sh`, and each project's dependency install.
  */
 export interface ToolchainPlan {
   /** Runtime versions Tesota found, such as `{ node: "24.15.0", java: "21" }`. */
@@ -19,8 +27,14 @@ export interface ToolchainPlan {
   /** `mise.toml` or `.tool-versions` files that mise installs itself inside the environment. */
   readonly miseFiles: readonly string[];
   readonly setupScript: string | null;
-  /** The lockfile-based install, when no setup script takes over project setup. */
-  readonly dependencies: string | null;
+  /** The projects' lockfile installs, when no setup script takes over project setup. */
+  readonly installs: readonly DependencyInstall[];
+  /**
+   * Folders below the root that hold a `package.json`, whose `node_modules`,
+   * like the root's, the environment keeps on its own disk so an install never
+   * writes Linux packages into the operator's files.
+   */
+  readonly packages: readonly string[];
   /** Changes whenever anything that affects setup changes. */
   readonly fingerprint: string;
 }
@@ -57,8 +71,8 @@ function pinnedVersion(value: unknown): string | null {
   return versionPattern.exec(cleaned)?.[1] ?? null;
 }
 
-function packageManifest(checkout: string): Record<string, unknown> {
-  const text = readText(checkout, "package.json");
+function packageManifest(checkout: string, folder: string): Record<string, unknown> {
+  const text = readText(checkout, inProject(folder, "package.json"));
   if (text === null) return {};
   try {
     const parsed: unknown = JSON.parse(text);
@@ -70,68 +84,86 @@ function field(value: unknown, key: string): unknown {
   return typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
 }
 
-function runtimeVersions(checkout: string, sources: string[]): Record<string, string> {
+/** The folders whose JavaScript runtime pins and lockfile count: the root's, then each package's that no workspace around it holds. */
+function packageFolders(projects: readonly Project[]): string[] {
+  return ["", ...projects.filter((project) => project.folder !== "" && project.kinds.includes("node")).map((project) => project.folder)];
+}
+
+/** The runtimes the folders pin, the first pin of each runtime winning. */
+function runtimeVersions(checkout: string, folders: readonly string[], sources: string[]): Record<string, string> {
   const tools: Record<string, string> = {};
   const take = (tool: string, version: string | null, source: string): void => {
     if (version === null || tool in tools) return;
     tools[tool] = version;
     sources.push(source);
   };
-  for (const file of [".node-version", ".nvmrc"]) take("node", pinnedVersion(readText(checkout, file)), file);
-  take("bun", pinnedVersion(readText(checkout, ".bun-version")), ".bun-version");
-  const manifest = packageManifest(checkout);
-  take("node", pinnedVersion(field(field(manifest, "engines"), "node")), "package.json engines.node");
-  const manager = /^(bun)@(.+)$/u.exec(typeof manifest["packageManager"] === "string" ? manifest["packageManager"] : "");
-  if (manager !== null) take(manager[1] ?? "bun", pinnedVersion(manager[2]), "package.json packageManager");
-  take("bun", pinnedVersion(field(field(manifest, "engines"), "bun")), "package.json engines.bun");
+  for (const folder of folders) {
+    for (const file of [".node-version", ".nvmrc"].map((name) => inProject(folder, name))) {
+      take("node", pinnedVersion(readText(checkout, file)), file);
+    }
+    const bunFile = inProject(folder, ".bun-version");
+    take("bun", pinnedVersion(readText(checkout, bunFile)), bunFile);
+    const manifest = packageManifest(checkout, folder);
+    const named = inProject(folder, "package.json");
+    take("node", pinnedVersion(field(field(manifest, "engines"), "node")), `${named} engines.node`);
+    const manager = /^(bun)@(.+)$/u.exec(typeof manifest["packageManager"] === "string" ? manifest["packageManager"] : "");
+    if (manager !== null) take(manager[1] ?? "bun", pinnedVersion(manager[2]), `${named} packageManager`);
+    take("bun", pinnedVersion(field(field(manifest, "engines"), "bun")), `${named} engines.bun`);
+  }
   return tools;
 }
 
-/** The package manager whose lockfile the checkout commits, which installs exactly what that lockfile names. */
-export function lockfileManager(checkout: string): { readonly manager: "bun" | "npm"; readonly lockfile: string } | null {
-  for (const lockfile of ["bun.lock", "bun.lockb"]) if (existsSync(join(checkout, lockfile))) return { manager: "bun", lockfile };
-  return existsSync(join(checkout, "package-lock.json")) ? { manager: "npm", lockfile: "package-lock.json" } : null;
-}
-
-function dependencyInstall(checkout: string): string | null {
-  const found = lockfileManager(checkout);
-  if (found === null) return null;
-  return found.manager === "bun" ? "bun install --frozen-lockfile" : "npm ci";
+/** The install of the package manager whose lockfile a folder commits, which installs exactly what that lockfile names. */
+function dependencyInstall(directory: string): string | null {
+  if (["bun.lock", "bun.lockb"].some((lockfile) => existsSync(join(directory, lockfile)))) return "bun install --frozen-lockfile";
+  return existsSync(join(directory, "package-lock.json")) ? "npm ci" : null;
 }
 
 /**
- * Add each language the root's files show, at the version they state or its
- * fallback, with the build tools it needs and its registries.
+ * Add each language the projects' files show, at the version the first
+ * project to state one states, or its fallback, with the build tools each
+ * project needs and the languages' registries.
  */
-function languageTools(checkout: string, tools: Record<string, string>, sources: string[]): string[] {
-  const root = rootEntries(checkout);
+function languageTools(checkout: string, projects: readonly Project[], tools: Record<string, string>, sources: string[]): string[] {
   const registries: string[] = [];
-  for (const language of LANGUAGES.filter((candidate) => presentIn(candidate, root) && !(candidate.tool in tools))) {
-    const stated = language.stated((path) => readText(checkout, path), root);
-    tools[language.tool] = stated?.version ?? language.fallback;
-    sources.push(stated?.source ?? `${language.tool} found, ${language.fallback} by default`);
-    for (const [tool, version] of Object.entries(language.buildTools?.(root) ?? {})) tools[tool] ??= version;
-    registries.push(...language.registries);
+  for (const project of projects) {
+    for (const language of LANGUAGES.filter((candidate) => project.kinds.includes(candidate.tool))) {
+      if (!(language.tool in tools)) {
+        const stated = language.stated((path) => readText(checkout, inProject(project.folder, path)), project.entries);
+        tools[language.tool] = stated?.version ?? language.fallback;
+        sources.push(stated === null ? `${language.tool} found, ${language.fallback} by default`
+          : inProject(project.folder, stated.source));
+      }
+      for (const [tool, version] of Object.entries(language.buildTools?.(project.entries) ?? {})) tools[tool] ??= version;
+      registries.push(...language.registries);
+    }
   }
   return [...new Set(registries)];
 }
 
 export function planToolchain(checkout: string): ToolchainPlan {
+  const projects = findProjects(checkout);
   const sources: string[] = [];
-  const tools = runtimeVersions(checkout, sources);
-  const registries = languageTools(checkout, tools, sources);
+  const folders = packageFolders(projects);
+  const tools = runtimeVersions(checkout, folders, sources);
+  const registries = languageTools(checkout, projects, tools, sources);
   const miseFiles = ["mise.toml", ".mise.toml", ".tool-versions"].filter((file) => existsSync(join(checkout, file)));
   const setupScript = existsSync(join(checkout, ".tesota", "setup.sh")) ? ".tesota/setup.sh" : null;
-  const dependencies = setupScript === null ? dependencyInstall(checkout) : null;
+  const installs = setupScript !== null ? [] : folders.flatMap((folder) => {
+    const command = dependencyInstall(join(checkout, folder));
+    return command === null ? [] : [{ folder, command }];
+  });
+  const packages = projects.filter((project) => project.folder !== "" && project.entries.includes("package.json"))
+    .map((project) => project.folder);
   const fingerprint = createHash("sha256").update(JSON.stringify({ mise: MISE_RELEASE.version, tools,
     miseFiles: Object.fromEntries(miseFiles.map((file) => [file, readText(checkout, file)])),
-    setup: setupScript === null ? null : readText(checkout, setupScript), dependencies, registries })).digest("hex");
-  return { tools, sources, registries, miseFiles, setupScript, dependencies, fingerprint };
+    setup: setupScript === null ? null : readText(checkout, setupScript), installs, registries })).digest("hex");
+  return { tools, sources, registries, miseFiles, setupScript, installs, packages, fingerprint };
 }
 
 /** Whether anything must run inside the environment after its runtimes are in place. */
 export function needsSetup(plan: ToolchainPlan): boolean {
-  return plan.miseFiles.length > 0 || plan.setupScript !== null || plan.dependencies !== null;
+  return plan.miseFiles.length > 0 || plan.setupScript !== null || plan.installs.length > 0;
 }
 
 /** How an environment runs mise during setup. */
@@ -169,12 +201,6 @@ export function missingRuntimes(tools: Readonly<Record<string, string>>, carried
   }));
 }
 
-/**
- * The stages that set up an environment, in order, each needing the ones
- * before it: mise and the tools it installs, the repository's setup script,
- * then its lockfile install. Versions hold only digits and dots
- * (`pinnedVersion`), so they are safe in a script.
- */
 /** Where an environment's proxy listens for its commands, when they reach the network through one. */
 export interface CommandProxy {
   readonly host: string;
@@ -205,6 +231,12 @@ function jvmProxyScript(proxy: CommandProxy): string {
     `cat > "$HOME/.gradle/gradle.properties" <<'TESOTA'\n${gradle}\nTESOTA`].join("\n");
 }
 
+/**
+ * The stages that set up an environment, in order, each needing the ones
+ * before it: mise and the tools it installs, the repository's setup script,
+ * then each project's lockfile install. Versions hold only digits and dots
+ * (`pinnedVersion`), so they are safe in a script.
+ */
 export function setupStages(plan: ToolchainPlan, mise: MiseUse, proxy?: CommandProxy): SetupStage[] {
   const stages: SetupStage[] = [];
   const runtimes = Object.entries(mise.runtimes);
@@ -223,7 +255,9 @@ export function setupStages(plan: ToolchainPlan, mise: MiseUse, proxy?: CommandP
     stages.push({ description: "Point Maven and Gradle at the sandbox's proxy", script: jvmProxyScript(proxy) });
   }
   if (plan.setupScript !== null) stages.push({ description: `Run ${plan.setupScript}`, script: `sh ${plan.setupScript}` });
-  if (plan.dependencies !== null) stages.push({ description: `Install dependencies (${plan.dependencies})`, script: plan.dependencies });
+  for (const { folder, command } of plan.installs) {
+    stages.push({ description: `Install dependencies${folder === "" ? "" : ` in ${folder}`} (${command})`, script: inFolder(folder, command) });
+  }
   return stages;
 }
 

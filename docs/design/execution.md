@@ -206,11 +206,14 @@ cannot confirm they are gone; the WSL sandbox's own proxy holds them for
 setup alone and confirms them closed ([WSL sandbox](#wsl-sandbox)). Docker
 bakes the pinned runtimes into a sandbox kit that `sbx` builds once per set
 of versions and reuses for later sessions, and the workspace's
-`node_modules` lives on the sandbox's own disk rather than the slower
-workspace mount, in both. It does for every workspace, not only one that is
-a JavaScript package when the session starts, so a package created and
-installed mid-session never writes Linux binaries into the operator's
-checkout. A failed step stops setup but not the session, and
+`node_modules`, and that of each package in a folder below its root, lives
+on the sandbox's own disk rather than the slower workspace mount, in both.
+The root's does for every workspace, not only one that is a JavaScript
+package when the session starts, so a package created and installed there
+mid-session never writes Linux binaries into the operator's checkout; a
+package in a subfolder gets its own when the sandbox is prepared, and Docker
+Sandboxes makes a new sandbox when that set changes, since it mounts them
+when the sandbox is created. A failed step stops setup but not the session, and
 the operator and agent are told what failed; a fingerprint of the setup
 inputs skips setup when nothing changed.
 
@@ -316,9 +319,9 @@ own home, mounted at the account's own home path so that programs asking the
 system for the home, as Java does, find the same folder as `HOME` (Maven
 otherwise misses its settings and loses its downloads after each command),
 a temporary folder at `/tmp`, and, on WSL's own disk, the repository's
-package caches and the workspace's `node_modules`, as Docker Sandboxes
-keeps it; the empty folder it mounts over is removed when the session ends
-if the sandbox created it. Nothing else of WSL or Windows is in it. A command
+package caches and the workspace's `node_modules` and its packages', as
+Docker Sandboxes keeps them; the empty folders it mounts over are removed
+when the session ends if the sandbox created them. Nothing else of WSL or Windows is in it. A command
 runs in `/bin/sh` and gets only its `PATH`, its home, the proxy and what it
 was given.
 
@@ -380,9 +383,19 @@ agent's commands, so `node` is the version `.nvmrc` pins. Then
 `.tesota/setup.sh`, or the lockfile install, runs with them.
 
 **Languages found without declaring them** (`src/languages.ts`). The plan also
-reads the files each language's projects
-already have at the repository's root, so a repository that declares nothing
-gets its language, as it would on the operator's own machine:
+reads the files each language's projects already have, so a repository that
+declares nothing gets its language, as it would on the operator's own
+machine. Projects are found at the root and in folders up to three levels
+below it (`src/projects.ts`), skipping dot folders and those that hold
+dependencies or build output, so a monorepo whose app and backend sit in
+subfolders gets both. A project inside another of the same kind belongs to
+it, as Gradle's settings, Maven's modules and Cargo's workspaces build the
+projects below them; a JavaScript package claims the packages below it only
+when it declares workspaces, since a root `package.json` often holds only
+the repository's tooling. Each project adds its language's registries and
+the build tool it lacks a wrapper for, and its JavaScript runtime pins and
+lockfile install, run from its folder; the first project to state a
+language's version, the root's first, sets it:
 
 | Language | Files | Version from | Otherwise | Registries |
 | --- | --- | --- | --- | --- |
@@ -412,8 +425,7 @@ read-only to commands, and NuGet's revocation checks offline and .NET's
 telemetry off, since both would reach hosts over plain HTTP. The
 languages' registries, and the destinations the operator allowed for the
 repository, are open from the start, setup included. Mise's files and
-`.tesota/setup.sh` still override, and only the root is read, so a
-monorepo's subprojects need them.
+`.tesota/setup.sh` still override; both are read at the root only.
 
 While setup runs, the proxy also permits the toolchain hosts, and only then:
 it holds them apart from what is allowed, ends their tunnels when setup

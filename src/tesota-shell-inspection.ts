@@ -94,14 +94,16 @@ function obligationSubject(obligation: Obligation): string {
 
 /**
  * Each finding, request and unfinished review, under who acts on it; with
- * `clean`, a line saying so when no reviewer left anything to act on.
+ * `clean`, a line saying so when no reviewer left anything to act on, and
+ * beneath it `limit`, what that verdict was not checked by.
  */
-function addReviews(groups: Groups, reviews: readonly ReviewReport[], clean: boolean, starts: boolean): void {
+function addReviews(groups: Groups, reviews: readonly ReviewReport[], clean: boolean, starts: boolean, limit?: string): void {
   const findings = reviews.flatMap((report) => report.status === "completed" ? report.findings : []);
   if (clean && reviews.length > 0 && reviews.every((report) => report.status === "completed") &&
     findings.every((finding) => actionOfFinding(finding, starts) === "context")) {
     groups.context.push("  ✓ The reviewers found no problem this change caused");
   }
+  if (limit !== undefined) groups.context.push(limit);
   for (const report of reviews) {
     if (report.status === "incomplete") { groups.operator.push(`  ✗ ${report.reviewer} did not finish: ${report.reason}`); continue; }
     for (const finding of report.findings) {
@@ -287,7 +289,10 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews, dept
     groups.operator.push("    These change how the result is checked; only you can tell whether that is legitimate.");
   }
   const starts = reviewRoundStarts(checks, reviews);
-  addReviews(groups, reviews, true, starts);
+  // Without a check command nothing built or tested the change, so the verdict rests on the review (#318).
+  const unchecked = checks.some((check) => check.verifier === "command") ? undefined
+    : "  · No check command ran: no build or test verified this change";
+  addReviews(groups, reviews, true, starts, unchecked);
   if (depth?.depth === "deep") {
     groups.context.push(`  · thorough review${measurement === undefined ? "" :
       ` (took ${costText(measurement.durationMs, measurement.tokens)})`}: ${depth.reasons.join("; ")}`);

@@ -48,10 +48,15 @@ verifier is never reported as passed.
 | Tesota's Oxlint profile | Changed JavaScript and TypeScript files introduce no diagnostics the profile rejects, such as a new `any` or a comment that silences a check |
 | LemmaScript with Dafny | The `//@` properties of changed annotated files are proved; it runs on a private copy, and says nothing was proved when Dafny is missing, or when it verified nothing in the file |
 
-The operator approves check commands once per repository; Tesota suggests the
-repository's `check` script, or its `typecheck`, `lint` and `test` scripts,
-using the lockfile's package manager, and `cargo test` or `go test ./...` for
-Rust and Go. A check may also name the JUnit XML reports its command writes,
+The operator approves check commands once per repository; Tesota suggests
+each project's, at the root or in a folder below it found as the toolchain
+plan finds them ([execution](execution.md)), run from its folder: a
+package's `check` script, or its `typecheck`, `lint` and `test` scripts,
+using the lockfile's package manager; Gradle's `check` and Maven's `verify`,
+through the wrapper when there is one, since each runs every verification
+the build declares; and `cargo test` or `go test ./...` for Rust and Go.
+When no check command runs, the review's summary says so under its verdict:
+no build or test verified the change. A check may also name the JUnit XML reports its command writes,
 as `command => report, report`, relative to the repository and in paths Git
 ignores; a check whose report Git does not ignore is not run, since writing
 the report would change the reviewed files, and is reported as not started. A check that changes files is reported as `changed_files`, and

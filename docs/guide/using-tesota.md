@@ -355,12 +355,15 @@ is written to the conversation. It has three tabs, switched with `←→`, `Tab`
 
 When a request leaves changes, Tesota runs your checks on exactly that
 content. The first time in a repository it suggests commands from it (for
-example `bun run check`); press Enter to accept, type your own separated by
-`;`, or type `none`. Tesota remembers the choice for that repository. After a
+example `bun run check`, `./gradlew check` or `./mvnw verify`), for each
+project at the root or in a folder up to three levels below it, run from
+that folder (`cd backend && ./gradlew check`); press Enter to accept, type
+your own separated by `;`, or type `none`. Without a check, the review's
+summary says that no build or test verified the change. Tesota remembers the choice for that repository. After a
 command you may name the JUnit XML reports it writes, in paths your
 `.gitignore` covers, so its failures are compared test by test:
 `bun run check => test-reports/unit.xml, test-reports/workspace.xml`.
-When your repository uses Vitest or Jest, the suggested check already comes
+When your repository's root package uses Vitest or Jest, the suggested check already comes
 with a related form, a command where `{files}` stands for the changed files,
 and Enter accepts both; you can also type one:
 `bun run check; related: bunx vitest related --run --passWithNoTests {files}`.
@@ -695,7 +698,9 @@ background colors; plain conversation text still uses the terminal's foreground.
   Java, Go, Rust, Python, Ruby and .NET from the files their projects
   already have (`pom.xml`, `go.mod`, `Cargo.toml`, `pyproject.toml`,
   `Gemfile`, `*.csproj`), with the version they name, and reaches their
-  package registries; only files at the repository's root are read. In Docker
+  package registries. Projects in folders up to three levels below the root
+  count too, each with its own runtime, build tool and lockfile install; mise's
+  files and `.tesota/setup.sh` are read at the root only. In Docker
   Sandboxes, the first session with a new set of runtime versions builds them
   into a cached image, which can take a few minutes; later sessions reuse it
   and prepare in about half a minute. Restored sessions prepare when opened; new sessions prepare
@@ -703,9 +708,10 @@ background colors; plain conversation text still uses the terminal's foreground.
   line shows preparation. Installed `node_modules` stay inside the sandbox,
   mounted over your project's own `node_modules`, which keeps its Windows
   binaries, in every project, so an install in one that becomes a
-  JavaScript project during the session stays in the sandbox too. Where your
-  project has no `node_modules`, the sandbox creates the empty folder to
-  mount over: the WSL sandbox removes it when the session ends, and Docker
+  JavaScript project during the session stays in the sandbox too; so do
+  those of the packages in subfolders that the sandbox found when it was
+  prepared. Where a folder has no `node_modules`, the sandbox creates the
+  empty folder to mount over: the WSL sandbox removes it when the session ends, and Docker
   Sandboxes when its sandbox is removed. The sandbox's installs belong to
   your project and are reused by its next session. Dev Container definitions are not read yet.
 - Copies of the files an application replaced stay in
