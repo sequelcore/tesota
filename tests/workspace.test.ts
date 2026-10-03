@@ -7,7 +7,7 @@ import { afterEach, expect, it } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import { Workspace } from "../src/workspace.js";
 import { applyWorkspace, ApplyConflictError } from "../src/workspace-apply.js";
-import { type ApprovedCheck, parseApprovedChecks, runChecks, suggestChecks } from "../src/workspace-checks.js";
+import { type ApprovedCheck, parseApprovedChecks, REPOSITORY_PROBE, runChecks, suggestChecks } from "../src/workspace-checks.js";
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
@@ -178,7 +178,7 @@ it("runs a failing check again on the base, and sends back only a failure the ca
   const environment = await hostProvider.prepare(workspace.checkout);
   const commands: string[] = [];
   const counted = { ...environment, run: (command: string, options: Parameters<typeof environment.run>[1]) => {
-    commands.push(command);
+    if (command !== REPOSITORY_PROBE) commands.push(command);
     return environment.run(command, options);
   } };
   // Passes only on the base: the base's files, and the ignored dependencies, in place of the candidate's.
@@ -212,7 +212,7 @@ it("runs a related form for the changed files and judges its failure by the whol
   const environment = await hostProvider.prepare(workspace.checkout);
   const commands: string[] = [];
   const counted = { ...environment, run: (command: string, options: Parameters<typeof environment.run>[1]) => {
-    commands.push(command);
+    if (command !== REPOSITORY_PROBE) commands.push(command);
     return environment.run(command, options);
   } };
   // The related form fails on the candidate; the whole command passes on the base, so the failure comes with the changes.
@@ -282,7 +282,7 @@ async function reportedFixture(): Promise<{ workspace: Workspace; snapshot: Retu
   const prepared = await hostProvider.prepare(workspace.checkout);
   const commands: string[] = [];
   const environment = { ...prepared, run: (command: string, options: Parameters<typeof prepared.run>[1]) => {
-    commands.push(command);
+    if (command !== REPOSITORY_PROBE) commands.push(command);
     return prepared.run(command, options);
   } };
   const run = (mode: string): ApprovedCheck => ({ command: `node node_modules/reporter.js ${mode}`,

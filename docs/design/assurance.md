@@ -96,6 +96,15 @@ failure's origin is `introduced` when the base passes, `preexisting` when the
 base ends the same way, and `unknown` otherwise, as when the base run could
 not start, was stopped or changed files (`checkOrigin` in
 `src/verification/check-origin-rule.ts`, proved by `bun run formal:check`).
+**The two runs compare only under the same conditions** (#267). The base's
+one-commit checkout is always a Git repository. The source is not one to a
+command in the sandbox when its `.git` is a file naming a Git directory
+outside it, as in a worktree or a submodule
+([gitrepository-layout](https://git-scm.com/docs/gitrepository-layout)), since
+the sandbox shows only the source. When a check fails, Tesota asks each place
+`git rev-parse --is-inside-work-tree` in the environment that ran it. When the
+answers differ, the origin is `unknown`, the result says how the runs
+differed, and the failure goes to the operator rather than starting a round.
 The result panel and the reviewers see how the base ended beside the failure.
 A session keeps each base run by command, reports, base and environment, so
 correction rounds on the same base do not repeat it; a base run costs one more
