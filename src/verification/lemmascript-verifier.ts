@@ -59,7 +59,8 @@ export interface ProofRun {
  * LemmaScript with Dafny on one TypeScript source, with its `.dfy` companion
  * when there is one. Both are copied to a private directory, because `lsc`
  * writes generated proof files next to its input, so the caller's files never
- * change.
+ * change. A run that exits cleanly but verified nothing, as when LemmaScript
+ * translated no annotated function, proved nothing and is not a pass.
  */
 export async function proveSource(name: string, source: string, companion: string | undefined,
   signal: AbortSignal): Promise<ProofRun> {
@@ -69,9 +70,12 @@ export async function proveSource(name: string, source: string, companion: strin
     await writeFile(join(directory, name), source, { mode: 0o600 });
     if (companion !== undefined) await writeFile(join(directory, name.replace(/\.ts$/u, ".dfy")), companion, { mode: 0o600 });
     const proof = await run(process.execPath, [lscEntry(), "check", "--backend=dafny", name], directory, signal);
-    const outcome = signal.aborted ? "cancelled" : proof.timedOut ? "timed_out" : proof.error ? "not_started" :
+    const vacuous = proof.status === 0 && /finished with 0 verified/u.test(proof.output);
+    const outcome = signal.aborted ? "cancelled" : proof.timedOut ? "timed_out" : proof.error || vacuous ? "not_started" :
       proof.status === 0 ? "passed" : "failed";
-    return { outcome, exitCode: proof.status, output: proof.output, durationMs: Date.now() - started };
+    const output = vacuous ? `${proof.output.trimEnd()}\nLemmaScript verified nothing in this file, so nothing was proved.`
+      : proof.output;
+    return { outcome, exitCode: proof.status, output, durationMs: Date.now() - started };
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
 
