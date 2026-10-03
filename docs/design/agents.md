@@ -142,9 +142,25 @@ stopped after one failed run and said which obligation remained unproved.
 With the guidance alone it never proved it, and in 2 of 5 runs it explained
 the fix without making it. Neither arm proved it without the guidance. The
 other cases repeated the first measurement: invariant cases 0/15 with
-neither, 10/15 with the guidance, 15/15 with the tool. The open point is the
+neither, 10/15 with the guidance, 15/15 with the tool. The open point was the
 agent giving up after one failed proof, honestly but with the work
 unfinished.
+
+**After a failed proof** (2026-10-03, Luna, two rounds of ten runs per side,
+the second with the two free accounts swapped). A failed `prove` now ends
+with a note telling the agent the work is not finished: read the failing
+obligation, fix the code or add the invariant or assertion it needs, and run
+`prove` again until it passes, or say why it cannot pass without changing the
+contract. The note is in the tool's reply, where the agent reads it at the
+failure, rather than in the prompt. On the even-power case Luna proved 9 of
+20 without it and 15 of 20 with it (5 and 4, against 7 and 8, by round), and
+stopped after a single failed run 4 times without it and never with it. The
+direction held in both rounds, but the difference is not established: a gap
+this size arises by chance about one time in ten (Fisher's exact test,
+p ≈ 0.10). The other six cases were proved in every run either way, no
+contract was weakened, and the note costs about 4k tokens only on turns
+whose proof fails. The failures that remain tried twice and did not find the
+parity invariants, a limit of the model that a reminder does not change.
 
 **GPT-6.1 Sol** (2026-10-03, `codex:gpt-6.1-sol`, all seven cases, five runs
 per arm) behaved as Sonnet did. With neither it proved 15 of 35, none of the

@@ -49,11 +49,13 @@ record of that use starts on 2026-10-01; what it surfaced is in
   more tokens per turn. A case that tempts weakening the contract drew no
   weakening from Luna or Sol in any arm; Sol proved it every time with the
   guidance alone, while Luna, with the tool, proved 3 of 5 and reported the
-  unproved obligation in the other two, after one failed run. Next: test
-  whether wording or a retry budget keeps the agent working after a failed
-  proof, and measure whether the agent should add contracts where the
-  repository's instructions ask for them. What the agent proves stays
-  feedback; Tesota's run on the candidate stays the evidence.
+  unproved obligation in the other two, after one failed run. A note in the
+  failed tool reply that the work is not finished raised that case from 9 to
+  15 of 20 and ended single-attempt stops, consistently over two rounds but
+  not yet established (p ≈ 0.10); confirm it on real sessions. Next: measure
+  whether the agent should add contracts where the repository's instructions
+  ask for them. What the agent proves stays feedback; Tesota's run on the
+  candidate stays the evidence.
   [Agents](design/agents.md#proofs-while-it-works)
   [Issue #294](https://github.com/sequelcore/tesota/issues/294)
 - Scope behavior was measured on cases that tempt the agent to make unrelated

@@ -55,7 +55,10 @@ it.runIf(dafny)("reports a proved contract and a failing obligation, leaving the
   writeFileSync(join(root, "good.ts"), good);
   writeFileSync(join(root, "bad.ts"), "//@ ensures \\result >= 0\nexport function minus(): number {\n  return -1;\n}\n");
   expect(await call(tools, "good.ts")).toMatch(/^Proved: every \/\/@ contract in good\.ts holds\./u);
-  expect(await call(tools, "bad.ts")).toMatch(/^Not proved: an obligation in bad\.ts failed\./u);
+  const failed = await call(tools, "bad.ts");
+  expect(failed).toMatch(/^Not proved: an obligation in bad\.ts failed\./u);
+  expect(failed).toMatch(/run prove again\. Keep going until it passes;.*never loosen the contract to make it pass\.$/u);
+  expect(await call(tools, "good.ts")).not.toContain("run prove again");
   expect(readdirSync(root).sort()).toEqual(["bad.ts", "good.ts"]);
 }, 120_000);
 
