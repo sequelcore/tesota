@@ -1,3 +1,4 @@
+import type { ProvedLines } from "../src/correction.js";
 import { expect, it, vi } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
 import { askingDecisions } from "../src/session-decisions.js";
@@ -207,15 +208,26 @@ const operatorCall: Finding = { severity: "medium", disposition: "operator", ori
   reason: "Cents or dollars?" };
 
 /** A review dependency that returns one prepared review per call, each for its own tree. */
-function reviews(...rounds: { tree: string; findings: readonly Finding[] }[]): TesotaShellDependencies["review"] {
+function reviews(...rounds: { tree: string; findings: readonly Finding[]; proved?: ProvedLines }[]): TesotaShellDependencies["review"] {
   return vi.fn(async (approved: readonly ApprovedCheck[]): Promise<ReviewResult> => {
     const round = rounds.shift() ?? { tree: "z".repeat(40), findings: [] };
     return { status: "ready", tree: round.tree, changes: [change], requests: ["Charge over $100 less"],
       checks: approved.map(({ command }) => ({ verifier: "command" as const, claim: "exits 0", limits: "only what it tests", command, tree: round.tree, environment: "host", guarantees: hostProvider.guarantees,
         outcome: "passed" as const, exitCode: 0, durationMs: 1, output: "" })),
-      reviews: [{ reviewer: "Tesota reviewer", tree: round.tree, status: "completed", summary: "", findings: round.findings }] };
+      reviews: [{ reviewer: "Tesota reviewer", tree: round.tree, status: "completed", summary: "", findings: round.findings }],
+      ...round.proved === undefined ? {} : { proved: round.proved } };
   });
 }
+
+it("asks the agent to strengthen the proved contract that allowed a finding it sends back", async () => {
+  const proved = [{ path: "src/price.ts", lines: [2, 3, 4], contracts: ["//@ ensures \\result <= amount\nexport function total("] }];
+  const fixture = shell(["Charge over $100 less", "", "a", ""],
+    { review: reviews({ tree: "1".repeat(40), findings: [fixable], proved }, { tree: "2".repeat(40), findings: [] }) });
+  await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+  expect(fixture.dependencies.work).toHaveBeenNthCalledWith(2, expect.stringContaining("This line is proved, so its contract " +
+    "allowed this behavior:\n    //@ ensures \\result <= amount\n    export function total(\n  Fix the code, and strengthen"),
+  "tesota", { previousTree: "1".repeat(40), sentBack: [fixable] });
+});
 
 it("sends fixable findings back with the unchanged requests, then asks the operator on the corrected result", async () => {
   const fixture = shell(["Charge over $100 less", "", "a", ""],

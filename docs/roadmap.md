@@ -58,14 +58,16 @@ record of that use starts on 2026-10-01; what it surfaced is in
   [Issue #294](https://github.com/sequelcore/tesota/issues/294)
 - Make the prover the authority for proved code after the turn. Built: which
   changed lines a proof covers, by a proved rule; the Guarantees tab; and
-  proof-based mutation of each changed contract. Measured and not adopted:
-  routing every finding on a proved line to the operator, which kept recall
-  but sent an obvious fix to a person and saved no tokens. Next, each on its
-  own measurement: a defect on a proved line goes back to the agent to fix the
-  code and strengthen the contract; the proof stands in for the correctness
-  lens on fully proved files in a deep review; counterexamples in `prove`'s
-  feedback; ClaimCheck's restatement in Guarantees; and the agent adding
-  contracts where the request or the repository's instructions ask.
+  proof-based mutation of each changed contract; and a defect on a proved
+  line going back to the agent to fix the code and strengthen the contract,
+  which on GPT-6 Luna strengthened the contract in 14 of 15 corrections
+  against none without it. Measured and not adopted: routing every finding on
+  a proved line to the operator, which kept recall but sent an obvious fix to
+  a person and saved no tokens. Next, each on its own measurement: the proof
+  stands in for the correctness lens on fully proved files in a deep review;
+  counterexamples in `prove`'s feedback; ClaimCheck's restatement in
+  Guarantees; and the agent adding contracts where the request or the
+  repository's instructions ask.
   [Proofs](design/proofs.md)
 - Scope behavior was measured on cases that tempt the agent to make unrelated
   changes, registered before any run: five temptations and a control in

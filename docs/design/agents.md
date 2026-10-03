@@ -105,7 +105,9 @@ It runs on a private copy, as Tesota's verifier does, so it changes no file
 and needs no command approval. Its guidance tells the agent to work until the
 proof passes, to change a contract only when the request asks for different
 behavior and say so, and never to remove or loosen one, or add `//@ assume`,
-to make a proof pass. LemmaScript's own loop and Midspiral's lemmafit put the
+to make a proof pass; it also gives LemmaScript's annotation syntax, since an
+agent that guessed it wrote quantifiers LemmaScript rejects
+([proofs](proofs.md#where-each-problem-goes)). LemmaScript's own loop and Midspiral's lemmafit put the
 verifier inside the agent's work in the same way.
 
 What the agent proves is feedback, never evidence: Tesota still proves the

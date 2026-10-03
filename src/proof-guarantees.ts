@@ -83,7 +83,7 @@ function proofOutcome(checks: readonly CheckResult[], path: string): ProofOutcom
  * results, keyed `path:name`.
  */
 export function proofGuarantees(snapshot: WorkspaceSnapshot, checks: readonly CheckResult[], reviews: readonly ReviewReport[],
-  read: ContentReader, mutation: ReadonlyMap<string, MutationResult> = new Map()): Guarantees {
+  read: ContentReader, mutation: ReadonlyMap<string, MutationResult> = new Map()): Guarantees & Required<Pick<Guarantees, "covered">> {
   const changed = candidateLines(snapshot);
   const claimcheck = reviews.find((report) => report.reviewer === "ClaimCheck method");
   const found: ContractGuarantee[] = [];

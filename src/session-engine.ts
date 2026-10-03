@@ -1592,7 +1592,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       if (plan !== undefined && main?.status === "completed") showPlan(id, withReview(plan, main.obligations ?? []));
       output.inspectFor(id, inspectReview(state.lastReview));
       await journal(id, workspace, reviewEntry("changes", snapshot, requests, checks, flags, reviews, depth, measurement));
-      return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews, requests };
+      return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews, requests,
+        proved: guarantees.covered };
     }),
     checkWhole: (commands) => runOperation(id, async (signal): Promise<WholeChecksResult> => {
       const workspace = await workspaceFor(id);
