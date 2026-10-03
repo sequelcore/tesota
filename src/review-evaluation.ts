@@ -233,6 +233,61 @@ export const ENVIRONMENT_CASES: readonly EvaluationCase[] = [
     defects: [] },
 ];
 
+const typedTest = (body: string): string => `import test from "node:test";\nimport assert from "node:assert";\n${body}\n`;
+const shippingContract = (threshold: number): string => `//@ ensures \\result >= 0\n//@ ensures total >= ${threshold} ==> ` +
+  `\\result === 0\n//@ ensures total < ${threshold} ==> \\result === 5\nexport function shippingCost(total: number): number {\n` +
+  `  return total < ${threshold} ? 5 : 0;\n}\n`;
+
+/**
+ * Candidates with LemmaScript contracts that prove, for step 4 of "proofs as
+ * the authority" (docs/design/assurance.md, "Review of proof-covered code"),
+ * registered on 2026-10-03 before any run: a proved function whose contract
+ * allows a defect the request rules out, which must still surface, as a
+ * question about the contract; a defect in an unannotated function of the
+ * same file, which must still be found; and a correct proved change, which
+ * should cost no more. Each candidate was checked with `lsc check` first: the
+ * three prove, the helper in LemmaScript's subset since it translates the
+ * whole file. `live:review --set=proofs` runs them with `--proofs=off`, as
+ * review is today, and `--proofs=narrow`, with the coverage and the routing.
+ */
+export const PROOF_REVIEW_CASES: readonly EvaluationCase[] = [
+  { name: "defect the contract allows",
+    request: "Add clamp(value, low, high) in src/clamp.ts: values below low become low, values above high become high, " +
+      "and values in between are unchanged.",
+    base: { "src/index.ts": "export const ready = true;\n" },
+    candidate: { "src/clamp.ts": "//@ requires low <= high\n//@ ensures low <= \\result && \\result <= high\n" +
+      "export function clamp(value: number, low: number, high: number): number {\n  if (value < low) return high;\n" +
+      "  if (value > high) return high;\n  return value;\n}\n",
+    "src/clamp.test.ts": typedTest(`import { clamp } from "./clamp.ts";\ntest("inside", () => assert.equal(clamp(5, 0, 10), 5));\n` +
+      `test("above", () => assert.equal(clamp(15, 0, 10), 10));`) },
+    defects: [{ paths: ["src/clamp.ts"], keywords: ["below", "low", "minimum", "returns high", "return high"] }],
+    acceptable: [{ paths: ["src/clamp.ts", "src/clamp.test.ts"], keywords: ["contract", "ensures", "test", "cover"] }] },
+  { name: "defect outside the proof",
+    request: "Charge 5 for shipping below 50 and nothing from 50, and add freeShippingGap(total), how much more the order " +
+      "needs for free shipping: 0 once shipping is free.",
+    base: { "src/index.ts": "export const ready = true;\n" },
+    candidate: { "src/shipping.ts": `${shippingContract(50)}\nexport function freeShippingGap(total: number): number {\n` +
+      "  return total >= 50 ? 0 : 50 - total + 1;\n}\n",
+    "src/shipping.test.ts": typedTest(`import { shippingCost, freeShippingGap } from "./shipping.ts";\n` +
+      `test("cost", () => assert.equal(shippingCost(20), 5));\ntest("free", () => assert.equal(freeShippingGap(60), 0));`) },
+    defects: [{ paths: ["src/shipping.ts"], keywords: ["+ 1", "off by one", "off-by-one", "one too", "gap", "51", "31"] }],
+    acceptable: [{ paths: ["src/shipping.ts", "src/shipping.test.ts"], keywords: ["test", "cover", "contract", "annotat"] }] },
+  { name: "correct proved change", request: "Make free shipping in src/shipping.ts start at 60 instead of 50.",
+    base: { "src/shipping.ts": shippingContract(50),
+      "src/shipping.test.ts": typedTest(`import { shippingCost } from "./shipping.ts";\ntest("small", () => assert.equal(shippingCost(20), 5));`) },
+    candidate: { "src/shipping.ts": shippingContract(60),
+      "src/shipping.test.ts": typedTest(`import { shippingCost } from "./shipping.ts";\ntest("small", () => assert.equal(shippingCost(20), 5));\n` +
+        `test("threshold", () => { assert.equal(shippingCost(55), 5); assert.equal(shippingCost(60), 0); });`) },
+    defects: [] },
+];
+
+/** The dispositions of the findings that match a case's planted defects: whether one went back as a fix or to the operator. */
+export function defectDispositions(testCase: EvaluationCase, reports: readonly ReviewReport[]): Finding["disposition"][] {
+  return reports.flatMap((report) => report.status === "completed" ? report.findings : [])
+    .filter((finding) => testCase.defects.some((defect) => matches(finding, defect)))
+    .map((finding) => finding.disposition);
+}
+
 export const PREMISE_CASES: readonly EvaluationCase[] = [
   { name: "documented policy changed", request: shippingReport,
     base: { "docs/pricing.md": policy("Shipping costs 5 on orders of 50 or less. Free shipping starts above 50, as the storefront " +
