@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { EnvironmentGuarantees, ExecutionEnvironment } from "./execution-environment.js";
+import { gradleBuild, mavenBuild } from "./languages.js";
+import { findProjects, inFolder, type Project } from "./projects.js";
 import { terminalOutputText } from "./terminal-output.js";
 import { clearTestReports, introducedTests, MAX_CHECK_REPORTS, normalizeReportPath, readTestResults,
   type TestResults } from "./test-report.js";
@@ -200,19 +202,19 @@ export function describeBase(base: BaseCheck): string {
 const outputLimit = 8 * 1024;
 const defaultTimeoutSeconds = 15 * 60;
 
-function packageRunner(checkout: string): string {
-  if (existsSync(join(checkout, "bun.lock")) || existsSync(join(checkout, "bun.lockb"))) return "bun run";
-  if (existsSync(join(checkout, "pnpm-lock.yaml"))) return "pnpm run";
-  if (existsSync(join(checkout, "yarn.lock"))) return "yarn run";
+function packageRunner(directory: string): string {
+  if (existsSync(join(directory, "bun.lock")) || existsSync(join(directory, "bun.lockb"))) return "bun run";
+  if (existsSync(join(directory, "pnpm-lock.yaml"))) return "pnpm run";
+  if (existsSync(join(directory, "yarn.lock"))) return "yarn run";
   return "npm run";
 }
 
 /** The package manager's way to run a dependency's own command. */
 const packageExec: Readonly<Record<string, string>> = { "bun run": "bunx", "pnpm run": "pnpm exec", "yarn run": "yarn", "npm run": "npx" };
 
-function packageManifest(checkout: string): Readonly<{ scripts: readonly string[]; dependencies: readonly string[] }> {
+function packageManifest(directory: string): Readonly<{ scripts: readonly string[]; dependencies: readonly string[] }> {
   try {
-    const manifest: unknown = JSON.parse(readFileSync(join(checkout, "package.json"), "utf8"));
+    const manifest: unknown = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
     const keys = (field: string): string[] => {
       const value: unknown = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, field) : undefined;
       return typeof value === "object" && value !== null ? Object.keys(value) : [];
@@ -230,24 +232,50 @@ function relatedForm(runner: string, dependencies: readonly string[]): string | 
 }
 
 /**
+ * A package's `check` script, or its `typecheck`, `lint` and `test` scripts,
+ * with the package manager its lockfile names; with `related`, the command
+ * that runs the tests comes with a related form when its test runner can
+ * select tests by changed files (decision 052).
+ */
+function packageChecks(directory: string, related: boolean): string[] {
+  const { scripts, dependencies } = packageManifest(directory);
+  const runner = packageRunner(directory);
+  const form = related ? relatedForm(runner, dependencies) : undefined;
+  const withRelated = (command: string): string => form === undefined ? command : `${command}; ${relatedPrefix} ${form}`;
+  if (scripts.includes("check")) return [withRelated(`${runner} check`)];
+  return ["typecheck", "lint", "test"].filter((name) => scripts.includes(name))
+    .map((name) => name === "test" ? withRelated(`${runner} ${name}`) : `${runner} ${name}`);
+}
+
+/** The build's own lifecycle task that runs every verification it declares: Gradle's `check`, Maven's `verify`, through the wrapper when there is one. */
+function javaChecks(entries: readonly string[]): string[] {
+  if (gradleBuild(entries)) return [entries.includes("gradlew") ? "./gradlew check" : "gradle check"];
+  if (mavenBuild(entries)) return [entries.includes("mvnw") ? "./mvnw verify" : "mvn verify"];
+  return [];
+}
+
+/**
+ * One project's checks, run from its folder. A related form is offered only
+ * at the root: it receives the changed files relative to the repository.
+ */
+function projectChecks(checkout: string, project: Project): string[] {
+  const { folder, entries, kinds } = project;
+  const here = (command: string): string => inFolder(folder, command);
+  return [
+    ...kinds.includes("node") ? packageChecks(join(checkout, folder), folder === "").map(here) : [],
+    ...kinds.includes("java") ? javaChecks(entries).map(here) : [],
+    ...kinds.includes("rust") && entries.includes("Cargo.toml") ? [here("cargo test")] : [],
+    ...kinds.includes("go") ? [here("go test ./...")] : [],
+  ];
+}
+
+/**
  * Commands the repository appears to use for checking itself, as the operator
- * types them. The command that runs the tests comes with a related form when
- * the repository's test runner can select tests by changed files (decision
- * 052). The operator approves or replaces them.
+ * types them: each project's, at the root or in a folder below it (#318). The
+ * operator approves or replaces them.
  */
 export function suggestChecks(checkout: string): readonly string[] {
-  const { scripts, dependencies } = packageManifest(checkout);
-  if (scripts.length > 0) {
-    const runner = packageRunner(checkout);
-    const related = relatedForm(runner, dependencies);
-    const withRelated = (command: string): string => related === undefined ? command : `${command}; ${relatedPrefix} ${related}`;
-    if (scripts.includes("check")) return [withRelated(`${runner} check`)];
-    return ["typecheck", "lint", "test"].filter((name) => scripts.includes(name))
-      .map((name) => name === "test" ? withRelated(`${runner} ${name}`) : `${runner} ${name}`);
-  }
-  if (existsSync(join(checkout, "Cargo.toml"))) return ["cargo test"];
-  if (existsSync(join(checkout, "go.mod"))) return ["go test ./..."];
-  return [];
+  return findProjects(checkout).flatMap((project) => projectChecks(checkout, project));
 }
 
 interface CommandRun {

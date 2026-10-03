@@ -190,15 +190,16 @@ function setUp(connection: Connection, plan: ToolchainPlan, ready: Extract<Sandb
 export async function bubblewrapEnvironment(launch: Launch, workspace: string, options: PrepareOptions = {}): Promise<ExecutionEnvironment> {
   options.signal?.throwIfAborted();
   const root = resolve(workspace);
+  const plan = planToolchain(root);
   const connection = new Connection(launch(["serve", "--workspace", root,
-    ...options.repository === undefined ? [] : ["--repository", options.repository]]));
+    ...options.repository === undefined ? [] : ["--repository", options.repository],
+    ...plan.packages.flatMap((folder) => ["--package", folder])]));
   const stop = (): void => { void connection.close(); };
   options.signal?.addEventListener("abort", stop, { once: true });
   try {
     const first = await connection.first;
     if (first.type !== "ready") throw new Error(`The WSL sandbox could not start: ${first.type === "failed" ? first.message : first.type}`);
     options.signal?.throwIfAborted();
-    const plan = planToolchain(root);
     // The repository's languages' registries and what the operator allowed for it are open from the start, setup included.
     const allowed = [...plan.registries.map((host) => `${host}:443`), ...options.allowed ?? []];
     if (allowed.length > 0) await sandboxNetwork(connection).allow(allowed);

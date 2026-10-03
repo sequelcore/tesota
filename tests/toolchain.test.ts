@@ -27,7 +27,7 @@ it("reads runtimes from package.json and installs from the lockfile", async () =
     "package.json": JSON.stringify({ packageManager: "bun@1.4.2", engines: { node: "24.15.0" } }), "bun.lock": "",
   }));
   expect(plan).toMatchObject({ tools: { node: "24.15.0", bun: "1.4.2" }, miseFiles: [], setupScript: null,
-    dependencies: "bun install --frozen-lockfile", sources: ["package.json engines.node", "package.json packageManager"] });
+    installs: [{ folder: "", command: "bun install --frozen-lockfile" }], sources: ["package.json engines.node", "package.json packageManager"] });
   expect(needsSetup(plan)).toBe(true);
   expect(needsDownloadHosts(plan, docker)).toBe(false);
   expect(needsDownloadHosts(plan, wsl({ node: "22" }))).toBe(true);
@@ -41,12 +41,12 @@ it("prefers dedicated version files and skips ranges it cannot pin", async () =>
     "package-lock.json": "{}",
   }));
   expect(plan.tools).toEqual({ node: "22.1.0", bun: "1.3.0" });
-  expect(plan.dependencies).toBe("npm ci");
+  expect(plan.installs).toEqual([{ folder: "", command: "npm ci" }]);
 });
 
 it("lets a repository setup script take over project setup and reach download hosts", async () => {
   const plan = planToolchain(await repository({ ".tesota/setup.sh": "bun install\n", "bun.lock": "" }));
-  expect(plan).toMatchObject({ tools: {}, setupScript: ".tesota/setup.sh", dependencies: null });
+  expect(plan).toMatchObject({ tools: {}, setupScript: ".tesota/setup.sh", installs: [] });
   expect(needsDownloadHosts(plan, docker)).toBe(true);
 });
 
@@ -89,6 +89,38 @@ it("orders setup the same way everywhere: tools, then the setup script, then the
   expect(setupStages(planToolchain(await repository({ "README.md": "hi" })), wsl({}))).toEqual([]);
 });
 
+it("plans each project in a subfolder: its runtime, build tools, registries and lockfile install, from its own folder", async () => {
+  const plan = planToolchain(await repository({
+    "README.md": "monorepo",
+    "frontend/package.json": JSON.stringify({ engines: { node: "22.11.0" }, scripts: { check: "tsc" } }),
+    "frontend/bun.lock": "",
+    "backend/build.gradle.kts": "kotlin { jvmToolchain(25) }",
+    "backend/settings.gradle.kts": "rootProject.name = \"api\"",
+    "backend/gradlew": "",
+    "backend/app/build.gradle.kts": "",
+  }));
+  expect(plan.tools).toEqual({ node: "22.11.0", java: "25" });
+  expect(plan.sources).toEqual(["frontend/package.json engines.node", "backend/build.gradle.kts"]);
+  expect(plan.registries).toContain("plugins.gradle.org");
+  expect(plan.installs).toEqual([{ folder: "frontend", command: "bun install --frozen-lockfile" }]);
+  expect(plan.packages).toEqual(["frontend"]);
+  expect(setupStages(plan, wsl({})).at(-1)).toEqual({ description: "Install dependencies in frontend (bun install --frozen-lockfile)",
+    script: "cd frontend && bun install --frozen-lockfile" });
+  // A project without a wrapper gets its build tool, wherever it is.
+  expect(planToolchain(await repository({ "services/api/pom.xml": "<java.version>17</java.version>" })).tools)
+    .toEqual({ java: "17", maven: "latest" });
+});
+
+it("leaves a workspace's packages to the root's install, but mounts their node_modules too", async () => {
+  const plan = planToolchain(await repository({
+    "package.json": JSON.stringify({ workspaces: ["packages/*"] }), "bun.lock": "",
+    "packages/ui/package.json": JSON.stringify({ engines: { node: "20" } }), "packages/ui/bun.lock": "",
+  }));
+  expect(plan.installs).toEqual([{ folder: "", command: "bun install --frozen-lockfile" }]);
+  expect(plan.tools).toEqual({});
+  expect(plan.packages).toEqual(["packages/ui"]);
+});
+
 it("checks the pinned mise binary before using it, in the sandbox and in the kit build", () => {
   const script = miseInstallScript();
   expect(script).toContain("sha256sum -c -");
@@ -105,10 +137,12 @@ it("bakes the pinned versions into a workload kit named by its content", async (
   expect(descriptor).toContain('  nodeVersion:\n    default: "24.15.0"');
   expect(descriptor).toContain('  pythonVersion:\n    default: ""');
   expect(descriptor).toContain("buildArg: BUN_VERSION");
-  expect(descriptor).toContain('  dependenciesPath:\n    default: ""');
-  expect(descriptor).toContain("env: TESOTA_DEPENDENCIES_PATH");
+  expect(descriptor).toContain('  dependenciesPaths:\n    default: ""');
+  expect(descriptor).toContain("env: TESOTA_DEPENDENCIES_PATHS");
   expect(descriptor).toContain("com.docker.sandbox/volume@1");
-  expect(descriptor).toContain('mount --bind /home/agent/.tesota-dependencies/node_modules "$TESOTA_DEPENDENCIES_PATH"');
+  // Each node_modules, the root's and each package's, gets its own folder of the volume.
+  expect(descriptor).toContain("IFS=:; for target in $TESOTA_DEPENDENCIES_PATHS;");
+  expect(descriptor).toContain('mount --bind "/home/agent/.tesota-dependencies$target" "$target"');
   const root = await mkdtemp(join(tmpdir(), "tesota-kits-"));
   roots.push(root);
   const first = await writeToolchainKit({ node: "24.15.0", bun: "1.4.2" }, root);

@@ -67,11 +67,15 @@ export interface SandboxLayout {
   /** The repository's installed tools, on WSL's own disk: writable during setup, read-only to every other command. */
   readonly toolchains: string;
   /**
-   * A folder on WSL's own disk mounted as the workspace's `node_modules`, for
-   * every workspace, so an install never writes Linux packages into the
-   * operator's checkout, even one that becomes a JavaScript package mid-session.
+   * A folder on WSL's own disk that mirrors the workspace's packages: its
+   * `node_modules` is mounted as the workspace's, for every workspace, and
+   * `<package>/node_modules` as each package's, so an install never writes
+   * Linux packages into the operator's checkout, even one that becomes a
+   * JavaScript package mid-session.
    */
   readonly modules: string;
+  /** Folders below the workspace's root that hold a JavaScript package, relative with forward slashes. */
+  readonly packages: readonly string[];
   readonly relay: string;
   readonly socket: string;
   /** An empty file mounted read-only over each file hidden from commands. */
@@ -263,7 +267,9 @@ export function bubblewrapArguments(layout: SandboxLayout, cwd: string, command:
     "--proc", "/proc", "--dev", "/dev", "--bind", layout.temp, "/tmp",
     "--bind", layout.cache, layout.cache,
     phase === "setup" ? "--bind" : "--ro-bind", layout.toolchains, layout.toolchains,
-    "--bind", mounted, layout.workspace, "--bind", layout.modules, join(layout.workspace, "node_modules"),
+    "--bind", mounted, layout.workspace,
+    ...["", ...layout.packages].flatMap((folder) => ["--bind", join(layout.modules, folder, "node_modules"),
+      join(layout.workspace, folder, "node_modules")]),
     ...guarded.readOnly.flatMap((path) => ["--ro-bind", join(mounted, path), join(layout.workspace, path)]),
     ...guarded.hidden.flatMap((path) => ["--ro-bind", layout.mask, join(layout.workspace, path)]),
     "--ro-bind", layout.relay, layout.relay, "--bind", layout.socket, layout.socket,
@@ -542,7 +548,7 @@ class SandboxServer {
     const cwd = resolve(layout.workspace, execution.cwd);
     if (!within(cwd, layout.workspace)) return { outcome: "not_started", exitCode: null, refused: [] };
     const mounted = execution.root ?? layout.workspace;
-    if (execution.root !== undefined) await mkdir(join(mounted, "node_modules"), { recursive: true });
+    if (execution.root !== undefined) await mountPoints(mounted, layout.packages);
     const guarded = await guardedPaths(mounted, execution.hidden ?? []);
     const started = new Date();
     const path = [...this.#toolFolders, this.#parts.path].filter((entry) => entry.length > 0).join(delimiter);
@@ -607,6 +613,8 @@ function toolsOnThisMachine(): string[] {
 
 export interface ServeOptions {
   readonly workspace: string;
+  /** Folders below the workspace's root that hold a JavaScript package, relative with forward slashes. */
+  readonly packages?: readonly string[];
   /** The repository's key, whose sessions share its package caches and installed tools. */
   readonly repository?: string;
   readonly paths: PathTranslation;
@@ -624,17 +632,18 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   const workspace = translate(options.workspace, options.paths);
   const state = stateFolder(workspace);
   const shared = options.repository === undefined ? state : repositoryFolder(options.repository);
+  // A package's folder, named by the host, stays inside the workspace, as its node_modules does inside the mirror.
+  const packages = (options.packages ?? []).filter((folder) => folder.split("/").every((part) => part !== "" && part !== "." && part !== ".."));
   const layout: SandboxLayout = { workspace, home: join(state, "home"), account: homedir(), temp: join(state, "tmp"),
-    cache: join(shared, "cache"), toolchains: join(shared, "toolchains"), modules: join(state, "node_modules"),
+    cache: join(shared, "cache"), toolchains: join(shared, "toolchains"), modules: join(state, "modules"), packages,
     relay: join(state, "relay.cjs"), socket: join(state, "proxy.sock"), mask: join(state, "hidden"), runtime: process.execPath,
     system: systemFolders(), tools: toolsOnThisMachine() };
-  for (const folder of [layout.home, layout.temp, join(layout.cache, "npm"), join(layout.cache, "bun"), layout.toolchains, layout.modules]) {
+  for (const folder of [layout.home, layout.temp, join(layout.cache, "npm"), join(layout.cache, "bun"), layout.toolchains,
+    ...["", ...packages].map((folder) => join(layout.modules, folder, "node_modules"))]) {
     await mkdir(folder, { recursive: true });
   }
-  // The mount point for the workspace's own node_modules, as Docker Sandboxes makes it, removed at the end if it was made here and stayed empty.
-  const mountPoint = join(workspace, "node_modules");
-  const made = !existsSync(mountPoint);
-  await mkdir(mountPoint, { recursive: true });
+  // The mount points for the workspace's own node_modules, as Docker Sandboxes makes them, removed at the end if made here and still empty.
+  const made = await mountPoints(workspace, packages);
   await writeFile(layout.relay, RELAY_SOURCE, "utf8");
   // Read-only, so an earlier start left one that cannot be written again.
   await rm(layout.mask, { force: true });
@@ -651,7 +660,17 @@ export async function serve(options: ServeOptions, input: Readable, output: Writ
   }
   await server.close();
   // Removes only an empty folder, so nothing the operator put there is lost.
-  if (made) await rmdir(mountPoint).catch(() => undefined);
+  for (const mountPoint of made) await rmdir(mountPoint).catch(() => undefined);
+}
+
+/** Make the node_modules mount points in a folder shown at the workspace's path, the root's and each package's; the ones made here. */
+async function mountPoints(folder: string, packages: readonly string[]): Promise<string[]> {
+  const made: string[] = [];
+  for (const mountPoint of ["", ...packages].map((name) => join(folder, name, "node_modules"))) {
+    if (!existsSync(mountPoint)) made.push(mountPoint);
+    await mkdir(mountPoint, { recursive: true });
+  }
+  return made;
 }
 
 /** Remove what a workspace's sandbox kept on WSL's disk. */

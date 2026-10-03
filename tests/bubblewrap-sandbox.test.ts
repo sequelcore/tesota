@@ -13,7 +13,7 @@ import { distributionSetupScript, listedDistributions } from "../src/wsl-environ
 const layout: SandboxLayout = { workspace: "/mnt/c/Users/op/.tesota/workspaces/abc/repo", home: "/home/tesota/.local/state/s/home",
   account: "/home/tesota",
   temp: "/home/tesota/.local/state/s/tmp", cache: "/mnt/c/Users/op/.tesota/cache/k",
-  toolchains: "/home/tesota/.local/state/tesota/toolchains/k", modules: "/home/tesota/.local/state/s/node_modules",
+  toolchains: "/home/tesota/.local/state/tesota/toolchains/k", modules: "/home/tesota/.local/state/s/modules", packages: ["apps/web"],
   relay: "/home/tesota/.local/state/s/relay.cjs", socket: "/home/tesota/.local/state/s/proxy.sock",
   mask: "/home/tesota/.local/state/s/hidden", runtime: "/usr/local/bin/node",
   system: [{ path: "/usr" }, { path: "/bin", link: "usr/bin" }, { path: "/etc" }], tools: ["/opt/node"] };
@@ -84,7 +84,9 @@ it("builds a sandbox of new namespaces that mounts only the system, tools, works
   expect(mounts).toEqual([
     "--ro-bind /usr /usr", "--symlink usr/bin /bin", "--ro-bind /etc /etc", `--bind ${layout.home} /home/tesota`,
     "--ro-bind-try /opt/node /opt/node", `--bind ${layout.temp} /tmp`, `--bind ${layout.cache} ${layout.cache}`,
-    `--ro-bind ${layout.toolchains} ${layout.toolchains}`, `--bind ${layout.workspace} ${layout.workspace}`, `--bind ${layout.modules ?? ""} ${layout.workspace}/node_modules`,
+    `--ro-bind ${layout.toolchains} ${layout.toolchains}`, `--bind ${layout.workspace} ${layout.workspace}`,
+    `--bind ${layout.modules}/node_modules ${layout.workspace}/node_modules`,
+    `--bind ${layout.modules}/apps/web/node_modules ${layout.workspace}/apps/web/node_modules`,
     `--ro-bind ${layout.relay} ${layout.relay}`, `--bind ${layout.socket} ${layout.socket}`]);
   expect(args.slice(-10)).toEqual(["--chdir", `${layout.workspace}/src`, "--info-fd", "3", "--",
     "/usr/local/bin/node", layout.relay, layout.socket, "3128", "npm test"]);
@@ -106,7 +108,8 @@ it("shows another folder at the workspace's path, with the same node_modules and
   const mounts = args.flatMap((arg, index) => ["--bind", "--ro-bind"].includes(arg) ? [`${arg} ${args[index + 1] ?? ""} ${args[index + 2] ?? ""}`] : []);
   expect(mounts).toContain(`--bind ${base} ${layout.workspace}`);
   expect(mounts).not.toContain(`--bind ${layout.workspace} ${layout.workspace}`);
-  expect(mounts).toContain(`--bind ${layout.modules ?? ""} ${layout.workspace}/node_modules`);
+  expect(mounts).toContain(`--bind ${layout.modules}/node_modules ${layout.workspace}/node_modules`);
+  expect(mounts).toContain(`--bind ${layout.modules}/apps/web/node_modules ${layout.workspace}/apps/web/node_modules`);
   expect(mounts).toContain(`--ro-bind ${base}/.git ${layout.workspace}/.git`);
 });
 
