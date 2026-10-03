@@ -1,6 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { request } from "node:https";
-import { convert } from "html-to-text";
+import { convert, type FormatCallback } from "html-to-text";
 import { isPublicAddress } from "./web-address.js";
 import { type WebPermission, webAdmission } from "./verification/web-admission.js";
 
@@ -80,14 +80,31 @@ async function readLimited(body: AsyncIterable<Uint8Array>): Promise<Uint8Array 
   return all;
 }
 
+/** HTML's `time`, and the elements that render a date from their `datetime` attribute, as GitHub's `relative-time` does. */
+const datedElements = ["time", "relative-time", "local-time"];
+const datetimeLimit = 64;
+
+/**
+ * A dated element's text with its `datetime` beside it, in brackets: a page
+ * may show "05 Sep" and keep the year only there (issue #300), and a reader
+ * can quote only what the text holds.
+ */
+const machineDate: FormatCallback = (element, walk, builder) => {
+  walk(element.children, builder);
+  const datetime = String(element.attribs?.["datetime"] ?? "").trim();
+  if (datetime.length > 0 && datetime.length <= datetimeLimit) builder.addInline(` [${datetime}]`);
+};
+
 function pageText(bytes: Uint8Array, type: string, charset: string | undefined): string {
   let decoded: string;
   try { decoded = new TextDecoder(charset ?? "utf-8").decode(bytes); } catch { decoded = new TextDecoder("utf-8").decode(bytes); }
   if (type === "text/html" || type === "application/xhtml+xml") {
     // Headings and table headers keep their case, so a reader can quote them as the page wrote them.
-    return convert(decoded, { wordwrap: false, selectors: [{ selector: "img", format: "skip" },
-      ...["h1", "h2", "h3", "h4", "h5", "h6"].map((selector) => ({ selector, options: { uppercase: false } })),
-      { selector: "table", options: { uppercaseHeaderCells: false } }] });
+    return convert(decoded, { wordwrap: false, formatters: { machineDate },
+      selectors: [{ selector: "img", format: "skip" },
+        ...["h1", "h2", "h3", "h4", "h5", "h6"].map((selector) => ({ selector, options: { uppercase: false } })),
+        { selector: "table", options: { uppercaseHeaderCells: false } },
+        ...datedElements.map((selector) => ({ selector, format: "machineDate" }))] });
   }
   return decoded;
 }
