@@ -695,6 +695,136 @@ missing what the full pass finds:
 A step that fails or does not decide runs the full check, as the answer
 check's first pass does.
 
+## Planned: proofs as the authority for proved code
+
+The working agent now proves contracts while it works
+([agents](agents.md#proofs-while-it-works)), but everything after the turn
+still treats a passing proof as one check among others: every reviewer reads
+proved code as if nothing settled it, a proof's result reaches the operator as
+Dafny output, and nothing measures whether a contract constrains what it
+names. This section designs the rest from three principles in the sources:
+
+1. **The prover decides whether code meets its contract.** "The prover checks
+   the LLM's proposals — the LLM is not trusted, only the prover"
+   ([LemmaScript design](https://docs.lemmascript.org/design/)). A model never
+   re-decides a question a proof settled.
+2. **What stays open is the contract.** "The central bottleneck is validating
+   specifications: since there is no oracle for specification correctness
+   other than the user, we need semi-automated metrics"
+   ([Lahiri, 2026](https://arxiv.org/abs/2603.17150)); the human's job "shifts
+   to reviewing the contract"
+   ([How the loop works](https://docs.lemmascript.org/how-the-loop-works/)).
+3. **The cheapest check that settles a question runs first**: the prover,
+   then fixed rules, then a model, then the operator, as the rest of this page
+   already orders checks.
+
+| Question | Settled by | State |
+| --- | --- | --- |
+| Does the proved function meet its contract? | The proof | Built |
+| Did the agent weaken a contract? | Flags, and `contractWeakened`'s fixed rules | Flags built; the rules exist in `live:agent` only |
+| Does the contract constrain the behavior it names? | Proof-based mutation | Planned |
+| Does the contract say what was asked? | ClaimCheck, then the operator | ClaimCheck built; the operator's view planned |
+| Is the code a proof does not cover right? | Review, as today | Built |
+
+### What a proof covers
+
+A proof establishes its contract for the function it annotates, within
+LemmaScript's supported subset and its translation to Dafny, with numbers
+modeled as mathematical integers under production range assumptions. It says
+nothing about callers, unannotated code, behavior outside that number model,
+or inputs its `requires` clauses exclude, and an `assume` narrows it further.
+So a changed line is **proof-covered** only when it lies in the body of a
+function whose contract proved on this tree, and the candidate added no
+`assume` or `requires` to that contract. That rule, `proofCovered`, is the one
+every part below reads; it is stated precisely and proved with LemmaScript
+before anything uses it.
+
+### Review of proof-covered code
+
+Reviewers receive the proved contracts and which changed lines they cover.
+They do not judge whether a proof-covered line meets its contract: the proof
+did. A correctness finding on a proof-covered line is a finding about the
+contract, since the contract allows the behavior it calls wrong, so it goes
+to ClaimCheck and the operator as a contract question and is never sent back
+as a code fix. A deep review's correctness lens skips a file whose changed
+lines are all proof-covered; the security lens never does, since a contract
+says nothing about authority unless it states it.
+
+Adopted only when `live:review` cases registered for it show the same recall
+for less: a proved function with a planted defect its contract allows, which
+must still surface as a contract question; a defect outside the proof in the
+same file, which must still be found; and a clean proved change, which must
+cost fewer tokens.
+
+### Checking the contract itself
+
+**Proof-based mutation.** For each contract the candidate added or changed,
+Tesota mutates the function body with fixed operators (a comparison flipped,
+a constant moved by one, a branch's result swapped, a statement dropped) and
+proves each mutant. A mutant that still proves is behavior the contract does
+not constrain, and is reported by line and operator. This is Lahiri's
+completeness metric, the share of buggy mutations a specification rejects
+([FMCAD 2024](https://arxiv.org/abs/2406.09757)), and nl2postcond's
+discriminative power ([Endres et al., FSE 2024](https://nl2postcond.github.io/)),
+with the prover in place of tests: no model decides it. A surviving mutant
+may be equivalent to the original, so the report says a mutant survived,
+never that the contract is wrong, and a mutant whose proof times out counts
+as neither rejected nor surviving. Each mutant is one Dafny run of seconds, so
+mutants are capped per function and run only for contracts that changed.
+
+**ClaimCheck stays the intent comparison**, and stays evidence. Its authors
+measured 96.3% accuracy over 108 comparisons, roughly one wrong in 27, and
+call it "a probabilistic sanity check that requires human review and
+approval" ([ClaimCheck](https://midspiral.com/blog/claimcheck-narrowing-the-gap-between-proof-and-intent/)).
+It also uses two different models for its passes, where Tesota keeps one
+route's passes apart by context only; whether a second model earns its cost
+is measured on the same comparisons before changing it.
+
+### Showing what was guaranteed
+
+The result panel gains a **Guarantees** view, as lemmafit's `/guarantees`
+report maps each requirement to its proof. For each contract the candidate
+touched: its `//@` lines as written, which anyone who reads TypeScript can
+read; ClaimCheck's plain restatement and verdict beside them; whether it
+proved, failed or did not run; what it assumes (`requires`, `assume`); the
+mutants that survived; and, apart, the changed code no proof covers. Dafny's
+output stays behind it, for the agent and for debugging; the operator sees
+what was promised, not how it was proved.
+
+### Adding contracts
+
+The agent proves contracts that exist. Writing new ones, where the code has
+none, is a different behavior: an added `//@` line is a change nobody asked
+for unless the request or the repository's instructions ask for it, and a
+contract the agent wrote can prove and still say less than was meant. So the
+agent adds contracts only when one of those asks, and an added contract goes
+through the same path: the proof, mutation, ClaimCheck, the formal
+specification flag, and the operator's decision. Lahiri observes that models
+"struggle with quantifiers, recursive predicates, and ghost variables", so
+`live:agent` cases registered for it score proved, mutants rejected,
+ClaimCheck's verdict and scope before the agent is told to add any.
+
+### Correction rounds
+
+The two-round limit bounds what model review costs; it was never a rule
+about proofs. With the agent proving as it works, a contract still failing
+after the turn is less common, though not rare on hard proofs: GPT-6 Luna
+left 5 of 20 even-power turns unproved even with the retry note. Such a
+failure stays in the limit, and after the last round goes to the operator
+with the failing obligation. Journaled turns decide whether proof repair
+needs a budget of its own.
+
+### Order
+
+Each step is adopted on its own measurement, in this order, since each later
+one reads the earlier:
+
+1. `proofCovered`, specified and proved.
+2. The Guarantees view, which changes what the operator sees and nothing else.
+3. Proof-based mutation, deterministic evidence about each changed contract.
+4. Narrowed review of proof-covered code, behind its `live:review` cases.
+5. Adding contracts, behind its `live:agent` cases.
+
 ## Planned: contributions from others
 
 Not scheduled: this follows the release and daily use
