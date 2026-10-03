@@ -5,8 +5,15 @@ it("splits a record at its own headings, the Checks section apart for its tab", 
   const record = "Your requests\n  1. Fix it\n\nChecks\n  ✓ passed: npm test\n\nReview\n  advisor\n    Looks right";
   expect(recordSections(record).map((section) => section.split("\n", 1)[0])).toEqual(["Your requests", "Checks", "Review"]);
   expect(resultSections(record)).toEqual({ review: "Your requests\n  1. Fix it\n\nReview\n  advisor\n    Looks right",
-    checks: "Checks\n  ✓ passed: npm test" });
+    checks: "Checks\n  ✓ passed: npm test", guarantees: "" });
   expect(recordSections("")).toEqual([]);
+});
+
+it("gives a Guarantees section its own tab, with the blank lines between its contracts kept inside it", () => {
+  const record = "Checks\n  ✓ passed: npm test\n\nGuarantees\n  ✓ proved clamp in src/clamp.ts\n    //@ ensures \\result >= 0\n\n" +
+    "  ✓ proved total in src/total.ts\n\nReview\n  None";
+  expect(resultSections(record)).toEqual({ review: "Review\n  None", checks: "Checks\n  ✓ passed: npm test",
+    guarantees: "Guarantees\n  ✓ proved clamp in src/clamp.ts\n    //@ ensures \\result >= 0\n\n  ✓ proved total in src/total.ts" });
 });
 
 it("keeps a saved request's unindented lines with it, as records saved before they were kept under its number have them", () => {

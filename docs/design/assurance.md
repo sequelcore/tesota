@@ -764,7 +764,7 @@ names. This section designs the rest from three principles in the sources:
 | Does the proved function meet its contract? | The proof | Built |
 | Did the agent weaken a contract? | Flags, and `contractWeakened`'s fixed rules | Flags built; the rules exist in `live:agent` only |
 | Does the contract constrain the behavior it names? | Proof-based mutation | Planned |
-| Does the contract say what was asked? | ClaimCheck, then the operator | ClaimCheck built; the operator's view planned |
+| Does the contract say what was asked? | ClaimCheck, then the operator | Built: ClaimCheck, and its verdict in the Guarantees tab |
 | Is the code a proof does not cover right? | Review, as today | Built |
 
 ### What a proof covers
@@ -776,9 +776,12 @@ nothing about callers, unannotated code, behavior outside that number model,
 or inputs its `requires` clauses exclude, and an `assume` narrows it further.
 So a changed line is **proof-covered** only when it lies in the body of a
 function whose contract proved on this tree, and the candidate added no
-`assume` or `requires` to that contract. That rule, `proofCovered`, is the one
-every part below reads; it is stated precisely and proved with LemmaScript
-before anything uses it.
+`assume` or `requires` to that contract. That rule is `proofCovered` in
+`src/verification/proof-cover-rule.ts`, proved by `bun run formal:check`, and
+every part below reads it. `src/proof-guarantees.ts` gives it each contract's
+function body, from its declaration to the brace that closes it, and the
+file's LemmaScript result: the verifier proves a whole file, so a function
+counts as proved only when its file did.
 
 ### Review of proof-covered code
 
@@ -823,14 +826,20 @@ is measured on the same comparisons before changing it.
 
 ### Showing what was guaranteed
 
-The result panel gains a **Guarantees** view, as lemmafit's `/guarantees`
-report maps each requirement to its proof. For each contract the candidate
-touched: its `//@` lines as written, which anyone who reads TypeScript can
-read; ClaimCheck's plain restatement and verdict beside them; whether it
-proved, failed or did not run; what it assumes (`requires`, `assume`); the
-mutants that survived; and, apart, the changed code no proof covers. Dafny's
-output stays behind it, for the agent and for debugging; the operator sees
-what was promised, not how it was proved.
+The result panel has a **Guarantees** tab when the candidate changed a file
+with contracts, as lemmafit's `/guarantees` report maps each requirement to
+its proof (`src/proof-guarantees.ts`). For each contract in a changed
+annotated file it shows: its `//@` lines as written, which anyone who reads
+TypeScript can read; whether it proved, failed or did not run; what it takes
+as given (`requires`, `assume`), marking what this change added, which
+narrows the proof; and ClaimCheck's verdict, labeled as a model's comparison
+and not a proof, or that ClaimCheck did not compare it. Apart, it lists the
+changed lines in those files no proof covers, which are left to review.
+Dafny's output stays in the Checks tab, for the agent and for debugging; the
+operator sees what was promised, not how it was proved. Still planned:
+ClaimCheck's plain restatement of each contract, which its first pass writes
+but the review record does not keep yet, and surviving mutants, once
+mutation is built.
 
 ### Adding contracts
 
@@ -860,8 +869,9 @@ needs a budget of its own.
 Each step is adopted on its own measurement, in this order, since each later
 one reads the earlier:
 
-1. `proofCovered`, specified and proved.
-2. The Guarantees view, which changes what the operator sees and nothing else.
+1. `proofCovered`, specified and proved. Built.
+2. The Guarantees view, which changes what the operator sees and nothing
+   else. Built, without the restatement and mutants named above.
 3. Proof-based mutation, deterministic evidence about each changed contract.
 4. Narrowed review of proof-covered code, behind its `live:review` cases.
 5. Adding contracts, behind its `live:agent` cases.
