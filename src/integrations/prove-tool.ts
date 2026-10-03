@@ -64,6 +64,15 @@ export function hasContracts(root: string): boolean {
   return false;
 }
 
+/**
+ * What follows a failed proof, at the moment the agent reads it: in the first
+ * measurement GPT-6 Luna stopped after one failure in 2 of 5 runs of a proof
+ * it could finish, where the prompt's guidance was read long before.
+ */
+const retryNote = "This is not finished yet. Read the obligation that failed above, then change the code or add the " +
+  "//@ invariant or assertion it needs, and run prove again. Keep going until it passes; stop only if you can say " +
+  "why it cannot pass without changing the contract, and never loosen the contract to make it pass.";
+
 function text(content: string): { content: { type: "text"; text: string }[]; details: undefined } {
   return { content: [{ type: "text", text: content }], details: undefined };
 }
@@ -93,7 +102,7 @@ export function proveTool(root: string): ToolDefinition {
         : proof.outcome === "timed_out" ? `The proof of ${name} ran past its time limit; that is not a pass.`
         : proof.outcome === "cancelled" ? `The proof of ${name} was stopped.`
         : `The proof of ${name} could not start.`;
-      return text(`${how}\n\n${proof.output.trimEnd()}`);
+      return text(`${how}\n\n${proof.output.trimEnd()}${proof.outcome === "failed" ? `\n\n${retryNote}` : ""}`);
     },
   });
 }
