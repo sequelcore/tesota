@@ -262,8 +262,9 @@ export class SourceSession implements CheckTarget {
   /**
    * Record an operator request verbatim; the record starts over when no turn
    * is undecided, unless the request was steered into the turn in progress.
+   * True when it started over.
    */
-  recordRequest(text: string, steered = false): Promise<void> {
+  recordRequest(text: string, steered = false): Promise<boolean> {
     return this.#requests.record(text, steered || this.#record.turns.length > 0);
   }
 

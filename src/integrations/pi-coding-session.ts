@@ -18,7 +18,7 @@ import { PLAN_GUIDANCE, planTool } from "./plan-tool.js";
 import type { WorkPlan } from "../work-plan.js";
 import { exploreTool, type ExplorerPool } from "./pi-explore.js";
 import { CONTRACT_GUIDANCE, PROVE_GUIDANCE, proveTool } from "./prove-tool.js";
-import { type WebAccess, webReadTool, webSearchTool } from "./web-tools.js";
+import { type WebAccess, webEvidence, webReadTool, webSearchTool } from "./web-tools.js";
 import type { ModelTarget } from "./model-session.js";
 import type { AgentActivity, AgentChange, ConversationEntry, TurnResult } from "./model-session-contract.js";
 
@@ -490,8 +490,9 @@ export function activityOf(event: AgentSessionEvent, message: number): AgentActi
       return { type: "tool_output", call: event.toolCallId, output: resultText(event.partialResult) };
     case "tool_execution_end": {
       const change = event.toolName === "edit" && !event.isError ? editChange(event.result) : undefined;
+      const evidence = event.isError ? undefined : webEvidence(event.toolName, event.result);
       return { type: "tool_finished", call: event.toolCallId, failed: event.isError, output: resultText(event.result),
-        ...(change === undefined ? {} : { change }) };
+        ...(change === undefined ? {} : { change }), ...(evidence === undefined ? {} : { evidence }) };
     }
     default:
       return undefined;

@@ -99,13 +99,26 @@ export interface ClaimedStep {
 }
 
 /**
- * A tool call of the agent's latest turn as Tesota recorded it, not as the
- * agent reports it: evidence for what the agent read, ran or changed.
+ * What a web call returned that a reviewer may hold a sourced claim to (issue
+ * #300), never the page itself: a search's sources, or the quotes of a page
+ * reader's answer that Tesota found on the page it fetched. Both stay
+ * untrusted content from the web.
+ */
+export type WebEvidence =
+  | Readonly<{ kind: "search"; sources: readonly Readonly<{ url: string; title: string }>[] }>
+  /** `unfound` counts the reader's quotes that were not on the page, or that the quote rule left out. */
+  | Readonly<{ kind: "page"; url: string; quotes: readonly string[]; unfound: number }>;
+
+/**
+ * A tool call of the agent's as Tesota recorded it, not as the agent reports
+ * it: evidence for what the agent read, ran or changed, and for a web call
+ * what it returned.
  */
 export interface ToolCallRecord {
   readonly tool: string;
   readonly subject: string;
   readonly outcome: "succeeded" | "failed" | "unfinished";
+  readonly evidence?: WebEvidence;
 }
 
 /** Everything a reviewer may see. The working agent's reasoning is deliberately absent. */
@@ -134,9 +147,11 @@ export interface ReviewInput {
    */
   readonly response?: string;
   /**
-   * With `response`, the tool calls of the agent's latest turn, so a claim in
-   * the reply about reading, running or changing something is checked
-   * against what happened rather than the agent's account of it.
+   * With `response`, the agent's tool calls since the first of `requests`,
+   * correction rounds included (issue #300), so a claim in the reply about
+   * reading, running or changing something, or drawn from a search or a
+   * page, is checked against what happened rather than the agent's account
+   * of it.
    */
   readonly toolCalls?: readonly ToolCallRecord[];
 }

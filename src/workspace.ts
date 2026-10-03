@@ -180,9 +180,10 @@ export class Workspace {
   /**
    * Record an operator request verbatim. The record holds the requests behind
    * the pending changes (decision 015): when nothing is pending, it starts over,
-   * unless the request was steered into the turn in progress.
+   * unless the request was steered into the turn in progress. True when it
+   * started over.
    */
-  recordRequest(text: string, steered = false): Promise<void> {
+  recordRequest(text: string, steered = false): Promise<boolean> {
     return this.#requests.record(text, steered || this.snapshot().changes.length > 0);
   }
 

@@ -456,6 +456,7 @@ engines by the opt-in live suite.
 | A batch in which every tool asks to end the turn ends it, with no further model call | `terminate` on a tool result | A `PostToolBatch` hook answering `continue: false` |
 | A request ends `completed`, `failed` with the engine's own message, `cancelled`, or `unsettled` when the engine cannot be stopped | Pi's session events | The SDK's result message |
 | Tool activity and replies are reported as they happen | Pi's events | Tesota's tool wrappers and the SDK's messages |
+| A finished web call reports what it returned for review, with the call | The tool result's `details`, read from Pi's event | The tool result's `details`, read by Tesota's wrapper |
 | Tokens are reported as OpenTelemetry's GenAI conventions count them: `input` includes cached input, with cache reads and cache creation as parts of it | Pi's usage, cache added back into input | Claude Code's per-model usage, likewise |
 | The working agent reads a message steered into its run before its next model call, in the same run (checked on Pi only) | Pi's steering queue, read whole; one that arrives as the agent finishes gets a model call of its own | Not offered: a query takes its one prompt when it starts, so the message is queued for the next request |
 
@@ -498,7 +499,9 @@ The agent and explorers can search the web and read pages; reviewers, the
 refuter and the fix validator stay offline, because a page could steer the step that decides
 what reaches the operator, a finding based on a page cannot be checked
 against the code, and a review must give the same verdict on the same
-candidate later.
+candidate later. What they see of the web is what Tesota recorded of the
+agent's searches and readings: addresses, titles and the quotes it found on
+the page it fetched ([assurance](assurance.md#obligations), issue #300).
 
 - **Tools** (`src/integrations/web-tools.ts`). `web_search` returns titles,
   addresses and snippets, or a searching model's findings with the pages
@@ -506,7 +509,8 @@ candidate later.
   address and a question: Tesota fetches the page, and a fresh session with
   no tools, on the explorers' model when they are on and the agent's
   otherwise, receives its text and answers with quotes; the agent receives
-  that answer, never the page. An explorer has `web_fetch`, which returns the
+  that answer, never the page, and is told how many of the quotes Tesota
+  found on the page and recorded. An explorer has `web_fetch`, which returns the
   page's text to itself, since an explorer cannot write or run commands. Page
   text therefore reaches only sessions that cannot act. The tools are
   Tesota's own, so every engine has the same ones.
@@ -573,7 +577,13 @@ candidate later.
   verifies the certificate for the host, so a public name cannot point
   inside. Each redirect is a new destination with the same checks, at most
   five. GET only, no cookies, 2 MB, 30 seconds, and only text: HTML converted
-  to text, plain text, Markdown and JSON.
+  to text, plain text, Markdown and JSON. A date element (`time`,
+  `relative-time`, `local-time`) keeps its `datetime` in brackets after its
+  text, since a page may show "05 Sep" and keep the year only there, as
+  GitHub's release pages do; a reader can quote only what the text holds.
+  Search snippets and a searching model's findings stay leads for the agent
+  and are never recorded for review: Tesota fetched no page to check them
+  against, and two live searches on 2026-10-02 gave one release two years.
 - **Failures are typed** and never read as an empty success: `url_refused`,
   `destination_denied`, `address_refused`, `too_many_redirects`, `too_large`,
   `unsupported_type`, `timeout`, `empty_page` and `fetch_failed` for pages,

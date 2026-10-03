@@ -65,7 +65,9 @@ function refuterPrompt(root: string): string {
     "give that earlier number as duplicateOf. Gaps are numbered after the findings: work the reviewer found " +
     "missing or partial, from a request or from a plan step the agent marked done. For a gap, confirmed means it " +
     "really is missing or partial in the result, and refuted means the result does it after all; look for the " +
-    "work in the whole repository before confirming. When you are done, " +
+    "work in the whole repository before confirming. A gap about a claim drawn from the web is settled by the " +
+    "record's web evidence, from any round of these requests: refute it when a recorded source or quote supports " +
+    "the claim, and confirm it when none does or a quote contradicts it. When you are done, " +
     "call record_verdicts once with a verdict for every finding and every gap." +
     `\n\nPlatform: ${process.platform}.` + repositoryInstructions(root);
 }

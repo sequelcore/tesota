@@ -237,12 +237,17 @@ export function isAbort(error: unknown): boolean {
 }
 
 /** One shell session's workspace, agent conversation and pending review. */
-/** Keeps a turn's tool call as Tesota saw it start and finish; a call that never finished stays unfinished. */
+/**
+ * Keeps a turn's tool call as Tesota saw it start and finish, with what a web
+ * call returned for review; a call that never finished stays unfinished.
+ */
 export function recordCall(calls: Map<string, ToolCallRecord>, activity: AgentActivity): void {
   if (activity.type === "tool_started") calls.set(activity.call, { tool: activity.tool, subject: activity.subject, outcome: "unfinished" });
   if (activity.type !== "tool_finished") return;
   const started = calls.get(activity.call);
-  if (started !== undefined) calls.set(activity.call, { ...started, outcome: activity.failed ? "failed" : "succeeded" });
+  if (started === undefined) return;
+  calls.set(activity.call, { ...started, outcome: activity.failed ? "failed" : "succeeded",
+    ...(activity.evidence === undefined ? {} : { evidence: activity.evidence }) });
 }
 
 /** What a session works in: an isolated workspace, or the operator's own files through the source's shadow. */
@@ -303,6 +308,17 @@ class SessionState {
   unverified: Readonly<{ input: ReviewInput; requests: readonly string[]; triage: Readonly<{ model: string; decision: TriageDecision }> }> | undefined;
   /** The latest turn's tool calls by call id, as Tesota saw them, for the answer check to hold the reply to. */
   readonly turnCalls: Map<string, ToolCallRecord> = new Map();
+  /**
+   * The earlier turns' tool calls for the same pending requests, correction
+   * rounds included, so the answer check sees what those turns searched and
+   * read, not only the latest turn (issue #300).
+   */
+  requestCalls: readonly ToolCallRecord[] = [];
+  /** Starts a turn's calls; the earlier turns' stay with the requests they served, and start over when the requests do. */
+  beginTurnCalls(requestsStartedOver: boolean): void {
+    this.requestCalls = requestsStartedOver ? [] : [...this.requestCalls, ...this.turnCalls.values()];
+    this.turnCalls.clear();
+  }
   /** The hidden files the agent was last told of, so it hears again only when they change. */
   toldHidden: string | undefined;
   /** The repository's toolchain declaration the sandbox was set up for, or last asked about (decision 048). */
@@ -1473,8 +1489,9 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
           .filter((note) => note !== undefined);
         // A new request makes any earlier review stale, whether or not the work finishes.
         stateFor(id).reviewed = undefined;
+        let startedOver = false;
         if (origin === "operator") {
-          await (await workspaceFor(id)).recordRequest(request);
+          startedOver = await (await workspaceFor(id)).recordRequest(request);
           try { nameFromRequest(id, request); } catch { /* a session keeps its name when the store cannot save a new one */ }
         }
         const prompt = notes.length === 0 ? request
@@ -1482,7 +1499,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
         state.note = undefined;
         state.explorers?.startTurn();
         state.advisor?.startTurn();
-        state.turnCalls.clear();
+        state.beginTurnCalls(startedOver);
         let ended: Awaited<ReturnType<SourceSession["endTurn"]>> | undefined;
         let result: Awaited<ReturnType<typeof coding.run>>;
         const steered: Promise<void>[] = [];
@@ -1599,7 +1616,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       const claimedSteps = (plan ?? []).flatMap((step, index) => step.status === "done"
         ? [{ index: index + 1, step: step.step, ...step.check === undefined ? {} : { check: step.check } }] : []);
       const input = { checkout: workspace.checkout, requests, snapshot, checks: [], flags: [],
-        response: state.lastReply ?? "", toolCalls: [...state.turnCalls.values()],
+        response: state.lastReply ?? "", toolCalls: [...state.requestCalls, ...state.turnCalls.values()],
         ...(claimedSteps.length === 0 ? {} : { claimedSteps }) };
       // A cheap first pass spares the reviewer a turn with nothing to check (decision 034); off, every answer is checked.
       const triage = await firstPassNow(id, requests, state.lastReply ?? "", signal);
@@ -1693,7 +1710,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
     steer: (id, text) => {
       const running = states.get(id)?.running;
       if (running?.agent.steer?.(text) !== true) return false;
-      running.steered.push(running.work.recordRequest(text, true));
+      running.steered.push(running.work.recordRequest(text, true).then(() => undefined));
       return true;
     },
     abortActive: () => { for (const controller of activeOperations.values()) controller.abort(); },

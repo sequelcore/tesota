@@ -43,6 +43,20 @@ it("reads an allowed page over https, from the address it checked, as text", asy
   expect(w.requested).toEqual([{ url: "https://docs.example.com/guide", address: "93.184.215.14" }]);
 });
 
+it("keeps a date's machine-readable form, which a page may show without its year", async () => {
+  // GitHub's release page, as served on 2026-10-03: the year is only in the attribute.
+  const html = "<html><body><p>released this\n  <relative-time class=\"no-wrap\" datetime=\"2026-09-05T05:55:48Z\">\n" +
+    "    05 Sep 05:55\n  </relative-time></p><p>Posted <time datetime=\"2026-09-05\">Sept 5</time>, updated <time>today</time>, " +
+    `<local-time datetime="${"9".repeat(65)}">later</local-time>.</p></body></html>`;
+  const w = web({ allowed: ["github.com"], pages: { "https://github.com/oven-sh/bun/releases/tag/bun-v1.4.2":
+    response(200, { "content-type": "text/html" }, html) } });
+  const result = await fetchPage("https://github.com/oven-sh/bun/releases/tag/bun-v1.4.2", w.dependencies, signal());
+  if (result.status !== "ok") throw new Error(result.status);
+  const text = result.page.text.replace(/\s+/gu, " ");
+  expect(text).toContain("released this 05 Sep 05:55 [2026-09-05T05:55:48Z]");
+  expect(text).toContain("Posted Sept 5 [2026-09-05], updated today, later.");
+});
+
 it("refuses a URL it could never fetch before asking anyone or looking anything up", async () => {
   for (const url of ["ftp://example.com/a", "file:///etc/passwd", "https://user:secret@example.com/", "not a url",
     "https://example.com:8443/"]) {

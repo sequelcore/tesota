@@ -76,7 +76,7 @@ export function decisionEntry(tree: string, decision: AssuranceDecision): Assura
 
 /**
  * The answer check's first pass on a turn that changed no files, whether or
- * not the full check then ran, with the turn's tool calls, so every decision,
+ * not the full check then ran, with the tool calls the check saw, so every decision,
  * a skip included, can be measured against what the turn held.
  */
 export function triageEntry(tree: string, requests: readonly string[], model: string, decision: TriageDecision,

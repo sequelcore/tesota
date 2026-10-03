@@ -19,13 +19,20 @@ export class RequestRecord {
 
   constructor(directory: string) { this.#directory = directory; }
 
-  /** Record a request; the record starts over when nothing is pending and no request is held open. */
-  async record(text: string, pending: boolean): Promise<void> {
+  /**
+   * Record a request; the record starts over when nothing is pending and no
+   * request is held open. True when it started over, so what belonged to the
+   * earlier requests, such as their tool calls, can start over with it.
+   */
+  async record(text: string, pending: boolean): Promise<boolean> {
     const line = `${JSON.stringify(requestSchema.parse({ text, at: new Date().toISOString() }))}\n`;
     const path = join(this.#directory, requestsFile);
     if (!pending && !existsSync(join(this.#directory, openRequestsFile))) {
       await writeFile(path, line, { encoding: "utf8", mode: 0o600 });
-    } else await appendFile(path, line, "utf8");
+      return true;
+    }
+    await appendFile(path, line, "utf8");
+    return false;
   }
 
   /**

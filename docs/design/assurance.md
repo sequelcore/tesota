@@ -355,14 +355,54 @@ cases. TypeSafe receives the turn's requests and reply, and says it does not
 train on them.
 Every first pass is journaled, a skip included, with its model, decision,
 probability when the model gives one, whether the full check ran and the
-turn's tool calls; the result panel shows why a checked turn was checked.
+tool calls the check saw; the result panel shows why a checked turn was checked.
 
 The answer reviewer and the refuter also receive Tesota's record of the
-latest turn's tool calls, each with its outcome: succeeded, failed or
-unfinished. A claim in the reply that the agent read, ran, checked or changed
-something holds only when that record shows it, since agents report work
-their own transcript shows they did not do
-([Smyth et al., 2026](https://arxiv.org/abs/2609.20812)).
+agent's tool calls since the first of the pending requests, correction rounds
+included, each with its outcome: succeeded, failed or unfinished. A claim in
+the reply that the agent read, ran, checked or changed something holds only
+when that record shows it, since agents report work their own transcript
+shows they did not do
+([Smyth et al., 2026](https://arxiv.org/abs/2609.20812)). The record starts
+over with the requests (`recordRequest` reports it), so a correction round's
+review still sees what the earlier rounds did. Until issue
+[#300](https://github.com/sequelcore/tesota/issues/300) the record held only
+the latest run's calls: on 2026-10-02 a correct, sourced answer about Bun's
+latest release went back for a missing search, then for missing page
+readings, then ended unclear, as each round's review lost the round before.
+The calls are held in memory, so a restarted shell starts the record over.
+
+**Research answers.** A web call's record also keeps what it returned
+(`WebEvidence` in `src/review.ts`), so a claim the reply draws from the web
+can be checked although reviewers stay offline: a search's addresses and
+titles, never its snippets or a searching model's findings, and the page
+reader's quotes that Tesota found on the page it fetched. The reader is a
+model, so its quotes are its claims: it writes each on a line starting with
+`>`, and Tesota keeps one only when it is on the page, with curly quotation
+marks and whitespace compared plainly, is at most 300 characters, and the
+page has fewer than eight kept (`quoteKept` in
+`src/verification/quote-rule.ts`, proved by `bun run formal:check`); the
+others are counted, and the agent is told not to rely on them. This is
+Anthropic's Citations taking `cited_text` from the document rather than the
+model, done by Tesota, and the dual-LLM pattern's rule that a quarantined
+model's output reaches a deciding model only within constraints
+([Beurer-Kellner et al., 2025](https://arxiv.org/abs/2506.08837)). The
+reviewer judges each sourced claim against that evidence: a claim a recorded
+quote contradicts is unmet, one no evidence supports is uncertain, and a
+search or reading from an earlier round counts as one from the latest. It
+judges whether the sources say what the reply says, as attribution
+measures do ([Rashkin et al., 2021](https://arxiv.org/abs/2112.12870)), not
+whether the web is right, and a model judging that is wrong often enough
+(about 80% macro-F1 for a fine-tuned GPT-3.5,
+[Li et al., 2024](https://arxiv.org/abs/2402.15089)) that its verdict stays
+a judged check and its gaps face the refuter. The evidence is untrusted
+web text in the review: each quote and title is shown as a JSON string,
+marked as data, and the latest 30 web calls keep theirs when older calls
+are cut. A planted quote can at most make the reviewer accept what the
+page really says; one that tries to steer the verdict on something else is
+short, exact page text and still meets the refuter, which lowers that risk
+without ruling it out. A review reads the recorded evidence, never the web
+again, so the same candidate keeps the same verdict.
 
 ### Planned: routing the answer check
 
@@ -383,7 +423,8 @@ the cheapest check that can settle it:
 | --- | --- | --- |
 | A request to change or run something, or a follow-up to one | Repository and the turn's events | Full check: obligations and refuter |
 | A question about the repository | Repository | Reviewer |
-| A reply claim about the agent's own actions: read, ran, changed | The turn's tool calls | Reviewer given the record (built) |
+| A reply claim about the agent's own actions: read, ran, changed | The request's tool calls | Reviewer given the record (built) |
+| A reply claim drawn from the web | The request's search sources and the page quotes Tesota found | Reviewer given the record (built) |
 | A reply claim about the workspace | The workspace record | Comparison with the record, no model |
 | A reply claim about the repository | Repository | Reviewer |
 | A reply claim about runtime behavior | Session records or execution | Reviewer given those records, else reported unverified |
