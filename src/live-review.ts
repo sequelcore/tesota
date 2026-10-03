@@ -12,7 +12,7 @@ import { reviewDepth } from "./review-depth.js";
 import type { ReviewReport } from "./review.js";
 import { ENVIRONMENT_CASES, EVALUATION_CASES, PREMISE_CASES, PROOF_REVIEW_CASES, SCOPE_CASES, defectDispositions, scoreCase,
   type CaseScore, type EvaluationCase } from "./review-evaluation.js";
-import { proofGuarantees, routeProvedFindings } from "./proof-guarantees.js";
+import { proofGuarantees } from "./proof-guarantees.js";
 import { runLemmaScriptVerifier } from "./verification/lemmascript-verifier.js";
 import { validateFixes } from "./integrations/pi-fix-validator.js";
 import type { ReviewInput } from "./review.js";
@@ -101,10 +101,8 @@ const sets: Record<string, readonly EvaluationCase[]> = { core: EVALUATION_CASES
   all: [...EVALUATION_CASES, ...SCOPE_CASES, ...PREMISE_CASES, ...ENVIRONMENT_CASES] };
 const selected = sets[setArgument];
 if (selected === undefined) throw new Error("Use --set=core, scope, premise, environment, proofs or all.");
-// --proofs=narrow gives the reviewers the changed lines a proof covers and routes fixable findings on them to the
-// operator, as step 4 of "proofs as the authority" plans; off reviews as today. The proofs set needs Dafny.
-const proofsArgument = process.argv.find((argument) => argument.startsWith("--proofs="))?.slice("--proofs=".length) ?? "off";
-if (proofsArgument !== "off" && proofsArgument !== "narrow") throw new Error("Use --proofs=off or narrow.");
+// The proofs set runs its TypeScript tests and LemmaScript with Dafny, and records which changed lines a proof covers
+// and where the findings on its planted defects went (docs/design/proofs.md).
 
 // --model-reviewer=, --model-refuter= and --model-validator= compare route:model choices; otherwise the operator's apply.
 const chosen = readModelChoices();
@@ -140,8 +138,7 @@ try {
       ...proofs ? await runLemmaScriptVerifier(snapshot, read, signal) : []];
     const covered = proofs ? proofGuarantees(snapshot, checks, [], read).covered ?? [] : [];
     const input = { checkout: workspace.checkout, requests: await workspace.requests(), snapshot, checks,
-      flags: flagVerificationChanges(snapshot, read),
-      ...proofsArgument === "narrow" && covered.length > 0 ? { proofCoverage: covered } : {} };
+      flags: flagVerificationChanges(snapshot, read) };
     const started = Date.now();
     const decision = reviewDepth(snapshot, input.flags, checks);
     const deep = depthMode === "deep" || depthMode === "computed" && decision.depth === "deep";
@@ -164,8 +161,7 @@ try {
       console.log(`${testCase.name}: not measured, every reviewer failed: ${failed.reason}`);
       continue;
     }
-    const refutedReports = await refuteFindings(ai.refuter, input, reviews, signal);
-    const tested = proofsArgument === "narrow" ? routeProvedFindings(refutedReports, covered) : refutedReports;
+    const tested = await refuteFindings(ai.refuter, input, reviews, signal);
     const done = Date.now();
     const reviewUsage = usage;
     const reviewTokens = totalTokens(reviewUsage);
@@ -192,7 +188,7 @@ try {
         ` | defect findings ${defectDispositions(testCase, tested).join(",") || "none"}` : ""));
   }
 } finally { rmSync(root, { recursive: true, force: true }); }
-const record = { at: new Date().toISOString(), models: modelIds, depthMode, set: setArgument, proofs: proofsArgument,
+const record = { at: new Date().toISOString(), models: modelIds, depthMode, set: setArgument,
   raw: totals(raw), refuted: totals(refuted),
   plantedFalseClaims: { total: plantedResults.length, refuted: plantedResults.filter((result) => result === "refuted").length,
     confirmed: plantedResults.filter((result) => result === "confirmed").length }, notMeasured, cases };

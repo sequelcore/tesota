@@ -94,6 +94,9 @@ that gate passes on the result.
 
 ### Proofs while it works
 
+This is the agent's part of Tesota's proof system; [proofs](proofs.md) designs
+the rest, from what a proof covers to what the operator sees.
+
 The `prove` tool (`src/integrations/prove-tool.ts`, issue
 [#294](https://github.com/sequelcore/tesota/issues/294)) runs LemmaScript with
 Dafny on one TypeScript file with `//@` annotations, with its `.dfy`

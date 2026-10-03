@@ -14,6 +14,7 @@ siblings describe what is built unless a section explicitly says planned.
 | [Workspace](workspace.md) | The shadow repository, turns in your project with keep and revert, and the separate copy a second session applies from |
 | [Execution](execution.md) | Where commands run, a sandbox or this computer, when the operator is asked, and network |
 | [Assurance](assurance.md) | Checks, verifiers, review, refutation, correction, the journal and the forecast |
+| [Proofs](proofs.md) | LemmaScript proofs from the agent's turn to the operator's decision: what a proof covers, checking contracts, where each problem goes |
 | [Agents](agents.md) | The working agent, explorers, the advisor and the model for each role |
 | [Sessions](sessions.md) | The shell and saved sessions |
 

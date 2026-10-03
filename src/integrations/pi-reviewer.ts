@@ -271,22 +271,6 @@ function answerMessage(input: ReviewInput): string {
   ].join("\n\n");
 }
 
-/**
- * The changed lines a proof covers and the contracts it proved them against.
- * The prover settled whether they meet those contracts, so the reviewer judges
- * the contracts against the requests instead, and everything else as usual.
- */
-function proofCoverageText(input: ReviewInput): string[] {
-  const coverage = input.proofCoverage ?? [];
-  if (coverage.length === 0) return [];
-  return [`Changed lines proved by LemmaScript with Dafny against these contracts, for every input they admit:\n${coverage
-    .map((entry) => `- ${entry.path}, lines ${entry.lines.join(", ")}:\n${entry.contracts.map((contract) =>
-      contract.split("\n").map((line) => `    ${line}`).join("\n")).join("\n")}`).join("\n")}\n` +
-    "Do not check whether these lines meet these contracts: the proof did. Check instead whether each contract says " +
-    "what the requests ask: if code on these lines does something the requests rule out, the contract allows it, so " +
-    "report it as a finding on that line about the contract. Review every other line as usual, callers included."];
-}
-
 /** What the reviewer is told: the requests verbatim, the evidence, the flags and the diff; never the worker's reasoning. */
 export function reviewMessage(input: ReviewInput): string {
   const { snapshot } = input;
@@ -301,7 +285,6 @@ export function reviewMessage(input: ReviewInput): string {
     `Changes that alter what checks the result (Tesota's fixed rules):\n${input.flags.map((flag) =>
       `- ${flag.status} ${flag.path} (${flag.kind})`).join("\n") || "- none"}`,
     `Checks Tesota ran on this exact content:\n${input.checks.map(checkLine).join("\n") || "- none ran"}`,
-    ...proofCoverageText(input),
     ...claimedStepsText(input),
     ...(input.correction === undefined ? [] : [`This is a correction round. These problems were sent back to the agent ` +
       `and a separate validator checks them; report only problems the correction itself introduced:\n` +

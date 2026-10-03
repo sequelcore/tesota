@@ -3,9 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
-import { reviewMessage } from "../src/integrations/pi-reviewer.js";
-import { proofGuarantees, routeProvedFindings } from "../src/proof-guarantees.js";
-import type { Finding, ReviewInput, ReviewReport } from "../src/review.js";
+import { proofGuarantees } from "../src/proof-guarantees.js";
+import type { Finding } from "../src/review.js";
 import { PROOF_REVIEW_CASES, defectDispositions } from "../src/review-evaluation.js";
 import { proveSource } from "../src/verification/lemmascript-verifier.js";
 import type { WorkspaceSnapshot } from "../src/workspace.js";
@@ -14,30 +13,6 @@ import type { CheckResult } from "../src/workspace-checks.js";
 const dafny = spawnSync("dafny", ["--version"], { encoding: "utf8" }).status === 0;
 const finding = (line: number, disposition: Finding["disposition"]): Finding => ({ severity: "high", disposition,
   origin: "introduced", path: "src/clamp.ts", line, statement: "Values below low return high.", reason: "The request says low." });
-
-it("sends a fixable finding on a proved line to the operator as a contract question, and leaves every other finding", () => {
-  const report: ReviewReport = { reviewer: "Tesota reviewer", tree: "t", status: "completed", summary: "",
-    findings: [finding(4, "fixable"), finding(9, "fixable"), finding(5, "operator")] };
-  const [routed] = routeProvedFindings([report], [{ path: "src/clamp.ts", lines: [4, 5], contracts: ["//@ ensures \\result >= 0"] }]);
-  const findings = routed?.status === "completed" ? routed.findings : [];
-  expect(findings.map((entry) => entry.disposition)).toEqual(["operator", "fixable", "operator"]);
-  expect(findings[0]?.statement).toBe("The proved contract allows this: Values below low return high.");
-  expect(findings[0]?.reason).toContain("which is yours to decide");
-  expect(findings[2]?.statement).toBe("Values below low return high.");
-  const incomplete: ReviewReport = { reviewer: "Tesota reviewer", tree: "t", status: "incomplete", reason: "stopped" };
-  expect(routeProvedFindings([incomplete], [])).toEqual([incomplete]);
-});
-
-it("tells the reviewer which lines a proof covers only when the step is on", () => {
-  const snapshot: WorkspaceSnapshot = { base: "b", tree: "t", diff: "", changes: [{ status: "added", path: "src/clamp.ts" }] };
-  const input: ReviewInput = { checkout: ".", requests: ["Add clamp"], snapshot, checks: [], flags: [] };
-  expect(reviewMessage(input)).not.toContain("proved by LemmaScript");
-  const message = reviewMessage({ ...input,
-    proofCoverage: [{ path: "src/clamp.ts", lines: [4, 5], contracts: ["//@ ensures \\result >= 0\nexport function clamp("] }] });
-  expect(message).toContain("Changed lines proved by LemmaScript with Dafny against these contracts, for every input they admit:\n" +
-    "- src/clamp.ts, lines 4, 5:\n    //@ ensures \\result >= 0\n    export function clamp(");
-  expect(message).toContain("Do not check whether these lines meet these contracts: the proof did.");
-});
 
 it("registers a defect the contract allows, one outside the proof and a correct change, each passing its own tests", () => {
   expect(PROOF_REVIEW_CASES.map((entry) => entry.defects.length)).toEqual([1, 1, 0]);

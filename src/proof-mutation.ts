@@ -7,8 +7,8 @@ import type { WorkspaceSnapshot } from "./workspace.js";
 import type { CheckResult } from "./workspace-checks.js";
 
 /**
- * Proof-based mutation (docs/design/assurance.md, "Checking the contract
- * itself"): for each contract the candidate added or changed and proved,
+ * Proof-based mutation (docs/design/proofs.md, "Checking the contract"):
+ * for each contract the candidate added or changed and proved,
  * small fixed changes to its function's body, each proved again. A mutant
  * that still proves is behavior the contract does not rule out. This is the
  * completeness metric of Lahiri (FMCAD 2024) with the prover in place of

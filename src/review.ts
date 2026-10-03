@@ -154,14 +154,6 @@ export interface ReviewInput {
    * of it.
    */
   readonly toolCalls?: readonly ToolCallRecord[];
-  /**
-   * Changed lines a proof covers, with the proved contracts that cover them
-   * (docs/design/assurance.md, "Review of proof-covered code"): the reviewer
-   * does not judge whether they meet those contracts, and a fixable finding
-   * on one goes to the operator as a question about the contract. Absent
-   * unless that step is on.
-   */
-  readonly proofCoverage?: readonly { readonly path: string; readonly lines: readonly number[]; readonly contracts: readonly string[] }[];
 }
 
 export type ReviewReport =

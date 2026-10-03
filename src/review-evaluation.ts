@@ -239,16 +239,16 @@ const shippingContract = (threshold: number): string => `//@ ensures \\result >=
   `  return total < ${threshold} ? 5 : 0;\n}\n`;
 
 /**
- * Candidates with LemmaScript contracts that prove, for step 4 of "proofs as
- * the authority" (docs/design/assurance.md, "Review of proof-covered code"),
- * registered on 2026-10-03 before any run: a proved function whose contract
- * allows a defect the request rules out, which must still surface, as a
- * question about the contract; a defect in an unannotated function of the
- * same file, which must still be found; and a correct proved change, which
- * should cost no more. Each candidate was checked with `lsc check` first: the
- * three prove, the helper in LemmaScript's subset since it translates the
- * whole file. `live:review --set=proofs` runs them with `--proofs=off`, as
- * review is today, and `--proofs=narrow`, with the coverage and the routing.
+ * Candidates with LemmaScript contracts that prove, for the routing of
+ * problems about a contract (docs/design/proofs.md, "Where each problem
+ * goes"), registered on 2026-10-03 before any run: a proved function whose
+ * contract allows a defect the request rules out, which must still surface;
+ * a defect in an unannotated function of the same file, which must still be
+ * found; and a correct proved change, which should cost no more. Each
+ * candidate was checked with `lsc check` first: the three prove, the helper in
+ * LemmaScript's subset since it translates the whole file.
+ * `live:review --set=proofs` records which lines a proof covers and where
+ * each finding on a planted defect went.
  */
 export const PROOF_REVIEW_CASES: readonly EvaluationCase[] = [
   { name: "defect the contract allows",

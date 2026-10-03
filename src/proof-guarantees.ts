@@ -9,8 +9,8 @@ import type { CheckResult } from "./workspace-checks.js";
 
 /**
  * What the candidate's LemmaScript contracts guarantee, for the result
- * panel's Guarantees view (docs/design/assurance.md, "Showing what was
- * guaranteed"): each contract in a changed annotated file as written, whether
+ * panel's Guarantees view (docs/design/proofs.md, "What the operator
+ * sees"): each contract in a changed annotated file as written, whether
  * it proved, what it assumes, what the candidate added to its assumptions,
  * how ClaimCheck compared it with the requests, and, apart, the changed lines
  * no proof covers (`proofCovered`).
@@ -129,23 +129,6 @@ export function proofGuarantees(snapshot: WorkspaceSnapshot, checks: readonly Ch
     }
   }
   return { contracts: found, uncovered, covered };
-}
-
-/**
- * Step 4 of "proofs as the authority" (docs/design/assurance.md, "Review of
- * proof-covered code"): a `fixable` finding on a proof-covered line is a
- * question about the contract, since the contract allows the behavior it calls
- * wrong, so it goes to the operator and never back to the agent as a code fix.
- */
-export function routeProvedFindings(reports: readonly ReviewReport[], covered: NonNullable<Guarantees["covered"]>): ReviewReport[] {
-  const isCovered = (path: string | undefined, line: number | undefined): boolean => line !== undefined &&
-    covered.some((entry) => path?.replaceAll("\\", "/") === entry.path && entry.lines.includes(line));
-  return reports.map((report) => report.status !== "completed" ? report : { ...report,
-    findings: report.findings.map((finding) => finding.disposition !== "fixable" || !isCovered(finding.path, finding.line) ? finding
-      : { ...finding, disposition: "operator" as const,
-        statement: `The proved contract allows this: ${finding.statement}`,
-        reason: `${finding.reason} The line is proved against its contract, so the question is whether the contract says ` +
-          "what was asked, which is yours to decide." }) });
 }
 
 /** Line numbers as short ranges: 3, 5-8, 12. */
