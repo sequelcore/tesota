@@ -56,8 +56,14 @@ function location(finding: Finding): string {
   return `${finding.path}${finding.line === undefined ? "" : `:${finding.line}`} — `;
 }
 
+/** How a finding sent back stood after the correction (#250), so a carried finding never reads as a new one. */
+const recheckWords: Readonly<Record<NonNullable<Finding["recheck"]>, string>> =
+  { resolved: "resolved after the correction", present: "still present after the correction",
+    unchecked: "not re-checked after the correction" };
+
 /** Why a finding is where it is: its severity for the agent, what the operator must weigh, or that it was already there. */
 function findingLabel(finding: Finding, action: ReviewAction): string {
+  if (finding.recheck !== undefined) return `${finding.severity} · ${recheckWords[finding.recheck]}`;
   if (action === "context") return "already there before";
   if (action === "agent") return finding.severity;
   // The agent's, had a round started for another reason (#254).
@@ -100,6 +106,10 @@ function addReviews(groups: Groups, reviews: readonly ReviewReport[], clean: boo
     if (report.status === "incomplete") { groups.operator.push(`  ✗ ${report.reviewer} did not finish: ${report.reason}`); continue; }
     for (const finding of report.findings) {
       const action = actionOfFinding(finding, starts);
+      if (finding.recheck === "resolved") {
+        groups.context.push(`  ✓ ${findingLabel(finding, action)} · ${location(finding)}${finding.statement}`);
+        continue;
+      }
       // Repeats and findings the second check ruled out are counted below, not listed.
       if (action === "context" && finding.origin !== "preexisting") continue;
       groups[action].push(`  ${findingMark(finding, action)} ${findingLabel(finding, action)} · ${location(finding)}${finding.statement}`);
@@ -111,7 +121,8 @@ function addReviews(groups: Groups, reviews: readonly ReviewReport[], clean: boo
         `${outcomeWords[outcomeOf(obligation)]}: ${obligation.obligation}`);
     }
   }
-  const ruledOut = findings.filter((finding) => finding.standing === "refuted" && finding.duplicateOf === undefined).length;
+  const ruledOut = findings.filter((finding) => finding.standing === "refuted" && finding.duplicateOf === undefined &&
+    finding.recheck === undefined).length;
   if (ruledOut > 0) {
     groups.context.push(`  · ${ruledOut} suspected ${ruledOut === 1 ? "problem was" : "problems were"} ruled out by a second check; ` +
       "see the result panel");
@@ -166,11 +177,14 @@ function causeWords(finding: Finding): string {
 
 function findingDetail(finding: Finding, starts: boolean, refuter?: string): string {
   const action = actionOfFinding(finding, starts);
-  const mark = finding.standing === "refuted" || finding.duplicateOf !== undefined ? "·" : findingMark(finding, action);
+  const mark = finding.recheck === "resolved" ? "✓"
+    : finding.standing === "refuted" || finding.duplicateOf !== undefined ? "·" : findingMark(finding, action);
   const who = finding.premise === true ? "your call, the request's premise" : finding.disposition === "operator" ? "your call" : "fixable";
-  const second = finding.standing === undefined ? "" :
-    `\n      Second check${refuter === undefined ? "" : ` (refuter ${refuter})`}: ${standingWords[finding.standing]}` +
-    `${finding.refutation === undefined ? "" : `. ${finding.refutation}`}`;
+  const second = finding.recheck !== undefined
+    ? `\n      Sent back earlier: ${recheckWords[finding.recheck]}${finding.refutation === undefined ? "" : `. ${finding.refutation}`}`
+    : finding.standing === undefined ? "" :
+      `\n      Second check${refuter === undefined ? "" : ` (refuter ${refuter})`}: ${standingWords[finding.standing]}` +
+      `${finding.refutation === undefined ? "" : `. ${finding.refutation}`}`;
   return `\n\n    ${mark} ${finding.severity}, ${who}: ${location(finding)}${finding.statement}\n      ${finding.reason}` +
     `\n      Next: ${nextWords[action]}\n      Cause: ${causeWords(finding)}` +
     `${finding.originNote === undefined ? "" : `. ${finding.originNote}`}${second}` +

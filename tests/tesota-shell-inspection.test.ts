@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { hostProvider } from "../src/host-environment.js";
+import { validationReport } from "../src/integrations/pi-fix-validator.js";
 import { inspectReview } from "../src/tesota-shell-inspection.js";
 import type { WorkspaceSnapshot } from "../src/workspace.js";
 
@@ -159,4 +160,24 @@ it("names the tests that fail only with the changes when the check fails without
   const review = inspectReview({ snapshot, checks: [failed], requests: [], flags: [], reviews: [] });
   expect(review.summary).toContain("also failed (exit 1) without these changes, but this test fails only with them, " +
     "so the failure comes with them: tests/a.test.ts > rounds");
+});
+
+it("labels each finding carried from a correction, so none reads as new and a resolved one shows as resolved (#250)", () => {
+  const tree = snapshot.tree;
+  const sent = (statement: string) => ({ severity: "medium" as const, disposition: "fixable" as const, origin: "introduced" as const,
+    standing: "confirmed" as const, path: "src/render.ts", line: 211, statement, reason: "r" });
+  const validation = validationReport(tree, [sent("Sizes vanish at widths 50 to 52"), sent("The helper hides a missing notice"),
+    sent("Totals are not rounded")], { status: "completed", reply: "" }, [
+    { id: 1, verdict: "resolved", evidence: "render.ts:211 keeps the size" },
+    { id: 2, verdict: "unresolved", evidence: "notice() still returns an empty string" }]);
+  const review = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [validation] });
+  expect(review.summary).toContain("For the agent to fix\n  ✗ medium · still present after the correction · src/render.ts:211 — " +
+    "The helper hides a missing notice");
+  expect(review.summary).toContain("Needs you\n  ? medium · not re-checked after the correction · src/render.ts:211 — Totals are not rounded");
+  expect(review.summary).toContain("For context\n  ✓ bun run check\n  ✓ medium · resolved after the correction · src/render.ts:211 — " +
+    "Sizes vanish at widths 50 to 52");
+  expect(review.summary).not.toContain("ruled out by a second check");
+  expect(review.detail).toContain("Sent back earlier: still present after the correction. After the correction: notice() still " +
+    "returns an empty string");
+  expect(review.detail).toContain("Sent back earlier: resolved after the correction. After the correction: render.ts:211 keeps the size");
 });

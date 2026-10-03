@@ -654,10 +654,16 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
   /** The model for one of the review step's sessions, counting its tokens toward the step. */
   const modelFor = async (run: ReviewRun, role: ModelRole): Promise<ModelAccess> =>
     ({ target: await openModel(run.signal, role), onUsage: run.onUsage });
-  /** In a correction round, whether each finding sent back is resolved; a validator that cannot run settles nothing. */
+  /**
+   * In a correction round, whether each finding sent back is resolved; a validator that cannot run settles nothing, and
+   * a correction that changed nothing resolved nothing, without asking one (#250).
+   */
   const validateCorrection = async (run: ReviewRun): Promise<ReviewReport | undefined> => {
     const sentBack = run.input.correction?.sentBack ?? [];
     if (sentBack.length === 0) return undefined;
+    if (run.input.snapshot.changes.length === 0) {
+      return validationReport(run.input.snapshot.tree, sentBack, { status: "completed", reply: "" }, undefined, false);
+    }
     output.reportFor(run.id, { phase: "reviewing", activity: activityBy("Checking each fix", "validator", run.models.validator) });
     try {
       return { ...await validateFixes(await modelFor(run, "validator"), run.input, sentBack, run.signal), model: run.models.validator };
