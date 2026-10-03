@@ -292,6 +292,18 @@ it("sends a failure only the whole checks found back to the agent, and runs them
   expect(fixture.dependencies.checkWhole).toHaveBeenCalledTimes(2);
 });
 
+it("sends a low finding back with a failure only the whole checks found, and starts no round for the low finding alone (#254)",
+  async () => {
+    const low: Finding = { ...fixable, severity: "low", statement: "A comment is stale" };
+    const fixture = shell(["Charge over $100 less", "", "a", ""], { review: relatedReviews(
+      { tree: "1".repeat(40), findings: [low] }, { tree: "2".repeat(40), findings: [low] }), checkWhole: wholeRuns("failed", "passed") });
+    await expect(runTesotaShell(fixture.dependencies)).resolves.toBe(0);
+    expect(fixture.dependencies.work).toHaveBeenNthCalledWith(2, expect.stringContaining("`bun run check` failed"), "tesota",
+      { previousTree: "1".repeat(40), sentBack: [low] });
+    // On the correction the whole checks pass, so the low finding left alone goes to the operator: no third round.
+    expect(fixture.dependencies.work).toHaveBeenCalledTimes(2);
+  });
+
 it("runs the whole checks once before the decision when the operator's next message goes first", async () => {
   const fixture = shell(["Charge over $100 less", "", ""],
     { review: relatedReviews({ tree: "1".repeat(40), findings: [fixable] }), checkWhole: wholeRuns("passed") });

@@ -1,6 +1,6 @@
 import type { TriageDecision } from "./integrations/answer-triage.js";
 import type { Finding, Obligation, ReviewReport } from "./review.js";
-import { actionOfCheck, actionOfFinding, actionOfObligation } from "./review-action.js";
+import { actionOfCheck, actionOfFinding, actionOfObligation, reviewRoundStarts } from "./review-action.js";
 import { type ObligationOutcome, obligationOutcome } from "./verification/obligation-outcome.js";
 import type { ReviewAction } from "./verification/review-action-rule.js";
 import type { DepthDecision } from "./review-depth.js";
@@ -60,6 +60,8 @@ function location(finding: Finding): string {
 function findingLabel(finding: Finding, action: ReviewAction): string {
   if (action === "context") return "already there before";
   if (action === "agent") return finding.severity;
+  // The agent's, had a round started for another reason (#254).
+  if (actionOfFinding(finding) === "agent") return "low · sent back only with other problems";
   if (finding.standing === "unsettled") return `${finding.severity} · the second check could not decide`;
   if (finding.standing === undefined) return `${finding.severity} · not checked a second time`;
   if (finding.origin === "unknown") return `${finding.severity} · cause unclear`;
@@ -88,16 +90,16 @@ function obligationSubject(obligation: Obligation): string {
  * Each finding, request and unfinished review, under who acts on it; with
  * `clean`, a line saying so when no reviewer left anything to act on.
  */
-function addReviews(groups: Groups, reviews: readonly ReviewReport[], clean: boolean): void {
+function addReviews(groups: Groups, reviews: readonly ReviewReport[], clean: boolean, starts: boolean): void {
   const findings = reviews.flatMap((report) => report.status === "completed" ? report.findings : []);
   if (clean && reviews.length > 0 && reviews.every((report) => report.status === "completed") &&
-    findings.every((finding) => actionOfFinding(finding) === "context")) {
+    findings.every((finding) => actionOfFinding(finding, starts) === "context")) {
     groups.context.push("  ✓ The reviewers found no problem this change caused");
   }
   for (const report of reviews) {
     if (report.status === "incomplete") { groups.operator.push(`  ✗ ${report.reviewer} did not finish: ${report.reason}`); continue; }
     for (const finding of report.findings) {
-      const action = actionOfFinding(finding);
+      const action = actionOfFinding(finding, starts);
       // Repeats and findings the second check ruled out are counted below, not listed.
       if (action === "context" && finding.origin !== "preexisting") continue;
       groups[action].push(`  ${findingMark(finding, action)} ${findingLabel(finding, action)} · ${location(finding)}${finding.statement}`);
@@ -162,8 +164,8 @@ function causeWords(finding: Finding): string {
   return finding.origin === "introduced" ? "this change" : finding.origin === "preexisting" ? "already there before" : "unclear";
 }
 
-function findingDetail(finding: Finding, refuter?: string): string {
-  const action = actionOfFinding(finding);
+function findingDetail(finding: Finding, starts: boolean, refuter?: string): string {
+  const action = actionOfFinding(finding, starts);
   const mark = finding.standing === "refuted" || finding.duplicateOf !== undefined ? "·" : findingMark(finding, action);
   const who = finding.premise === true ? "your call, the request's premise" : finding.disposition === "operator" ? "your call" : "fixable";
   const second = finding.standing === undefined ? "" :
@@ -176,10 +178,10 @@ function findingDetail(finding: Finding, refuter?: string): string {
 }
 
 /** One reviewer: its name, then its summary and each finding and request nested under it. */
-function reviewDetail(report: ReviewReport): string {
+function reviewDetail(report: ReviewReport, starts: boolean): string {
   const by = report.model === undefined ? "" : ` · ${report.model}`;
   if (report.status === "incomplete") return `  ✗ ${report.reviewer}${by} did not finish (${report.reason})`;
-  return `  ${report.reviewer}${by}\n    ${report.summary}` + report.findings.map((finding) => findingDetail(finding, report.refuter)).join("") +
+  return `  ${report.reviewer}${by}\n    ${report.summary}` + report.findings.map((finding) => findingDetail(finding, starts, report.refuter)).join("") +
     (report.obligations === undefined || report.obligations.length === 0 ? ""
       : `\n\n    What was asked\n${[...report.obligations.map(obligationDetail), ...(report.continuations ?? []).map((item) =>
         `    · Message ${item.index} continues request ${item.continues}, so it is judged as part of it`)].join("\n")}`);
@@ -216,7 +218,8 @@ function requestedDetail(requests: readonly string[]): string {
 export function inspectAnswer(requests: readonly string[], reviews: readonly ReviewReport[],
   triage?: Readonly<{ model: string; decision: TriageDecision; requested?: boolean }>): ShellInspection {
   const groups: Groups = { agent: [], operator: [], context: [] };
-  addReviews(groups, reviews, false);
+  const starts = reviewRoundStarts([], reviews);
+  addReviews(groups, reviews, false, starts);
   return {
     title: "Answer check",
     summary: [...grouped(groups), ...progressLines(reviews),
@@ -224,7 +227,7 @@ export function inspectAnswer(requests: readonly string[], reviews: readonly Rev
       ...[verifiedBy(reviews)].filter((line) => line !== undefined)].join("\n"),
     detail: `${requestedDetail(requests)}${triage === undefined ? "" :
       `\n\n${firstPassDetail(triage.model, triage.decision, triage.requested === true)}`}` +
-      `\n\nReview\n${reviews.map(reviewDetail).join("\n\n") || "  None"}`,
+      `\n\nReview\n${reviews.map((report) => reviewDetail(report, starts)).join("\n\n") || "  None"}`,
   };
 }
 
@@ -269,7 +272,8 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews, dept
   if (flags.length > 0) {
     groups.operator.push("    These change how the result is checked; only you can tell whether that is legitimate.");
   }
-  addReviews(groups, reviews, true);
+  const starts = reviewRoundStarts(checks, reviews);
+  addReviews(groups, reviews, true, starts);
   if (depth?.depth === "deep") {
     groups.context.push(`  · thorough review${measurement === undefined ? "" :
       ` (took ${costText(measurement.durationMs, measurement.tokens)})`}: ${depth.reasons.join("; ")}`);
@@ -285,7 +289,7 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews, dept
         `  ${flag.status} ${flag.path} (${flag.kind})`).join("\n")}`) +
       `\n\nChecks\n${checks.map(checkDetail).join("\n\n") || "  None"}` +
       (promised === undefined ? "" : `\n\n${promised}`) +
-      `\n\nReview\n${reviews.map(reviewDetail).join("\n\n") || "  None"}` +
+      `\n\nReview\n${reviews.map((report) => reviewDetail(report, starts)).join("\n\n") || "  None"}` +
       `\n\nContent\n  tree ${snapshot.tree}\n  base ${snapshot.base}`,
     diff: snapshot.diff,
   };

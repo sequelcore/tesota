@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { checkAction, findingAction, obligationAction, type ActionCheckOrigin, type ActionOutcome,
+import { checkAction, findingAction, obligationAction, roundStarts, severityAction, type ActionCheckOrigin, type ActionOutcome,
   type ActionStanding } from "../src/verification/review-action-rule.js";
 
 it("sends only introduced, confirmed, fixable findings to the agent", () => {
@@ -34,4 +34,20 @@ it("sends only confirmed missing work the agent can do back, and the rest to the
   expect(obligationAction("not_held", "operator")).toBe("operator");
   expect(obligationAction("uncertain", "fixable")).toBe("operator");
   expect(obligationAction("held", "operator")).toBe("context");
+});
+
+it("starts a round for a failed check, an unmet obligation or a significant finding, never for low findings alone", () => {
+  expect(roundStarts(false, false, false)).toBe(false);
+  expect(roundStarts(true, false, false)).toBe(true);
+  expect(roundStarts(false, true, false)).toBe(true);
+  expect(roundStarts(false, false, true)).toBe(true);
+});
+
+it("sends a low finding meant for the agent to the operator unless a round starts anyway, and changes nothing else", () => {
+  expect(severityAction("agent", true, false)).toBe("operator");
+  expect(severityAction("agent", true, true)).toBe("agent");
+  expect(severityAction("agent", false, false)).toBe("agent");
+  for (const action of ["operator", "context"] as const) {
+    expect(severityAction(action, true, false)).toBe(action);
+  }
 });

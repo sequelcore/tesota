@@ -589,6 +589,12 @@ context**. Cause, severity and the second check's standing remain separate
 facts in the result panel. An unfinished review needs the operator and never
 counts as a clean result.
 
+A **low-severity finding alone never starts a round** (#254). One that would
+go to the agent goes to the operator, who can send it back, unless a round
+starts for a failed check, an unmet obligation or a finding of medium
+severity or higher, and then it travels with that round (`roundStarts` and
+`severityAction` in `src/verification/review-action-rule.ts`, proved).
+
 Failed or timed-out checks the candidate introduced, findings that are fixable, introduced,
 confirmed and not a repeat, and obligations that did not hold, go back to the working agent in the same
 conversation, with the request record unchanged. Tesota then verifies the new

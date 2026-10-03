@@ -203,7 +203,7 @@ async function assess(dependencies: TesotaShellDependencies,
     if (correction === undefined) {
       const ran = await whole();
       if (ran?.status === "cancelled") return ending();
-      correction = ran === undefined ? undefined : correctionFor(ran.checks, []);
+      correction = ran === undefined ? undefined : correctionFor(ran.checks, review.reviews);
       if (correction === undefined) return "ready";
     }
     if (lastRound) return ending();
