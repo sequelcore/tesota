@@ -459,9 +459,11 @@ two rounds, fewer if a round changes nothing. Each round shows its own review, a
 does Tesota ask for your decision. What only you can decide never goes back
 to the agent. The full record and the diff open beside it on a wide terminal;
 `Alt+R` shows or hides them, in place of the conversation on a narrow one.
-The result has up to three tabs: Review, with your requests, the files and
-the review; Checks; and Diff. An answer that changed no files has only its
-review. `Alt+T`, or a click or tap on a tab, chooses one, and each tab keeps
+The result has up to four tabs: Review, with your requests, the files and
+the review; Checks; Guarantees, when the change touched a file with
+LemmaScript contracts, with each contract as written, whether it proved,
+what it takes as given and the changed lines no proof covers; and Diff. An
+answer that changed no files has only its review. `Alt+T`, or a click or tap on a tab, chooses one, and each tab keeps
 its own scroll position; a new result opens on Review. A click or tap on a
 session in the sidebar selects it too, as `Alt+J` and `Alt+K` do, so a phone
 over SSH reaches both without those keys.

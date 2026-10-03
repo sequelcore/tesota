@@ -5,6 +5,7 @@ import { type ObligationOutcome, obligationOutcome } from "./verification/obliga
 import type { ReviewAction } from "./verification/review-action-rule.js";
 import type { DepthDecision } from "./review-depth.js";
 import { costText, type ReviewMeasurement } from "./review-forecast.js";
+import { type Guarantees, guaranteesDetail } from "./proof-guarantees.js";
 import { SANDBOX_NAMES } from "./execution-providers.js";
 import { verifiedBy } from "./review-attribution.js";
 import type { ShellInspection } from "./tesota-shell-terminal.js";
@@ -24,6 +25,8 @@ export interface ReviewRecord {
   readonly depth?: DepthDecision;
   /** What the review step took, shown beside a thorough review's forecast. */
   readonly measurement?: ReviewMeasurement;
+  /** What the candidate's LemmaScript contracts guarantee; absent in records made before it. */
+  readonly guarantees?: Guarantees;
 }
 
 /**
@@ -252,7 +255,9 @@ const flagVerbs: Readonly<Record<VerificationChange["status"], string>> =
  * files and then every check, flagged change and finding once, under who acts
  * on it, and the full record for the result panel.
  */
-export function inspectReview({ snapshot, checks, flags, requests, reviews, depth, measurement }: ReviewRecord): ShellInspection {
+export function inspectReview({ snapshot, checks, flags, requests, reviews, depth, measurement, guarantees }: ReviewRecord):
+  ShellInspection {
+  const promised = guarantees === undefined ? undefined : guaranteesDetail(guarantees);
   const first = checks[0];
   const where = first === undefined ? "No checks ran." : `Checks ran on this exact content ${checkPlace(first)}.`;
   const groups: Groups = { agent: [], operator: [], context: [] };
@@ -279,6 +284,7 @@ export function inspectReview({ snapshot, checks, flags, requests, reviews, dept
       (flags.length === 0 ? "" : `\n\nChanges to how the result is checked\n${flags.map((flag) =>
         `  ${flag.status} ${flag.path} (${flag.kind})`).join("\n")}`) +
       `\n\nChecks\n${checks.map(checkDetail).join("\n\n") || "  None"}` +
+      (promised === undefined ? "" : `\n\n${promised}`) +
       `\n\nReview\n${reviews.map(reviewDetail).join("\n\n") || "  None"}` +
       `\n\nContent\n  tree ${snapshot.tree}\n  base ${snapshot.base}`,
     diff: snapshot.diff,

@@ -4,25 +4,30 @@ import { DiffView } from "./tesota-shell-diff.js";
 import { bold, mutedText, selectedRow, type TesotaShellTheme } from "./tesota-shell-theme.js";
 import { recordRows } from "./tesota-shell-transcript.js";
 
-export type ResultTab = "review" | "checks" | "diff";
-const RESULT_TABS: readonly ResultTab[] = ["review", "checks", "diff"];
-const tabLabels: Readonly<Record<ResultTab, string>> = { review: "Review", checks: "Checks", diff: "Diff" };
+export type ResultTab = "review" | "checks" | "guarantees" | "diff";
+const RESULT_TABS: readonly ResultTab[] = ["review", "checks", "guarantees", "diff"];
+const tabLabels: Readonly<Record<ResultTab, string>> = { review: "Review", checks: "Checks", guarantees: "Guarantees", diff: "Diff" };
+
+/** A record's text for each tab that shows part of it. */
+export type RecordTabs = Readonly<{ review: string; checks: string; guarantees: string }>;
 
 /**
  * A record split for its tabs: its Checks section, which the Checks tab
- * shows, and the rest, which the Review tab shows. A section starts at an
- * unindented line after a blank one; everything nested in it is indented.
+ * shows, its Guarantees section, which the Guarantees tab shows, and the
+ * rest, which the Review tab shows. A section starts at an unindented line
+ * after a blank one; everything nested in it is indented.
  */
-export function resultSections(record: string): Readonly<{ review: string; checks: string }> {
+export function resultSections(record: string): RecordTabs {
   const sections = recordSections(record);
-  const isChecks = (section: string): boolean => section.split("\n", 1)[0] === "Checks";
-  return { review: sections.filter((section) => !isChecks(section)).join("\n\n"),
-    checks: sections.filter(isChecks).join("\n\n") };
+  const heading = (section: string): string => section.split("\n", 1)[0] ?? "";
+  return { review: sections.filter((section) => !["Checks", "Guarantees"].includes(heading(section))).join("\n\n"),
+    checks: sections.filter((section) => heading(section) === "Checks").join("\n\n"),
+    guarantees: sections.filter((section) => heading(section) === "Guarantees").join("\n\n") };
 }
 
 /** The headings a record's sections have, as `src/tesota-shell-inspection.ts` writes them; "Requested" in earlier records. */
 const RECORD_HEADINGS: ReadonlySet<string> = new Set(["Your requests", "Requested", "First pass", "Files",
-  "Changes to how the result is checked", "Checks", "Review", "Content"]);
+  "Changes to how the result is checked", "Checks", "Guarantees", "Review", "Content"]);
 const REQUEST_HEADINGS: ReadonlySet<string> = new Set(["Your requests", "Requested"]);
 
 /**
@@ -103,7 +108,7 @@ export class ResultPanel {
   #heading = "";
   /** What the panel shows, so showing the same result again keeps its tab and places. */
   #shown = "";
-  #sections: Readonly<{ review: string; checks: string }> = { review: "", checks: "" };
+  #sections: RecordTabs = { review: "", checks: "", guarantees: "" };
   /** Each source's diff once known; the reviewed one with the result, the others when the operator asks for them. */
   #diffs: Partial<Record<DiffSource, string>> = {};
   #source: DiffSource = "reviewed";
@@ -129,10 +134,11 @@ export class ResultPanel {
       const lines = this.diff.render(width);
       return lines.length > 0 ? lines : [` ${mutedText(`No changes in the ${sourceLabels[this.#source].toLowerCase()}.`, this.#theme)}`];
     });
-    const bodies = { review: record(() => this.#sections.review), checks: record(() => this.#sections.checks), diff };
+    const bodies = { review: record(() => this.#sections.review), checks: record(() => this.#sections.checks),
+      guarantees: record(() => this.#sections.guarantees), diff };
     this.#bodies = Object.values(bodies);
     const scroll = (tab: ResultTab): ScrollView => new ScrollView(bodies[tab], { scrollbar: "auto" });
-    this.#scrolls = { review: scroll("review"), checks: scroll("checks"), diff: scroll("diff") };
+    this.#scrolls = { review: scroll("review"), checks: scroll("checks"), guarantees: scroll("guarantees"), diff: scroll("diff") };
     const header: Component = { render: (width) => this.#header(width), invalidate: () => undefined,
       handleMouse: (event) => this.#mouse(event) };
     this.view = new VStack([{ component: header, basis: "auto", shrink: 0 },
@@ -150,11 +156,14 @@ export class ResultPanel {
       : this.#diffs[source] !== undefined);
   }
 
-  /** The tabs this result has: Review with a record or nothing else to show, Checks when checks ran, Diff with a source. */
+  /**
+   * The tabs this result has: Review with a record or nothing else to show, Checks when checks ran, Guarantees when
+   * the change touched a contract, Diff with a source.
+   */
   get tabs(): readonly ResultTab[] {
     const diff = this.sources.length > 0;
     return RESULT_TABS.filter((tab) => tab === "review" ? this.#sections.review.length > 0 || !diff
-      : tab === "checks" ? this.#sections.checks.length > 0 : diff);
+      : tab === "diff" ? diff : this.#sections[tab].length > 0);
   }
 
   /** Show a styled heading and a result's record and diff, from its first tab's start: another result begins anew. */

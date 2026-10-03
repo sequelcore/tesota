@@ -35,6 +35,7 @@ import { hostedSearch } from "./integrations/hosted-search.js";
 import { ExplorerPool } from "./integrations/pi-explore.js";
 import { Advisor } from "./integrations/advisor.js";
 import { hasContracts } from "./integrations/prove-tool.js";
+import { proofGuarantees } from "./proof-guarantees.js";
 import { consultAdvisor } from "./integrations/advisor-session.js";
 import { Semaphore } from "./semaphore.js";
 import { type ShellSessionRecord, type ShellSessionStore } from "./shell-session-store.js";
@@ -1581,11 +1582,12 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       const reviews: ReviewReport[] = unchanged ? reports : reports.map((report) => ({ reviewer: report.reviewer,
         tree: snapshot.tree, status: "incomplete", reason: "the candidate changed during review" }));
       if (unchanged) state.reviewed = snapshot;
-      state.lastReview = { snapshot, checks, flags, requests, reviews, depth, measurement };
+      const guarantees = proofGuarantees(snapshot, checks, reviews, read);
+      state.lastReview = { snapshot, checks, flags, requests, reviews, depth, measurement, guarantees };
       // Each claimed step shows what the review found of it, a judged check, beside the prompt.
       const main = reviews.find((report) => report.status === "completed" && report.obligations !== undefined);
       if (plan !== undefined && main?.status === "completed") showPlan(id, withReview(plan, main.obligations ?? []));
-      output.inspectFor(id, inspectReview({ snapshot, checks, flags, requests, reviews, depth, measurement }));
+      output.inspectFor(id, inspectReview(state.lastReview));
       await journal(id, workspace, reviewEntry("changes", snapshot, requests, checks, flags, reviews, depth, measurement));
       return { status: "ready", tree: snapshot.tree, changes: snapshot.changes, checks, reviews, requests };
     }),

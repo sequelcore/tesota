@@ -182,6 +182,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `verification/toolchain-refresh-rule.ts` | When a toolchain the repository declares mid-session is set up in the sandbox: only on the operator's yes, and never where the sandbox sets up only when prepared, proved |
 | `workspace-checks.ts`, `verification/oxlint*.ts`, `verification/lemmascript-verifier.ts` | Verifier results with claim and limits: approved commands, Oxlint, LemmaScript with Dafny |
 | `integrations/prove-tool.ts` | The working agent's own LemmaScript proof run, feedback while it works, on in a repository with `//@` files |
+| `proof-guarantees.ts`, `verification/proof-cover-rule.ts` | What a candidate's contracts guarantee, for the Guarantees tab, and the proved rule for which changed lines a proof covers |
 | `test-report.ts`, `verification/check-origin-rule.ts` | Reading a check's JUnit XML reports, and the proved rule for whose failure a check or test is |
 | `verification-changes.ts` | Flagging changes to tests, check configuration, CI, specifications and scripts |
 | `review.ts`, `integrations/pi-reviewer.ts`, `integrations/pi-claimcheck.ts` | The reviewer contract, Tesota's reviewer and lenses, and ClaimCheck's method |
