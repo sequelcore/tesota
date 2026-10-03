@@ -176,7 +176,8 @@ it("never blames the changes for a failure that comes from where the runs happen
       if (base !== undefined) return host.run(command, { ...rest, cwd: base });
       await rm(view, { recursive: true, force: true });
       await cp(source, view, { recursive: true, filter: (path) => basename(path) !== ".git" });
-      return host.run(command, { ...rest, cwd: view });
+      // Git stops looking at the fixture's root, so a repository above the temporary folder, as on a CI runner, is not found.
+      return host.run(command, { ...rest, cwd: view, env: { ...rest.env, GIT_CEILING_DIRECTORIES: root } });
     } };
   const session = await create();
   await session.beginTurn();
