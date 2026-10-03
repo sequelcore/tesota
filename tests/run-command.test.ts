@@ -138,7 +138,8 @@ it("keeps the run's session to resume, and prints one JSON record of it", async 
     }, undefined, join(root, "stores"));
   expect(code).toBe(0);
   const record = JSON.parse(out.join("")) as RunRecord;
-  expect(record).toMatchObject({ status: "completed", exitCode: 0, reply: "Fixed the parser.", blocked: false });
+  expect(record).toMatchObject({ status: "completed", exitCode: 0, reply: "Fixed the parser.",
+    replies: ["Fixed the parser."], blocked: false });
   expect(err.at(-1)).toBe(`Session ${record.session}: tesota resume ${record.session} opens it.\n`);
   const store = openShellSessionStore(root, join(root, "stores"));
   try { expect(store.list().map((session) => session.id)).toContain(record.session); } finally { store.close(); }
@@ -163,6 +164,8 @@ it("keeps the reply of the turn's latest round when the answer check sends the f
   expect(code).toBe(0);
   expect(session.work).toHaveBeenCalledTimes(2);
   expect(output.record.reply).toBe("It gives 10% above 100.");
+  // The corrected answer is kept, for a caveat the correction does not repeat.
+  expect(output.record.replies).toEqual(["It gives 10%. Above 100.", "It gives 10% above 100."]);
   // With --json, the reply is printed only inside the record.
   expect(out).toEqual([]);
 });
