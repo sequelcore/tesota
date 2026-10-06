@@ -149,21 +149,24 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
     err: (text) => { process.stderr.write(text); },
   });
 } else if (args[0] === "models") {
-  const { runModelsCommand } = await import("./models-command.js");
-  process.exitCode = runModelsCommand(args.slice(1), (text) => { process.stdout.write(text); });
+  const { offeredModels, runModelsCommand } = await import("./models-command.js");
+  const { allRoutes, routeAccounts } = await import("./auth.js");
+  process.exitCode = runModelsCommand(args.slice(1), (text) => { process.stdout.write(text); }, offeredModels(),
+    await routeAccounts(allRoutes()));
 } else if (args[0] === "usage") {
   const { runUsageCommand } = await import("./account-usage.js");
   const { usageSources } = await import("./integrations/usage-sources.js");
   process.exitCode = await runUsageCommand(args.slice(1), (text) => { process.stdout.write(text); }, usageSources());
 } else if (args[0] === "roles") {
-  const { offeredModels, rolePicker, runRolesCommand } = await import("./models-command.js");
+  const { offeredModels, rolePicker, runRolesCommand, servedModels } = await import("./models-command.js");
   const { DEFAULT_MODELS_FILE, isModelRole } = await import("./model-roles.js");
   const { allRoutes, routeAccounts } = await import("./auth.js");
+  const accounts = await routeAccounts(allRoutes());
   let roleArgs = args.slice(1);
   if (roleArgs.length === 1 && isModelRole(roleArgs[0] ?? "") && process.stdin.isTTY && process.stdout.isTTY) {
     const { chooseCliOption } = await import("./cli-choice.js");
     const role = roleArgs[0] ?? "";
-    const picker = rolePicker(`/roles ${role} `, offeredModels());
+    const picker = rolePicker(`/roles ${role} `, servedModels(offeredModels(), accounts));
     const entries = picker?.entries.flatMap((entry) => [entry.id,
       ...entry.reasoning.map((level) => `${entry.id}@${level}`)].map((value) => ({
       value, label: value, detail: `${value === picker.current ? "current · " : ""}${entry.detail}`,
@@ -173,7 +176,7 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
     roleArgs = [role, choice];
   }
   process.exitCode = runRolesCommand(roleArgs, (text) => { process.stdout.write(text); }, offeredModels(), DEFAULT_MODELS_FILE,
-    await routeAccounts(allRoutes()));
+    accounts);
 } else if (args[0] === "prune" && (args.length === 1 || args.length === 2 && args[1] === "--force")) {
   const { formatPrunePlan, measureWorkspaces, planWorkspacePrune, removeWorkspaces } = await import("./workspace-prune.js");
   const { claudeCodeConfigDirectories } = await import("./claude-code-transcripts.js");

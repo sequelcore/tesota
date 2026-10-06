@@ -3,8 +3,8 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 import { addRoute, chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
-import { dataNotice, modelCost, offeredChoices, offeredModels, rolePicker, runModelsCommand, runRolesCommand,
-  type OfferedModel } from "../src/models-command.js";
+import { CODEX_FREE_REFUSED, dataNotice, modelCost, offeredChoices, offeredModels, planRefusal, rolePicker, runModelsCommand,
+  runRolesCommand, servedModels, type OfferedModel } from "../src/models-command.js";
 
 // A home of the test's own, so the routes it adds are never the operator's, and the operator's never reach it.
 vi.mock("node:os", async (original) => {
@@ -268,4 +268,33 @@ it("says when roles spread across routes draw on one account, under the listing 
   expect(runRolesCommand([], write, withSecond, path, [{ route: "claude-code", account: ours }, { route: "claude-2", account: { id: "b7" } }],
     added)).toBe(0);
   expect(output).not.toContain("share one plan's limits");
+});
+
+it("withholds the models Codex does not serve on a route's free ChatGPT plan, and refuses them for a role, naming the plan (#296)", () => {
+  addRoute("codex-free3", "codex");
+  const catalog = offeredModels();
+  expect(catalog.map((model) => model.id)).toEqual(expect.arrayContaining(CODEX_FREE_REFUSED.map((model) => `codex-free3:${model}`)));
+  const accounts = [{ route: "codex", account: { id: "plus", plan: "plus" } }, { route: "codex-free3", account: { id: "free", plan: "free" } }];
+  const served = servedModels(catalog, accounts).map((model) => model.id);
+  expect(served).toEqual(expect.arrayContaining(["codex:gpt-6.1-sol", "codex-free3:gpt-6-luna"]));
+  expect(served).not.toContain("codex-free3:gpt-6.1-sol");
+  // An unknown plan withholds nothing: only an observed refusal takes a model away.
+  expect(planRefusal("codex-free3:gpt-6.1-sol@high", [])).toBeUndefined();
+  expect(planRefusal("codex-free3:gpt-6.1-sol@high", accounts)).toBe(
+    "codex-free3 is signed in to a free ChatGPT plan, on which Codex does not serve gpt-6.1-sol");
+
+  let text = "";
+  const write = (written: string): void => { text += written; };
+  expect(runModelsCommand(["codex-free3"], write, catalog, accounts)).toBe(0);
+  expect(text).not.toMatch(/^ {2}gpt-6\.1-sol /mu);
+  expect(text).toContain("Not listed: gpt-5.6-sol, gpt-6-sol, gpt-6.1-sol; Codex does not serve them on codex-free3's free ChatGPT plan.");
+
+  const path = file();
+  text = "";
+  expect(runRolesCommand(["agent", "codex-free3:gpt-6.1-sol"], write, catalog, path, accounts)).toBe(1);
+  expect(text).toContain("codex-free3 is signed in to a free ChatGPT plan, on which Codex does not serve gpt-6.1-sol");
+  expect(readModelChoices(path).agent).toBe(DEFAULT_MODEL);
+  text = "";
+  expect(runRolesCommand(["agent", "codex:gpt-6.1-sol"], write, catalog, path, accounts)).toBe(0);
+  expect(text).toMatch(/^The agent now uses codex:gpt-6.1-sol.\n/u);
 });
