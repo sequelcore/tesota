@@ -271,7 +271,15 @@ plan that the agent marked done, whether it really happened.
 It judges each against the whole result, unchanged files included, as
 `met`, `partial`, `unmet` or `uncertain`, with the evidence. A plan step is
 the agent's claim, given to the reviewer as a claim to check, never as an
-account to trust. A main review that leaves a request or a claimed step
+account to trust. The reviewer also sees the agent's final reply, as an
+untrusted claim, and Tesota's record of the turn's tool calls, with the last
+2,000 characters each of the latest 20 commands' output, in the sandbox or
+on the computer (`recordCall` in `src/session-engine.ts`). So an obligation a
+command satisfies is judged from that command's output, and one about the
+reply itself, such as telling the operator what ran, from the reply; an
+`uncertain` obligation names the evidence that was missing. Without them,
+finished work read "0 of 1 done, 1 unclear" in five reviewed turns
+([#252](https://github.com/sequelcore/tesota/issues/252)). A main review that leaves a request or a claimed step
 unassessed, or assesses one that does not exist, is incomplete
 (`missingAssessments` in `src/integrations/pi-reviewer.ts`); focused lenses
 and ClaimCheck report none.

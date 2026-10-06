@@ -152,6 +152,11 @@ it("names each lens, tells it its focus, and offers the rules lens only where th
         .review({ ...input, checkout: root }, new AbortController().signal);
       expect(prompt).toContain("Then check the other direction: for each change in the diff, whether a request or a " +
         "claimed plan step needs it.");
+      // An obligation is judged from the command or reply that satisfies it, and uncertain names what is missing (#252).
+      expect(prompt).toContain("from that command's output in Tesota's record of the tool calls");
+      expect(prompt).toContain("Judge an obligation about the agent's own reply, such as telling the user what ran or " +
+        "what to check, against the reply.");
+      expect(prompt).toContain("say in its evidence which evidence is missing");
     } finally { start.mockRestore(); }
   } finally { await rm(root, { recursive: true, force: true }); }
 });

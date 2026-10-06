@@ -239,19 +239,32 @@ export function isAbort(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-/** One shell session's workspace, agent conversation and pending review. */
+/** How much of a command's output its record keeps for review: the end, where results and exit codes print. */
+const COMMAND_OUTPUT_KEPT = 2_000;
+
 /**
  * Keeps a turn's tool call as Tesota saw it start and finish, with what a web
- * call returned for review; a call that never finished stays unfinished.
+ * call returned and the end of a command's output for review (#252); a call
+ * that never finished stays unfinished.
  */
 export function recordCall(calls: Map<string, ToolCallRecord>, activity: AgentActivity): void {
   if (activity.type === "tool_started") calls.set(activity.call, { tool: activity.tool, subject: activity.subject, outcome: "unfinished" });
   if (activity.type !== "tool_finished") return;
   const started = calls.get(activity.call);
   if (started === undefined) return;
+  const command = started.tool === "bash" || started.tool === "run_on_computer";
   calls.set(activity.call, { ...started, outcome: activity.failed ? "failed" : "succeeded",
-    ...(activity.evidence === undefined ? {} : { evidence: activity.evidence }) });
+    ...(activity.evidence === undefined ? {} : { evidence: activity.evidence }),
+    ...command ? { output: activity.output.slice(-COMMAND_OUTPUT_KEPT) } : {} });
 }
+
+/** What the agent replied and ran for the pending requests, so a review judges obligations a command or the reply satisfies from them (#252). */
+function turnEvidence(state: SessionState): Pick<ReviewInput, "reply" | "toolCalls"> {
+  return { ...state.lastReply === undefined ? {} : { reply: state.lastReply },
+    toolCalls: [...state.requestCalls, ...state.turnCalls.values()] };
+}
+
+/** One shell session's workspace, agent conversation and pending review. */
 
 /** What a session works in: an isolated workspace, or the operator's own files through the source's shadow. */
 type Work = Workspace | SourceSession;
@@ -1609,6 +1622,7 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       const reports = await reviewCandidate({ id, signal, depth, candidate: snapshot, models,
         input: { checkout: workspace.checkout, requests, snapshot: scope, checks, flags,
           ...(claimedSteps.length === 0 ? {} : { claimedSteps }),
+          ...turnEvidence(state),
           ...(correction === undefined ? {} : { correction: { sentBack: correction.sentBack } }) },
         read: (path) => read(snapshot.tree, path), onUsage: (usage) => { tokens += totalTokens(usage); } });
       if (signal.aborted) return { status: "cancelled" };

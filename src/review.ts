@@ -127,6 +127,8 @@ export interface ToolCallRecord {
   readonly subject: string;
   readonly outcome: "succeeded" | "failed" | "unfinished";
   readonly evidence?: WebEvidence;
+  /** The end of a command's output, in the sandbox or on the computer, so an obligation it satisfies is judged from it (#252). */
+  readonly output?: string;
 }
 
 /** Everything a reviewer may see. The working agent's reasoning is deliberately absent. */
@@ -155,11 +157,17 @@ export interface ReviewInput {
    */
   readonly response?: string;
   /**
-   * With `response`, the agent's tool calls since the first of `requests`,
-   * correction rounds included (issue #300), so a claim in the reply about
-   * reading, running or changing something, or drawn from a search or a
-   * page, is checked against what happened rather than the agent's account
-   * of it.
+   * When the turn changed files, the agent's final reply (#252): untrusted
+   * like `response`, it settles only what the requests ask the reply itself
+   * to say, such as which commands ran or what to check.
+   */
+  readonly reply?: string;
+  /**
+   * The agent's tool calls since the first of `requests`, correction rounds
+   * included (issue #300), so a claim in the reply about reading, running or
+   * changing something, or drawn from a search or a page, is checked against
+   * what happened rather than the agent's account of it, and an obligation a
+   * command satisfies is judged from that command's output (#252).
    */
   readonly toolCalls?: readonly ToolCallRecord[];
 }
