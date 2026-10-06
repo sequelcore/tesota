@@ -5,6 +5,7 @@ import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
+import { planServes } from "./verification/codex-plan-rule.js";
 import { type RouteAccount, sharedRoleGroups, sharedRoleNote } from "./route-accounts.js";
 import type { ModelPickerData } from "./tesota-shell-model-picker.js";
 import { accountRoute, HOSTED_SEARCH_KINDS, type ModelChoices, chooseModel, DECISION_MODELS, isDecisionModel, isReasoningLevel, OPTIONAL_ROLES, type ReasoningLevel, ROLE_OFF, DEFAULT_MODELS_FILE, isModelRole, MODEL_ROLES,
@@ -144,6 +145,29 @@ export function offeredModels(added: readonly AddedRoute[] = readAddedRoutes()):
   return [...kinds, ...accounts];
 }
 
+/**
+ * Codex's models a free ChatGPT plan does not serve: each request fails at
+ * once with "The '<model>' model is not supported when using Codex with a
+ * ChatGPT account", observed on 2026-10-02 on free accounts while a Plus
+ * account served the same models (#296).
+ */
+export const CODEX_FREE_REFUSED: readonly string[] = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"];
+
+/** Why a choice's route does not serve its model on the route's plan, or undefined when it does or the plan is unknown. */
+export function planRefusal(choice: string, accounts: RouteAccounts, added: readonly AddedRoute[] = readAddedRoutes()): string | undefined {
+  const parsed = parseModelChoice(choice, added);
+  if (parsed?.kind !== "codex") return undefined;
+  const plan = accounts.find((entry) => entry.route === parsed.route)?.account?.plan;
+  if (planServes(plan === "free", CODEX_FREE_REFUSED.includes(parsed.model))) return undefined;
+  return `${parsed.route} is signed in to a free ChatGPT plan, on which Codex does not serve ${parsed.model}`;
+}
+
+/** The offered models each route's plan serves (#296); with no accounts read, every model. */
+export function servedModels(offered: readonly OfferedModel[], accounts: RouteAccounts,
+  added: readonly AddedRoute[] = readAddedRoutes()): OfferedModel[] {
+  return offered.filter((model) => planRefusal(model.id, accounts, added) === undefined);
+}
+
 const gatewayNames: Partial<Record<RouteKind, string>> = { openrouter: "OpenRouter", opencode: "OpenCode Zen", "opencode-go": "OpenCode Go" };
 
 /** Who pays for a model, and its list price: what an API key is billed, or on a plan a way to compare models. */
@@ -207,7 +231,7 @@ function rolesListing(offered: readonly OfferedModel[], path: string, accounts: 
   const choices = readModelChoices(path);
   const rows = MODEL_ROLES.map((role) => {
     const detail = choices[role] === ROLE_OFF ? offText[role] ?? "off" : isDecisionModel(choices[role]) ? DECISION_COST
-      : modelCost(offered.find((model) => model.id === choices[role]?.split("@")[0]));
+      : planRefusal(choices[role], accounts, added) ?? modelCost(offered.find((model) => model.id === choices[role]?.split("@")[0]));
     return `  ${role.padEnd(10)}${choices[role].padEnd(30)}${detail}\n  ${"".padEnd(10)}${ROLE_DESCRIPTIONS[role]}`;
   });
   const warnings = [describeJudgeWarnings(judgeWarnings(choices)), ...roleAccountNotes(choices, accounts, added)]
@@ -247,14 +271,19 @@ export function rolePicker(prefix: string, offered: readonly OfferedModel[], pat
  * `tesota models` lists the catalog; `tesota models <route>` lists one route.
  */
 export function runModelsCommand(args: readonly string[], write: (text: string) => void,
-  offered: readonly OfferedModel[] = offeredModels()): number {
+  catalog: readonly OfferedModel[] = offeredModels(), accounts: RouteAccounts = []): number {
+  const offered = servedModels(catalog, accounts);
   if (args.length === 0) {
     write(`Available models, as route:model:\n${routeListing(offered)}\n  typesafe, for triage only: ${DECISION_MODELS.join(", ")}\n` +
       "Use tesota models <route> for prices, or tesota roles to assign models.\n");
     return 0;
   }
   if (args.length === 1 && offered.some((model) => model.route === args[0])) {
-    write(modelsOf(args[0] ?? "", offered));
+    const route = args[0] ?? "";
+    const withheld = catalog.filter((model) => model.route === route && !offered.includes(model))
+      .map((model) => model.id.slice(route.length + 1));
+    write(modelsOf(route, offered) + (withheld.length === 0 ? ""
+      : `  Not listed: ${withheld.join(", ")}; Codex does not serve them on ${route}'s free ChatGPT plan.\n`));
     return 0;
   }
   write(`Usage: tesota models [<${ROUTE_KINDS.join("|")}>]\n`);
@@ -271,8 +300,13 @@ export function runRolesCommand(args: readonly string[], write: (text: string) =
     write(`Usage: tesota roles [<${MODEL_ROLES.join("|")}> <route:model|default|off>]\n`);
     return 2;
   }
+  const refusal = planRefusal(model, accounts, added);
+  if (refusal !== undefined) {
+    write(`${refusal}. Choose another model, or a route on a paid plan.\n`);
+    return 1;
+  }
   try {
-    const choices = chooseModel(role, model, offeredChoices(offered, role), path);
+    const choices = chooseModel(role, model, offeredChoices(servedModels(offered, accounts, added), role), path);
     write(choices[role] === ROLE_OFF ? (role === "explorer" ? "Explorers are off.\n"
       : role === "triage" ? "The first pass is off: every answer gets the full check.\n" : `The ${role} is off.\n`)
       : `The ${role} now uses ${choices[role]}.\n`);

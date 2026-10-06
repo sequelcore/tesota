@@ -42,6 +42,8 @@ it("reads a Codex sign-in's account from its token's claims, the stored account 
   expect(codexAccount({ type: "oauth", access, refresh: "", expires: 0, accountId: "acct-stored" }))
     .toEqual({ id: "acct-stored", email: "plus@example.com" });
   expect(codexAccount({ type: "oauth", access, refresh: "", expires: 0 })).toEqual({ id: "acct-from-claim", email: "plus@example.com" });
+  const free = token({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-free", chatgpt_plan_type: "free" } });
+  expect(codexAccount({ type: "oauth", access: free })).toEqual({ id: "acct-free", plan: "free" });
   expect(codexAccount({ type: "oauth", access: "not-a-token" })).toBeUndefined();
   expect(codexAccount(undefined)).toBeUndefined();
 });
