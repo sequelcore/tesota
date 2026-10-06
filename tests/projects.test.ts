@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { findProjects, inFolder } from "../src/projects.js";
+import { planToolchain } from "../src/toolchain.js";
 import { suggestChecks } from "../src/workspace-checks.js";
 
 /**
@@ -51,6 +52,22 @@ it("finds a monorepo's JavaScript app and Gradle project in subfolders and runs 
   ]);
   // A related form takes paths relative to the repository, so only the root's checks come with one.
   expect(suggestChecks(root)).toEqual(["cd backend && ./gradlew check", "cd frontend && bun run lint", "cd frontend && bun run test"]);
+});
+
+it("lets a subfolder's build keep its kind and checks when the root only states the version", async () => {
+  const root = await repository({ ".java-version": "21\n", "frontend/package.json": JSON.stringify({ scripts: { check: "tsc" } }),
+    "frontend/bun.lock": "", "backend/settings.gradle.kts": "", "backend/gradlew": "",
+    "backend/build.gradle.kts": "java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }" });
+  expect(findProjects(root).map(({ folder, kinds }) => ({ folder, kinds }))).toEqual([
+    { folder: "", kinds: [] }, { folder: "backend", kinds: ["java"] }, { folder: "frontend", kinds: ["node"] }]);
+  expect(suggestChecks(root)).toEqual(["cd backend && ./gradlew check", "cd frontend && bun run check"]);
+  // The subfolder's own build states its release first; the root's file applies only where it states none.
+  expect(planToolchain(root)).toMatchObject({ tools: { java: "25" }, sources: ["backend/build.gradle.kts"] });
+  const unstated = await repository({ ".sdkmanrc": "java=21.0.4-tem\n", "global.json": "{ \"sdk\": { \"version\": \"9.0.100\" } }",
+    "backend/pom.xml": "<project/>", "src/App/App.csproj": "" });
+  expect(planToolchain(unstated)).toMatchObject({ tools: { java: "21.0.4", dotnet: "9.0.100" }, sources: [".sdkmanrc", "global.json"] });
+  // With no build below, a folder that only states the version is still that language's project.
+  expect(findProjects(await repository({ ".python-version": "3.12\n", "tools/README.md": "" }))[0]?.kinds).toEqual(["python"]);
 });
 
 it("keeps a root package's checks beside its subfolders' unless it declares workspaces", async () => {

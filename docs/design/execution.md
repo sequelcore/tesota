@@ -395,7 +395,12 @@ when it declares workspaces, since a root `package.json` often holds only
 the repository's tooling. Each project adds its language's registries and
 the build tool it lacks a wrapper for, and its JavaScript runtime pins and
 lockfile install, run from its folder; the first project to state a
-language's version, the root's first, sets it:
+language's version, the root's first, sets it. A version file
+(`.java-version`, `.sdkmanrc`, `rust-toolchain(.toml)`, `.python-version`,
+`.ruby-version`, `global.json`) builds nothing: a folder holding only one
+claims no folder below it, and is that language's project only when no
+folder below builds one. A project whose own files state no version takes
+the nearest such file in a folder above it, as version managers read it:
 
 | Language | Files | Version from | Otherwise | Registries |
 | --- | --- | --- | --- | --- |

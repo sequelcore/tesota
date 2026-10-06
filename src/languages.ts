@@ -30,8 +30,15 @@ export interface StatedVersion {
 export interface Language {
   /** mise's name for the tool. */
   readonly tool: string;
-  /** Files in a project's folder whose presence shows the language; a name starting with `*` matches that ending. */
+  /** Files in a project's folder whose presence shows a build of the language; a name starting with `*` matches that ending. */
   readonly markers: readonly string[];
+  /**
+   * Files that only state the language's version, as version managers read
+   * them in the folder they sit in and every folder below. A folder holding
+   * only these builds nothing, so it is a project of the language only when
+   * no folder below it builds one (#318).
+   */
+  readonly versionFiles?: readonly string[];
   /** The version the repository's files state, if any. */
   readonly stated: (read: ReadFile, entries: readonly string[]) => StatedVersion | null;
   /** The release installed when no file states one. */
@@ -85,7 +92,8 @@ export function mavenBuild(entries: readonly string[]): boolean {
 
 const java: Language = {
   tool: "java",
-  markers: ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", ".java-version", ".sdkmanrc"],
+  markers: ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"],
+  versionFiles: [".java-version", ".sdkmanrc"],
   stated: (read) => javaRelease(firstStated(
     firstMatch(read, ".java-version", [/^\s*(?:[a-z]+-)?(\d+(?:\.\d+){0,2})/mu]),
     firstMatch(read, ".sdkmanrc", [/^\s*java\s*=\s*(\d+(?:\.\d+){0,2})/mu]),
@@ -113,7 +121,8 @@ const go: Language = {
 
 const rust: Language = {
   tool: "rust",
-  markers: ["Cargo.toml", "rust-toolchain.toml", "rust-toolchain"],
+  markers: ["Cargo.toml"],
+  versionFiles: ["rust-toolchain.toml", "rust-toolchain"],
   // A toolchain file names the channel; Cargo's `rust-version` is only a minimum, so stable builds it.
   stated: (read) => firstStated(
     firstMatch(read, "rust-toolchain.toml", [/^\s*channel\s*=\s*"([^"]+)"/mu]),
@@ -127,7 +136,8 @@ const rust: Language = {
 
 const python: Language = {
   tool: "python",
-  markers: ["pyproject.toml", "requirements.txt", "setup.py", "setup.cfg", "Pipfile", ".python-version"],
+  markers: ["pyproject.toml", "requirements.txt", "setup.py", "setup.cfg", "Pipfile"],
+  versionFiles: [".python-version"],
   stated: (read) => firstStated(
     firstMatch(read, ".python-version", [/^\s*(\d+(?:\.\d+){0,2})/mu]),
     firstMatch(read, "pyproject.toml", [/requires-python\s*=\s*["']\s*(?:>=|~=|==|\^)?\s*(\d+(?:\.\d+){0,2})/u]),
@@ -138,7 +148,8 @@ const python: Language = {
 
 const ruby: Language = {
   tool: "ruby",
-  markers: ["Gemfile", ".ruby-version"],
+  markers: ["Gemfile"],
+  versionFiles: [".ruby-version"],
   stated: (read) => firstStated(
     firstMatch(read, ".ruby-version", [/^\s*(?:ruby-)?(\d+(?:\.\d+){0,2})/mu]),
     firstMatch(read, "Gemfile", [/^\s*ruby\s+["'](?:~>|>=)?\s*(\d+(?:\.\d+){0,2})["']/mu])),
@@ -162,7 +173,8 @@ function dotnetTarget(read: ReadFile, entries: readonly string[]): StatedVersion
 
 const dotnet: Language = {
   tool: "dotnet",
-  markers: ["global.json", "*.csproj", "*.fsproj", "*.vbproj", "*.sln", "*.slnx"],
+  markers: ["*.csproj", "*.fsproj", "*.vbproj", "*.sln", "*.slnx"],
+  versionFiles: ["global.json"],
   stated: (read, entries) => firstStated(
     firstMatch(read, "global.json", [/"version"\s*:\s*"(\d+(?:\.\d+){0,2})"/u]),
     dotnetTarget(read, entries)),
@@ -194,8 +206,13 @@ export function languageVariables(tools: Readonly<Record<string, string>>, place
     .map((language) => language.variables?.(places)[phase] ?? {}));
 }
 
-/** Whether any of a language's markers is among a folder's names. */
-export function presentIn(language: Language, entries: readonly string[]): boolean {
+/** Whether a folder builds the language: any of its markers is among the folder's names. */
+export function builtIn(language: Language, entries: readonly string[]): boolean {
   return language.markers.some((marker) => marker.startsWith("*") ? entries.some((name) => name.endsWith(marker.slice(1)))
     : entries.includes(marker));
+}
+
+/** Whether a folder only states the language's version: it holds a version file and no build. */
+export function pinnedIn(language: Language, entries: readonly string[]): boolean {
+  return !builtIn(language, entries) && (language.versionFiles ?? []).some((file) => entries.includes(file));
 }
