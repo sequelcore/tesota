@@ -348,6 +348,18 @@ names routes signed in to the same account, whose limits are one plan's
 and a role choice that makes it so name roles on different routes that draw
 on one account, since spreading roles across routes is meant to spread them
 across plans; roles all on one route draw on one account by choice.
+A Codex route also offers only the models its ChatGPT plan serves: the
+token's `chatgpt_plan_type` claim names the plan, and on a free plan
+`tesota models`, `/model` and the role pickers leave out `CODEX_FREE_REFUSED`
+in `src/models-command.ts`, while `tesota roles` and `/model` refuse such a
+choice and name the plan (`planServes` in
+`src/verification/codex-plan-rule.ts`, proved). The list comes from an
+observed refusal, not a guess: on 2026-10-02 every request to `gpt-6.1-sol`,
+`gpt-6-sol` and `gpt-5.6-sol` on free accounts failed at once with "The
+'<model>' model is not supported when using Codex with a ChatGPT account",
+while a Plus account served them
+([issue #296](https://github.com/sequelcore/tesota/issues/296)). A route
+whose plan is unknown, or paid, offers every model.
 
 **What each account has left**. `tesota usage` and the
 shell's Accounts panel ask each route's provider, only when run or opened,

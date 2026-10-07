@@ -12,6 +12,8 @@ export interface RouteAccount {
   /** What tells two accounts apart: Claude Code's account id, or Codex's ChatGPT account id. */
   readonly id: string;
   readonly email?: string;
+  /** The ChatGPT plan a Codex sign-in is on, as its token names it: `free`, `plus`, `pro` and the like (#296). */
+  readonly plan?: string;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -46,7 +48,9 @@ export function codexAccount(credential: unknown): RouteAccount | undefined {
     .find((value): value is string => typeof value === "string" && value.length > 0);
   if (id === undefined) return undefined;
   const email = record(claims?.["https://api.openai.com/profile"])?.["email"];
-  return { id, ...typeof email === "string" && email.length > 0 ? { email } : {} };
+  const plan = auth?.["chatgpt_plan_type"];
+  return { id, ...typeof email === "string" && email.length > 0 ? { email } : {},
+    ...typeof plan === "string" && plan.length > 0 ? { plan } : {} };
 }
 
 /** An email with most of its name hidden, as `r3…@outlook.es`, for screens others may see. */
