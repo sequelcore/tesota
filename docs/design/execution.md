@@ -395,7 +395,16 @@ when it declares workspaces, since a root `package.json` often holds only
 the repository's tooling. Each project adds its language's registries and
 the build tool it lacks a wrapper for, and its JavaScript runtime pins and
 lockfile install, run from its folder; the first project to state a
-language's version, the root's first, sets it. A version file
+language's version, the root's first, sets it. An exact declaration in that
+project, such as a Java toolchain, wins; otherwise the nearest ancestor's
+version file applies before the project's target framework or minimum version.
+Thus a root SDK 9 pin still builds a child targeting .NET 8, and a Python 3.12
+pin still builds a child requiring at least 3.10. An exact child declaration,
+including Python `==3.11.9` or Ruby `ruby '3.3.5'`, wins over the ancestor.
+This follows [global.json's SDK selection](https://learn.microsoft.com/en-us/dotnet/core/tools/global-json),
+[pyenv's directory search](https://github.com/pyenv/pyenv#understanding-python-version-selection),
+and the distinction between [Java toolchains and compilation targets](https://docs.gradle.org/current/userguide/toolchains.html).
+A version file
 (`.java-version`, `.sdkmanrc`, `rust-toolchain(.toml)`, `.python-version`,
 `.ruby-version`, `global.json`) builds nothing: a folder holding only one
 claims no folder below it, and is that language's project only when no

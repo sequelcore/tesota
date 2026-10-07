@@ -25,6 +25,8 @@ export type ReadFile = (path: string) => string | null;
 export interface StatedVersion {
   readonly version: string;
   readonly source: string;
+  /** An exact toolchain declaration, or the minimum a build can accept. */
+  readonly strength: "pin" | "minimum";
 }
 
 export interface Language {
@@ -61,12 +63,12 @@ export function safeVersion(value: string | null | undefined): string | null {
 }
 
 /** The first of these patterns' first group found in a file, as a safe version. */
-function firstMatch(read: ReadFile, file: string, patterns: readonly RegExp[]): StatedVersion | null {
+function firstMatch(read: ReadFile, file: string, patterns: readonly RegExp[], strength: StatedVersion["strength"] = "pin"): StatedVersion | null {
   const text = read(file);
   if (text === null) return null;
   for (const pattern of patterns) {
     const version = safeVersion(pattern.exec(text)?.[1]);
-    if (version !== null) return { version, source: file };
+    if (version !== null) return { version, source: file, strength };
   }
   return null;
 }
@@ -97,10 +99,12 @@ const java: Language = {
   stated: (read) => javaRelease(firstStated(
     firstMatch(read, ".java-version", [/^\s*(?:[a-z]+-)?(\d+(?:\.\d+){0,2})/mu]),
     firstMatch(read, ".sdkmanrc", [/^\s*java\s*=\s*(\d+(?:\.\d+){0,2})/mu]),
-    firstMatch(read, "pom.xml", [/<maven\.compiler\.release>\s*([\d.]+)\s*</u, /<release>\s*([\d.]+)\s*</u,
-      /<java\.version>\s*([\d.]+)\s*</u, /<maven\.compiler\.source>\s*([\d.]+)\s*</u]),
     ...["build.gradle.kts", "build.gradle"].map((file) => firstMatch(read, file, [/JavaLanguageVersion\.of\(\s*(\d+)\s*\)/u,
-      /jvmToolchain\(\s*(\d+)\s*\)/u, /JavaVersion\.VERSION_(?:1_)?(\d+)/u, /sourceCompatibility\s*=\s*['"]?([\d.]+)/u])))),
+      /jvmToolchain\(\s*(\d+)\s*\)/u])),
+    firstMatch(read, "pom.xml", [/<maven\.compiler\.release>\s*([\d.]+)\s*</u, /<release>\s*([\d.]+)\s*</u,
+      /<java\.version>\s*([\d.]+)\s*</u, /<maven\.compiler\.source>\s*([\d.]+)\s*</u], "minimum"),
+    ...["build.gradle.kts", "build.gradle"].map((file) => firstMatch(read, file, [/JavaVersion\.VERSION_(?:1_)?(\d+)/u,
+      /sourceCompatibility\s*=\s*['"]?([\d.]+)/u], "minimum")))),
   fallback: "21",
   registries: ["repo.maven.apache.org", "repo1.maven.org", "services.gradle.org", "downloads.gradle.org",
     "plugins.gradle.org", "plugins-artifacts.gradle.org"],
@@ -114,7 +118,9 @@ const go: Language = {
   tool: "go",
   markers: ["go.mod"],
   // A `toolchain` line names the release to build with; the `go` line only the minimum.
-  stated: (read) => firstMatch(read, "go.mod", [/^toolchain\s+go(\d+(?:\.\d+){0,2})\s*$/mu, /^go\s+(\d+(?:\.\d+){0,2})\s*$/mu]),
+  stated: (read) => firstStated(
+    firstMatch(read, "go.mod", [/^toolchain\s+go(\d+(?:\.\d+){0,2})\s*$/mu]),
+    firstMatch(read, "go.mod", [/^go\s+(\d+(?:\.\d+){0,2})\s*$/mu], "minimum")),
   fallback: "latest",
   registries: [],
 };
@@ -140,8 +146,9 @@ const python: Language = {
   versionFiles: [".python-version"],
   stated: (read) => firstStated(
     firstMatch(read, ".python-version", [/^\s*(\d+(?:\.\d+){0,2})/mu]),
-    firstMatch(read, "pyproject.toml", [/requires-python\s*=\s*["']\s*(?:>=|~=|==|\^)?\s*(\d+(?:\.\d+){0,2})/u]),
-    firstMatch(read, "Pipfile", [/python_(?:full_)?version\s*=\s*["'](\d+(?:\.\d+){0,2})["']/u])),
+    firstMatch(read, "pyproject.toml", [/requires-python\s*=\s*["']\s*==\s*(\d+(?:\.\d+){0,2})\s*["']/u]),
+    firstMatch(read, "Pipfile", [/python_(?:full_)?version\s*=\s*["'](\d+(?:\.\d+){0,2})["']/u]),
+    firstMatch(read, "pyproject.toml", [/requires-python\s*=\s*["']\s*(?:>=|~=|==|\^)?\s*(\d+(?:\.\d+){0,2})/u], "minimum")),
   fallback: "3.13",
   registries: [],
 };
@@ -152,7 +159,8 @@ const ruby: Language = {
   versionFiles: [".ruby-version"],
   stated: (read) => firstStated(
     firstMatch(read, ".ruby-version", [/^\s*(?:ruby-)?(\d+(?:\.\d+){0,2})/mu]),
-    firstMatch(read, "Gemfile", [/^\s*ruby\s+["'](?:~>|>=)?\s*(\d+(?:\.\d+){0,2})["']/mu])),
+    firstMatch(read, "Gemfile", [/^\s*ruby\s+["'](\d+(?:\.\d+){0,2})["']/mu]),
+    firstMatch(read, "Gemfile", [/^\s*ruby\s+["'](?:~>|>=)?\s*(\d+(?:\.\d+){0,2})["']/mu], "minimum")),
   fallback: "3.4",
   registries: ["rubygems.org", "index.rubygems.org"],
   // Ruby's own gem folder is read-only to commands, so gems go to the home, where Ruby still finds its bundled ones.
@@ -165,7 +173,7 @@ function dotnetTarget(read: ReadFile, entries: readonly string[]): StatedVersion
   for (const file of entries.filter((name) => /\.(?:cs|fs|vb)proj$/u.test(name))) {
     for (const match of (read(file) ?? "").matchAll(/net(\d+)\.\d+/gu)) {
       const major = Number(match[1]);
-      if (best === null || major > Number(best.version)) best = { version: String(major), source: file };
+      if (best === null || major > Number(best.version)) best = { version: String(major), source: file, strength: "minimum" };
     }
   }
   return best;
@@ -204,15 +212,4 @@ export function languageVariables(tools: Readonly<Record<string, string>>, place
   phase: "setup" | "commands"): Record<string, string> {
   return Object.assign({}, ...LANGUAGES.filter((language) => language.tool in tools)
     .map((language) => language.variables?.(places)[phase] ?? {}));
-}
-
-/** Whether a folder builds the language: any of its markers is among the folder's names. */
-export function builtIn(language: Language, entries: readonly string[]): boolean {
-  return language.markers.some((marker) => marker.startsWith("*") ? entries.some((name) => name.endsWith(marker.slice(1)))
-    : entries.includes(marker));
-}
-
-/** Whether a folder only states the language's version: it holds a version file and no build. */
-export function pinnedIn(language: Language, entries: readonly string[]): boolean {
-  return !builtIn(language, entries) && (language.versionFiles ?? []).some((file) => entries.includes(file));
 }

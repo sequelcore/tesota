@@ -1,6 +1,7 @@
 import { type Dirent, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { builtIn, LANGUAGES, pinnedIn } from "./languages.js";
+import { LANGUAGES } from "./languages.js";
+import { below, builtIn, keepsProjectKind, pinnedIn } from "./verification/project-rule.js";
 
 /**
  * The projects a repository holds, at its root or in folders below it to a
@@ -33,15 +34,10 @@ const skipped: ReadonlySet<string> = new Set(["node_modules", "vendor", "dist", 
 
 /** The kinds a folder's names show, and those among them it only states a version of. */
 function kindsIn(entries: readonly string[]): { present: string[]; pinned: string[] } {
-  const pinned = LANGUAGES.filter((language) => pinnedIn(language, entries)).map((language) => language.tool);
+  const pinned = LANGUAGES.filter((language) => pinnedIn(language.markers, language.versionFiles ?? [], entries)).map((language) => language.tool);
   return { present: [...entries.includes("package.json") ? ["node"] : [],
-    ...LANGUAGES.filter((language) => builtIn(language, entries) || pinned.includes(language.tool))
+    ...LANGUAGES.filter((language) => builtIn(language.markers, entries) || pinned.includes(language.tool))
       .map((language) => language.tool)], pinned };
-}
-
-/** Whether a folder lies below another, as `backend/app` below `backend` and every folder below the root. */
-export function below(folder: string, other: string): boolean {
-  return other !== folder && (folder === "" || other.startsWith(`${folder}/`));
 }
 
 /** Whether a JavaScript package builds the packages below it: it declares workspaces, as npm, Yarn and Bun read them, or has pnpm's file. */
@@ -74,8 +70,8 @@ export function findProjects(checkout: string): Project[] {
       queue.push({ folder: next.folder === "" ? name : `${next.folder}/${name}`, depth: next.depth + 1, claimed });
     }
   }
-  return found.map(({ folder, entries, kinds, pinned }) => ({ folder, entries, kinds: kinds.filter((kind) => !pinned.includes(kind)
-    || !found.some((other) => below(folder, other.folder) && other.kinds.includes(kind))) }));
+  return found.map(({ folder, entries, kinds, pinned }) => ({ folder, entries, kinds: kinds.filter((kind) => keepsProjectKind(pinned.includes(kind),
+    found.some((other) => below(folder, other.folder) && other.kinds.includes(kind) && !other.pinned.includes(kind)))) }));
 }
 
 /** A file of a project's, relative to the repository. */
