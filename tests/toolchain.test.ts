@@ -111,6 +111,77 @@ it("plans each project in a subfolder: its runtime, build tools, registries and 
     .toEqual({ java: "17", maven: "latest" });
 });
 
+it("uses an ancestor's .NET SDK pin before a child project's target framework", async () => {
+  const plan = planToolchain(await repository({
+    "global.json": '{ "sdk": { "version": "9.0.100" } }',
+    "app/App.csproj": "<TargetFramework>net8.0</TargetFramework>",
+  }));
+  expect(plan.tools).toEqual({ dotnet: "9.0.100" });
+  expect(plan.sources).toEqual(["global.json"]);
+});
+
+it("uses an ancestor's Python pin before a child project's minimum requirement", async () => {
+  const plan = planToolchain(await repository({
+    ".python-version": "3.12\n",
+    "app/pyproject.toml": '[project]\nrequires-python = ">=3.10"\n',
+  }));
+  expect(plan.tools).toEqual({ python: "3.12" });
+  expect(plan.sources).toEqual([".python-version"]);
+});
+
+it("uses a project's local SDK pin before an ancestor's pin", async () => {
+  const plan = planToolchain(await repository({
+    "global.json": '{ "sdk": { "version": "9.0.100" } }',
+    "app/global.json": '{ "sdk": { "version": "10.0.100" } }',
+    "app/App.csproj": "<TargetFramework>net8.0</TargetFramework>",
+  }));
+  expect(plan.tools).toEqual({ dotnet: "10.0.100" });
+  expect(plan.sources).toEqual(["app/global.json"]);
+});
+
+it("keeps exact Python and Ruby declarations ahead of an ancestor's version file", async () => {
+  expect(planToolchain(await repository({
+    ".python-version": "3.12\n",
+    "app/pyproject.toml": '[project]\nrequires-python = "==3.11.9"\n',
+  })).tools).toEqual({ python: "3.11.9" });
+  expect(planToolchain(await repository({
+    ".ruby-version": "3.4\n", "app/Gemfile": "ruby '3.3.5'\n",
+  })).tools).toEqual({ ruby: "3.3.5" });
+});
+
+it("keeps an ancestor's Java toolchain pin ahead of a Maven compilation target", async () => {
+  expect(planToolchain(await repository({
+    ".java-version": "21\n", "app/pom.xml": "<maven.compiler.release>17</maven.compiler.release>",
+  })).tools).toEqual({ java: "21", maven: "latest" });
+});
+
+it("uses a local Pipfile pin ahead of both a Python minimum and an ancestor's pin", async () => {
+  const plan = planToolchain(await repository({
+    ".python-version": "3.12\n", "app/pyproject.toml": '[project]\nrequires-python = ">=3.10"\n',
+    "app/Pipfile": '[requires]\npython_full_version = "3.11.9"\n',
+  }));
+  expect(plan.tools).toEqual({ python: "3.11.9" });
+  expect(plan.sources).toEqual(["app/Pipfile"]);
+});
+
+it("uses an exact Gradle toolchain ahead of a Maven target in the same folder", async () => {
+  const plan = planToolchain(await repository({
+    ".java-version": "21\n", "app/pom.xml": "<maven.compiler.release>17</maven.compiler.release>",
+    "app/build.gradle.kts": "java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }",
+  }));
+  expect(plan.tools).toEqual({ java: "25", maven: "latest", gradle: "latest" });
+  expect(plan.sources).toEqual(["app/build.gradle.kts"]);
+});
+
+it("inherits the nearest ancestor's version file across directories without a build", async () => {
+  const plan = planToolchain(await repository({
+    ".python-version": "3.12\n", "apps/.python-version": "3.13\n",
+    "apps/service/pyproject.toml": '[project]\nrequires-python = ">=3.10"\n',
+  }));
+  expect(plan.tools).toEqual({ python: "3.13" });
+  expect(plan.sources).toEqual(["apps/.python-version"]);
+});
+
 it("leaves a workspace's packages to the root's install, but mounts their node_modules too", async () => {
   const plan = planToolchain(await repository({
     "package.json": JSON.stringify({ workspaces: ["packages/*"] }), "bun.lock": "",

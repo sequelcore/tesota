@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { LANGUAGES, miseSpec } from "./languages.js";
+import { LANGUAGES, miseSpec, type StatedVersion } from "./languages.js";
 import { findProjects, inFolder, inProject, type Project } from "./projects.js";
+import { below, versionSource } from "./verification/project-rule.js";
 
 /** A lockfile install, run from its project's folder. */
 export interface DependencyInstall {
@@ -119,6 +120,21 @@ function dependencyInstall(directory: string): string | null {
   return existsSync(join(directory, "package-lock.json")) ? "npm ci" : null;
 }
 
+interface StatedInFolder {
+  readonly folder: string;
+  readonly stated: StatedVersion | null;
+}
+
+/** The nearest ancestor's version-file pin, which version managers apply to descendant folders. */
+function inheritedVersionFilePin(checkout: string, language: typeof LANGUAGES[number], folders: readonly Project[]): StatedInFolder | null {
+  for (const folder of folders) {
+    if (!(language.versionFiles ?? []).some((file) => folder.entries.includes(file))) continue;
+    const stated = language.stated((path) => readText(checkout, inProject(folder.folder, path)), folder.entries);
+    if (stated?.strength === "pin") return { folder: folder.folder, stated };
+  }
+  return null;
+}
+
 /**
  * Add each language the projects' files show, at the version the first
  * project to state one states, or its fallback, with the build tools each
@@ -129,10 +145,17 @@ function languageTools(checkout: string, projects: readonly Project[], tools: Re
   for (const project of projects) {
     for (const language of LANGUAGES.filter((candidate) => project.kinds.includes(candidate.tool))) {
       if (!(language.tool in tools)) {
-        const stated = language.stated((path) => readText(checkout, inProject(project.folder, path)), project.entries);
+        const local: StatedInFolder = { folder: project.folder,
+          stated: language.stated((path) => readText(checkout, inProject(project.folder, path)), project.entries) };
+        // An exact declaration in the project wins. Otherwise, a version file in the nearest parent applies before
+        // a project's target or minimum requirement, as version managers read it (#318).
+        const folders = projects.filter((other) => below(other.folder, project.folder))
+          .sort((a, b) => b.folder.length - a.folder.length);
+        const inherited = local.stated?.strength === "pin" ? null : inheritedVersionFilePin(checkout, language, folders);
+        const selected = versionSource(local.stated?.strength ?? "none", inherited !== null) === "ancestor" && inherited !== null ? inherited : local;
+        const stated = selected.stated;
         tools[language.tool] = stated?.version ?? language.fallback;
-        sources.push(stated === null ? `${language.tool} found, ${language.fallback} by default`
-          : inProject(project.folder, stated.source));
+        sources.push(stated === null ? `${language.tool} found, ${language.fallback} by default` : inProject(selected.folder, stated.source));
       }
       for (const [tool, version] of Object.entries(language.buildTools?.(project.entries) ?? {})) tools[tool] ??= version;
       registries.push(...language.registries);

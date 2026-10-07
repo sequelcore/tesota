@@ -2,7 +2,9 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { below, builtIn, pinnedIn } from "../src/verification/project-rule.js";
 import { findProjects, inFolder } from "../src/projects.js";
+import { planToolchain } from "../src/toolchain.js";
 import { suggestChecks } from "../src/workspace-checks.js";
 
 /**
@@ -53,6 +55,22 @@ it("finds a monorepo's JavaScript app and Gradle project in subfolders and runs 
   expect(suggestChecks(root)).toEqual(["cd backend && ./gradlew check", "cd frontend && bun run lint", "cd frontend && bun run test"]);
 });
 
+it("lets a subfolder's build keep its kind and checks when the root only states the version", async () => {
+  const root = await repository({ ".java-version": "21\n", "frontend/package.json": JSON.stringify({ scripts: { check: "tsc" } }),
+    "frontend/bun.lock": "", "backend/settings.gradle.kts": "", "backend/gradlew": "",
+    "backend/build.gradle.kts": "java { toolchain { languageVersion = JavaLanguageVersion.of(25) } }" });
+  expect(findProjects(root).map(({ folder, kinds }) => ({ folder, kinds }))).toEqual([
+    { folder: "", kinds: [] }, { folder: "backend", kinds: ["java"] }, { folder: "frontend", kinds: ["node"] }]);
+  expect(suggestChecks(root)).toEqual(["cd backend && ./gradlew check", "cd frontend && bun run check"]);
+  // An exact subfolder toolchain wins over the root's version file.
+  expect(planToolchain(root)).toMatchObject({ tools: { java: "25" }, sources: ["backend/build.gradle.kts"] });
+  const unstated = await repository({ ".sdkmanrc": "java=21.0.4-tem\n", "global.json": "{ \"sdk\": { \"version\": \"9.0.100\" } }",
+    "backend/pom.xml": "<project/>", "src/App/App.csproj": "" });
+  expect(planToolchain(unstated)).toMatchObject({ tools: { java: "21.0.4", dotnet: "9.0.100" }, sources: [".sdkmanrc", "global.json"] });
+  // With no build below, a folder that only states the version is still that language's project.
+  expect(findProjects(await repository({ ".python-version": "3.12\n", "tools/README.md": "" }))[0]?.kinds).toEqual(["python"]);
+});
+
 it("keeps a root package's checks beside its subfolders' unless it declares workspaces", async () => {
   const tooling = await repository({ "package.json": JSON.stringify({ scripts: { lint: "prettier" } }),
     "web/package.json": JSON.stringify({ scripts: { check: "tsc" } }), "api/go.mod": "module api\n" });
@@ -62,9 +80,33 @@ it("keeps a root package's checks beside its subfolders' unless it declares work
   expect(suggestChecks(workspaces)).toEqual(["npm run check"]);
 });
 
+it("keeps a version-only root when descendants also only state versions", async () => {
+  const root = await repository({ ".python-version": "3.12\n", "tools/.python-version": "3.13\n" });
+  expect(findProjects(root)[0]?.kinds).toEqual(["python"]);
+  expect(planToolchain(root).tools).toEqual({ python: "3.12" });
+});
+
 it("reads folders to a bounded depth", async () => {
   expect(suggestChecks(await repository({ "a/b/c/Cargo.toml": "" }))).toEqual(["cd a/b/c && cargo test"]);
   expect(suggestChecks(await repository({ "a/b/c/d/Cargo.toml": "" }))).toEqual([]);
+});
+
+it("distinguishes descendants from equal folders and sibling prefixes", () => {
+  expect(below("", "app")).toBe(true);
+  expect(below("", "")).toBe(false);
+  expect(below("app", "app/service")).toBe(true);
+  expect(below("app", "app")).toBe(false);
+  expect(below("app", "apple/service")).toBe(false);
+  expect(below("app/service", "app")).toBe(false);
+});
+
+it("recognizes build markers and version-only directories independently", () => {
+  expect(builtIn(["*.csproj"], ["App.csproj"])).toBe(true);
+  expect(builtIn(["*.csproj"], ["App.csproj.bak"])).toBe(false);
+  expect(builtIn(["pom.xml"], ["my-pom.xml"])).toBe(false);
+  expect(pinnedIn(["pom.xml"], [".java-version"], [".java-version"])).toBe(true);
+  expect(pinnedIn(["pom.xml"], [".java-version"], ["pom.xml", ".java-version"])).toBe(false);
+  expect(pinnedIn(["pom.xml"], [".java-version"], [])).toBe(false);
 });
 
 it("quotes a folder the shell would otherwise split", () => {
