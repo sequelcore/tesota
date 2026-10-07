@@ -94,6 +94,7 @@ clean review is advice; neither shows that the change does what you asked. The
 | How it works today | [Design](docs/design/overview.md) |
 | Current status and next work | [Roadmap](docs/roadmap.md) |
 | Build, test and contribution practice | [Development](docs/development.md) |
+| Analysis direction and proposed integration | [Repository analysis](docs/design/repository-analysis.md), [decisions](docs/decisions/README.md) |
 
 Tesota is licensed under [Apache-2.0](LICENSE). Preserve [NOTICE](NOTICE) and
 retained third-party notices. See [CONTRIBUTING.md](CONTRIBUTING.md) and
