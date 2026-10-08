@@ -11,9 +11,15 @@ import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 /** Pi's provider id, under which the route's sign-in is kept. */
 export const CHATGPT_PROVIDER = "openai";
 
-/** The models a ChatGPT plan served through Codex, as Pi 1.1's legacy Codex catalog listed them. */
-export const CHATGPT_PLAN_MODELS: readonly string[] = ["gpt-5.3-codex-spark", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol",
-  "gpt-5.6-terra", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol"];
+/**
+ * The models a ChatGPT plan serves: those `GET /v1/models` lists as visible to
+ * a signed-in account, as OpenAI's Sign in with ChatGPT documentation says to
+ * choose them. On 2026-10-08 every plan that can sign in (Go, Plus, Pro,
+ * Business, Enterprise, Edu) listed the same ones, so the list is not read per
+ * account; it changes when OpenAI's does.
+ */
+export const CHATGPT_PLAN_MODELS: readonly string[] = ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra",
+  "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol"];
 
 /** How Tesota names itself on OpenAI's consent screen. */
 export const CHATGPT_AGENT_NAME = "Tesota";
