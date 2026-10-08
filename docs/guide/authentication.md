@@ -27,6 +27,12 @@ pool as your own Claude Code; the `anthropic` route is billed to the API key,
 `openrouter` to your OpenRouter credits, `opencode` to your Zen balance, and
 `opencode-go` counts against your Go subscription's limits.
 
+The `claude-code` route runs the unmodified Claude Code bundled with Tesota,
+signed in with your own Claude plan, as Anthropic's terms allow. The plan's
+limits assume ordinary individual use; for heavy, unattended or shared use,
+use the `anthropic` route with an API key
+([decision](../decisions/claude-code-route-terms.md)).
+
 ## How much each account has left
 
 `tesota usage` asks each provider how much every route has left and when it
