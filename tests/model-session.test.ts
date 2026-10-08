@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { CHATGPT_PLAN_MODELS, chatgptProvider } from "../src/integrations/chatgpt-provider.js";
 import { openModelTarget } from "../src/integrations/model-session.js";
 import { TesotaCredentials } from "../src/integrations/tesota-credentials.js";
 import { CodingSession } from "../src/integrations/pi-coding-session.js";
@@ -42,6 +43,12 @@ it("reaches the ChatGPT route only through its sign-in, never an OpenAI API key,
   } finally {
     if (before === undefined) delete process.env["OPENAI_API_KEY"]; else process.env["OPENAI_API_KEY"] = before;
   }
+});
+
+it("offers every model a ChatGPT plan serves, each with Pi's catalogue entry, and none it does not", () => {
+  expect(chatgptProvider().getModels().map((model) => model.id).sort()).toEqual([...CHATGPT_PLAN_MODELS].sort());
+  // Hidden or absent in what OpenAI lists for a plan on 2026-10-08.
+  for (const id of ["gpt-5.5", "gpt-5.3-codex-spark", "gpt-4o"]) expect(CHATGPT_PLAN_MODELS).not.toContain(id);
 });
 
 it("refuses a choice that is not route:model, or a model the route does not have", async () => {
