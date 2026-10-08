@@ -1,9 +1,9 @@
 # Security policy
 
 Tesota is pre-release software. It has no supported stable release and should
-not be treated as a security boundary for untrusted workloads. Current platform,
-isolation and live-integration limits are documented in the
-[roadmap](docs/roadmap.md) and the [design](docs/design/overview.md).
+not be treated as a security boundary: it verifies an agent's results and
+leaves what the agent may do to the harness that runs it. Current status and
+limits are documented in the [roadmap](docs/roadmap.md).
 
 ## Reporting a vulnerability
 
@@ -20,15 +20,12 @@ Please include:
 - the affected commit and platform;
 - the violated boundary and expected behavior;
 - a minimal reproduction without real credentials or private data;
-- observed effects and whether they may persist outside a Tesota workspace;
+- observed effects and whether they persist;
 - any known workaround.
 
-High-priority reports include file-tool writes outside the workspace, shell
-commands that run without approval in a supervised session, sandboxed
-commands that reach the host or an unallowed destination, credential or
-prompt disclosure,
-unconfirmed processes represented as settled, check results attached to the
-wrong content, and application of anything other than the reviewed changes.
+High-priority reports include evidence attached to the wrong content, a change
+reported as proved or tested when it was not, weakened evidence that goes
+unreported, and credential or prompt disclosure.
 
 ## Disclosure and scope
 
@@ -37,5 +34,5 @@ affected boundary and coordinate remediation and disclosure. No response-time or
 bug-bounty commitment is made while the project is pre-release.
 
 Model mistakes, low-quality suggestions and unsupported task classes are product
-limitations rather than vulnerabilities unless they cross an enforced authority,
-confidentiality, integrity or promotion boundary.
+limitations rather than vulnerabilities unless they cross a confidentiality or
+evidence-integrity boundary.

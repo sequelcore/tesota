@@ -1,8 +1,7 @@
 /**
- * Which changed lines a proof covers (docs/design/proofs.md, "What a proof
- * covers"): a line is proof-covered only when it lies in a function whose
- * contract proved on this tree, and the candidate did not narrow that
- * contract. Function `k` spans lines `starts[k]` to `ends[k]`, both included;
+ * Which changed lines a proof covers: a line is proof-covered only when it
+ * lies in a function whose contract proved on this tree, and the candidate
+ * did not narrow that contract. Function `k` spans lines `starts[k]` to `ends[k]`, both included;
  * `proved[k]` says its file proved, and `narrowed[k]` that the candidate
  * narrowed its contract, which the caller decides. Anything else, a caller or
  * unannotated code included, is left to review.

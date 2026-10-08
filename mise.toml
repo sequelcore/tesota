@@ -1,8 +1,5 @@
 # Tools this repository's checks need beyond Node and Bun, which package.json pins.
-# Tesota's sandboxes install them through mise, as any developer or CI can.
 
 [tools]
-# Pi's grep tool, which tests/secret-files.test.ts exercises, searches with ripgrep.
-ripgrep = "15.1.0"
 # bun run formal:check proves the LemmaScript rules in src/verification/ with Dafny 4.
 "github:dafny-lang/dafny" = "4.11.0"

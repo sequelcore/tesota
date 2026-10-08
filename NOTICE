@@ -7,17 +7,6 @@ You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2
 Tesota was reconstructed from the Kiln repository and retains selected Kiln
 history, attribution, documentation and adapted engineering work.
 
-Terminal themes
-
-The palettes in src/tesota-shell-theme.ts adapt the visual direction of
-packages/operator-appearance/src/palettes.ts from Kiln commit
-f02c70b6c312e22f76edf912902e8efaa8aa736a (kiln-legacy-2026-09).
-Kiln credited Automata, Phosphor and Vesper to the community themes at
-https://github.com/SunkenInTime/t3-themes. Tesota's terminal implementation
-does not copy that gallery's source code or theme JSON. Status colors,
-message backgrounds and selections are adapted to Tesota's terminal roles;
-the GUI appearance infrastructure is not included.
-
 Kiln
 Copyright 2024-2026 Sequel
 
@@ -34,68 +23,3 @@ Copyright 2025 OpenAI
 
 The palo fierro scene, its saguaros and tumbleweed, their motion and materials,
 and the colors they take from Tesota's themes, are Tesota's own.
-
-ClaimCheck
-
-The round-trip review in src/integrations/pi-claimcheck.ts adapts the method and
-prompt wording of ClaimCheck (https://github.com/metareflection/claimcheck),
-licensed under the MIT License:
-
-MIT License
-
-Copyright (c) 2026 metareflection
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
---------------------------------------------------------------------------------
-
-Tesota depends on @anthropic-ai/claude-agent-sdk, which bundles Anthropic's
-Claude Code program. It is not part of Tesota and is not redistributed with
-this repository; it is installed from npm under its own terms:
-
-© Anthropic PBC. All rights reserved. Use is subject to the Legal Agreements
-outlined here: https://code.claude.com/docs/en/legal-and-compliance.
-
---------------------------------------------------------------------------------
-
-Zod
-
-The built WSL sandbox server includes Zod, licensed under the MIT License:
-
-MIT License
-
-Copyright (c) 2025 Colin McDonnell
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
