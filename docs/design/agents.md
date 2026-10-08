@@ -329,8 +329,8 @@ installation's id, kept in `~/.tesota/auth/device-id`. Tesota registers its
 own provider in place of Pi's (`chatgptProvider` in
 `src/integrations/chatgpt-provider.ts`): Sign in with ChatGPT is its only
 sign-in, so an `OPENAI_API_KEY` in the environment is never billed for a
-plan's route, and it lists only the models a plan served through Codex
-(`CHATGPT_PLAN_MODELS`), since Pi lists the whole API catalogue under the same
+plan's route, and it lists only the models OpenAI lists as visible to a
+signed-in plan (`CHATGPT_PLAN_MODELS`), since Pi lists the whole API catalogue under the same
 provider. A login kept for the legacy sign-in is not read: each account signs
 in again.
 

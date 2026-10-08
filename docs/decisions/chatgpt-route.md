@@ -29,7 +29,7 @@ catalogue.
 - Tesota registers its own provider in place of Pi's `openai`
   (`src/integrations/chatgpt-provider.ts`): Sign in with ChatGPT is its only
   sign-in, so an environment API key is never billed for a plan's route, and
-  it offers only the models a plan served through Codex.
+  it offers only the models OpenAI lists for a plan.
 - Logins saved for the legacy route are not read, and `codex` route choices in
   `~/.tesota/routes.json` and `models.json` are invalid: the operator signs
   each account in again and renames the kind in those files.
@@ -54,9 +54,11 @@ Exercised live on 2026-10-08:
   for it, only a refused request at a plan's limit, so `tesota usage` points
   to ChatGPT's settings.
 - The token names no email and no plan; status shows the account by its id.
-- OpenAI documents `GET /v1/models` on the account's token for the models it
-  serves; the route still offers a fixed list, and the roadmap holds the
-  change.
+- `GET /v1/models` on the account's token, which OpenAI documents for
+  choosing models, listed seven as visible to the Plus account, and every
+  plan that can sign in had all seven. It hid `gpt-5.5` and did not list
+  `gpt-5.3-codex-spark`, which the legacy catalogue offered. The route offers
+  those seven; since no plan differs, it does not read the list per account.
 - Pi registers a new client at every sign-in, where OpenAI asks applications
   to keep the issued one for the account, so each sign-in adds a connected
   app in ChatGPT's settings.
