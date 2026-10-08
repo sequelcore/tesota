@@ -91,15 +91,18 @@ it("runs the script npm's and pnpm's Windows shims name, never the shim", () => 
   expect(piOnPath(join(pnpm, "bin"), "win32")).toEqual({ version: "1.3.0", cli: pnpmCli });
 });
 
-it("runs the script a shell shim names, or the one npm links pi to", () => {
+// A Linux or macOS PATH: a Windows folder's drive letter would split at its colon.
+it.skipIf(process.platform === "win32")("runs the script a shell shim names or npm links pi to, and no binary pi", () => {
   const prefix = folder();
   const cli = globalPi(prefix);
   writeFileSync(join(prefix, "pi"), '#!/bin/sh\nexec node  "$basedir/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" "$@"\n');
   expect(piOnPath(prefix, "linux")).toEqual({ version: "1.3.0", cli });
-  if (process.platform === "win32") return; // Creating a symbolic link needs a privilege Windows does not grant by default.
   const linked = folder();
   symlinkSync(cli, join(linked, "pi"));
   expect(piOnPath(linked, "linux")).toEqual({ version: "1.3.0", cli });
+  const binary = folder();
+  writeFileSync(join(binary, "pi"), Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 2]));
+  expect(piOnPath(`${binary}:${prefix}`, "linux")).toBeUndefined();
 });
 
 it("uses only the first pi on PATH, and only when it runs an installed Pi package", () => {
@@ -113,8 +116,5 @@ it("uses only the first pi on PATH, and only when it runs an installed Pi packag
   const missing = folder();
   writeFileSync(join(missing, "pi.cmd"), npmShim);
   expect(piOnPath(missing, "win32")).toBeUndefined();
-  const binary = folder();
-  writeFileSync(join(binary, "pi"), Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 2]));
-  expect(piOnPath(binary, "linux")).toBeUndefined();
   expect(piOnPath("", "win32")).toBeUndefined();
 });
