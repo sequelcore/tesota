@@ -1,17 +1,20 @@
 import type { Evidence } from "./evidence.js";
+import type { Weakening } from "./verification-changes.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
 
 /**
  * What a run that changed files leaves the operator when it settles: each
  * changed file with contracts, the gate's verdict on its proof and the
- * evidence, bound to the content it checked; and the changed files nothing
- * verified. Version 0 covers proofs only.
+ * evidence, bound to the content it checked; the changes that may weaken
+ * the evidence; and the changed files nothing verified. Changes are measured
+ * against the commit the operator's request started from.
  */
 export interface Receipt {
   readonly version: 0;
   /** False when the project has no Git repository, so nothing could tell which files changed or verify them. */
   readonly repository: boolean;
   readonly proofs: readonly { readonly path: string; readonly verdict: GateVerdict; readonly evidence: Evidence }[];
+  readonly weakened: readonly Weakening[];
   /** Changed files, relative to the project, that no evidence covers. */
   readonly unverified: readonly string[];
 }
@@ -27,6 +30,13 @@ function line(path: string, verdict: GateVerdict, evidence: Evidence): string {
   return `  NOT proved    ${path}: ${what}, repeating a failure already sent back`;
 }
 
+function weakening(change: Weakening): string {
+  const what = change.kind === "removed_contract" ? `removes or changes ${change.annotation}`
+    : change.kind === "added_assume" ? `adds ${change.annotation}`
+      : change.kind === "deleted_test" ? "deletes a test file" : "edits a test file";
+  return `  may weaken    ${change.path}: ${what}`;
+}
+
 /** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */
 export function renderReceipt(receipt: Receipt): string {
   if (!receipt.repository) {
@@ -37,6 +47,7 @@ export function renderReceipt(receipt: Receipt): string {
     "Tesota receipt",
     ...receipt.proofs.flatMap(({ path, verdict, evidence }) =>
       [line(path, verdict, evidence), `                content sha256 ${evidence.contentHash}`]),
+    ...receipt.weakened.map(weakening),
     ...receipt.unverified.map((path) => `  not verified  ${path}: no verifier covers it`),
   ].join("\n");
 }

@@ -3,31 +3,74 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
 import { proofReport } from "./prove-tool.js";
 import { type Receipt, renderReceipt } from "./receipt.js";
+import { type Weakening, weakenedEvidence } from "./verification-changes.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
 
 const execFileAsync = promisify(execFile);
 
-async function git(root: string, args: readonly string[]): Promise<string[] | undefined> {
+async function git(root: string, args: readonly string[]): Promise<string | undefined> {
   try {
-    const { stdout } = await execFileAsync("git", [...args, "-z"], { cwd: root, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
-    return stdout.split("\0").filter((path) => path !== "");
+    return (await execFileAsync("git", args, { cwd: root, windowsHide: true, maxBuffer: 16 * 1024 * 1024 })).stdout;
   } catch { return undefined; }
 }
 
+async function gitPaths(root: string, args: readonly string[]): Promise<string[] | undefined> {
+  return (await git(root, [...args, "-z"]))?.split("\0").filter((path) => path !== "");
+}
+
+/** `git diff` from `base`, relative to the project, as this module reads it whatever the operator's Git configuration. */
+function diffFrom(base: string, ...options: string[]): string[] {
+  return ["-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames",
+    "--relative", "--src-prefix=a/", "--dst-prefix=b/", ...options, base];
+}
+
+/** The commit `HEAD` names in the project at `root`; null before its first commit, and outside Git. */
+export async function headCommit(root: string): Promise<string | null> {
+  const commit = (await git(root, ["rev-parse", "--verify", "--quiet", "HEAD"]))?.trim();
+  return commit === undefined || commit === "" ? null : commit;
+}
+
 /**
- * The files under `root` that differ from `HEAD` or are untracked, relative
- * to it; every tracked file in a repository with no commit yet. Deleted files
- * are left out, and so is everything outside a Git repository (`undefined`).
+ * The files under `root` that differ from the commit `base` or are
+ * untracked, relative to it; every tracked file when `base` is null, before
+ * the repository's first commit. A commit made since `base` hides nothing.
+ * Deleted files are left out, and so is everything outside a Git repository
+ * (`undefined`).
  */
-export async function changedFiles(root: string): Promise<string[] | undefined> {
-  const tracked = await git(root, ["diff", "--name-only", "--relative", "--diff-filter=d", "HEAD"])
-    ?? await git(root, ["ls-files", "--cached"]);
-  const untracked = await git(root, ["ls-files", "--others", "--exclude-standard"]);
+export async function changedFiles(root: string, base: string | null): Promise<string[] | undefined> {
+  const tracked = base === null ? await gitPaths(root, ["ls-files", "--cached"])
+    : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=d"));
+  const untracked = await gitPaths(root, ["ls-files", "--others", "--exclude-standard"]);
   return tracked === undefined || untracked === undefined ? undefined : [...new Set([...tracked, ...untracked])].sort();
+}
+
+async function readIfPresent(path: string): Promise<string | undefined> {
+  try { return await readFile(path, "utf8"); } catch { return undefined; }
+}
+
+const statuses: Readonly<Record<string, ChangeStatus>> = { A: "added", D: "deleted" };
+
+/**
+ * The changes from `base` that may weaken the evidence (`weakenedEvidence`).
+ * A changed file the base lacks, untracked or before the first commit, counts
+ * as added whole.
+ */
+async function weakenings(root: string, base: string | null, changed: readonly string[]): Promise<Weakening[]> {
+  const listed = base === null ? [] : await gitPaths(root, diffFrom(base, "--name-status")) ?? [];
+  const changes: Pick<ChangedFile, "path" | "status">[] = [];
+  for (let k = 0; k + 1 < listed.length; k += 2) {
+    changes.push({ path: listed[k + 1] ?? "", status: statuses[listed[k] ?? ""] ?? "modified" });
+  }
+  const diff = base === null ? "" : await git(root, diffFrom(base, "--unified=0")) ?? "";
+  const inDiff = new Set(changes.map(({ path }) => path));
+  const whole = await Promise.all(changed.filter((path) => !inDiff.has(path)).map(async (path): Promise<ChangedFile> =>
+    ({ path, status: "added", added: (await readIfPresent(join(root, path)))?.split(/\r?\n/u) ?? [], removed: [] })));
+  return weakenedEvidence([...changedLines(diff, changes), ...whole].sort((a, b) => a.path < b.path ? -1 : 1));
 }
 
 async function hasAnnotations(root: string, path: string): Promise<boolean> {
@@ -56,28 +99,38 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
  * sent back for that file (`gateVerdict`). That memory lasts for the
  * operator's request: it resets on their input, not on `agent_start`, which
  * every continuation fires too. When nothing goes back, the run settles with
- * a receipt for the operator. Outside a Git repository it cannot tell what
+ * a receipt for the operator. Changes are measured against the commit `HEAD`
+ * named when the operator's request started, so a commit the agent makes
+ * hides nothing; a steer or follow-up sent while the agent works belongs to
+ * the request already running. Outside a Git repository it cannot tell what
  * changed, so a request that ran a tool that may change files ends with a
  * receipt that says so.
  */
 export function registerGate(pi: ExtensionAPI): void {
   let sentBack = new Map<string, string[]>();
   let mayHaveChanged = false;
-  pi.on("input", (event) => {
-    if (event.source !== "extension") { sentBack = new Map(); mayHaveChanged = false; }
+  /** The request's base, recorded before the agent can run anything; a run no operator input started takes `HEAD` as it settles. */
+  let base: Promise<string | null> | undefined;
+  pi.on("input", async (event, ctx) => {
+    if (event.source === "extension") return undefined;
+    sentBack = new Map();
+    mayHaveChanged = false;
+    if (event.streamingBehavior === undefined) { base = headCommit(ctx.cwd); await base; }
     return undefined;
   });
   pi.on("tool_execution_start", (event) => { if (!readOnlyTools.has(event.toolName)) mayHaveChanged = true; });
   pi.on("agent_before_settle", async (event, ctx) => {
     if (event.outcome !== "completed") return undefined;
-    const changed = await changedFiles(ctx.cwd);
+    const from = await (base ??= headCommit(ctx.cwd));
+    const changed = await changedFiles(ctx.cwd, from);
     if (changed === undefined) {
       if (!mayHaveChanged) return undefined;
-      const receipt: Receipt = { version: 0, repository: false, proofs: [], unverified: [] };
+      const receipt: Receipt = { version: 0, repository: false, proofs: [], weakened: [], unverified: [] };
       return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
         display: true, details: receipt }] };
     }
-    if (changed.length === 0) return undefined;
+    const weakened = await weakenings(ctx.cwd, from, changed);
+    if (changed.length === 0 && weakened.length === 0) return undefined;
     const signal = ctx.signal ?? new AbortController().signal;
     const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
     const judged: Receipt["proofs"][number][] = [];
@@ -96,7 +149,7 @@ export function registerGate(pi: ExtensionAPI): void {
     // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
     const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
       path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
-    const receipt: Receipt = { version: 0, repository: true, proofs: judged, unverified: changed.filter((path) => !covered.has(path)) };
+    const receipt: Receipt = { version: 0, repository: true, proofs: judged, weakened, unverified: changed.filter((path) => !covered.has(path)) };
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
   });
