@@ -33,4 +33,4 @@ jobs:
           TEMP: ${{ github.workspace }}/.tesota-test-temp
           TMP: ${{ github.workspace }}/.tesota-test-temp
           TMPDIR: ${{ github.workspace }}/.tesota-test-temp
-      - run: bun --no-env-file dist/cli.js --help
+      - run: node dist/cli.js --help

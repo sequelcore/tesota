@@ -1,14 +1,13 @@
 # Contributing to Tesota
 
-Tesota is a pre-release coding agent that checks and reviews changes before
-the operator applies them. Contributions are welcome when they advance a
-demonstrated user need without weakening command approval, review of the exact
-changes, evidence integrity or human acceptance.
+Tesota is a pre-release verification layer for coding agents. Contributions
+are welcome when they advance a demonstrated user need without weakening
+evidence integrity or human acceptance.
 
 ## Before changing code
 
-Read the [design](docs/design/overview.md),
-[roadmap](docs/roadmap.md) and [development guide](docs/development.md). For a
+Read the [roadmap](docs/roadmap.md) and the
+[development guide](docs/development.md). For a
 substantial new capability, open a focused discussion or issue first so its user,
 owner, effect boundary and qualification evidence are explicit.
 
@@ -22,28 +21,27 @@ bun install --frozen-lockfile --ignore-scripts
 bun run check
 ```
 
-`bun run check` builds and type-checks the project, runs the test suites and
-executes Oxlint without applying fixes. Live evaluations and the proofs are
-separate commands and are not part of the offline contribution gate.
+`bun run check` builds and type-checks the project, runs the tests and
+executes Oxlint without applying fixes. The proofs are a separate command and
+are not part of the offline contribution gate.
 
 ## Change expectations
 
 - Keep the change focused and preserve unrelated behavior.
 - Put each behavior in one canonical owner and add abstractions only for current
   consumers.
-- Treat public or persisted names, evidence schemas and authority rules as
-  contracts.
+- Treat public or persisted names and evidence schemas as contracts.
 - Add the smallest behavioral test that proves the change and its important
   failure path.
 - Never make a check pass by weakening, deleting or suppressing the condition
   that detected the defect.
-- Keep credentials, personal paths, provider routing and operator state out of
+- Keep credentials, personal paths and operator state out of
   source, fixtures, logs and documentation.
 - Update the owning documentation when behavior, support or a consequential
   decision changes.
 
-Do not commit generated `dist/`, dependency directories, local environment
-files or retained live-run artifacts.
+Do not commit generated `dist/`, dependency directories or local environment
+files.
 
 ## Branch workflow
 
