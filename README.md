@@ -43,7 +43,8 @@ tesota auth login
 
 `tesota auth login` lets you choose a route; `tesota auth login codex` signs
 in with a ChatGPT plan. Without one, Tesota can use
-Claude Code, an Anthropic API key, OpenCode, or OpenRouter;
+Claude Code signed in with your own Claude plan, an Anthropic API key,
+OpenCode, or OpenRouter;
 [choosing models](docs/guide/choosing-models.md) shows the
 setup for each.
 
