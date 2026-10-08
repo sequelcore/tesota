@@ -10,9 +10,10 @@ layer. Today, in a project with LemmaScript `//@` contracts, it gives the
 agent a `prove` tool that proves them with Dafny while it works, keeps the
 agent working while a changed file's contracts do not prove, runs the
 project's tests and says which changed tests pass without the change, and
-ends the run with a receipt of what was proved, what was tested, what may
-weaken the evidence, such as a loosened contract or a deleted test, and what
-was not verified. The
+ends the run with a receipt of what was proved, which proved contracts are
+too weak to rule out small changes to their code, what a model judged of
+them against the request, what was tested, what may weaken the evidence,
+such as a loosened contract or a deleted test, and what was not verified. The
 [roadmap](docs/roadmap.md) lists what comes next. The earlier agent remains
 in Git history.
 

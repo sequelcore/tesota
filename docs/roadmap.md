@@ -18,7 +18,11 @@ lists the changes that may weaken the evidence, measured from the commit the
 request started at ([#341](https://github.com/sequelcore/tesota/issues/341)).
 Before it settles it runs the project's tests and reports a changed test
 that passes without the change
-([#342](https://github.com/sequelcore/tesota/issues/342)). A prototype on the
+([#342](https://github.com/sequelcore/tesota/issues/342)). For each contract
+the request added or changed that proved, the receipt says whether small
+changes to its code still prove, which makes it too weak to trust, and how
+the session's model judged it against the request, labelled as a model's
+judgment ([#345](https://github.com/sequelcore/tesota/issues/345)). A prototype on the
 `proto/verification-layer` branch confirmed that Pi 1.1's extension API
 carries the design.
 
@@ -50,12 +54,26 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    back until their set repeats, and runs each changed or added test file
    over the commit the request started from, in a Git worktree; one that
    passes there is reported as not exercising the change.
-6. **Contract strength.** Proof-based mutation and ClaimCheck against the
-   request.
+6. **Contract strength.** Done in #345: once the tests pass, up to 8 mutants
+   of each contract the request added or changed in a proved file are proved
+   alone, and the receipt calls a contract with a surviving mutant a weak
+   contract; ClaimCheck has a model restate each contract without the
+   request, the second model `--claimcheck-model` names or else the
+   session's, then has the session's model compare the restatement with
+   it, and the receipt labels that verdict a model's judgment and says when
+   one model made both requests. Neither sends anything back to the agent.
+   Mutation flags the registered clamp and discount weak contracts; the
+   maximum case's one mutant is ruled out by its contract, and ClaimCheck
+   on GPT-6 Luna judged that contract not to express the request in 3 of 3
+   live runs.
 7. **Receipt for pull requests.** `tesota receipt` writes Markdown and JSON,
    following in-toto's agentic process evidence proposal where it settles.
+   The receipt stops counting changed lines in a proved file's unannotated
+   functions as covered, using `proofCovered`.
 8. **Evaluation.** The registered proof cases as a live suite that runs Pi
-   with the package.
+   with the package. It also measures whether sending a weak contract back
+   to the agent helps, and whether a second ClaimCheck model changes its
+   verdicts.
 9. **Documentation.** README, a design page, a decision record that reverses
    the harness decisions, and this roadmap.
 10. **Parallel sessions.** Recommend an existing Pi package, or raise the gap

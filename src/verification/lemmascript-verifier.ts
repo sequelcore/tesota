@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -86,4 +86,19 @@ export async function proveFile(root: string, path: string, signal: AbortSignal)
   const output = outcome === "vacuous"
     ? `${printed}\nLemmaScript verified nothing in this file, so nothing was proved.` : printed;
   return evidence(outcome, output, proofPath(root, path, `${regen.output}\n${check?.output ?? ""}`));
+}
+
+/**
+ * How LemmaScript with Dafny ends on `source` alone, as file `name` in a
+ * temporary folder: with no `.dfy` beside it, regen generates the program
+ * without proof additions. Proof-based mutation proves its mutants this way,
+ * so the project is never touched.
+ */
+export async function proveSource(name: string, source: string, signal: AbortSignal): Promise<ProofOutcome> {
+  const directory = await mkdtemp(join(tmpdir(), "tesota-lemmascript-"));
+  try {
+    await writeFile(join(directory, name), source);
+    const [regen, check] = await regenThenCheck(directory, name, signal);
+    return outcomeOf(regen, check, signal);
+  } finally { await rm(directory, { recursive: true, force: true }); }
 }
