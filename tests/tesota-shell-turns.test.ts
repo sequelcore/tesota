@@ -68,7 +68,7 @@ async function openShell(record: ShellSessionRecord | readonly ShellSessionRecor
   const createWorkspace = Workspace.create.bind(Workspace);
   spies.push(vi.spyOn(Workspace, "create").mockImplementation((directory, _root, options) =>
     createWorkspace(directory, join(root, "workspaces"), { ...options, sourcesRoot: join(root, "sources") })));
-  spies.push(vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}) } as unknown as ModelRuntime),
+  spies.push(vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}), registerNativeProvider: () => {} } as unknown as ModelRuntime),
     vi.spyOn(SessionManager, "findById").mockReturnValue(undefined),
     vi.spyOn(SessionManager, "create").mockReturnValue({} as SessionManager),
     vi.spyOn(CodingSession, "create").mockImplementation(async (options) => {

@@ -5,6 +5,7 @@ import { ModelRuntime, type SessionManager, type ToolDefinition } from "@earendi
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { type ModelChoice, parseModelChoice, type ReasoningLevel, type RouteKind } from "../model-roles.js";
 import type { TokenUsage } from "../token-usage.js";
+import { CHATGPT_PROVIDER, chatgptProvider } from "./chatgpt-provider.js";
 import { ClaudeCodeSession } from "./claude-code-session.js";
 import { TesotaCredentials } from "./tesota-credentials.js";
 import type { AgentActivity, ConversationEntry, ModelSession } from "./model-session-contract.js";
@@ -12,7 +13,7 @@ import { type CodingSessionOptions, CodingSession, type WorkingAgentOptions, wor
 
 /**
  * One interface over the engines a role can run on (decision 021): Pi, for
- * the `codex` and `anthropic` routes, and Claude Code, for `claude-code`. A
+ * the `chatgpt` and `anthropic` routes, and Claude Code, for `claude-code`. A
  * role's prompt, tools, results, activity and token counts are the same on
  * either.
  */
@@ -47,8 +48,20 @@ function configOf(target: Extract<ModelTarget, { engine: "claude-code" }>): { co
 }
 
 /** Pi's provider for each kind of route it serves. */
-const piProviders = { codex: "openai-codex", anthropic: "anthropic", openrouter: "openrouter", opencode: "opencode",
+const piProviders = { chatgpt: CHATGPT_PROVIDER, anthropic: "anthropic", openrouter: "openrouter", opencode: "opencode",
   "opencode-go": "opencode-go" } as const satisfies Partial<Record<RouteKind, string>>;
+
+/**
+ * Pi's model runtime over these credentials, with the `chatgpt` route's own
+ * provider in place of Pi's OpenAI provider, which would otherwise answer with
+ * an `OPENAI_API_KEY` from the environment.
+ */
+export async function piRuntime(credentials: TesotaCredentials, signal?: AbortSignal): Promise<ModelRuntime> {
+  const runtime = await ModelRuntime.create({ credentials, refreshOnCreate: false, allowModelNetwork: false,
+    ...(signal === undefined ? {} : { signal }) });
+  runtime.registerNativeProvider(chatgptProvider());
+  return runtime;
+}
 
 /** How Tesota names itself to a gateway, as OpenCode Go asks of every client: its own name and version, and the system. */
 export function tesotaUserAgent(): string {
@@ -88,8 +101,7 @@ export async function openModelTarget(choice: string, signal?: AbortSignal,
       ...added ? { configDirectory: claudeCodeRouteDirectory(parsed.route) } : {} };
   }
   const provider = piProviders[parsed.kind];
-  const modelRuntime = await ModelRuntime.create({ credentials: added ? TesotaCredentials.forRoute(parsed.route, provider) : credentials,
-    refreshOnCreate: false, allowModelNetwork: false, ...(signal === undefined ? {} : { signal }) });
+  const modelRuntime = await piRuntime(added ? TesotaCredentials.forRoute(parsed.route, provider) : credentials, signal);
   const model = modelRuntime.getModel(provider, parsed.model);
   if (model === undefined) throw new Error(`${choice} is unavailable. Check tesota models and tesota auth status.`);
   const identity = identityHeaders(parsed.kind);

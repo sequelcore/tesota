@@ -3,8 +3,8 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 import { addRoute, chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
-import { CODEX_FREE_REFUSED, dataNotice, modelCost, offeredChoices, offeredModels, planRefusal, rolePicker, runModelsCommand,
-  runRolesCommand, servedModels, type OfferedModel } from "../src/models-command.js";
+import { dataNotice, modelCost, offeredChoices, offeredModels, rolePicker, runModelsCommand,
+  runRolesCommand, type OfferedModel } from "../src/models-command.js";
 
 // A home of the test's own, so the routes it adds are never the operator's, and the operator's never reach it.
 vi.mock("node:os", async (original) => {
@@ -25,8 +25,8 @@ function file(): string {
 }
 const all = ["low", "medium", "high", "xhigh", "max"] as const;
 const offered: OfferedModel[] = [
-  { id: "codex:gpt-6-luna", route: "codex", kind: "codex", name: "Luna", listPrice: { input: 0.1, output: 0.5 }, reasoning: all },
-  { id: "codex:gpt-6-sol", route: "codex", kind: "codex", name: "Sol", listPrice: { input: 2, output: 10 }, reasoning: all },
+  { id: "chatgpt:gpt-6-luna", route: "chatgpt", kind: "chatgpt", name: "Luna", listPrice: { input: 0.1, output: 0.5 }, reasoning: all },
+  { id: "chatgpt:gpt-6-sol", route: "chatgpt", kind: "chatgpt", name: "Sol", listPrice: { input: 2, output: 10 }, reasoning: all },
   { id: "anthropic:claude-opus-5-5", route: "anthropic", kind: "anthropic", name: "Opus 5.5", listPrice: { input: 4, output: 20 }, reasoning: all },
   { id: "claude-code:opus", route: "claude-code", kind: "claude-code", name: "Claude Code's opus", reasoning: all },
   { id: "claude-code:claude-opus-5-5", route: "claude-code", kind: "claude-code", name: "Opus 5.5", listPrice: { input: 4, output: 20 }, reasoning: all },
@@ -35,35 +35,35 @@ const offered: OfferedModel[] = [
 const ids = offeredChoices(offered);
 
 it("reads route:model and nothing else", () => {
-  expect(parseModelChoice("codex:gpt-6-luna")).toEqual({ route: "codex", kind: "codex", model: "gpt-6-luna" });
+  expect(parseModelChoice("chatgpt:gpt-6-luna")).toEqual({ route: "chatgpt", kind: "chatgpt", model: "gpt-6-luna" });
   expect(parseModelChoice("claude-code:opus")).toEqual({ route: "claude-code", kind: "claude-code", model: "opus" });
   expect(parseModelChoice("anthropic:claude-opus-5-5")).toEqual({ route: "anthropic", kind: "anthropic", model: "claude-opus-5-5" });
-  for (const value of ["gpt-6-luna", "off", "openai:gpt-6", "codex:", ":opus", "codex:bad model", "codex:a/b",
-    "codex:gpt-6-astra@turbo", "codex:gpt-6-astra@", "codex:@high"]) {
+  for (const value of ["gpt-6-luna", "off", "openai:gpt-6", "chatgpt:", ":opus", "chatgpt:bad model", "chatgpt:a/b",
+    "chatgpt:gpt-6-astra@turbo", "chatgpt:gpt-6-astra@", "chatgpt:@high"]) {
     expect(parseModelChoice(value)).toBeUndefined();
   }
 });
 
 it("reads a reasoning level after the model, and offers only the levels each model supports", () => {
-  expect(parseModelChoice("codex:gpt-6-astra@xhigh")).toEqual({ route: "codex", kind: "codex", model: "gpt-6-astra", reasoning: "xhigh" });
+  expect(parseModelChoice("chatgpt:gpt-6-astra@xhigh")).toEqual({ route: "chatgpt", kind: "chatgpt", model: "gpt-6-astra", reasoning: "xhigh" });
   expect(parseModelChoice("claude-code:opus@max")).toEqual({ route: "claude-code", kind: "claude-code", model: "opus", reasoning: "max" });
-  expect(ids).toContain("codex:gpt-6-sol@high");
+  expect(ids).toContain("chatgpt:gpt-6-sol@high");
   expect(ids).not.toContain("claude-code:haiku@high");
   const path = file();
-  expect(chooseModel("reviewer", "codex:gpt-6-sol@xhigh", ids, path).reviewer).toBe("codex:gpt-6-sol@xhigh");
+  expect(chooseModel("reviewer", "chatgpt:gpt-6-sol@xhigh", ids, path).reviewer).toBe("chatgpt:gpt-6-sol@xhigh");
   expect(() => chooseModel("agent", "claude-code:haiku@high", ids, path)).toThrow("claude-code:haiku@high is not offered");
   // The real catalogues: Astra has no level below minimal that Tesota offers, and Haiku 5.5 through Claude Code takes effort.
   const real = offeredModels();
-  expect(real.find((model) => model.id === "codex:gpt-6-astra")?.reasoning).toEqual(["low", "medium", "high", "xhigh", "max"]);
+  expect(real.find((model) => model.id === "chatgpt:gpt-6-astra")?.reasoning).toEqual(["low", "medium", "high", "xhigh", "max"]);
   expect(real.find((model) => model.id === "claude-code:opus")?.reasoning).toEqual(["low", "medium", "high", "xhigh", "max"]);
   expect(real.find((model) => model.id === "claude-code:haiku")?.reasoning).toEqual(["low", "medium", "high", "xhigh", "max"]);
 });
 
 it("gives every role the default until the operator chooses, with explorers and the advisor off", () => {
   expect(readModelChoices(file())).toEqual({ agent: DEFAULT_MODEL, explorer: "off", advisor: "off", reviewer: DEFAULT_MODEL,
-    refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL, namer: "codex:gpt-6-luna@low",
+    refuter: DEFAULT_MODEL, validator: DEFAULT_MODEL, triage: DEFAULT_MODEL, namer: "chatgpt:gpt-6-luna@low",
     searcher: DEFAULT_MODEL });
-  expect(DEFAULT_MODEL).toBe("codex:gpt-6-luna");
+  expect(DEFAULT_MODEL).toBe("chatgpt:gpt-6-luna");
 });
 
 it("gives the searcher only routes whose provider searches itself, or off", () => {
@@ -73,20 +73,20 @@ it("gives the searcher only routes whose provider searches itself, or off", () =
   expect(() => chooseModel("searcher", "anthropic:claude-opus-5-5", ids, path)).toThrow("its provider's own search");
   const searcher = rolePicker("/roles searcher ", offered, path)?.entries.map((entry) => entry.id) ?? [];
   expect(searcher.length).toBeGreaterThan(2);
-  expect(searcher.filter((id) => id !== "default" && id !== "off").every((id) => /^(codex|claude-code):/u.test(id))).toBe(true);
+  expect(searcher.filter((id) => id !== "default" && id !== "off").every((id) => /^(chatgpt|claude-code):/u.test(id))).toBe(true);
   expect(searcher.slice(-2)).toEqual(["default", "off"]);
 });
 
 it("turns the answer check's first pass off, so every answer gets the full check, and back to its default", () => {
   const path = file();
-  expect(chooseModel("triage", "codex:gpt-6-sol@low", ids, path).triage).toBe("codex:gpt-6-sol@low");
+  expect(chooseModel("triage", "chatgpt:gpt-6-sol@low", ids, path).triage).toBe("chatgpt:gpt-6-sol@low");
   expect(chooseModel("triage", "off", ids, path).triage).toBe("off");
   expect(chooseModel("triage", "default", ids, path).triage).toBe(DEFAULT_MODEL);
 });
 
 it("turns explorers and the advisor on with a model and off again, and accepts off for no other role", () => {
   const path = file();
-  expect(chooseModel("explorer", "codex:gpt-6-luna", ids, path).explorer).toBe("codex:gpt-6-luna");
+  expect(chooseModel("explorer", "chatgpt:gpt-6-luna", ids, path).explorer).toBe("chatgpt:gpt-6-luna");
   expect(chooseModel("explorer", "off", ids, path).explorer).toBe("off");
   expect(() => chooseModel("reviewer", "off", ids, path)).toThrow("off is not offered");
   expect(() => chooseModel("agent", "off", ids, path)).toThrow("off is not offered");
@@ -98,10 +98,10 @@ it("turns explorers and the advisor on with a model and off again, and accepts o
 it("keeps each role's route and model, refuses what no route offers, and clears it with default", () => {
   const path = file();
   expect(chooseModel("reviewer", "claude-code:opus", ids, path).reviewer).toBe("claude-code:opus");
-  expect(chooseModel("agent", "codex:gpt-6-sol", ids, path)).toMatchObject({ agent: "codex:gpt-6-sol", reviewer: "claude-code:opus" });
+  expect(chooseModel("agent", "chatgpt:gpt-6-sol", ids, path)).toMatchObject({ agent: "chatgpt:gpt-6-sol", reviewer: "claude-code:opus" });
   expect(chooseModel("refuter", "anthropic:claude-opus-5-5", ids, path).refuter).toBe("anthropic:claude-opus-5-5");
   expect(() => chooseModel("validator", "gpt-6-sol", ids, path)).toThrow("gpt-6-sol is not offered");
-  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ agent: "codex:gpt-6-sol", reviewer: "claude-code:opus",
+  expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({ agent: "chatgpt:gpt-6-sol", reviewer: "claude-code:opus",
     refuter: "anthropic:claude-opus-5-5" });
   expect(chooseModel("reviewer", "default", ids, path).reviewer).toBe(DEFAULT_MODEL);
 });
@@ -110,7 +110,7 @@ it("refuses a file it cannot read as model choices instead of guessing", () => {
   const path = file();
   writeFileSync(path, JSON.stringify({ reviewer: "gpt-6-astra" }));
   expect(() => readModelChoices(path)).toThrow("not a valid model choice file");
-  writeFileSync(path, JSON.stringify({ reviewer: "codex:gpt-6-astra", judge: "codex:gpt-6-sol" }));
+  writeFileSync(path, JSON.stringify({ reviewer: "chatgpt:gpt-6-astra", judge: "chatgpt:gpt-6-sol" }));
   expect(() => readModelChoices(path)).toThrow("not a valid model choice file");
 });
 
@@ -127,7 +127,7 @@ it("lists each role with who pays for it and the model's list price, and sets on
   expect(runRolesCommand([], write, offered, path)).toBe(0);
   expect(output).toContain("  reviewer  claude-code:opus              your Claude Code sign-in");
   expect(output).toContain("  refuter   anthropic:claude-opus-5-5     your Anthropic API key, $4 in and $20 out per million tokens");
-  expect(output).toContain("  agent     codex:gpt-6-luna              your ChatGPT plan's limits; list price $0.1 in and $0.5 out");
+  expect(output).toContain("  agent     chatgpt:gpt-6-luna            your ChatGPT plan's limits; list price $0.1 in and $0.5 out");
   expect(output).toContain("  validator claude-code:claude-opus-5-5   your Claude Code sign-in; list price $4 in and $20 out");
   expect(output).toContain("Use tesota models to see available models");
   expect(output).toContain("  advisor   off                           no advisor; choose a model to turn it on");
@@ -144,12 +144,12 @@ it("lists each role with who pays for it and the model's list price, and sets on
   expect(output).toContain("The advisor now uses claude-code:opus.\n");
   expect(output).toContain("the reviewer judges work the advisor's guidance shaped, and both use claude-code:opus");
   // A choice with a reasoning level is priced as its model.
-  expect(runRolesCommand(["validator", "codex:gpt-6-sol@high"], write, offered, path)).toBe(0);
+  expect(runRolesCommand(["validator", "chatgpt:gpt-6-sol@high"], write, offered, path)).toBe(0);
   output = "";
   expect(runRolesCommand([], write, offered, path)).toBe(0);
-  expect(output).toContain("  validator codex:gpt-6-sol@high          your ChatGPT plan's limits; list price $2 in and $10 out");
-  expect(runRolesCommand(["judge", "codex:gpt-6-sol"], write, offered, path)).toBe(2);
-  expect(runRolesCommand(["agent", "codex:gpt-9"], write, offered, path)).toBe(1);
+  expect(output).toContain("  validator chatgpt:gpt-6-sol@high        your ChatGPT plan's limits; list price $2 in and $10 out");
+  expect(runRolesCommand(["judge", "chatgpt:gpt-6-sol"], write, offered, path)).toBe(2);
+  expect(runRolesCommand(["agent", "chatgpt:gpt-9"], write, offered, path)).toBe(1);
 });
 
 it("reads OpenRouter's vendor/model:variant ids only on OpenRouter, and OpenCode's ids on Zen and Go", () => {
@@ -160,7 +160,7 @@ it("reads OpenRouter's vendor/model:variant ids only on OpenRouter, and OpenCode
   expect(parseModelChoice("opencode:big-pickle")).toEqual({ route: "opencode", kind: "opencode", model: "big-pickle" });
   expect(parseModelChoice("opencode-go:glm-5.3@max")).toEqual({ route: "opencode-go", kind: "opencode-go", model: "glm-5.3", reasoning: "max" });
   for (const value of ["openrouter:a//b", "openrouter:/b", "openrouter:a/b/c", "openrouter:a/b:", "opencode:a/b",
-    "opencode-go:x:free", "codex:a:free"]) {
+    "opencode-go:x:free", "chatgpt:a:free"]) {
     expect(parseModelChoice(value)).toBeUndefined();
   }
 });
@@ -183,7 +183,7 @@ it("offers the gateways' models, with who pays and what a free model's provider 
   for (const id of ["openrouter:google/gemma-4-31b-it:free", "openrouter:openrouter/free", "opencode-go:muse-spark-1.3-contributor"]) {
     expect(dataNotice(id), id).toMatch(/may keep your prompts and code/u);
   }
-  for (const id of ["openrouter:anthropic/claude-opus-5.5", "opencode:gpt-6-luna", "opencode-go:glm-5.3", "codex:gpt-6-luna"]) {
+  for (const id of ["openrouter:anthropic/claude-opus-5.5", "opencode:gpt-6-luna", "opencode-go:glm-5.3", "chatgpt:gpt-6-luna"]) {
     expect(dataNotice(id), id).toBeUndefined();
   }
 });
@@ -196,7 +196,7 @@ it("lists a large route by count, and all of its models on request", () => {
   expect(runModelsCommand(["openrouter"], (text) => { writes.push(text); }, offeredModels())).toBe(0);
   expect(writes.join("")).toContain("google/gemma-4-31b-it:free");
   writes.length = 0;
-  expect(runModelsCommand(["reviewer", "codex:gpt-6-luna"], (text) => { writes.push(text); }, offered)).toBe(2);
+  expect(runModelsCommand(["reviewer", "chatgpt:gpt-6-luna"], (text) => { writes.push(text); }, offered)).toBe(2);
   expect(writes.join("")).toContain("Usage: tesota models [<");
 });
 
@@ -247,7 +247,7 @@ it("says when roles spread across routes draw on one account, under the listing 
   const withSecond: OfferedModel[] = [...offered, { id: "claude-2:opus", route: "claude-2", kind: "claude-code", name: "Claude Code's opus",
     reasoning: all }];
   const ours = { id: "45e4b49f" };
-  const accounts = [{ route: "claude-code", account: ours }, { route: "claude-2", account: ours }, { route: "codex", account: { id: "plus" } }];
+  const accounts = [{ route: "claude-code", account: ours }, { route: "claude-2", account: ours }, { route: "chatgpt", account: { id: "plus" } }];
   let output = "";
   const write = (text: string): void => { output += text; };
   expect(runRolesCommand(["agent", "claude-code:opus"], write, withSecond, path, accounts, added)).toBe(0);
@@ -261,40 +261,11 @@ it("says when roles spread across routes draw on one account, under the listing 
   expect(output).toContain(note);
   // A choice on a route of its own account says nothing of the others.
   output = "";
-  expect(runRolesCommand(["refuter", "codex:gpt-6-sol"], write, withSecond, path, accounts, added)).toBe(0);
+  expect(runRolesCommand(["refuter", "chatgpt:gpt-6-sol"], write, withSecond, path, accounts, added)).toBe(0);
   expect(output).not.toContain("share one plan's limits");
   // Signed in to different accounts, the same roles share nothing.
   output = "";
   expect(runRolesCommand([], write, withSecond, path, [{ route: "claude-code", account: ours }, { route: "claude-2", account: { id: "b7" } }],
     added)).toBe(0);
   expect(output).not.toContain("share one plan's limits");
-});
-
-it("withholds the models Codex does not serve on a route's free ChatGPT plan, and refuses them for a role, naming the plan (#296)", () => {
-  addRoute("codex-free3", "codex");
-  const catalog = offeredModels();
-  expect(catalog.map((model) => model.id)).toEqual(expect.arrayContaining(CODEX_FREE_REFUSED.map((model) => `codex-free3:${model}`)));
-  const accounts = [{ route: "codex", account: { id: "plus", plan: "plus" } }, { route: "codex-free3", account: { id: "free", plan: "free" } }];
-  const served = servedModels(catalog, accounts).map((model) => model.id);
-  expect(served).toEqual(expect.arrayContaining(["codex:gpt-6.1-sol", "codex-free3:gpt-6-luna"]));
-  expect(served).not.toContain("codex-free3:gpt-6.1-sol");
-  // An unknown plan withholds nothing: only an observed refusal takes a model away.
-  expect(planRefusal("codex-free3:gpt-6.1-sol@high", [])).toBeUndefined();
-  expect(planRefusal("codex-free3:gpt-6.1-sol@high", accounts)).toBe(
-    "codex-free3 is signed in to a free ChatGPT plan, on which Codex does not serve gpt-6.1-sol");
-
-  let text = "";
-  const write = (written: string): void => { text += written; };
-  expect(runModelsCommand(["codex-free3"], write, catalog, accounts)).toBe(0);
-  expect(text).not.toMatch(/^ {2}gpt-6\.1-sol /mu);
-  expect(text).toContain("Not listed: gpt-5.6-sol, gpt-6-sol, gpt-6.1-sol; Codex does not serve them on codex-free3's free ChatGPT plan.");
-
-  const path = file();
-  text = "";
-  expect(runRolesCommand(["agent", "codex-free3:gpt-6.1-sol"], write, catalog, path, accounts)).toBe(1);
-  expect(text).toContain("codex-free3 is signed in to a free ChatGPT plan, on which Codex does not serve gpt-6.1-sol");
-  expect(readModelChoices(path).agent).toBe(DEFAULT_MODEL);
-  text = "";
-  expect(runRolesCommand(["agent", "codex:gpt-6.1-sol"], write, catalog, path, accounts)).toBe(0);
-  expect(text).toMatch(/^The agent now uses codex:gpt-6.1-sol.\n/u);
 });

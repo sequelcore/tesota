@@ -425,7 +425,7 @@ it("opens a model picker on /model: filtered by typing, a reasoning level with l
   const onModel = vi.fn();
   const levels = ["low", "medium", "high", "xhigh", "max"] as const;
   const modelPicker = () => ({ current: "claude-code:opus", contextTokens: 48_300, entries: [
-    { id: "codex:gpt-6-sol", detail: "your ChatGPT plan's limits", reasoning: levels },
+    { id: "chatgpt:gpt-6-sol", detail: "your ChatGPT plan's limits", reasoning: levels },
     { id: "claude-code:opus", detail: "your Claude Code sign-in", reasoning: levels },
     { id: "claude-code:haiku", detail: "your Claude Code sign-in", reasoning: [] } ] });
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onModel, modelPicker });
@@ -436,18 +436,18 @@ it("opens a model picker on /model: filtered by typing, a reasoning level with l
   terminal.send("\r");
   expect(onModel).not.toHaveBeenCalled();
   const opened = screen();
-  expect(opened).toContain("codex:gpt-6-sol");
+  expect(opened).toContain("chatgpt:gpt-6-sol");
   expect(opened).toMatch(/● claude-code:opus/u);
   expect(opened).toContain("←→ reasoning");
   expect(opened).toContain("A switch re-reads about 48k tokens without cache; /handoff starts fresh.");
   terminal.send("sol");
   const filtered = screen();
-  expect(filtered).toContain("codex:gpt-6-sol");
+  expect(filtered).toContain("chatgpt:gpt-6-sol");
   expect(filtered).not.toContain("claude-code:haiku");
   for (let step = 0; step < 3; step++) terminal.send("\x1b[C");
   expect(screen()).toContain("‹ high ›");
   terminal.send("\r");
-  expect(onModel).toHaveBeenCalledWith("default", "codex:gpt-6-sol@high");
+  expect(onModel).toHaveBeenCalledWith("default", "chatgpt:gpt-6-sol@high");
   // Esc closes the picker and leaves what was typed; a name typed in full still switches without it.
   shell.ask("> ").catch(() => undefined);
   terminal.send("/model hai");
@@ -485,10 +485,10 @@ it("chooses a role's model with /roles: a role, then its model, which Enter sets
     prefixes.push(prefix);
     return prefix === "/roles "
       ? { title: "Role", completes: true, current: "", entries: [
-        { id: "reviewer", detail: "codex:gpt-6-astra", reasoning: [] }, { id: "triage", detail: "codex:gpt-6-luna", reasoning: [] }] }
-      : { title: "The triage's model, for every session", current: "codex:gpt-6-luna", entries: [
+        { id: "reviewer", detail: "chatgpt:gpt-6-astra", reasoning: [] }, { id: "triage", detail: "chatgpt:gpt-6-luna", reasoning: [] }] }
+      : { title: "The triage's model, for every session", current: "chatgpt:gpt-6-luna", entries: [
         { id: "typesafe:jev-1.13.0", detail: "your TypeSafe key", reasoning: [] },
-        { id: "codex:gpt-6-luna", detail: "your ChatGPT plan's limits", reasoning: [] }] };
+        { id: "chatgpt:gpt-6-luna", detail: "your ChatGPT plan's limits", reasoning: [] }] };
   };
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onRoleModel, modelPicker });
   shell.start();
@@ -506,7 +506,7 @@ it("chooses a role's model with /roles: a role, then its model, which Enter sets
   expect(prefixes).toEqual(["/roles ", "/roles triage "]);
   const models = screen();
   expect(models).toContain("The triage's model, for every session");
-  expect(models).toMatch(/● codex:gpt-6-luna/u);
+  expect(models).toMatch(/● chatgpt:gpt-6-luna/u);
   terminal.send("jev");
   terminal.send("\r");
   expect(onRoleModel).toHaveBeenCalledWith("default", ["triage", "typesafe:jev-1.13.0"]);
@@ -961,13 +961,13 @@ it("keeps a shell command typed while the session works in the input, since it w
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, onModel });
   shell.start();
   shell.reportFor("default", { phase: "working" });
-  terminal.send("/model codex:gpt-6-sol");
+  terminal.send("/model chatgpt:gpt-6-sol");
   terminal.send("\r");
   tui.renderNow(true);
   expect(onModel).not.toHaveBeenCalled();
   expect(shell.hasQueued("default")).toBe(false);
   expect(visible(terminal)).toContain("Shell commands run at the prompt once this work ends");
-  expect(visible(terminal)).toContain("/model codex:gpt-6-sol");
+  expect(visible(terminal)).toContain("/model chatgpt:gpt-6-sol");
   shell.stop();
 });
 
@@ -1974,18 +1974,18 @@ it("opens the Accounts panel over the session: its tabs, keys that never reach t
   const accounts: AccountsSource = {
     readUsage: async (update) => {
       reads.usage += 1;
-      update([{ route: "codex", kind: "codex", state: "reading" }]);
-      update([{ route: "codex", kind: "codex", state: "read", reading: { plan: "plus", notes: [],
+      update([{ route: "chatgpt", kind: "chatgpt", state: "reading" }]);
+      update([{ route: "chatgpt", kind: "chatgpt", state: "read", reading: { plan: "plus", notes: [],
         meters: [{ label: "week", left: 20 }] } }]);
     },
     readSignIns: async () => {
       reads.signIns += 1;
-      return { rows: [{ route: "codex", kind: "Codex", signIn: "signed in" }], usedBy: () => ["reviewer"] };
+      return { rows: [{ route: "chatgpt", kind: "ChatGPT", signIn: "signed in" }], usedBy: () => ["reviewer"] };
     },
-    roles: () => [{ role: "agent", choice: "claude-code:sonnet", route: "claude-code" }, { role: "reviewer", choice: "codex:gpt-6-astra",
-      route: "codex" }, { role: "advisor", choice: "off" }],
+    roles: () => [{ role: "agent", choice: "claude-code:sonnet", route: "claude-code" }, { role: "reviewer", choice: "chatgpt:gpt-6-astra",
+      route: "chatgpt" }, { role: "advisor", choice: "off" }],
   };
-  const modelPicker = () => ({ current: "codex:gpt-6-astra", entries: [{ id: "codex:gpt-6-sol", detail: "plan", reasoning: [] }] });
+  const modelPicker = () => ({ current: "chatgpt:gpt-6-astra", entries: [{ id: "chatgpt:gpt-6-sol", detail: "plan", reasoning: [] }] });
   const shell = createTesotaShellTerminal({ cwd: "work/tesota", tui, accounts, modelPicker });
   shell.start();
   const answer = shell.ask("> ");
@@ -2001,16 +2001,16 @@ it("opens the Accounts panel over the session: its tabs, keys that never reach t
   expect(usage).toContain("Accounts");
   expect(screenLine(terminal.writes.join(""), "Session 1")).toContain("[2m");
   expect(usage).toMatch(/1 Usage {3}2 Sign-ins {3}3 Roles/u);
-  expect(usage).toMatch(/codex {2}Codex plus {2}week {4}████░░░░░░░░░░░░░░░░ {2}20%/u);
+  expect(usage).toMatch(/chatgpt {2}ChatGPT plus {2}week {4}████░░░░░░░░░░░░░░░░ {2}20%/u);
   expect(usage).toContain("read just now");
   // Typing while the panel is open reaches the panel, not the request.
   terminal.send("x");
   terminal.send("\t");
   const signIns = await screen();
-  expect(signIns).toMatch(/codex {2}Codex {2}signed in {2}— +reviewer/u);
+  expect(signIns).toMatch(/chatgpt {2}ChatGPT {2}signed in {2}— +reviewer/u);
   terminal.send("3");
   terminal.send("\x1b[B");
-  expect(await screen()).toMatch(/› reviewer {2}codex:gpt-6-astra {3}codex {8}██░░░░░░░░ {2}20% {2}week/u);
+  expect(await screen()).toMatch(/› reviewer {2}chatgpt:gpt-6-astra {2}chatgpt {6}██░░░░░░░░ {2}20% {2}week/u);
   terminal.send("r");
   await screen();
   expect(reads).toEqual({ usage: 2, signIns: 2 });
@@ -2018,7 +2018,7 @@ it("opens the Accounts panel over the session: its tabs, keys that never reach t
   terminal.send("\r");
   const picker = await screen();
   expect(picker).not.toContain("1 Usage");
-  expect(picker).toContain("codex:gpt-6-sol");
+  expect(picker).toContain("chatgpt:gpt-6-sol");
   terminal.send("\x1b");
   terminal.send("\x1b");
   await screen();

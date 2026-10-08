@@ -56,7 +56,7 @@ A change to an engine adapter or to the model-session contract passes
 `tests/model-session-contract.test.ts`, which holds every engine to the same
 clauses, and then the opt-in live suite, `TESOTA_LIVE_MODELS=1` with
 `TESOTA_LIVE_MODEL_CHOICES` naming the `route:model` choices (default
-`claude-code:haiku,codex:gpt-6-luna`); it uses the operator's sign-ins and a
+`claude-code:haiku,chatgpt:gpt-6-luna`); it uses the operator's sign-ins and a
 little model usage. A new engine joins the shared suite with a harness before
 any role uses it.
 

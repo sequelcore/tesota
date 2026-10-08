@@ -20,10 +20,10 @@ bun link
 tesota auth login
 ```
 
-Login stores a Codex credential under `~/.tesota/auth`; see
+Login stores a ChatGPT sign-in under `~/.tesota/auth`; see
 [authentication](authentication.md). `bun unlink` removes the command.
 
-Every role uses `codex:gpt-6-luna` until you choose otherwise, except explorers
+Every role uses `chatgpt:gpt-6-luna` until you choose otherwise, except explorers
 and the advisor, which are off. `tesota roles` lists the working agent,
 explorers, advisor, reviewer, refuter and fix validator with
 their models, who pays for each and the model's list price, and
@@ -31,7 +31,7 @@ their models, who pays for each and the model's list price, and
 models](choosing-models.md) has setups for the accounts you have and why they
 work; [authentication](authentication.md) covers signing in to each route.
 
-Explorers are off by default. `tesota roles explorer codex:gpt-6-luna` lets the agent
+Explorers are off by default. `tesota roles explorer chatgpt:gpt-6-luna` lets the agent
 of sessions opened afterwards ask read-only explorers questions about the
 repository with its `explore` tool: each explorer reads and searches but cannot
 change files or run commands, at most three run at once and eight per
@@ -48,8 +48,8 @@ agent decides when to consult it; you can ask for it in a request. Each
 consult shows in the conversation with the agent's question.
 
 The agent and explorers can **search the web and read pages**, with nothing
-to set up. Signed in to Codex or Claude Code, the `searcher` role's model
-searches with its provider's own search, `codex:gpt-6-luna` by default
+to set up. Signed in to ChatGPT or Claude Code, the `searcher` role's model
+searches with its provider's own search, `chatgpt:gpt-6-luna` by default
 (`tesota roles searcher <route:model>` chooses another on those routes). Each
 search names who searched and what it took. The findings come with the pages
 they cite; a page the search did not find is marked as not confirmed, and the
@@ -173,17 +173,17 @@ is not there, is caught and sent back. A quick first pass, on your
 `triage` model, skips the check for greetings, thanks and small talk;
 `tesota roles triage off` checks every answer in full instead. Its verdict
 always shows under the agent's reply, with the model that made it and why:
-`· First pass · triage codex:gpt-6-luna · sent to the full check: the reply
+`· First pass · triage chatgpt:gpt-6-luna · sent to the full check: the reply
 says how orderTotal rounds`, or `nothing to check`, or `could not decide`.
 When it skips the check, `/verify` runs the full check on that answer
 anyway, until your next request.
 
 Each step names the role and model doing it. While Tesota works, the status
-line reads `Reviewing · reviewer codex:gpt-6.1-sol`, `Testing each finding
+line reads `Reviewing · reviewer chatgpt:gpt-6.1-sol`, `Testing each finding
 and gap · refuter …` or `Checking each fix · validator …`; a call to the
 advisor, an explorer or the page reader shows its model beside it, as
 `• Advisor · claude-2:opus`. A review ends with who verified it,
-`Reviewed by codex:gpt-6.1-sol; findings tested by claude-2:opus.`, and its
+`Reviewed by chatgpt:gpt-6.1-sol; findings tested by claude-2:opus.`, and its
 record names each report's model and the refuter on each second check.
 
 The agent reads, searches, edits, creates and deletes files in your project.
@@ -313,7 +313,7 @@ continues, so follow-up requests keep their context.
 A session keeps its agent's model, shown at the bottom right. `/model` opens
 a list of the models: type to filter it, use ↑↓ to choose, ← → for a
 reasoning level, and Enter to switch this session's agent. You can also type
-the choice, for example `/model codex:gpt-6-sol@high` or
+the choice, for example `/model chatgpt:gpt-6-sol@high` or
 `/model claude-code:opus`. On the same
 engine (every route but `claude-code` shares Pi; `claude-code` is its own)
 the conversation continues. On another engine, and with `/handoff`, which

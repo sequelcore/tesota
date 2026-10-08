@@ -5,7 +5,7 @@ each signed in its own way:
 
 | Route | Sign in | Stored by |
 | --- | --- | --- |
-| `codex` | `tesota auth login codex`: Pi's Codex OAuth | Tesota, in `~/.tesota/auth/codex.json` |
+| `chatgpt` | `tesota auth login chatgpt`: Sign in with ChatGPT in your browser | Tesota, in `~/.tesota/auth/chatgpt.json` |
 | `anthropic` | `tesota auth login anthropic`: your Anthropic API key, typed without being shown | Tesota, in `~/.tesota/auth/anthropic.json`; `ANTHROPIC_API_KEY` also works |
 | `claude-code` | `tesota auth login claude-code`: Claude Code's own sign-in, the same as `claude auth login` | Claude Code, never Tesota |
 | `openrouter` | `tesota auth login openrouter`: sign in with OpenRouter in your browser, or paste a key you have | Tesota, in `~/.tesota/auth/openrouter.json`; `OPENROUTER_API_KEY` also works |
@@ -22,8 +22,9 @@ logout` for that. Tesota never reads, copies or stores a Claude subscription
 login, and never accepts one for the `anthropic` route. Tesota does not read or
 copy the credential stores of Codex, Pi or Kiln.
 
-Usage on the `claude-code` route draws on your Claude plan's limits, the same
-pool as your own Claude Code; the `anthropic` route is billed to the API key,
+Usage on the `chatgpt` route counts against your ChatGPT plan's limits, and
+on the `claude-code` route against your Claude plan's, the same pool as your
+own Claude Code; the `anthropic` route is billed to the API key,
 `openrouter` to your OpenRouter credits, `opencode` to your Zen balance, and
 `opencode-go` counts against your Go subscription's limits.
 
@@ -36,31 +37,28 @@ use the `anthropic` route with an API key
 ## How much each account has left
 
 `tesota usage` asks each provider how much every route has left and when it
-resets; name a route to read only that one, as in `tesota usage codex-work`.
+resets; name a route to read only that one, as in `tesota usage chatgpt-work`.
 Inside a session, `/usage` opens the same table in the Accounts panel
 ([using Tesota](using-tesota.md#accounts)).
 
 ```text
 Route        Account          Window     Left                       Details
-codex        Codex plus       5h         ████████████████████ 100%  resets in 3h 7m
-                              week       █████████████░░░░░░░  67%  resets in 6d 1h
+chatgpt      ChatGPT          no usage source for Sign in with ChatGPT: see ChatGPT's settings, Usage
 claude-2     Claude Code pro  5h         ████████████████████ 100%
                               week       ░░░░░░░░░░░░░░░░░░░░   0%  resets in 1d 9h
 openrouter   OpenRouter       key limit  ████████████░░░░░░░░  61%  $2.45 of $4.00 left
 typesafe     TypeSafe         no usage source: see console.typesafe.ai/settings/billing
 ```
 
-A bar is the share **left**, empty only when nothing is. Windows are named by
-their length, so a free Codex account shows its 30-day window. An OpenRouter
+A bar is the share **left**, empty only when nothing is. An OpenRouter
 key with a limit shows what remains of it; one without a limit shows what it
-has used. OpenCode shows its Go subscription's windows. The Anthropic API
-route, OpenCode Zen and TypeSafe have no usage source for the key Tesota
-holds, so the table says where to look instead. Routes signed in to the same
+has used. OpenCode shows its Go subscription's windows. Sign in with ChatGPT,
+the Anthropic API route, OpenCode Zen and TypeSafe have no usage source for
+the credential Tesota holds, so the table says where to look instead. Routes signed in to the same
 account share one plan, so that account is read once: the first route shows
 its meters and the others say `same account as <route>: one reading, above`.
 
-Codex's usage comes from a private ChatGPT endpoint and Claude Code's from an
-experimental report, so either may stop working. When a read fails, the table
+Claude Code's usage comes from an experimental report, so it may stop working. When a read fails, the table
 shows that route's last reading from the past hour with its age; after an
 hour it says `unknown` with the reason. Readings are saved in
 `~/.tesota/usage.json` without any key or token.
@@ -96,18 +94,26 @@ was created. Zen's free models, such as Big Pickle, are not offered: OpenCode
 lets only its own app use them, and refuses other tools with "OpenCode's free
 tier can only be used from within OpenCode".
 
-## Codex
+## ChatGPT
 
-Pi refreshes expiring Codex credentials when they are used. `bun run
-auth:codex` is also a login command. Login requires an interactive,
-unrecorded terminal once: enter the temporary code only on the official website
-shown by Tesota, using the intended account. It performs no model inference.
-Logging in again on a signed-in route signs in afresh, as to change accounts;
-the earlier login stays until the new one completes. A TTY check cannot detect terminal recording.
+`tesota auth login chatgpt` opens OpenAI's Sign in with ChatGPT page in your
+browser, which names Tesota and returns to a server Tesota runs on this
+computer for the sign-in. If the browser is on another computer, paste the
+address it ended on when Tesota asks. Tesota shows only OpenAI's sign-in
+address, and refuses to continue with any other. Each sign-in registers its
+own client with OpenAI, and Tesota sends OpenAI this installation's id, kept
+in `~/.tesota/auth/device-id`. The route signs in only this way: an
+`OPENAI_API_KEY` in the environment is never used for it. `bun run
+auth:chatgpt` is also a login command. Logging in again on a signed-in route
+signs in afresh, as to change accounts; the earlier login stays until the new
+one completes. Pi refreshes an expiring login when it is used.
 
-Login stops after three minutes, and cancelling it stops it at once; a code
-that arrives after that is never shown. Login fails if anything tries to call
-a model during it, even if that attempt is caught.
+The route needs a Go, Plus or Pro plan: OpenAI lets a free ChatGPT account
+sign in, then refuses the token, and Tesota says so. It offers the models a
+ChatGPT plan serves, not the rest of OpenAI's API catalog. The sign-in names
+no email, so status shows `(no email recorded)` for it. Login stops after three minutes, and cancelling it stops it at
+once. Login fails if anything tries to call a model during it, even if that
+attempt is caught.
 
 Status is offline and prints whether a saved login exists and the account it
 is for, read from the saved login's own claims, its email masked unless you
@@ -125,8 +131,8 @@ in again.
 ## Storage and concurrency
 
 [TesotaCredentials](../../src/integrations/tesota-credentials.ts) implements Pi's
-public `CredentialStore` contract for `openai-codex`, which holds only an OAuth
-login; `anthropic`, which holds only an API key; `openrouter`, which holds a
+public `CredentialStore` contract for `openai`, which holds only a Sign in with
+ChatGPT login; `anthropic`, which holds only an API key; `openrouter`, which holds a
 pasted key or the key its sign-in issued, which Pi keeps as an OAuth
 credential without a refresh token; and `opencode` and `opencode-go`, which
 share one file holding one API key. Pi owns authorization, polling, token
@@ -150,12 +156,12 @@ Failed operations preserve the previous credential where replacement has not
 completed. This is not a power-loss or distributed-filesystem guarantee.
 
 Lock acquisition waits at most ten seconds and respects cancellation. A killed
-process can leave `codex.lock`. Tesota does not steal an apparently stale lock.
+process can leave `chatgpt.lock`. Tesota does not steal an apparently stale lock.
 Before removing it, establish that no Tesota process is active. A provider-side refresh followed by a failed local save can require
 login again; local locking cannot roll back a remote token rotation.
 
 Corrupt, oversized, foreign-provider or inaccessible records fail closed. A
 saved login does not grant verification authority, model entitlement or human
-acceptance. [Login](../../src/integrations/codex-login.ts) owns the device-code
-flow and OpenRouter's sign-in; [storage](../../src/integrations/tesota-credentials.ts)
+acceptance. [Login](../../src/integrations/pi-login.ts) owns Sign in with
+ChatGPT and OpenRouter's sign-in; [storage](../../src/integrations/tesota-credentials.ts)
 owns the files.

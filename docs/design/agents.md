@@ -35,7 +35,7 @@ restating the question. It is the only agent that writes.
   proved by `bun run formal:check`: the same model changes nothing; a model
   on the **same engine** switches in place and the conversation continues
   (Pi's `setModel`, which adapts earlier messages to the new model, across
-  the `codex` and `anthropic` routes; Claude Code's model per query, on a
+  the `chatgpt` and `anthropic` routes; Claude Code's model per query, on a
   resumed conversation); a model on **another engine** starts a new
   conversation, because neither engine can read the other's.
 - **A switch in place costs one uncached turn.** A prompt cache belongs to
@@ -256,11 +256,11 @@ off until the operator chooses a model for it (`tesota roles advisor
 | `refuter` | The refuter |
 | `validator` | The fix validator |
 | `triage` | The answer check's first pass; it may also use Jev, a typed decision model, and `off` sends every answer to the full check |
-| `namer` | Writes a short title for each new session from its first request; `codex:gpt-6-luna@low` by default, and `off` keeps the request as the name |
-| `searcher` | Searches the web for the agent and explorers with its provider's own search; only Codex and Claude Code routes, and `off` leaves search to the keyless providers |
+| `namer` | Writes a short title for each new session from its first request; `chatgpt:gpt-6-luna@low` by default, and `off` keeps the request as the name |
+| `searcher` | Searches the web for the agent and explorers with its provider's own search; only ChatGPT and Claude Code routes, and `off` leaves search to the keyless providers |
 
 Each role uses the model the operator chose in `~/.tesota/models.json`,
-written as `route:model`, and `codex:gpt-6-luna`, the cheapest on the Codex
+written as `route:model`, and `chatgpt:gpt-6-luna`, the cheapest on the ChatGPT
 route, when there is no choice. `tesota roles` lists each role with its
 model, who pays for it and the model's list price, and
 `tesota roles <role> <route:model>` sets one from the models
@@ -310,7 +310,7 @@ role can use any route.
 
 | Route | Engine | Signed in by | Paid through |
 | --- | --- | --- | --- |
-| `codex` | Pi | `tesota auth login codex`: Pi's Codex OAuth, stored by Tesota | The operator's ChatGPT plan, against its limits |
+| `chatgpt` | Pi | `tesota auth login chatgpt`: Sign in with ChatGPT in the browser, stored by Tesota | The operator's ChatGPT plan, against its limits |
 | `anthropic` | Pi | `tesota auth login anthropic`: the operator's Anthropic API key, stored by Tesota, or `ANTHROPIC_API_KEY` | The API key, per token |
 | `claude-code` | Claude Code, through the Claude Agent SDK | The operator, in Claude Code itself (`claude`, then `/login`) | Whatever Claude Code is signed in with, usually a Claude plan |
 | `openrouter` | Pi | `tesota auth login openrouter`: OpenRouter's browser sign-in, which issues a key, or a pasted key, stored by Tesota; or `OPENROUTER_API_KEY` | The operator's OpenRouter credits, per token; `:free` models cost nothing |
@@ -320,15 +320,39 @@ role can use any route.
 Who pays is the route's (`ROUTE_BILLING`); a model's list price is the
 catalogue's.
 
+**The ChatGPT route** ([issue #191](https://github.com/sequelcore/tesota/issues/191))
+signs in through Pi's OpenAI provider with Sign in with ChatGPT, which
+replaced Pi's legacy Codex sign-in. Its token is issued for the OpenAI API
+itself, with a client OpenAI registers for each sign-in; the consent screen
+names Tesota (`LoginOptions.agentName`), and OpenAI is told this
+installation's id, kept in `~/.tesota/auth/device-id`. Tesota registers its
+own provider in place of Pi's (`chatgptProvider` in
+`src/integrations/chatgpt-provider.ts`): Sign in with ChatGPT is its only
+sign-in, so an `OPENAI_API_KEY` in the environment is never billed for a
+plan's route, and it lists only the models a plan served through Codex
+(`CHATGPT_PLAN_MODELS`), since Pi lists the whole API catalogue under the same
+provider. A login kept for the legacy sign-in is not read: each account signs
+in again.
+
+Live on 2026-10-08, a Plus account signed in and served requests; a free
+account signed in in the browser, and OpenAI then refused to exchange the
+sign-in for a token, as its help centre says plan usage in other apps needs
+Go, Plus or Pro. Tesota names that refusal, and the other failures Pi reports,
+without showing the provider's text (`failureOf` in
+`src/integrations/pi-login.ts`). The legacy route had served free accounts
+through Codex, so the free-plan model filter it needed (#296) is gone. The
+token names no email and no plan, so status shows the account by its id
+only.
+
 **Several accounts**. The table's routes are each a *kind's*
 default route. A route is a kind and one account behind it: the kind
 decides the engine, the models, who pays and each model's lab; the route
-decides only the account. The operator adds routes of the `codex` and
+decides only the account. The operator adds routes of the `chatgpt` and
 `claude-code` kinds, the ones signed in to a plan, under names of their
-own (`tesota auth login codex --as codex-work`, kept in
+own (`tesota auth login chatgpt --as chatgpt-work`, kept in
 `~/.tesota/routes.json`), and gives a role one with the usual choice,
-`codex-work:gpt-6-luna@low`, as t3code runs Codex and Claude as separate
-instances. An added Codex route keeps its login in a file of its own
+`chatgpt-work:gpt-6-luna@low`, as t3code runs Codex and Claude as separate
+instances. An added ChatGPT route keeps its login in a file of its own
 beside the default route's; an added Claude Code route has its own
 configuration folder (`CLAUDE_CONFIG_DIR`), where the operator signs in
 with Claude Code itself, so Tesota still holds no Claude login. Routes of
@@ -342,24 +366,12 @@ route that a role uses is not removed until the roles choose another
 a route in again, to change its account, or out keeps the route and the
 roles on it, and only `tesota auth remove` deletes one. Status names the
 account each route is signed in to, from Claude Code's `.claude.json` or the
-Codex token's profile claim, read locally, its email masked unless asked, and
+ChatGPT token's profile claim, read locally, its email masked unless asked, and
 names routes signed in to the same account, whose limits are one plan's
 (`src/route-accounts.ts`). `tesota roles`, the Accounts panel's Roles tab
 and a role choice that makes it so name roles on different routes that draw
 on one account, since spreading roles across routes is meant to spread them
 across plans; roles all on one route draw on one account by choice.
-A Codex route also offers only the models its ChatGPT plan serves: the
-token's `chatgpt_plan_type` claim names the plan, and on a free plan
-`tesota models`, `/model` and the role pickers leave out `CODEX_FREE_REFUSED`
-in `src/models-command.ts`, while `tesota roles` and `/model` refuse such a
-choice and name the plan (`planServes` in
-`src/verification/codex-plan-rule.ts`, proved). The list comes from an
-observed refusal, not a guess: on 2026-10-02 every request to `gpt-6.1-sol`,
-`gpt-6-sol` and `gpt-5.6-sol` on free accounts failed at once with "The
-'<model>' model is not supported when using Codex with a ChatGPT account",
-while a Plus account served them
-([issue #296](https://github.com/sequelcore/tesota/issues/296)). A route
-whose plan is unknown, or paid, offers every model.
 
 **What each account has left**. `tesota usage` and the
 shell's Accounts panel ask each route's provider, only when run or opened,
@@ -368,14 +380,14 @@ Codex's `/status` draws it, and when it resets. An account is read once,
 through the first route signed in to it, and every route on it shows that
 reading and names that route, so two meters of one plan cannot disagree
 (`usageReader` in `src/verification/usage-reader-rule.ts`, proved); a route
-whose account cannot be read is read by itself. Codex's windows come from `wham/usage`, the private
-endpoint Codex's own client reads, with the route's token, which Pi
-refreshes; Claude Code's from the Agent SDK's experimental usage report,
+whose account cannot be read is read by itself. Sign in with ChatGPT has no
+usage source: `wham/usage` refuses its token, and OpenAI documents only a
+refused request when a plan's limit is reached, so the table points to
+ChatGPT's settings. Claude Code's windows come from the Agent SDK's experimental usage report,
 read without sending a request and with Claude Code's ordinary traffic on,
 since a working session turns it off and the report then has no limits;
 OpenRouter's from the key's limit; OpenCode Go's from its usage endpoint.
-A window is labelled by its own length, so a free Codex account's 30-day
-window is not taken for a week. The segment count is proved
+The segment count is proved
 (`src/verification/usage-meter-rule.ts`): a bar is empty only when nothing
 is left and full only when nothing is used. Each reading is saved in
 `~/.tesota/usage.json` with its time, and a failed read, often a usage
@@ -451,7 +463,7 @@ one, with `tesota roles` or `/model`, warns and never refuses, as for
 judges. Paid models on these gateways keep nothing or 30 days by their
 stated policies.
 
-A judge's lab is the route's on `codex`, `anthropic` and
+A judge's lab is the route's on `chatgpt`, `anthropic` and
 `claude-code`, OpenRouter's vendor, and the family an OpenCode model's id
 starts with. The same model on another route is the same model
 (`openrouter:anthropic/claude-opus-5.5` is `anthropic:claude-opus-5-5`); a
@@ -561,13 +573,13 @@ the page it fetched ([assurance](assurance.md#obligations), issue #300).
   snippet, so a page's text reaches the agent only through `web_read`. Live
   on 2026-10-02, each answered in 1 to 2 s.
 - **Hosted search** (`src/integrations/hosted-search.ts`) runs on the
-  routes whose provider searches itself, Codex and Claude Code
+  routes whose provider searches itself, ChatGPT and Claude Code
   (`HOSTED_SEARCH_KINDS`); the Anthropic API's search has not been
   exercised. Its session has no Tesota tools, only the provider's search:
-  Codex on Pi with the Responses `web_search` tool, Claude Code with
+  ChatGPT on Pi with the Responses `web_search` tool, Claude Code with
   `WebSearch` alone. The searcher answers with findings and their pages, so
   web content again reaches only a session that cannot act. Pi keeps only a
-  response's text, so the Codex search reads the pages its search found or
+  response's text, so the ChatGPT search reads the pages its search found or
   opened and its `url_citation`s from the provider's events
   (`onProviderStreamEvent`); Claude Code's `WebSearch` result lists its
   pages. A page the findings cite counts as a source only when the search

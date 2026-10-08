@@ -9,10 +9,10 @@ Usage: tesota [--help | -h | help]
        tesota resume [<session-id>] [--theme <${TESOTA_SHELL_THEME_NAMES.join("|")}>]
        tesota run [--allow-commands] [--allow-network] [--checks=<command;…>|none] [--apply] [--folder] [--json] (<request> | -)
        tesota verify <file.ts|file.js>
-       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]
+       tesota auth <login|status|logout> [chatgpt|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]
        tesota auth status --show-accounts
        tesota auth remove <added route>
-       tesota auth login <codex|claude-code> --as <name>
+       tesota auth login <chatgpt|claude-code> --as <name>
        tesota models [<route>]
        tesota usage [<route>]
        tesota roles [<role> [<route:model|default|off>]]
@@ -149,16 +149,14 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
     err: (text) => { process.stderr.write(text); },
   });
 } else if (args[0] === "models") {
-  const { offeredModels, runModelsCommand } = await import("./models-command.js");
-  const { allRoutes, routeAccounts } = await import("./auth.js");
-  process.exitCode = runModelsCommand(args.slice(1), (text) => { process.stdout.write(text); }, offeredModels(),
-    await routeAccounts(allRoutes()));
+  const { runModelsCommand } = await import("./models-command.js");
+  process.exitCode = runModelsCommand(args.slice(1), (text) => { process.stdout.write(text); });
 } else if (args[0] === "usage") {
   const { runUsageCommand } = await import("./account-usage.js");
   const { usageSources } = await import("./integrations/usage-sources.js");
   process.exitCode = await runUsageCommand(args.slice(1), (text) => { process.stdout.write(text); }, usageSources());
 } else if (args[0] === "roles") {
-  const { offeredModels, rolePicker, runRolesCommand, servedModels } = await import("./models-command.js");
+  const { offeredModels, rolePicker, runRolesCommand } = await import("./models-command.js");
   const { DEFAULT_MODELS_FILE, isModelRole } = await import("./model-roles.js");
   const { allRoutes, routeAccounts } = await import("./auth.js");
   const accounts = await routeAccounts(allRoutes());
@@ -166,7 +164,7 @@ if (shellFlags && process.stdin.isTTY === true && process.stdout.isTTY === true 
   if (roleArgs.length === 1 && isModelRole(roleArgs[0] ?? "") && process.stdin.isTTY && process.stdout.isTTY) {
     const { chooseCliOption } = await import("./cli-choice.js");
     const role = roleArgs[0] ?? "";
-    const picker = rolePicker(`/roles ${role} `, servedModels(offeredModels(), accounts));
+    const picker = rolePicker(`/roles ${role} `, offeredModels());
     const entries = picker?.entries.flatMap((entry) => [entry.id,
       ...entry.reasoning.map((level) => `${entry.id}@${level}`)].map((value) => ({
       value, label: value, detail: `${value === picker.current ? "current · " : ""}${entry.detail}`,

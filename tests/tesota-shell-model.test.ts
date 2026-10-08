@@ -25,7 +25,7 @@ vi.mock("../src/shell-session-store.js", () => ({ openShellSessionStore: mocks.o
 vi.mock("../src/integrations/model-session.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../src/integrations/model-session.js")>(),
   startWorkingAgent: mocks.startWorkingAgent, openModelTarget: mocks.openModelTarget }));
-// The shell must not read the operator's own choices in ~/.tesota: the agent's role takes its default, codex:gpt-6-luna.
+// The shell must not read the operator's own choices in ~/.tesota: the agent's role takes its default, chatgpt:gpt-6-luna.
 vi.mock("../src/model-roles.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/model-roles.js")>();
   const { join } = await import("node:path");
@@ -100,11 +100,11 @@ function shell() {
 it("switches in place on the same engine, and the conversation continues", async () => {
   const { created, said, model } = shell();
   await created.session("session").work("Add a retry limit.");
-  await created.agentModel?.change("session", "codex:gpt-6-sol");
+  await created.agentModel?.change("session", "chatgpt:gpt-6-sol");
   expect(agents[0]?.switchModel).toHaveBeenCalledWith(expect.objectContaining({ engine: "pi" }));
-  expect(record.agent).toBe("codex:gpt-6-sol");
+  expect(record.agent).toBe("chatgpt:gpt-6-sol");
   expect(record.engineId).toBe("11111111-1111-4111-8111-111111111111");
-  expect(model).toHaveBeenLastCalledWith("session", "codex:gpt-6-sol");
+  expect(model).toHaveBeenLastCalledWith("session", "chatgpt:gpt-6-sol");
   expect(said()).toContain("its conversation continues");
   // Caches belong to one model and level: the operator learns what the next request re-reads, and the cheaper way.
   expect(said()).toContain("The next request re-reads this conversation, about 48k tokens, without the prompt cache");
@@ -113,8 +113,8 @@ it("switches in place on the same engine, and the conversation continues", async
   expect(said()).not.toContain("Same model judging");
   // A lab shared with its judges is a note, dimmed; the same model is a warning, colored.
   expect(vi.mocked(created.surface.writeTo)).toHaveBeenCalledWith("session", expect.stringContaining("Same lab"), "info");
-  await created.agentModel?.change("session", "codex:gpt-6-luna");
-  expect(said()).toContain("the reviewer judges the agent's work, and both use codex:gpt-6-luna");
+  await created.agentModel?.change("session", "chatgpt:gpt-6-luna");
+  expect(said()).toContain("the reviewer judges the agent's work, and both use chatgpt:gpt-6-luna");
   await created.session("session").work("Also log it.");
   expect(mocks.startWorkingAgent).toHaveBeenCalledTimes(1);
   created.dispose?.();
@@ -155,7 +155,7 @@ it("hands off on the same model with /handoff", async () => {
   await created.session("session").work("Add a retry limit.");
   await created.agentModel?.handOff("session");
   expect(agents[0]?.dispose).toHaveBeenCalled();
-  expect(record.agent).toBe("codex:gpt-6-luna");
+  expect(record.agent).toBe("chatgpt:gpt-6-luna");
   expect(record.engineId).not.toBe("11111111-1111-4111-8111-111111111111");
   expect(said()).toContain("will not have this conversation");
   created.dispose?.();
@@ -185,15 +185,15 @@ it("gives the agent an advisor only when the role is on, reading the agent's con
 it("refuses a model no route offers and changes nothing", async () => {
   // A refusal changes nothing in the session, so it is a reply and is not saved.
   const { created, notices, replies } = shell();
-  await created.agentModel?.change("session", "codex:no-such-model");
+  await created.agentModel?.change("session", "chatgpt:no-such-model");
   expect(replies).toHaveBeenLastCalledWith("session", expect.stringContaining("is not offered"), "warning");
   expect(notices).not.toHaveBeenCalled();
   expect(record.agent).toBeUndefined();
-  await created.agentModel?.change("session", "codex:gpt-6-luna");
-  expect(replies).toHaveBeenLastCalledWith("session", expect.stringContaining("already uses codex:gpt-6-luna"));
+  await created.agentModel?.change("session", "chatgpt:gpt-6-luna");
+  expect(replies).toHaveBeenLastCalledWith("session", expect.stringContaining("already uses chatgpt:gpt-6-luna"));
   // A reasoning level the model accepts is a switch on the same engine; one it does not is refused.
-  await created.agentModel?.change("session", "codex:gpt-6-luna@high");
-  expect(record.agent).toBe("codex:gpt-6-luna@high");
+  await created.agentModel?.change("session", "chatgpt:gpt-6-luna@high");
+  expect(record.agent).toBe("chatgpt:gpt-6-luna@high");
   await created.agentModel?.change("session", "claude-code:claude-haiku-4-5@high");
   expect(replies).toHaveBeenLastCalledWith("session", expect.stringContaining("is not offered"), "warning");
   created.dispose?.();

@@ -107,7 +107,7 @@ it("reminds a reviewer that answered in prose once, and then accepts its submiss
     }) } as unknown as Awaited<ReturnType<typeof CodingSession.start>>;
   });
   try {
-    const reviewer = createPiReviewer({ target: { engine: "pi", route: "codex", modelRuntime: {} as never, model: {} as never } });
+    const reviewer = createPiReviewer({ target: { engine: "pi", route: "chatgpt", modelRuntime: {} as never, model: {} as never } });
     const report = await reviewer.review({ ...input, checkout: process.cwd() }, new AbortController().signal);
     expect(report).toEqual({ reviewer: "Tesota reviewer", tree, status: "completed", summary: "Late but complete", findings: [],
       obligations: [{ source: "request", index: 1, obligation: "The discount applies", status: "met", evidence: "price.ts:3" },
@@ -140,7 +140,7 @@ it("names each lens, tells it its focus, and offers the rules lens only where th
     });
     try {
       const lens = REVIEW_LENSES[1]!;
-      const report = await createPiReviewer({ target: { engine: "pi", route: "codex", modelRuntime: {} as never, model: {} as never }, lens })
+      const report = await createPiReviewer({ target: { engine: "pi", route: "chatgpt", modelRuntime: {} as never, model: {} as never }, lens })
         .review({ ...input, checkout: root }, new AbortController().signal);
       expect(report.reviewer).toBe("Tesota reviewer · security and authority");
       expect(prompt).toContain(`This is a focused review: ${lens.focus} Other reviewers cover the rest: do not report a problem ` +
@@ -148,7 +148,7 @@ it("names each lens, tells it its focus, and offers the rules lens only where th
       expect(prompt).toContain("Never log secrets.");
       // Only the main reviewer checks the other direction: changes no request or claimed step needs (issue #165).
       expect(prompt).not.toContain("check the other direction");
-      await createPiReviewer({ target: { engine: "pi", route: "codex", modelRuntime: {} as never, model: {} as never } })
+      await createPiReviewer({ target: { engine: "pi", route: "chatgpt", modelRuntime: {} as never, model: {} as never } })
         .review({ ...input, checkout: root }, new AbortController().signal);
       expect(prompt).toContain("Then check the other direction: for each change in the diff, whether a request or a " +
         "claimed plan step needs it.");

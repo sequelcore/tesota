@@ -108,7 +108,7 @@ request, shortened to its first line, names it at once; and in the
 background one short session writes a title of three to seven words from
 that request, in its language, with a `title` tool and nothing else
 (`src/integrations/session-namer.ts`). That session runs on the `namer`
-role's model, `codex:gpt-6-luna@low` by default, as Codex names its threads
+role's model, `chatgpt:gpt-6-luna@low` by default, as Codex names its threads
 with Luna at low effort; a role of its own, since naming is no other role's
 responsibility, and `off` keeps the shortened request as the name.
 `/rename <name>` names the session, and `/rename` alone asks

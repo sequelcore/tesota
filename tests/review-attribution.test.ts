@@ -10,21 +10,21 @@ const tested: ReviewReport = { ...untested, findings: [{ ...finding, standing: "
 
 it("names each report's model, and the refuter only on reports whose findings it tested", () => {
   const [first, second, third] = attributed([untested, tested,
-    { reviewer: "ClaimCheck", tree: "t", status: "incomplete", reason: "timed out" }], { reviewer: "codex:sol", refuter: "claude:opus" });
-  expect(first).toMatchObject({ model: "codex:sol" });
+    { reviewer: "ClaimCheck", tree: "t", status: "incomplete", reason: "timed out" }], { reviewer: "chatgpt:sol", refuter: "claude:opus" });
+  expect(first).toMatchObject({ model: "chatgpt:sol" });
   expect(first).not.toHaveProperty("refuter");
-  expect(second).toMatchObject({ model: "codex:sol", refuter: "claude:opus" });
-  expect(third).toMatchObject({ model: "codex:sol", status: "incomplete" });
+  expect(second).toMatchObject({ model: "chatgpt:sol", refuter: "claude:opus" });
+  expect(third).toMatchObject({ model: "chatgpt:sol", status: "incomplete" });
   // A report that already names its model, as the fix validator's, keeps it.
-  expect(attributed([{ ...untested, model: "codex:validator" }], { reviewer: "codex:sol" })[0]).toMatchObject({ model: "codex:validator" });
+  expect(attributed([{ ...untested, model: "chatgpt:validator" }], { reviewer: "chatgpt:sol" })[0]).toMatchObject({ model: "chatgpt:validator" });
 });
 
 it("words a step with its role and model, and the line naming who verified a review", () => {
-  expect(activityBy("Reviewing", "reviewer", "codex:sol")).toBe("Reviewing · reviewer codex:sol");
+  expect(activityBy("Reviewing", "reviewer", "chatgpt:sol")).toBe("Reviewing · reviewer chatgpt:sol");
   expect(activityBy("Reviewing", "reviewer", undefined)).toBe("Reviewing");
-  const reports = attributed([tested, untested], { reviewer: "codex:sol", refuter: "claude:opus" });
-  expect(verifiedBy(reports)).toBe("Reviewed by codex:sol; findings tested by claude:opus.");
-  expect(verifiedBy(attributed([untested], { reviewer: "codex:sol" }))).toBe("Reviewed by codex:sol.");
+  const reports = attributed([tested, untested], { reviewer: "chatgpt:sol", refuter: "claude:opus" });
+  expect(verifiedBy(reports)).toBe("Reviewed by chatgpt:sol; findings tested by claude:opus.");
+  expect(verifiedBy(attributed([untested], { reviewer: "chatgpt:sol" }))).toBe("Reviewed by chatgpt:sol.");
   // A report recorded before reviews named their models shows nothing rather than a guess.
   expect(verifiedBy([untested])).toBeUndefined();
 });

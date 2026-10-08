@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { costText, forecastLine, MEASUREMENTS_KEPT, withMeasurement, type ReviewMeasurement } from "../src/review-forecast.js";
 import { canEstimate, countsAsMeasurement, middlePositions } from "../src/verification/review-estimate.js";
 
-const luna = { reviewer: "codex:gpt-6-luna", refuter: "codex:gpt-6-luna", validator: "codex:gpt-6-luna" };
+const luna = { reviewer: "chatgpt:gpt-6-luna", refuter: "chatgpt:gpt-6-luna", validator: "chatgpt:gpt-6-luna" };
 const deep = { depth: "deep" as const, correction: false, lenses: ["correctness and regressions", "security and authority"],
   claimcheck: false, models: luna };
 const measured = (durationMs: number, tokens: number, overrides: Partial<ReviewMeasurement> = {}): ReviewMeasurement =>
@@ -54,7 +54,7 @@ it("measures a review step only when every reviewer finished", () => {
 });
 
 it("compares only reviews made with the same models, reading older measurements as the default model", () => {
-  const astra = { ...luna, reviewer: "codex:gpt-6-astra" };
+  const astra = { ...luna, reviewer: "chatgpt:gpt-6-astra" };
   const history = [measured(10_000, 10_000), measured(20_000, 20_000), measured(30_000, 30_000, { models: luna })];
   expect(forecastLine(deep, history)).toContain("median of 3");
   expect(forecastLine({ ...deep, models: astra }, history)).toContain("(0 of 3 comparable reviews measured)");

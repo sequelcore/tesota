@@ -3,30 +3,30 @@ import { existsSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { createModels } from "@earendil-works/pi-ai";
-import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { browserSignInAuth, deviceCodeAuth, deviceCodeTerminalRenderer, loginToCodex, loginToOpenRouter,
-  type LoginResult } from "./integrations/codex-login.js";
+import { CHATGPT_PROVIDER, chatgptProvider } from "./integrations/chatgpt-provider.js";
+import { browserSignInAuth, CHATGPT_SIGN_IN, loginToChatGPT, loginToOpenRouter, OPENROUTER_SIGN_IN,
+  type LoginResult } from "./integrations/pi-login.js";
 import { claudeCodeRouteDirectory } from "./integrations/model-session.js";
 import { TesotaCredentials } from "./integrations/tesota-credentials.js";
 import { ACCOUNT_KINDS, accountRoute, type AddedRoute, addRoute, MODEL_ROLES, parseModelChoice, readAddedRoutes, readModelChoices, removeRoute,
   type RouteKind } from "./model-roles.js";
 import { windowsSystemProgram } from "./windows-system.js";
 import { routeAfter } from "./verification/route-removal-rule.js";
-import { accountText, claudeCodeAccount, codexAccount, type RouteAccount, sharedAccountNote, sharedAccounts } from "./route-accounts.js";
+import { accountText, chatgptAccount, claudeCodeAccount, type RouteAccount, sharedAccountNote, sharedAccounts } from "./route-accounts.js";
 
 /**
- * `tesota auth` for each route (decisions 021 and 031). Tesota stores Codex's
- * OAuth login, an Anthropic API key, an OpenRouter key, one OpenCode key,
+ * `tesota auth` for each route (decisions 021 and 031). Tesota stores a Sign
+ * in with ChatGPT login (#191), an Anthropic API key, an OpenRouter key, one OpenCode key,
  * which Zen and Go share, and a TypeSafe key (decision 035). It never holds a
  * Claude subscription login: for the `claude-code` route it runs Claude Code's
  * own sign-in and status, and reads only whether Claude Code is signed in and
- * how. The operator can add routes of the `codex` and `claude-code` kinds,
- * one account each (decision 050): a Codex route keeps its login in a file
+ * how. The operator can add routes of the `chatgpt` and `claude-code` kinds,
+ * one account each (decision 050): a ChatGPT route keeps its login in a file
  * of its own, and a Claude Code route signs in with Claude Code in a
  * configuration folder of its own.
  */
 
-export const AUTH_ROUTES = ["codex", "anthropic", "claude-code", "openrouter", "opencode", "typesafe"] as const;
+export const AUTH_ROUTES = ["chatgpt", "anthropic", "claude-code", "openrouter", "opencode", "typesafe"] as const;
 const routes = AUTH_ROUTES;
 type AuthRoute = typeof routes[number];
 
@@ -117,22 +117,39 @@ function openInBrowser(url: string): void {
   child.unref();
 }
 
-async function codex(action: string, credentials: TesotaCredentials, route: string = "codex"): Promise<number> {
-  const label = route === "codex" ? "Codex" : `Codex (${route})`;
+/** Why a ChatGPT sign-in saved nothing, as the operator reads it. */
+const signInFailures: Readonly<Record<Exclude<LoginResult, "succeeded">, string>> = {
+  failed: "the sign-in did not complete",
+  timed_out: "the sign-in timed out",
+  not_granted: "OpenAI signed the account in but did not grant API access to its ChatGPT plan, which this route needs",
+  refused: "OpenAI refused to exchange the sign-in for a token, as it does for a free ChatGPT plan: this route needs Go, Plus or Pro",
+  declined: "the sign-in was declined in the browser",
+};
+
+/** The terminal a browser sign-in shows itself on: the browser, standard output, and a hidden line. */
+const browserTerminal = { open: openInBrowser, write: (text: string) => { process.stdout.write(text); },
+  readLine: (prompt: string, signal: AbortSignal) => readLine(prompt, { hidden: true, signal }) };
+
+/** Sign in with ChatGPT in the browser, or sign out (#191). */
+async function chatgpt(action: string, credentials: TesotaCredentials, route: string = "chatgpt"): Promise<number> {
+  const label = route === "chatgpt" ? "ChatGPT" : `ChatGPT (${route})`;
   if (action === "logout") {
     const models = createModels({ credentials });
-    models.setProvider(openaiCodexProvider());
-    await models.logout("openai-codex");
+    models.setProvider(chatgptProvider());
+    await models.logout(CHATGPT_PROVIDER);
     console.log(`${label}: local Tesota credentials removed.`);
     return 0;
   }
   // Signed in already, this signs in again, as to change accounts: the earlier login stays until the new one completes.
-  const again = await credentials.read("openai-codex") !== undefined;
+  const again = await credentials.read(CHATGPT_PROVIDER) !== undefined;
   const cancel = new AbortController();
   const watchdog = setTimeout(() => process.exit(1), 185_000);
   try {
-    if (await loginToCodex(deviceCodeAuth(deviceCodeTerminalRenderer(), cancel.signal), credentials) !== "succeeded") {
-      throw new Error("Login did not complete");
+    const result = await loginToChatGPT(browserSignInAuth(CHATGPT_SIGN_IN, browserTerminal, cancel.signal),
+      await credentials.deviceId(), credentials);
+    if (result !== "succeeded") {
+      console.error(`${label}: ${signInFailures[result]}; nothing was saved.`);
+      return 1;
     }
     console.log(`${label}: login saved for future Tesota runs${again ? ", in place of the earlier one" : ""}.`);
     return 0;
@@ -163,8 +180,7 @@ async function openRouter(action: string, credentials: TesotaCredentials): Promi
   const cancel = new AbortController();
   let result: LoginResult;
   try {
-    result = await loginToOpenRouter(browserSignInAuth({ open: openInBrowser, write: (text) => { process.stdout.write(text); },
-      readLine: (prompt, signal) => readLine(prompt, { hidden: true, signal }) }, cancel.signal), credentials);
+    result = await loginToOpenRouter(browserSignInAuth(OPENROUTER_SIGN_IN, browserTerminal, cancel.signal), credentials);
   } finally { cancel.abort(); }
   if (result !== "succeeded") {
     console.error(result === "timed_out" ? "OpenRouter: the sign-in timed out; nothing was saved." : "OpenRouter: the sign-in did not complete; nothing was saved.");
@@ -222,7 +238,7 @@ async function addedRoute(action: string, route: AddedRoute): Promise<number> {
   }
   if (action === "status") return statusOf([route.name], new TesotaCredentials());
   const signInAction = action === "remove" ? "logout" : action;
-  const code = route.kind === "codex" ? await codex(signInAction, TesotaCredentials.forRoute(route.name, "openai-codex"), route.name)
+  const code = route.kind === "chatgpt" ? await chatgpt(signInAction, TesotaCredentials.forRoute(route.name, CHATGPT_PROVIDER), route.name)
     : await claudeCode(signInAction, route.name);
   if (outcome === "delete" && code === 0) {
     removeRoute(route.name);
@@ -244,7 +260,7 @@ export interface RouteStatus {
 }
 
 /** Each kind's name, as tables show it. */
-export const kindLabels: Readonly<Record<string, string>> = { codex: "Codex", "claude-code": "Claude Code", anthropic: "Anthropic API",
+export const kindLabels: Readonly<Record<string, string>> = { chatgpt: "ChatGPT", "claude-code": "Claude Code", anthropic: "Anthropic API",
   openrouter: "OpenRouter", opencode: "OpenCode", typesafe: "TypeSafe" };
 
 /** A key route's sign-in: a saved key, one from the environment, or none. */
@@ -257,9 +273,9 @@ async function keySignIn(route: KeyRouteName, credentials: TesotaCredentials): P
 
 /** A route's sign-in, as its status line shows it. */
 async function signInOf(route: string, kind: string, credentials: TesotaCredentials): Promise<string> {
-  if (kind === "codex") {
-    const store = route === "codex" ? credentials : TesotaCredentials.forRoute(route, "openai-codex");
-    return await store.read("openai-codex") !== undefined ? "signed in" : `signed out: tesota auth login ${route}`;
+  if (kind === "chatgpt") {
+    const store = route === "chatgpt" ? credentials : TesotaCredentials.forRoute(route, CHATGPT_PROVIDER);
+    return await store.read(CHATGPT_PROVIDER) !== undefined ? "signed in" : `signed out: tesota auth login ${route}`;
   }
   if (kind === "claude-code") {
     const env = route === "claude-code" ? process.env : { ...process.env, CLAUDE_CONFIG_DIR: claudeCodeRouteDirectory(route) };
@@ -352,9 +368,9 @@ export async function routeStatuses(names: readonly string[], credentials: Tesot
 
 /** Which account a signed-in route is for, from its own sign-in; read locally, never shown whole unless asked. */
 export async function routeAccount(route: string, kind: string, credentials: TesotaCredentials): Promise<RouteAccount | undefined> {
-  if (kind === "codex") {
-    const store = route === "codex" ? credentials : TesotaCredentials.forRoute(route, "openai-codex");
-    return codexAccount(await store.read("openai-codex"));
+  if (kind === "chatgpt") {
+    const store = route === "chatgpt" ? credentials : TesotaCredentials.forRoute(route, CHATGPT_PROVIDER);
+    return chatgptAccount(await store.read(CHATGPT_PROVIDER));
   }
   if (kind === "claude-code") return claudeCodeAccount(route === "claude-code" ? undefined : claudeCodeRouteDirectory(route));
   return undefined;
@@ -381,7 +397,7 @@ async function statusOf(names: readonly string[], credentials: TesotaCredentials
 
 /**
  * Add a route of a kind, signed in to another account: `tesota auth login
- * codex --as codex-work` (decision 050).
+ * chatgpt --as chatgpt-work` (decision 050).
  */
 export async function addAccount(kind: string, name: string): Promise<number> {
   if (!(ACCOUNT_KINDS as readonly string[]).includes(kind)) {
@@ -422,7 +438,7 @@ export async function runAuthCommand(action: string, route?: string,
   if (action === "status" && (route === undefined || route === "--show-accounts")) {
     return everyStatus(credentials, route === "--show-accounts");
   }
-  const chosen = route ?? "codex";
+  const chosen = route ?? "chatgpt";
   const added = readAddedRoutes().find((entry) => entry.name === chosen);
   if (["login", "status", "logout", "remove"].includes(action) && added !== undefined) {
     try { return await addedRoute(action, added); } catch {
@@ -439,7 +455,7 @@ export async function runAuthCommand(action: string, route?: string,
   if (action === "status") return statusOf([chosen], credentials);
   try {
     switch (chosen as AuthRoute) {
-      case "codex": return await codex(action, credentials);
+      case "chatgpt": return await chatgpt(action, credentials);
       case "claude-code": return await claudeCode(action);
       case "openrouter": return await openRouter(action, credentials);
       case "anthropic": case "opencode": case "typesafe": return await pastedKey(chosen as KeyRouteName, action, credentials);

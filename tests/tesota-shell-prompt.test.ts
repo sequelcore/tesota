@@ -40,7 +40,7 @@ it("brings the operator's newer repository state to their request, never to a co
     vi.spyOn(Workspace, "create").mockResolvedValue(workspace),
     // A test double stands for the work whether the session works in the source or in a workspace.
     vi.spyOn(SourceSession, "create").mockResolvedValue(workspace as unknown as SourceSession),
-    vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}) } as unknown as ModelRuntime),
+    vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}), registerNativeProvider: () => {} } as unknown as ModelRuntime),
     vi.spyOn(SessionManager, "findById").mockReturnValue(undefined),
     vi.spyOn(SessionManager, "create").mockReturnValue({} as SessionManager),
     vi.spyOn(CodingSession, "create").mockResolvedValue(coding),
@@ -86,7 +86,7 @@ it.each([
     vi.spyOn(Workspace, "create").mockResolvedValue(workspace),
     // A test double stands for the work whether the session works in the source or in a workspace.
     vi.spyOn(SourceSession, "create").mockResolvedValue(workspace as unknown as SourceSession),
-    vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}) } as unknown as ModelRuntime),
+    vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}), registerNativeProvider: () => {} } as unknown as ModelRuntime),
     vi.spyOn(SessionManager, "findById").mockReturnValue(undefined),
     vi.spyOn(SessionManager, "create").mockReturnValue({} as SessionManager),
     vi.spyOn(CodingSession, "create").mockResolvedValue(coding),
@@ -134,7 +134,7 @@ it("records a message steered into the agent's run as a request of that turn, an
   const spies = [
     vi.spyOn(Workspace, "create").mockResolvedValue(workspace),
     vi.spyOn(SourceSession, "create").mockResolvedValue(workspace as unknown as SourceSession),
-    vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}) } as unknown as ModelRuntime),
+    vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}), registerNativeProvider: () => {} } as unknown as ModelRuntime),
     vi.spyOn(SessionManager, "findById").mockReturnValue(undefined),
     vi.spyOn(SessionManager, "create").mockReturnValue({} as SessionManager),
     vi.spyOn(CodingSession, "create").mockResolvedValue(coding),

@@ -12,26 +12,26 @@ import * as z from "zod";
  */
 
 /**
- * The kinds of route, how Tesota reaches a model: `codex` through Pi and the operator's ChatGPT
- * plan, `anthropic` through Pi and an Anthropic API key, `claude-code`
+ * The kinds of route, how Tesota reaches a model: `chatgpt` through Pi and the operator's ChatGPT
+ * plan, signed in with Sign in with ChatGPT, `anthropic` through Pi and an Anthropic API key, `claude-code`
  * through the operator's own Claude Code, which signs in by itself, and
  * through Pi the gateways of decision 031: `openrouter` with an OpenRouter
  * key, and OpenCode's `opencode` (Zen, pay as you go) and `opencode-go` (a
  * subscription) with one OpenCode key.
  */
-export const ROUTE_KINDS = ["codex", "anthropic", "claude-code", "openrouter", "opencode", "opencode-go"] as const;
+export const ROUTE_KINDS = ["chatgpt", "anthropic", "claude-code", "openrouter", "opencode", "opencode-go"] as const;
 export type RouteKind = typeof ROUTE_KINDS[number];
 
 /**
  * A route is a kind of route and one account behind it (decision 050). Each
  * kind's own name is its default route; the operator adds routes of a kind
- * under names of their own, one account each, such as `codex-work` for a
+ * under names of their own, one account each, such as `chatgpt-work` for a
  * second ChatGPT account. The kind decides the engine, the models, who pays
  * and each model's lab; the route decides only the account. Accounts can be
  * added for the kinds signed in to a plan, whose accounts people hold several
  * of.
  */
-export const ACCOUNT_KINDS: readonly RouteKind[] = ["codex", "claude-code"];
+export const ACCOUNT_KINDS: readonly RouteKind[] = ["chatgpt", "claude-code"];
 
 export interface AddedRoute {
   readonly name: string;
@@ -95,7 +95,7 @@ export function routeKindOf(name: string, added: readonly AddedRoute[]): RouteKi
  * see.
  */
 export const ROUTE_BILLING: Readonly<Record<RouteKind, Readonly<{ payer: string; metered: boolean }>>> = {
-  codex: { payer: "your ChatGPT plan's limits", metered: false },
+  chatgpt: { payer: "your ChatGPT plan's limits", metered: false },
   anthropic: { payer: "your Anthropic API key", metered: true },
   "claude-code": { payer: "your Claude Code sign-in", metered: false },
   openrouter: { payer: "your OpenRouter credits", metered: true },
@@ -105,15 +105,15 @@ export const ROUTE_BILLING: Readonly<Record<RouteKind, Readonly<{ payer: string;
 
 /** The engine that runs a route's models: Pi, or Claude Code through the Claude Agent SDK. */
 export type ModelEngine = "pi" | "claude-code";
-export const ROUTE_ENGINE: Readonly<Record<RouteKind, ModelEngine>> = { codex: "pi", anthropic: "pi", "claude-code": "claude-code",
+export const ROUTE_ENGINE: Readonly<Record<RouteKind, ModelEngine>> = { chatgpt: "pi", anthropic: "pi", "claude-code": "claude-code",
   openrouter: "pi", opencode: "pi", "opencode-go": "pi" };
 
 /**
  * The kinds whose provider searches the web itself, exercised live for the
- * searcher (issue #295): Codex's Responses `web_search` and Claude Code's
+ * searcher (issue #295): the OpenAI Responses `web_search` and Claude Code's
  * `WebSearch`. The Anthropic API's search has not been exercised.
  */
-export const HOSTED_SEARCH_KINDS: readonly RouteKind[] = ["codex", "claude-code"];
+export const HOSTED_SEARCH_KINDS: readonly RouteKind[] = ["chatgpt", "claude-code"];
 
 /**
  * How much a model reasons (decision 029): the effort levels both engines
@@ -200,8 +200,8 @@ export const ROLE_DESCRIPTIONS: Readonly<Record<ModelRole, string>> = {
   searcher: "searches the web for the agent and explorers with its provider's own search",
 };
 
-/** The model every role uses until the operator chooses another: the cheapest on the Codex route. */
-export const DEFAULT_MODEL: string = "codex:gpt-6-luna";
+/** The model every role uses until the operator chooses another: the cheapest on the ChatGPT route. */
+export const DEFAULT_MODEL: string = "chatgpt:gpt-6-luna";
 /** Naming a session needs little reasoning, so its default reasons at low, as Codex's own titles do. */
 export const DEFAULT_NAMER: string = `${DEFAULT_MODEL}@low`;
 /**

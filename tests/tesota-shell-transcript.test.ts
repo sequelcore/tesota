@@ -90,13 +90,13 @@ it("shows the first pass's verdict with its model and reason every time, and how
   initTheme("dark");
   const transcript = new Transcript(tesotaShellTheme("tesota-dark"));
   const screen = (): string => stripTerminalSequences(transcript.container.render(160).join("\n"));
-  transcript.add({ kind: "triage", model: "codex:luna", outcome: "checked", reason: "the reply says how orderTotal rounds" });
-  expect(screen()).toContain("· First pass · triage codex:luna · sent to the full check: the reply says how orderTotal rounds");
+  transcript.add({ kind: "triage", model: "chatgpt:luna", outcome: "checked", reason: "the reply says how orderTotal rounds" });
+  expect(screen()).toContain("· First pass · triage chatgpt:luna · sent to the full check: the reply says how orderTotal rounds");
   expect(screen()).not.toContain("/verify");
-  transcript.add({ kind: "triage", model: "codex:luna", outcome: "skipped", reason: "it explains a concept" });
-  expect(screen()).toContain("· First pass · triage codex:luna · nothing to check: it explains a concept");
+  transcript.add({ kind: "triage", model: "chatgpt:luna", outcome: "skipped", reason: "it explains a concept" });
+  expect(screen()).toContain("· First pass · triage chatgpt:luna · nothing to check: it explains a concept");
   expect(screen()).toContain("/verify runs the full check anyway.");
-  transcript.add({ kind: "triage", model: "codex:luna", outcome: "undecided", reason: "the first pass timed out" });
+  transcript.add({ kind: "triage", model: "chatgpt:luna", outcome: "undecided", reason: "the first pass timed out" });
   expect(screen()).toContain("could not decide, so the full check runs: the first pass timed out");
 });
 

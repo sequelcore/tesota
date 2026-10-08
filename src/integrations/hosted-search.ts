@@ -10,7 +10,7 @@ import type { TokenUsage } from "../token-usage.js";
  * provider's own search, which needs no setup, and answers with findings and
  * the pages they came from. The session has no Tesota tools, only the
  * provider's search, so a page it reads cannot make anything act, as with
- * `web_read`'s reader. Codex runs on Pi with the Responses `web_search` tool,
+ * `web_read`'s reader. The ChatGPT route runs on Pi with the Responses `web_search` tool,
  * whose sources and citations are read from the provider's events, since Pi
  * keeps only the text; Claude Code runs with `WebSearch` alone.
  */
@@ -51,10 +51,10 @@ export function citedAddresses(findings: string): Source[] {
 }
 
 /**
- * What the Codex Responses stream says the search did: the pages each
+ * What the Responses stream says the search did: the pages each
  * `web_search_call` found or opened, and the `url_citation`s in the answer.
  */
-export function codexSearchEvent(event: unknown, found: Source[], cited: Source[]): void {
+export function responsesSearchEvent(event: unknown, found: Source[], cited: Source[]): void {
   const data = record(event);
   if (data === undefined) return;
   if (data["type"] === "response.output_item.done") {
@@ -89,7 +89,7 @@ export function claudeSearchResult(message: SDKMessage, found: Source[]): void {
   }
 }
 
-async function codexSearch(target: Extract<ModelTarget, { engine: "pi" }>, request: string, signal: AbortSignal,
+async function responsesSearch(target: Extract<ModelTarget, { engine: "pi" }>, request: string, signal: AbortSignal,
   onUsage?: (usage: TokenUsage) => void): Promise<Searched> {
   const found: Source[] = [];
   const cited: Source[] = [];
@@ -105,7 +105,7 @@ async function codexSearch(target: Extract<ModelTarget, { engine: "pi" }>, reque
       return { ...body, tools: [...Array.isArray(tools) ? tools : [], { type: "web_search" }],
         include: [...Array.isArray(include) ? include : [], "web_search_call.action.sources"] };
     },
-    onProviderStreamEvent: (event) => { codexSearchEvent(event, found, cited); },
+    onProviderStreamEvent: (event) => { responsesSearchEvent(event, found, cited); },
   }).result();
   const { input, output, cacheRead, cacheWrite } = message.usage;
   onUsage?.({ input: input + cacheRead + cacheWrite, output, cacheRead, cacheCreation: cacheWrite });
@@ -154,7 +154,7 @@ export function hostedSearch(choice: string, open: (signal: AbortSignal) => Prom
       const running = AbortSignal.any([signal, AbortSignal.timeout(HOSTED_SEARCH_TIME_LIMIT_MS)]);
       try {
         const target = await open(running);
-        const searched = target.engine === "pi" ? await codexSearch(target, request, running, onUsage)
+        const searched = target.engine === "pi" ? await responsesSearch(target, request, running, onUsage)
           : await claudeCodeSearch(target, request, running, onUsage);
         const { results, unverified } = checkedSources(searched.cited, searched.found, limit);
         const findings = searched.findings.length > FINDINGS_LIMIT

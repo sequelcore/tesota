@@ -15,11 +15,11 @@ import { NO_TOKENS, type TokenUsage, addTokens } from "../src/token-usage.js";
  * Claude Code double behaves as Claude Code does. Opt-in, because it uses the
  * operator's sign-ins and model usage: `TESOTA_LIVE_MODELS=1`, with
  * `TESOTA_LIVE_MODEL_CHOICES` naming the `route:model` choices to hold to it
- * (default `claude-code:haiku,codex:gpt-6-luna`).
+ * (default `claude-code:haiku,chatgpt:gpt-6-luna`).
  */
 
 const live = process.env["TESOTA_LIVE_MODELS"] === "1";
-const choices = (process.env["TESOTA_LIVE_MODEL_CHOICES"] ?? "claude-code:haiku,codex:gpt-6-luna").split(",");
+const choices = (process.env["TESOTA_LIVE_MODEL_CHOICES"] ?? "claude-code:haiku,chatgpt:gpt-6-luna").split(",");
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });

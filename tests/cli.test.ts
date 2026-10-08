@@ -44,10 +44,10 @@ it.each([[], ["--help"], ["-h"], ["help"]])("prints compiled CLI help for %j", (
     "       tesota resume [<session-id>] [--theme <tesota-dark|tesota-light|vesper|sequel|automata|phosphor|terminal>]\n" +
     "       tesota run [--allow-commands] [--allow-network] [--checks=<command;…>|none] [--apply] [--folder] [--json] (<request> | -)\n" +
     "       tesota verify <file.ts|file.js>\n" +
-    "       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]\n" +
+    "       tesota auth <login|status|logout> [chatgpt|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]\n" +
     "       tesota auth status --show-accounts\n" +
     "       tesota auth remove <added route>\n" +
-    "       tesota auth login <codex|claude-code> --as <name>\n" +
+    "       tesota auth login <chatgpt|claude-code> --as <name>\n" +
     "       tesota models [<route>]\n" +
     "       tesota usage [<route>]\n" +
     "       tesota roles [<role> [<route:model|default|off>]]\n" +
@@ -92,7 +92,7 @@ it.each([["login"], ["logout"]])("requires an explicit auth route without a term
 });
 
 it("does not accept role assignments through the model catalog command", () => {
-  const result = run(["models", "agent", "codex:gpt-6-luna"]);
+  const result = run(["models", "agent", "chatgpt:gpt-6-luna"]);
   expect(result.status).toBe(2);
   expect(result.stdout).toContain("Usage: tesota models [<");
 });

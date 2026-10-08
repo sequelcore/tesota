@@ -176,7 +176,7 @@ function piHarness(): EngineHarness {
     other: () => {
       const model = runtime?.getModel(faux.provider.id, "other");
       if (runtime === undefined || model === undefined) throw new Error("The other model is missing");
-      return { engine: "pi", route: "codex", modelRuntime: runtime, model, reasoning: "high" };
+      return { engine: "pi", route: "chatgpt", modelRuntime: runtime, model, reasoning: "high" };
     },
     lastCall: () => last,
     async start(root, tools, observed, conversation) {

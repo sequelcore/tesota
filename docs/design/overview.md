@@ -62,8 +62,8 @@ request
 Tesota owns the workspace, execution environments, checks, review, correction
 and application. Pi (`@earendil-works/pi-*`) is the agent engine and terminal
 toolkit, used through its public APIs; Tesota does not reimplement the agent
-loop or OAuth. Models are reached through routes: Codex through Pi's OAuth
-support, Anthropic's API through Pi with an API key, the operator's Claude
+loop or OAuth. Models are reached through routes: the operator's ChatGPT plan
+through Pi's Sign in with ChatGPT, Anthropic's API through Pi with an API key, the operator's Claude
 subscription through Claude Code, run by the Claude Agent SDK, and OpenRouter
 and OpenCode's Zen and Go through Pi with their keys
 ([agents](agents.md#model-routes), [authentication](../guide/authentication.md)).
@@ -198,7 +198,7 @@ routing and execution permissions live in code and in Tesota's own directory
 | `integrations/advisor.ts`, `integrations/advisor-session.ts` | The advisor: the `advisor` tool, its allowance, the conversation it reads, and its session |
 | `model-roles.ts`, `models-command.ts`, `judge-warnings.ts`, `verification/judge-independence.ts` | The route and model for each role, `tesota roles`, the `tesota models` catalog, and warnings when a judge shares its author's model or lab |
 | `integrations/model-session.ts`, `integrations/claude-code-session.ts` | Starting a role's session on Pi or on Claude Code, and Tesota's tools inside Claude Code |
-| `integrations/tesota-credentials.ts`, `integrations/codex-login.ts`, `auth.ts` | Codex OAuth and Anthropic API key storage, Codex login, and `tesota auth` |
+| `integrations/tesota-credentials.ts`, `integrations/pi-login.ts`, `integrations/chatgpt-provider.ts`, `auth.ts` | Credential storage, the browser sign-ins through Pi, the ChatGPT route's provider, and `tesota auth` |
 | `review-evaluation.ts`, `live-review.ts`, `delegation-evaluation.ts`, `live-delegation.ts` | The evaluations with known truth and their live runners |
 
 ## Current limits

@@ -204,8 +204,7 @@ export function createProcessTesotaShell(cwd: string = process.cwd(),
   }
   // Each session keeps its own mode; a session saved before modes runs in accept edits, as it did.
   const engine = createSessionEngine({ cwd, store, output: surface, decisions: (id) => shellDecisions(surface, id),
-    chooseExecution, fresh: freshSessions, mode: (id) => saved(id)?.mode ?? "accept-edits",
-    routeAccounts: () => routeAccounts(allRoutes()) });
+    chooseExecution, fresh: freshSessions, mode: (id) => saved(id)?.mode ?? "accept-edits" });
   for (const session of store.list()) engine.permissionMode.open(session.id);
   for (const session of savedSessions) void engine.showUndecided(session.id);
   /**

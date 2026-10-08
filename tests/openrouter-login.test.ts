@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { browserSignInAuth, loginToOpenRouter } from "../src/integrations/codex-login.js";
+import { browserSignInAuth, loginToOpenRouter, OPENROUTER_SIGN_IN } from "../src/integrations/pi-login.js";
 import { TesotaCredentials } from "../src/integrations/tesota-credentials.js";
 
 /**
@@ -51,7 +51,7 @@ it("signs in through the browser and keeps OpenRouter's key, without asking for 
   const pasted = vi.fn((_prompt: string, signal: AbortSignal) => new Promise<string>((_resolve, reject) => {
     signal.addEventListener("abort", () => { reject(new DOMException("cancelled", "AbortError")); }, { once: true });
   }));
-  const auth = browserSignInAuth({ open: browserReturning("TEST_CODE"), write: (text) => { shown.push(text); }, readLine: pasted },
+  const auth = browserSignInAuth(OPENROUTER_SIGN_IN, { open: browserReturning("TEST_CODE"), write: (text) => { shown.push(text); }, readLine: pasted },
     new AbortController().signal);
   expect(await loginToOpenRouter(auth, credentials)).toBe("succeeded");
   expect(exchange).toHaveBeenCalledOnce();
@@ -67,7 +67,7 @@ it("signs in through the browser and keeps OpenRouter's key, without asking for 
 it("takes the address the browser ended on when it cannot reach this computer", async () => {
   const credentials = await store();
   keyEndpoint();
-  const auth = browserSignInAuth({ open: () => { throw new Error("no browser here"); }, write: () => {},
+  const auth = browserSignInAuth(OPENROUTER_SIGN_IN, { open: () => { throw new Error("no browser here"); }, write: () => {},
     readLine: async () => "http://127.0.0.1:1/oauth/callback/x?code=TEST_CODE" }, new AbortController().signal);
   expect(await loginToOpenRouter(auth, credentials)).toBe("succeeded");
   expect(await credentials.read("openrouter")).toMatchObject({ access: "TEST_ISSUED_KEY" });
@@ -76,7 +76,7 @@ it("takes the address the browser ended on when it cannot reach this computer", 
 it("refuses a sign-in address that is not OpenRouter's, and saves nothing", async () => {
   const credentials = await store();
   const opened = vi.fn();
-  const auth = browserSignInAuth({ open: opened, write: () => {}, readLine: async () => "" }, new AbortController().signal);
+  const auth = browserSignInAuth(OPENROUTER_SIGN_IN, { open: opened, write: () => {}, readLine: async () => "" }, new AbortController().signal);
   expect(() => { auth.notify({ type: "auth_url", url: "https://openrouter.example/auth?callback_url=x" }); }).toThrow();
   expect(opened).not.toHaveBeenCalled();
   expect(await credentials.read("openrouter")).toBeUndefined();

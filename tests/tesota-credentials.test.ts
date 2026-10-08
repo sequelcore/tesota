@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { expect, it, vi } from "vitest";
 import { createModels, type OAuthCredential } from "@earendil-works/pi-ai";
-import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
+import { chatgptProvider } from "../src/integrations/chatgpt-provider.js";
 import { TesotaCredentials } from "../src/integrations/tesota-credentials.js";
 import { windowsPowerShell } from "../src/windows-system.js";
 
@@ -14,7 +14,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFileSync: vi.fn(actual.execFileSync) };
 });
 
-const provider = "openai-codex";
+const provider = "openai";
 const secret: OAuthCredential = { type: "oauth", access: "TEST_ACCESS", refresh: "TEST_REFRESH", expires: 0, accountId: "TEST_ACCOUNT" };
 // Allow private-storage preparation (30 s), a held credential lock (10 s), and CLI startup (5 s).
 const authProcessLimitMs = 45_000;
@@ -59,13 +59,13 @@ it("compiled login persists across processes, a second login replaces the first,
   const root = await mkdtemp(join(tmpdir(), "tesota-auth-cli-"));
   try {
     const invoke = (action: string) => spawnSync("bun", ["--no-env-file", "--preload",
-      resolve("tests/fixtures/persistent-auth-smoke.mjs"), resolve("dist/cli.js"), "auth", action, "codex"], {
+      resolve("tests/fixtures/persistent-auth-smoke.mjs"), resolve("dist/cli.js"), "auth", action, "chatgpt"], {
       encoding: "utf8", timeout: authProcessLimitMs, windowsHide: true,
       env: { PATH: process.env["PATH"], SystemRoot: process.env["SystemRoot"], TESOTA_TEST_AUTH_DIRECTORY: join(root, "auth") },
     });
     const operations: readonly (readonly [string, string])[] = [
       ["login", "login saved"], ["status", "signed in"],
-      ["login", "in place of the earlier one"], ["logout", "credentials removed"], ["status", "signed out: tesota auth login codex"],
+      ["login", "in place of the earlier one"], ["logout", "credentials removed"], ["status", "signed out: tesota auth login chatgpt"],
     ];
     for (const [action, expected] of operations) {
       const result = invoke(action);
@@ -86,9 +86,22 @@ it("persists OAuth across instances, lists only metadata, and deletes through Pi
     expect(await next.read(provider)).toEqual(secret);
     expect(await next.list()).toEqual([{ providerId: provider, type: "oauth" }]);
     const models = createModels({ credentials: next });
-    models.setProvider(openaiCodexProvider());
+    models.setProvider(chatgptProvider());
     await models.logout(provider);
     expect(await first.read(provider)).toBeUndefined();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("keeps one device id for this installation, beside the credentials and the same for every route", async () => {
+  const root = await mkdtemp(join(tmpdir(), "tesota-device-"));
+  try {
+    const directory = join(root, "auth");
+    const id = await new TesotaCredentials(directory).deviceId();
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u);
+    expect(await new TesotaCredentials(directory).deviceId()).toBe(id);
+    expect(await TesotaCredentials.forRoute("chatgpt-work", provider, directory).deviceId()).toBe(id);
+    await writeFile(join(directory, "device-id"), "not-a-uuid");
+    await expect(new TesotaCredentials(directory).deviceId()).rejects.toThrow("Invalid device id");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -100,21 +113,21 @@ it("serializes Pi refresh across independent stores and preserves credentials on
     const refresh = vi.fn(async () => ({ ...secret, access: "ROTATED_ACCESS", expires: Date.now() + 3_600_000 }));
     const instances = [first, new TesotaCredentials(join(root, "auth"))].map((credentials) => {
       const models = createModels({ credentials });
-      const codex = openaiCodexProvider();
-      const oauth = codex.auth.oauth;
-      if (oauth === undefined) throw new Error("Expected Codex OAuth support");
+      const chatgpt = chatgptProvider();
+      const oauth = chatgpt.auth.oauth;
+      if (oauth === undefined) throw new Error("Expected Sign in with ChatGPT");
       oauth.refresh = refresh;
-      models.setProvider(codex);
+      models.setProvider(chatgpt);
       return models;
     });
     await Promise.all(instances.map((models) => models.getAuth(provider)));
     expect(refresh).toHaveBeenCalledOnce();
     expect(await first.read(provider)).toMatchObject({ access: "ROTATED_ACCESS" });
-    const before = await readFile(join(root, "auth/codex.json"));
+    const before = await readFile(join(root, "auth/chatgpt.json"));
     await expect(first.modify(provider, async () => { throw new Error("TEST_FAILURE"); })).rejects.toThrow();
-    expect(await readFile(join(root, "auth/codex.json"))).toEqual(before);
+    expect(await readFile(join(root, "auth/chatgpt.json"))).toEqual(before);
     await expect(first.modify(provider, async () => ({ ...secret, access: "x".repeat(70_000) }))).rejects.toThrow("bound");
-    expect(await readFile(join(root, "auth/codex.json"))).toEqual(before);
+    expect(await readFile(join(root, "auth/chatgpt.json"))).toEqual(before);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -128,19 +141,19 @@ it("rejects foreign providers, corrupt records and cancelled writes without leak
     await expect(store.modify(provider, async () => { cancel.abort(); return { ...secret, access: "NEW" }; },
       { signal: cancel.signal })).rejects.toThrow();
     expect(await store.read(provider)).toEqual(secret);
-    await writeFile(join(root, "auth/codex.json"), "TEST_SECRET_BROKEN_JSON");
+    await writeFile(join(root, "auth/chatgpt.json"), "TEST_SECRET_BROKEN_JSON");
     await expect(store.read(provider)).rejects.toThrow("Cannot read Tesota credentials");
     await expect(store.read(provider)).rejects.not.toThrow("TEST_SECRET");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-it("keeps an Anthropic API key beside the Codex login, and never accepts a claude.ai OAuth credential", async () => {
+it("keeps an Anthropic API key beside the ChatGPT login, and never accepts a claude.ai OAuth credential", async () => {
   const root = await mkdtemp(join(tmpdir(), "tesota-anthropic-auth-"));
   try {
     const store = new TesotaCredentials(join(root, "auth"));
     await expect(store.modify("anthropic", async () => ({ type: "oauth", access: "A", refresh: "R", expires: 0 })))
       .rejects.toThrow("Only an Anthropic API key can be stored");
-    await expect(store.modify(provider, async () => ({ type: "api_key", key: "KEY" }))).rejects.toThrow("Only valid Codex OAuth");
+    await expect(store.modify(provider, async () => ({ type: "api_key", key: "KEY" }))).rejects.toThrow("Only a Sign in with ChatGPT login");
     await expect(store.modify("anthropic", async () => ({ type: "api_key", key: " " }))).rejects.toThrow();
     await store.modify("anthropic", async () => ({ type: "api_key", key: "TEST_ANTHROPIC_KEY" }));
     await store.modify(provider, async () => secret);
