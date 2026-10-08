@@ -1,3 +1,5 @@
+// Live: the operator's own sign-ins and settings, not the isolated test home.
+import "./operator-home.js";
 import { expect, it } from "vitest";
 import { fetchPage, pinnedGet, resolveHost, type WebFetchDependencies } from "../src/web-fetch.js";
 import { exaSearch, parallelSearch, SNIPPET_LIMIT } from "../src/integrations/keyless-search.js";

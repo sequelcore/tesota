@@ -1,3 +1,5 @@
+// Live: the operator's own sign-ins and settings, not the isolated test home.
+import "./operator-home.js";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

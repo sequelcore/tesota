@@ -15,6 +15,7 @@ const configuration: ViteUserConfig = defineConfig({
       "tests/tesota-shell.test.ts",
       "tests/test-report.test.ts",
     ],
+    setupFiles: ["tests/isolated-home.ts"],
     maxWorkers: 4,
     testTimeout: 10_000,
   },
