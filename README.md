@@ -6,7 +6,9 @@ it couldn't verify. It ships as a [Pi](https://pi.dev) package and a `tesota`
 command that opens Pi with it.
 
 Tesota is being rebuilt from a full coding agent into this verification
-layer. Today the package loads into Pi and adds no verification yet; the
+layer. Today, in a project with LemmaScript `//@` contracts, it gives the
+agent a `prove` tool that proves them with Dafny while it works; it does not
+yet stop an agent that calls an unproved change done. The
 [roadmap](docs/roadmap.md) lists what comes next. The earlier agent remains
 in Git history.
 
