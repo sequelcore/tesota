@@ -16,7 +16,9 @@ open while a changed file's contracts do not prove, and ends it with a
 receipt ([#339](https://github.com/sequelcore/tesota/issues/339)) that also
 lists the changes that may weaken the evidence, measured from the commit the
 request started at ([#341](https://github.com/sequelcore/tesota/issues/341)).
-A prototype on the
+Before it settles it runs the project's tests and reports a changed test
+that passes without the change
+([#342](https://github.com/sequelcore/tesota/issues/342)). A prototype on the
 `proto/verification-layer` branch confirmed that Pi 1.1's extension API
 carries the design.
 
@@ -43,8 +45,11 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    `requires` added to an existing function, an added `assume` in source or
    a `.dfy` (where an `{:axiom}` or a lemma without a body counts as one),
    and a deleted or edited test.
-5. **Test rung.** Find and run the project's tests; a changed or added test
-   that also passes on the base is reported as not exercising the change.
+5. **Test rung.** Done in #342: once no proof goes back, the gate runs the
+   commands of the projects that own the changed files, sends failing tests
+   back until their set repeats, and runs each changed or added test file
+   over the commit the request started from, in a Git worktree; one that
+   passes there is reported as not exercising the change.
 6. **Contract strength.** Proof-based mutation and ClaimCheck against the
    request.
 7. **Receipt for pull requests.** `tesota receipt` writes Markdown and JSON,
