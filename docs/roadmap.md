@@ -84,7 +84,8 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    to the agent helps, and whether a second ClaimCheck model changes its
    verdicts.
 9. **Documentation.** README, a design page, a decision record that reverses
-   the harness decisions, and this roadmap.
+   the harness decisions, this roadmap, and `docs/receipt-v1.md`, the page
+   the receipt's in-toto `predicateType` names, describing its format.
 10. **Parallel sessions.** Recommend an existing Pi package, or raise the gap
     with Pi.
 11. **Identity.** Tesota's visual identity stays: the animated palo fierro
