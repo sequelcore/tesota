@@ -41,7 +41,8 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    commit the request started at, so an agent's commit hides nothing, and
    the receipt lists a removed or changed `requires` or `ensures`, a
    `requires` added to an existing function, an added `assume` in source or
-   a `.dfy`, and a deleted or edited test.
+   a `.dfy` (where an `{:axiom}` or a lemma without a body counts as one),
+   and a deleted or edited test.
 5. **Test rung.** Find and run the project's tests; a changed or added test
    that also passes on the base is reported as not exercising the change.
 6. **Contract strength.** Proof-based mutation and ClaimCheck against the
