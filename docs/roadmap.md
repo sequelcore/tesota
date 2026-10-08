@@ -19,7 +19,9 @@ carries the design.
 The refactor lands on `dev` in slices, one pull request each. Every slice
 passes `bun run check`, `bun run formal:check` and `git diff --check`.
 
-1. **Remove the harness and scaffold the package.** Done in #334.
+1. **Remove the harness and scaffold the package.** Done in #334, keeping
+   the test-origin and proof-coverage rules, the JUnit report reader and the
+   tree's renderer.
 2. **Verifier interface and LemmaScript.** One adapter contract: what was
    checked, the outcome and the evidence, bound to a content hash. A
    LemmaScript adapter that regenerates before it checks and treats
@@ -42,12 +44,24 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    the harness decisions, and this roadmap.
 10. **Parallel sessions.** Recommend an existing Pi package, or raise the gap
     with Pi.
-11. **Alpha.** Publish `tesota` to npm after a week on a real project.
+11. **Identity.** Tesota's visual identity stays: the animated palo fierro
+    tree as Pi's header through `ctx.ui.setHeader`, and Tesota's light and
+    dark palettes shipped as a Pi theme. The tree's renderer,
+    `src/welcome-mark.ts`, is already here.
+12. **Alpha.** Publish `tesota` to npm after a week on a real project.
 
-Slices 2 to 8 restore the modules they port from Git and adapt them: the
-LemmaScript verifier and `prove`, proof mutation and guarantees, ClaimCheck,
-weakened evidence from the diff, finding the project's test command, and the
-registered proof cases.
+The slices that port earlier work restore it from the provenance commit
+`d0c03f66`, `dev` before the harness was removed, and adapt it there; Git
+keeps the tests that went with it.
+
+| Slice | Restores from `d0c03f66` |
+| --- | --- |
+| 2 | `src/verification/lemmascript-verifier.ts`, `src/integrations/prove-tool.ts` |
+| 4 | `src/diff-lines.ts`, `src/verification-changes.ts` |
+| 5 | `suggestChecks` from `src/workspace-checks.ts` |
+| 6 | `src/proof-mutation.ts`, `src/proof-guarantees.ts`, `src/integrations/pi-claimcheck.ts`, with ClaimCheck's NOTICE entry |
+| 8 | The registered proof cases in `src/agent-evaluation.ts` |
+| 11 | `src/tesota-shell-theme.ts` and `src/verification/shell-theme-rule.ts` with its proof and the themes' NOTICE entry; the header from `WelcomeBanner` in `src/tesota-shell-welcome.ts` |
 
 ## Open questions
 
