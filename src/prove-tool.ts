@@ -39,6 +39,13 @@ const retryNote = "This is not finished yet. Read the obligation that failed abo
   "//@ invariant or assertion it needs, and run prove again. Keep going until it passes; stop only if you can say " +
   "why it cannot pass without changing the contract, and never loosen the contract to make it pass.";
 
+/**
+ * What follows a vacuous proof: LemmaScript attaches a `//@` block only to
+ * the function right below it, so anything between them drops its contracts.
+ */
+const vacuousNote = "Check that every //@ requires and //@ ensures block sits directly above the function it " +
+  "describes: anything between the //@ block and the function drops its contracts. Fix that and run prove again.";
+
 const skippedFolders = new Set(["node_modules", ".git", "dist", "build", "out", "coverage"]);
 const scanLimit = 20_000;
 const fileLimit = 1024 * 1024;
@@ -107,7 +114,9 @@ export const proveTool: ToolDefinition<typeof parameters> = {
       : proof.outcome === "failed" ? `Not proved: an obligation in ${path} failed.`
       : proof.outcome === "timed_out" ? `The proof of ${path} ran past its time limit; that is not a pass.`
       : proof.outcome === "cancelled" ? `The proof of ${path} was stopped.`
-      : `Not proved: the proof of ${path} did not run or verified nothing.`;
-    return text(`${how}\n\n${proof.output}${proof.outcome === "failed" ? `\n\n${retryNote}` : ""}`);
+      : proof.outcome === "vacuous" ? `Not proved: Dafny verified nothing in ${path}, so none of its contracts was proved.`
+      : `Not proved: the proof of ${path} could not run.`;
+    const next = proof.outcome === "failed" ? `\n\n${retryNote}` : proof.outcome === "vacuous" ? `\n\n${vacuousNote}` : "";
+    return text(`${how}\n\n${proof.output}${next}`);
   },
 };

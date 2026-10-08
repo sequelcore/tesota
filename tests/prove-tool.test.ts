@@ -65,6 +65,16 @@ it.runIf(dafny)("reports a proved contract and a failing obligation, then asks t
   expect(readdirSync(root).sort()).toEqual(["bad.dfy", "bad.dfy.gen", "bad.ts", "good.dfy", "good.dfy.gen", "good.ts"]);
 }, 120_000);
 
+it.runIf(dafny)("tells the agent to check where its //@ lines sit when Dafny verified nothing", async () => {
+  const root = folder();
+  writeFileSync(join(root, "detached.ts"),
+    "//@ ensures \\result >= 0\nconst unit = 1;\nexport function one(): number {\n  return unit;\n}\n");
+  const vacuous = await call(root, "detached.ts");
+  expect(vacuous).toMatch(/^Not proved: Dafny verified nothing in detached\.ts, so none of its contracts was proved\./u);
+  expect(vacuous).toMatch(/anything between the \/\/@ block and the function drops its contracts\. Fix that and run prove again\.$/u);
+  expect(vacuous).not.toContain("Read the obligation that failed");
+}, 120_000);
+
 it("finds contracts outside dependency, build and hidden folders only", () => {
   const root = folder();
   mkdirSync(join(root, "src"));

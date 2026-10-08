@@ -77,7 +77,7 @@ function proofPath(root: string, path: string, printed: string): string {
  * proof additions, then `lsc check` proves it. Proving in a copy would leave
  * the project's `.dfy` behind the source, which an independent `lsc check`
  * then rejects. The evidence covers the source and its `.dfy` as they are
- * after the run; a run that verified nothing proved nothing (`proofOutcome`).
+ * after the run; a run that verified nothing is vacuous, never proved (`proofOutcome`).
  */
 export async function proveFile(root: string, path: string, signal: AbortSignal): Promise<Evidence> {
   const started = Date.now();
@@ -97,7 +97,7 @@ export async function proveFile(root: string, path: string, signal: AbortSignal)
   const [regen, check] = await regenThenCheck(root, path, signal);
   const outcome = outcomeOf(regen, check, signal);
   const printed = (check ?? regen).output.trimEnd();
-  const output = outcome === "not_started" && check?.error === false
+  const output = outcome === "vacuous"
     ? `${printed}\nLemmaScript verified nothing in this file, so nothing was proved.` : printed;
   return evidence(outcome, output, proofPath(root, path, `${regen.output}\n${check?.output ?? ""}`));
 }

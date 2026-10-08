@@ -49,7 +49,7 @@ it.runIf(dafny)("refutes the registered clamp base and proves its fix, bound to 
 it.runIf(dafny)("never counts a run in which Dafny verified nothing as proved", async () => {
   const root = project({ "loose.ts": "//@ ensures \\result >= 0\nexport const a = 1;\n" });
   const proof = await prove(root, "loose.ts");
-  expect(proof.outcome).toBe("not_started");
+  expect(proof.outcome).toBe("vacuous");
   expect(proof.output).toContain("LemmaScript verified nothing in this file, so nothing was proved.");
 }, 120_000);
 
