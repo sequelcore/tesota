@@ -1,13 +1,12 @@
-import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { type Evidence, contentHash } from "../evidence.js";
+import { type ProcessRun, runProcess } from "../process.js";
 import { type ProofOutcome, proofOutcome } from "./proof-outcome-rule.js";
 
 const timeoutMs = 5 * 60_000;
-const outputLimit = 8 * 1024;
 const limits = "Proves only the annotated properties of the translated functions, within LemmaScript's supported " +
   "TypeScript subset. It says nothing about unannotated code, or whether the properties are what was asked.";
 
@@ -16,23 +15,9 @@ export function annotations(source: string): string[] {
   return source.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line.startsWith("//@"));
 }
 
-interface Run { readonly status: number | null; readonly output: string; readonly error: boolean; readonly timedOut: boolean }
-
-function run(executable: string, args: readonly string[], cwd: string, signal: AbortSignal): Promise<Run> {
-  return new Promise((settle) => {
-    let output = "";
-    const child = spawn(executable, [...args], { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-    const append = (chunk: Buffer): void => { output = (output + chunk.toString("utf8")).slice(-outputLimit); };
-    child.stdout.on("data", append);
-    child.stderr.on("data", append);
-    let timedOut = false;
-    const stop = (): void => { child.kill(); };
-    const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
-    signal.addEventListener("abort", stop, { once: true });
-    const finish = (result: Run): void => { clearTimeout(timer); signal.removeEventListener("abort", stop); settle(result); };
-    child.once("error", (error) => { finish({ status: null, output: error.message, error: true, timedOut }); });
-    child.once("close", (status) => { finish({ status, output, error: false, timedOut }); });
-  });
+/** LemmaScript's and Dafny's processes, run so that a timeout or a stop ends Dafny's too (`runProcess`). */
+function run(executable: string, args: readonly string[], cwd: string, signal: AbortSignal): Promise<ProcessRun> {
+  return runProcess(executable, args, cwd, signal, timeoutMs);
 }
 
 /** Resolved when a proof runs, not when the extension loads, so Pi opens even where LemmaScript is missing. */
@@ -43,7 +28,7 @@ function lscEntry(): string {
 
 /** Whether Dafny answers on this computer, which every LemmaScript proof needs. */
 export async function dafnyInstalled(signal: AbortSignal): Promise<boolean> {
-  return (await run("dafny", ["--version"], tmpdir(), signal)).status === 0;
+  return (await run("dafny", ["--version"], tmpdir(), signal)).exitCode === 0;
 }
 
 async function readIfPresent(path: string): Promise<string | undefined> {
@@ -51,17 +36,18 @@ async function readIfPresent(path: string): Promise<string | undefined> {
 }
 
 /** `lsc regen`, then `lsc check` when regen succeeded and nothing stopped it, as LemmaScript orders them. */
-async function regenThenCheck(root: string, path: string, signal: AbortSignal): Promise<readonly [Run, Run | undefined]> {
-  const lsc = (...command: string[]): Promise<Run> =>
+async function regenThenCheck(root: string, path: string, signal: AbortSignal):
+  Promise<readonly [ProcessRun, ProcessRun | undefined]> {
+  const lsc = (...command: string[]): Promise<ProcessRun> =>
     run(process.execPath, [lscEntry(), ...command, "--backend=dafny", path], root, signal);
   const regen = await lsc("regen", "--no-verify");
-  return [regen, regen.status === 0 && !signal.aborted && !regen.timedOut ? await lsc("check") : undefined];
+  return [regen, regen.ended === "exited" && regen.exitCode === 0 && !signal.aborted ? await lsc("check") : undefined];
 }
 
-function outcomeOf(regen: Run, check: Run | undefined, signal: AbortSignal): ProofOutcome {
+function outcomeOf(regen: ProcessRun, check: ProcessRun | undefined, signal: AbortSignal): ProofOutcome {
   const verified = Number([...(check?.output ?? "").matchAll(/finished with (\d+) verified/gu)].at(-1)?.[1] ?? 0);
-  return proofOutcome(signal.aborted, regen.timedOut || check?.timedOut === true, !regen.error && check?.error !== true,
-    regen.status === 0, check?.status ?? -1, verified);
+  return proofOutcome(signal.aborted, regen.ended === "timed_out" || check?.ended === "timed_out",
+    regen.ended !== "not_started" && check?.ended !== "not_started", regen.exitCode === 0, check?.exitCode ?? -1, verified);
 }
 
 /** The `.dfy` LemmaScript used: its configuration can keep proofs in another folder, which its "Generated:" line names. */

@@ -342,21 +342,23 @@ it("runs the project's tests, and runs each changed test on the request's base e
   const run = gate(root);
   await run.input();
   write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n",
-    "test/negative.test.mjs": priceTest(-1, 0), "test/positive.test.mjs": priceTest(2, 2) });
+    "test/negative.test.mjs": priceTest(-1, 0), "test/positive.test.mjs": priceTest(2, 2),
+    "test/__snapshots__/price.test.mjs.snap": "exports[`total 1`] = `1`;\n" });
   commit(root, "the agent's change");
   const settled = await run.settle();
   expect(settled?.continue).toBeUndefined();
+  const changed = ["src/price.mjs", "test/__snapshots__/price.test.mjs.snap", "test/negative.test.mjs", "test/positive.test.mjs"];
+  // The snapshot is no test a runner runs alone, so it gets no line of its own on the base.
   expect(entry(settled).content).toBe([
     "Tesota receipt",
     "  passed        bun run test",
     "  exercises     test/negative.test.mjs: it fails without the change, and the base passes without it",
     "  vacuous test  test/positive.test.mjs: it passes without the change",
-    ...["src/price.mjs", "test/negative.test.mjs", "test/positive.test.mjs"].map((path) =>
-      `  not proved    ${path}: no proof covers it; the project's commands pass with it`),
+    ...changed.map((path) => `  not proved    ${path}: no proof covers it; the project's commands pass with it`),
   ].join("\n"));
   const receipt = entry(settled).details as Receipt;
   expect(receipt.tests.map(({ command, evidence }) => [command, evidence.verifier, evidence.files]))
-    .toEqual([["bun run test", "command", ["src/price.mjs", "test/negative.test.mjs", "test/positive.test.mjs"]]]);
+    .toEqual([["bun run test", "command", changed]]);
   // The base ran in a worktree that is gone, and the checkout's dependencies it linked are not.
   expect(spawnSync("git", ["worktree", "list", "--porcelain"], { cwd: root, encoding: "utf8" }).stdout.match(/^worktree /gmu))
     .toHaveLength(1);

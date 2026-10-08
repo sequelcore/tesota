@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { type Dirent, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync,
   writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { getShellConfig } from "@earendil-works/pi-coding-agent";
 import { type Evidence, contentHash } from "./evidence.js";
 import { type ProjectChecks, findProjects, owningProjects } from "./projects.js";
+import { runProcess } from "./process.js";
 import { readTestResults } from "./test-report.js";
 import { type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
 
@@ -16,59 +17,22 @@ const execFileAsync = promisify(execFile);
 export type CommandOutcome = Extract<CheckOutcome, "passed" | "failed" | "timed_out" | "cancelled" | "not_started">;
 
 const defaultTimeoutMs = 15 * 60_000;
-const outputLimit = 8 * 1024;
-// A shell that exits while a descendant still holds its output never closes it; the run ends this long after the exit.
-const closeGraceMs = 2_000;
-
-/** Stop a process and every process it started: `taskkill /T` on Windows, the process group elsewhere. */
-function stopTree(pid: number): void {
-  if (process.platform === "win32") {
-    spawn(join(process.env["SystemRoot"] ?? "C:\\Windows", "System32", "taskkill.exe"), ["/F", "/T", "/PID", String(pid)],
-      { stdio: "ignore", windowsHide: true }).once("error", () => undefined);
-    return;
-  }
-  try { process.kill(-pid, "SIGKILL"); } catch { try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ } }
-}
 
 /**
  * Run one command in Pi's shell, the one its `bash` tool runs the agent's
- * commands in, from `cwd`. A run past `timeoutMs`, or one `signal` stops,
- * ends with every process it started.
+ * commands in, from `cwd`, through `runProcess`.
  */
-export function runShell(command: string, cwd: string, signal: AbortSignal, timeoutMs: number = defaultTimeoutMs):
+export async function runShell(command: string, cwd: string, signal: AbortSignal, timeoutMs: number = defaultTimeoutMs):
   Promise<{ outcome: CommandOutcome; output: string }> {
   let config: ReturnType<typeof getShellConfig>;
   try { config = getShellConfig(); } catch (error) {
-    return Promise.resolve({ outcome: "not_started", output: error instanceof Error ? error.message : String(error) });
+    return { outcome: "not_started", output: error instanceof Error ? error.message : String(error) };
   }
   if (config.commandTransport === "stdin") {
-    return Promise.resolve({ outcome: "not_started", output: `${config.shell} reads commands from its input, which Tesota cannot give it.` });
+    return { outcome: "not_started", output: `${config.shell} reads commands from its input, which Tesota cannot give it.` };
   }
-  if (signal.aborted) return Promise.resolve({ outcome: "cancelled", output: "" });
-  return new Promise((settle) => {
-    let output = "";
-    let timedOut = false;
-    const child = spawn(config.shell, [...config.args, command], { cwd, windowsHide: true, detached: process.platform !== "win32",
-      stdio: ["ignore", "pipe", "pipe"] });
-    const append = (chunk: Buffer): void => { output = (output + chunk.toString("utf8")).slice(-outputLimit); };
-    child.stdout.on("data", append);
-    child.stderr.on("data", append);
-    const stop = (): void => { if (child.pid !== undefined) stopTree(child.pid); };
-    const timer = setTimeout(() => { timedOut = true; stop(); }, timeoutMs);
-    signal.addEventListener("abort", stop, { once: true });
-    let grace: NodeJS.Timeout | undefined;
-    const finish = (outcome: CommandOutcome): void => {
-      clearTimeout(timer);
-      clearTimeout(grace);
-      signal.removeEventListener("abort", stop);
-      settle({ outcome, output });
-    };
-    const ended = (code: number | null): CommandOutcome =>
-      signal.aborted ? "cancelled" : timedOut ? "timed_out" : code === 0 ? "passed" : "failed";
-    child.once("error", (error) => { output = error.message; finish("not_started"); });
-    child.once("exit", (code) => { grace = setTimeout(() => { finish(ended(code)); }, closeGraceMs); });
-    child.once("close", (code) => { finish(ended(code)); });
-  });
+  const { ended, exitCode, output } = await runProcess(config.shell, [...config.args, command], cwd, signal, timeoutMs);
+  return { outcome: ended === "exited" ? exitCode === 0 ? "passed" : "failed" : ended, output };
 }
 
 const reportDepth = 6;
