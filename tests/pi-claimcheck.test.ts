@@ -14,17 +14,22 @@ const source = [
 ].join("\n");
 const items = contracts("src/policy.ts", source);
 const requests = ["Denied paths must always win over allowed ones."];
+const models = { restatedBy: "p/r", comparedBy: "p/c" };
 const justified = (fn: number): Comparison => ({ function: fn, verdict: "justified", explanation: "Matches." });
 
 /** A session whose model answers each request with `replies` in turn, recording what it was asked. */
-function session(...replies: object[]): { ctx: Parameters<typeof claimCheck>[0]; asked: string[] } {
+function session(...replies: object[]): { ctx: Parameters<typeof claimCheck>[0]; asked: string[]; models: string[] } {
   const asked: string[] = [];
-  const complete = (_model: unknown, context: { messages: { content: { text: string }[] }[] }): Promise<unknown> => {
+  const models: string[] = [];
+  const complete = (model: { id: string }, context: { messages: { content: { text: string }[] }[] }): Promise<unknown> => {
     asked.push(context.messages[0]?.content[0]?.text ?? "");
+    models.push(model.id);
     const reply = replies[asked.length - 1];
     return reply instanceof Error ? Promise.reject(reply) : Promise.resolve({ stopReason: "toolUse", content: [], ...reply });
   };
-  return { ctx: { model: { provider: "provider", id: "model" } as never, modelRegistry: { complete } as never }, asked };
+  const find = (provider: string, id: string): object | undefined =>
+    provider === "other" && id === "restater" ? { provider, id } : undefined;
+  return { ctx: { model: { provider: "provider", id: "model" } as never, modelRegistry: { complete, find } as never }, asked, models };
 }
 
 const call = (name: string, args: object): object => ({ content: [{ type: "toolCall", id: "1", name, arguments: args }] });
@@ -46,19 +51,34 @@ it("restates contracts without ever showing the request, then compares them with
 
 it("keeps the judgments in the contracts' order, and judges nothing when a contract was not compared", () => {
   const vacuous: Comparison = { function: 2, verdict: "vacuous", explanation: "Always true for doubles of non-negatives." };
-  expect(claimcheckResult("p/m", items, [vacuous, justified(1)])).toEqual({ status: "judged", model: "p/m", judgments: [
+  expect(claimcheckResult(models, items, [vacuous, justified(1)])).toEqual({ status: "judged", ...models, judgments: [
     { verdict: "justified", explanation: "Matches." }, { verdict: "vacuous", explanation: "Always true for doubles of non-negatives." }] });
-  expect(claimcheckResult("p/m", items, [justified(1)])).toEqual({ status: "not_judged", reason: "no comparison for double" });
+  expect(claimcheckResult(models, items, [justified(1)])).toEqual({ status: "not_judged", reason: "no comparison for double" });
 });
 
 it("asks the session's model in two requests, the first without the request, and names the model that judged", async () => {
   const { ctx, asked } = session(informalized, call("record_comparisons", { comparisons: [justified(1),
     { function: 2, verdict: "partially_justified", explanation: "Says nothing of doubling." }] }));
-  expect(await claimCheck(ctx, requests, items, new AbortController().signal)).toEqual({ status: "judged", model: "provider/model",
+  expect(await claimCheck(ctx, requests, items, new AbortController().signal)).toEqual({ status: "judged",
+    restatedBy: "provider/model", comparedBy: "provider/model",
     judgments: [{ verdict: "justified", explanation: "Matches." }, { verdict: "partially_justified", explanation: "Says nothing of doubling." }] });
   expect(asked).toHaveLength(2);
   expect(asked[0]).not.toContain(requests[0]);
   expect(asked[1]).toContain(requests[0]);
+});
+
+it("restates with the second model when one is set, and judges nothing when the registry lacks it", async () => {
+  const comparisons = call("record_comparisons", { comparisons: [justified(1), justified(2)] });
+  const second = session(informalized, comparisons);
+  expect(await claimCheck(second.ctx, requests, items, new AbortController().signal, "other/restater"))
+    .toMatchObject({ status: "judged", restatedBy: "other/restater", comparedBy: "provider/model" });
+  expect(second.models).toEqual(["restater", "model"]);
+  for (const setting of ["other/missing", "restater"]) {
+    const missing = session(informalized, comparisons);
+    expect(await claimCheck(missing.ctx, requests, items, new AbortController().signal, setting)).toEqual({ status: "not_judged",
+      reason: `its restating model ${setting} is not a provider/id in Pi's model registry` });
+    expect(missing.asked).toEqual([]);
+  }
 });
 
 it("judges nothing, and says why, without a model or a usable answer", async () => {

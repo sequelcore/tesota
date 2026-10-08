@@ -59,11 +59,11 @@ it("mutates and has a model judge only the changed contracts, and labels the ver
   const ctx = { model: { provider: "provider", id: "model" } as never, modelRegistry: { complete } as never };
   const strength = await contractStrength(ctx, ["total keeps negative amounts"], [{ path: "src/rules.ts", source: changed, baseSource: base }],
     new AbortController().signal);
-  expect(strength).toEqual({ claimcheck: { status: "judged", model: "provider/model" }, contracts: [{ path: "src/rules.ts", name: "total",
+  expect(strength).toEqual({ claimcheck: { status: "judged", restatedBy: "provider/model", comparedBy: "provider/model" }, contracts: [{ path: "src/rules.ts", name: "total",
     lines: ["//@ requires amount >= 0", "//@ ensures \\result === amount"], mutation: { rejected: 3, survived: [], inconclusive: 0 },
     judgment: { verdict: "partially_justified", explanation: "It excludes negative amounts." } }] });
   expect(renderReceipt({ version: 0, repository: true, proofs: [], tests: [], exercises: [], weakened: [], unverified: [], ...strength }))
-    .toContain("  model judged  by ClaimCheck on provider/model; a model's judgment against the request, not a proof:\n" +
+    .toContain("  model judged  by ClaimCheck on provider/model, one model for both requests, a model's judgment against the request, not a proof:\n" +
       "                total in src/rules.ts covers only part of what was asked: It excludes negative amounts.");
   expect(await contractStrength(ctx, [], [{ path: "src/rules.ts", source: base, baseSource: base }], new AbortController().signal))
     .toEqual({ contracts: [] });
@@ -75,4 +75,10 @@ it("says when ClaimCheck judged nothing", async () => {
     [{ path: "src/rules.ts", source: changed, baseSource: base }], new AbortController().signal);
   expect(renderReceipt({ version: 0, repository: true, proofs: [], tests: [], exercises: [], weakened: [], unverified: [], ...strength }))
     .toContain("  not judged    whether the contracts express the request: ClaimCheck no model is selected");
+});
+
+it("names each model when a second one restated", () => {
+  expect(renderReceipt({ version: 0, repository: true, proofs: [], tests: [], exercises: [], weakened: [], unverified: [], contracts: [],
+    claimcheck: { status: "judged", restatedBy: "other/restater", comparedBy: "provider/model" } }))
+    .toContain("  model judged  by ClaimCheck on other/restater restating and provider/model comparing, a model's judgment");
 });

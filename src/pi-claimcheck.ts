@@ -5,12 +5,12 @@ import type { Contract } from "./proof-guarantees.js";
 
 /**
  * ClaimCheck's round-trip method (metareflection/claimcheck, MIT), adapted to
- * LemmaScript contracts that proved, run through the session's model in Pi's
- * model registry. Pass 1 restates each contract without seeing the
- * operator's request; pass 2, a separate request, compares that restatement
- * with the request. ClaimCheck uses two different models for the passes;
- * with the session's one model, Tesota keeps them apart by context only. Its
- * verdict is a model's judgment, never a proof.
+ * LemmaScript contracts that proved, run through Pi's model registry. Pass 1
+ * restates each contract without seeing the operator's request; pass 2, a
+ * separate request, compares that restatement with the request. ClaimCheck
+ * uses two different models for the passes; unless a second model is set,
+ * both use the session's model, kept apart by context only, and the receipt
+ * says so. Its verdict is a model's judgment, never a proof.
  */
 
 /** Both passes together end within this, so a stalled provider cannot hold the run open. */
@@ -44,9 +44,14 @@ export interface Comparison {
   readonly explanation: string;
 }
 
-/** A model's judgment of the contracts against the request; `judgments` follows the order of the contracts judged. */
+/**
+ * A model's judgment of the contracts against the request, with the models
+ * that restated and compared them as `provider/id`; `judgments` follows the
+ * order of the contracts judged.
+ */
 export type ClaimCheck =
-  | { readonly status: "judged"; readonly model: string; readonly judgments: readonly Pick<Comparison, "verdict" | "explanation">[] }
+  | { readonly status: "judged"; readonly restatedBy: string; readonly comparedBy: string;
+    readonly judgments: readonly Pick<Comparison, "verdict" | "explanation">[] }
   | { readonly status: "not_judged"; readonly reason: string };
 
 function contractList(items: readonly Contract[]): string {
@@ -86,11 +91,12 @@ export function comparePrompt(requests: readonly string[], items: readonly Contr
 }
 
 /** The judgments in the contracts' order; not judged when a contract was left without a comparison. */
-export function claimcheckResult(model: string, items: readonly Contract[], comparisons: readonly Comparison[]): ClaimCheck {
+export function claimcheckResult(models: Pick<Extract<ClaimCheck, { status: "judged" }>, "restatedBy" | "comparedBy">,
+  items: readonly Contract[], comparisons: readonly Comparison[]): ClaimCheck {
   const judgments = items.map((_item, index) => comparisons.find((comparison) => comparison.function === index + 1));
   const missing = items.filter((_item, index) => judgments[index] === undefined);
   if (missing.length > 0) return { status: "not_judged", reason: `no comparison for ${missing.map((item) => item.name).join(", ")}` };
-  return { status: "judged", model,
+  return { status: "judged", ...models,
     judgments: judgments.flatMap((judgment) => judgment === undefined ? [] : [{ verdict: judgment.verdict, explanation: judgment.explanation }]) };
 }
 
@@ -105,7 +111,7 @@ function unanswered(reply: Pick<Reply, "stopReason" | "errorMessage">, signal: A
   return reply.stopReason === "error" ? `the model request failed: ${reply.errorMessage ?? "no reason given"}` : undefined;
 }
 
-/** One request to the session's model, answered through the tool `name` with `parameters`; why it gave no answer otherwise. */
+/** One request to `model`, answered through the tool `name` with `parameters`; why it gave no answer otherwise. */
 async function recorded<T>(ctx: ModelAccess, model: NonNullable<ModelAccess["model"]>, name: string,
   parameters: TSchema, prompt: string, signal: AbortSignal): Promise<T | string> {
   let reply: Reply;
@@ -124,20 +130,32 @@ async function recorded<T>(ctx: ModelAccess, model: NonNullable<ModelAccess["mod
   return call?.type === "toolCall" && Value.Check(parameters, call.arguments) ? call.arguments as T : "the model did not record its answer";
 }
 
+const named = (model: NonNullable<ModelAccess["model"]>): string => `${model.provider}/${model.id}`;
+
 /**
- * ClaimCheck on `items` against the operator's `requests`, through the
- * session's model; not judged when no model is selected, or when a pass
- * gives no usable answer within `CLAIMCHECK_TIME_LIMIT_MS`.
+ * ClaimCheck on `items` against the operator's `requests`. The session's
+ * model compares; `restateWith`, a `provider/id` in Pi's model registry,
+ * restates when set, as ClaimCheck's method uses a second model for that
+ * pass, and the session's model restates otherwise. Not judged when a model
+ * is missing, or when a pass gives no usable answer within
+ * `CLAIMCHECK_TIME_LIMIT_MS`.
  */
 export async function claimCheck(ctx: ModelAccess, requests: readonly string[], items: readonly Contract[],
-  signal: AbortSignal): Promise<ClaimCheck> {
+  signal: AbortSignal, restateWith?: string): Promise<ClaimCheck> {
   const { model } = ctx;
   if (model === undefined) return { status: "not_judged", reason: "no model is selected" };
+  const slash = restateWith?.indexOf("/") ?? -1;
+  const restater = restateWith === undefined ? model
+    : slash > 0 ? ctx.modelRegistry.find(restateWith.slice(0, slash), restateWith.slice(slash + 1)) : undefined;
+  if (restater === undefined) {
+    return { status: "not_judged", reason: `its restating model ${restateWith ?? ""} is not a provider/id in Pi's model registry` };
+  }
   const limited = AbortSignal.any([signal, AbortSignal.timeout(CLAIMCHECK_TIME_LIMIT_MS)]);
-  const first = await recorded<{ informalizations: Informalization[] }>(ctx, model, "record_informalizations", informalizationSchema, informalizePrompt(items), limited);
+  const first = await recorded<{ informalizations: Informalization[] }>(ctx, restater, "record_informalizations",
+    informalizationSchema, informalizePrompt(items), limited);
   if (typeof first === "string") return { status: "not_judged", reason: first };
   const second = await recorded<{ comparisons: Comparison[] }>(ctx, model, "record_comparisons", comparisonSchema,
     comparePrompt(requests, items, first.informalizations), limited);
   if (typeof second === "string") return { status: "not_judged", reason: second };
-  return claimcheckResult(`${model.provider}/${model.id}`, items, second.comparisons);
+  return claimcheckResult({ restatedBy: named(restater), comparedBy: named(model) }, items, second.comparisons);
 }

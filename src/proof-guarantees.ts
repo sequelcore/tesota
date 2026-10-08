@@ -83,17 +83,18 @@ export interface ContractStrength {
   readonly judgment?: Pick<Comparison, "verdict" | "explanation">;
 }
 
-/** Which model ClaimCheck asked, or why it judged nothing. */
-export type ClaimCheckRun = { readonly status: "judged"; readonly model: string } | Extract<ClaimCheck, { status: "not_judged" }>;
+/** Which models ClaimCheck asked, or why it judged nothing. */
+export type ClaimCheckRun = Omit<Extract<ClaimCheck, { status: "judged" }>, "judgments"> | Extract<ClaimCheck, { status: "not_judged" }>;
 
 /**
  * Mutation and ClaimCheck for each contract a proved file's content added or
  * changed against its base; `claimcheck` is absent when there is no such
- * contract. ClaimCheck runs on the session's model while the mutants prove.
+ * contract. ClaimCheck runs while the mutants prove, restating with
+ * `restateWith` when set (`claimCheck`).
  */
 export async function contractStrength(ctx: Pick<ExtensionContext, "model" | "modelRegistry">, requests: readonly string[],
   files: readonly { readonly path: string; readonly source: string; readonly baseSource: string | undefined }[],
-  signal: AbortSignal): Promise<{ readonly contracts: readonly ContractStrength[]; readonly claimcheck?: ClaimCheckRun }> {
+  signal: AbortSignal, restateWith?: string): Promise<{ readonly contracts: readonly ContractStrength[]; readonly claimcheck?: ClaimCheckRun }> {
   const items = files.flatMap(({ path, source, baseSource }) =>
     changedContracts(path, source, baseSource).map((contract) => ({ contract, source })));
   if (items.length === 0) return { contracts: [] };
@@ -104,11 +105,13 @@ export async function contractStrength(ctx: Pick<ExtensionContext, "model" | "mo
     }
     return results;
   };
-  const [mutations, judged] = await Promise.all([mutate(), claimCheck(ctx, requests, items.map(({ contract }) => contract), signal)]);
+  const [mutations, judged] = await Promise.all([mutate(), claimCheck(ctx, requests, items.map(({ contract }) => contract), signal,
+    restateWith)]);
   return {
     contracts: items.map(({ contract }, index) => ({ path: contract.path, name: contract.name, lines: contractLines(contract),
       mutation: mutations[index] ?? { rejected: 0, survived: [], inconclusive: 0 },
       ...judged.status === "judged" && judged.judgments[index] !== undefined ? { judgment: judged.judgments[index] } : {} })),
-    claimcheck: judged.status === "judged" ? { status: "judged", model: judged.model } : judged,
+    claimcheck: judged.status === "judged"
+      ? { status: "judged", restatedBy: judged.restatedBy, comparedBy: judged.comparedBy } : judged,
   };
 }

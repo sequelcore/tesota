@@ -69,10 +69,12 @@ contract is that the request added or changed in a file that proved
 (`src/proof-guarantees.ts`): `src/proof-mutation.ts` proves up to 8 small
 changes to the function's body, each alone in a temporary folder without the
 file's `.dfy` proof additions, and one that still proves makes it a weak
-contract in the receipt; `src/pi-claimcheck.ts` asks the session's model,
-through `ctx.modelRegistry`, to restate each contract without the request and
-then compare it with the operator's request, and the receipt labels that
-verdict a model's judgment, or says why there is none. Neither sends
+contract in the receipt; `src/pi-claimcheck.ts`, through `ctx.modelRegistry`,
+asks a model to restate each contract without the request, the one Pi's
+`--claimcheck-model <provider>/<id>` flag names or else the session's, and
+the session's model to compare the restatement with the operator's request.
+The receipt labels that verdict a model's judgment, says when one model made
+both requests, or says why there is none. Neither sends
 anything back to the agent. The tests that prove files run
 only where Dafny is installed; the gate's tests script the proofs and the
 model instead and run real commands. Build before `bun link`; later builds

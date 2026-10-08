@@ -90,6 +90,7 @@ function gate(root: string, active = ["read", "edit", "prove"], session: object 
 } {
   const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
   registerGate({ on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
+    registerFlag: () => undefined, getFlag: (name: string) => (session as { flags?: Record<string, string> }).flags?.[name],
     getActiveTools: () => active } as never);
   const ctx = { cwd: root, signal: undefined, ...session };
   return {
@@ -182,11 +183,20 @@ it("measures the strength of the contracts the request changed once they prove, 
   writeFileSync(join(root, "src", "other.ts"), "//@ ensures \\result >= 0\nexport function g(): number {\n  return 2;\n}\n");
   const settled = entry(await run.settle());
   expect(settled.content).toContain(["  contract      f in src/rule.ts: all 1 decided changes to its code fail the proof",
-    "  model judged  by ClaimCheck on provider/model; a model's judgment against the request, not a proof:",
+    "  model judged  by ClaimCheck on provider/model, one model for both requests, a model's judgment against the request, not a proof:",
     "                f in src/rule.ts does not express what was asked: It allows any non-negative result."].join("\n"));
   expect(settled.content).not.toContain("g in src/other.ts");
   expect(asked[1]).toContain("1. f returns zero\n2. and only zero");
   expect((settled.details as Receipt).contracts.map(({ name, judgment }) => [name, judgment?.verdict])).toEqual([["f", "not_justified"]]);
+});
+
+it("restates with the model the claimcheck-model flag names", async () => {
+  const root = project();
+  const run = gate(root, undefined, { model: { provider: "provider", id: "model" }, flags: { "claimcheck-model": "other/missing" },
+    modelRegistry: { find: () => undefined } });
+  await run.input();
+  writeFileSync(join(root, "src", "rule.ts"), `//@ ensures true\n${contract}`);
+  expect(entry(await run.settle()).content).toContain("ClaimCheck its restating model other/missing is not a provider/id in Pi's model registry");
 });
 
 it("stops on any failure already sent back, alternating ones included, and forgets them on the operator's input only", async () => {

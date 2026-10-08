@@ -89,7 +89,9 @@ function claimcheckLines(run: ClaimCheckRun | undefined, contracts: readonly Con
   if (run.status === "not_judged") {
     return [`  not judged    whether the contracts express the request: ClaimCheck ${run.reason}`];
   }
-  return [`  model judged  by ClaimCheck on ${run.model}; a model's judgment against the request, not a proof:`,
+  const models = run.restatedBy === run.comparedBy
+    ? `${run.comparedBy}, one model for both requests,` : `${run.restatedBy} restating and ${run.comparedBy} comparing,`;
+  return [`  model judged  by ClaimCheck on ${models} a model's judgment against the request, not a proof:`,
     ...contracts.flatMap(({ path, name, judgment }) => judgment === undefined ? [] : [`                ${name} in ${path} ` +
       `${verdictText[judgment.verdict]}${judgment.verdict === "justified" ? "" : `: ${judgment.explanation}`}`])];
 }

@@ -172,11 +172,19 @@ function failingReport({ command, failingTests, evidence }: CommandRun): string 
  * the request's base.
  */
 async function strength(ctx: ExtensionContext, base: string | null, proofs: Receipt["proofs"], requests: readonly string[],
-  signal: AbortSignal): Promise<Pick<Receipt, "contracts" | "claimcheck">> {
+  signal: AbortSignal, restateWith: string | undefined): Promise<Pick<Receipt, "contracts" | "claimcheck">> {
   const files = await Promise.all(proofs.filter(({ verdict }) => verdict === "proved").map(async ({ path }) => ({ path,
     source: await readIfPresent(join(ctx.cwd, path)) ?? "",
     baseSource: base === null ? undefined : await git(ctx.cwd, ["show", `${base}:./${path}`]) })));
-  return contractStrength(ctx, requests, files, signal);
+  return contractStrength(ctx, requests, files, signal, restateWith);
+}
+
+/** The Pi flag that names ClaimCheck's second model (`claimCheck`). */
+const claimcheckModelFlag = "claimcheck-model";
+
+function restateWith(pi: ExtensionAPI): string | undefined {
+  const value = pi.getFlag(claimcheckModelFlag);
+  return typeof value === "string" && value !== "" ? value : undefined;
 }
 
 /** Built-in tools that only read, and `prove`, whose changes are the proof's own; any other tool may change files. */
@@ -199,6 +207,8 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
  * receipt that says so.
  */
 export function registerGate(pi: ExtensionAPI): void {
+  pi.registerFlag(claimcheckModelFlag, { type: "string",
+    description: "The provider/id of a second model for ClaimCheck to restate contracts with; the session's model otherwise" });
   let sentBack = new Map<string, string[]>();
   let commandsSentBack = new Map<string, string[]>();
   let mayHaveChanged = false;
@@ -256,7 +266,7 @@ export function registerGate(pi: ExtensionAPI): void {
     const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
       path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
     const receipt: Receipt = { version: 0, repository: true, proofs: judged,
-      ...await strength(ctx, from, judged, requests, signal), tests, exercises, weakened,
+      ...await strength(ctx, from, judged, requests, signal, restateWith(pi)), tests, exercises, weakened,
       unverified: changed.filter((path) => !covered.has(path)) };
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
