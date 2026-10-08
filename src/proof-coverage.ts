@@ -1,6 +1,7 @@
 import { bodyEnd, contracts } from "./proof-guarantees.js";
 import type { FileChange, Weakening } from "./verification-changes.js";
 import { proofCovered } from "./verification/proof-cover-rule.js";
+import { ranges } from "./verification/range-rule.js";
 
 /** The changed lines of a file that proved that no contract's proof covers, as inclusive ranges in the file as changed. */
 export interface UncoveredLines {
@@ -8,16 +9,6 @@ export interface UncoveredLines {
   readonly lines: readonly (readonly [number, number])[];
 }
 
-/** The inclusive ranges of consecutive numbers in `numbers`, which are sorted and distinct. */
-function ranges(numbers: readonly number[]): [number, number][] {
-  const found: [number, number][] = [];
-  for (const number of numbers) {
-    const last = found.at(-1);
-    if (last !== undefined && last[1] + 1 === number) last[1] = number;
-    else found.push([number, number]);
-  }
-  return found;
-}
 
 /** Each contract's function with its lines, from its first annotation to the brace that closes it. */
 function spans(path: string, source: string): { name: string; start: number; end: number }[] {
@@ -65,5 +56,5 @@ export function uncoveredLines(change: FileChange, source: string, baseSource: s
   const proved = current.map(() => true);
   const narrowed = narrowedContracts(change.path, source, baseSource, weakened);
   return { path: change.path,
-    lines: ranges(changed.filter((line) => !proofCovered(line, starts, ends, proved, narrowed))) };
+    lines: ranges(changed.filter((line) => !proofCovered(line, starts, ends, proved, narrowed))).map(({ start, end }) => [start, end] as [number, number]) };
 }
