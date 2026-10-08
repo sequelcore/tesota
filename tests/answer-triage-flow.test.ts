@@ -70,7 +70,7 @@ async function openShell(record: ShellSessionRecord, run: () => Promise<{ status
   const createWorkspace = Workspace.create.bind(Workspace);
   spies.push(vi.spyOn(Workspace, "create").mockImplementation((directory, _root, options) =>
     createWorkspace(directory, join(root, "workspaces"), { ...options, sourcesRoot: join(root, "sources") })));
-  spies.push(vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}) } as unknown as ModelRuntime),
+  spies.push(vi.spyOn(ModelRuntime, "create").mockResolvedValue({ getModel: () => ({}), registerNativeProvider: () => {} } as unknown as ModelRuntime),
     vi.spyOn(SessionManager, "findById").mockReturnValue(undefined),
     vi.spyOn(SessionManager, "create").mockReturnValue({} as SessionManager),
     vi.spyOn(CodingSession, "create").mockImplementation(async (options) => {
@@ -116,8 +116,8 @@ it("shows the first pass's verdict with its model, runs /verify on an answer it 
     expect(await session.assessAnswer?.()).toMatchObject({ status: "assessed", reviews: [] });
     // The first pass names itself while it decides, and its verdict reaches the conversation.
     expect(progress.mock.calls.some(([, value]) => value.phase === "reviewing" &&
-      value.activity === "Deciding whether the answer needs checking · triage codex:gpt-6-luna")).toBe(true);
-    expect(triage).toHaveBeenCalledWith("session", { model: "codex:gpt-6-luna", outcome: "skipped",
+      value.activity === "Deciding whether the answer needs checking · triage chatgpt:gpt-6-luna")).toBe(true);
+    expect(triage).toHaveBeenCalledWith("session", { model: "chatgpt:gpt-6-luna", outcome: "skipped",
       reason: "it explains a concept and claims nothing about the files" });
     expect(mocks.reviewAnswer).not.toHaveBeenCalled();
 
@@ -125,12 +125,12 @@ it("shows the first pass's verdict with its model, runs /verify on an answer it 
     await turns.verify("session");
     expect(mocks.reviewAnswer).toHaveBeenCalledOnce();
     expect(progress.mock.calls.some(([, value]) => value.phase === "reviewing" &&
-      value.activity === "Checking the answer against your requests · reviewer codex:gpt-6-luna")).toBe(true);
+      value.activity === "Checking the answer against your requests · reviewer chatgpt:gpt-6-luna")).toBe(true);
     const shown = inspect.mock.calls.at(-1)?.[1];
     expect(shown?.title).toBe("Answer check");
-    expect(shown?.summary).toContain("Reviewed by codex:gpt-6-luna.");
-    expect(shown?.detail).toContain("First pass\n  triage codex:gpt-6-luna found nothing to check; you asked for the full check with /verify");
-    expect(shown?.detail).toContain("  Tesota reviewer · codex:gpt-6-luna\n    The answer holds.");
+    expect(shown?.summary).toContain("Reviewed by chatgpt:gpt-6-luna.");
+    expect(shown?.detail).toContain("First pass\n  triage chatgpt:gpt-6-luna found nothing to check; you asked for the full check with /verify");
+    expect(shown?.detail).toContain("  Tesota reviewer · chatgpt:gpt-6-luna\n    The answer holds.");
 
     // Once checked, there is nothing left to verify.
     await turns.verify("session");
@@ -151,7 +151,7 @@ it("sends a checkable answer to the full check, says so, and leaves nothing for 
     const session = shell.session("session");
     await session.work("How does orderTotal round?");
     await session.assessAnswer?.();
-    expect(triage).toHaveBeenCalledWith("session", { model: "codex:gpt-6-luna", outcome: "checked",
+    expect(triage).toHaveBeenCalledWith("session", { model: "chatgpt:gpt-6-luna", outcome: "checked",
       reason: "the reply says how orderTotal rounds" });
     expect(mocks.reviewAnswer).toHaveBeenCalledOnce();
     await turns.verify("session");

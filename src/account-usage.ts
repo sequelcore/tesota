@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { allRoutes, kindLabels } from "./auth.js";
+import { CHATGPT_PROVIDER } from "./integrations/chatgpt-provider.js";
 import { creditPercent, filledSegments, type MeterTone, meterTone, remainingPercent } from "./verification/usage-meter-rule.js";
 import { usageReader } from "./verification/usage-reader-rule.js";
 
@@ -91,8 +92,8 @@ function usedWindow(label: string, used: number, resetsAt: number | undefined): 
   return { label, left: remainingPercent(Math.round(used)), ...resetsAt === undefined ? {} : { resetsAt } };
 }
 
-/** Codex's `wham/usage`: each window with its length and reset, and the credit balance. */
-export function codexUsage(body: unknown): UsageReading {
+/** ChatGPT's `wham/usage`, as Codex reads it: each window with its length and reset, and the credit balance. */
+export function chatgptUsage(body: unknown): UsageReading {
   const limits = field(body, "rate_limit");
   const meters = [field(limits, "primary_window"), field(limits, "secondary_window")].flatMap((value) => {
     const window = (value);
@@ -158,18 +159,18 @@ function refusal(route: string, status: number): string {
   return `usage request failed (HTTP ${status})`;
 }
 
-async function readCodex(route: string, sources: UsageSources): Promise<Outcome> {
-  const token = await sources.key(route, "openai-codex");
+async function readChatGPT(route: string, sources: UsageSources): Promise<Outcome> {
+  const token = await sources.key(route, CHATGPT_PROVIDER);
   if (token === undefined) return { none: `signed out: tesota auth login ${route}` };
-  const account = codexAccount(token);
+  const account = chatgptAccountId(token);
   const response = await sources.get("https://chatgpt.com/backend-api/wham/usage", { Authorization: `Bearer ${token}`,
     "User-Agent": sources.userAgent, ...account === undefined ? {} : { "ChatGPT-Account-Id": account } });
   if (response.status !== 200) throw new Error(refusal(route, response.status));
-  return { reading: codexUsage(response.body) };
+  return { reading: chatgptUsage(response.body) };
 }
 
-/** The ChatGPT account a Codex token belongs to, from its own claims, as Codex and Pi read it. */
-function codexAccount(token: string): string | undefined {
+/** The ChatGPT account a token belongs to, from its own claims, as Codex and Pi read it. */
+function chatgptAccountId(token: string): string | undefined {
   try {
     const claims: unknown = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"));
     return text(field(field(claims, "https://api.openai.com/auth"), "chatgpt_account_id"));
@@ -210,7 +211,7 @@ const noSource: Readonly<Record<string, string>> = {
 };
 
 async function readRoute(route: string, kind: string, sources: UsageSources): Promise<Outcome> {
-  if (kind === "codex") return readCodex(route, sources);
+  if (kind === "chatgpt") return readChatGPT(route, sources);
   if (kind === "claude-code") return readClaudeCode(route, sources);
   if (kind === "openrouter") return readOpenRouter(route, sources);
   if (kind === "opencode") return readOpenCode(route, sources);
@@ -417,7 +418,7 @@ function wrapWords(text: string, width: number): string[] {
 }
 
 /** What the readings rest on, said once under the table. */
-export const USAGE_SOURCES_NOTE: string = "Codex's usage comes from a private ChatGPT endpoint and Claude Code's from an experimental report; either may change.";
+export const USAGE_SOURCES_NOTE: string = "ChatGPT's usage comes from a private ChatGPT endpoint and Claude Code's from an experimental report; either may change.";
 
 /** `tesota usage`'s text: the table, then what it rests on. */
 export function usageTable(usage: readonly RouteUsage[], now: number): string {

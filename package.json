@@ -28,7 +28,7 @@
     "live:agent": "bun --no-env-file dist/live-agent.js",
     "live:answer": "bun --no-env-file dist/live-answer.js",
     "live:prbench": "bun --no-env-file dist/live-prbench.js",
-    "auth:codex": "bun --no-env-file dist/cli.js auth login codex"
+    "auth:chatgpt": "bun --no-env-file dist/cli.js auth login chatgpt"
   },
   "devDependencies": {
     "@types/html-to-text": "9.0.4",

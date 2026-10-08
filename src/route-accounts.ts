@@ -4,15 +4,15 @@ import { join } from "node:path";
 
 /**
  * Which account a route is signed in to, as its own sign-in records it
- * (#235): Claude Code in its configuration folder's `.claude.json`, Codex in
+ * (#235): Claude Code in its configuration folder's `.claude.json`, ChatGPT in
  * the profile its OAuth token carries. Read locally, with no request; a token
  * or key is never shown, and an email only masked unless the operator asks.
  */
 export interface RouteAccount {
-  /** What tells two accounts apart: Claude Code's account id, or Codex's ChatGPT account id. */
+  /** What tells two accounts apart: Claude Code's account id, or the ChatGPT account id. */
   readonly id: string;
   readonly email?: string;
-  /** The ChatGPT plan a Codex sign-in is on, as its token names it: `free`, `plus`, `pro` and the like (#296). */
+  /** The ChatGPT plan a sign-in is on, as its token names it: `free`, `plus`, `pro` and the like (#296). */
   readonly plan?: string;
 }
 
@@ -35,8 +35,8 @@ export function claudeCodeAccount(configDirectory: string | undefined): RouteAcc
   } catch { return undefined; }
 }
 
-/** The account a Codex sign-in is for, from its stored credential: the access token's claims, read but never verified or shown. */
-export function codexAccount(credential: unknown): RouteAccount | undefined {
+/** The account a ChatGPT sign-in is for, from its stored credential: the access token's claims, read but never verified or shown. */
+export function chatgptAccount(credential: unknown): RouteAccount | undefined {
   const stored = record(credential);
   const access = stored?.["access"];
   let claims: Record<string, unknown> | undefined;

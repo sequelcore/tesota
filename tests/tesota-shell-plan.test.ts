@@ -67,7 +67,7 @@ beforeEach(() => {
   const workspace = { directory, checkout: join(directory, "repo"), included: [],
     update: () => ({ status: "current" }), snapshot: () => ({ tree: "t", changes: [] }), revert: vi.fn(), keepRequestsOpen: vi.fn(),
     requests: async () => [], recordRequest: vi.fn(async () => {}) } as unknown as Workspace;
-  mocks.openModelTarget.mockResolvedValue({ engine: "pi", model: { id: "codex:gpt-6-luna" } });
+  mocks.openModelTarget.mockResolvedValue({ engine: "pi", model: { id: "chatgpt:gpt-6-luna" } });
   mocks.startWorkingAgent.mockImplementation(async (_access: unknown, options: typeof agentOptions) => {
     agentOptions = options;
     return { usable: true, resumed: true, run: vi.fn(async () => ({ status: "completed", reply: "ok" })),

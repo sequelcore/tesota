@@ -37,11 +37,11 @@ function operator(answer: KeylessAnswer): { asked: (readonly string[])[]; ask: (
 }
 
 it("searches with the searcher first, and never asks about keyless search while it answers", async () => {
-  const searcher = hosted(ok("codex:gpt-6-luna"));
+  const searcher = hosted(ok("chatgpt:gpt-6-luna"));
   const exa = provider("exa", ok("exa"));
   const who = operator("session");
   const search = readWebSearch({ path: config(undefined), hosted: searcher, keyless: [exa], ask: who.ask });
-  expect(await search.search("bun", 5, running())).toEqual(ok("codex:gpt-6-luna"));
+  expect(await search.search("bun", 5, running())).toEqual(ok("chatgpt:gpt-6-luna"));
   expect([searcher.calls, exa.calls, who.asked]).toEqual([["bun"], [], []]);
 });
 
@@ -88,17 +88,17 @@ it("uses keyless search only when allowed where nobody can be asked, as in tesot
 });
 
 it("moves on when a provider fails, naming each one tried", async () => {
-  const search = readWebSearch({ path: config(JSON.stringify({ keyless: "allowed" })), hosted: hosted(failed("codex: limit reached")),
+  const search = readWebSearch({ path: config(JSON.stringify({ keyless: "allowed" })), hosted: hosted(failed("chatgpt: limit reached")),
     keyless: [provider("exa", failed("rate limited")), provider("parallel", ok("parallel"))] });
   expect(await search.search("x", 5, running())).toEqual(ok("parallel"));
-  const none = readWebSearch({ path: config(JSON.stringify({ keyless: "allowed" })), hosted: hosted(failed("codex: limit reached")),
+  const none = readWebSearch({ path: config(JSON.stringify({ keyless: "allowed" })), hosted: hosted(failed("chatgpt: limit reached")),
     keyless: [provider("exa", failed("rate limited"))] });
   expect(await none.search("x", 5, running())).toEqual({ status: "failed", error: "provider_failed",
-    detail: "hosted: codex: limit reached; exa: rate limited" });
+    detail: "hosted: chatgpt: limit reached; exa: rate limited" });
 });
 
 it("uses a pinned provider alone: it never falls back, and is not replaced when unavailable", async () => {
-  const searcher = hosted(ok("codex:gpt-6-luna"));
+  const searcher = hosted(ok("chatgpt:gpt-6-luna"));
   const exa = provider("exa", failed("rate limited"));
   const parallel = provider("parallel", ok("parallel"));
   const pinned = readWebSearch({ path: config(JSON.stringify({ search: "exa" })), hosted: searcher, keyless: [exa, parallel] });

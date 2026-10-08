@@ -18,22 +18,36 @@ function credentials(): TesotaCredentials {
 it("sends each route to its engine and model", async () => {
   const store = credentials();
   expect(await openModelTarget("claude-code:opus", undefined, store)).toEqual({ engine: "claude-code", route: "claude-code", model: "opus" });
-  const codex = await openModelTarget("codex:gpt-6-luna", undefined, store);
-  expect(codex.engine === "pi" && [codex.model.provider, codex.model.id]).toEqual(["openai-codex", "gpt-6-luna"]);
+  const chatgpt = await openModelTarget("chatgpt:gpt-6-luna", undefined, store);
+  expect(chatgpt.engine === "pi" && [chatgpt.model.provider, chatgpt.model.id]).toEqual(["openai", "gpt-6-luna"]);
   const anthropic = await openModelTarget("anthropic:claude-opus-5-5", undefined, store);
   expect(anthropic.engine === "pi" && [anthropic.model.provider, anthropic.model.id]).toEqual(["anthropic", "claude-opus-5-5"]);
   // A reasoning level travels with the target to either engine; without one, none is set and the engine's default applies.
   expect(await openModelTarget("claude-code:opus@xhigh", undefined, store))
     .toEqual({ engine: "claude-code", route: "claude-code", model: "opus", reasoning: "xhigh" });
-  const astra = await openModelTarget("codex:gpt-6-astra@high", undefined, store);
+  const astra = await openModelTarget("chatgpt:gpt-6-astra@high", undefined, store);
   expect(astra.engine === "pi" && [astra.model.id, astra.reasoning]).toEqual(["gpt-6-astra", "high"]);
-  expect(codex.reasoning).toBeUndefined();
+  expect(chatgpt.reasoning).toBeUndefined();
+});
+
+it("reaches the ChatGPT route only through its sign-in, never an OpenAI API key, and only the plan's models", async () => {
+  const before = process.env["OPENAI_API_KEY"];
+  process.env["OPENAI_API_KEY"] = "TEST_OPENAI_KEY";
+  try {
+    const target = await openModelTarget("chatgpt:gpt-6-luna", undefined, credentials());
+    if (target.engine !== "pi") throw new Error("Expected Pi");
+    expect(await target.modelRuntime.getAuth("openai")).toBeUndefined();
+    expect(target.modelRuntime.getModels("openai").map((model) => model.id)).not.toContain("gpt-4o");
+    await expect(openModelTarget("chatgpt:gpt-4o", undefined, credentials())).rejects.toThrow("unavailable");
+  } finally {
+    if (before === undefined) delete process.env["OPENAI_API_KEY"]; else process.env["OPENAI_API_KEY"] = before;
+  }
 });
 
 it("refuses a choice that is not route:model, or a model the route does not have", async () => {
   const store = credentials();
   await expect(openModelTarget("gpt-6-luna", undefined, store)).rejects.toThrow("not a route:model choice");
-  await expect(openModelTarget("codex:claude-opus-5-5", undefined, store)).rejects.toThrow("unavailable");
+  await expect(openModelTarget("chatgpt:claude-opus-5-5", undefined, store)).rejects.toThrow("unavailable");
 });
 
 it("opens the gateway routes on Pi, with one OpenCode key for Zen and Go", async () => {

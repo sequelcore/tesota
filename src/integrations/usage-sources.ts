@@ -1,21 +1,20 @@
-import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { query, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { UsageSources } from "../account-usage.js";
 import { AUTH_ROUTES, claudeCodeExecutable, routeAccount } from "../auth.js";
-import { claudeCodeRouteDirectory, tesotaUserAgent } from "./model-session.js";
+import { claudeCodeRouteDirectory, piRuntime, tesotaUserAgent } from "./model-session.js";
 import { TesotaCredentials } from "./tesota-credentials.js";
 
 /** How long one provider may take to answer before its read counts as failed. */
 const READ_TIME_LIMIT_MS = 20_000;
 
 /**
- * A route's key or token through Pi, which refreshes a Codex sign-in that
+ * A route's key or token through Pi, which refreshes a ChatGPT sign-in that
  * expired and reads a key from its environment variable when none is saved.
  */
 async function routeKey(route: string, provider: string, credentials: TesotaCredentials): Promise<string | undefined> {
   // Each kind's default route keeps its credential in Tesota's store; an added route in its own file (decision 050).
   const store = (AUTH_ROUTES as readonly string[]).includes(route) ? credentials : TesotaCredentials.forRoute(route, provider);
-  const runtime = await ModelRuntime.create({ credentials: store, refreshOnCreate: false, allowModelNetwork: false });
+  const runtime = await piRuntime(store);
   const key = (await runtime.getAuth(provider))?.auth.apiKey;
   return key === undefined || key.length === 0 ? undefined : key;
 }

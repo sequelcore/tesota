@@ -368,7 +368,7 @@ export interface SessionEngineOptions {
    * run without a terminal does, and the mode cannot be switched.
    */
   readonly mode?: (id: string) => PermissionMode;
-  /** Each route's account, read once in the background; a Codex route's plan withholds models it does not serve (#296). */
+  /** Each route's account, read once in the background; a ChatGPT route's plan withholds models it does not serve (#296). */
   readonly routeAccounts?: () => Promise<RouteAccounts>;
 }
 

@@ -9,7 +9,7 @@ const configuration: ViteUserConfig = defineConfig({
   test: {
     include: [
       "tests/bubblewrap-sandbox.test.ts",
-      "tests/codex-login.test.ts",
+      "tests/pi-login.test.ts",
       "tests/tesota-shell-command.test.ts",
       "tests/tesota-shell-terminal.test.ts",
       "tests/tesota-shell.test.ts",

@@ -94,7 +94,7 @@ export function keylessSearchQuestion(providers: readonly string[]): ShellQuesti
     title: `Search the web with ${named}?`,
     detail: `${named} search free, without an account. The one that searches receives the search's words, which the ` +
       "agent writes from your request, and this computer's network address, as any site does; not an account, session " +
-      "or model name. Without them, search needs the searcher role on a Codex or Claude Code route.",
+      "or model name. Without them, search needs the searcher role on a ChatGPT or Claude Code route.",
     options: [
       { value: "session", key: "y", label: "Yes, this session",
         decided: { text: `✓ Searches may go to ${named} this session.`, tone: "info" } },

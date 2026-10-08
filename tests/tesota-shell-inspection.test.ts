@@ -11,12 +11,12 @@ const check = { verifier: "command" as const, claim: "exits 0", limits: "only wh
 
 it("names each report's model in the record, the refuter on each second check, and who verified it under the review", () => {
   const review = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
-    { reviewer: "Tesota reviewer", tree: snapshot.tree, status: "completed", summary: "One problem.", model: "codex:sol",
+    { reviewer: "Tesota reviewer", tree: snapshot.tree, status: "completed", summary: "One problem.", model: "chatgpt:sol",
       refuter: "claude:opus", findings: [{ severity: "high", disposition: "fixable", origin: "introduced", path: "src/a.ts",
         statement: "Off by one", reason: "r", standing: "confirmed" }] }] });
-  expect(review.detail).toContain("  Tesota reviewer · codex:sol\n    One problem.");
+  expect(review.detail).toContain("  Tesota reviewer · chatgpt:sol\n    One problem.");
   expect(review.detail).toContain("      Second check (refuter claude:opus): confirmed");
-  expect(review.summary.split("\n").at(-1)).toBe("Reviewed by codex:sol; findings tested by claude:opus.");
+  expect(review.summary.split("\n").at(-1)).toBe("Reviewed by chatgpt:sol; findings tested by claude:opus.");
   const earlier = inspectReview({ snapshot, checks: [check], requests: [], flags: [], reviews: [
     { reviewer: "Tesota reviewer", tree: snapshot.tree, status: "completed", summary: "Fine.", findings: [] }] });
   expect(earlier.summary).not.toContain("Reviewed by");

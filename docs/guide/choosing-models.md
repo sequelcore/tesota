@@ -16,9 +16,9 @@ for sign-in and [agents](../design/agents.md#model-routes) for the route contrac
 | `validator` | Checks whether a correction resolved a finding | After correction |
 | `triage` | Decides whether a turn with no file changes needs a full check | On those turns; `off` always runs the full check |
 | `namer` | Writes a short session title | At session start; `off` keeps the request as the title |
-| `searcher` | Searches the web for the agent and explorers with its provider's own search; Codex and Claude Code routes only | When the agent or an explorer searches; `off` leaves search to Exa and Parallel, which search without an account |
+| `searcher` | Searches the web for the agent and explorers with its provider's own search; ChatGPT and Claude Code routes only | When the agent or an explorer searches; `off` leaves search to Exa and Parallel, which search without an account |
 
-The built-in model choice is `codex:gpt-6-luna`. `tesota roles` lists the
+The built-in model choice is `chatgpt:gpt-6-luna`. `tesota roles` lists the
 current choice for every role, its account and who pays. An unreadable role
 configuration is an error; Tesota does not silently choose another model.
 
@@ -31,7 +31,7 @@ identifies the account that pays or supplies plan usage.
 
 | Route | Account |
 | --- | --- |
-| `codex` | Your ChatGPT plan |
+| `chatgpt` | Your ChatGPT plan |
 | `claude-code` | Your Claude Code sign-in |
 | `anthropic` | Your Anthropic API key |
 | `openrouter` | Your OpenRouter account |
@@ -41,10 +41,10 @@ identifies the account that pays or supplies plan usage.
 Sign in to a route, inspect its models, then set a role:
 
 ```text
-tesota auth login codex
-tesota models codex
+tesota auth login chatgpt
+tesota models chatgpt
 tesota roles
-tesota roles reviewer codex:gpt-6-luna
+tesota roles reviewer chatgpt:gpt-6-luna
 ```
 
 `tesota roles <role> default` restores that role's built-in choice. In the
@@ -56,8 +56,8 @@ If you use more than one ChatGPT or Claude account, add a route for each one
 and assign it to the roles that should use it:
 
 ```text
-tesota auth login codex --as codex-work
-tesota roles validator codex-work:gpt-6-luna
+tesota auth login chatgpt --as chatgpt-work
+tesota roles validator chatgpt-work:gpt-6-luna
 tesota auth status
 ```
 
@@ -76,9 +76,9 @@ Roles on claude-code (agent, reviewer) and claude-2 (advisor) share one plan's l
 ```
 
 To move a route to another account, sign it in again: `tesota auth login
-codex-work` keeps the route and the roles on it, and the earlier login stays
-until the new one completes. `tesota auth logout codex-work` signs it out and
-keeps it too. `tesota auth remove codex-work` deletes an added route, and
+chatgpt-work` keeps the route and the roles on it, and the earlier login stays
+until the new one completes. `tesota auth logout chatgpt-work` signs it out and
+keeps it too. `tesota auth remove chatgpt-work` deletes an added route, and
 refuses while a role uses it.
 
 `tesota usage` shows available provider usage data when you request it; some

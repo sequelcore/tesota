@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { accountText, claudeCodeAccount, codexAccount, maskEmail, sharedAccountNote, sharedAccounts, sharedRoleGroups, sharedRoleNote }
+import { accountText, claudeCodeAccount, chatgptAccount, maskEmail, sharedAccountNote, sharedAccounts, sharedRoleGroups, sharedRoleNote }
   from "../src/route-accounts.js";
 import { routeAfter } from "../src/verification/route-removal-rule.js";
 
@@ -39,13 +39,13 @@ it("reads the account Claude Code records in a configuration folder, and nothing
 it("reads a Codex sign-in's account from its token's claims, the stored account id first", () => {
   const access = token({ sub: "user-1", "https://api.openai.com/auth": { chatgpt_account_id: "acct-from-claim" },
     "https://api.openai.com/profile": { email: "plus@example.com" } });
-  expect(codexAccount({ type: "oauth", access, refresh: "", expires: 0, accountId: "acct-stored" }))
+  expect(chatgptAccount({ type: "oauth", access, refresh: "", expires: 0, accountId: "acct-stored" }))
     .toEqual({ id: "acct-stored", email: "plus@example.com" });
-  expect(codexAccount({ type: "oauth", access, refresh: "", expires: 0 })).toEqual({ id: "acct-from-claim", email: "plus@example.com" });
+  expect(chatgptAccount({ type: "oauth", access, refresh: "", expires: 0 })).toEqual({ id: "acct-from-claim", email: "plus@example.com" });
   const free = token({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-free", chatgpt_plan_type: "free" } });
-  expect(codexAccount({ type: "oauth", access: free })).toEqual({ id: "acct-free", plan: "free" });
-  expect(codexAccount({ type: "oauth", access: "not-a-token" })).toBeUndefined();
-  expect(codexAccount(undefined)).toBeUndefined();
+  expect(chatgptAccount({ type: "oauth", access: free })).toEqual({ id: "acct-free", plan: "free" });
+  expect(chatgptAccount({ type: "oauth", access: "not-a-token" })).toBeUndefined();
+  expect(chatgptAccount(undefined)).toBeUndefined();
 });
 
 it("masks an email unless it is shown, and says when a sign-in names none", () => {
@@ -59,8 +59,8 @@ it("masks an email unless it is shown, and says when a sign-in names none", () =
 
 it("names the routes signed in to one account, once each, and none alone", () => {
   const ours = { id: "45e4b49f" };
-  const groups = sharedAccounts([{ route: "codex", account: { id: "plus" } }, { route: "claude-code", account: ours },
-    { route: "codex-free1" }, { route: "claude-2", account: ours }]);
+  const groups = sharedAccounts([{ route: "chatgpt", account: { id: "plus" } }, { route: "claude-code", account: ours },
+    { route: "chatgpt-free1" }, { route: "claude-2", account: ours }]);
   expect(groups).toEqual([["claude-code", "claude-2"]]);
   expect(sharedAccountNote(groups[0] ?? [])).toContain("claude-code and claude-2 are signed in to the same account");
 });
@@ -68,8 +68,8 @@ it("names the routes signed in to one account, once each, and none alone", () =>
 it("names roles spread across routes that draw on one account, and not a shared route no role uses", () => {
   const ours = { id: "45e4b49f" };
   const routes = [{ route: "claude-code", account: ours }, { route: "claude-2", account: ours }, { route: "claude-3", account: ours },
-    { route: "codex", account: { id: "plus" } }];
-  const roles: Readonly<Record<string, readonly string[]>> = { "claude-code": ["agent", "reviewer"], "claude-2": ["advisor"], codex: ["refuter"] };
+    { route: "chatgpt", account: { id: "plus" } }];
+  const roles: Readonly<Record<string, readonly string[]>> = { "claude-code": ["agent", "reviewer"], "claude-2": ["advisor"], chatgpt: ["refuter"] };
   const usedBy = (route: string): readonly string[] => roles[route] ?? [];
   const groups = sharedRoleGroups(routes, usedBy);
   expect(groups).toEqual([["claude-code", "claude-2"]]);

@@ -10,7 +10,7 @@ import { type JudgeIndependence, judgeIndependence } from "./verification/judge-
  */
 
 /** The lab behind every model of a route that serves one lab's models. */
-const routeLab: Readonly<Partial<Record<RouteKind, string>>> = { codex: "OpenAI", anthropic: "Anthropic", "claude-code": "Anthropic" };
+const routeLab: Readonly<Partial<Record<RouteKind, string>>> = { chatgpt: "OpenAI", anthropic: "Anthropic", "claude-code": "Anthropic" };
 /** The lab behind an OpenRouter vendor, as OpenRouter names it in `vendor/model`. */
 const vendorLab: Readonly<Record<string, string>> = { openai: "OpenAI", anthropic: "Anthropic", google: "Google", "x-ai": "xAI",
   "z-ai": "Z.ai", moonshotai: "Moonshot AI", qwen: "Alibaba", deepseek: "DeepSeek", minimax: "MiniMax", xiaomi: "Xiaomi",

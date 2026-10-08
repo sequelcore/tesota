@@ -10,7 +10,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", async (actual) => ({
   },
 }));
 
-const { citedAddresses, claudeSearchResult, codexSearchEvent, hostedSearch } = await import("../src/integrations/hosted-search.js");
+const { citedAddresses, claudeSearchResult, responsesSearchEvent, hostedSearch } = await import("../src/integrations/hosted-search.js");
 
 afterEach(() => { sdk.options.length = 0; sdk.messages.length = 0; });
 const running = (): AbortSignal => new AbortController().signal;
@@ -29,7 +29,7 @@ function codex(events: unknown[], answer: string, stopReason = "stop"): { target
       },
     }),
   };
-  return { target: { engine: "pi", route: "codex", modelRuntime, model: {} } as unknown as ModelTarget, payloads };
+  return { target: { engine: "pi", route: "chatgpt", modelRuntime, model: {} } as unknown as ModelTarget, payloads };
 }
 
 const searchDone = (action: Record<string, unknown>) => ({ type: "response.output_item.done", item: { type: "web_search_call", action } });
@@ -42,11 +42,11 @@ it("adds Codex's own search to the request and checks the answer's citations aga
     citation("https://bun.sh/?utm_source=openai", "Bun"), citation("https://made-up.example/", "Made up"),
   ], "Bun 1.4.2 ([bun.sh](https://bun.sh/?utm_source=openai)).");
   let tokens = 0;
-  const outcome = await hostedSearch("codex:gpt-6-luna", async () => target).search("bun latest", 5, running(),
+  const outcome = await hostedSearch("chatgpt:gpt-6-luna", async () => target).search("bun latest", 5, running(),
     (usage) => { tokens += usage.input + usage.output; });
   expect(payloads).toEqual([{ model: "gpt-6-luna", tools: [{ type: "web_search" }],
     include: ["reasoning.encrypted_content", "web_search_call.action.sources"] }]);
-  expect(outcome).toEqual({ status: "ok", provider: "codex:gpt-6-luna", findings: "Bun 1.4.2 ([bun.sh](https://bun.sh/?utm_source=openai)).",
+  expect(outcome).toEqual({ status: "ok", provider: "chatgpt:gpt-6-luna", findings: "Bun 1.4.2 ([bun.sh](https://bun.sh/?utm_source=openai)).",
     results: [{ title: "Bun", url: "https://bun.sh/?utm_source=openai", snippet: "Cited in the findings" },
       { title: "https://github.com/oven-sh/bun/releases", url: "https://github.com/oven-sh/bun/releases", snippet: "" }],
     unverified: ["https://made-up.example/"] });
@@ -55,10 +55,10 @@ it("adds Codex's own search to the request and checks the answer's citations aga
 
 it("reports a stopped search as the provider's failure, naming the searcher", async () => {
   const { target } = codex([], "", "error");
-  expect(await hostedSearch("codex-work:gpt-6-luna", async () => target).search("x", 5, running()))
-    .toEqual({ status: "failed", error: "provider_failed", detail: "codex-work:gpt-6-luna: usage limit" });
-  expect(await hostedSearch("codex:gpt-6-luna", async () => { throw new Error("not signed in"); }).search("x", 5, running()))
-    .toMatchObject({ status: "failed", detail: "codex:gpt-6-luna: not signed in" });
+  expect(await hostedSearch("chatgpt-work:gpt-6-luna", async () => target).search("x", 5, running()))
+    .toEqual({ status: "failed", error: "provider_failed", detail: "chatgpt-work:gpt-6-luna: usage limit" });
+  expect(await hostedSearch("chatgpt:gpt-6-luna", async () => { throw new Error("not signed in"); }).search("x", 5, running()))
+    .toMatchObject({ status: "failed", detail: "chatgpt:gpt-6-luna: not signed in" });
 });
 
 it("runs Claude Code with WebSearch as its only tool, and keeps only citations its search found", async () => {
@@ -83,9 +83,9 @@ it("runs Claude Code with WebSearch as its only tool, and keeps only citations i
 it("reads sources only from the events and results that carry them", () => {
   const found: { url: string }[] = [];
   const cited: { url: string }[] = [];
-  codexSearchEvent({ type: "response.output_item.done", item: { type: "message", action: { url: "https://x.example/" } } }, found, cited);
-  codexSearchEvent({ type: "response.output_text.annotation.added", annotation: { type: "file_citation", url: "https://y.example/" } }, found, cited);
-  codexSearchEvent("not an event", found, cited);
+  responsesSearchEvent({ type: "response.output_item.done", item: { type: "message", action: { url: "https://x.example/" } } }, found, cited);
+  responsesSearchEvent({ type: "response.output_text.annotation.added", annotation: { type: "file_citation", url: "https://y.example/" } }, found, cited);
+  responsesSearchEvent("not an event", found, cited);
   claudeSearchResult({ type: "assistant" } as never, found);
   expect([found, cited]).toEqual([[], []]);
   expect(citedAddresses("See [docs](https://a.example/d) and https://b.example/e, then (https://c.example/f).").map((source) => source.url))

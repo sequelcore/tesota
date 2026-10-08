@@ -1,10 +1,10 @@
 import { mock } from "bun:test";
 import { TesotaCredentials } from "../../dist/integrations/tesota-credentials.js";
-import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
+import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 
 const directory = process.env["TESOTA_TEST_AUTH_DIRECTORY"];
 if (!directory) throw new Error("Synthetic storage required");
-const createProvider = openaiCodexProvider;
+const createProvider = openaiProvider;
 
 // Diagnose only synthetic storage, without emitting the credential, the command, or raw exception text.
 async function storageOperation(action, operation) {
@@ -24,8 +24,8 @@ mock.module("../../dist/integrations/tesota-credentials.js", () => ({
     delete(...args) { return storageOperation("delete", () => super.delete(...args)); }
   },
 }));
-mock.module("@earendil-works/pi-ai/providers/openai-codex", () => ({
-  openaiCodexProvider: () => {
+mock.module("@earendil-works/pi-ai/providers/openai", () => ({
+  openaiProvider: () => {
     const provider = createProvider();
     provider.auth.oauth.login = async () => {
       return { type: "oauth", access: "SYNTHETIC_ACCESS", refresh: "SYNTHETIC_REFRESH", expires: Date.now() + 3_600_000 };

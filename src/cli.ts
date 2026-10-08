@@ -9,10 +9,10 @@ Usage: tesota [--help | -h | help]
        tesota resume [<session-id>] [--theme <${TESOTA_SHELL_THEME_NAMES.join("|")}>]
        tesota run [--allow-commands] [--allow-network] [--checks=<command;…>|none] [--apply] [--folder] [--json] (<request> | -)
        tesota verify <file.ts|file.js>
-       tesota auth <login|status|logout> [codex|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]
+       tesota auth <login|status|logout> [chatgpt|anthropic|claude-code|openrouter|opencode|typesafe|<added route>]
        tesota auth status --show-accounts
        tesota auth remove <added route>
-       tesota auth login <codex|claude-code> --as <name>
+       tesota auth login <chatgpt|claude-code> --as <name>
        tesota models [<route>]
        tesota usage [<route>]
        tesota roles [<role> [<route:model|default|off>]]

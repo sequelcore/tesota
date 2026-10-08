@@ -1,9 +1,9 @@
 import { type Api, createModels, getSupportedThinkingLevels, type Model } from "@earendil-works/pi-ai";
 import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
-import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
+import { CHATGPT_PROVIDER, chatgptProvider } from "./integrations/chatgpt-provider.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { planServes } from "./verification/codex-plan-rule.js";
 import { type RouteAccount, sharedRoleGroups, sharedRoleNote } from "./route-accounts.js";
@@ -119,7 +119,7 @@ function gatewayModel(route: RouteKind, model: Model<Api>): OfferedModel {
  */
 export function offeredModels(added: readonly AddedRoute[] = readAddedRoutes()): OfferedModel[] {
   const models = createModels();
-  for (const provider of [openaiCodexProvider(), anthropicProvider(), openrouterProvider(), opencodeProvider(), opencodeGoProvider()]) {
+  for (const provider of [chatgptProvider(), anthropicProvider(), openrouterProvider(), opencodeProvider(), opencodeGoProvider()]) {
     models.setProvider(provider);
   }
   const priced = (route: RouteKind, provider: string, accepted: (model: Model<Api>) => ReasoningLevel[]): OfferedModel[] =>
@@ -137,7 +137,7 @@ export function offeredModels(added: readonly AddedRoute[] = readAddedRoutes()):
     return { id: `claude-code:${alias}`, route: "claude-code", kind: "claude-code", name: `Claude Code's ${alias}`,
       reasoning: newest === undefined ? [] : effortLevels(newest) };
   });
-  const kinds = [...priced("codex", "openai-codex", levels), ...priced("anthropic", "anthropic", levels), ...aliases,
+  const kinds = [...priced("chatgpt", CHATGPT_PROVIDER, levels), ...priced("anthropic", "anthropic", levels), ...aliases,
     ...priced("claude-code", "anthropic", effortLevels), ...gateway("openrouter", "openrouter"), ...gateway("opencode", "opencode"),
     ...gateway("opencode-go", "opencode-go")];
   const accounts = added.flatMap((route) => kinds.filter((model) => model.route === route.kind)
@@ -146,20 +146,20 @@ export function offeredModels(added: readonly AddedRoute[] = readAddedRoutes()):
 }
 
 /**
- * Codex's models a free ChatGPT plan does not serve: each request fails at
- * once with "The '<model>' model is not supported when using Codex with a
- * ChatGPT account", observed on 2026-10-02 on free accounts while a Plus
- * account served the same models (#296).
+ * The models a free ChatGPT plan does not serve: each request failed at once
+ * with "The '<model>' model is not supported when using Codex with a ChatGPT
+ * account", observed on 2026-10-02 on free accounts while a Plus account
+ * served the same models (#296).
  */
-export const CODEX_FREE_REFUSED: readonly string[] = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"];
+export const CHATGPT_FREE_REFUSED: readonly string[] = ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"];
 
 /** Why a choice's route does not serve its model on the route's plan, or undefined when it does or the plan is unknown. */
 export function planRefusal(choice: string, accounts: RouteAccounts, added: readonly AddedRoute[] = readAddedRoutes()): string | undefined {
   const parsed = parseModelChoice(choice, added);
-  if (parsed?.kind !== "codex") return undefined;
+  if (parsed?.kind !== "chatgpt") return undefined;
   const plan = accounts.find((entry) => entry.route === parsed.route)?.account?.plan;
-  if (planServes(plan === "free", CODEX_FREE_REFUSED.includes(parsed.model))) return undefined;
-  return `${parsed.route} is signed in to a free ChatGPT plan, on which Codex does not serve ${parsed.model}`;
+  if (planServes(plan === "free", CHATGPT_FREE_REFUSED.includes(parsed.model))) return undefined;
+  return `${parsed.route} is signed in to a free ChatGPT plan, which does not serve ${parsed.model}`;
 }
 
 /** The offered models each route's plan serves (#296); with no accounts read, every model. */
@@ -283,7 +283,7 @@ export function runModelsCommand(args: readonly string[], write: (text: string) 
     const withheld = catalog.filter((model) => model.route === route && !offered.includes(model))
       .map((model) => model.id.slice(route.length + 1));
     write(modelsOf(route, offered) + (withheld.length === 0 ? ""
-      : `  Not listed: ${withheld.join(", ")}; Codex does not serve them on ${route}'s free ChatGPT plan.\n`));
+      : `  Not listed: ${withheld.join(", ")}; ${route}'s free ChatGPT plan does not serve them.\n`));
     return 0;
   }
   write(`Usage: tesota models [<${ROUTE_KINDS.join("|")}>]\n`);

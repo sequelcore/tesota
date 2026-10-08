@@ -23,7 +23,7 @@ function tested(report: Extract<ReviewReport, { status: "completed" }>): boolean
     (report.obligations ?? []).some((obligation) => obligation.standing !== undefined);
 }
 
-/** A step's status line with the role doing it and its model, as `Reviewing · reviewer codex:gpt-6.1-sol`. */
+/** A step's status line with the role doing it and its model, as `Reviewing · reviewer chatgpt:gpt-6.1-sol`. */
 export function activityBy(activity: string, role: ModelRole, model: string | undefined): string {
   return model === undefined || model.length === 0 ? activity : `${activity} · ${role} ${model}`;
 }

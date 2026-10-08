@@ -58,7 +58,7 @@ export const DEFAULT_WEB_CONFIG: string = join(homedir(), ".tesota", "web.json")
 const configSchema = z.strictObject({ search: z.enum(SEARCH_PROVIDERS).optional(), keyless: z.literal("allowed").optional() });
 type WebConfig = z.infer<typeof configSchema>;
 
-const NOT_CONFIGURED = "No search provider: sign in to Codex or Claude Code for the searcher role (tesota roles), " +
+const NOT_CONFIGURED = "No search provider: sign in to ChatGPT or Claude Code for the searcher role (tesota roles), " +
   "or allow keyless search when Tesota asks";
 
 /** Whether a keyless provider may be used, and how to ask the operator when nobody has answered yet. */

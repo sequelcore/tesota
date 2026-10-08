@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, open, rename, rm } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
@@ -8,17 +8,18 @@ import type { AuthOperationOptions, Credential, CredentialInfo, CredentialStore 
 import { windowsPowerShell } from "../windows-system.js";
 
 const maxBytes = 64 * 1024;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
 /**
  * The credentials Tesota keeps, and the kinds each provider may hold
- * (decisions 021 and 031): Codex's OAuth login, an Anthropic API key, an
+ * (decisions 021 and 031): a Sign in with ChatGPT login (#191), an Anthropic API key, an
  * OpenRouter key, pasted or issued by its browser sign-in, and one OpenCode
  * key that Zen and Go share, kept in one file, and a TypeSafe key for the
  * answer check's first pass on Jev (decision 035). An Anthropic OAuth credential
  * is never accepted: a claude.ai login belongs to Claude Code, not to Tesota.
  */
 const providers = {
-  "openai-codex": { types: ["oauth"], file: "codex", refused: "Only valid Codex OAuth credentials are supported" },
+  openai: { types: ["oauth"], file: "chatgpt", refused: "Only a Sign in with ChatGPT login can be stored" },
   anthropic: { types: ["api_key"], file: "anthropic", refused: "Only an Anthropic API key can be stored" },
   openrouter: { types: ["api_key", "issued_key"], file: "openrouter", refused: "Only an OpenRouter key can be stored" },
   opencode: { types: ["api_key"], file: "opencode", refused: "Only an OpenCode API key can be stored" },
@@ -210,6 +211,27 @@ export class TesotaCredentials implements CredentialStore {
       } finally { await rm(temporary, { force: true }); }
       return next;
     }, options);
+  }
+
+  /**
+   * This installation's id, which Sign in with ChatGPT sends OpenAI as its
+   * agent host (#191): created on first use, kept beside the credentials, and
+   * the same for every route.
+   */
+  async deviceId(): Promise<string> {
+    await this.ensurePrivate();
+    const path = join(this.directory, "device-id");
+    try {
+      const saved = (await readFile(path, "utf8")).trim();
+      if (UUID.test(saved)) return saved;
+      throw new Error("Invalid device id; delete it to create another");
+    } catch (error) {
+      if (readErrorCode(error) !== "ENOENT") throw error;
+    }
+    const created = randomUUID();
+    await writeFile(path, `${created}
+`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    return created;
   }
 
   async delete(id: string, options?: AuthOperationOptions): Promise<void> {

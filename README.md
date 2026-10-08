@@ -41,7 +41,7 @@ bun link
 tesota auth login
 ```
 
-`tesota auth login` lets you choose a route; `tesota auth login codex` signs
+`tesota auth login` lets you choose a route; `tesota auth login chatgpt` signs
 in with a ChatGPT plan. Without one, Tesota can use
 Claude Code signed in with your own Claude plan, an Anthropic API key,
 OpenCode, or OpenRouter;
@@ -63,7 +63,7 @@ session and a folder that is not a Git repository always do.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="docs/assets/tesota-turn-light.png">
-  <img alt="A reviewed turn in Tesota. In the conversation, the agent fixed a pricing bug and ran npm test; the review below it lists the two edited files, flags that the agent edited a test, which only the user can judge, and says the checks ran on this exact content in the WSL sandbox, reviewed by codex:gpt-6-astra. Under it, a bar offers Keep, Revert and Diff for the undecided turn. On the right, the record's Checks tab shows the check that passed, what a pass shows and what it does not, and the test output. On the left, the sidebar lists two other sessions, one needing a decision and one unread." src="docs/assets/tesota-turn-dark.png">
+  <img alt="A reviewed turn in Tesota. In the conversation, the agent fixed a pricing bug and ran npm test; the review below it lists the two edited files, flags that the agent edited a test, which only the user can judge, and says the checks ran on this exact content in the WSL sandbox, reviewed by chatgpt:gpt-6-astra. Under it, a bar offers Keep, Revert and Diff for the undecided turn. On the right, the record's Checks tab shows the check that passed, what a pass shows and what it does not, and the test output. On the left, the sidebar lists two other sessions, one needing a decision and one unread." src="docs/assets/tesota-turn-dark.png">
 </picture>
 
 On Windows, the agent's commands run on their own in Tesota's WSL sandbox,
