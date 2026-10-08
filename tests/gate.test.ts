@@ -95,6 +95,7 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   expect(await run.settle()).toBeUndefined();
   writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
   writeFileSync(join(root, "notes.md"), "# Notes, changed\n");
+  writeFileSync(join(root, "src", "rule.dfy.gen"), "// regenerated\n");
   scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
   const failed = await run.settle();
   expect(failed?.continue).toBe(true);

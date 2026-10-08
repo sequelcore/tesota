@@ -79,7 +79,9 @@ export function registerGate(pi: ExtensionAPI): void {
         .join("\n\n");
       return { entries: [{ type: "custom_message", customType: "tesota-gate", content, display: true }], continue: true };
     }
-    const covered = new Set(judged.flatMap(({ evidence }) => evidence.files));
+    // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
+    const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
+      path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
     const receipt: Receipt = { version: 0, proofs: judged, unverified: changed.filter((path) => !covered.has(path)) };
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
