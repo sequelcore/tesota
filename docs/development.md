@@ -64,9 +64,18 @@ snapshots aside,
 over the request's base in a Git worktree in the computer's temporary
 folder, with the checkout's `node_modules` linked in, and gives no verdict
 there when the change touches `package.json` or a lockfile
-(`src/test-rung.ts`). The tests that prove files run
-only where Dafny is installed; the gate's tests script the proofs instead and
-run real commands. Build before `bun link`; later builds
+(`src/test-rung.ts`). When the commands pass, it measures how strong each
+contract is that the request added or changed in a file that proved
+(`src/proof-guarantees.ts`): `src/proof-mutation.ts` proves up to 8 small
+changes to the function's body, each alone in a temporary folder without the
+file's `.dfy` proof additions, and one that still proves makes it a weak
+contract in the receipt; `src/pi-claimcheck.ts` asks the session's model,
+through `ctx.modelRegistry`, to restate each contract without the request and
+then compare it with the operator's request, and the receipt labels that
+verdict a model's judgment, or says why there is none. Neither sends
+anything back to the agent. The tests that prove files run
+only where Dafny is installed; the gate's tests script the proofs and the
+model instead and run real commands. Build before `bun link`; later builds
 refresh that linked executable, and `bun unlink` removes it. The lint rule
 limits cyclomatic complexity to 20 in `src` and `tests` with no file
 exceptions.

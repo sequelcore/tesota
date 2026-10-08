@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
+import { contractStrength } from "./proof-guarantees.js";
 import { owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
 import { type Receipt, renderReceipt } from "./receipt.js";
@@ -165,6 +166,19 @@ function failingReport({ command, failingTests, evidence }: CommandRun): string 
   return `Tesota: \`${command}\` fails with your changes.\n\n${names}${evidence.output.trimEnd()}`;
 }
 
+/**
+ * How strong the contracts are that the request added or changed in the
+ * files that proved (`contractStrength`), measured against their content at
+ * the request's base.
+ */
+async function strength(ctx: ExtensionContext, base: string | null, proofs: Receipt["proofs"], requests: readonly string[],
+  signal: AbortSignal): Promise<Pick<Receipt, "contracts" | "claimcheck">> {
+  const files = await Promise.all(proofs.filter(({ verdict }) => verdict === "proved").map(async ({ path }) => ({ path,
+    source: await readIfPresent(join(ctx.cwd, path)) ?? "",
+    baseSource: base === null ? undefined : await git(ctx.cwd, ["show", `${base}:./${path}`]) })));
+  return contractStrength(ctx, requests, files, signal);
+}
+
 /** Built-in tools that only read, and `prove`, whose changes are the proof's own; any other tool may change files. */
 const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
 
@@ -173,8 +187,10 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
  * file with contracts. A failed or vacuous proof goes back to the agent and
  * the run continues, until the agent repeats any failure the gate already
  * sent back for that file (`gateVerdict`). Then the test rung runs
- * (`testRung`). That memory lasts for the operator's request: it resets on their input, not on `agent_start`, which
- * every continuation fires too. When nothing goes back, the run settles with
+ * (`testRung`), and once it passes, the strength of the contracts the
+ * request added or changed is measured (`strength`) for the receipt. What
+ * went back lasts for the operator's request: it resets on their input, not
+ * on `agent_start`, which every continuation fires too. When nothing goes back, the run settles with
  * a receipt for the operator. Changes are measured against the commit `HEAD`
  * named when the operator's request started, so a commit the agent makes
  * hides nothing; a steer or follow-up sent while the agent works belongs to
@@ -186,6 +202,8 @@ export function registerGate(pi: ExtensionAPI): void {
   let sentBack = new Map<string, string[]>();
   let commandsSentBack = new Map<string, string[]>();
   let mayHaveChanged = false;
+  /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
+  let requests: string[] = [];
   /** The request's base, recorded before the agent can run anything; a run no operator input started takes `HEAD` as it settles. */
   let base: Promise<string | null> | undefined;
   pi.on("input", async (event, ctx) => {
@@ -193,7 +211,10 @@ export function registerGate(pi: ExtensionAPI): void {
     sentBack = new Map();
     commandsSentBack = new Map();
     mayHaveChanged = false;
-    if (event.streamingBehavior === undefined) { base = headCommit(ctx.cwd); await base; }
+    if (event.streamingBehavior !== undefined) { requests.push(event.text); return undefined; }
+    requests = [event.text];
+    base = headCommit(ctx.cwd);
+    await base;
     return undefined;
   });
   pi.on("tool_execution_start", (event) => { if (!readOnlyTools.has(event.toolName)) mayHaveChanged = true; });
@@ -203,7 +224,7 @@ export function registerGate(pi: ExtensionAPI): void {
     const changed = await changedFiles(ctx.cwd, from);
     if (changed === undefined) {
       if (!mayHaveChanged) return undefined;
-      const receipt: Receipt = { version: 0, repository: false, proofs: [], tests: [], exercises: [], weakened: [], unverified: [] };
+      const receipt: Receipt = { version: 0, repository: false, proofs: [], contracts: [], tests: [], exercises: [], weakened: [], unverified: [] };
       return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
         display: true, details: receipt }] };
     }
@@ -234,7 +255,8 @@ export function registerGate(pi: ExtensionAPI): void {
     // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
     const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
       path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
-    const receipt: Receipt = { version: 0, repository: true, proofs: judged, tests, exercises, weakened,
+    const receipt: Receipt = { version: 0, repository: true, proofs: judged,
+      ...await strength(ctx, from, judged, requests, signal), tests, exercises, weakened,
       unverified: changed.filter((path) => !covered.has(path)) };
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };

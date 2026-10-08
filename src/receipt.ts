@@ -1,4 +1,5 @@
 import type { Evidence } from "./evidence.js";
+import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
 import type { Weakening } from "./verification-changes.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
@@ -6,7 +7,8 @@ import type { GateVerdict } from "./verification/gate-rule.js";
 /**
  * What a run that changed files leaves the operator when it settles: each
  * changed file with contracts, the gate's verdict on its proof and the
- * evidence, bound to the content it checked; the project's commands, such as
+ * evidence, bound to the content it checked; how strong each contract the
+ * request added or changed is, once it proved; the project's commands, such as
  * its tests, with theirs; whether each changed or added test exercises the
  * change; the changes that may weaken the evidence; and the changed files no
  * proof covers. Changes are measured against the commit the operator's
@@ -17,6 +19,10 @@ export interface Receipt {
   /** False when the project has no Git repository, so nothing could tell which files changed or verify them. */
   readonly repository: boolean;
   readonly proofs: readonly { readonly path: string; readonly verdict: GateVerdict; readonly evidence: Evidence }[];
+  /** Each contract the request added or changed in a file that proved, with what mutation and ClaimCheck found. */
+  readonly contracts: readonly ContractStrength[];
+  /** Which model ClaimCheck asked, or why it judged nothing; absent when no contract was there to judge. */
+  readonly claimcheck?: ClaimCheckRun;
   readonly tests: readonly (CommandRun & { readonly verdict: GateVerdict })[];
   readonly exercises: readonly TestExercise[];
   /**
@@ -54,6 +60,40 @@ const exerciseText: Readonly<Record<TestExercise["finding"], string>> = {
   exercises: "exercises     ", does_not_exercise: "vacuous test  ", unknown: "exercise?     ",
 };
 
+/**
+ * What mutation found about one contract. A survivor proved after the change,
+ * so the contract does not rule that behavior out and is too weak to trust;
+ * the survivor may still behave the same as the original, so it is never
+ * called a defect.
+ */
+function mutationLines({ path, name, mutation }: ContractStrength): string[] {
+  const tried = mutation.rejected + mutation.survived.length + mutation.inconclusive;
+  const unsettled = mutation.inconclusive === 0 ? "" : `; ${mutation.inconclusive} could not be decided`;
+  if (tried === 0) return [`  contract      ${name} in ${path}: mutation found no change to try in its body`];
+  if (mutation.survived.length === 0) {
+    return [`  contract      ${name} in ${path}: all ${mutation.rejected} decided changes to its code fail the proof${unsettled}`];
+  }
+  return [`  weak contract ${name} in ${path}: ${mutation.survived.length} of ${tried} changes to its code still prove, so ` +
+    `the contract does not rule them out (one may behave the same as the original)${unsettled}`,
+  ...mutation.survived.map((mutant) => `                line ${mutant.line}: ${mutant.before} became ${mutant.after}`)];
+}
+
+const verdictText: Readonly<Record<NonNullable<ContractStrength["judgment"]>["verdict"], string>> = {
+  justified: "expresses what was asked", partially_justified: "covers only part of what was asked",
+  not_justified: "does not express what was asked", vacuous: "proves nothing beyond its assumptions",
+};
+
+/** ClaimCheck's view of the contracts, always labelled a model's judgment. */
+function claimcheckLines(run: ClaimCheckRun | undefined, contracts: readonly ContractStrength[]): string[] {
+  if (run === undefined) return [];
+  if (run.status === "not_judged") {
+    return [`  not judged    whether the contracts express the request: ClaimCheck ${run.reason}`];
+  }
+  return [`  model judged  by ClaimCheck on ${run.model}; a model's judgment against the request, not a proof:`,
+    ...contracts.flatMap(({ path, name, judgment }) => judgment === undefined ? [] : [`                ${name} in ${path} ` +
+      `${verdictText[judgment.verdict]}${judgment.verdict === "justified" ? "" : `: ${judgment.explanation}`}`])];
+}
+
 function weakening(change: Weakening): string {
   const what = change.kind === "removed_contract" ? `removes or changes ${change.annotation}`
     : change.kind === "added_requires" ? `adds ${change.annotation} to a function the base had`
@@ -73,6 +113,8 @@ export function renderReceipt(receipt: Receipt): string {
     "Tesota receipt",
     ...receipt.proofs.flatMap(({ path, verdict, evidence }) =>
       [line(path, verdict, evidence), `                content sha256 ${evidence.contentHash}`]),
+    ...receipt.contracts.flatMap(mutationLines),
+    ...claimcheckLines(receipt.claimcheck, receipt.contracts),
     ...receipt.tests.map(testLine),
     ...receipt.exercises.map(({ path, finding, reason }) => `  ${exerciseText[finding]}${path}: ${reason}`),
     ...receipt.weakened === "too_large"

@@ -18,6 +18,8 @@ vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
     return Promise.resolve({ verifier: "lemmascript", claim: `claim of ${path}`, limits: "", outcome, output, durationMs: 1,
       files: [path, path.replace(/\.ts$/u, ".dfy")], contentHash: `hash of ${path}` });
   },
+  // Every mutant fails its proof, so a changed contract's strength is measured without Dafny.
+  proveSource: () => Promise.resolve("failed"),
 }));
 
 const roots: string[] = [];
@@ -82,17 +84,17 @@ function priceTest(input: number, expected: number, name = "total"): string {
 interface Settled { entries?: { customType: string; content: string; details?: unknown }[]; continue?: boolean }
 
 /** The gate's handlers on a fake Pi, run as Pi runs them in `root`. */
-function gate(root: string, active = ["read", "edit", "prove"]): {
-  input: (source?: string, streamingBehavior?: string) => Promise<void>; agentStart: () => void; tool: (name: string) => void;
+function gate(root: string, active = ["read", "edit", "prove"], session: object = {}): {
+  input: (source?: string, streamingBehavior?: string, text?: string) => Promise<void>; agentStart: () => void; tool: (name: string) => void;
   settle: (outcome?: string) => Promise<Settled | undefined>;
 } {
   const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
   registerGate({ on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
     getActiveTools: () => active } as never);
-  const ctx = { cwd: root, signal: undefined };
+  const ctx = { cwd: root, signal: undefined, ...session };
   return {
-    input: async (source = "interactive", streamingBehavior) => {
-      await handlers.get("input")?.({ type: "input", text: "fix it", source, streamingBehavior }, ctx);
+    input: async (source = "interactive", streamingBehavior, text = "fix it") => {
+      await handlers.get("input")?.({ type: "input", text, source, streamingBehavior }, ctx);
     },
     agentStart: () => { handlers.get("agent_start")?.({ type: "agent_start" }, ctx); },
     tool: (toolName) => { handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName }, ctx); },
@@ -159,6 +161,32 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   const receipt = entry(proved).details as Receipt;
   expect(receipt.proofs.map(({ path, verdict, evidence }) => [path, verdict, evidence.contentHash]))
     .toEqual([["src/rule.ts", "proved", "hash of src/rule.ts"]]);
+});
+
+it("measures the strength of the contracts the request changed once they prove, judged against what the operator asked", async () => {
+  const root = repository({ "src/rule.ts": contract,
+    "src/other.ts": "//@ ensures \\result >= 0\nexport function g(): number {\n  return 1;\n}\n" });
+  const asked: string[] = [];
+  const complete = (_model: unknown, context: { messages: { content: { text: string }[] }[]; tools: { name: string }[] }): Promise<unknown> => {
+    asked.push(context.messages[0]?.content[0]?.text ?? "");
+    const name = context.tools[0]?.name;
+    return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name, arguments: name === "record_comparisons"
+      ? { comparisons: [{ function: 1, verdict: "not_justified", explanation: "It allows any non-negative result." }] }
+      : { informalizations: [{ function: 1, preconditions: "none", postcondition: "non-negative", strength: "weak" }] } }] });
+  };
+  const run = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { complete } });
+  await run.input("interactive", undefined, "f returns zero");
+  await run.input("interactive", "steer", "and only zero");
+  writeFileSync(join(root, "src", "rule.ts"), "//@ ensures \\result >= 0\n//@ ensures \\result <= 1\n" +
+    "export function f(): number {\n  return 0;\n}\n");
+  writeFileSync(join(root, "src", "other.ts"), "//@ ensures \\result >= 0\nexport function g(): number {\n  return 2;\n}\n");
+  const settled = entry(await run.settle());
+  expect(settled.content).toContain(["  contract      f in src/rule.ts: all 1 decided changes to its code fail the proof",
+    "  model judged  by ClaimCheck on provider/model; a model's judgment against the request, not a proof:",
+    "                f in src/rule.ts does not express what was asked: It allows any non-negative result."].join("\n"));
+  expect(settled.content).not.toContain("g in src/other.ts");
+  expect(asked[1]).toContain("1. f returns zero\n2. and only zero");
+  expect((settled.details as Receipt).contracts.map(({ name, judgment }) => [name, judgment?.verdict])).toEqual([["f", "not_justified"]]);
 });
 
 it("stops on any failure already sent back, alternating ones included, and forgets them on the operator's input only", async () => {
