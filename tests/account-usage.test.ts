@@ -2,15 +2,11 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { bar, claudeCodeUsage, chatgptUsage, LAST_KNOWN_MS, openCodeGoUsage, openRouterUsage, pendingUsage, readUsage,
-  runUsageCommand, span, usageLines, usageTable, type UsageResponse, type UsageSources, windowLabel } from "../src/account-usage.js";
+import { bar, claudeCodeUsage, LAST_KNOWN_MS, openCodeGoUsage, openRouterUsage, pendingUsage, readUsage,
+  runUsageCommand, span, usageLines, usageTable, type UsageResponse, type UsageSources } from "../src/account-usage.js";
 import { creditPercent, filledSegments, meterTone, remainingPercent } from "../src/verification/usage-meter-rule.js";
 
 const now = Date.parse("2026-09-29T15:00:00Z");
-// A token shaped as ChatGPT's, whose claims name its ChatGPT account.
-const claims = Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "account-1" } })).toString("base64url");
-const chatgptToken = `TEST_HEADER.${claims}.TEST_SIGNATURE`;
-
 /** Sources that answer as the providers did on 2026-09-29, recording what each request carried. */
 function sources(answers: Readonly<Record<string, UsageResponse | Error>>, keys: Readonly<Record<string, string>> = {},
   accounts: Readonly<Record<string, string>> = {}) {
@@ -31,24 +27,6 @@ function sources(answers: Readonly<Record<string, UsageResponse | Error>>, keys:
   };
   return { fake, requests };
 }
-
-const chatgptPlus = { plan_type: "plus", rate_limit: {
-  primary_window: { used_percent: 0, limit_window_seconds: 18_000, reset_at: now / 1000 + 3 * 3600 + 420 },
-  secondary_window: { used_percent: 33, limit_window_seconds: 604_800, reset_at: now / 1000 + 6 * 86_400 + 3600 },
-}, credits: { has_credits: false, unlimited: false, balance: "0" } };
-
-it("labels each window by its own length and turns the percent used into the percent left", () => {
-  expect([18_000, 86_400, 604_800, 2_592_000, 5400].map(windowLabel)).toEqual(["5h", "day", "week", "30 days", "90m"]);
-  expect(chatgptUsage(chatgptPlus)).toEqual({ plan: "plus", notes: [], meters: [
-    { label: "5h", left: 100, resetsAt: now + (3 * 3600 + 420) * 1000 },
-    { label: "week", left: 67, resetsAt: now + (6 * 86_400 + 3600) * 1000 }] });
-  // A free account has one 30-day window and nothing else.
-  expect(chatgptUsage({ plan_type: "free", rate_limit: { primary_window: { used_percent: 2, limit_window_seconds: 2_592_000,
-    reset_at: 1 } }, credits: { has_credits: true, balance: "12.5" } }).meters.map((meter) => [meter.label, meter.left]))
-    .toEqual([["30 days", 98]]);
-  expect(chatgptUsage({ credits: { has_credits: true, balance: "12.5" } }).notes).toEqual(["12.5 credits"]);
-  expect(chatgptUsage({ credits: { unlimited: true } }).notes).toEqual(["unlimited credits"]);
-});
 
 it("reads Claude Code's plan windows and ignores the entries it does not name", () => {
   expect(claudeCodeUsage({ subscription_type: "pro", rate_limits: {
@@ -88,34 +66,30 @@ it("reads every route at once, sends each key only to its provider, and never sh
   const path = join(folder, "usage.json");
   try {
     const { fake, requests } = sources({
-      "https://chatgpt.com/backend-api/wham/usage": { status: 200, body: chatgptPlus },
       "claude:/claude/claude-2": { status: 200, body: { subscription_type: "pro", rate_limits: { seven_day: { utilization: 100 } } } },
       "https://openrouter.ai/api/v1/key": { status: 200, body: { data: { usage: 1.55, limit: 4, limit_remaining: 2.45 } } },
       "https://opencode.ai/zen/go/v1/usage": { status: 403, body: { type: "error" } },
-    }, { chatgpt: chatgptToken, openrouter: "TEST_OPENROUTER_KEY", opencode: "TEST_OPENCODE_KEY" });
+    }, { chatgpt: "TEST_CHATGPT_TOKEN", openrouter: "TEST_OPENROUTER_KEY", opencode: "TEST_OPENCODE_KEY" });
     const arrived: string[] = [];
-    const usage = await readUsage([{ route: "chatgpt", kind: "chatgpt" }, { route: "chatgpt-free1", kind: "chatgpt" },
-      { route: "claude-2", kind: "claude-code" }, { route: "openrouter", kind: "openrouter" }, { route: "opencode", kind: "opencode" },
-      { route: "typesafe", kind: "typesafe" }], fake, { path, now: () => now, onEach: (one) => { arrived.push(one.route); } });
-    expect(arrived.sort()).toEqual(["chatgpt", "chatgpt-free1", "claude-2", "opencode", "openrouter", "typesafe"]);
+    const usage = await readUsage([{ route: "chatgpt", kind: "chatgpt" }, { route: "claude-2", kind: "claude-code" },
+      { route: "openrouter", kind: "openrouter" }, { route: "opencode", kind: "opencode" }, { route: "typesafe", kind: "typesafe" }],
+    fake, { path, now: () => now, onEach: (one) => { arrived.push(one.route); } });
+    expect(arrived.sort()).toEqual(["chatgpt", "claude-2", "opencode", "openrouter", "typesafe"]);
+    // Sign in with ChatGPT has no usage source, so its token is never sent anywhere to read one.
     expect(requests.map((request) => [request.url, request.headers["Authorization"]])).toEqual([
-      ["https://chatgpt.com/backend-api/wham/usage", `Bearer ${chatgptToken}`],
       ["https://openrouter.ai/api/v1/key", "Bearer TEST_OPENROUTER_KEY"],
       ["https://opencode.ai/zen/go/v1/usage", "Bearer TEST_OPENCODE_KEY"]]);
-    expect(requests[0]?.headers["ChatGPT-Account-Id"]).toBe("account-1");
     const table = usageTable(usage, now);
     expect(table.split("\n")).toEqual([
-      "Route          Account          Window     Left                       Details",
-      "chatgpt        ChatGPT plus     5h         ████████████████████ 100%  resets in 3h 7m",
-      "                                week       █████████████░░░░░░░  67%  resets in 6d 1h",
-      "chatgpt-free1  ChatGPT          signed out: tesota auth login chatgpt-free1",
-      "claude-2       Claude Code pro  week       ░░░░░░░░░░░░░░░░░░░░   0%",
-      "openrouter     OpenRouter       key limit  ████████████░░░░░░░░  61%  $2.45 of $4.00 left",
-      "opencode       OpenCode         no OpenCode Go subscription",
-      "                                Zen's balance: see opencode.ai",
-      "typesafe       TypeSafe         no usage source: see console.typesafe.ai/settings/billing",
+      "Route       Account          Window     Left                       Details",
+      "chatgpt     ChatGPT          no usage source for Sign in with ChatGPT: see ChatGPT's settings, Usage",
+      "claude-2    Claude Code pro  week       ░░░░░░░░░░░░░░░░░░░░   0%",
+      "openrouter  OpenRouter       key limit  ████████████░░░░░░░░  61%  $2.45 of $4.00 left",
+      "opencode    OpenCode         no OpenCode Go subscription",
+      "                             Zen's balance: see opencode.ai",
+      "typesafe    TypeSafe         no usage source: see console.typesafe.ai/settings/billing",
       "",
-      "ChatGPT's usage comes from a private ChatGPT endpoint and Claude Code's from an experimental report; either may change.",
+      "Claude Code's usage comes from an experimental report, which may change.",
       ""]);
     // On a width, a note wraps beneath its own column, so its link is never cut.
     expect(usageLines(usage.slice(-1), now, { width: 60 })).toEqual([
@@ -123,8 +97,8 @@ it("reads every route at once, sends each key only to its provider, and never sh
       "typesafe  TypeSafe  no usage source: see",
       "                    console.typesafe.ai/settings/billing"]);
     const saved = await readFile(path, "utf8");
-    expect(Object.keys(JSON.parse(saved) as object).sort()).toEqual(["chatgpt", "claude-2", "opencode", "openrouter"]);
-    expect(`${table}${saved}`).not.toMatch(/TEST_|account-1/u);
+    expect(Object.keys(JSON.parse(saved) as object).sort()).toEqual(["claude-2", "opencode", "openrouter"]);
+    expect(`${table}${saved}`).not.toMatch(/TEST_/u);
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
 
@@ -168,7 +142,7 @@ it("names a refused sign-in, and refuses a route it does not know", async () => 
 it("reads an account once through its first route, and every route on it shows that one reading", async () => {
   const folder = await mkdtemp(join(tmpdir(), "tesota-usage-"));
   const path = join(folder, "usage.json");
-  // claude-code and claude-2 are signed in to one claude.ai account; chatgpt-free1's account cannot be read.
+  // claude-code and claude-2 are signed in to one claude.ai account; chatgpt-free1's has no usage source.
   const routes = [{ route: "claude-code", kind: "claude-code" }, { route: "chatgpt-free1", kind: "chatgpt" },
     { route: "claude-2", kind: "claude-code" }];
   const accounts = { "claude-code": "45e4b49f", "claude-2": "45e4b49f" };
@@ -186,7 +160,7 @@ it("reads an account once through its first route, and every route on it shows t
     expect(usage[0]?.sameAccountAs).toBeUndefined();
     expect(usageLines(usage, now).slice(1)).toEqual([
       "claude-code    Claude Code max  5h      ████████████░░░░░░░░  60%",
-      "chatgpt-free1  ChatGPT          signed out: tesota auth login chatgpt-free1",
+      "chatgpt-free1  ChatGPT          no usage source for Sign in with ChatGPT: see ChatGPT's settings, Usage",
       "claude-2       Claude Code max  same account as claude-code: one reading, above"]);
     // Saved under both routes, so a later failed read of either shows the same last reading.
     expect(Object.keys(JSON.parse(await readFile(path, "utf8")) as object).sort()).toEqual(["claude-2", "claude-code"]);

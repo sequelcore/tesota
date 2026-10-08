@@ -128,6 +128,34 @@ it("goes through Pi's own browser sign-in and keeps the client OpenAI issued", a
   expect(shown.join("")).not.toContain("TEST_");
 });
 
+it.each([
+  ["not_granted", { status: 200, scope: "openid offline_access" }, {}],
+  ["refused", { status: 400, scope: "" }, {}],
+  ["declined", { status: 200, scope: "" }, { error: "access_denied" }],
+] as const)("names a sign-in that saved nothing as %s, from Pi's own failure, and saves nothing", async (expected, token, callbackError) => {
+  const actual = await vi.importActual<typeof import("@earendil-works/pi-ai")>("@earendil-works/pi-ai");
+  const root = await mkdtemp(join(tmpdir(), "tesota-chatgpt-failure-"));
+  roots.push(root);
+  const credentials = new TesotaCredentials(join(root, "auth"));
+  harness.create.mockImplementation((options: Parameters<typeof actual.createModels>[0]) => actual.createModels(options));
+  vi.stubGlobal("fetch", vi.fn(async () => token.status === 200
+    ? Response.json({ access_token: "TEST_ACCESS", refresh_token: "TEST_REFRESH", id_token: "TEST_ID", expires_in: 3600, scope: token.scope })
+    : new Response("TEST_PROVIDER_TEXT", { status: token.status })));
+  const browser = (url: string): void => {
+    const opened = new URL(url);
+    const callback = new URL(opened.searchParams.get("redirect_uri") ?? "");
+    for (const [name, value] of Object.entries({ code: "TEST_CODE", state: opened.searchParams.get("state") ?? "",
+      client_id: "TEST_CLIENT", ...callbackError })) callback.searchParams.set(name, value);
+    get(callback, (response) => { response.resume(); });
+  };
+  const auth = browserSignInAuth(CHATGPT_SIGN_IN, { open: browser, write: () => {},
+    readLine: (_prompt, signal) => new Promise<string>((_resolve, reject) => {
+      signal.addEventListener("abort", () => { reject(new DOMException("cancelled", "AbortError")); }, { once: true });
+    }) }, new AbortController().signal);
+  expect(await loginToChatGPT(auth, DEVICE, credentials)).toBe(expected);
+  expect(await credentials.read("openai")).toBeUndefined();
+});
+
 it("refuses a sign-in address that is not OpenAI's", () => {
   const opened = vi.fn();
   const auth = browserSignInAuth(CHATGPT_SIGN_IN, { open: opened, write: () => {}, readLine: async () => "" }, new AbortController().signal);

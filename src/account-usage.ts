@@ -2,7 +2,6 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { allRoutes, kindLabels } from "./auth.js";
-import { CHATGPT_PROVIDER } from "./integrations/chatgpt-provider.js";
 import { creditPercent, filledSegments, type MeterTone, meterTone, remainingPercent } from "./verification/usage-meter-rule.js";
 import { usageReader } from "./verification/usage-reader-rule.js";
 
@@ -79,35 +78,9 @@ const instant = (value: unknown): number | undefined => {
 };
 const dollars = (value: number): string => `$${value.toFixed(2)}`;
 
-/** A window's label from its own length: 5h, week, 30 days. */
-export function windowLabel(seconds: number): string {
-  if (seconds === 7 * 86_400) return "week";
-  if (seconds >= 86_400 && seconds % 86_400 === 0) return seconds === 86_400 ? "day" : `${seconds / 86_400} days`;
-  if (seconds >= 3600 && seconds % 3600 === 0) return `${seconds / 3600}h`;
-  return `${Math.round(seconds / 60)}m`;
-}
-
 /** A meter from a window whose provider reports the percent used. */
 function usedWindow(label: string, used: number, resetsAt: number | undefined): UsageMeter {
   return { label, left: remainingPercent(Math.round(used)), ...resetsAt === undefined ? {} : { resetsAt } };
-}
-
-/** ChatGPT's `wham/usage`, as Codex reads it: each window with its length and reset, and the credit balance. */
-export function chatgptUsage(body: unknown): UsageReading {
-  const limits = field(body, "rate_limit");
-  const meters = [field(limits, "primary_window"), field(limits, "secondary_window")].flatMap((value) => {
-    const window = (value);
-    const used = finite(field(window, "used_percent"));
-    const seconds = finite(field(window, "limit_window_seconds"));
-    const reset = finite(field(window, "reset_at"));
-    return used === undefined || seconds === undefined ? [] : [usedWindow(windowLabel(seconds), used, reset === undefined ? undefined : reset * 1000)];
-  });
-  const credits = field(body, "credits");
-  const balance = text(field(credits, "balance")) ?? finite(field(credits, "balance"))?.toString();
-  const notes = field(credits, "unlimited") === true ? ["unlimited credits"]
-    : field(credits, "has_credits") === true && balance !== undefined ? [`${balance} credits`] : [];
-  const plan = text(field(body, "plan_type"));
-  return { ...plan === undefined ? {} : { plan }, meters, notes };
 }
 
 const claudeWindows = [["five_hour", "5h"], ["seven_day", "week"], ["seven_day_opus", "week, Opus"],
@@ -159,24 +132,6 @@ function refusal(route: string, status: number): string {
   return `usage request failed (HTTP ${status})`;
 }
 
-async function readChatGPT(route: string, sources: UsageSources): Promise<Outcome> {
-  const token = await sources.key(route, CHATGPT_PROVIDER);
-  if (token === undefined) return { none: `signed out: tesota auth login ${route}` };
-  const account = chatgptAccountId(token);
-  const response = await sources.get("https://chatgpt.com/backend-api/wham/usage", { Authorization: `Bearer ${token}`,
-    "User-Agent": sources.userAgent, ...account === undefined ? {} : { "ChatGPT-Account-Id": account } });
-  if (response.status !== 200) throw new Error(refusal(route, response.status));
-  return { reading: chatgptUsage(response.body) };
-}
-
-/** The ChatGPT account a token belongs to, from its own claims, as Codex and Pi read it. */
-function chatgptAccountId(token: string): string | undefined {
-  try {
-    const claims: unknown = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"));
-    return text(field(field(claims, "https://api.openai.com/auth"), "chatgpt_account_id"));
-  } catch { return undefined; }
-}
-
 async function readClaudeCode(route: string, sources: UsageSources): Promise<Outcome> {
   const outcome = claudeCodeUsage(await sources.claudeCode(route === "claude-code" ? undefined : sources.claudeCodeDirectory(route)));
   if ("none" in outcome) throw new Error(`${outcome.none}; tesota auth status ${route} shows its sign-in`);
@@ -207,11 +162,12 @@ async function readOpenCode(route: string, sources: UsageSources): Promise<Outco
 /** Routes whose provider offers no usage source for the credential Tesota holds, and where the operator can look. */
 const noSource: Readonly<Record<string, string>> = {
   anthropic: "no usage source for an API key: see console.anthropic.com/usage",
+  // Sign in with ChatGPT has no usage endpoint; a plan's limit shows only as a refused request (#191).
+  chatgpt: "no usage source for Sign in with ChatGPT: see ChatGPT's settings, Usage",
   typesafe: "no usage source: see console.typesafe.ai/settings/billing",
 };
 
 async function readRoute(route: string, kind: string, sources: UsageSources): Promise<Outcome> {
-  if (kind === "chatgpt") return readChatGPT(route, sources);
   if (kind === "claude-code") return readClaudeCode(route, sources);
   if (kind === "openrouter") return readOpenRouter(route, sources);
   if (kind === "opencode") return readOpenCode(route, sources);
@@ -418,7 +374,7 @@ function wrapWords(text: string, width: number): string[] {
 }
 
 /** What the readings rest on, said once under the table. */
-export const USAGE_SOURCES_NOTE: string = "ChatGPT's usage comes from a private ChatGPT endpoint and Claude Code's from an experimental report; either may change.";
+export const USAGE_SOURCES_NOTE: string = "Claude Code's usage comes from an experimental report, which may change.";
 
 /** `tesota usage`'s text: the table, then what it rests on. */
 export function usageTable(usage: readonly RouteUsage[], now: number): string {

@@ -1,7 +1,7 @@
 # The chatgpt route replaces the codex route
 
-Status: Accepted on 2026-09-29; built on 2026-10-08, pending a live sign-in
-on real accounts. [Issue #191](https://github.com/sequelcore/tesota/issues/191).
+Status: Accepted on 2026-09-29; built and exercised live on 2026-10-08.
+[Issue #191](https://github.com/sequelcore/tesota/issues/191).
 
 ## Context
 
@@ -40,8 +40,26 @@ Each account signs in again once, in a browser. The legacy route's device-code
 sign-in, which needed no browser on this computer, is gone; a browser on
 another computer still works by pasting the address it ended on.
 
-Three things rest on the legacy route's evidence until a live sign-in confirms
-them: that `wham/usage` accepts the new token for the usage windows, that the
-plan serves the same models through the OpenAI API, and that a free plan
-refuses the same three. Measurements recorded before 2026-10-08 name the
-`codex` route; they ran on the legacy sign-in.
+Exercised live on 2026-10-08:
+
+- A Plus account signed in, OpenAI's screen named Tesota, and requests
+  passed the live model-session contract.
+- A free account signed in in the browser, and OpenAI then refused to
+  exchange the sign-in for a token. OpenAI's help centre says using a plan in
+  other apps needs Go, Plus or Pro. The legacy route had served free accounts
+  through Codex; this one cannot. Tesota names the refusal, and the free-plan
+  model filter the legacy route needed (#296) is removed. The operator kept
+  only paid accounts on the route.
+- `wham/usage` refuses the new token, and OpenAI documents no usage source
+  for it, only a refused request at a plan's limit, so `tesota usage` points
+  to ChatGPT's settings.
+- The token names no email and no plan; status shows the account by its id.
+- OpenAI documents `GET /v1/models` on the account's token for the models it
+  serves; the route still offers a fixed list, and the roadmap holds the
+  change.
+- Pi registers a new client at every sign-in, where OpenAI asks applications
+  to keep the issued one for the account, so each sign-in adds a connected
+  app in ChatGPT's settings.
+
+Measurements recorded before 2026-10-08 name the `codex` route; they ran on
+the legacy sign-in.

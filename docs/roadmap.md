@@ -133,10 +133,9 @@ record of that use starts on 2026-10-01; what it surfaced is in
   never count as the operator's. Custom behavior modes, such as a grilling
   or triage mode, wait for daily use, under workflow profiles.
   [Execution](design/execution.md#where-commands-run)
-- Confirm the `chatgpt` route, which replaced the `codex` route with Sign in
-  with ChatGPT, on real accounts: a live request on each, the usage windows
-  `wham/usage` reports for its token, and which models a free plan refuses
-  through it. [Issue #191](https://github.com/sequelcore/tesota/issues/191)
+- Offer the `chatgpt` route's models from what each account serves, as
+  OpenAI documents with `GET /v1/models` on the account's token, instead of a
+  fixed list. [Issue #191](https://github.com/sequelcore/tesota/issues/191)
 - Exercise model routes that have not completed a live request. OpenCode Zen
   restricts its free models to its own client, and OpenCode Go requires an
   active subscription. Do not present either route as live-qualified until it

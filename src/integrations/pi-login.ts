@@ -13,7 +13,24 @@ import { CHATGPT_AGENT_NAME, chatgptProvider } from "./chatgpt-provider.js";
 /** A login that has not finished by then is abandoned. */
 export const LOGIN_TIME_LIMIT_MS: number = 180_000;
 
-export type LoginResult = "succeeded" | "failed" | "timed_out";
+/**
+ * How a login ended. `not_granted`: OpenAI signed the account in but did not
+ * grant the API access a plan's route needs. `refused`: the provider refused
+ * the code exchange. `declined`: the sign-in was declined in the browser.
+ */
+export type LoginResult = "succeeded" | "failed" | "timed_out" | "not_granted" | "refused" | "declined";
+
+/** Pi's known sign-in failures, by the words of its error; anything else is a plain failure, never shown raw. */
+const knownFailures: readonly (readonly [RegExp, LoginResult])[] = [
+  [/did not include chatgpt\.tokens\.use\.direct/u, "not_granted"],
+  [/OAuth token request failed \(\d{3}\)/u, "refused"],
+  [/authorization failed: /u, "declined"],
+];
+
+function failureOf(error: unknown): LoginResult {
+  const message = error instanceof Error ? error.message : "";
+  return knownFailures.find(([pattern]) => pattern.test(message))?.[1] ?? "failed";
+}
 
 class LoginTimeout extends Error {
   constructor() { super("Login timed out"); }
@@ -46,7 +63,7 @@ async function isolatedLogin(provider: Provider, interaction: AuthInteraction, c
     await runOAuthLogin((auth) => models.login(provider.id, "oauth", auth, options), interaction);
     return inferenceAttempted ? "failed" : "succeeded";
   } catch (error) {
-    return error instanceof LoginTimeout ? "timed_out" : "failed";
+    return error instanceof LoginTimeout ? "timed_out" : failureOf(error);
   }
 }
 

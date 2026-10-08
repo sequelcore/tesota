@@ -334,6 +334,16 @@ plan's route, and it lists only the models a plan served through Codex
 provider. A login kept for the legacy sign-in is not read: each account signs
 in again.
 
+Live on 2026-10-08, a Plus account signed in and served requests; a free
+account signed in in the browser, and OpenAI then refused to exchange the
+sign-in for a token, as its help centre says plan usage in other apps needs
+Go, Plus or Pro. Tesota names that refusal, and the other failures Pi reports,
+without showing the provider's text (`failureOf` in
+`src/integrations/pi-login.ts`). The legacy route had served free accounts
+through Codex, so the free-plan model filter it needed (#296) is gone. The
+token names no email and no plan, so status shows the account by its id
+only.
+
 **Several accounts**. The table's routes are each a *kind's*
 default route. A route is a kind and one account behind it: the kind
 decides the engine, the models, who pays and each model's lab; the route
@@ -362,18 +372,6 @@ names routes signed in to the same account, whose limits are one plan's
 and a role choice that makes it so name roles on different routes that draw
 on one account, since spreading roles across routes is meant to spread them
 across plans; roles all on one route draw on one account by choice.
-A ChatGPT route also offers only the models its plan serves: the
-token's `chatgpt_plan_type` claim names the plan, and on a free plan
-`tesota models`, `/model` and the role pickers leave out `CHATGPT_FREE_REFUSED`
-in `src/models-command.ts`, while `tesota roles` and `/model` refuse such a
-choice and name the plan (`planServes` in
-`src/verification/codex-plan-rule.ts`, proved). The list comes from an
-observed refusal, not a guess: on 2026-10-02 every request to `gpt-6.1-sol`,
-`gpt-6-sol` and `gpt-5.6-sol` on free accounts failed at once with "The
-'<model>' model is not supported when using Codex with a ChatGPT account",
-while a Plus account served them
-([issue #296](https://github.com/sequelcore/tesota/issues/296)). A route
-whose plan is unknown, or paid, offers every model.
 
 **What each account has left**. `tesota usage` and the
 shell's Accounts panel ask each route's provider, only when run or opened,
@@ -382,14 +380,14 @@ Codex's `/status` draws it, and when it resets. An account is read once,
 through the first route signed in to it, and every route on it shows that
 reading and names that route, so two meters of one plan cannot disagree
 (`usageReader` in `src/verification/usage-reader-rule.ts`, proved); a route
-whose account cannot be read is read by itself. ChatGPT's windows come from `wham/usage`, the private
-endpoint Codex's own client reads, with the route's token, which Pi
-refreshes; Claude Code's from the Agent SDK's experimental usage report,
+whose account cannot be read is read by itself. Sign in with ChatGPT has no
+usage source: `wham/usage` refuses its token, and OpenAI documents only a
+refused request when a plan's limit is reached, so the table points to
+ChatGPT's settings. Claude Code's windows come from the Agent SDK's experimental usage report,
 read without sending a request and with Claude Code's ordinary traffic on,
 since a working session turns it off and the report then has no limits;
 OpenRouter's from the key's limit; OpenCode Go's from its usage endpoint.
-A window is labelled by its own length, so a free ChatGPT account's 30-day
-window is not taken for a week. The segment count is proved
+The segment count is proved
 (`src/verification/usage-meter-rule.ts`): a bar is empty only when nothing
 is left and full only when nothing is used. Each reading is saved in
 `~/.tesota/usage.json` with its time, and a failed read, often a usage

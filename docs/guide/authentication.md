@@ -43,25 +43,22 @@ Inside a session, `/usage` opens the same table in the Accounts panel
 
 ```text
 Route        Account          Window     Left                       Details
-chatgpt      ChatGPT plus     5h         ████████████████████ 100%  resets in 3h 7m
-                              week       █████████████░░░░░░░  67%  resets in 6d 1h
+chatgpt      ChatGPT          no usage source for Sign in with ChatGPT: see ChatGPT's settings, Usage
 claude-2     Claude Code pro  5h         ████████████████████ 100%
                               week       ░░░░░░░░░░░░░░░░░░░░   0%  resets in 1d 9h
 openrouter   OpenRouter       key limit  ████████████░░░░░░░░  61%  $2.45 of $4.00 left
 typesafe     TypeSafe         no usage source: see console.typesafe.ai/settings/billing
 ```
 
-A bar is the share **left**, empty only when nothing is. Windows are named by
-their length, so a free ChatGPT account shows its 30-day window. An OpenRouter
+A bar is the share **left**, empty only when nothing is. An OpenRouter
 key with a limit shows what remains of it; one without a limit shows what it
-has used. OpenCode shows its Go subscription's windows. The Anthropic API
-route, OpenCode Zen and TypeSafe have no usage source for the key Tesota
-holds, so the table says where to look instead. Routes signed in to the same
+has used. OpenCode shows its Go subscription's windows. Sign in with ChatGPT,
+the Anthropic API route, OpenCode Zen and TypeSafe have no usage source for
+the credential Tesota holds, so the table says where to look instead. Routes signed in to the same
 account share one plan, so that account is read once: the first route shows
 its meters and the others say `same account as <route>: one reading, above`.
 
-ChatGPT's usage comes from a private ChatGPT endpoint, the one Codex reads, and
-Claude Code's from an experimental report, so either may stop working. When a read fails, the table
+Claude Code's usage comes from an experimental report, so it may stop working. When a read fails, the table
 shows that route's last reading from the past hour with its age; after an
 hour it says `unknown` with the reason. Readings are saved in
 `~/.tesota/usage.json` without any key or token.
@@ -111,8 +108,10 @@ auth:chatgpt` is also a login command. Logging in again on a signed-in route
 signs in afresh, as to change accounts; the earlier login stays until the new
 one completes. Pi refreshes an expiring login when it is used.
 
-The route offers the models a ChatGPT plan serves, not the rest of OpenAI's
-API catalog. Login stops after three minutes, and cancelling it stops it at
+The route needs a Go, Plus or Pro plan: OpenAI lets a free ChatGPT account
+sign in, then refuses the token, and Tesota says so. It offers the models a
+ChatGPT plan serves, not the rest of OpenAI's API catalog. The sign-in names
+no email, so status shows `(no email recorded)` for it. Login stops after three minutes, and cancelling it stops it at
 once. Login fails if anything tries to call a model during it, even if that
 attempt is caught.
 

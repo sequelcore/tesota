@@ -117,6 +117,15 @@ function openInBrowser(url: string): void {
   child.unref();
 }
 
+/** Why a ChatGPT sign-in saved nothing, as the operator reads it. */
+const signInFailures: Readonly<Record<Exclude<LoginResult, "succeeded">, string>> = {
+  failed: "the sign-in did not complete",
+  timed_out: "the sign-in timed out",
+  not_granted: "OpenAI signed the account in but did not grant API access to its ChatGPT plan, which this route needs",
+  refused: "OpenAI refused to exchange the sign-in for a token, as it does for a free ChatGPT plan: this route needs Go, Plus or Pro",
+  declined: "the sign-in was declined in the browser",
+};
+
 /** The terminal a browser sign-in shows itself on: the browser, standard output, and a hidden line. */
 const browserTerminal = { open: openInBrowser, write: (text: string) => { process.stdout.write(text); },
   readLine: (prompt: string, signal: AbortSignal) => readLine(prompt, { hidden: true, signal }) };
@@ -139,7 +148,7 @@ async function chatgpt(action: string, credentials: TesotaCredentials, route: st
     const result = await loginToChatGPT(browserSignInAuth(CHATGPT_SIGN_IN, browserTerminal, cancel.signal),
       await credentials.deviceId(), credentials);
     if (result !== "succeeded") {
-      console.error(`${label}: ${result === "timed_out" ? "the sign-in timed out" : "the sign-in did not complete"}; nothing was saved.`);
+      console.error(`${label}: ${signInFailures[result]}; nothing was saved.`);
       return 1;
     }
     console.log(`${label}: login saved for future Tesota runs${again ? ", in place of the earlier one" : ""}.`);

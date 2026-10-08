@@ -17,8 +17,7 @@ import { type WorkPlan, withReview } from "./work-plan.js";
 import { isGitRepository, largeUntrackedFiles, largeUntrackedWarning, pathKey } from "./source-shadow.js";
 import { hiddenFilesIn } from "./secret-files.js";
 import { hasUndecidedTurns, type RevertedTurn, SourceSession } from "./source-session.js";
-import { dataNotice, offeredChoices, offeredModels, type OfferedModel, planRefusal, routeListing, type RouteAccounts,
-  servedModels } from "./models-command.js";
+import { dataNotice, offeredChoices, offeredModels, type OfferedModel, routeListing } from "./models-command.js";
 import { handoffBrief, hasHistory, openFindings, type SessionHistory } from "./handoff-brief.js";
 import { describeJudgeWarnings, judgeWarnings } from "./judge-warnings.js";
 import { modelSwitch, needsBrief } from "./verification/model-switch.js";
@@ -368,8 +367,6 @@ export interface SessionEngineOptions {
    * run without a terminal does, and the mode cannot be switched.
    */
   readonly mode?: (id: string) => PermissionMode;
-  /** Each route's account, read once in the background; a ChatGPT route's plan withholds models it does not serve (#296). */
-  readonly routeAccounts?: () => Promise<RouteAccounts>;
 }
 
 /** What the engine offers the shell and a run without a terminal: each session's work and the commands on it. */
@@ -420,7 +417,7 @@ export function sessionAgentModel(store: ShellSessionStore, id: string): string 
  * review and application, and the commands on it, writing to `output` and
  * asking `decisions`. The shell and a run without a terminal share it.
  */
-export function createSessionEngine({ cwd, store, output, decisions, chooseExecution, fresh, mode, routeAccounts }: SessionEngineOptions):
+export function createSessionEngine({ cwd, store, output, decisions, chooseExecution, fresh, mode }: SessionEngineOptions):
   SessionEngine {
   const modeOf = (id: string): PermissionMode => mode?.(id) ?? "accept-edits";
   // Sessions share one choice per shell, since readiness takes some seconds; qualification is kept on disk. The
@@ -469,10 +466,8 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
   };
   const agentChoice = (id: string): string => sessionAgentModel(store, id);
   let offeredCache: readonly OfferedModel[] | undefined;
-  let accounts: RouteAccounts = [];
-  void routeAccounts?.().then((read) => { accounts = read; offeredCache = undefined; }, () => undefined);
   /** The routes' models, read once: the catalogues ship with Tesota and do not change while it runs. */
-  const offered = (): readonly OfferedModel[] => { offeredCache ??= servedModels(offeredModels(), accounts); return offeredCache; };
+  const offered = (): readonly OfferedModel[] => { offeredCache ??= offeredModels(); return offeredCache; };
   const savedSessions = store.list();
   /** The agent's plan (decision 033), shown and saved; undefined when the work it planned ends. */
   const showPlan = (id: string, plan: WorkPlan | undefined): void => {
@@ -933,8 +928,6 @@ export function createSessionEngine({ cwd, store, output, decisions, chooseExecu
       const choice = argument === "default" ? role : argument;
       const from = parseModelChoice(current);
       const to = parseModelChoice(choice);
-      const refusal = planRefusal(choice, accounts);
-      if (refusal !== undefined) { output.replyTo(id, `${refusal}. /model lists the models it serves.`, "warning"); return; }
       if (from === undefined || to === undefined || !offeredChoices(models).includes(choice)) {
         output.replyTo(id, `${choice} is not offered. /model lists the models.`, "warning");
         return;

@@ -3,8 +3,8 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, expect, it, vi } from "vitest";
 import { addRoute, chooseModel, DEFAULT_MODEL, parseModelChoice, readModelChoices } from "../src/model-roles.js";
-import { CHATGPT_FREE_REFUSED, dataNotice, modelCost, offeredChoices, offeredModels, planRefusal, rolePicker, runModelsCommand,
-  runRolesCommand, servedModels, type OfferedModel } from "../src/models-command.js";
+import { dataNotice, modelCost, offeredChoices, offeredModels, rolePicker, runModelsCommand,
+  runRolesCommand, type OfferedModel } from "../src/models-command.js";
 
 // A home of the test's own, so the routes it adds are never the operator's, and the operator's never reach it.
 vi.mock("node:os", async (original) => {
@@ -268,33 +268,4 @@ it("says when roles spread across routes draw on one account, under the listing 
   expect(runRolesCommand([], write, withSecond, path, [{ route: "claude-code", account: ours }, { route: "claude-2", account: { id: "b7" } }],
     added)).toBe(0);
   expect(output).not.toContain("share one plan's limits");
-});
-
-it("withholds the models a route's free ChatGPT plan does not serve, and refuses them for a role, naming the plan (#296)", () => {
-  addRoute("chatgpt-free3", "chatgpt");
-  const catalog = offeredModels();
-  expect(catalog.map((model) => model.id)).toEqual(expect.arrayContaining(CHATGPT_FREE_REFUSED.map((model) => `chatgpt-free3:${model}`)));
-  const accounts = [{ route: "chatgpt", account: { id: "plus", plan: "plus" } }, { route: "chatgpt-free3", account: { id: "free", plan: "free" } }];
-  const served = servedModels(catalog, accounts).map((model) => model.id);
-  expect(served).toEqual(expect.arrayContaining(["chatgpt:gpt-6.1-sol", "chatgpt-free3:gpt-6-luna"]));
-  expect(served).not.toContain("chatgpt-free3:gpt-6.1-sol");
-  // An unknown plan withholds nothing: only an observed refusal takes a model away.
-  expect(planRefusal("chatgpt-free3:gpt-6.1-sol@high", [])).toBeUndefined();
-  expect(planRefusal("chatgpt-free3:gpt-6.1-sol@high", accounts)).toBe(
-    "chatgpt-free3 is signed in to a free ChatGPT plan, which does not serve gpt-6.1-sol");
-
-  let text = "";
-  const write = (written: string): void => { text += written; };
-  expect(runModelsCommand(["chatgpt-free3"], write, catalog, accounts)).toBe(0);
-  expect(text).not.toMatch(/^ {2}gpt-6\.1-sol /mu);
-  expect(text).toContain("Not listed: gpt-5.6-sol, gpt-6-sol, gpt-6.1-sol; chatgpt-free3's free ChatGPT plan does not serve them.");
-
-  const path = file();
-  text = "";
-  expect(runRolesCommand(["agent", "chatgpt-free3:gpt-6.1-sol"], write, catalog, path, accounts)).toBe(1);
-  expect(text).toContain("chatgpt-free3 is signed in to a free ChatGPT plan, which does not serve gpt-6.1-sol");
-  expect(readModelChoices(path).agent).toBe(DEFAULT_MODEL);
-  text = "";
-  expect(runRolesCommand(["agent", "chatgpt:gpt-6.1-sol"], write, catalog, path, accounts)).toBe(0);
-  expect(text).toMatch(/^The agent now uses chatgpt:gpt-6.1-sol.\n/u);
 });

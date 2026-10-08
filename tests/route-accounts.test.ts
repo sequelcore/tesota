@@ -36,14 +36,15 @@ it("reads the account Claude Code records in a configuration folder, and nothing
   expect(claudeCodeAccount(never)).toBeUndefined();
 });
 
-it("reads a Codex sign-in's account from its token's claims, the stored account id first", () => {
+it("reads a ChatGPT sign-in's account from its token's claims, the stored account id first", () => {
   const access = token({ sub: "user-1", "https://api.openai.com/auth": { chatgpt_account_id: "acct-from-claim" },
     "https://api.openai.com/profile": { email: "plus@example.com" } });
   expect(chatgptAccount({ type: "oauth", access, refresh: "", expires: 0, accountId: "acct-stored" }))
     .toEqual({ id: "acct-stored", email: "plus@example.com" });
   expect(chatgptAccount({ type: "oauth", access, refresh: "", expires: 0 })).toEqual({ id: "acct-from-claim", email: "plus@example.com" });
-  const free = token({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-free", chatgpt_plan_type: "free" } });
-  expect(chatgptAccount({ type: "oauth", access: free })).toEqual({ id: "acct-free", plan: "free" });
+  // Sign in with ChatGPT's token may name no email; the account is still told apart by its id.
+  const bare = token({ "https://api.openai.com/auth": { chatgpt_account_id: "acct-bare" } });
+  expect(chatgptAccount({ type: "oauth", access: bare })).toEqual({ id: "acct-bare" });
   expect(chatgptAccount({ type: "oauth", access: "not-a-token" })).toBeUndefined();
   expect(chatgptAccount(undefined)).toBeUndefined();
 });

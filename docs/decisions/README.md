@@ -8,4 +8,4 @@ Built behavior remains in the [design overview](../design/overview.md).
 - [The claude-code route under Anthropic's terms](claude-code-route-terms.md)
   — accepted; the route stays as built.
 - [The chatgpt route replaces the codex route](chatgpt-route.md)
-  — accepted and built; a live sign-in on real accounts is pending.
+  — accepted, built and exercised live; paid ChatGPT plans only.
