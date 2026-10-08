@@ -38,14 +38,23 @@ function stubPi(root: string, version: string): void {
     "process.stdout.write(JSON.stringify(process.argv.slice(2)));\nprocess.exit(7);\n");
 }
 
-/** A copy of the built launcher with no Pi beside it, or with a stub Pi of `version`. */
-function launcherCopy(version?: string): string {
+/** A copy of the built package with no Pi beside it, or with a stub Pi of `version`; `src` holds its extension. */
+function launcherCopy(version?: string, { src = true } = {}): string {
   const root = folder();
   cpSync("dist", join(root, "dist"), { recursive: true });
+  if (src) cpSync("src", join(root, "src"), { recursive: true });
   cpSync("package.json", join(root, "package.json"));
   if (version !== undefined) stubPi(root, version);
   return join(root, "dist", "cli.js");
 }
+
+it("refuses to open Pi without Tesota's extension, which Pi would skip without a word", () => {
+  const result = tesota(launcherCopy("9.0.0", { src: false }), ["--help"], folder());
+  expect(result.status).toBe(1);
+  expect(result.stdout).toBe("");
+  expect(result.stderr).toContain("Tesota's installation is incomplete: its Pi extension is missing");
+  expect(result.stderr).toContain(join("src", "extension.ts"));
+});
 
 it("refuses to start without a supported Pi and says how to install one", () => {
   const missing = tesota(launcherCopy(), ["--help"], folder(), folder());

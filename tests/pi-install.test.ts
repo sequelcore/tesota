@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { installedPi, minimumPiVersion, PI_PACKAGE, piOnPath, piProblem } from "../src/pi-install.js";
+import { installedPi, minimumPiVersion, missingExtensions, PI_PACKAGE, piOnPath, piProblem } from "../src/pi-install.js";
 import { versionAtLeast } from "../src/verification/pi-version-rule.js";
 
 const roots: string[] = [];
@@ -40,6 +40,15 @@ it("reads the minimum Pi from Tesota's peer range, which the development copy of
   const pi = installedPi(process.cwd());
   expect(pi?.version).toBe(JSON.parse(readFileSync("package.json", "utf8")).devDependencies[PI_PACKAGE]);
   expect(piProblem(pi, minimum)).toBeUndefined();
+});
+
+it("names the extension files the pi manifest lists that are missing, and finds none missing here", () => {
+  expect(missingExtensions(process.cwd())).toEqual([]);
+  const root = folder();
+  writeFileSync(join(root, "package.json"), JSON.stringify({ pi: { extensions: ["./src/extension.ts"] } }));
+  expect(missingExtensions(root)).toEqual([join(root, "src", "extension.ts")]);
+  writeFileSync(join(root, "package.json"), JSON.stringify({}));
+  expect(() => missingExtensions(root)).toThrow("pi.extensions");
 });
 
 it("accepts a Pi at or above the minimum and says how to install one otherwise", () => {

@@ -91,6 +91,20 @@ export function minimumPiVersion(packageRoot: string): string {
   return minimum;
 }
 
+/**
+ * The extension files the `pi` manifest in Tesota's `package.json` names
+ * that are missing. Pi skips a missing extension without a word, so the
+ * launcher checks first rather than open Pi without Tesota.
+ */
+export function missingExtensions(packageRoot: string): string[] {
+  const extensions = manifest(join(packageRoot, "package.json"))?.["pi"];
+  const paths = typeof extensions === "object" && extensions !== null ? Reflect.get(extensions, "extensions") : undefined;
+  if (!Array.isArray(paths) || paths.length === 0 || !paths.every((path) => typeof path === "string")) {
+    throw new Error("Tesota's package.json must name its extension files in pi.extensions.");
+  }
+  return paths.map((path: string) => join(packageRoot, path)).filter((path) => !existsSync(path));
+}
+
 const release = (version: string): readonly [number, number, number] | undefined => {
   const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/u.exec(version);
   return match === null ? undefined : [Number(match[1]), Number(match[2]), Number(match[3])];
