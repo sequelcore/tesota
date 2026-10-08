@@ -24,8 +24,10 @@ record of that use starts on 2026-10-01; what it surfaced is in
 ### 1. Prepare the release and exercise the current workflow
 
 - Finish release identity: clear the name, domain and social handles. Public
-  app listing on OpenRouter follows launch preparation.
-  [Overview](design/overview.md#name-and-identity)
+  app listing on OpenRouter follows launch preparation. Before publishing,
+  decide whether the `claude-code` route's use of the Agent SDK fits
+  Anthropic's terms. [Overview](design/overview.md#name-and-identity)
+  [Issue #322](https://github.com/sequelcore/tesota/issues/322)
 - Use the WSL sandbox as the default on a real project, including its toolchain
   preparation and the option to approve one command on the host. Correct the
   obstacles real use reveals. [Execution](design/execution.md)
@@ -69,6 +71,7 @@ record of that use starts on 2026-10-01; what it surfaced is in
   Guarantees; and the agent adding contracts where the request or the
   repository's instructions ask.
   [Proofs](design/proofs.md)
+  [Issue #313](https://github.com/sequelcore/tesota/issues/313)
 - Scope behavior was measured on cases that tempt the agent to make unrelated
   changes, registered before any run: five temptations and a control in
   `live:agent`. On 2026-09-30, `claude-code:sonnet` kept all 10 tempted runs in
@@ -130,11 +133,10 @@ record of that use starts on 2026-10-01; what it surfaced is in
   never count as the operator's. Custom behavior modes, such as a grilling
   or triage mode, wait for daily use, under workflow profiles.
   [Execution](design/execution.md#where-commands-run)
-- Put the sessions that wait on the operator, for an approval or an answer,
-  first in the sidebar, as Codex's agents view groups "Needs input" first,
-  and name how many wait in the footer while the sidebar is hidden, so a
-  blocked session is seen without looking for it.
-  [Sessions](design/sessions.md)
+- Replace the `codex` route, which signs in through Pi's legacy
+  `openai-codex` provider, with Sign in with ChatGPT as a `chatgpt` route,
+  with no compatibility layer.
+  [Issue #191](https://github.com/sequelcore/tesota/issues/191)
 - Exercise model routes that have not completed a live request. OpenCode Zen
   restricts its free models to its own client, and OpenCode Go requires an
   active subscription. Do not present either route as live-qualified until it
@@ -152,17 +154,20 @@ describe these planned results as release features.
 Score at least two reviewer setups on SWE-PRBench's 100-pull-request split
 with its official judge, before and after refutation, and record the results
 with the evaluation change. `live:prbench` and the scorer are built; scores are
-not yet recorded here. Then compare the whole loop against plain Pi on one
-model through Terminal-Bench and Harbor. `tesota run` is the noninteractive
+not yet recorded here, and the run waits for API credit for the official
+judge. Then compare the whole loop against plain Pi on one model through
+Terminal-Bench and Harbor. `tesota run` is the noninteractive
 way to run Tesota it needs; Harbor's adapter for it is not built.
 [Evaluation method](development.md#evaluations)
 
 ### 4. Use Tesota daily
 
-Use it on a private project and then on Tesota's own changes. Revisit explorer
-and reviewer choices with evidence from those sessions. A normal week of real
-changes should include checks, review, correction where needed, and the
-operator's decision on the complete result. Passing checks and a clean review
+Daily use started on 2026-10-01, on an outside Windows project and on
+Tesota's own issues; what it surfaces is filed under
+[issue #243](https://github.com/sequelcore/tesota/issues/243). Revisit
+explorer and reviewer choices with evidence from those sessions. A normal
+week of real changes should include checks, review, correction where needed,
+and the operator's decision on the complete result. Passing checks and a clean review
 remain separate from human acceptance.
 
 Once others contribute, apply the same roles to their pull requests and
