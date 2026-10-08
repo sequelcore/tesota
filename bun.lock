@@ -4,19 +4,24 @@
   "workspaces": {
     "": {
       "name": "tesota",
+      "dependencies": {
+        "lemmascript": "0.6.4",
+      },
       "devDependencies": {
         "@earendil-works/pi-coding-agent": "1.1.0",
         "@types/node": "24.10.0",
-        "lemmascript": "0.6.4",
         "oxlint": "1.82.0",
+        "typebox": "1.3.27",
         "typescript": "7.0.2",
         "vitest": "4.1.11",
       },
       "peerDependencies": {
         "@earendil-works/pi-coding-agent": ">=1.1.0",
+        "typebox": "*",
       },
       "optionalPeers": [
         "@earendil-works/pi-coding-agent",
+        "typebox",
       ],
     },
   },
