@@ -40,8 +40,12 @@ is an optional peer for the same reason. `lemmascript` is a runtime
 dependency: `prove` runs its `lsc` with the operator's Dafny in the project
 itself, `lsc regen` and then `lsc check`, so the project's `.dfy` follows the
 source as described under "Adding a capability". The gate proves the same
-way, in `src/gate.ts`; it takes the changed files from Git, against `HEAD`
-plus untracked files. Outside a Git repository it cannot tell what changed,
+way, in `src/gate.ts`; it takes the changed files from Git, against the
+commit `HEAD` named when the operator's request started, plus untracked
+files, so a commit the agent makes during the request hides nothing. From the
+same diff it lists in the receipt the changes that may weaken the evidence:
+a removed or changed `//@ requires` or `ensures`, an added `//@ assume`, and
+a deleted or edited test file. Outside a Git repository it cannot tell what changed,
 so it holds no run, and a request that ran a tool that may change files ends
 with a receipt saying its changes were not verified. The tests that prove
 files run only where Dafny is installed; the gate's tests script the proofs
