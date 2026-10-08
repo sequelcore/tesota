@@ -13,7 +13,10 @@ evidence that its change does what was asked. It ships as a Pi package and a
 LemmaScript contracts the package gives the agent `prove`
 ([#337](https://github.com/sequelcore/tesota/issues/337)), holds the run
 open while a changed file's contracts do not prove, and ends it with a
-receipt ([#339](https://github.com/sequelcore/tesota/issues/339)). A prototype on the
+receipt ([#339](https://github.com/sequelcore/tesota/issues/339)) that also
+lists the changes that may weaken the evidence, measured from the commit the
+request started at ([#341](https://github.com/sequelcore/tesota/issues/341)).
+A prototype on the
 `proto/verification-layer` branch confirmed that Pi 1.1's extension API
 carries the design.
 
@@ -34,9 +37,12 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    back to the agent and stops when a correction repeats any failure
    already sent back; a proof that could not run goes to the operator. Receipt v0 lists each
    proof with its content hash and the changed files nothing verified.
-4. **Weakened evidence.** A removed or changed `requires` or `ensures`, an
-   added `assume`, and a deleted or edited test, from the diff against the
-   base.
+4. **Weakened evidence.** Done in #341: the gate measures changes from the
+   commit the request started at, so an agent's commit hides nothing, and
+   the receipt lists a removed or changed `requires` or `ensures`, a
+   `requires` added to an existing function, an added `assume` in source or
+   a `.dfy` (where an `{:axiom}` or a lemma without a body counts as one),
+   and a deleted or edited test.
 5. **Test rung.** Find and run the project's tests; a changed or added test
    that also passes on the base is reported as not exercising the change.
 6. **Contract strength.** Proof-based mutation and ClaimCheck against the

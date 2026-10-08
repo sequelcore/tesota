@@ -1,33 +1,113 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
 import { proofReport } from "./prove-tool.js";
 import { type Receipt, renderReceipt } from "./receipt.js";
+import { type FileChange, needsContent, weakenedEvidence } from "./verification-changes.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
 
-const execFileAsync = promisify(execFile);
+const outputLimit = 16 * 1024 * 1024;
 
-async function git(root: string, args: readonly string[]): Promise<string[] | undefined> {
-  try {
-    const { stdout } = await execFileAsync("git", [...args, "-z"], { cwd: root, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
-    return stdout.split("\0").filter((path) => path !== "");
-  } catch { return undefined; }
+/**
+ * Git's output in `root`; `too_large` when it passes what the gate reads,
+ * undefined when Git fails. Past the limit it closes Git's output and waits
+ * for Git to exit on the broken pipe instead of killing it: on Windows the
+ * `git` on PATH can be a launcher, and killing it would leave the Git it
+ * started running in the project after the gate moved on.
+ */
+function gitOutput(root: string, args: readonly string[]): Promise<string | "too_large" | undefined> {
+  return new Promise((settle) => {
+    const child = spawn("git", [...args], { cwd: root, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    child.stdout.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > outputLimit) child.stdout.destroy();
+      else chunks.push(chunk);
+    });
+    child.once("error", () => { settle(undefined); });
+    child.once("close", (status) => {
+      settle(size > outputLimit ? "too_large" : status === 0 ? Buffer.concat(chunks).toString("utf8") : undefined);
+    });
+  });
+}
+
+async function git(root: string, args: readonly string[]): Promise<string | undefined> {
+  const output = await gitOutput(root, args);
+  return output === "too_large" ? undefined : output;
+}
+
+async function gitPaths(root: string, args: readonly string[]): Promise<string[] | undefined> {
+  return (await git(root, [...args, "-z"]))?.split("\0").filter((path) => path !== "");
+}
+
+/** `git diff` from `base`, relative to the project, as this module reads it whatever the operator's Git configuration. */
+function diffFrom(base: string, ...options: string[]): string[] {
+  return ["-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames",
+    "--relative", "--src-prefix=a/", "--dst-prefix=b/", ...options, base];
+}
+
+/** The commit `HEAD` names in the project at `root`; null before its first commit, and outside Git. */
+export async function headCommit(root: string): Promise<string | null> {
+  const commit = (await git(root, ["rev-parse", "--verify", "--quiet", "HEAD"]))?.trim();
+  return commit === undefined || commit === "" ? null : commit;
 }
 
 /**
- * The files under `root` that differ from `HEAD` or are untracked, relative
- * to it; every tracked file in a repository with no commit yet. Deleted files
- * are left out, and so is everything outside a Git repository (`undefined`).
+ * The files under `root` that differ from the commit `base` or are
+ * untracked, relative to it; every tracked file when `base` is null, before
+ * the repository's first commit. A commit made since `base` hides nothing.
+ * Deleted files are left out, and so is everything outside a Git repository
+ * (`undefined`).
  */
-export async function changedFiles(root: string): Promise<string[] | undefined> {
-  const tracked = await git(root, ["diff", "--name-only", "--relative", "--diff-filter=d", "HEAD"])
-    ?? await git(root, ["ls-files", "--cached"]);
-  const untracked = await git(root, ["ls-files", "--others", "--exclude-standard"]);
+export async function changedFiles(root: string, base: string | null): Promise<string[] | undefined> {
+  const tracked = base === null ? await gitPaths(root, ["ls-files", "--cached"])
+    : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=d"));
+  const untracked = await gitPaths(root, ["ls-files", "--others", "--exclude-standard"]);
   return tracked === undefined || untracked === undefined ? undefined : [...new Set([...tracked, ...untracked])].sort();
+}
+
+async function readIfPresent(path: string): Promise<string | undefined> {
+  try { return await readFile(path, "utf8"); } catch { return undefined; }
+}
+
+const statuses: Readonly<Record<string, ChangeStatus>> = { A: "added", D: "deleted" };
+
+/** The diff from `base` and its files, or why the gate cannot read it. */
+async function diffFromBase(root: string, base: string): Promise<ChangedFile[] | Exclude<Receipt["weakened"], readonly unknown[]>> {
+  const listed = await gitOutput(root, [...diffFrom(base, "--name-status"), "-z"]);
+  const diff = await gitOutput(root, diffFrom(base, "--unified=0"));
+  if (listed === "too_large" || diff === "too_large") return "too_large";
+  if (listed === undefined || diff === undefined) return "unreadable";
+  const fields = listed.split("\0");
+  const changes: Pick<ChangedFile, "path" | "status">[] = [];
+  for (let k = 0; k + 1 < fields.length; k += 2) {
+    changes.push({ path: fields[k + 1] ?? "", status: statuses[fields[k] ?? ""] ?? "modified" });
+  }
+  return changedLines(diff, changes);
+}
+
+/**
+ * The changes from `base` that may weaken the evidence (`weakenedEvidence`),
+ * or why they could not be checked. A changed file the base lacks, untracked
+ * or before the first commit, counts as added whole.
+ */
+async function weakenings(root: string, base: string | null, changed: readonly string[]): Promise<Receipt["weakened"]> {
+  const diffed = base === null ? [] : await diffFromBase(root, base);
+  if (typeof diffed === "string") return diffed;
+  const inDiff = new Set(diffed.map(({ path }) => path));
+  const whole = await Promise.all(changed.filter((path) => !inDiff.has(path)).map(async (path): Promise<FileChange> => {
+    const content = await readIfPresent(join(root, path));
+    return { path, status: "added", removed: [], content,
+      added: content?.split(/\r?\n/u).map((text, k) => ({ number: k + 1, text })) ?? [] };
+  }));
+  const read = await Promise.all(diffed.map(async (file): Promise<FileChange> => base === null || !needsContent(file) ? file
+    : { ...file, content: await readIfPresent(join(root, file.path)), baseContent: await git(root, ["show", `${base}:./${file.path}`]) }));
+  return weakenedEvidence([...read, ...whole].sort((a, b) => a.path < b.path ? -1 : 1));
 }
 
 async function hasAnnotations(root: string, path: string): Promise<boolean> {
@@ -56,28 +136,38 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
  * sent back for that file (`gateVerdict`). That memory lasts for the
  * operator's request: it resets on their input, not on `agent_start`, which
  * every continuation fires too. When nothing goes back, the run settles with
- * a receipt for the operator. Outside a Git repository it cannot tell what
+ * a receipt for the operator. Changes are measured against the commit `HEAD`
+ * named when the operator's request started, so a commit the agent makes
+ * hides nothing; a steer or follow-up sent while the agent works belongs to
+ * the request already running. Outside a Git repository it cannot tell what
  * changed, so a request that ran a tool that may change files ends with a
  * receipt that says so.
  */
 export function registerGate(pi: ExtensionAPI): void {
   let sentBack = new Map<string, string[]>();
   let mayHaveChanged = false;
-  pi.on("input", (event) => {
-    if (event.source !== "extension") { sentBack = new Map(); mayHaveChanged = false; }
+  /** The request's base, recorded before the agent can run anything; a run no operator input started takes `HEAD` as it settles. */
+  let base: Promise<string | null> | undefined;
+  pi.on("input", async (event, ctx) => {
+    if (event.source === "extension") return undefined;
+    sentBack = new Map();
+    mayHaveChanged = false;
+    if (event.streamingBehavior === undefined) { base = headCommit(ctx.cwd); await base; }
     return undefined;
   });
   pi.on("tool_execution_start", (event) => { if (!readOnlyTools.has(event.toolName)) mayHaveChanged = true; });
   pi.on("agent_before_settle", async (event, ctx) => {
     if (event.outcome !== "completed") return undefined;
-    const changed = await changedFiles(ctx.cwd);
+    const from = await (base ??= headCommit(ctx.cwd));
+    const changed = await changedFiles(ctx.cwd, from);
     if (changed === undefined) {
       if (!mayHaveChanged) return undefined;
-      const receipt: Receipt = { version: 0, repository: false, proofs: [], unverified: [] };
+      const receipt: Receipt = { version: 0, repository: false, proofs: [], weakened: [], unverified: [] };
       return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
         display: true, details: receipt }] };
     }
-    if (changed.length === 0) return undefined;
+    const weakened = await weakenings(ctx.cwd, from, changed);
+    if (changed.length === 0 && Array.isArray(weakened) && weakened.length === 0) return undefined;
     const signal = ctx.signal ?? new AbortController().signal;
     const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
     const judged: Receipt["proofs"][number][] = [];
@@ -96,7 +186,7 @@ export function registerGate(pi: ExtensionAPI): void {
     // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
     const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
       path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
-    const receipt: Receipt = { version: 0, repository: true, proofs: judged, unverified: changed.filter((path) => !covered.has(path)) };
+    const receipt: Receipt = { version: 0, repository: true, proofs: judged, weakened, unverified: changed.filter((path) => !covered.has(path)) };
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
   });

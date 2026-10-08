@@ -9,7 +9,8 @@ Tesota is being rebuilt from a full coding agent into this verification
 layer. Today, in a project with LemmaScript `//@` contracts, it gives the
 agent a `prove` tool that proves them with Dafny while it works, keeps the
 agent working while a changed file's contracts do not prove, and ends the
-run with a receipt of what was proved and what was not verified. The
+run with a receipt of what was proved, what may weaken the evidence, such as
+a loosened contract or a deleted test, and what was not verified. The
 [roadmap](docs/roadmap.md) lists what comes next. The earlier agent remains
 in Git history.
 
