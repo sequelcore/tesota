@@ -210,7 +210,6 @@ it("measures from the commit the request started at, so an agent's commit hides 
   writeFileSync(join(root, "notes.md"), "# Notes, changed\n");
   commit(root, "agent");
   scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
-  await run.input("interactive", "steer");
   expect(entry(await run.settle()).content).toContain("Tesota: src/rule.ts does not prove yet.");
   scripted.delete("src/rule.ts");
   const receipt = entry(await run.settle()).details as Receipt;
@@ -218,6 +217,17 @@ it("measures from the commit the request started at, so an agent's commit hides 
   expect(receipt.unverified).toEqual(["notes.md"]);
   await run.input();
   expect(await run.settle()).toBeUndefined();
+});
+
+it("keeps the running request's base through a steer or follow-up sent after the agent committed", async () => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
+  commit(root, "agent");
+  await run.input("interactive", "steer");
+  await run.input("interactive", "followUp");
+  expect((entry(await run.settle()).details as Receipt).proofs.map(({ path }) => path)).toEqual(["src/rule.ts"]);
 });
 
 it("lists every file in a repository whose first commit the agent made", async () => {
@@ -235,26 +245,33 @@ it("puts each change that may weaken the evidence in the receipt, committed or n
   const root = project();
   mkdirSync(join(root, "tests"));
   const rule = ["//@ requires x >= 0", "//@ ensures \\result >= 0", "//@ ensures \\result >= x",
-    "export function f(x: number): number { return x; }", ""];
+    "export function f(x: number): number { return x; }", "", "export function g(y: number): number { return y; }", ""];
   writeFileSync(join(root, "src", "rule.ts"), rule.join("\n"));
+  writeFileSync(join(root, "src", "rule.dfy"), "method f(x: int) returns (r: int)\n{\n  r := x;\n}\n");
   writeFileSync(join(root, "tests", "rule.test.ts"), "it('f', () => {});\n");
   writeFileSync(join(root, "tests", "old.test.ts"), "it('old', () => {});\n");
   commit(root, "tests");
   const run = gate(root);
   await run.input();
   writeFileSync(join(root, "src", "rule.ts"), ["//@ requires x >= 1", "//@ ensures   \\result >= x", "//@ assume x < 10",
-    "export function f(x: number): number { return x; }", ""].join("\n"));
+    "export function f(x: number): number { return x; }", "", "//@ requires y > 0",
+    "export function g(y: number): number { return y; }", "", "//@ requires z > 0",
+    "export function h(z: number): number { return z; }", ""].join("\n"));
   rmSync(join(root, "tests", "old.test.ts"));
   commit(root, "agent");
+  writeFileSync(join(root, "src", "rule.dfy"), "method f(x: int) returns (r: int)\n{\n  assume false;\n  r := x;\n}\n");
   writeFileSync(join(root, "tests", "rule.test.ts"), "it.skip('f', () => {});\n");
   writeFileSync(join(root, "src", "new.ts"), "//@ assume false\nexport const a = 1;\n");
   writeFileSync(join(root, "tests", "new.test.ts"), "it('new', () => {});\n");
   const settled = entry(await run.settle());
   expect(settled.content.split("\n").filter((line) => line.startsWith("  may weaken"))).toEqual([
     "  may weaken    src/new.ts: adds //@ assume false",
+    "  may weaken    src/rule.dfy: adds assume false;",
     "  may weaken    src/rule.ts: removes or changes //@ requires x >= 0",
     "  may weaken    src/rule.ts: removes or changes //@ ensures \\result >= 0",
+    "  may weaken    src/rule.ts: adds //@ requires x >= 1 to a function the base had",
     "  may weaken    src/rule.ts: adds //@ assume x < 10",
+    "  may weaken    src/rule.ts: adds //@ requires y > 0 to a function the base had",
     "  may weaken    tests/old.test.ts: deletes a test file",
     "  may weaken    tests/rule.test.ts: edits a test file",
   ]);
@@ -271,4 +288,16 @@ it("settles with a receipt when the only change deletes a test", async () => {
   await run.input();
   rmSync(join(root, "tests", "old.test.ts"));
   expect(entry(await run.settle()).content).toBe("Tesota receipt\n  may weaken    tests/old.test.ts: deletes a test file");
+});
+
+it("says a change too large to read was not checked for weakening, instead of listing nothing", async () => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  writeFileSync(join(root, "notes.md"), "x\n".repeat(9 * 1024 * 1024));
+  const settled = entry(await run.settle());
+  expect(settled.content).toBe(["Tesota receipt",
+    "  not checked   weakened evidence: the change is too large to check for weakening",
+    "  not verified  notes.md: no verifier covers it"].join("\n"));
+  expect((settled.details as Receipt).weakened).toBe("too_large");
 });

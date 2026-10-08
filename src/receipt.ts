@@ -14,7 +14,12 @@ export interface Receipt {
   /** False when the project has no Git repository, so nothing could tell which files changed or verify them. */
   readonly repository: boolean;
   readonly proofs: readonly { readonly path: string; readonly verdict: GateVerdict; readonly evidence: Evidence }[];
-  readonly weakened: readonly Weakening[];
+  /**
+   * The changes that may weaken the evidence, or why they could not be
+   * checked: the change from the base is larger than the gate reads
+   * (`too_large`), or Git could not show it (`unreadable`).
+   */
+  readonly weakened: readonly Weakening[] | "too_large" | "unreadable";
   /** Changed files, relative to the project, that no evidence covers. */
   readonly unverified: readonly string[];
 }
@@ -32,6 +37,7 @@ function line(path: string, verdict: GateVerdict, evidence: Evidence): string {
 
 function weakening(change: Weakening): string {
   const what = change.kind === "removed_contract" ? `removes or changes ${change.annotation}`
+    : change.kind === "added_requires" ? `adds ${change.annotation} to a function the base had`
     : change.kind === "added_assume" ? `adds ${change.annotation}`
       : change.kind === "deleted_test" ? "deletes a test file" : "edits a test file";
   return `  may weaken    ${change.path}: ${what}`;
@@ -47,7 +53,10 @@ export function renderReceipt(receipt: Receipt): string {
     "Tesota receipt",
     ...receipt.proofs.flatMap(({ path, verdict, evidence }) =>
       [line(path, verdict, evidence), `                content sha256 ${evidence.contentHash}`]),
-    ...receipt.weakened.map(weakening),
+    ...receipt.weakened === "too_large"
+      ? ["  not checked   weakened evidence: the change is too large to check for weakening"]
+      : receipt.weakened === "unreadable"
+        ? ["  not checked   weakened evidence: Git could not show the change"] : receipt.weakened.map(weakening),
     ...receipt.unverified.map((path) => `  not verified  ${path}: no verifier covers it`),
   ].join("\n");
 }

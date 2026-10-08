@@ -2,7 +2,7 @@
 
 datatype AnnotationKind = requires_ | ensures_ | assume_ | other
 
-function weakens(kind: AnnotationKind, removed: bool, matched: bool): bool
+function weakens(kind: AnnotationKind, removed: bool, matched: bool, existed: bool): bool
 {
   if matched then
     false
@@ -10,10 +10,10 @@ function weakens(kind: AnnotationKind, removed: bool, matched: bool): bool
     if removed then
       (kind.requires_? || kind.ensures_?)
     else
-      kind.assume_?
+      (kind.assume_? || (kind.requires_? && existed))
 }
 
-lemma weakens_ensures(kind: AnnotationKind, removed: bool, matched: bool)
-  ensures (weakens(kind, removed, matched) <==> (!(matched) && ((removed && (kind.requires_? || kind.ensures_?)) || (!(removed) && kind.assume_?))))
+lemma weakens_ensures(kind: AnnotationKind, removed: bool, matched: bool, existed: bool)
+  ensures (weakens(kind, removed, matched, existed) <==> (!(matched) && ((removed && (kind.requires_? || kind.ensures_?)) || (!(removed) && (kind.assume_? || (kind.requires_? && existed))))))
 {
 }

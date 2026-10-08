@@ -7,16 +7,25 @@ import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.
 import type { Evidence } from "./evidence.js";
 import { proofReport } from "./prove-tool.js";
 import { type Receipt, renderReceipt } from "./receipt.js";
-import { type Weakening, weakenedEvidence } from "./verification-changes.js";
+import { type FileChange, addsRequires, weakenedEvidence } from "./verification-changes.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
 
 const execFileAsync = promisify(execFile);
 
-async function git(root: string, args: readonly string[]): Promise<string | undefined> {
+/** Git's output in `root`; `too_large` when it passes what the gate reads, undefined when Git fails. */
+async function gitOutput(root: string, args: readonly string[]): Promise<string | "too_large" | undefined> {
   try {
     return (await execFileAsync("git", args, { cwd: root, windowsHide: true, maxBuffer: 16 * 1024 * 1024 })).stdout;
-  } catch { return undefined; }
+  } catch (error) {
+    return error instanceof Error && "code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+      ? "too_large" : undefined;
+  }
+}
+
+async function git(root: string, args: readonly string[]): Promise<string | undefined> {
+  const output = await gitOutput(root, args);
+  return output === "too_large" ? undefined : output;
 }
 
 async function gitPaths(root: string, args: readonly string[]): Promise<string[] | undefined> {
@@ -55,22 +64,36 @@ async function readIfPresent(path: string): Promise<string | undefined> {
 
 const statuses: Readonly<Record<string, ChangeStatus>> = { A: "added", D: "deleted" };
 
-/**
- * The changes from `base` that may weaken the evidence (`weakenedEvidence`).
- * A changed file the base lacks, untracked or before the first commit, counts
- * as added whole.
- */
-async function weakenings(root: string, base: string | null, changed: readonly string[]): Promise<Weakening[]> {
-  const listed = base === null ? [] : await gitPaths(root, diffFrom(base, "--name-status")) ?? [];
+/** The diff from `base` and its files, or why the gate cannot read it. */
+async function diffFromBase(root: string, base: string): Promise<ChangedFile[] | Exclude<Receipt["weakened"], readonly unknown[]>> {
+  const listed = await gitOutput(root, [...diffFrom(base, "--name-status"), "-z"]);
+  const diff = await gitOutput(root, diffFrom(base, "--unified=0"));
+  if (listed === "too_large" || diff === "too_large") return "too_large";
+  if (listed === undefined || diff === undefined) return "unreadable";
+  const fields = listed.split("\0");
   const changes: Pick<ChangedFile, "path" | "status">[] = [];
-  for (let k = 0; k + 1 < listed.length; k += 2) {
-    changes.push({ path: listed[k + 1] ?? "", status: statuses[listed[k] ?? ""] ?? "modified" });
+  for (let k = 0; k + 1 < fields.length; k += 2) {
+    changes.push({ path: fields[k + 1] ?? "", status: statuses[fields[k] ?? ""] ?? "modified" });
   }
-  const diff = base === null ? "" : await git(root, diffFrom(base, "--unified=0")) ?? "";
-  const inDiff = new Set(changes.map(({ path }) => path));
-  const whole = await Promise.all(changed.filter((path) => !inDiff.has(path)).map(async (path): Promise<ChangedFile> =>
-    ({ path, status: "added", added: (await readIfPresent(join(root, path)))?.split(/\r?\n/u) ?? [], removed: [] })));
-  return weakenedEvidence([...changedLines(diff, changes), ...whole].sort((a, b) => a.path < b.path ? -1 : 1));
+  return changedLines(diff, changes);
+}
+
+/**
+ * The changes from `base` that may weaken the evidence (`weakenedEvidence`),
+ * or why they could not be checked. A changed file the base lacks, untracked
+ * or before the first commit, counts as added whole.
+ */
+async function weakenings(root: string, base: string | null, changed: readonly string[]): Promise<Receipt["weakened"]> {
+  const diffed = base === null ? [] : await diffFromBase(root, base);
+  if (typeof diffed === "string") return diffed;
+  const inDiff = new Set(diffed.map(({ path }) => path));
+  const whole = await Promise.all(changed.filter((path) => !inDiff.has(path)).map(async (path): Promise<FileChange> => ({
+    path, status: "added", removed: [],
+    added: (await readIfPresent(join(root, path)))?.split(/\r?\n/u).map((text, k) => ({ number: k + 1, text })) ?? [],
+  })));
+  const read = await Promise.all(diffed.map(async (file): Promise<FileChange> => base === null || !addsRequires(file) ? file
+    : { ...file, content: await readIfPresent(join(root, file.path)), baseContent: await git(root, ["show", `${base}:./${file.path}`]) }));
+  return weakenedEvidence([...read, ...whole].sort((a, b) => a.path < b.path ? -1 : 1));
 }
 
 async function hasAnnotations(root: string, path: string): Promise<boolean> {
@@ -130,7 +153,7 @@ export function registerGate(pi: ExtensionAPI): void {
         display: true, details: receipt }] };
     }
     const weakened = await weakenings(ctx.cwd, from, changed);
-    if (changed.length === 0 && weakened.length === 0) return undefined;
+    if (changed.length === 0 && Array.isArray(weakened) && weakened.length === 0) return undefined;
     const signal = ctx.signal ?? new AbortController().signal;
     const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
     const judged: Receipt["proofs"][number][] = [];
