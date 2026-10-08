@@ -17,7 +17,10 @@ registry packages; lifecycle scripts are disabled.
 | `bun run check` | Run the complete repository gate |
 | `bun run formal:check` | Prove the LemmaScript rules in `src/verification/`; requires Dafny |
 
-`bun run check` does not invoke Dafny or a live model. The launcher tests run
+`bun run check` never calls a live model, and its tests that prove files run
+only where Dafny is installed. CI installs Dafny from `mise.toml` on Ubuntu
+and Windows, so those tests run there, and `bun run formal:check` runs after
+the check. The launcher tests run
 the compiled launcher and the Pi it finds. Run `bun run check`,
 `bun run formal:check` when a proved rule changed, and `git diff --check`
 before completing a change. Report what actually ran; passing checks, live
