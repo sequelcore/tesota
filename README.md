@@ -43,7 +43,9 @@ every argument to Pi, so `tesota -p "<request>"` runs one request. In the
 folder where the session ran, `tesota receipt` writes the last receipt as
 Markdown for a pull request's description or a comment, and
 `tesota receipt --json` writes it as an unsigned in-toto Statement about the
-commit `HEAD` names, for CI. Run `bun unlink` in this checkout to remove the
+commit `HEAD` names, for CI. It names who is accountable from Git's
+`user.email`, or from `--owner <login or email>`, and lists the files that
+commit changed after the receipt, which nothing in it covers. Run `bun unlink` in this checkout to remove the
 command.
 
 ## Documentation

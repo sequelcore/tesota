@@ -48,6 +48,12 @@ export interface Receipt {
    * could not be read.
    */
   readonly uncovered: readonly UncoveredLines[];
+  /**
+   * Every file changed from `base` as the run left it, relative to the
+   * project: the blob id Git would store for its content, or null when
+   * deleted; `unreadable` when Git could not tell.
+   */
+  readonly changed: readonly { readonly path: string; readonly blob: string | null }[] | "unreadable";
 }
 
 function why(evidence: Evidence): string {

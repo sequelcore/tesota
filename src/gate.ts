@@ -38,6 +38,27 @@ export async function changedFiles(root: string, base: string | null): Promise<s
   return tracked === undefined || untracked === undefined ? undefined : [...new Set([...tracked, ...untracked])].sort();
 }
 
+/**
+ * Each file changed from `base`, as the run leaves it: the blob id Git would
+ * store for its content, or null once deleted; `unreadable` when Git cannot
+ * tell. A pull request's commit holds the receipt's content exactly where its
+ * blobs match (`changedAfter`).
+ */
+async function recordedChanges(root: string, base: string | null, changed: readonly string[]): Promise<Receipt["changed"]> {
+  const deleted = base === null ? [] : await gitPaths(root, diffFrom(base, "--name-only", "--diff-filter=D"));
+  if (deleted === undefined) return "unreadable";
+  const blobs: string[] = [];
+  // In batches, to stay within the command line's length on Windows.
+  for (let k = 0; k < changed.length; k += 200) {
+    const batch = changed.slice(k, k + 200);
+    const ids = (await git(root, ["hash-object", "--", ...batch]))?.trim().split(/\r?\n/u);
+    if (ids?.length !== batch.length) return "unreadable";
+    blobs.push(...ids);
+  }
+  return [...changed.map((path, k) => ({ path, blob: blobs[k] ?? null })), ...deleted.map((path) => ({ path, blob: null }))]
+    .sort((a, b) => a.path < b.path ? -1 : 1);
+}
+
 async function readIfPresent(path: string): Promise<string | undefined> {
   try { return await readFile(path, "utf8"); } catch { return undefined; }
 }
@@ -214,7 +235,7 @@ export function registerGate(pi: ExtensionAPI): void {
     if (changed === undefined) {
       if (!mayHaveChanged) return undefined;
       const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), proofs: [],
-        contracts: [], tests: [], exercises: [], weakened: [], unverified: [], uncovered: [] };
+        contracts: [], tests: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [] };
       return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
         display: true, details: receipt }] };
     }
@@ -250,7 +271,7 @@ export function registerGate(pi: ExtensionAPI): void {
     const receipt: Receipt = { version: 1, repository: true, ...run, proofs: judged,
       ...await contractStrength(ctx, requests, sources, signal, restateWith(pi)), tests, exercises, weakened,
       unverified: changed.filter((path) => !covered.has(path)), uncovered: uncovered(sources, changes, weakened),
-      settledAt: new Date().toISOString() };
+      changed: await recordedChanges(ctx.cwd, from, changed), settledAt: new Date().toISOString() };
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
   });

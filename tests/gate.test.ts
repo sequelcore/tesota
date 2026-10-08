@@ -182,6 +182,17 @@ it("lists the changed lines of a proved file that no contract covers, and not th
   expect((settled.details as Receipt).uncovered).toEqual([{ path: "src/rule.ts", lines: [[4, 6]] }]);
 });
 
+it("records the blob of every file the run left changed, and a deleted one as null", async () => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  writeFileSync(join(root, "src", "new.md"), "# New\n");
+  rmSync(join(root, "notes.md"));
+  const blob = spawnSync("git", ["hash-object", "src/new.md"], { cwd: root, encoding: "utf8" }).stdout.trim();
+  expect((entry(await run.settle()).details as Receipt).changed).toEqual([{ path: "notes.md", blob: null },
+    { path: "src/new.md", blob }]);
+});
+
 it("measures the strength of the contracts the request changed once they prove, judged against what the operator asked", async () => {
   const root = repository({ "src/rule.ts": contract,
     "src/other.ts": "//@ ensures \\result >= 0\nexport function g(): number {\n  return 1;\n}\n" });

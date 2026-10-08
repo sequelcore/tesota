@@ -74,7 +74,8 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    an unsigned in-toto Statement about the commit `HEAD` names, with the
    predicate fields of in-toto's agentic process evidence proposal
    (in-toto/attestation#600) and the receipt under its `custom`. It names
-   the proofs and commands whose checked content the commit no longer holds.
+   the proofs and commands whose checked content the commit no longer holds,
+   and the files whose content in the commit differs from what the run left.
    The receipt lists a proved file's changed lines outside every contract
    that proved, or in one the change narrowed, as not covered, through
    `proofCovered`.
