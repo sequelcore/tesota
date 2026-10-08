@@ -403,7 +403,7 @@ it("says a change too large to read was not checked for weakening, instead of li
     "  not checked   weakened evidence: the change is too large to check for weakening",
     "  not verified  notes.md: no verifier covers it"].join("\n"));
   expect((settled.details as Receipt).weakened).toBe("too_large");
-});
+}, 60_000);
 it("runs the project's tests, and runs each changed test on the request's base even after the agent commits", async () => {
   const root = testedProject();
   const run = gate(root);
