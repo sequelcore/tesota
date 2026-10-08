@@ -204,6 +204,28 @@ it("records a turn's tool calls as they start and finish, and leaves one that ne
   recordCall(calls, { type: "tool_finished", call: "1", failed: true, output: "1 failed" });
   recordCall(calls, { type: "tool_finished", call: "2", failed: false, output: "" });
   recordCall(calls, { type: "tool_finished", call: "unknown", failed: false, output: "" });
-  expect([...calls.values()]).toEqual([{ tool: "bash", subject: "bun test", outcome: "failed" },
+  expect([...calls.values()]).toEqual([{ tool: "bash", subject: "bun test", outcome: "failed", output: "1 failed" },
     { tool: "read", subject: "a.ts", outcome: "succeeded" }, { tool: "bash", subject: "sleep 99", outcome: "unfinished" }]);
+});
+
+it("judges an obligation from the commands the agent ran and the reply it gave, when the turn changed files (#252)", () => {
+  const calls = new Map<string, ToolCallRecord>();
+  recordCall(calls, { type: "tool_started", call: "1", tool: "run_on_computer", subject: "npm run build" });
+  recordCall(calls, { type: "tool_finished", call: "1", failed: false, output: `${"x".repeat(5_000)}Built dist/app.exe` });
+  recordCall(calls, { type: "tool_started", call: "2", tool: "bash", subject: "true" });
+  recordCall(calls, { type: "tool_finished", call: "2", failed: false, output: "" });
+  const [build, quiet] = [...calls.values()];
+  // The end of the output is kept, where results print.
+  expect(build?.output).toHaveLength(2_000);
+  expect(build?.output?.endsWith("Built dist/app.exe")).toBe(true);
+  const message = reviewMessage({ ...input, reply: "Ran npm run build on your computer; check dist/app.exe.",
+    toolCalls: [...calls.values()] });
+  expect(message).toContain("The agent's final reply (untrusted; it settles only what a request asks the reply itself to say");
+  expect(message).toContain("Ran npm run build on your computer; check dist/app.exe.");
+  expect(message).toContain(`- run_on_computer npm run build\n  output, its end: ${JSON.stringify(build?.output)}`);
+  expect(message).toContain(`- bash true\n  output: none`);
+  expect(message).toContain("run_on_computer ran on the operator's computer");
+  expect(quiet?.output).toBe("");
+  // Without them, a change review reads as before.
+  expect(reviewMessage(input)).not.toContain("final reply");
 });

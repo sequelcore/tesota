@@ -271,10 +271,74 @@ plan that the agent marked done, whether it really happened.
 It judges each against the whole result, unchanged files included, as
 `met`, `partial`, `unmet` or `uncertain`, with the evidence. A plan step is
 the agent's claim, given to the reviewer as a claim to check, never as an
-account to trust. A main review that leaves a request or a claimed step
+account to trust. The reviewer also sees the agent's final reply, as an
+untrusted claim, and Tesota's record of the turn's tool calls, with the last
+2,000 characters each of the latest 20 commands' output, in the sandbox or
+on the computer (`recordCall` in `src/session-engine.ts`). So an obligation a
+command satisfies is judged from that command's output, and one about the
+reply itself, such as telling the operator what ran, from the reply; an
+`uncertain` obligation names the evidence that was missing. Without them,
+finished work read "0 of 1 done, 1 unclear" in five reviewed turns
+([#252](https://github.com/sequelcore/tesota/issues/252)). A main review that leaves a request or a claimed step
 unassessed, or assesses one that does not exist, is incomplete
 (`missingAssessments` in `src/integrations/pi-reviewer.ts`); focused lenses
 and ClaimCheck report none.
+
+**Measured command and reply evidence** on 2026-10-07 with
+`codex:gpt-6.1-sol`, medium reasoning, for reviewer and refuter. The baseline
+was `c6568360`; the candidate was `f634d75c`. The later merge of #323 changed
+none of the candidate's review, reviewer or session-engine code. Nine frozen
+cases ran twice, baseline first in the first repetition and candidate first
+in the second, with no trial retries. Commands actually ran in temporary Git
+workspaces; their activities passed through production `recordCall`, review,
+origin attribution and refutation. The request, command result and final
+reply provided the independent truth, not the reviewer's verdict.
+
+| Targeted outcome, two repetitions | Baseline | Candidate |
+| --- | --- | --- |
+| Cases judged correctly | 8/18 | 16/18 |
+| Completed work held | 0/8 | 6/8 |
+| Missing work confirmed | 6/8 | 8/8 |
+| Missing work incorrectly held | 0/8 | 0/8 |
+| Correct work incorrectly marked a confirmed gap | 0/8 | 0/8 |
+| Cut output left uncertain | 2/2 | 2/2 |
+| Input plus output tokens, cached input included | 196,392 | 229,196 |
+| Sum of review and refutation time | 413.65 s | 428.06 s |
+
+The gain came from successful coverage, a build on the computer and a complete
+reply, and from detecting an incomplete reply. Failed builds, a failed command
+printing malicious instructions and incomplete coverage were not held. A
+successful command with empty output remained uncertain in both repetitions,
+so the change does not resolve every command obligation. An initially invalid
+negative fixture actually obtained 100% line coverage, despite 50% function
+coverage; all four trials are retained but excluded, and both variants reran
+that case with a separately frozen multiline body whose observed line coverage
+was 60%. The nine valid cases include that replacement. Raw records and the
+frozen runner are retained outside the repository; these small synthetic
+measurements establish the evidence path, not general reviewer quality or
+billing cost. The additional 16.7% tokens accompanied a measured gain.
+
+The existing `live:review --set=core` and `--set=scope`, standard depth and
+the same Sol 6.1 reviewer, refuter and validator, had equal before/after
+totals: 4/4 core defects, the same one reported false positive, 4/4 planted
+claims refuted, 2/2 scope extras marked and none sent back. Neither run was
+incomplete. The shared core false positive was an operator/premise observation
+about an unrequested nonmutation change. The scope scorer reported 0/1
+introduced defects in both runs, although both confirmed the remaining
+quick-hack failure as a fixable obligation; that scorer excludes obligations
+and preexisting findings. These raw scores are preserved, not replaced by an
+adjusted score.
+
+`live:answer --stage=review --runs=1`, with Sol 6.1 for every model role,
+also had equal completed results: 13/13 known verdicts right, no misses or
+false alarms, the declined false premise left to the operator, and all four
+request counts right. Baseline/candidate review tokens were 126,485/125,648.
+The first baseline attempt stopped producing verdicts after nine cases when
+the model quota was exhausted: four verdict cases and the premise case were
+incomplete, each using zero tokens. That record is retained as unavailable
+evidence; the entire baseline evaluation ran again on 2026-10-08 after quota
+returned, without changing its code or prompts. First-pass triage was not
+measured. No global role configuration changed.
 
 **A message that only steers is no request of its own.** Each message is
 recorded verbatim, but "continue" after a stopped turn, "try again", or "ask
