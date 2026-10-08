@@ -3,22 +3,29 @@ import type { ProofOutcome } from "./proof-outcome-rule.js";
 /**
  * What the gate does with one changed file's proof when a run is about to
  * settle: a `failed` or `vacuous` proof goes back to the agent, which can fix
- * the code or the proof, unless `repeated` says it is the same failure the
- * gate last sent back for that file since the operator's input: a correction
- * that made no progress, which the gate reports instead of sending back
- * again. A proof that could not run, ran past its limit or was stopped is the
- * operator's to resolve, never the agent's.
+ * the code or the proof, unless its `failure` is one the gate already sent
+ * back for that file in this request (`sent`): a correction that made no
+ * progress, even one that alternates between failures, which the gate
+ * reports instead of sending back again. A proof that could not run, ran past
+ * its limit or was stopped is the operator's to resolve, never the agent's.
  */
 export type GateVerdict = "proved" | "send_back" | "no_progress" | "operator";
 
 //@ ensures \result === "proved" <==> outcome === "passed"
-//@ ensures \result === "send_back" <==> (outcome === "failed" || outcome === "vacuous") && !repeated
-//@ ensures \result === "no_progress" <==> (outcome === "failed" || outcome === "vacuous") && repeated
+//@ ensures \result === "send_back" <==> (outcome === "failed" || outcome === "vacuous") && !exists(k: nat, k < sent.length && sent[k] === failure)
+//@ ensures \result === "no_progress" <==> (outcome === "failed" || outcome === "vacuous") && exists(k: nat, k < sent.length && sent[k] === failure)
 //@ ensures \result === "operator" <==> (outcome === "not_started" || outcome === "timed_out" || outcome === "cancelled")
-export function gateVerdict(outcome: ProofOutcome, repeated: boolean): GateVerdict {
+export function gateVerdict(outcome: ProofOutcome, failure: string, sent: readonly string[]): GateVerdict {
   if (outcome === "passed") return "proved";
-  if (outcome === "failed" || outcome === "vacuous") return repeated ? "no_progress" : "send_back";
-  return "operator";
+  if (outcome !== "failed" && outcome !== "vacuous") return "operator";
+  let k = 0;
+  while (k < sent.length) {
+    //@ invariant 0 <= k && k <= sent.length
+    //@ invariant forall(j: nat, j < k ==> sent[j] !== failure)
+    if (sent[k] === failure) return "no_progress";
+    k = k + 1;
+  }
+  return "send_back";
 }
 
 /**

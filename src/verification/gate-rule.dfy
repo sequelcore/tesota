@@ -4,26 +4,30 @@ datatype GateVerdict = proved | send_back | no_progress | operator
 
 datatype ProofOutcome = passed | failed | vacuous | timed_out | cancelled | not_started
 
-function gateVerdict(outcome: ProofOutcome, repeated: bool): GateVerdict
+method gateVerdict(outcome: ProofOutcome, failure: string, sent: seq<string>) returns (res: GateVerdict)
+  ensures (res.proved? <==> outcome.passed?)
+  ensures (res.send_back? <==> ((outcome.failed? || outcome.vacuous?) && !(exists k: nat :: ((k < |sent|) && (sent[k] == failure)))))
+  ensures (res.no_progress? <==> ((outcome.failed? || outcome.vacuous?) && exists k: nat :: ((k < |sent|) && (sent[k] == failure))))
+  ensures (res.operator? <==> ((outcome.not_started? || outcome.timed_out?) || outcome.cancelled?))
 {
-  if outcome.passed? then
-    GateVerdict.proved
-  else
-    if (outcome.failed? || outcome.vacuous?) then
-      if repeated then
-        GateVerdict.no_progress
-      else
-        GateVerdict.send_back
-    else
-      GateVerdict.operator
-}
-
-lemma gateVerdict_ensures(outcome: ProofOutcome, repeated: bool)
-  ensures (gateVerdict(outcome, repeated).proved? <==> outcome.passed?)
-  ensures (gateVerdict(outcome, repeated).send_back? <==> ((outcome.failed? || outcome.vacuous?) && !(repeated)))
-  ensures (gateVerdict(outcome, repeated).no_progress? <==> ((outcome.failed? || outcome.vacuous?) && repeated))
-  ensures (gateVerdict(outcome, repeated).operator? <==> ((outcome.not_started? || outcome.timed_out?) || outcome.cancelled?))
-{
+  if outcome.passed? {
+    return GateVerdict.proved;
+  }
+  if ((!outcome.failed?) && (!outcome.vacuous?)) {
+    return GateVerdict.operator;
+  }
+  var k := 0;
+  while (k < |sent|)
+    invariant (0 <= k)
+    invariant (k <= |sent|)
+    invariant forall j: nat :: ((j < k) ==> (sent[j] != failure))
+  {
+    if (sent[k] == failure) {
+      return GateVerdict.no_progress;
+    }
+    k := (k + 1);
+  }
+  return GateVerdict.send_back;
 }
 
 method keepsWorking(verdicts: seq<GateVerdict>) returns (res: bool)

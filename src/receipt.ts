@@ -9,6 +9,8 @@ import type { GateVerdict } from "./verification/gate-rule.js";
  */
 export interface Receipt {
   readonly version: 0;
+  /** False when the project has no Git repository, so nothing could tell which files changed or verify them. */
+  readonly repository: boolean;
   readonly proofs: readonly { readonly path: string; readonly verdict: GateVerdict; readonly evidence: Evidence }[];
   /** Changed files, relative to the project, that no evidence covers. */
   readonly unverified: readonly string[];
@@ -22,11 +24,15 @@ function line(path: string, verdict: GateVerdict, evidence: Evidence): string {
     return `  NOT proved    ${path}: the proof ${why}`;
   }
   const what = evidence.outcome === "vacuous" ? "Dafny verified nothing" : "an obligation fails";
-  return `  NOT proved    ${path}: ${what}, the same after a correction`;
+  return `  NOT proved    ${path}: ${what}, repeating a failure already sent back`;
 }
 
 /** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */
 export function renderReceipt(receipt: Receipt): string {
+  if (!receipt.repository) {
+    return "Tesota receipt\n  not verified  this request's changes: the project has no Git repository, so Tesota " +
+      "cannot tell which files changed";
+  }
   return [
     "Tesota receipt",
     ...receipt.proofs.flatMap(({ path, verdict, evidence }) =>

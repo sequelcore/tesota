@@ -36,16 +36,16 @@ export const PROVE_GUIDELINES: readonly string[] = [
  * measurement GPT-6 Luna stopped after one failure in 2 of 5 runs of a proof
  * it could finish, where the prompt's guidance was read long before.
  */
-const retryNote = "This is not finished yet. Read the obligation that failed above, then change the code or add the " +
-  "//@ invariant or assertion it needs, and run prove again. Keep going until it passes; stop only if you can say " +
-  "why it cannot pass without changing the contract, and never loosen the contract to make it pass.";
+const retryNote = (again: string): string => "This is not finished yet. Read the obligation that failed above, then " +
+  `change the code or add the //@ invariant or assertion it needs, and ${again}. Keep going until it passes; stop only ` +
+  "if you can say why it cannot pass without changing the contract, and never loosen the contract to make it pass.";
 
 /**
  * What follows a vacuous proof: LemmaScript attaches a `//@` block only to
  * the function right below it, so anything between them drops its contracts.
  */
-const vacuousNote = "Check that every //@ requires and //@ ensures block sits directly above the function it " +
-  "describes: anything between the //@ block and the function drops its contracts. Fix that and run prove again.";
+const vacuousNote = (again: string): string => "Check that every //@ requires and //@ ensures block sits directly " +
+  `above the function it describes: anything between the //@ block and the function drops its contracts. Fix that and ${again}.`;
 
 const skippedFolders = new Set(["node_modules", ".git", "dist", "build", "out", "coverage"]);
 const scanLimit = 20_000;
@@ -79,15 +79,20 @@ export function hasContracts(root: string): boolean {
   return false;
 }
 
-/** A proof's result for the agent, from `prove` or the gate: how it ended, what LemmaScript printed and what to do next. */
-export function proofReport(path: string, proof: Evidence): string {
+/**
+ * A proof's result for the agent, from `prove` or the gate: how it ended,
+ * what LemmaScript printed and what to do next, which names `prove` only
+ * when the agent has it (`proveActive`); otherwise the gate proves again.
+ */
+export function proofReport(path: string, proof: Evidence, proveActive: boolean): string {
+  const again = proveActive ? "run prove again" : "finish your turn, and Tesota will prove the file again";
   const how = proof.outcome === "passed" ? `Proved: every //@ contract in ${path} holds.`
     : proof.outcome === "failed" ? `Not proved: an obligation in ${path} failed.`
     : proof.outcome === "timed_out" ? `The proof of ${path} ran past its time limit; that is not a pass.`
     : proof.outcome === "cancelled" ? `The proof of ${path} was stopped.`
     : proof.outcome === "vacuous" ? `Not proved: Dafny verified nothing in ${path}, so none of its contracts was proved.`
     : `Not proved: the proof of ${path} could not run.`;
-  const next = proof.outcome === "failed" ? `\n\n${retryNote}` : proof.outcome === "vacuous" ? `\n\n${vacuousNote}` : "";
+  const next = proof.outcome === "failed" ? `\n\n${retryNote(again)}` : proof.outcome === "vacuous" ? `\n\n${vacuousNote(again)}` : "";
   return `${how}\n\n${proof.output}${next}`;
 }
 
@@ -122,6 +127,6 @@ export const proveTool: ToolDefinition<typeof parameters> = {
     let source: string;
     try { source = await readFile(absolute, "utf8"); } catch { return text(`${path} does not exist.`); }
     if (annotations(source).length === 0) return text(`${path} has no //@ annotations, so there is nothing to prove.`);
-    return text(proofReport(path, await proveFile(ctx.cwd, path, signal ?? new AbortController().signal)));
+    return text(proofReport(path, await proveFile(ctx.cwd, path, signal ?? new AbortController().signal), true));
   },
 };

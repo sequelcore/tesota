@@ -46,13 +46,18 @@ function project(): string {
 interface Settled { entries?: { customType: string; content: string; details?: unknown }[]; continue?: boolean }
 
 /** The gate's handlers on a fake Pi, run as Pi runs them in `root`. */
-function gate(root: string): { input: (source?: string) => void; agentStart: () => void; settle: (outcome?: string) => Promise<Settled | undefined> } {
+function gate(root: string, active = ["read", "edit", "prove"]): {
+  input: (source?: string) => void; agentStart: () => void; tool: (name: string) => void;
+  settle: (outcome?: string) => Promise<Settled | undefined>;
+} {
   const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
-  registerGate({ on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); } } as never);
+  registerGate({ on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
+    getActiveTools: () => active } as never);
   const ctx = { cwd: root, signal: undefined };
   return {
     input: (source = "interactive") => { handlers.get("input")?.({ type: "input", text: "fix it", source }, ctx); },
     agentStart: () => { handlers.get("agent_start")?.({ type: "agent_start" }, ctx); },
+    tool: (toolName) => { handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName }, ctx); },
     settle: async (outcome = "completed") =>
       await handlers.get("agent_before_settle")?.({ type: "agent_before_settle", outcome }, ctx) as Settled | undefined,
   };
@@ -65,12 +70,12 @@ function entry(settled: Settled | undefined): { customType: string; content: str
 }
 
 it("sends a failed or vacuous proof back, and lets the operator resolve one that could not run", () => {
-  expect(gateVerdict("passed", false)).toBe("proved");
-  expect(gateVerdict("failed", false)).toBe("send_back");
-  expect(gateVerdict("vacuous", false)).toBe("send_back");
-  expect(gateVerdict("failed", true)).toBe("no_progress");
-  expect(gateVerdict("not_started", false)).toBe("operator");
-  expect(gateVerdict("timed_out", false)).toBe("operator");
+  expect(gateVerdict("passed", "", [])).toBe("proved");
+  expect(gateVerdict("failed", "A", [])).toBe("send_back");
+  expect(gateVerdict("vacuous", "B", ["A"])).toBe("send_back");
+  expect(gateVerdict("failed", "A", ["A", "B"])).toBe("no_progress");
+  expect(gateVerdict("not_started", "A", [])).toBe("operator");
+  expect(gateVerdict("timed_out", "A", ["A"])).toBe("operator");
   expect(keepsWorking(["proved", "operator", "no_progress"])).toBe(false);
   expect(keepsWorking(["proved", "send_back"])).toBe(true);
 });
@@ -102,6 +107,7 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   expect(entry(failed).customType).toBe("tesota-gate");
   expect(entry(failed).content).toContain("Tesota: src/rule.ts does not prove yet.");
   expect(entry(failed).content).toContain("This is not finished yet.");
+  expect(entry(failed).content).toContain("and run prove again.");
   scripted.set("src/rule.ts", { outcome: "vacuous", output: "0 verified, 0 errors" });
   expect((await run.settle())?.continue).toBe(true);
   scripted.delete("src/rule.ts");
@@ -115,17 +121,22 @@ it("keeps the agent working while a changed contract fails, and settles with a r
     .toEqual([["src/rule.ts", "proved", "hash of src/rule.ts"]]);
 });
 
-it("stops on a failure repeated after a correction, and forgets failures on the operator's input, not on agent_start", async () => {
+it("stops on any failure already sent back, alternating ones included, and forgets them on the operator's input only", async () => {
   const root = project();
   const run = gate(root);
   run.input();
   writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
-  scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
+  scripted.set("src/rule.ts", { outcome: "failed", output: "A" });
   expect((await run.settle())?.continue).toBe(true);
   run.agentStart();
+  scripted.set("src/rule.ts", { outcome: "failed", output: "B" });
+  expect((await run.settle())?.continue).toBe(true);
+  run.agentStart();
+  scripted.set("src/rule.ts", { outcome: "failed", output: "A" });
   const stuck = await run.settle();
   expect(stuck?.continue).toBeUndefined();
-  expect(entry(stuck).content).toContain("NOT proved    src/rule.ts: an obligation fails, the same after a correction");
+  expect(entry(stuck).content).toContain(
+    "NOT proved    src/rule.ts: an obligation fails, repeating a failure already sent back");
   expect((entry(stuck).details as Receipt).proofs.map(({ verdict }) => verdict)).toEqual(["no_progress"]);
   run.input("extension");
   expect((await run.settle())?.continue).toBeUndefined();
@@ -142,6 +153,35 @@ it("reports a proof that could not run to the operator instead of sending it bac
   expect(settled?.continue).toBeUndefined();
   expect(entry(settled).content).toContain(
     "NOT proved    src/rule.ts: the proof could not run: Dafny is not installed, so nothing was proved.");
+});
+
+it("tells the agent to finish its turn instead of running prove when prove is not active", async () => {
+  const root = project();
+  const run = gate(root, ["read", "edit"]);
+  writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
+  scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
+  const failed = entry(await run.settle()).content;
+  expect(failed).toContain("and finish your turn, and Tesota will prove the file again.");
+  expect(failed).not.toContain("prove again");
+  scripted.set("src/rule.ts", { outcome: "vacuous", output: "0 verified, 0 errors" });
+  expect(entry(await run.settle()).content).toContain("Fix that and finish your turn, and Tesota will prove the file again.");
+});
+
+it("tells the operator outside Git that changes could not be verified, once a tool may have changed files", async () => {
+  const outside = mkdtempSync(join(tmpdir(), "tesota-gate-"));
+  roots.push(outside);
+  const run = gate(outside);
+  run.input();
+  run.tool("read");
+  expect(await run.settle()).toBeUndefined();
+  run.tool("edit");
+  const settled = entry(await run.settle());
+  expect(settled.customType).toBe("tesota-receipt");
+  expect(settled.content).toBe("Tesota receipt\n  not verified  this request's changes: the project has no Git " +
+    "repository, so Tesota cannot tell which files changed");
+  expect((settled.details as Receipt).repository).toBe(false);
+  run.input();
+  expect(await run.settle()).toBeUndefined();
 });
 
 it("proves a contract file whose .dfy alone changed, and leaves runs that did not complete alone", async () => {

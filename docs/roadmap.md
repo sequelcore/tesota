@@ -31,8 +31,8 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    guidance.
 3. **The gate and the receipt.** Done in #339: a gate at
    `agent_before_settle` sends a failed or vacuous proof of a changed file
-   back to the agent and stops when a correction repeats the failure; a
-   proof that could not run goes to the operator. Receipt v0 lists each
+   back to the agent and stops when a correction repeats any failure
+   already sent back; a proof that could not run goes to the operator. Receipt v0 lists each
    proof with its content hash and the changed files nothing verified.
 4. **Weakened evidence.** A removed or changed `requires` or `ensures`, an
    added `assume`, and a deleted or edited test, from the diff against the
