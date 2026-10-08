@@ -26,22 +26,29 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun run build && vitest run",
     "lint": "oxlint --config .oxlintrc.json --deny-warnings src tests",
-    "formal:check": "lsc check --backend=dafny src/verification/check-origin-rule.ts && lsc check --backend=dafny src/verification/proof-cover-rule.ts && lsc check --backend=dafny src/verification/pi-version-rule.ts",
+    "formal:check": "lsc check --backend=dafny src/verification/check-origin-rule.ts && lsc check --backend=dafny src/verification/proof-cover-rule.ts && lsc check --backend=dafny src/verification/pi-version-rule.ts && lsc check --backend=dafny src/verification/proof-outcome-rule.ts",
     "check": "bun run typecheck && bun run test && bun run lint"
   },
+  "dependencies": {
+    "lemmascript": "0.6.4"
+  },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=1.1.0"
+    "@earendil-works/pi-coding-agent": ">=1.1.0",
+    "typebox": "*"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "typebox": {
       "optional": true
     }
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.1.0",
     "@types/node": "24.10.0",
-    "lemmascript": "0.6.4",
     "oxlint": "1.82.0",
+    "typebox": "1.3.27",
     "typescript": "7.0.2",
     "vitest": "4.1.11"
   }
