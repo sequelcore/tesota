@@ -25,8 +25,12 @@ observations and human acceptance are different claims.
 
 Tesota is a Pi package. Pi loads its extension from `src/extension.ts`, which
 the `pi` manifest in `package.json` names. The `tesota` command, built to
-`dist/cli.js`, finds the Pi installed beside it, checks it against the
-minimum version in `peerDependencies`, and runs it with the package loaded.
+`dist/cli.js`, finds the Pi installed beside it, or else the one the first
+`pi` on PATH runs, checks it against the minimum version in
+`peerDependencies`, and runs it with the package loaded. It runs Pi's script
+with Node and never a package manager's shim, such as npm's `pi.cmd`, so the
+operator's arguments never pass through a shell; a `pi` that is not an
+installed Pi package, such as a standalone binary, is not used.
 Pi is an optional peer dependency, never a runtime dependency, so the package
 uses the operator's Pi; the development copy in `devDependencies` must meet
 the minimum, which a test checks. Build before `bun link`; later builds
