@@ -4,14 +4,21 @@ import { spawn } from "node:child_process";
 import { constants } from "node:os";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { installedPi, minimumPiVersion, piProblem } from "./pi-install.js";
+import { installedPi, minimumPiVersion, missingExtensions, piOnPath, piProblem } from "./pi-install.js";
 
 /**
  * The `tesota` command: Pi with Tesota's package loaded, every argument
- * passed through to Pi.
+ * passed through to Pi. The Pi installed beside Tesota comes first, then the
+ * one on PATH.
  */
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const pi = installedPi(packageRoot);
+const missing = missingExtensions(packageRoot);
+if (missing.length > 0) {
+  process.stderr.write(`Tesota's installation is incomplete: its Pi extension is missing (${missing.join(", ")}). ` +
+    "Reinstall Tesota.\n");
+  process.exit(1);
+}
+const pi = installedPi(packageRoot) ?? piOnPath(process.env["PATH"] ?? "", process.platform);
 const problem = piProblem(pi, minimumPiVersion(packageRoot));
 if (pi === undefined || problem !== undefined) {
   process.stderr.write(`${problem}\n`);

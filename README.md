@@ -28,8 +28,8 @@ bun run check
 bun link
 ```
 
-Tesota runs inside Pi 1.1.0 or later, installed beside it; in a checkout,
-`bun install` provides one. `tesota` opens Pi with Tesota loaded and passes
+Tesota runs inside Pi 1.1.0 or later, installed beside it or on PATH; in a
+checkout, `bun install` provides one. `tesota` opens Pi with Tesota loaded and passes
 every argument to Pi, so `tesota -p "<request>"` runs one request. Run
 `bun unlink` in this checkout to remove the command.
 
