@@ -39,8 +39,9 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    proof with its content hash and the changed files nothing verified.
 4. **Weakened evidence.** Done in #341: the gate measures changes from the
    commit the request started at, so an agent's commit hides nothing, and
-   the receipt lists a removed or changed `requires` or `ensures`, an added
-   `assume`, and a deleted or edited test.
+   the receipt lists a removed or changed `requires` or `ensures`, a
+   `requires` added to an existing function, an added `assume` in source or
+   a `.dfy`, and a deleted or edited test.
 5. **Test rung.** Find and run the project's tests; a changed or added test
    that also passes on the base is reported as not exercising the change.
 6. **Contract strength.** Proof-based mutation and ClaimCheck against the
