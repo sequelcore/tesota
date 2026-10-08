@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type TObject, type TString, Type } from "typebox";
+import type { Evidence } from "./evidence.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
 
 /**
@@ -78,6 +79,18 @@ export function hasContracts(root: string): boolean {
   return false;
 }
 
+/** A proof's result for the agent, from `prove` or the gate: how it ended, what LemmaScript printed and what to do next. */
+export function proofReport(path: string, proof: Evidence): string {
+  const how = proof.outcome === "passed" ? `Proved: every //@ contract in ${path} holds.`
+    : proof.outcome === "failed" ? `Not proved: an obligation in ${path} failed.`
+    : proof.outcome === "timed_out" ? `The proof of ${path} ran past its time limit; that is not a pass.`
+    : proof.outcome === "cancelled" ? `The proof of ${path} was stopped.`
+    : proof.outcome === "vacuous" ? `Not proved: Dafny verified nothing in ${path}, so none of its contracts was proved.`
+    : `Not proved: the proof of ${path} could not run.`;
+  const next = proof.outcome === "failed" ? `\n\n${retryNote}` : proof.outcome === "vacuous" ? `\n\n${vacuousNote}` : "";
+  return `${how}\n\n${proof.output}${next}`;
+}
+
 function text(content: string): { content: { type: "text"; text: string }[]; details: undefined } {
   return { content: [{ type: "text", text: content }], details: undefined };
 }
@@ -109,14 +122,6 @@ export const proveTool: ToolDefinition<typeof parameters> = {
     let source: string;
     try { source = await readFile(absolute, "utf8"); } catch { return text(`${path} does not exist.`); }
     if (annotations(source).length === 0) return text(`${path} has no //@ annotations, so there is nothing to prove.`);
-    const proof = await proveFile(ctx.cwd, path, signal ?? new AbortController().signal);
-    const how = proof.outcome === "passed" ? `Proved: every //@ contract in ${path} holds.`
-      : proof.outcome === "failed" ? `Not proved: an obligation in ${path} failed.`
-      : proof.outcome === "timed_out" ? `The proof of ${path} ran past its time limit; that is not a pass.`
-      : proof.outcome === "cancelled" ? `The proof of ${path} was stopped.`
-      : proof.outcome === "vacuous" ? `Not proved: Dafny verified nothing in ${path}, so none of its contracts was proved.`
-      : `Not proved: the proof of ${path} could not run.`;
-    const next = proof.outcome === "failed" ? `\n\n${retryNote}` : proof.outcome === "vacuous" ? `\n\n${vacuousNote}` : "";
-    return text(`${how}\n\n${proof.output}${next}`);
+    return text(proofReport(path, await proveFile(ctx.cwd, path, signal ?? new AbortController().signal)));
   },
 };
