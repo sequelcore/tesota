@@ -40,7 +40,7 @@ it("knows a model's lab through the gateways, and the same model on any route", 
   expect(sameModel("openrouter:anthropic/claude-opus-5.5", "anthropic:claude-opus-5-5")).toBe(true);
   expect(sameModel("opencode:gpt-6-luna", "codex:gpt-6-luna")).toBe(true);
   expect(sameModel("opencode-go:glm-5.3", "openrouter:z-ai/glm-5.3")).toBe(true);
-  expect(sameModel("openrouter:qwen/qwen3.8-27b:free", "openrouter:qwen/qwen3.8-27b")).toBe(true);
+  expect(sameModel("openrouter:google/gemma-4-31b-it:free", "openrouter:google/gemma-4-31b-it")).toBe(true);
   expect(sameModel("opencode:claude-opus-5-5", "claude-code:opus")).toBe(true);
   expect(sameModel("opencode:glm-5.3", "opencode:kimi-k3")).toBe(false);
   const warned = judgeWarnings(choices({ agent: "opencode-go:kimi-k3", reviewer: "openrouter:moonshotai/kimi-k2.6",

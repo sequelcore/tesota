@@ -38,8 +38,8 @@ it("refuses a choice that is not route:model, or a model the route does not have
 
 it("opens the gateway routes on Pi, with one OpenCode key for Zen and Go", async () => {
   const store = credentials();
-  const router = await openModelTarget("openrouter:qwen/qwen3.8-27b:free", undefined, store);
-  expect(router.engine === "pi" && [router.model.provider, router.model.id]).toEqual(["openrouter", "qwen/qwen3.8-27b:free"]);
+  const router = await openModelTarget("openrouter:google/gemma-4-31b-it:free", undefined, store);
+  expect(router.engine === "pi" && [router.model.provider, router.model.id]).toEqual(["openrouter", "google/gemma-4-31b-it:free"]);
   const zen = await openModelTarget("opencode:gpt-6-luna", undefined, store);
   expect(zen.engine === "pi" && [zen.model.provider, zen.model.id]).toEqual(["opencode", "gpt-6-luna"]);
   const go = await openModelTarget("opencode-go:glm-5.3@high", undefined, store);
@@ -77,7 +77,7 @@ it("names Tesota, not Pi, to the gateways, and gives OpenCode the conversation i
   await store.modify("opencode", async () => ({ type: "api_key", key: "TEST_OPENCODE_KEY" }));
   await store.modify("openrouter", async () => ({ type: "api_key", key: "TEST_OPENROUTER_KEY" }));
   try {
-    for (const choice of ["opencode-go:glm-5.3", "openrouter:qwen/qwen3.8-27b:free"]) {
+    for (const choice of ["opencode-go:glm-5.3", "openrouter:google/gemma-4-31b-it:free"]) {
       const target = await openModelTarget(choice, undefined, store);
       if (target.engine !== "pi") throw new Error("expected Pi");
       const session = await CodingSession.start({ cwd: root, modelRuntime: target.modelRuntime,

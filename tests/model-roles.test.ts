@@ -52,11 +52,11 @@ it("reads a reasoning level after the model, and offers only the levels each mod
   const path = file();
   expect(chooseModel("reviewer", "codex:gpt-6-sol@xhigh", ids, path).reviewer).toBe("codex:gpt-6-sol@xhigh");
   expect(() => chooseModel("agent", "claude-code:haiku@high", ids, path)).toThrow("claude-code:haiku@high is not offered");
-  // The real catalogues: Astra has no level below minimal that Tesota offers, and Haiku through Claude Code has no effort.
+  // The real catalogues: Astra has no level below minimal that Tesota offers, and Haiku 5.5 through Claude Code takes effort.
   const real = offeredModels();
   expect(real.find((model) => model.id === "codex:gpt-6-astra")?.reasoning).toEqual(["low", "medium", "high", "xhigh", "max"]);
   expect(real.find((model) => model.id === "claude-code:opus")?.reasoning).toEqual(["low", "medium", "high", "xhigh", "max"]);
-  expect(real.find((model) => model.id === "claude-code:haiku")?.reasoning).toEqual([]);
+  expect(real.find((model) => model.id === "claude-code:haiku")?.reasoning).toEqual(["low", "medium", "high", "xhigh", "max"]);
 });
 
 it("gives every role the default until the operator chooses, with explorers and the advisor off", () => {
@@ -153,7 +153,7 @@ it("lists each role with who pays for it and the model's list price, and sets on
 });
 
 it("reads OpenRouter's vendor/model:variant ids only on OpenRouter, and OpenCode's ids on Zen and Go", () => {
-  expect(parseModelChoice("openrouter:qwen/qwen3.8-27b:free")).toEqual({ route: "openrouter", kind: "openrouter", model: "qwen/qwen3.8-27b:free" });
+  expect(parseModelChoice("openrouter:google/gemma-4-31b-it:free")).toEqual({ route: "openrouter", kind: "openrouter", model: "google/gemma-4-31b-it:free" });
   expect(parseModelChoice("openrouter:anthropic/claude-opus-5.5@high"))
     .toEqual({ route: "openrouter", kind: "openrouter", model: "anthropic/claude-opus-5.5", reasoning: "high" });
   expect(parseModelChoice("openrouter:auto")).toEqual({ route: "openrouter", kind: "openrouter", model: "auto" });
@@ -167,7 +167,7 @@ it("reads OpenRouter's vendor/model:variant ids only on OpenRouter, and OpenCode
 
 it("offers the gateways' models, with who pays and what a free model's provider may do with your code", () => {
   const real = offeredModels();
-  for (const id of ["openrouter:qwen/qwen3.8-27b:free", "openrouter:anthropic/claude-opus-5.5", "opencode:gpt-6-luna",
+  for (const id of ["openrouter:google/gemma-4-31b-it:free", "openrouter:anthropic/claude-opus-5.5", "opencode:gpt-6-luna",
     "opencode-go:glm-5.3", "opencode-go:muse-spark-1.3-contributor"]) {
     expect(real.some((model) => model.id === id), id).toBe(true);
   }
@@ -177,10 +177,10 @@ it("offers the gateways' models, with who pays and what a free model's provider 
   const find = (id: string): OfferedModel | undefined => real.find((model) => model.id === id);
   expect(modelCost(find("opencode:gpt-6-luna"))).toBe("your OpenCode Zen balance, $0.1 in and $0.5 out per million tokens");
   expect(modelCost(find("opencode-go:glm-5.3"))).toMatch(/^your OpenCode Go subscription's limits; list price/u);
-  expect(modelCost(find("openrouter:qwen/qwen3.8-27b:free"))).toMatch(/^free on OpenRouter/u);
+  expect(modelCost(find("openrouter:google/gemma-4-31b-it:free"))).toMatch(/^free on OpenRouter/u);
   // OpenRouter's own routers pick a model per request, so no one price applies.
   expect(modelCost(find("openrouter:auto"))).toBe("your OpenRouter credits; the price is the model it picks");
-  for (const id of ["openrouter:qwen/qwen3.8-27b:free", "openrouter:openrouter/free", "opencode-go:muse-spark-1.3-contributor"]) {
+  for (const id of ["openrouter:google/gemma-4-31b-it:free", "openrouter:openrouter/free", "opencode-go:muse-spark-1.3-contributor"]) {
     expect(dataNotice(id), id).toMatch(/may keep your prompts and code/u);
   }
   for (const id of ["openrouter:anthropic/claude-opus-5.5", "opencode:gpt-6-luna", "opencode-go:glm-5.3", "codex:gpt-6-luna"]) {
@@ -194,7 +194,7 @@ it("lists a large route by count, and all of its models on request", () => {
   expect(writes.join("")).toMatch(/openrouter: \d+ models, \d+ of them free; tesota models openrouter lists them/u);
   writes.length = 0;
   expect(runModelsCommand(["openrouter"], (text) => { writes.push(text); }, offeredModels())).toBe(0);
-  expect(writes.join("")).toContain("qwen/qwen3.8-27b:free");
+  expect(writes.join("")).toContain("google/gemma-4-31b-it:free");
   writes.length = 0;
   expect(runModelsCommand(["reviewer", "codex:gpt-6-luna"], (text) => { writes.push(text); }, offered)).toBe(2);
   expect(writes.join("")).toContain("Usage: tesota models [<");
