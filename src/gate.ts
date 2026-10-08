@@ -1,7 +1,6 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
@@ -11,16 +10,30 @@ import { type FileChange, addsRequires, weakenedEvidence } from "./verification-
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
 
-const execFileAsync = promisify(execFile);
+const outputLimit = 16 * 1024 * 1024;
 
-/** Git's output in `root`; `too_large` when it passes what the gate reads, undefined when Git fails. */
-async function gitOutput(root: string, args: readonly string[]): Promise<string | "too_large" | undefined> {
-  try {
-    return (await execFileAsync("git", args, { cwd: root, windowsHide: true, maxBuffer: 16 * 1024 * 1024 })).stdout;
-  } catch (error) {
-    return error instanceof Error && "code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
-      ? "too_large" : undefined;
-  }
+/**
+ * Git's output in `root`; `too_large` when it passes what the gate reads,
+ * undefined when Git fails. Past the limit it closes Git's output and waits
+ * for Git to exit on the broken pipe instead of killing it: on Windows the
+ * `git` on PATH can be a launcher, and killing it would leave the Git it
+ * started running in the project after the gate moved on.
+ */
+function gitOutput(root: string, args: readonly string[]): Promise<string | "too_large" | undefined> {
+  return new Promise((settle) => {
+    const child = spawn("git", [...args], { cwd: root, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    const chunks: Buffer[] = [];
+    let size = 0;
+    child.stdout.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > outputLimit) child.stdout.destroy();
+      else chunks.push(chunk);
+    });
+    child.once("error", () => { settle(undefined); });
+    child.once("close", (status) => {
+      settle(size > outputLimit ? "too_large" : status === 0 ? Buffer.concat(chunks).toString("utf8") : undefined);
+    });
+  });
 }
 
 async function git(root: string, args: readonly string[]): Promise<string | undefined> {
