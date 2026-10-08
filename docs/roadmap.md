@@ -11,8 +11,9 @@ evidence that its change does what was asked. It ships as a Pi package and a
 `tesota` command that opens Pi with it. The harness was removed in
 [#334](https://github.com/sequelcore/tesota/issues/334). In a project with
 LemmaScript contracts the package gives the agent `prove`
-([#337](https://github.com/sequelcore/tesota/issues/337)); nothing yet stops
-an agent that calls an unproved change done. A prototype on the
+([#337](https://github.com/sequelcore/tesota/issues/337)), holds the run
+open while a changed file's contracts do not prove, and ends it with a
+receipt ([#339](https://github.com/sequelcore/tesota/issues/339)). A prototype on the
 `proto/verification-layer` branch confirmed that Pi 1.1's extension API
 carries the design.
 
@@ -28,9 +29,11 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    a content hash, a LemmaScript adapter that regenerates before it checks
    and treats "0 verified" as not proved, and `prove` with the measured
    guidance.
-3. **The gate and the receipt.** A gate at `agent_before_settle` that keeps
-   the agent working while the evidence fails, and stops when a correction
-   makes no progress; a receipt bound to the content.
+3. **The gate and the receipt.** Done in #339: a gate at
+   `agent_before_settle` sends a failed or vacuous proof of a changed file
+   back to the agent and stops when a correction repeats any failure
+   already sent back; a proof that could not run goes to the operator. Receipt v0 lists each
+   proof with its content hash and the changed files nothing verified.
 4. **Weakened evidence.** A removed or changed `requires` or `ensures`, an
    added `assume`, and a deleted or edited test, from the diff against the
    base.
