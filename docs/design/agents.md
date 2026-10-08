@@ -417,7 +417,7 @@ Tesota.
 
 **The gateways** serve many labs' models through Pi's own
 providers. OpenRouter names a model `vendor/model`, with a `:variant` such
-as `:free` (`openrouter:qwen/qwen3.8-27b:free`); only that route accepts the
+as `:free` (`openrouter:google/gemma-4-31b-it:free`); only that route accepts the
 slash and the variant. Tesota names itself to them, not Pi: OpenCode asks
 every client for its own user agent and a stable `x-opencode-session` per
 conversation, so the model carries `tesota/<version>` and

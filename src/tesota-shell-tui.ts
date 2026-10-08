@@ -1,4 +1,4 @@
-import { TuiAltScreen, visibleWidth, type Terminal } from "@earendil-works/pi-tui";
+import { TuiAltScreen, visibleWidth, type ProgramStatus, type Terminal } from "@earendil-works/pi-tui";
 import { colorText, surfaceText } from "./tesota-shell-theme.js";
 
 /** Fades the layout beneath the overlays while a panel is open, as a web page dims behind a dialog. */
@@ -134,4 +134,5 @@ export class FocusReportingTerminal implements Terminal {
   clearScreen(): void { this.#terminal.clearScreen(); }
   setTitle(title: string): void { this.#terminal.setTitle(title); }
   setProgress(active: boolean): void { this.#terminal.setProgress(active); }
+  setProgramStatus(status: ProgramStatus): void { this.#terminal.setProgramStatus(status); }
 }

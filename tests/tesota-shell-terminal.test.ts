@@ -36,6 +36,7 @@ class TestTerminal implements Terminal {
   readonly titles: string[] = [];
   setTitle(title: string): void { this.titles.push(title); }
   setProgress(_active: boolean): void {}
+  setProgramStatus(): void {}
   send(data: string): void { this.input?.(data); }
   resizeTo(columns: number, rows: number): void {
     this.columns = columns;

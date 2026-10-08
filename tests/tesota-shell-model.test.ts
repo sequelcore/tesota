@@ -144,7 +144,7 @@ it("starts a new conversation on another engine, says so, and sends the brief wi
 it("warns when the agent switches to a free model whose provider may keep the code", async () => {
   const { created, said } = shell();
   await created.session("session").work("Add a retry limit.");
-  await created.agentModel?.change("session", "openrouter:qwen/qwen3.8-27b:free");
+  await created.agentModel?.change("session", "openrouter:google/gemma-4-31b-it:free");
   expect(agents[0]?.switchModel).toHaveBeenCalled();
   expect(said()).toContain("Free model: its provider may keep your prompts and code");
   created.dispose?.();
@@ -194,7 +194,7 @@ it("refuses a model no route offers and changes nothing", async () => {
   // A reasoning level the model accepts is a switch on the same engine; one it does not is refused.
   await created.agentModel?.change("session", "codex:gpt-6-luna@high");
   expect(record.agent).toBe("codex:gpt-6-luna@high");
-  await created.agentModel?.change("session", "claude-code:haiku@high");
+  await created.agentModel?.change("session", "claude-code:claude-haiku-4-5@high");
   expect(replies).toHaveBeenLastCalledWith("session", expect.stringContaining("is not offered"), "warning");
   created.dispose?.();
 });
