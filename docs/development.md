@@ -55,10 +55,12 @@ so it holds no run, and a request that ran a tool that may change files ends
 with a receipt saying its changes were not verified. Once no proof goes back, the gate runs the commands that
 `suggestChecks` in `src/projects.ts` finds for the projects that own the
 changed files, in Pi's shell, stopping every process a command started when
-it runs past its limit or is cancelled. It reads the failing tests from the
+it runs past its limit or is cancelled; `src/process.ts` starts and stops
+these processes, and LemmaScript's and Dafny's for a proof too. It reads the failing tests from the
 JUnit XML reports a command writes during the run, and sends a failure back
 until the set of failing tests repeats one already sent; a command that
-writes no report goes back once. Then it runs each changed or added test file
+writes no report goes back once. Then it runs each changed or added test file,
+snapshots aside,
 over the request's base in a Git worktree in the computer's temporary
 folder, with the checkout's `node_modules` linked in, and gives no verdict
 there when the change touches `package.json` or a lockfile
