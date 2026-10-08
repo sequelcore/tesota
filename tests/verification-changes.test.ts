@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { type AddedLine, changedLines } from "../src/diff-lines.js";
-import { weakenedEvidence } from "../src/verification-changes.js";
+import { bodilessLemmas, weakenedEvidence } from "../src/verification-changes.js";
 import { weakens } from "../src/verification/weakening-rule.js";
 
 const numbered = (...lines: string[]): AddedLine[] => lines.map((text, k) => ({ number: k + 1, text }));
@@ -70,6 +70,31 @@ it("flags weakened contracts, added assumptions and deleted or edited tests, and
     { path: "tests/tax.spec.tsx", kind: "deleted_test" },
     { path: "app/test_orders.py", kind: "edited_test" },
     { path: "internal/orders_test.go", kind: "edited_test" },
+  ]);
+});
+
+it("finds lemmas declared without a body, whatever their attributes, and not those with one", () => {
+  const dafny = [
+    "lemma {:axiom} Trusted(x: int)", "  ensures x > 0", "",
+    "ghost lemma Bare(x: int) ensures x < 0", "method M() {", "}", "",
+    "lemma Proved(x: int)", "  ensures x == x", "{", "}", "",
+    "lemma Inline() ensures true {}",
+    "lemma Brace(s: set<int>)", "  ensures s <= s {", "}",
+    "// lemma Commented()", "/* lemma Hidden()", "*/",
+    "module Inner {", "  lemma Last()", "}",
+  ].join("\n");
+  expect(bodilessLemmas(dafny)).toEqual(["Trusted", "Bare", "Last"]);
+});
+
+it("flags an {:axiom} and a lemma left without a body in a proof, unless the base had it so", () => {
+  const baseContent = "lemma Old()\n  ensures true\n\nlemma Kept()\n  ensures true\n{\n}\n";
+  const content = "lemma Old()\n  ensures true\n\nlemma Kept()\n  ensures true\n\nlemma {:axiom} New()\n  ensures false\n";
+  expect(weakenedEvidence([{ path: "src/rule.dfy", status: "modified", removed: ["{", "}"],
+    added: [{ number: 7, text: "lemma {:axiom} New()" }, { number: 8, text: "  ensures false" },
+      { number: 9, text: "  // not {:axiom} here" }], content, baseContent }])).toEqual([
+    { path: "src/rule.dfy", kind: "added_assume", annotation: "lemma {:axiom} New()" },
+    { path: "src/rule.dfy", kind: "added_assume", annotation: "lemma Kept without a body" },
+    { path: "src/rule.dfy", kind: "added_assume", annotation: "lemma New without a body" },
   ]);
 });
 

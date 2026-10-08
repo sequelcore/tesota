@@ -6,7 +6,7 @@ import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.
 import type { Evidence } from "./evidence.js";
 import { proofReport } from "./prove-tool.js";
 import { type Receipt, renderReceipt } from "./receipt.js";
-import { type FileChange, addsRequires, weakenedEvidence } from "./verification-changes.js";
+import { type FileChange, needsContent, weakenedEvidence } from "./verification-changes.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
 
@@ -100,11 +100,12 @@ async function weakenings(root: string, base: string | null, changed: readonly s
   const diffed = base === null ? [] : await diffFromBase(root, base);
   if (typeof diffed === "string") return diffed;
   const inDiff = new Set(diffed.map(({ path }) => path));
-  const whole = await Promise.all(changed.filter((path) => !inDiff.has(path)).map(async (path): Promise<FileChange> => ({
-    path, status: "added", removed: [],
-    added: (await readIfPresent(join(root, path)))?.split(/\r?\n/u).map((text, k) => ({ number: k + 1, text })) ?? [],
-  })));
-  const read = await Promise.all(diffed.map(async (file): Promise<FileChange> => base === null || !addsRequires(file) ? file
+  const whole = await Promise.all(changed.filter((path) => !inDiff.has(path)).map(async (path): Promise<FileChange> => {
+    const content = await readIfPresent(join(root, path));
+    return { path, status: "added", removed: [], content,
+      added: content?.split(/\r?\n/u).map((text, k) => ({ number: k + 1, text })) ?? [] };
+  }));
+  const read = await Promise.all(diffed.map(async (file): Promise<FileChange> => base === null || !needsContent(file) ? file
     : { ...file, content: await readIfPresent(join(root, file.path)), baseContent: await git(root, ["show", `${base}:./${file.path}`]) }));
   return weakenedEvidence([...read, ...whole].sort((a, b) => a.path < b.path ? -1 : 1));
 }

@@ -259,14 +259,19 @@ it("puts each change that may weaken the evidence in the receipt, committed or n
     "export function h(z: number): number { return z; }", ""].join("\n"));
   rmSync(join(root, "tests", "old.test.ts"));
   commit(root, "agent");
-  writeFileSync(join(root, "src", "rule.dfy"), "method f(x: int) returns (r: int)\n{\n  assume false;\n  r := x;\n}\n");
+  writeFileSync(join(root, "src", "rule.dfy"), "method f(x: int) returns (r: int)\n{\n  assume false;\n  r := x;\n}\n" +
+    "\nlemma Free()\n  ensures false\n");
+  writeFileSync(join(root, "src", "extra.dfy"), "lemma {:axiom} Given()\n  ensures false\n");
   writeFileSync(join(root, "tests", "rule.test.ts"), "it.skip('f', () => {});\n");
   writeFileSync(join(root, "src", "new.ts"), "//@ assume false\nexport const a = 1;\n");
   writeFileSync(join(root, "tests", "new.test.ts"), "it('new', () => {});\n");
   const settled = entry(await run.settle());
   expect(settled.content.split("\n").filter((line) => line.startsWith("  may weaken"))).toEqual([
+    "  may weaken    src/extra.dfy: adds lemma {:axiom} Given()",
+    "  may weaken    src/extra.dfy: adds lemma Given without a body",
     "  may weaken    src/new.ts: adds //@ assume false",
     "  may weaken    src/rule.dfy: adds assume false;",
+    "  may weaken    src/rule.dfy: adds lemma Free without a body",
     "  may weaken    src/rule.ts: removes or changes //@ requires x >= 0",
     "  may weaken    src/rule.ts: removes or changes //@ ensures \\result >= 0",
     "  may weaken    src/rule.ts: adds //@ requires x >= 1 to a function the base had",

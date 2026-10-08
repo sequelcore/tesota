@@ -5,7 +5,9 @@ import { type AnnotationKind, weakens } from "./verification/weakening-rule.js";
  * A change, against the request's base, to the evidence its result rests on:
  * a removed or changed `requires` or `ensures`, a `requires` added to a
  * function the base had, and an added `assume`, in LemmaScript source or a
- * Dafny proof, with the line as written; and a deleted or edited test file.
+ * Dafny proof, with the line as written, which in a proof includes an
+ * `{:axiom}` and a lemma left without a body; and a deleted or edited test
+ * file.
  * The operator decides whether it is legitimate.
  */
 export type Weakening =
@@ -13,8 +15,9 @@ export type Weakening =
   | { readonly path: string; readonly kind: "deleted_test" | "edited_test" };
 
 /**
- * A changed file, with its content as changed and at the base where an added
- * `requires` needs them (`addsRequires`) to tell whether its function is new.
+ * A changed file, with its content as changed and at the base where the
+ * rules need them (`needsContent`): to tell whether an added `requires`
+ * annotates a new function, and which lemmas a proof leaves without a body.
  */
 export interface FileChange extends ChangedFile {
   readonly content?: string | undefined;
@@ -30,15 +33,40 @@ const testPaths = [
 ];
 
 function kindOf(path: string, line: string): AnnotationKind | undefined {
-  if (path.endsWith(".dfy")) return /^\s*assume\b/u.test(line) ? "assume" : undefined;
+  if (path.endsWith(".dfy")) return /^\s*assume\b|\{:axiom\b/u.test(line.replace(/\/\/.*$/u, "")) ? "assume" : undefined;
   const word = /^\s*\/\/@\s*(\w+)/u.exec(line)?.[1];
   if (word === undefined) return undefined;
   return word === "requires" || word === "ensures" || word === "assume" ? word : "other";
 }
 
-/** Whether `file` adds a `//@ requires`, whose function's novelty needs the file's content now and at the base. */
-export function addsRequires(file: ChangedFile): boolean {
-  return file.status === "modified" && file.added.some(({ text }) => kindOf(file.path, text) === "requires");
+/** Whether the rules need `file`'s content now and at the base: for a Dafny proof, or a `//@ requires` it adds. */
+export function needsContent(file: ChangedFile): boolean {
+  return file.path.endsWith(".dfy") ||
+    file.status === "modified" && file.added.some(({ text }) => kindOf(file.path, text) === "requires");
+}
+
+const declaration = new RegExp(String.raw`^(?:(?:ghost|static|opaque|twostate|least|greatest|abstract)\s+)*` +
+  String.raw`(?:lemma|method|function|predicate|datatype|codatatype|class|trait|module|import|const|type|newtype|iterator|constructor)\b`, "u");
+const lemmaHeader = /^(?:(?:ghost|static|opaque|twostate|least|greatest)\s+)*lemma\s+([\w'?$]+)/u;
+
+/**
+ * The lemmas a Dafny program declares without a body, which Dafny takes as
+ * axioms. Read as Dafny is conventionally written: a body opens with a `{`
+ * that begins or ends a line, before the next declaration or the `}` that
+ * closes the enclosing one.
+ */
+export function bodilessLemmas(dafny: string): string[] {
+  const lines = dafny.replace(/\/\*[\s\S]*?\*\//gu, "").split(/\r?\n/u)
+    .map((line) => line.replace(/\/\/.*$/u, "").replace(/\{:[^}]*\}/gu, "").trim());
+  return lines.flatMap((line, k) => {
+    const name = lemmaHeader.exec(line)?.[1];
+    if (name === undefined) return [];
+    for (const [j, text] of lines.slice(k).entries()) {
+      if (j > 0 && (declaration.test(text) || text === "}")) break;
+      if (text.startsWith("{") || /\{[^{}]*\}?$/u.test(text)) return [];
+    }
+    return [name];
+  });
 }
 
 const functionName = /\bfunction\s*\*?\s*([\w$]+)/u;
@@ -79,7 +107,15 @@ function annotationChanges(file: FileChange): Weakening[] {
     return kind === undefined || !weakens(kind, false, matched, kind === "requires" && existed(file, line.number)) ? []
       : [{ path: file.path, kind: kind === "requires" ? "added_requires" : "added_assume", annotation: line.text.trim() } as const];
   });
-  return [...removed, ...added];
+  return [...removed, ...added, ...axiomChanges(file)];
+}
+
+/** Lemmas a proof leaves without a body that the base gave one or did not have: as good as an added `assume`. */
+function axiomChanges(file: FileChange): Weakening[] {
+  if (!file.path.endsWith(".dfy") || file.content === undefined) return [];
+  const before = new Set(bodilessLemmas(file.baseContent ?? ""));
+  return bodilessLemmas(file.content).flatMap((name) => !weakens("assume", false, before.has(name), false) ? []
+    : [{ path: file.path, kind: "added_assume", annotation: `lemma ${name} without a body` } as const]);
 }
 
 function testChange(file: ChangedFile): Weakening[] {
