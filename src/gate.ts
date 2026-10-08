@@ -4,9 +4,11 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
+import { owningProjects, suggestChecks } from "./projects.js";
 import { proofReport } from "./prove-tool.js";
 import { type Receipt, renderReceipt } from "./receipt.js";
-import { type FileChange, needsContent, weakenedEvidence } from "./verification-changes.js";
+import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
+import { type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
 
@@ -126,6 +128,42 @@ async function contractFiles(root: string, changed: readonly string[]): Promise<
   return files;
 }
 
+/**
+ * What a failing command's correction must change before it goes back
+ * again: the set of tests that fail, read from the JUnit reports it wrote;
+ * the command itself when it wrote none, so that it goes back once, since a
+ * run's output varies and cannot show a correction repeating a failure.
+ */
+function testFailure({ command, failingTests }: CommandRun): string {
+  return failingTests === undefined ? command : `failing tests:\n${failingTests.join("\n")}`;
+}
+
+/**
+ * The test rung (#342), once no proof goes back: the commands of the projects
+ * that own the changed files (`suggestChecks`, `owningProjects`) run on the
+ * change. A command that fails goes back to the agent until its failure
+ * repeats one already sent back (`testFailure`, `gateVerdict`). When every
+ * command passes, each changed or added test runs over the request's base,
+ * which shows whether it exercises the change.
+ */
+async function testRung(root: string, base: string | null, changed: readonly string[],
+  sentBack: ReadonlyMap<string, readonly string[]>, signal: AbortSignal): Promise<Pick<Receipt, "tests" | "exercises">> {
+  const projects = owningProjects(suggestChecks(root), changed);
+  const tests = (await runCommands(root, projects, changed, signal)).map((run) =>
+    ({ ...run, verdict: gateVerdict(run.evidence.outcome, testFailure(run), sentBack.get(run.command) ?? []) }));
+  const passed = tests.every(({ evidence }) => evidence.outcome === "passed");
+  const exercises = passed && base !== null
+    ? await exerciseTests(root, base, changed.filter(isTestPath), changed, projects, signal) : [];
+  return { tests, exercises };
+}
+
+/** What goes back to the agent for a failing command: the tests its reports name, then the end of its output. */
+function failingReport({ command, failingTests, evidence }: CommandRun): string {
+  const names = failingTests === undefined || failingTests.length === 0 ? ""
+    : `These tests fail:\n${failingTests.map((name) => `  ${name}`).join("\n")}\n\n`;
+  return `Tesota: \`${command}\` fails with your changes.\n\n${names}${evidence.output.trimEnd()}`;
+}
+
 /** Built-in tools that only read, and `prove`, whose changes are the proof's own; any other tool may change files. */
 const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
 
@@ -133,8 +171,8 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
  * The gate (#339): before a completed run settles, it proves every changed
  * file with contracts. A failed or vacuous proof goes back to the agent and
  * the run continues, until the agent repeats any failure the gate already
- * sent back for that file (`gateVerdict`). That memory lasts for the
- * operator's request: it resets on their input, not on `agent_start`, which
+ * sent back for that file (`gateVerdict`). Then the test rung runs
+ * (`testRung`). That memory lasts for the operator's request: it resets on their input, not on `agent_start`, which
  * every continuation fires too. When nothing goes back, the run settles with
  * a receipt for the operator. Changes are measured against the commit `HEAD`
  * named when the operator's request started, so a commit the agent makes
@@ -145,12 +183,14 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
  */
 export function registerGate(pi: ExtensionAPI): void {
   let sentBack = new Map<string, string[]>();
+  let commandsSentBack = new Map<string, string[]>();
   let mayHaveChanged = false;
   /** The request's base, recorded before the agent can run anything; a run no operator input started takes `HEAD` as it settles. */
   let base: Promise<string | null> | undefined;
   pi.on("input", async (event, ctx) => {
     if (event.source === "extension") return undefined;
     sentBack = new Map();
+    commandsSentBack = new Map();
     mayHaveChanged = false;
     if (event.streamingBehavior === undefined) { base = headCommit(ctx.cwd); await base; }
     return undefined;
@@ -162,7 +202,7 @@ export function registerGate(pi: ExtensionAPI): void {
     const changed = await changedFiles(ctx.cwd, from);
     if (changed === undefined) {
       if (!mayHaveChanged) return undefined;
-      const receipt: Receipt = { version: 0, repository: false, proofs: [], weakened: [], unverified: [] };
+      const receipt: Receipt = { version: 0, repository: false, proofs: [], tests: [], exercises: [], weakened: [], unverified: [] };
       return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
         display: true, details: receipt }] };
     }
@@ -183,10 +223,18 @@ export function registerGate(pi: ExtensionAPI): void {
         `Tesota: ${path} does not prove yet.\n\n${proofReport(path, evidence, proveActive)}`).join("\n\n");
       return { entries: [{ type: "custom_message", customType: "tesota-gate", content, display: true }], continue: true };
     }
+    const { tests, exercises } = await testRung(ctx.cwd, from, changed, commandsSentBack, signal);
+    const failing = tests.filter(({ verdict }) => verdict === "send_back");
+    if (failing.length > 0) {
+      for (const run of failing) commandsSentBack.set(run.command, [...commandsSentBack.get(run.command) ?? [], testFailure(run)]);
+      return { entries: [{ type: "custom_message", customType: "tesota-gate", content: failing.map(failingReport).join("\n\n"),
+        display: true }], continue: true };
+    }
     // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
     const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
       path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
-    const receipt: Receipt = { version: 0, repository: true, proofs: judged, weakened, unverified: changed.filter((path) => !covered.has(path)) };
+    const receipt: Receipt = { version: 0, repository: true, proofs: judged, tests, exercises, weakened,
+      unverified: changed.filter((path) => !covered.has(path)) };
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
   });
