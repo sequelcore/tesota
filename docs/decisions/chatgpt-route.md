@@ -61,7 +61,9 @@ Exercised live on 2026-10-08:
   those seven; since no plan differs, it does not read the list per account.
 - Pi registers a new client at every sign-in, where OpenAI asks applications
   to keep the issued one for the account, so each sign-in adds a connected
-  app in ChatGPT's settings.
+  app in ChatGPT's settings: two sign-ins to the Plus account listed two
+  Tesota entries. Requested upstream as
+  [pi#10670](https://github.com/earendil-works/pi/issues/10670).
 
 Measurements recorded before 2026-10-08 name the `codex` route; they ran on
 the legacy sign-in.
