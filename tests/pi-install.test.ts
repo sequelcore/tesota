@@ -23,7 +23,7 @@ it("finds Pi in the nearest node_modules folder up from Tesota, as Node resolves
   const root = folder();
   installPi(root, { version: "1.2.0", bin: { pi: "dist/bundle/cli.js" } });
   mkdirSync(join(root, "node_modules", "tesota", "dist"), { recursive: true });
-  expect(installedPi(join(root, "node_modules", "tesota"))).toEqual({
+  expect(installedPi(join(root, "node_modules", "tesota"))).toEqual({ root: join(root, "node_modules", PI_PACKAGE),
     version: "1.2.0", cli: join(root, "node_modules", PI_PACKAGE, "dist", "bundle", "cli.js") });
 });
 
@@ -52,7 +52,7 @@ it("names the extension files the pi manifest lists that are missing, and finds 
 });
 
 it("accepts a Pi at or above the minimum and says how to install one otherwise", () => {
-  const pi = (version: string) => ({ version, cli: "cli.js" });
+  const pi = (version: string) => ({ root: ".", version, cli: "cli.js" });
   for (const version of ["1.1.0", "1.1.1", "1.2.0", "2.0.0", "1.1.0-beta.1"]) expect(piProblem(pi(version), "1.1.0")).toBeUndefined();
   for (const version of ["1.0.9", "0.99.1", "unknown"]) {
     expect(piProblem(pi(version), "1.1.0")).toContain(`Tesota needs Pi 1.1.0 or later, and the Pi it found is ${version}.`);
@@ -92,12 +92,12 @@ it("runs the script npm's and pnpm's Windows shims name, never the shim", () => 
   const npm = folder();
   const cli = globalPi(npm);
   writeFileSync(join(npm, "pi.cmd"), npmShim);
-  expect(piOnPath(`${folder()};${npm}`, "win32")).toEqual({ version: "1.3.0", cli });
+  expect(piOnPath(`${folder()};${npm}`, "win32")).toEqual({ root: join(cli, "..", "..", ".."), version: "1.3.0", cli });
   const pnpm = folder();
   const pnpmCli = globalPi(join(pnpm, "global"));
   mkdirSync(join(pnpm, "bin"));
   writeFileSync(join(pnpm, "bin", "pi.cmd"), pnpmShim);
-  expect(piOnPath(join(pnpm, "bin"), "win32")).toEqual({ version: "1.3.0", cli: pnpmCli });
+  expect(piOnPath(join(pnpm, "bin"), "win32")).toEqual({ root: join(pnpmCli, "..", "..", ".."), version: "1.3.0", cli: pnpmCli });
 });
 
 // A Linux or macOS PATH: a Windows folder's drive letter would split at its colon.
@@ -105,10 +105,10 @@ it.skipIf(process.platform === "win32")("runs the script a shell shim names or n
   const prefix = folder();
   const cli = globalPi(prefix);
   writeFileSync(join(prefix, "pi"), '#!/bin/sh\nexec node  "$basedir/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" "$@"\n');
-  expect(piOnPath(prefix, "linux")).toEqual({ version: "1.3.0", cli });
+  expect(piOnPath(prefix, "linux")).toEqual({ root: join(cli, "..", "..", ".."), version: "1.3.0", cli });
   const linked = folder();
   symlinkSync(cli, join(linked, "pi"));
-  expect(piOnPath(linked, "linux")).toEqual({ version: "1.3.0", cli });
+  expect(piOnPath(linked, "linux")).toEqual({ root: join(cli, "..", "..", ".."), version: "1.3.0", cli });
   const binary = folder();
   writeFileSync(join(binary, "pi"), Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 2]));
   expect(piOnPath(`${binary}:${prefix}`, "linux")).toBeUndefined();

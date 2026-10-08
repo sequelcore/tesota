@@ -5,8 +5,11 @@
 
 export type ChangeStatus = "added" | "modified" | "deleted";
 
-/** A line the change added, with its number in the file as changed. */
-export interface AddedLine {
+/**
+ * A line the change added or removed, with its number in the file as
+ * changed: for a removed line, the number of the line that now follows it.
+ */
+export interface DiffLine {
   readonly number: number;
   readonly text: string;
 }
@@ -16,9 +19,9 @@ export interface ChangedFile {
   readonly path: string;
   readonly status: ChangeStatus;
   /** The lines the change added, without the diff's marker. */
-  readonly added: readonly AddedLine[];
+  readonly added: readonly DiffLine[];
   /** The lines the change removed, without the diff's marker. */
-  readonly removed: readonly string[];
+  readonly removed: readonly DiffLine[];
 }
 
 const hunkHeader = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/u;
@@ -42,11 +45,11 @@ function walk(lines: readonly string[], visit: (line: string, next: number) => v
 }
 
 function readFile(path: string, status: ChangeStatus, lines: readonly string[]): ChangedFile {
-  const added: AddedLine[] = [];
-  const removed: string[] = [];
+  const added: DiffLine[] = [];
+  const removed: DiffLine[] = [];
   walk(lines, (line, next) => {
     if (line.startsWith("+")) added.push({ number: next, text: line.slice(1) });
-    else if (line.startsWith("-")) removed.push(line.slice(1));
+    else if (line.startsWith("-")) removed.push({ number: next, text: line.slice(1) });
   });
   return { path, status, added, removed };
 }

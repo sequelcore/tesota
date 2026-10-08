@@ -1,9 +1,9 @@
 import { expect, it } from "vitest";
-import { type AddedLine, changedLines } from "../src/diff-lines.js";
+import { type DiffLine, changedLines } from "../src/diff-lines.js";
 import { bodilessLemmas, weakenedEvidence } from "../src/verification-changes.js";
 import { weakens } from "../src/verification/weakening-rule.js";
 
-const numbered = (...lines: string[]): AddedLine[] => lines.map((text, k) => ({ number: k + 1, text }));
+const numbered = (...lines: string[]): DiffLine[] => lines.map((text, k) => ({ number: k + 1, text }));
 
 it("weakens on a removed requires or ensures, a requires added to an existing function and an added assume, unless the line only moved", () => {
   expect(weakens("requires", true, false, true)).toBe(true);
@@ -19,7 +19,7 @@ it("weakens on a removed requires or ensures, a requires added to an existing fu
   expect(weakens("other", true, false, true)).toBe(false);
 });
 
-it("reads each file's added lines with their numbers and its removed lines, and none for a file it does not show", () => {
+it("reads each file's added and removed lines with their numbers, and none for a file it does not show", () => {
   const diff = [
     "diff --git a/src/a b.ts b/src/a b.ts",
     "--- a/src/a b.ts",
@@ -38,7 +38,7 @@ it("reads each file's added lines with their numbers and its removed lines, and 
   expect(changedLines(diff, [{ path: "src/a b.ts", status: "modified" }, { path: "img.png", status: "modified" },
     { path: "gone.ts", status: "deleted" }])).toEqual([
     { path: "src/a b.ts", status: "modified", added: [{ number: 2, text: "added" }, { number: 10, text: "later" }],
-      removed: ["-- removed, not a header"] },
+      removed: [{ number: 2, text: "-- removed, not a header" }] },
     { path: "img.png", status: "modified", added: [], removed: [] },
     { path: "gone.ts", status: "deleted", added: [], removed: [] },
   ]);
@@ -47,15 +47,15 @@ it("reads each file's added lines with their numbers and its removed lines, and 
 it("flags weakened contracts, added assumptions and deleted or edited tests, and nothing else", () => {
   expect(weakenedEvidence([
     { path: "src/policy.ts", status: "modified",
-      removed: ["//@ ensures denied(p) ==> \\result === false", "//@ requires p !== \"\"", "//@ invariant k >= 0",
-        "  //@ ensures \\result >= 0"],
+      removed: numbered("//@ ensures denied(p) ==> \\result === false", "//@ requires p !== \"\"", "//@ invariant k >= 0",
+        "  //@ ensures \\result >= 0"),
       added: numbered("//@ ensures true", "//@ assume p.length > 0", "//@ invariant k > 0", "//@ ensures  \\result >= 0") },
-    { path: "src/plain.ts", status: "modified", removed: ["// @ensures x"], added: numbered("// @assume y") },
-    { path: "src/policy.dfy", status: "modified", removed: ["  assume old;"],
+    { path: "src/plain.ts", status: "modified", removed: numbered("// @ensures x"), added: numbered("// @assume y") },
+    { path: "src/policy.dfy", status: "modified", removed: numbered("  assume old;"),
       added: numbered("  assume {:axiom} false;", "  // assume nothing", "  assume old;", "  assert x;") },
     { path: "src/new.dfy", status: "added", removed: [], added: numbered("assume x;") },
     { path: "src/price.test.ts", status: "modified", removed: [], added: [] },
-    { path: "tests/tax.spec.tsx", status: "deleted", removed: ["it()"], added: [] },
+    { path: "tests/tax.spec.tsx", status: "deleted", removed: numbered("it()"), added: [] },
     { path: "pkg/__tests__/cart.js", status: "added", removed: [], added: numbered("it()") },
     { path: "app/test_orders.py", status: "modified", removed: [], added: [] },
     { path: "internal/orders_test.go", status: "modified", removed: [], added: [] },
@@ -89,7 +89,7 @@ it("finds lemmas declared without a body, whatever their attributes, and not tho
 it("flags an {:axiom} and a lemma left without a body in a proof, unless the base had it so", () => {
   const baseContent = "lemma Old()\n  ensures true\n\nlemma Kept()\n  ensures true\n{\n}\n";
   const content = "lemma Old()\n  ensures true\n\nlemma Kept()\n  ensures true\n\nlemma {:axiom} New()\n  ensures false\n";
-  expect(weakenedEvidence([{ path: "src/rule.dfy", status: "modified", removed: ["{", "}"],
+  expect(weakenedEvidence([{ path: "src/rule.dfy", status: "modified", removed: numbered("{", "}"),
     added: [{ number: 7, text: "lemma {:axiom} New()" }, { number: 8, text: "  ensures false" },
       { number: 9, text: "  // not {:axiom} here" }], content, baseContent }])).toEqual([
     { path: "src/rule.dfy", kind: "added_assume", annotation: "lemma {:axiom} New()" },

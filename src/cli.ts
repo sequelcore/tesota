@@ -3,13 +3,15 @@
 import { spawn } from "node:child_process";
 import { constants } from "node:os";
 import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { installedPi, minimumPiVersion, missingExtensions, piOnPath, piProblem } from "./pi-install.js";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { installedPi, minimumPiVersion, missingExtensions, piModule, piOnPath, piProblem } from "./pi-install.js";
+import { type PiSessions, receiptCommand } from "./pull-request-receipt.js";
 
 /**
  * The `tesota` command: Pi with Tesota's package loaded, every argument
  * passed through to Pi. The Pi installed beside Tesota comes first, then the
- * one on PATH.
+ * one on PATH. `tesota receipt` instead writes the last receipt for a pull
+ * request, read from that Pi's sessions (`receiptCommand`).
  */
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const missing = missingExtensions(packageRoot);
@@ -23,6 +25,12 @@ const problem = piProblem(pi, minimumPiVersion(packageRoot));
 if (pi === undefined || problem !== undefined) {
   process.stderr.write(`${problem}\n`);
   process.exit(1);
+}
+
+if (process.argv[2] === "receipt") {
+  const { SessionManager } = await import(pathToFileURL(piModule(pi)).href) as { SessionManager: PiSessions };
+  process.exit(await receiptCommand(process.argv.slice(3), process.cwd(), SessionManager,
+    { out: (text) => process.stdout.write(text), error: (text) => process.stderr.write(text) }));
 }
 
 const child = spawn(process.execPath, [pi.cli, "--extension", packageRoot, ...process.argv.slice(2)], { stdio: "inherit" });

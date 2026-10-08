@@ -1,48 +1,18 @@
-import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, VERSION } from "@earendil-works/pi-coding-agent";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
+import { git, gitOutput, headCommit } from "./git.js";
 import { contractStrength } from "./proof-guarantees.js";
 import { owningProjects, suggestChecks } from "./projects.js";
+import { uncoveredLines } from "./proof-coverage.js";
 import { proofReport } from "./prove-tool.js";
 import { type Receipt, renderReceipt } from "./receipt.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
 import { type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
-
-const outputLimit = 16 * 1024 * 1024;
-
-/**
- * Git's output in `root`; `too_large` when it passes what the gate reads,
- * undefined when Git fails. Past the limit it closes Git's output and waits
- * for Git to exit on the broken pipe instead of killing it: on Windows the
- * `git` on PATH can be a launcher, and killing it would leave the Git it
- * started running in the project after the gate moved on.
- */
-function gitOutput(root: string, args: readonly string[]): Promise<string | "too_large" | undefined> {
-  return new Promise((settle) => {
-    const child = spawn("git", [...args], { cwd: root, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
-    const chunks: Buffer[] = [];
-    let size = 0;
-    child.stdout.on("data", (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > outputLimit) child.stdout.destroy();
-      else chunks.push(chunk);
-    });
-    child.once("error", () => { settle(undefined); });
-    child.once("close", (status) => {
-      settle(size > outputLimit ? "too_large" : status === 0 ? Buffer.concat(chunks).toString("utf8") : undefined);
-    });
-  });
-}
-
-async function git(root: string, args: readonly string[]): Promise<string | undefined> {
-  const output = await gitOutput(root, args);
-  return output === "too_large" ? undefined : output;
-}
 
 async function gitPaths(root: string, args: readonly string[]): Promise<string[] | undefined> {
   return (await git(root, [...args, "-z"]))?.split("\0").filter((path) => path !== "");
@@ -52,12 +22,6 @@ async function gitPaths(root: string, args: readonly string[]): Promise<string[]
 function diffFrom(base: string, ...options: string[]): string[] {
   return ["-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames",
     "--relative", "--src-prefix=a/", "--dst-prefix=b/", ...options, base];
-}
-
-/** The commit `HEAD` names in the project at `root`; null before its first commit, and outside Git. */
-export async function headCommit(root: string): Promise<string | null> {
-  const commit = (await git(root, ["rev-parse", "--verify", "--quiet", "HEAD"]))?.trim();
-  return commit === undefined || commit === "" ? null : commit;
 }
 
 /**
@@ -95,11 +59,13 @@ async function diffFromBase(root: string, base: string): Promise<ChangedFile[] |
 }
 
 /**
- * The changes from `base` that may weaken the evidence (`weakenedEvidence`),
- * or why they could not be checked. A changed file the base lacks, untracked
- * or before the first commit, counts as added whole.
+ * Each changed file's lines from `base`, with its content where the
+ * weakening rules need it (`needsContent`), or why the change could not be
+ * read. A changed file the base lacks, untracked or before the first commit,
+ * counts as added whole.
  */
-async function weakenings(root: string, base: string | null, changed: readonly string[]): Promise<Receipt["weakened"]> {
+async function fileChanges(root: string, base: string | null, changed: readonly string[]):
+  Promise<FileChange[] | Exclude<Receipt["weakened"], readonly unknown[]>> {
   const diffed = base === null ? [] : await diffFromBase(root, base);
   if (typeof diffed === "string") return diffed;
   const inDiff = new Set(diffed.map(({ path }) => path));
@@ -110,7 +76,7 @@ async function weakenings(root: string, base: string | null, changed: readonly s
   }));
   const read = await Promise.all(diffed.map(async (file): Promise<FileChange> => base === null || !needsContent(file) ? file
     : { ...file, content: await readIfPresent(join(root, file.path)), baseContent: await git(root, ["show", `${base}:./${file.path}`]) }));
-  return weakenedEvidence([...read, ...whole].sort((a, b) => a.path < b.path ? -1 : 1));
+  return [...read, ...whole].sort((a, b) => a.path < b.path ? -1 : 1);
 }
 
 async function hasAnnotations(root: string, path: string): Promise<boolean> {
@@ -166,17 +132,24 @@ function failingReport({ command, failingTests, evidence }: CommandRun): string 
   return `Tesota: \`${command}\` fails with your changes.\n\n${names}${evidence.output.trimEnd()}`;
 }
 
-/**
- * How strong the contracts are that the request added or changed in the
- * files that proved (`contractStrength`), measured against their content at
- * the request's base.
- */
-async function strength(ctx: ExtensionContext, base: string | null, proofs: Receipt["proofs"], requests: readonly string[],
-  signal: AbortSignal, restateWith: string | undefined): Promise<Pick<Receipt, "contracts" | "claimcheck">> {
-  const files = await Promise.all(proofs.filter(({ verdict }) => verdict === "proved").map(async ({ path }) => ({ path,
-    source: await readIfPresent(join(ctx.cwd, path)) ?? "",
-    baseSource: base === null ? undefined : await git(ctx.cwd, ["show", `${base}:./${path}`]) })));
-  return contractStrength(ctx, requests, files, signal, restateWith);
+/** The files that proved, as changed and at the request's base, whose contracts and covered lines the receipt measures. */
+async function provedSources(root: string, base: string | null, proofs: Receipt["proofs"]): Promise<ProvedSource[]> {
+  return Promise.all(proofs.filter(({ verdict }) => verdict === "proved").map(async ({ path }) => ({ path,
+    source: await readIfPresent(join(root, path)) ?? "",
+    baseSource: base === null ? undefined : await git(root, ["show", `${base}:./${path}`]) })));
+}
+
+type ProvedSource = { readonly path: string; readonly source: string; readonly baseSource: string | undefined };
+
+/** The changed lines of each TypeScript file that proved that no contract's proof covers (`uncoveredLines`). */
+function uncovered(sources: readonly ProvedSource[], changes: Awaited<ReturnType<typeof fileChanges>>,
+  weakened: Receipt["weakened"]): Receipt["uncovered"] {
+  if (typeof changes === "string" || typeof weakened === "string") return [];
+  const byPath = new Map(changes.map((change) => [change.path, change]));
+  return sources.flatMap(({ path, source, baseSource }) => {
+    const change = byPath.get(path);
+    return change === undefined || !path.endsWith(".ts") ? [] : [uncoveredLines(change, source, baseSource, weakened)];
+  });
 }
 
 /** The Pi flag that names ClaimCheck's second model (`claimCheck`). */
@@ -196,7 +169,8 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
  * the run continues, until the agent repeats any failure the gate already
  * sent back for that file (`gateVerdict`). Then the test rung runs
  * (`testRung`), and once it passes, the strength of the contracts the
- * request added or changed is measured (`strength`) for the receipt. What
+ * request added or changed (`contractStrength`) and the changed lines no
+ * proof covers (`uncovered`) are measured for the receipt. What
  * went back lasts for the operator's request: it resets on their input, not
  * on `agent_start`, which every continuation fires too. When nothing goes back, the run settles with
  * a receipt for the operator. Changes are measured against the commit `HEAD`
@@ -216,6 +190,7 @@ export function registerGate(pi: ExtensionAPI): void {
   let requests: string[] = [];
   /** The request's base, recorded before the agent can run anything; a run no operator input started takes `HEAD` as it settles. */
   let base: Promise<string | null> | undefined;
+  let startedAt: string | undefined;
   pi.on("input", async (event, ctx) => {
     if (event.source === "extension") return undefined;
     sentBack = new Map();
@@ -223,6 +198,7 @@ export function registerGate(pi: ExtensionAPI): void {
     mayHaveChanged = false;
     if (event.streamingBehavior !== undefined) { requests.push(event.text); return undefined; }
     requests = [event.text];
+    startedAt = new Date().toISOString();
     base = headCommit(ctx.cwd);
     await base;
     return undefined;
@@ -231,14 +207,19 @@ export function registerGate(pi: ExtensionAPI): void {
   pi.on("agent_before_settle", async (event, ctx) => {
     if (event.outcome !== "completed") return undefined;
     const from = await (base ??= headCommit(ctx.cwd));
+    startedAt ??= new Date().toISOString();
+    const run = { base: from, startedAt, pi: VERSION,
+      ...ctx.model === undefined ? {} : { model: `${ctx.model.provider}/${ctx.model.id}` } };
     const changed = await changedFiles(ctx.cwd, from);
     if (changed === undefined) {
       if (!mayHaveChanged) return undefined;
-      const receipt: Receipt = { version: 0, repository: false, proofs: [], contracts: [], tests: [], exercises: [], weakened: [], unverified: [] };
+      const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), proofs: [],
+        contracts: [], tests: [], exercises: [], weakened: [], unverified: [], uncovered: [] };
       return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
         display: true, details: receipt }] };
     }
-    const weakened = await weakenings(ctx.cwd, from, changed);
+    const changes = await fileChanges(ctx.cwd, from, changed);
+    const weakened = typeof changes === "string" ? changes : weakenedEvidence(changes);
     if (changed.length === 0 && Array.isArray(weakened) && weakened.length === 0) return undefined;
     const signal = ctx.signal ?? new AbortController().signal;
     const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
@@ -265,9 +246,11 @@ export function registerGate(pi: ExtensionAPI): void {
     // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
     const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
       path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
-    const receipt: Receipt = { version: 0, repository: true, proofs: judged,
-      ...await strength(ctx, from, judged, requests, signal, restateWith(pi)), tests, exercises, weakened,
-      unverified: changed.filter((path) => !covered.has(path)) };
+    const sources = await provedSources(ctx.cwd, from, judged);
+    const receipt: Receipt = { version: 1, repository: true, ...run, proofs: judged,
+      ...await contractStrength(ctx, requests, sources, signal, restateWith(pi)), tests, exercises, weakened,
+      unverified: changed.filter((path) => !covered.has(path)), uncovered: uncovered(sources, changes, weakened),
+      settledAt: new Date().toISOString() };
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
   });
