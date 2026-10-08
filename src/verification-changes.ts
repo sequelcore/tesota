@@ -32,6 +32,11 @@ const testPaths = [
   /\.snap$/u,
 ];
 
+/** Whether a path holds tests, or a snapshot they compare against, by the conventions of the common test runners. */
+export function isTestPath(path: string): boolean {
+  return testPaths.some((pattern) => pattern.test(path));
+}
+
 function kindOf(path: string, line: string): AnnotationKind | undefined {
   if (path.endsWith(".dfy")) return /^\s*assume\b|\{:axiom\b/u.test(line.replace(/\/\/.*$/u, "")) ? "assume" : undefined;
   const word = /^\s*\/\/@\s*(\w+)/u.exec(line)?.[1];
@@ -119,7 +124,7 @@ function axiomChanges(file: FileChange): Weakening[] {
 }
 
 function testChange(file: ChangedFile): Weakening[] {
-  if (file.status === "added" || !testPaths.some((pattern) => pattern.test(file.path))) return [];
+  if (file.status === "added" || !isTestPath(file.path)) return [];
   return [{ path: file.path, kind: file.status === "deleted" ? "deleted_test" : "edited_test" }];
 }
 

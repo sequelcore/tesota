@@ -52,9 +52,21 @@ not checked for weakening; the gate then waits for Git to exit instead of
 killing it, since on Windows killing Git's launcher leaves the real Git
 running in the project. Outside a Git repository it cannot tell what changed,
 so it holds no run, and a request that ran a tool that may change files ends
-with a receipt saying its changes were not verified. The tests that prove
-files run only where Dafny is installed; the gate's tests script the proofs
-instead. Build before `bun link`; later builds
+with a receipt saying its changes were not verified. Once no proof goes back, the gate runs the commands that
+`suggestChecks` in `src/projects.ts` finds for the projects that own the
+changed files, in Pi's shell, stopping every process a command started when
+it runs past its limit or is cancelled; `src/process.ts` starts and stops
+these processes, and LemmaScript's and Dafny's for a proof too. It reads the failing tests from the
+JUnit XML reports a command writes during the run, and sends a failure back
+until the set of failing tests repeats one already sent; a command that
+writes no report goes back once. Then it runs each changed or added test file,
+snapshots aside,
+over the request's base in a Git worktree in the computer's temporary
+folder, with the checkout's `node_modules` linked in, and gives no verdict
+there when the change touches `package.json` or a lockfile
+(`src/test-rung.ts`). The tests that prove files run
+only where Dafny is installed; the gate's tests script the proofs instead and
+run real commands. Build before `bun link`; later builds
 refresh that linked executable, and `bun unlink` removes it. The lint rule
 limits cyclomatic complexity to 20 in `src` and `tests` with no file
 exceptions.

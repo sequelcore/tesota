@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -30,17 +30,53 @@ function git(root: string, ...args: string[]): void {
 
 const contract = "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n";
 
-/** A repository with one committed contract file, `src/rule.ts`, and a committed plain file. */
-function project(): string {
+function write(root: string, files: Record<string, string>): void {
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), content);
+  }
+}
+
+function commit(root: string, message: string): void {
+  git(root, "add", "-A");
+  git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message);
+}
+
+/** A repository with these files committed. */
+function repository(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), "tesota-gate-"));
   roots.push(root);
-  mkdirSync(join(root, "src"));
-  writeFileSync(join(root, "src", "rule.ts"), contract);
-  writeFileSync(join(root, "notes.md"), "# Notes\n");
+  write(root, files);
   git(root, "init", "-q");
-  git(root, "add", ".");
-  git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base");
+  commit(root, "base");
   return root;
+}
+
+/** A repository with one committed contract file, `src/rule.ts`, and a committed plain file. */
+function project(): string {
+  return repository({ "src/rule.ts": contract, "notes.md": "# Notes\n" });
+}
+
+/**
+ * A package whose `test` script runs Node's test runner, with a dependency
+ * that only the checkout's ignored `node_modules` holds, as installed ones are.
+ */
+function testedProject(test = "node --test"): string {
+  const root = repository({
+    "package.json": JSON.stringify({ type: "module", scripts: { test } }), "bun.lock": "",
+    ".gitignore": "node_modules\nreport.xml\n", "src/price.mjs": "export const total = (n) => n;\n",
+    "test/price.test.mjs": "import assert from \"node:assert\";\nimport { test } from \"node:test\";\nimport { one } from \"dep\";\n" +
+      "import { total } from \"../src/price.mjs\";\ntest(\"one\", () => { assert.equal(total(1), one); });\n",
+  });
+  write(root, { "node_modules/dep/package.json": JSON.stringify({ name: "dep", type: "module", main: "index.js" }),
+    "node_modules/dep/index.js": "export const one = 1;\n" });
+  return root;
+}
+
+/** A Node test file with one test, `name`, asserting `total(input) === expected`. */
+function priceTest(input: number, expected: number, name = "total"): string {
+  return "import assert from \"node:assert\";\nimport { test } from \"node:test\";\nimport { total } from \"../src/price.mjs\";\n" +
+    `test(${JSON.stringify(name)}, () => { assert.equal(total(${input}), ${expected}); });\n`;
 }
 
 interface Settled { entries?: { customType: string; content: string; details?: unknown }[]; continue?: boolean }
@@ -197,11 +233,6 @@ it("proves a contract file whose .dfy alone changed, and leaves runs that did no
   expect(entry(await run.settle()).content).toContain("Tesota: src/rule.ts does not prove yet.");
 });
 
-function commit(root: string, message: string): void {
-  git(root, "add", "-A");
-  git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message);
-}
-
 it("measures from the commit the request started at, so an agent's commit hides nothing", async () => {
   const root = project();
   const run = gate(root);
@@ -306,3 +337,93 @@ it("says a change too large to read was not checked for weakening, instead of li
     "  not verified  notes.md: no verifier covers it"].join("\n"));
   expect((settled.details as Receipt).weakened).toBe("too_large");
 });
+it("runs the project's tests, and runs each changed test on the request's base even after the agent commits", async () => {
+  const root = testedProject();
+  const run = gate(root);
+  await run.input();
+  write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n",
+    "test/negative.test.mjs": priceTest(-1, 0), "test/positive.test.mjs": priceTest(2, 2),
+    "test/__snapshots__/price.test.mjs.snap": "exports[`total 1`] = `1`;\n" });
+  commit(root, "the agent's change");
+  const settled = await run.settle();
+  expect(settled?.continue).toBeUndefined();
+  const changed = ["src/price.mjs", "test/__snapshots__/price.test.mjs.snap", "test/negative.test.mjs", "test/positive.test.mjs"];
+  // The snapshot is no test a runner runs alone, so it gets no line of its own on the base.
+  expect(entry(settled).content).toBe([
+    "Tesota receipt",
+    "  passed        bun run test",
+    "  exercises     test/negative.test.mjs: it fails without the change, and the base passes without it",
+    "  vacuous test  test/positive.test.mjs: it passes without the change",
+    ...changed.map((path) => `  not proved    ${path}: no proof covers it; the project's commands pass with it`),
+  ].join("\n"));
+  const receipt = entry(settled).details as Receipt;
+  expect(receipt.tests.map(({ command, evidence }) => [command, evidence.verifier, evidence.files]))
+    .toEqual([["bun run test", "command", changed]]);
+  // The base ran in a worktree that is gone, and the checkout's dependencies it linked are not.
+  expect(spawnSync("git", ["worktree", "list", "--porcelain"], { cwd: root, encoding: "utf8" }).stdout.match(/^worktree /gmu))
+    .toHaveLength(1);
+  expect(existsSync(join(root, "node_modules", "dep", "index.js"))).toBe(true);
+}, 60_000);
+
+it("sends failing tests back once when the project writes no test report, then settles with the failure", async () => {
+  const root = testedProject();
+  const run = gate(root);
+  await run.input();
+  write(root, { "test/negative.test.mjs": priceTest(-1, 0) });
+  const failed = await run.settle();
+  expect(failed?.continue).toBe(true);
+  expect(entry(failed).customType).toBe("tesota-gate");
+  expect(entry(failed).content).toContain("Tesota: `bun run test` fails with your changes.");
+  run.agentStart();
+  const stuck = await run.settle();
+  expect(stuck?.continue).toBeUndefined();
+  expect(entry(stuck).content).toBe(["Tesota receipt",
+    "  NOT passed    bun run test: it still fails after its failure went back",
+    "  not verified  test/negative.test.mjs: no verifier covers it"].join("\n"));
+  await run.input();
+  expect((await run.settle())?.continue).toBe(true);
+}, 60_000);
+
+it("sends failing tests back until the set that fails repeats one already sent, read from the test report", async () => {
+  const root = testedProject("node --test --test-reporter=junit --test-reporter-destination=report.xml");
+  const run = gate(root);
+  await run.input();
+  write(root, { "test/a.test.mjs": priceTest(-1, 0, "a") });
+  const first = await run.settle();
+  expect(first?.continue).toBe(true);
+  expect(entry(first).content).toContain("These tests fail:\n  test > a\n");
+  run.agentStart();
+  write(root, { "test/b.test.mjs": priceTest(-2, 0, "b") });
+  expect((await run.settle())?.continue).toBe(true);
+  run.agentStart();
+  rmSync(join(root, "test", "b.test.mjs"));
+  const stuck = await run.settle();
+  expect(stuck?.continue).toBeUndefined();
+  expect(entry(stuck).content).toContain(
+    "  NOT passed    bun run test: these tests fail, as they did when they went back: test > a");
+  expect((entry(stuck).details as Receipt).tests.map(({ failingTests }) => failingTests)).toEqual([["test > a"]]);
+}, 60_000);
+
+it("gives no verdict on the base when the change touches what decides the dependencies", async () => {
+  const root = testedProject();
+  const run = gate(root);
+  await run.input();
+  write(root, { "package.json": JSON.stringify({ type: "module", scripts: { test: "node --test" }, description: "changed" }),
+    "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n", "test/negative.test.mjs": priceTest(-1, 0) });
+  expect(entry(await run.settle()).content).toContain("  exercise?     test/negative.test.mjs: the change touches " +
+    "package.json, and the base runs with the checkout's dependencies, so a run there may not be faithful");
+}, 60_000);
+
+it("runs only the commands of the projects that own the changed files, there and on the base", async () => {
+  const passing = "import { test } from \"node:test\";\ntest(\"ok\", () => {});\n";
+  const root = repository({
+    "a/package.json": JSON.stringify({ scripts: { test: "node --test" } }), "a/bun.lock": "", "a/test/x.test.mjs": passing,
+    "b/package.json": JSON.stringify({ scripts: { test: "node -e process.exit(1)" } }), "b/bun.lock": "",
+  });
+  const run = gate(root);
+  await run.input();
+  write(root, { "a/test/y.test.mjs": passing });
+  expect(entry(await run.settle()).content).toBe(["Tesota receipt", "  passed        cd a && bun run test",
+    "  vacuous test  a/test/y.test.mjs: it passes without the change",
+    "  not proved    a/test/y.test.mjs: no proof covers it; the project's commands pass with it"].join("\n"));
+}, 60_000);
