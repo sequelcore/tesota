@@ -1,7 +1,9 @@
 # Tesota becomes a verification layer
 
-Status: Accepted on 2026-10-08. Built in refactor slices 1–8 on `dev`.
-Documented in slice 9 ([#355](https://github.com/sequelcore/tesota/issues/355)).
+Status: Accepted on 2026-10-08. Built in refactor slices 1–8 on `dev`,
+documented in slice 9 ([#355](https://github.com/sequelcore/tesota/issues/355)),
+and carried to version 0.1.0 by the later work in the table under
+[Slices](#slices).
 
 ## Context
 
@@ -116,10 +118,12 @@ Each slice landed on `dev` through its own pull request.
 | 6. Contract strength | [#345](https://github.com/sequelcore/tesota/issues/345) | [#346](https://github.com/sequelcore/tesota/pull/346), [#348](https://github.com/sequelcore/tesota/pull/348) (Dafny in CI) |
 | 7. Receipt for pull requests | [#347](https://github.com/sequelcore/tesota/issues/347) | [#349](https://github.com/sequelcore/tesota/pull/349) |
 | 8. Evaluation | [#350](https://github.com/sequelcore/tesota/issues/350), [#352](https://github.com/sequelcore/tesota/issues/352) | [#351](https://github.com/sequelcore/tesota/pull/351), [#353](https://github.com/sequelcore/tesota/pull/353) |
-| 9. Documentation | [#355](https://github.com/sequelcore/tesota/issues/355) | This record's pull request |
+| 9. Documentation | [#355](https://github.com/sequelcore/tesota/issues/355), [#358](https://github.com/sequelcore/tesota/issues/358) | [#357](https://github.com/sequelcore/tesota/pull/357), [#359](https://github.com/sequelcore/tesota/pull/359) |
 | 11. Identity | [#360](https://github.com/sequelcore/tesota/issues/360) | [#361](https://github.com/sequelcore/tesota/pull/361) |
 | Input and footer | [#362](https://github.com/sequelcore/tesota/issues/362) | [#363](https://github.com/sequelcore/tesota/pull/363) |
+| Receipt false alarms: added tests, test files and comment-only lines | [#364](https://github.com/sequelcore/tesota/issues/364), [#366](https://github.com/sequelcore/tesota/issues/366) | [#365](https://github.com/sequelcore/tesota/pull/365), [#367](https://github.com/sequelcore/tesota/pull/367) |
 | 12. Alpha, part 1: package readiness | [#368](https://github.com/sequelcore/tesota/issues/368) | [#369](https://github.com/sequelcore/tesota/pull/369) |
+| Tesota's theme as the `tesota` command's default | [#370](https://github.com/sequelcore/tesota/issues/370) | [#371](https://github.com/sequelcore/tesota/pull/371) |
 
 The [verification design](../design/verification.md) describes what the
 slices built.
