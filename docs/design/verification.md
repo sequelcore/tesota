@@ -253,8 +253,9 @@ The weakening list decides narrowing:
 - any assumption added to the file's `.dfy`, which narrows every contract in
   the file.
 
-A removed line counts at the line that now follows it, and blank lines are
-ignored. The receipt lists the remaining lines as ranges (`ranges`, proved).
+A removed line counts at the line that now follows it. Blank and
+comment-only lines are ignored, by the same check the test rule uses; a
+`//@` line is a contract, not a comment, so it still counts. The receipt lists the remaining lines as ranges (`ranges`, proved).
 A changed file that no proof's evidence covers is listed whole, unless it
 is a test file: tests are evidence, reported as exercised, passed or as
 something that may weaken the evidence. Both lists read "not proved" when the project's commands passed, and "not verified"

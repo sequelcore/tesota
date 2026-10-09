@@ -1,5 +1,5 @@
 import { bodyEnd, contracts } from "./proof-guarantees.js";
-import type { FileChange, Weakening } from "./verification-changes.js";
+import { commentOnly, type FileChange, type Weakening } from "./verification-changes.js";
 import { proofCovered } from "./verification/proof-cover-rule.js";
 import { ranges } from "./verification/range-rule.js";
 
@@ -43,12 +43,14 @@ function narrowedContracts(path: string, source: string, baseSource: string | un
  * The changed lines of a TypeScript file whose proof passed that no proof
  * covers (`proofCovered`): those outside every function with a contract, and
  * those in one whose contract the change narrowed. A removed line counts at
- * the line that now follows it; blank lines are left out.
+ * the line that now follows it; blank and comment-only lines are left out,
+ * though a `//@` contract line is not a comment.
  */
 export function uncoveredLines(change: FileChange, source: string, baseSource: string | undefined,
   weakened: readonly Weakening[]): UncoveredLines {
   const count = source.split(/\r?\n/u).length;
-  const changed = [...new Set([...change.added, ...change.removed].filter(({ text }) => text.trim() !== "")
+  const changed = [...new Set([...change.added, ...change.removed].filter(({ text }) =>
+    text.trim() !== "" && !commentOnly(change.path, text))
     .map(({ number }) => Math.min(number, count)))].sort((a, b) => a - b);
   const current = spans(change.path, source);
   const starts = current.map(({ start }) => start);

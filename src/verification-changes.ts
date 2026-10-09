@@ -142,8 +142,9 @@ const runChanges = [
   /\bdef\s+(?:(?:setUp|tearDown)(?:Class|Module)?|(?:setup|teardown)_(?:method|function|class|module))\s*\(/u,
 ];
 
-function commentOnly(path: string, line: string): boolean {
-  return (path.endsWith(".py") ? /^#/u : /^(?:\/\/|\/\*|\*)/u).test(line.trim());
+/** Whether a line of `path` holds only a comment. A `//@` line is a LemmaScript contract, never a comment. */
+export function commentOnly(path: string, line: string): boolean {
+  return (path.endsWith(".py") ? /^#/u : /^(?:\/\/(?!@)|\/\*|\*)/u).test(line.trim());
 }
 
 const namedImports = [

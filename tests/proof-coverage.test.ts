@@ -29,6 +29,14 @@ it("lists changed lines outside every proved contract, and blank ones not at all
   expect(uncoveredLines(change, source, source, [])).toEqual({ path: "src/rule.ts", lines: [[6, 7]] });
 });
 
+it("leaves out comment-only changed lines, added or removed, but lists //@ contract lines and code", () => {
+  const change = { path: "src/rule.ts", status: "modified" as const,
+    added: [{ number: 5, text: "// plain adds one" }, { number: 6, text: "//@ ensures \\result > n" },
+      { number: 7, text: "  return n + 1; // and a note" }, { number: 8, text: "  /* a block" }],
+    removed: [{ number: 9, text: "   * note */" }, { number: 9, text: "  // an old note" }, { number: 15, text: "//@ requires n >= 0" }] };
+  expect(uncoveredLines(change, source, source, []).lines).toEqual([[6, 7], [15, 15]]);
+});
+
 it("lists the lines of a function whose contract the change narrowed", () => {
   const change = { path: "src/rule.ts", status: "modified" as const, added: lines(3, 10, 13), removed: [] };
   const added: Weakening = { path: "src/rule.ts", kind: "added_requires", annotation: "//@ requires n > 0" };

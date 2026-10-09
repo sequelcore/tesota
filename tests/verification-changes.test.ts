@@ -93,12 +93,14 @@ it("flags a removed, changed or commented-out assertion, and a deleted test file
     edit("tests/changed.test.ts", ["  expect(clamp(5, 0, 2)).toBeDefined();"], [assertion]),
     edit("tests/commented.test.ts", ["  // expect(clamp(5, 0, 2)).toBe(2);"], [assertion]),
     edit("tests/moved.test.ts", [assertion], [assertion]),
+    edit("tests/contract.test.ts", [], ["  //@ invariant k >= 0"]),
     { path: "tests/gone.test.ts", status: "deleted", added: [], removed: numbered(assertion) },
   ])).toEqual([
     { path: "tests/removed.test.ts", kind: "edited_test" },
     { path: "tests/changed.test.ts", kind: "edited_test" },
     { path: "tests/commented.test.ts", kind: "edited_test" },
     { path: "tests/moved.test.ts", kind: "edited_test" },
+    { path: "tests/contract.test.ts", kind: "edited_test" },
     { path: "tests/gone.test.ts", kind: "deleted_test" },
   ]);
 });
