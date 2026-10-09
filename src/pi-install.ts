@@ -5,8 +5,9 @@ import { versionAtLeast } from "./verification/pi-version-rule.js";
 /** The npm package that provides Pi, which Tesota declares as an optional peer dependency. */
 export const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 
-/** An installed Pi: its version and the program its `pi` command runs. */
+/** An installed Pi: its package folder, its version and the program its `pi` command runs. */
 export interface InstalledPi {
+  readonly root: string;
   readonly version: string;
   readonly cli: string;
 }
@@ -32,7 +33,7 @@ export function installedPi(folder: string): InstalledPi | undefined {
     const pi = manifest(join(root, "package.json"));
     const bin = pi?.["bin"];
     const cli = typeof bin === "object" && bin !== null ? Reflect.get(bin, "pi") : undefined;
-    if (typeof pi?.["version"] === "string" && typeof cli === "string") return { version: pi["version"], cli: join(root, cli) };
+    if (typeof pi?.["version"] === "string" && typeof cli === "string") return { root, version: pi["version"], cli: join(root, cli) };
     if (dirname(current) === current) return undefined;
   }
 }
@@ -43,7 +44,7 @@ function piHolding(file: string): InstalledPi | undefined {
     const pi = manifest(join(current, "package.json"));
     if (pi?.["name"] === undefined) continue;
     return pi["name"] === PI_PACKAGE && typeof pi["version"] === "string" && existsSync(file)
-      ? { version: pi["version"], cli: file } : undefined;
+      ? { root: current, version: pi["version"], cli: file } : undefined;
   }
   return undefined;
 }
@@ -80,6 +81,15 @@ export function piOnPath(pathVariable: string, platform: NodeJS.Platform): Insta
     return linked ?? (target === undefined ? undefined : piHolding(target));
   }
   return undefined;
+}
+
+/** The module Pi's package exports, which holds its `SessionManager`. */
+export function piModule(pi: InstalledPi): string {
+  const exported = manifest(join(pi.root, "package.json"))?.["exports"];
+  const main = typeof exported === "object" && exported !== null ? Reflect.get(exported, ".") : undefined;
+  const entry = typeof main === "object" && main !== null ? Reflect.get(main, "import") : undefined;
+  if (typeof entry !== "string") throw new Error(`The Pi at ${pi.root} exports no module Tesota can import.`);
+  return join(pi.root, entry);
 }
 
 /** The minimum Pi version in Tesota's `package.json`, whose peer range has the form `>=X.Y.Z`. */

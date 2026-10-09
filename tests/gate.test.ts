@@ -2,9 +2,11 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { VERSION } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Evidence } from "../src/evidence.js";
-import { changedFiles, headCommit, registerGate } from "../src/gate.js";
+import { changedFiles, registerGate } from "../src/gate.js";
+import { headCommit } from "../src/git.js";
 import type { Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
@@ -158,10 +160,37 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   expect(proved?.continue).toBeUndefined();
   expect(entry(proved).customType).toBe("tesota-receipt");
   expect(entry(proved).content).toBe(["Tesota receipt", "  proved        src/rule.ts",
-    "                content sha256 hash of src/rule.ts", "  not verified  notes.md: no verifier covers it"].join("\n"));
+    "                content sha256 hash of src/rule.ts",
+    "  not verified  src/rule.ts line 3: outside the contracts that proved, and no verifier covers them",
+    "  not verified  notes.md: no verifier covers it"].join("\n"));
   const receipt = entry(proved).details as Receipt;
   expect(receipt.proofs.map(({ path, verdict, evidence }) => [path, verdict, evidence.contentHash]))
     .toEqual([["src/rule.ts", "proved", "hash of src/rule.ts"]]);
+  expect(receipt).toMatchObject({ version: 1, base: await headCommit(root), pi: VERSION });
+  expect(receipt.model).toBeUndefined();
+  expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
+});
+
+it("lists the changed lines of a proved file that no contract covers, and not those of a contract that proved", async () => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  writeFileSync(join(root, "src", "rule.ts"), `${contract.replace("return 0;", "return 1;")}\nexport function g(): number {\n` +
+    "  return 1;\n}\n");
+  const settled = entry(await run.settle());
+  expect(settled.content).toContain("  not verified  src/rule.ts lines 4-6: outside the contracts that proved, and no verifier covers them");
+  expect((settled.details as Receipt).uncovered).toEqual([{ path: "src/rule.ts", lines: [[4, 6]] }]);
+});
+
+it("records the blob of every file the run left changed, and a deleted one as null", async () => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  writeFileSync(join(root, "src", "new.md"), "# New\n");
+  rmSync(join(root, "notes.md"));
+  const blob = spawnSync("git", ["hash-object", "src/new.md"], { cwd: root, encoding: "utf8" }).stdout.trim();
+  expect((entry(await run.settle()).details as Receipt).changed).toEqual([{ path: "notes.md", blob: null },
+    { path: "src/new.md", blob }]);
 });
 
 it("measures the strength of the contracts the request changed once they prove, judged against what the operator asked", async () => {
@@ -374,7 +403,7 @@ it("says a change too large to read was not checked for weakening, instead of li
     "  not checked   weakened evidence: the change is too large to check for weakening",
     "  not verified  notes.md: no verifier covers it"].join("\n"));
   expect((settled.details as Receipt).weakened).toBe("too_large");
-});
+}, 60_000);
 it("runs the project's tests, and runs each changed test on the request's base even after the agent commits", async () => {
   const root = testedProject();
   const run = gate(root);

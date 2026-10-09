@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { bodyEnd, changedContracts, contractStrength, contracts } from "../src/proof-guarantees.js";
 import { renderReceipt } from "../src/receipt.js";
+import { emptyReceipt } from "./receipts.js";
 
 /** Every mutant fails its proof: what mutation finds is under test in proof-mutation.test.ts. */
 vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
@@ -62,7 +63,7 @@ it("mutates and has a model judge only the changed contracts, and labels the ver
   expect(strength).toEqual({ claimcheck: { status: "judged", restatedBy: "provider/model", comparedBy: "provider/model" }, contracts: [{ path: "src/rules.ts", name: "total",
     lines: ["//@ requires amount >= 0", "//@ ensures \\result === amount"], mutation: { rejected: 3, survived: [], inconclusive: 0 },
     judgment: { verdict: "partially_justified", explanation: "It excludes negative amounts." } }] });
-  expect(renderReceipt({ version: 0, repository: true, proofs: [], tests: [], exercises: [], weakened: [], unverified: [], ...strength }))
+  expect(renderReceipt({ ...emptyReceipt, ...strength }))
     .toContain("  model judged  by ClaimCheck on provider/model, one model for both requests, a model's judgment against the request, not a proof:\n" +
       "                total in src/rules.ts covers only part of what was asked: It excludes negative amounts.");
   expect(await contractStrength(ctx, [], [{ path: "src/rules.ts", source: base, baseSource: base }], new AbortController().signal))
@@ -73,12 +74,12 @@ it("mutates and has a model judge only the changed contracts, and labels the ver
 it("says when ClaimCheck judged nothing", async () => {
   const strength = await contractStrength({ model: undefined, modelRegistry: {} as never }, [],
     [{ path: "src/rules.ts", source: changed, baseSource: base }], new AbortController().signal);
-  expect(renderReceipt({ version: 0, repository: true, proofs: [], tests: [], exercises: [], weakened: [], unverified: [], ...strength }))
+  expect(renderReceipt({ ...emptyReceipt, ...strength }))
     .toContain("  not judged    whether the contracts express the request: ClaimCheck no model is selected");
 });
 
 it("names each model when a second one restated", () => {
-  expect(renderReceipt({ version: 0, repository: true, proofs: [], tests: [], exercises: [], weakened: [], unverified: [], contracts: [],
+  expect(renderReceipt({ ...emptyReceipt, contracts: [],
     claimcheck: { status: "judged", restatedBy: "other/restater", comparedBy: "provider/model" } }))
     .toContain("  model judged  by ClaimCheck on other/restater restating and provider/model comparing, a model's judgment");
 });

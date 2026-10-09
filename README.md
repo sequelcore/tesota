@@ -13,7 +13,9 @@ project's tests and says which changed tests pass without the change, and
 ends the run with a receipt of what was proved, which proved contracts are
 too weak to rule out small changes to their code, what a model judged of
 them against the request, what was tested, what may weaken the evidence,
-such as a loosened contract or a deleted test, and what was not verified. The
+such as a loosened contract or a deleted test, and what was not verified,
+down to the changed lines outside the contracts that proved. `tesota receipt`
+writes that receipt for a pull request. The
 [roadmap](docs/roadmap.md) lists what comes next. The earlier agent remains
 in Git history.
 
@@ -37,8 +39,14 @@ bun link
 
 Tesota runs inside Pi 1.1.0 or later, installed beside it or on PATH; in a
 checkout, `bun install` provides one. `tesota` opens Pi with Tesota loaded and passes
-every argument to Pi, so `tesota -p "<request>"` runs one request. Run
-`bun unlink` in this checkout to remove the command.
+every argument to Pi, so `tesota -p "<request>"` runs one request. In the
+folder where the session ran, `tesota receipt` writes the last receipt as
+Markdown for a pull request's description or a comment, and
+`tesota receipt --json` writes it as an unsigned in-toto Statement about the
+commit `HEAD` names, for CI. It names who is accountable from Git's
+`user.email`, or from `--owner <login or email>`, and lists the files that
+commit changed after the receipt, which nothing in it covers. Run `bun unlink` in this checkout to remove the
+command.
 
 ## Documentation
 

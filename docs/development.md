@@ -78,7 +78,23 @@ asks a model to restate each contract without the request, the one Pi's
 the session's model to compare the restatement with the operator's request.
 The receipt labels that verdict a model's judgment, says when one model made
 both requests, or says why there is none. Neither sends
-anything back to the agent. The tests that prove files run
+anything back to the agent. A file that proved covers only its changed lines
+inside a function whose contract proved and that the change did not narrow,
+by the weakening list's reading: `src/proof-coverage.ts` applies
+`proofCovered` and the receipt lists the rest by line range. The receipt
+records the request's base, when it started and settled, Pi's version, the
+session's model, and the Git blob id of every file changed from the base as
+the run left it, null for a deleted one. `tesota receipt` (`src/pull-request-receipt.ts`) reads the
+last one from the sessions of the Pi the launcher found, through Pi's
+`SessionManager`, which it imports only for that command so the launcher
+starts without Pi on its module path. It describes the commit `HEAD` names
+and names the evidence whose files changed since, or differ from that commit,
+and every file whose blob in that commit differs from the one the receipt
+recorded, a file changed from the base with no record included;
+its JSON is an in-toto Statement with the predicate fields that
+jfrog/agentic-process-evidence specifies for in-toto/attestation#600, its
+owner taken from `--owner` or else Git's `user.email`, unsigned, and its
+`predicateType` the page `docs/receipt-v1.md`, which slice 9 writes. The tests that prove files run
 only where Dafny is installed; the gate's tests script the proofs and the
 model instead and run real commands. Build before `bun link`; later builds
 refresh that linked executable, and `bun unlink` removes it. The lint rule

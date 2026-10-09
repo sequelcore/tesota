@@ -22,7 +22,10 @@ that passes without the change
 the request added or changed that proved, the receipt says whether small
 changes to its code still prove, which makes it too weak to trust, and how
 the session's model judged it against the request, labelled as a model's
-judgment ([#345](https://github.com/sequelcore/tesota/issues/345)). A prototype on the
+judgment ([#345](https://github.com/sequelcore/tesota/issues/345)). It lists
+the changed lines of a proved file that no contract's proof covers, and
+`tesota receipt` writes the last receipt for a pull request
+([#347](https://github.com/sequelcore/tesota/issues/347)). A prototype on the
 `proto/verification-layer` branch confirmed that Pi 1.1's extension API
 carries the design.
 
@@ -66,16 +69,23 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    maximum case's one mutant is ruled out by its contract, and ClaimCheck
    on GPT-6 Luna judged that contract not to express the request in 3 of 3
    live runs.
-7. **Receipt for pull requests.** `tesota receipt` writes Markdown and JSON,
-   following in-toto's agentic process evidence proposal where it settles.
-   The receipt stops counting changed lines in a proved file's unannotated
-   functions as covered, using `proofCovered`.
+7. **Receipt for pull requests.** Done in #347: `tesota receipt` writes the
+   last receipt in the folder's Pi sessions as Markdown, or with `--json` as
+   an unsigned in-toto Statement about the commit `HEAD` names, with the
+   predicate fields of in-toto's agentic process evidence proposal
+   (in-toto/attestation#600) and the receipt under its `custom`. It names
+   the proofs and commands whose checked content the commit no longer holds,
+   and the files whose content in the commit differs from what the run left.
+   The receipt lists a proved file's changed lines outside every contract
+   that proved, or in one the change narrowed, as not covered, through
+   `proofCovered`.
 8. **Evaluation.** The registered proof cases as a live suite that runs Pi
    with the package. It also measures whether sending a weak contract back
    to the agent helps, and whether a second ClaimCheck model changes its
    verdicts.
 9. **Documentation.** README, a design page, a decision record that reverses
-   the harness decisions, and this roadmap.
+   the harness decisions, this roadmap, and `docs/receipt-v1.md`, the page
+   the receipt's in-toto `predicateType` names, describing its format.
 10. **Parallel sessions.** Recommend an existing Pi package, or raise the gap
     with Pi.
 11. **Identity.** Tesota's visual identity stays: the animated palo fierro

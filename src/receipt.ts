@@ -1,4 +1,5 @@
 import type { Evidence } from "./evidence.js";
+import type { UncoveredLines } from "./proof-coverage.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
 import type { Weakening } from "./verification-changes.js";
@@ -10,14 +11,22 @@ import type { GateVerdict } from "./verification/gate-rule.js";
  * evidence, bound to the content it checked; how strong each contract the
  * request added or changed is, once it proved; the project's commands, such as
  * its tests, with theirs; whether each changed or added test exercises the
- * change; the changes that may weaken the evidence; and the changed files no
- * proof covers. Changes are measured against the commit the operator's
- * request started from.
+ * change; the changes that may weaken the evidence; and the changed files and
+ * lines no proof covers. Changes are measured against the commit the
+ * operator's request started from.
  */
 export interface Receipt {
-  readonly version: 0;
+  readonly version: 1;
   /** False when the project has no Git repository, so nothing could tell which files changed or verify them. */
   readonly repository: boolean;
+  /** The commit `HEAD` named when the operator's request started; null before the first commit and outside Git. */
+  readonly base: string | null;
+  /** When the operator's request started and when its run settled, in ISO 8601. */
+  readonly startedAt: string;
+  readonly settledAt: string;
+  /** The Pi version the run used, and the session's model as `provider/id` when it settled, if one was set. */
+  readonly pi: string;
+  readonly model?: string;
   readonly proofs: readonly { readonly path: string; readonly verdict: GateVerdict; readonly evidence: Evidence }[];
   /** Each contract the request added or changed in a file that proved, with what mutation and ClaimCheck found. */
   readonly contracts: readonly ContractStrength[];
@@ -33,6 +42,18 @@ export interface Receipt {
   readonly weakened: readonly Weakening[] | "too_large" | "unreadable";
   /** Changed files, relative to the project, that no proof covers. */
   readonly unverified: readonly string[];
+  /**
+   * The changed lines of each TypeScript file that proved that no contract's
+   * proof covers (`uncoveredLines`); none when `weakened` says the change
+   * could not be read.
+   */
+  readonly uncovered: readonly UncoveredLines[];
+  /**
+   * Every file changed from `base` as the run left it, relative to the
+   * project: the blob id Git would store for its content, or null when
+   * deleted; `unreadable` when Git could not tell.
+   */
+  readonly changed: readonly { readonly path: string; readonly blob: string | null }[] | "unreadable";
 }
 
 function why(evidence: Evidence): string {
@@ -123,6 +144,14 @@ export function renderReceipt(receipt: Receipt): string {
       ? ["  not checked   weakened evidence: the change is too large to check for weakening"]
       : receipt.weakened === "unreadable"
         ? ["  not checked   weakened evidence: Git could not show the change"] : receipt.weakened.map(weakening),
+    ...typeof receipt.weakened === "string" && receipt.proofs.length > 0
+      ? ["  not checked   which changed lines the proofs cover, for the same reason"] : [],
+    ...receipt.uncovered.filter(({ lines }) => lines.length > 0).map(({ path, lines }) => {
+      const one = lines.length === 1 && lines[0]?.[0] === lines[0]?.[1];
+      const where = `${path} ${one ? "line" : "lines"} ${lines.map(([start, end]) => start === end ? `${start}` : `${start}-${end}`).join(", ")}`;
+      return tested ? `  not proved    ${where}: outside the contracts that proved; the project's commands pass with them`
+        : `  not verified  ${where}: outside the contracts that proved, and no verifier covers them`;
+    }),
     ...receipt.unverified.map((path) => tested
       ? `  not proved    ${path}: no proof covers it; the project's commands pass with it`
       : `  not verified  ${path}: no verifier covers it`),

@@ -102,12 +102,12 @@ function matching<T>(lines: readonly T[], text: (line: T) => string, others: rea
 }
 
 function annotationChanges(file: FileChange): Weakening[] {
-  const removed = matching(file.removed, (line) => line, file.added.map(({ text }) => text)).flatMap(({ line, matched }) => {
-    const kind = kindOf(file.path, line);
+  const removed = matching(file.removed, ({ text }) => text, file.added.map(({ text }) => text)).flatMap(({ line, matched }) => {
+    const kind = kindOf(file.path, line.text);
     return kind === undefined || !weakens(kind, true, matched, true) ? []
-      : [{ path: file.path, kind: "removed_contract", annotation: line.trim() } as const];
+      : [{ path: file.path, kind: "removed_contract", annotation: line.text.trim() } as const];
   });
-  const added = matching(file.added, ({ text }) => text, file.removed).flatMap(({ line, matched }) => {
+  const added = matching(file.added, ({ text }) => text, file.removed.map(({ text }) => text)).flatMap(({ line, matched }) => {
     const kind = kindOf(file.path, line.text);
     return kind === undefined || !weakens(kind, false, matched, kind === "requires" && existed(file, line.number)) ? []
       : [{ path: file.path, kind: kind === "requires" ? "added_requires" : "added_assume", annotation: line.text.trim() } as const];

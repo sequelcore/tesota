@@ -4,6 +4,7 @@ import { bodyEnd, contracts } from "../src/proof-guarantees.js";
 import { mutateContract, mutants } from "../src/proof-mutation.js";
 import { renderReceipt } from "../src/receipt.js";
 import { proveSource } from "../src/verification/lemmascript-verifier.js";
+import { emptyReceipt } from "./receipts.js";
 
 const dafny = spawnSync("dafny", ["--version"], { encoding: "utf8" }).status === 0;
 
@@ -55,8 +56,7 @@ it("swaps a branch's result, flips comparisons, moves numbers and swaps + and -,
 
 it("calls a contract with surviving mutants weak in the receipt, and says a survivor may behave the same as the original", () => {
   const show = (mutation: { rejected: number; survived: { line: number; operator: "result"; before: string; after: string }[];
-    inconclusive: number }): string => renderReceipt({ version: 0, repository: true, proofs: [], tests: [], exercises: [],
-    weakened: [], unverified: [], contracts: [{ path: "src/clamp.ts", name: "clamp", lines: ["//@ ensures \\result >= 0"], mutation }] });
+    inconclusive: number }): string => renderReceipt({ ...emptyReceipt, contracts: [{ path: "src/clamp.ts", name: "clamp", lines: ["//@ ensures \\result >= 0"], mutation }] });
   expect(show({ rejected: 3, survived: [], inconclusive: 0 }))
     .toContain("  contract      clamp in src/clamp.ts: all 3 decided changes to its code fail the proof");
   expect(show({ rejected: 2, survived: [{ line: 6, operator: "result", before: "low", after: "high" }], inconclusive: 1 }))
@@ -90,7 +90,7 @@ it.runIf(dafny)("flags the registered weak-contract cases whose bodies it can ch
     expect(await proveSource(path, source, AbortSignal.timeout(120_000)), path).toBe("passed");
     const mutation = await mutateOnly(path, source);
     const [contract] = contracts(path, source);
-    const receipt = renderReceipt({ version: 0, repository: true, proofs: [], tests: [], exercises: [], weakened: [], unverified: [],
+    const receipt = renderReceipt({ ...emptyReceipt,
       contracts: [{ path, name: contract?.name ?? "", lines: [], mutation }] });
     if (receipt.includes(`  weak contract ${contract?.name} in ${path}`)) flagged.push(path);
   }
