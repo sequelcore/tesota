@@ -117,6 +117,7 @@ Each slice landed on `dev` through its own pull request.
 | 7. Receipt for pull requests | [#347](https://github.com/sequelcore/tesota/issues/347) | [#349](https://github.com/sequelcore/tesota/pull/349) |
 | 8. Evaluation | [#350](https://github.com/sequelcore/tesota/issues/350), [#352](https://github.com/sequelcore/tesota/issues/352) | [#351](https://github.com/sequelcore/tesota/pull/351), [#353](https://github.com/sequelcore/tesota/pull/353) |
 | 9. Documentation | [#355](https://github.com/sequelcore/tesota/issues/355) | This record's pull request |
+| 11. Identity | [#360](https://github.com/sequelcore/tesota/issues/360) | [#361](https://github.com/sequelcore/tesota/pull/361) |
 
 The [verification design](../design/verification.md) describes what the
 slices built.
