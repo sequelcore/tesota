@@ -43,68 +43,11 @@ Pi is an optional peer dependency, never a runtime dependency, so the package
 uses the operator's Pi; the development copy in `devDependencies` must meet
 the minimum, which a test checks. `typebox`, which Pi supplies to extensions,
 is an optional peer for the same reason. `lemmascript` is a runtime
-dependency: `prove` runs its `lsc` with the operator's Dafny in the project
-itself, `lsc regen` and then `lsc check`, so the project's `.dfy` follows the
-source as described under "Adding a capability". The gate proves the same
-way, in `src/gate.ts`; it takes the changed files from Git, against the
-commit `HEAD` named when the operator's request started, plus untracked
-files, so a commit the agent makes during the request hides nothing. From the
-same diff it lists in the receipt the changes that may weaken the evidence:
-a removed or changed `//@ requires` or `ensures`, a `//@ requires` added to a
-function the base had, an added `//@ assume`, a Dafny `assume`, `{:axiom}`
-or lemma without a body added to a `.dfy`, and a deleted or edited test file.
-When the diff is larger than the gate reads, the receipt says the change was
-not checked for weakening; the gate then waits for Git to exit instead of
-killing it, since on Windows killing Git's launcher leaves the real Git
-running in the project. Outside a Git repository it cannot tell what changed,
-so it holds no run, and a request that ran a tool that may change files ends
-with a receipt saying its changes were not verified. Once no proof goes back, the gate runs the commands that
-`suggestChecks` in `src/projects.ts` finds for the projects that own the
-changed files, in Pi's shell, stopping every process a command started when
-it runs past its limit or is cancelled; `src/process.ts` starts and stops
-these processes, and LemmaScript's and Dafny's for a proof too. It reads the failing tests from the
-JUnit XML reports a command writes during the run, and sends a failure back
-until the set of failing tests repeats one already sent; a command that
-writes no report goes back once. Then it runs each changed or added test file,
-snapshots aside,
-over the request's base in a Git worktree in the computer's temporary
-folder, with the checkout's `node_modules` linked in, and gives no verdict
-there when the change touches `package.json` or a lockfile
-(`src/test-rung.ts`). When the commands pass, it measures how strong each
-contract is that the request added or changed in a file that proved
-(`src/proof-guarantees.ts`): `src/proof-mutation.ts` proves up to 8 small
-changes to the function's body, each alone in a temporary folder without the
-file's `.dfy` proof additions. For one that still proves, it asks Dafny in
-the same way whether the changed function returns the original's result for
-every input its `requires` admits (`equivalenceSource`); the receipt only
-counts a change proved equivalent, and any other that still proves makes the
-contract weak. A function that calls itself, or whose equivalence does not
-prove, such as one with a loop, keeps its survivors. The gate sends a weak
-contract's surviving changes back to the agent until they repeat.
-`src/pi-claimcheck.ts`, through `ctx.modelRegistry`,
-asks a model to restate each contract without the request, the one Pi's
-`--claimcheck-model <provider>/<id>` flag names or else the session's, and
-the session's model to compare the restatement with the operator's request.
-The receipt labels that verdict a model's judgment, says when one model made
-both requests, or says why there is none; it sends nothing back to the
-agent. A file that proved covers only its changed lines
-inside a function whose contract proved and that the change did not narrow,
-by the weakening list's reading: `src/proof-coverage.ts` applies
-`proofCovered` and the receipt lists the rest by line range. The receipt
-records the request's base, when it started and settled, Pi's version, the
-session's model, and the Git blob id of every file changed from the base as
-the run left it, null for a deleted one. `tesota receipt` (`src/pull-request-receipt.ts`) reads the
-last one from the sessions of the Pi the launcher found, through Pi's
-`SessionManager`, which it imports only for that command so the launcher
-starts without Pi on its module path. It describes the commit `HEAD` names
-and names the evidence whose files changed since, or differ from that commit,
-and every file whose blob in that commit differs from the one the receipt
-recorded, a file changed from the base with no record included;
-its JSON is an in-toto Statement with the predicate fields that
-jfrog/agentic-process-evidence specifies for in-toto/attestation#600, its
-owner taken from `--owner` or else Git's `user.email`, unsigned, and its
-`predicateType` the page `docs/receipt-v1.md`, which slice 9 writes. The tests that prove files run
-only where Dafny is installed; the gate's tests script the proofs and the
+dependency: `prove` and the gate run its `lsc` with the operator's Dafny in
+the project itself, as described under "Adding a capability". The
+[verification design](design/verification.md) describes the gate, its
+rungs and the receipt, and [receipt v1](receipt-v1.md) the receipt's format.
+The tests that prove files run only where Dafny is installed; the gate's tests script the proofs and the
 model instead and run real commands. Build before `bun link`; later builds
 refresh that linked executable, and `bun unlink` removes it. The lint rule
 limits cyclomatic complexity to 20 in `src` and `tests` with no file
@@ -156,6 +99,9 @@ evidence matters, then mechanism, and never claims more than was exercised.
 | --- | --- |
 | Orientation | [README](../README.md) |
 | Status and priorities | [Roadmap](roadmap.md) |
+| How verification works | [Verification design](design/verification.md) |
+| The receipt's format | [Receipt v1](receipt-v1.md) |
+| Consequential decisions | [Decisions](decisions/), one record per decision, named by date |
 | Build, test and contribution practice | This page |
 | Agent working instructions | [AGENTS.md](../AGENTS.md) |
 
