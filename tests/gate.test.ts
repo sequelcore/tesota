@@ -13,6 +13,7 @@ import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 
 /** The proofs the gate runs, scripted per file: the gate's decisions, not LemmaScript, are under test here. */
 const scripted = new Map<string, { outcome: ProofOutcome; output: string }>();
+let mutantOutcome: ProofOutcome = "failed";
 vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
   ...await original<typeof import("../src/verification/lemmascript-verifier.js")>(),
   proveFile: (_root: string, path: string): Promise<Evidence> => {
@@ -20,12 +21,12 @@ vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
     return Promise.resolve({ verifier: "lemmascript", claim: `claim of ${path}`, limits: "", outcome, output, durationMs: 1,
       files: [path, path.replace(/\.ts$/u, ".dfy")], contentHash: `hash of ${path}` });
   },
-  // Every mutant fails its proof, so a changed contract's strength is measured without Dafny.
-  proveSource: () => Promise.resolve("failed"),
+  // Every mutant ends as scripted, failing its proof unless a test says otherwise, so strength is measured without Dafny.
+  proveSource: () => Promise.resolve(mutantOutcome),
 }));
 
 const roots: string[] = [];
-beforeEach(() => { scripted.clear(); });
+beforeEach(() => { scripted.clear(); mutantOutcome = "failed"; });
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 function git(root: string, ...args: string[]): void {
@@ -226,6 +227,25 @@ it("restates with the model the claimcheck-model flag names", async () => {
   await run.input();
   writeFileSync(join(root, "src", "rule.ts"), `//@ ensures true\n${contract}`);
   expect(entry(await run.settle()).content).toContain("ClaimCheck its restating model other/missing is not a provider/id in Pi's model registry");
+});
+
+it("sends a weak contract back once with the experimental flag, and only lists it in the receipt without it", async () => {
+  mutantOutcome = "passed";
+  const root = project();
+  writeFileSync(join(root, "src", "rule.ts"), "//@ ensures \\result <= 5\nexport function f(): number {\n  return 0;\n}\n");
+  const plain = gate(root);
+  await plain.input();
+  expect(entry(await plain.settle()).customType).toBe("tesota-receipt");
+  const run = gate(root, undefined, { flags: { "send-back-weak-contracts": true } });
+  await run.input();
+  const sent = await run.settle();
+  expect(sent?.continue).toBe(true);
+  expect(entry(sent).content).toMatch(/^Tesota: the contract of f in src\/rule\.ts proves, but these changes to its code prove too, so it does not rule them out:\n {2}line 3: 0 became 1\n\nStrengthen the contract/u);
+  const settled = entry(await run.settle());
+  expect(settled.customType).toBe("tesota-receipt");
+  expect(settled.content).toContain("weak contract f in src/rule.ts");
+  await run.input();
+  expect((await run.settle())?.continue).toBe(true);
 });
 
 it("stops on any failure already sent back, alternating ones included, and forgets them on the operator's input only", async () => {

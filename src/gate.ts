@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type ExtensionAPI, VERSION } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, VERSION } from "@earendil-works/pi-coding-agent";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
 import { git, gitOutput, headCommit } from "./git.js";
-import { contractStrength } from "./proof-guarantees.js";
+import { type ContractStrength, contractStrength } from "./proof-guarantees.js";
 import { owningProjects, suggestChecks } from "./projects.js";
 import { uncoveredLines } from "./proof-coverage.js";
 import { proofReport } from "./prove-tool.js";
@@ -181,6 +181,47 @@ function restateWith(pi: ExtensionAPI): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
+/**
+ * EXPERIMENTAL, for slice 8's evaluation (#350) only: the Pi flag that sends
+ * a weak contract back to the agent instead of only listing it in the
+ * receipt. If the evaluation shows it does not help, the flag and
+ * `weakContractReport` are removed; if it helps, sending back becomes the
+ * default and the flag goes.
+ */
+const sendBackWeakFlag = "send-back-weak-contracts";
+
+/** What a weak contract's correction must change before it goes back again: the changes to its code that still prove. */
+function weakFailure({ mutation }: ContractStrength): string {
+  return mutation.survived.map(({ line, before, after }) => `${line}: ${before} -> ${after}`).join("\n");
+}
+
+/** What goes back to the agent for a weak contract (`sendBackWeakFlag`): the changes to its code its proof does not rule out. */
+function weakContractReport({ path, name, mutation }: ContractStrength): string {
+  return `Tesota: the contract of ${name} in ${path} proves, but these changes to its code prove too, so it does not rule ` +
+    `them out:\n${mutation.survived.map(({ line, before, after }) => `  line ${line}: ${before} became ${after}`).join("\n")}\n\n` +
+    "Strengthen the contract so its proof rules out what the request does not allow, and keep it provable. " +
+    "A change that behaves the same as the code needs nothing.";
+}
+
+/**
+ * What goes back for the weak contracts (`sendBackWeakFlag`), each until its
+ * surviving changes repeat ones already sent back (`gateVerdict`), recorded
+ * in `sentBack`; undefined when none goes back.
+ */
+function sendBackWeak(enabled: boolean, strength: readonly ContractStrength[], sentBack: Map<string, string[]>): string | undefined {
+  if (!enabled) return undefined;
+  const key = ({ path, name }: ContractStrength): string => `${path}#${name}`;
+  const weak = strength.filter((item) => item.mutation.survived.length > 0
+    && gateVerdict("failed", weakFailure(item), sentBack.get(key(item)) ?? []) === "send_back");
+  for (const item of weak) sentBack.set(key(item), [...sentBack.get(key(item)) ?? [], weakFailure(item)]);
+  return weak.length === 0 ? undefined : weak.map(weakContractReport).join("\n\n");
+}
+
+/** The session's model as the receipt records it, when one is set. */
+function sessionModel(ctx: Pick<ExtensionContext, "model">): Pick<Receipt, "model"> {
+  return ctx.model === undefined ? {} : { model: `${ctx.model.provider}/${ctx.model.id}` };
+}
+
 /** Built-in tools that only read, and `prove`, whose changes are the proof's own; any other tool may change files. */
 const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
 
@@ -191,7 +232,8 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
  * sent back for that file (`gateVerdict`). Then the test rung runs
  * (`testRung`), and once it passes, the strength of the contracts the
  * request added or changed (`contractStrength`) and the changed lines no
- * proof covers (`uncovered`) are measured for the receipt. What
+ * proof covers (`uncovered`) are measured for the receipt; with the
+ * experimental `sendBackWeakFlag`, a weak contract goes back first. What
  * went back lasts for the operator's request: it resets on their input, not
  * on `agent_start`, which every continuation fires too. When nothing goes back, the run settles with
  * a receipt for the operator. Changes are measured against the commit `HEAD`
@@ -204,8 +246,11 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
 export function registerGate(pi: ExtensionAPI): void {
   pi.registerFlag(claimcheckModelFlag, { type: "string",
     description: "The provider/id of a second model for ClaimCheck to restate contracts with; the session's model otherwise" });
+  pi.registerFlag(sendBackWeakFlag, { type: "boolean", default: false,
+    description: "Experimental: send a contract with a change to its code that still proves back to the agent" });
   let sentBack = new Map<string, string[]>();
   let commandsSentBack = new Map<string, string[]>();
+  let weakSentBack = new Map<string, string[]>();
   let mayHaveChanged = false;
   /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
   let requests: string[] = [];
@@ -216,6 +261,7 @@ export function registerGate(pi: ExtensionAPI): void {
     if (event.source === "extension") return undefined;
     sentBack = new Map();
     commandsSentBack = new Map();
+    weakSentBack = new Map();
     mayHaveChanged = false;
     if (event.streamingBehavior !== undefined) { requests.push(event.text); return undefined; }
     requests = [event.text];
@@ -229,8 +275,7 @@ export function registerGate(pi: ExtensionAPI): void {
     if (event.outcome !== "completed") return undefined;
     const from = await (base ??= headCommit(ctx.cwd));
     startedAt ??= new Date().toISOString();
-    const run = { base: from, startedAt, pi: VERSION,
-      ...ctx.model === undefined ? {} : { model: `${ctx.model.provider}/${ctx.model.id}` } };
+    const run = { base: from, startedAt, pi: VERSION, ...sessionModel(ctx) };
     const changed = await changedFiles(ctx.cwd, from);
     if (changed === undefined) {
       if (!mayHaveChanged) return undefined;
@@ -268,8 +313,12 @@ export function registerGate(pi: ExtensionAPI): void {
     const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
       path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
     const sources = await provedSources(ctx.cwd, from, judged);
-    const receipt: Receipt = { version: 1, repository: true, ...run, proofs: judged,
-      ...await contractStrength(ctx, requests, sources, signal, restateWith(pi)), tests, exercises, weakened,
+    const strength = await contractStrength(ctx, requests, sources, signal, restateWith(pi));
+    const weak = sendBackWeak(pi.getFlag(sendBackWeakFlag) === true, strength.contracts, weakSentBack);
+    if (weak !== undefined) {
+      return { entries: [{ type: "custom_message", customType: "tesota-gate", content: weak, display: true }], continue: true };
+    }
+    const receipt: Receipt = { version: 1, repository: true, ...run, proofs: judged, ...strength, tests, exercises, weakened,
       unverified: changed.filter((path) => !covered.has(path)), uncovered: uncovered(sources, changes, weakened),
       changed: await recordedChanges(ctx.cwd, from, changed), settledAt: new Date().toISOString() };
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
