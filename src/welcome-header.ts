@@ -145,7 +145,8 @@ export class WelcomeHeader implements Component {
     const theme = this.#theme;
     const cwd = this.#cwd.length > width ? `…${this.#cwd.slice(-(width - 1))}` : this.#cwd;
     const version = /^\d/u.test(this.#version) ? `v${this.#version}` : this.#version;
-    return [`${theme.bold("Tesota")} ${theme.fg("muted", `(${version})`)}`, theme.fg("muted", cwd),
+    // Bold directly: Pi's theme.bold leaves text plain where its color library detects no color support.
+    return [`\x1b[1mTesota\x1b[22m ${theme.fg("muted", `(${version})`)}`, theme.fg("muted", cwd),
       theme.fg("muted", WELCOME_TAGLINE)];
   }
 

@@ -126,7 +126,10 @@ from the same colors. They are optional:
 - Windows Terminal: copy `windows-terminal/tesota.json` to
   `%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\Tesota\`, restart
   Windows Terminal, and choose **Tesota Dark** or **Tesota Light** as a
-  profile's color scheme.
+  profile's color scheme. Windows Terminal shows bold text, such as the
+  header's `Tesota`, as a brighter color by default; set the profile's
+  **Intense text style** (`intenseTextStyle`) to **Bold font** to draw it
+  bold.
 - Ghostty: copy the files in `ghostty` to `~/.config/ghostty/themes/` and
   set `theme = light:Tesota Light,dark:Tesota Dark`.
 - WezTerm: copy the files in `wezterm` to `~/.config/wezterm/colors/` and

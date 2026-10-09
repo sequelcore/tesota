@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DefaultResourceLoader, type Theme } from "@earendil-works/pi-coding-agent";
-import { stripTerminalSequences, type TerminalColors, type TerminalColorScheme, type TuiMouseEvent, visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, type TerminalColorMode, type TerminalColors, type TerminalColorScheme, type TuiMouseEvent,
+  visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, expect, it } from "vitest";
 import { mountWelcomeHeader, WELCOME_FRAME_MS, WELCOME_SCENE_MS, WELCOME_TAGLINE, WelcomeHeader, themeMarkColors,
   type WelcomeHeaderOptions } from "../src/welcome-header.js";
@@ -22,10 +23,15 @@ beforeAll(async () => {
   for (const theme of loaded) if (theme.name !== undefined) themes.set(theme.name, theme);
 }, 30_000);
 
-function theme(name: string): Theme {
+/** A theme Pi loaded, in a color mode the test sets rather than the one Pi detected on this machine. */
+function theme(name: string, mode: TerminalColorMode = "truecolor"): Theme {
   const found = themes.get(name);
   if (found === undefined) throw new Error(`Pi did not load the theme ${name}`);
-  return found;
+  return new Proxy(found, { get: (target, key) => {
+    if (key === "getColorMode") return () => mode;
+    const value: unknown = Reflect.get(target, key);
+    return typeof value === "function" ? value.bind(target) : value;
+  } });
 }
 
 function header(options: Partial<WelcomeHeaderOptions> & { name?: string } = {}) {
@@ -146,6 +152,21 @@ it("colors the tree from the active theme's roles, and follows a change of theme
   const light = art(view.render(100));
   expect(stripTerminalSequences(light)).toBe(stripTerminalSequences(dark));
   expect(light).not.toBe(dark);
+});
+
+it("draws the tree in 256 colors where the theme's terminal has no truecolor", () => {
+  const art = (mode: TerminalColorMode): string => new WelcomeHeader("work", theme("tesota-dark", mode),
+    { requestRender: () => undefined, terminalRows: () => 60, stageShare: 1 / 3, setTimer: () => () => undefined })
+    .render(100).filter((line) => braille.test(line)).join("");
+  const indexed = art("256color");
+  expect(indexed).toContain("\x1b[38;5;");
+  expect(indexed).not.toContain("\x1b[38;2;");
+  expect(stripTerminalSequences(indexed)).toBe(stripTerminalSequences(art("truecolor")));
+});
+
+it("sets Tesota's name in bold above the muted version, whatever color support the terminal reports", () => {
+  const title = header().view.render(100).find((line) => stripTerminalSequences(line).includes("Tesota ("))!;
+  expect(title).toContain("\x1b[1mTesota\x1b[22m ");
 });
 
 it("keeps the tree to its share of the terminal, drops it where it would not fit, and never draws past the width", () => {
