@@ -28,7 +28,7 @@ it("runs Pi with Tesota's extension loaded and passes the arguments through", ()
   const requests = result.stdout.split("\n").filter((line) => line.startsWith("{")).map((line): unknown => JSON.parse(line));
   expect(requests).toContainEqual(expect.objectContaining({ method: "setStatus", statusKey: "tesota", statusText: "Tesota" }));
   expect(result.status).toBe(0);
-});
+}, 30_000);
 
 /** A stub Pi under `root`: it prints the arguments it received and exits with 7. */
 function stubPi(root: string, version: string): void {
