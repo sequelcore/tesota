@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -82,4 +82,24 @@ it("runs the Pi on PATH with Node, so no argument passes through a shell", () =>
   expect(result.stderr).toBe("");
   expect(JSON.parse(result.stdout)).toEqual(["--extension", dirname(dirname(cli)), ...args]);
   expect(result.status).toBe(7);
+});
+
+it("opens Pi in Tesota's theme when the operator chose none, and leaves a chosen theme alone", () => {
+  /** The stub Pi's module, whose SettingsManager reports `theme` as the operator's setting. */
+  const withSettings = (theme: string | undefined): string => {
+    const cli = launcherCopy("9.0.0");
+    const pi = join(dirname(dirname(cli)), "node_modules", PI_PACKAGE);
+    const manifest: unknown = JSON.parse(readFileSync(join(pi, "package.json"), "utf8"));
+    writeFileSync(join(pi, "package.json"), JSON.stringify({ ...manifest as object, exports: { ".": { import: "./index.js" } } }));
+    writeFileSync(join(pi, "index.js"),
+      `export const SettingsManager = { create: () => ({ getThemeSetting: () => ${JSON.stringify(theme) ?? "undefined"} }) };\n`);
+    return cli;
+  };
+  const unset = withSettings(undefined);
+  expect(JSON.parse(tesota(unset, ["-p", "hi"], folder()).stdout))
+    .toEqual(["--extension", dirname(dirname(unset)), "--use-theme", "tesota-light/tesota-dark", "-p", "hi"]);
+  expect(JSON.parse(tesota(unset, ["--use-theme", "light"], folder()).stdout))
+    .toEqual(["--extension", dirname(dirname(unset)), "--use-theme", "light"]);
+  const chosen = withSettings("dark");
+  expect(JSON.parse(tesota(chosen, ["-p", "hi"], folder()).stdout)).toEqual(["--extension", dirname(dirname(chosen)), "-p", "hi"]);
 });

@@ -2,7 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { installedPi, minimumPiVersion, missingExtensions, PI_PACKAGE, piOnPath, piProblem } from "../src/pi-install.js";
+import { installedPi, minimumPiVersion, missingExtensions, PI_PACKAGE, piOnPath, piProblem, piThemeSetting, TESOTA_THEMES,
+  themeArguments } from "../src/pi-install.js";
+import { usesTesotaTheme } from "../src/verification/default-theme-rule.js";
 import { versionAtLeast } from "../src/verification/pi-version-rule.js";
 
 const roots: string[] = [];
@@ -126,4 +128,41 @@ it("uses only the first pi on PATH, and only when it runs an installed Pi packag
   writeFileSync(join(missing, "pi.cmd"), npmShim);
   expect(piOnPath(missing, "win32")).toBeUndefined();
   expect(piOnPath("", "win32")).toBeUndefined();
+});
+
+it("opens Pi in Tesota's theme only when the readable settings name none and no --use-theme is given", () => {
+  for (const settingsRead of [false, true]) for (const themeSet of [false, true]) for (const themeArgument of [false, true]) {
+    expect(usesTesotaTheme(settingsRead, themeSet, themeArgument)).toBe(settingsRead && !themeSet && !themeArgument);
+  }
+  const pair = ["--use-theme", TESOTA_THEMES];
+  expect(themeArguments(undefined, ["-p", "fix it"])).toEqual(pair);
+  expect(themeArguments("", [])).toEqual(pair);
+  expect(themeArguments("dark", [])).toEqual([]);
+  expect(themeArguments("light/dark", [])).toEqual([]);
+  expect(themeArguments(undefined, ["--use-theme", "light"])).toEqual([]);
+  expect(themeArguments(undefined, ["--use-theme=light"])).toEqual([]);
+  expect(themeArguments(null, [])).toEqual([]);
+});
+
+/** A Pi whose module exports a `SettingsManager` that reports `theme`, or throws when `theme` is an Error. */
+function settingsPi(theme: string | undefined | Error) {
+  const root = folder();
+  installPi(root, { version: "1.2.0", bin: { pi: "cli.js" }, exports: { ".": { import: "./index.js" } } });
+  const create = theme instanceof Error ? `throw new Error(${JSON.stringify(theme.message)});`
+    : `return { getThemeSetting: () => ${theme === undefined ? "undefined" : JSON.stringify(theme)} };`;
+  writeFileSync(join(root, "node_modules", PI_PACKAGE, "index.js"), `export const SettingsManager = { create() { ${create} } };\n`);
+  const found = installedPi(join(root, "node_modules", "tesota"));
+  if (found === undefined) throw new Error("the stub Pi was not found");
+  return found;
+}
+
+it("reads the theme setting through the installed Pi's SettingsManager, and null when it can't", async () => {
+  expect(await piThemeSetting(settingsPi(undefined), folder())).toBeUndefined();
+  expect(await piThemeSetting(settingsPi("tesota-dark"), folder())).toBe("tesota-dark");
+  expect(await piThemeSetting(settingsPi(new Error("invalid settings.json")), folder())).toBeNull();
+  const noModule = folder();
+  installPi(noModule, { version: "1.2.0", bin: { pi: "cli.js" } });
+  const pi = installedPi(join(noModule, "node_modules", "tesota"));
+  expect(pi).toBeDefined();
+  if (pi !== undefined) expect(await piThemeSetting(pi, folder())).toBeNull();
 });

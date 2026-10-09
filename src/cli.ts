@@ -4,13 +4,15 @@ import { spawn } from "node:child_process";
 import { constants } from "node:os";
 import { dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { installedPi, minimumPiVersion, missingExtensions, piModule, piOnPath, piProblem } from "./pi-install.js";
+import { installedPi, minimumPiVersion, missingExtensions, piModule, piOnPath, piProblem, piThemeSetting, themeArguments }
+  from "./pi-install.js";
 import { type PiSessions, receiptCommand } from "./pull-request-receipt.js";
 
 /**
  * The `tesota` command: Pi with Tesota's package loaded, every argument
- * passed through to Pi. The Pi installed beside Tesota comes first, then the
- * one on PATH. `tesota receipt` instead writes the last receipt for a pull
+ * passed through to Pi, in Tesota's theme for the run unless the operator
+ * chose one (`themeArguments`). The Pi installed beside Tesota comes first,
+ * then the one on PATH. `tesota receipt` instead writes the last receipt for a pull
  * request, read from that Pi's sessions (`receiptCommand`).
  */
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -33,7 +35,9 @@ if (process.argv[2] === "receipt") {
     { out: (text) => process.stdout.write(text), error: (text) => process.stderr.write(text) }));
 }
 
-const child = spawn(process.execPath, [pi.cli, "--extension", packageRoot, ...process.argv.slice(2)], { stdio: "inherit" });
+const args = process.argv.slice(2);
+const theme = themeArguments(await piThemeSetting(pi, process.cwd()), args);
+const child = spawn(process.execPath, [pi.cli, "--extension", packageRoot, ...theme, ...args], { stdio: "inherit" });
 // Pi owns the terminal: Ctrl+C reaches it directly, and Tesota waits for it to exit.
 process.on("SIGINT", () => undefined);
 child.on("error", (error) => {

@@ -104,10 +104,13 @@ fullscreen mode, its default, a click on the resting tree plays the scene
 again.
 
 **Themes.** Tesota brings six Pi themes: `tesota-dark` and `tesota-light`,
-and `vesper`, `sequel`, `automata` and `phosphor`. Pi keeps the theme you
-chose until you pick another: open `/settings`, select **Theme**, and
-choose one, or choose a light and a dark one as a pair so Pi follows your
-terminal's appearance.
+and `vesper`, `sequel`, `automata` and `phosphor`. Until you choose a theme,
+`tesota` opens Pi in `tesota-light` or `tesota-dark`, following your
+terminal's light or dark appearance, without saving anything to Pi's
+settings. A theme you choose always wins: open `/settings`, select
+**Theme**, and choose one, or a light and a dark one as a pair; `tesota
+--use-theme <name>` picks one for a single run. Pi itself, with Tesota
+installed through `pi install`, keeps its own theme.
 
 **A quieter start.** Pi lists the context, skills and extensions it loaded
 beneath the header, so the tree keeps to a third of the window. To give it
