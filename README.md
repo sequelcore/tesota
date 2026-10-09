@@ -135,9 +135,23 @@ from the same colors. They are optional:
 - WezTerm: copy the files in `wezterm` to `~/.config/wezterm/colors/` and
   set `config.color_scheme = "Tesota Dark"`.
 
-Pi has no theme color for the input box's background, so it keeps Pi's
-border lines, and its footer keeps Pi's `dim` color; the `Tesota` status
-beneath it takes the theme's success color, sage in Tesota's themes.
+**Input and footer.** The input is a filled block in the theme's
+`userMessageBg`, the color of your sent messages, with a bar down its left
+edge in Pi's border color, which follows the thinking level and bash mode.
+Beneath it the footer shows, first, what Tesota knows about the current
+request:
+
+- before a request, what it can verify here: `● ready · proofs and tests`,
+  `● ready · tests only`, or `● ready · nothing to check with`;
+- while the gate works, its step and what the round found so far, such as
+  `◐ proving… · 1 proved · tests pass`;
+- after the run, the receipt in brief, such as
+  `✓ receipt · 1 proved · tests pass · 3 lines not proved`.
+
+The context window's use sits at its right. The second row holds the folder
+and branch, with the model at its right. On a narrow terminal the model
+goes first, then the evidence shortens, and the context % goes last.
+Statuses from other extensions follow on a third row.
 
 ## Credits
 

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type ExtensionAPI, type ExtensionContext, VERSION } from "@earendil-works/pi-coding-agent";
+import { type AgentBeforeSettleEvent, type AgentBeforeSettleEventResult, type ExtensionAPI, type ExtensionContext, VERSION }
+  from "@earendil-works/pi-coding-agent";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
 import { git, gitOutput, headCommit } from "./git.js";
@@ -11,6 +12,7 @@ import { proofReport } from "./prove-tool.js";
 import { type Receipt, renderReceipt } from "./receipt.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
 import { type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
+import type { Readiness } from "./verification/footer-rule.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
 
@@ -215,6 +217,62 @@ function sessionModel(ctx: Pick<ExtensionContext, "model">): Pick<Receipt, "mode
 /** Built-in tools that only read, and `prove`, whose changes are the proof's own; any other tool may change files. */
 const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
 
+/** What the gate's current round found so far: proofs, then the commands, then weak contracts. */
+export interface Tally {
+  readonly proved: number;
+  readonly notProved: number;
+  readonly tests?: "pass" | "fail";
+  readonly weak?: number;
+}
+
+/**
+ * What the gate is doing, for the footer. Between requests it is ready with
+ * what the project lets it verify. While a run settles it is proving,
+ * testing or measuring contracts; it has `sent_back` failures while the
+ * agent answers them, and is `settled` once the run ends with a receipt.
+ */
+export type GateStatus =
+  | { readonly step: "ready"; readonly readiness: Readiness }
+  | { readonly step: "proving" | "testing" | "measuring" | "sent_back"; readonly tally: Tally }
+  | { readonly step: "settled"; readonly receipt: Receipt };
+
+/** The round so far: the proofs judged, then whether every command passed, then how many contracts are weak. */
+function tally(proofs: Receipt["proofs"], tests?: Receipt["tests"], contracts?: readonly ContractStrength[]): Tally {
+  const proved = proofs.filter(({ verdict }) => verdict === "proved").length;
+  const passed = tests?.every(({ evidence }) => evidence.outcome === "passed");
+  return { proved, notProved: proofs.length - proved, ...tests === undefined || tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" },
+    ...contracts === undefined ? {} : { weak: contracts.filter(({ mutation }) => mutation.survived.length > 0).length } };
+}
+
+/** The gate's status and who listens to it; the gate alone changes it. */
+export class GateProgress {
+  #readiness: Readiness = "nothing";
+  #status: GateStatus = { step: "ready", readiness: "nothing" };
+  readonly #listeners = new Set<() => void>();
+
+  get status(): GateStatus { return this.#status; }
+
+  /** Calls `listener` on every change, until the returned function is called. */
+  subscribe(listener: () => void): () => void {
+    this.#listeners.add(listener);
+    return () => { this.#listeners.delete(listener); };
+  }
+
+  /** What the project lets Tesota verify, shown whenever no request has evidence to show. */
+  ready(readiness: Readiness): void {
+    this.#readiness = readiness;
+    this.publish({ step: "ready", readiness });
+  }
+
+  /** Back to ready, as on the operator's next request. */
+  reset(): void { this.publish({ step: "ready", readiness: this.#readiness }); }
+
+  publish(status: GateStatus): void {
+    this.#status = status;
+    for (const listener of this.#listeners) listener();
+  }
+}
+
 /**
  * The gate (#339): before a completed run settles, it proves every changed
  * file with contracts. A failed or vacuous proof goes back to the agent and
@@ -232,7 +290,8 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
  * changed, so a request that ran a tool that may change files ends with a
  * receipt that says so.
  */
-export function registerGate(pi: ExtensionAPI): void {
+export function registerGate(pi: ExtensionAPI): GateProgress {
+  const progress = new GateProgress();
   pi.registerFlag(claimcheckModelFlag, { type: "string",
     description: "The provider/id of a second model for ClaimCheck to restate contracts with; the session's model otherwise" });
   let sentBack = new Map<string, string[]>();
@@ -250,6 +309,7 @@ export function registerGate(pi: ExtensionAPI): void {
     commandsSentBack = new Map();
     weakSentBack = new Map();
     mayHaveChanged = false;
+    progress.reset();
     if (event.streamingBehavior !== undefined) { requests.push(event.text); return undefined; }
     requests = [event.text];
     startedAt = new Date().toISOString();
@@ -258,30 +318,39 @@ export function registerGate(pi: ExtensionAPI): void {
     return undefined;
   });
   pi.on("tool_execution_start", (event) => { if (!readOnlyTools.has(event.toolName)) mayHaveChanged = true; });
+  // A gate that fails midway leaves no step running in the footer.
   pi.on("agent_before_settle", async (event, ctx) => {
+    try { return await settle(event, ctx); } catch (error) { progress.reset(); throw error; }
+  });
+  /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
+  const outsideGit = (run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">): AgentBeforeSettleEventResult | undefined => {
+    if (!mayHaveChanged) return undefined;
+    const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), proofs: [],
+      contracts: [], tests: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [] };
+    progress.publish({ step: "settled", receipt });
+    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
+      display: true, details: receipt }] };
+  };
+  const settle = async (event: AgentBeforeSettleEvent, ctx: ExtensionContext): Promise<AgentBeforeSettleEventResult | undefined> => {
     if (event.outcome !== "completed") return undefined;
     const from = await (base ??= headCommit(ctx.cwd));
     startedAt ??= new Date().toISOString();
     const run = { base: from, startedAt, pi: VERSION, ...sessionModel(ctx) };
     const changed = await changedFiles(ctx.cwd, from);
-    if (changed === undefined) {
-      if (!mayHaveChanged) return undefined;
-      const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), proofs: [],
-        contracts: [], tests: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [] };
-      return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
-        display: true, details: receipt }] };
-    }
+    if (changed === undefined) return outsideGit(run);
     const changes = await fileChanges(ctx.cwd, from, changed);
     const weakened = typeof changes === "string" ? changes : weakenedEvidence(changes);
-    if (changed.length === 0 && Array.isArray(weakened) && weakened.length === 0) return undefined;
+    if (changed.length === 0 && Array.isArray(weakened) && weakened.length === 0) { progress.reset(); return undefined; }
     const signal = ctx.signal ?? new AbortController().signal;
     const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
     const judged: Receipt["proofs"][number][] = [];
     for (const path of await contractFiles(ctx.cwd, changed)) {
+      progress.publish({ step: "proving", tally: tally(judged) });
       const evidence = await proveFile(ctx.cwd, path, signal);
       judged.push({ path, verdict: gateVerdict(evidence.outcome, failure(evidence), sentBack.get(path) ?? []), evidence });
     }
     if (keepsWorking(judged.map(({ verdict }) => verdict))) {
+      progress.publish({ step: "sent_back", tally: tally(judged) });
       const back = judged.filter(({ verdict }) => verdict === "send_back");
       for (const { path, evidence } of back) sentBack.set(path, [...sentBack.get(path) ?? [], failure(evidence)]);
       const proveActive = pi.getActiveTools().includes("prove");
@@ -289,9 +358,11 @@ export function registerGate(pi: ExtensionAPI): void {
         `Tesota: ${path} does not prove yet.\n\n${proofReport(path, evidence, proveActive)}`).join("\n\n");
       return { entries: [{ type: "custom_message", customType: "tesota-gate", content, display: true }], continue: true };
     }
+    progress.publish({ step: "testing", tally: tally(judged) });
     const { tests, exercises } = await testRung(ctx.cwd, from, changed, commandsSentBack, signal);
     const failing = tests.filter(({ verdict }) => verdict === "send_back");
     if (failing.length > 0) {
+      progress.publish({ step: "sent_back", tally: tally(judged, tests) });
       for (const run of failing) commandsSentBack.set(run.command, [...commandsSentBack.get(run.command) ?? [], testFailure(run)]);
       return { entries: [{ type: "custom_message", customType: "tesota-gate", content: failing.map(failingReport).join("\n\n"),
         display: true }], continue: true };
@@ -300,15 +371,19 @@ export function registerGate(pi: ExtensionAPI): void {
     const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
       path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
     const sources = await provedSources(ctx.cwd, from, judged);
+    if (sources.length > 0) progress.publish({ step: "measuring", tally: tally(judged, tests) });
     const strength = await contractStrength(ctx, requests, sources, signal, restateWith(pi));
     const weak = sendBackWeak(strength.contracts, weakSentBack);
     if (weak !== undefined) {
+      progress.publish({ step: "sent_back", tally: tally(judged, tests, strength.contracts) });
       return { entries: [{ type: "custom_message", customType: "tesota-gate", content: weak, display: true }], continue: true };
     }
     const receipt: Receipt = { version: 1, repository: true, ...run, proofs: judged, ...strength, tests, exercises, weakened,
       unverified: changed.filter((path) => !covered.has(path)), uncovered: uncovered(sources, changes, weakened),
       changed: await recordedChanges(ctx.cwd, from, changed), settledAt: new Date().toISOString() };
+    progress.publish({ step: "settled", receipt });
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
-  });
+  };
+  return progress;
 }

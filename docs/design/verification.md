@@ -32,6 +32,7 @@ nothing verified, down to changed lines.
 | Coverage | `src/proof-coverage.ts` |
 | The receipt and `tesota receipt` | `src/receipt.ts`, `src/pull-request-receipt.ts` |
 | Processes and their limits | `src/process.ts` |
+| What the operator sees of the gate | `src/gate.ts` (`GateProgress`), `src/footer.ts`, `src/editor.ts`, `src/messages.ts` |
 
 ## Evidence
 
@@ -282,6 +283,32 @@ check evidence and not a reviewer's acceptance. With `--json` it writes an
 unsigned in-toto Statement instead. It refuses a receipt from a run outside
 Git.
 
+## What the operator sees
+
+The gate alone changes its status (`GateProgress` in `src/gate.ts`), and
+Pi's footer reads it (`EvidenceFooter` in `src/footer.ts`):
+
+- **Before a request:** what the project lets Tesota verify, from
+  `hasContracts` and `suggestChecks` at session start (`readiness`, proved):
+  proofs and tests, proofs only, tests only, or nothing to check with.
+- **While a run settles:** the gate's step (proving, testing or measuring
+  contracts), then whether it sent failures back, with what the round found
+  so far.
+- **After the run:** the receipt in brief.
+
+The operator's next request returns the status to ready, as does a run that
+changed nothing or a gate that fails midway. The footer's second row holds
+the folder, branch and model, and the context window's use sits at the
+right of the first. As the terminal narrows, the model goes first, then the
+evidence shortens, and the context % goes last (`footerLayout`, proved).
+
+The input (`FilledEditor` in `src/editor.ts`) is Pi's editor with its frame
+redrawn as a filled block, so autocomplete, paste, history, keybindings and
+scroll markers stay Pi's. The gate's messages and the receipt have their
+own renderers (`src/messages.ts`): a styled title in place of Pi's raw
+label, wrapping with a hanging indent. The receipt shows a content hash's
+first 12 digits, while the session entry keeps all 64.
+
 ## Proved rules
 
 The pure decisions above carry LemmaScript `//@` specifications in
@@ -298,6 +325,7 @@ The pure decisions above carry LemmaScript `//@` specifications in
 | `proof-cover-rule.ts` | Which changed lines a proof covers |
 | `range-rule.ts` | How the receipt groups line numbers |
 | `pi-version-rule.ts` | Whether the Pi found meets the minimum |
+| `footer-rule.ts` | What Tesota can verify before a request, and what the footer drops as the terminal narrows |
 
 ## Measurements
 

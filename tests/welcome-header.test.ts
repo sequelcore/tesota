@@ -1,37 +1,21 @@
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DefaultResourceLoader, type Theme } from "@earendil-works/pi-coding-agent";
+import type { Theme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, type TerminalColorMode, type TerminalColors, type TerminalColorScheme, type TuiMouseEvent,
   visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, expect, it } from "vitest";
 import { mountWelcomeHeader, WELCOME_FRAME_MS, WELCOME_SCENE_MS, WELCOME_TAGLINE, WelcomeHeader, themeMarkColors,
   type WelcomeHeaderOptions } from "../src/welcome-header.js";
+import { loadThemes, packageRoot, themeIn } from "./pi-themes.js";
 
-const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const braille = /[\u2801-\u28ff]/u;
-const themes = new Map<string, Theme>();
+let themes = new Map<string, Theme>();
 
-beforeAll(async () => {
-  // Loaded as the launcher loads Tesota: the package's root passed to Pi as an extension.
-  const loader = new DefaultResourceLoader({ cwd: mkdtempSync(join(tmpdir(), "tesota-themes-")),
-    agentDir: mkdtempSync(join(tmpdir(), "tesota-agent-")), additionalExtensionPaths: [packageRoot] });
-  await loader.reload();
-  const { themes: loaded, diagnostics } = loader.getThemes();
-  expect(diagnostics).toEqual([]);
-  for (const theme of loaded) if (theme.name !== undefined) themes.set(theme.name, theme);
-}, 30_000);
+beforeAll(async () => { themes = await loadThemes(); }, 30_000);
 
-/** A theme Pi loaded, in a color mode the test sets rather than the one Pi detected on this machine. */
 function theme(name: string, mode: TerminalColorMode = "truecolor"): Theme {
-  const found = themes.get(name);
-  if (found === undefined) throw new Error(`Pi did not load the theme ${name}`);
-  return new Proxy(found, { get: (target, key) => {
-    if (key === "getColorMode") return () => mode;
-    const value: unknown = Reflect.get(target, key);
-    return typeof value === "function" ? value.bind(target) : value;
-  } });
+  return themeIn(themes, name, mode);
 }
 
 function header(options: Partial<WelcomeHeaderOptions> & { name?: string } = {}) {
