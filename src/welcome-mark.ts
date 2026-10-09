@@ -35,6 +35,14 @@ const BLOWN_IN = 0.06;
 const BLOWN_OUT = 0.8;
 const HOPS = 3.5;
 const HOP = 0.3;
+/**
+ * When the tumbleweed rolls alone at a few dots tall, it is drawn at this many times the resolution, and a dot shows
+ * only where its stems cover at least `COVERAGE` of it, so its tangle stays open instead of filling in.
+ */
+const SUPERSAMPLE = 3;
+const COVERAGE = 0.4;
+/** How far out from its center, as a share of its radius, its stems show when it rolls alone. */
+const HOLLOW = 0.62;
 
 export type Rgb = readonly [number, number, number];
 
@@ -516,6 +524,12 @@ export function renderMark(columns: number, rows: number, progress: number, ligh
       y * sx + z * cx, values[k + 6]!);
   }
 
+  return brailleCells(columns, rows, depthBuffer, colors);
+}
+
+/** Packs a stage's dots, two by four to a cell, into braille cells colored by the average of their lit dots. */
+function brailleCells(columns: number, rows: number, depthBuffer: Float32Array, colors: Uint32Array): MarkCell[] {
+  const dotColumns = columns * 2;
   const cells: MarkCell[] = [];
   for (let row = 0; row < rows; row++) {
     for (let column = 0; column < columns; column++) {
@@ -533,4 +547,74 @@ export function renderMark(columns: number, rows: number, progress: number, ligh
     }
   }
   return cells;
+}
+
+/**
+ * The tumbleweed alone, rolling right to left along a stage of `columns` by `rows` cells as `progress` goes from 0
+ * to 1, lit as in the scene, for a working indicator. It fills the stage's height, wraps around the stage's edges,
+ * and turns a whole number of times, so the frame at 1 is the frame at 0. It is drawn at `SUPERSAMPLE` times the
+ * resolution and a dot shows where its stems cover `COVERAGE` of it, colored by their average. Deterministic for its
+ * inputs; the caller owns timing.
+ */
+export function renderTumbleweed(columns: number, rows: number, progress: number, light: MarkLighting): MarkCell[] {
+  const dotColumns = columns * 2;
+  const dotRows = rows * 4;
+  const fineColumns = dotColumns * SUPERSAMPLE;
+  const fineRows = dotRows * SUPERSAMPLE;
+  const scale = (fineRows - 1) / (TUMBLE_RADIUS * 2.3);
+  const span = fineColumns / scale;
+  const p = (progress % 1 + 1) % 1;
+  const travel = p * span;
+  // Rolling left, its top turns toward where it goes, as in the scene; whole turns keep the loop seamless.
+  const roll = -TAU * Math.max(1, Math.round(span / (TAU * TUMBLE_RADIUS))) * p;
+  const [s, c] = [Math.sin(roll), Math.cos(roll)];
+  const [sx, cx] = [Math.sin(PITCH), Math.cos(PITCH)];
+  const fineDepth = new Float32Array(fineColumns * fineRows).fill(Number.NEGATIVE_INFINITY);
+  const fineColors = new Uint32Array(fineColumns * fineRows);
+  const { count, values, group } = surface();
+  for (let point = 0; point < count; point++) {
+    if (group[point] !== Group.Tumbleweed) continue;
+    const k = point * SAMPLE_VALUES;
+    const [x0, y0, z, nx0, ny0, nz] = [values[k]!, values[k + 1]!, values[k + 2]!, values[k + 3]!, values[k + 4]!,
+      values[k + 5]!];
+    const [x, y] = [x0 * c - y0 * s, x0 * s + y0 * c];
+    const [nx, ny] = [nx0 * c - ny0 * s, nx0 * s + ny0 * c];
+    const y2 = y * cx - z * sx;
+    const z2 = y * sx + z * cx;
+    // The stems crossing its middle would fill it in at this size; its outer stems keep it an open ball.
+    if (Math.hypot(x, y2) < TUMBLE_RADIUS * HOLLOW) continue;
+    const row = Math.floor(fineRows / 2 + y2 * scale);
+    if (row < 0 || row >= fineRows) continue;
+    // The copies one stage-width to each side carry it across the edges as it wraps.
+    for (const shift of [-span, 0, span]) {
+      const column = Math.floor((span - travel + x + shift) * scale);
+      if (column < 0 || column >= fineColumns) continue;
+      const i = row * fineColumns + column;
+      if (z2 <= fineDepth[i]!) continue;
+      fineDepth[i] = z2;
+      fineColors[i] = shade(light, light.palettes[Stuff.Straw]!, nx, ny * cx - nz * sx, ny * sx + nz * cx, z2,
+        values[k + 6]!);
+    }
+  }
+  const depthBuffer = new Float32Array(dotColumns * dotRows).fill(Number.NEGATIVE_INFINITY);
+  const colors = new Uint32Array(dotColumns * dotRows);
+  for (let row = 0; row < dotRows; row++) {
+    for (let column = 0; column < dotColumns; column++) {
+      let [covered, r, g, b] = [0, 0, 0, 0];
+      for (let dy = 0; dy < SUPERSAMPLE; dy++) {
+        for (let dx = 0; dx < SUPERSAMPLE; dx++) {
+          const i = (row * SUPERSAMPLE + dy) * fineColumns + column * SUPERSAMPLE + dx;
+          if (!Number.isFinite(fineDepth[i]!)) continue;
+          const rgb = fineColors[i]!;
+          r += rgb >> 16 & 255; g += rgb >> 8 & 255; b += rgb & 255;
+          covered++;
+        }
+      }
+      if (covered < COVERAGE * SUPERSAMPLE * SUPERSAMPLE) continue;
+      const i = row * dotColumns + column;
+      depthBuffer[i] = 0;
+      colors[i] = Math.round(r / covered) << 16 | Math.round(g / covered) << 8 | Math.round(b / covered);
+    }
+  }
+  return brailleCells(columns, rows, depthBuffer, colors);
 }
