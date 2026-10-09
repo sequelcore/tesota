@@ -6,11 +6,12 @@ import { registerMessages } from "./messages.js";
 import { suggestChecks } from "./projects.js";
 import { hasContracts, proveTool } from "./prove-tool.js";
 import { readiness } from "./verification/footer-rule.js";
-import { mountWelcomeHeader, WelcomeHeader } from "./welcome-header.js";
+import { mountWelcomeHeader, TUMBLEWEED_FRAME_MS, tumbleweedFrames, WelcomeHeader } from "./welcome-header.js";
 
 /**
  * Tesota's Pi extension: it puts the palo fierro in Pi's header
- * (`WelcomeHeader`), draws the input as a filled block (`FilledEditor`) over
+ * (`WelcomeHeader`) and its tumbleweed in Pi's working indicator
+ * (`tumbleweedFrames`), draws the input as a filled block (`FilledEditor`) over
  * a footer that shows the gate's evidence (`EvidenceFooter`), offers `prove`
  * where there are contracts, holds a run open while a changed file's
  * contracts do not prove (`registerGate`), and styles the gate's messages
@@ -30,6 +31,8 @@ export default function tesota(pi: ExtensionAPI): void {
     ctx.ui.setHeader((tui, theme) => mountWelcomeHeader(new WelcomeHeader(ctx.cwd, theme,
       { requestRender: () => tui.requestRender(), terminalRows: () => tui.terminal.rows,
         stageShare: listed ? 1 / 3 : 1 / 2 }), tui));
+    // While the agent works, the scene's tumbleweed rolls where Pi shows its working indicator.
+    if (ctx.mode === "tui") ctx.ui.setWorkingIndicator({ frames: tumbleweedFrames(ctx.ui.theme), intervalMs: TUMBLEWEED_FRAME_MS });
     ctx.ui.setEditorComponent((tui, theme, keybindings) => new FilledEditor(tui, theme, keybindings, () => ctx.ui.theme));
     ctx.ui.setFooter((tui, theme, data) => new EvidenceFooter(theme, data, progress, { cwd: ctx.cwd,
       model: () => ctx.model === undefined ? "no model"

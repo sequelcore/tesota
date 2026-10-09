@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Color, colorToRgb, foregroundAnsi, MouseRegion, type TerminalColors, truncateToWidth, type TUI,
-  type TuiMouseEvent, type TuiMouseEventResult, visibleWidth, type Component } from "@earendil-works/pi-tui";
-import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLighting, renderMark, type MarkColors,
-  type Rgb } from "./welcome-mark.js";
+import { type Color, colorToRgb, foregroundAnsi, MouseRegion, type TerminalColorMode, type TerminalColors,
+  truncateToWidth, type TUI, type TuiMouseEvent, type TuiMouseEventResult, visibleWidth, type Component }
+  from "@earendil-works/pi-tui";
+import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLighting, renderMark,
+  renderTumbleweed, type MarkCell, type MarkColors, type Rgb } from "./welcome-mark.js";
 
 /** The scene's length: the wind rising and falling, and on a replay the tumbleweed's pass. */
 export const WELCOME_SCENE_MS = 9_000;
@@ -182,18 +183,36 @@ export class WelcomeHeader implements Component {
       this.#visitor);
     const lines: string[] = [];
     for (let row = 0; row < rows; row++) {
-      let line = "";
-      for (let column = 0; column < columns; column++) {
-        const cell = cells[row * columns + column]!;
-        if (cell.dots === 0) { line += " "; continue; }
-        const color: Color = { kind: "rgb", r: cell.rgb >> 16 & 255, g: cell.rgb >> 8 & 255, b: cell.rgb & 255 };
-        line += foregroundAnsi(color, mode) + String.fromCodePoint(0x2800 + cell.dots);
-      }
-      lines.push(`${line.trimEnd()}\x1b[39m`);
+      lines.push(`${brailleText(cells.slice(row * columns, (row + 1) * columns), mode).trimEnd()}\x1b[39m`);
     }
     this.#cached = { key, lines };
     return lines;
   }
+}
+
+/** A row of the mark's cells as terminal text: each cell's braille dots in its color, an empty cell as a space. */
+function brailleText(cells: readonly MarkCell[], mode: TerminalColorMode): string {
+  return cells.map(({ dots, rgb }) => {
+    if (dots === 0) return " ";
+    const color: Color = { kind: "rgb", r: rgb >> 16 & 255, g: rgb >> 8 & 255, b: rgb & 255 };
+    return foregroundAnsi(color, mode) + String.fromCodePoint(0x2800 + dots);
+  }).join("");
+}
+
+/** The tumbleweed indicator's stage in cells, and its frames for one pass across it. */
+const TUMBLEWEED_COLUMNS = 4;
+const TUMBLEWEED_FRAMES = 20;
+export const TUMBLEWEED_FRAME_MS = 80;
+
+/**
+ * Pi's working indicator in a Tesota session: the scene's tumbleweed rolling right to left across a few cells, one
+ * row tall, lit in the active theme's colors against its appearance's usual background. Pi plays the frames in a loop.
+ */
+export function tumbleweedFrames(theme: Theme): string[] {
+  const light = markLighting(fallbackBackground[theme.appearance], theme.appearance === "light", themeMarkColors(theme));
+  const mode = theme.getColorMode();
+  return Array.from({ length: TUMBLEWEED_FRAMES }, (_, frame) =>
+    `${brailleText(renderTumbleweed(TUMBLEWEED_COLUMNS, 1, frame / TUMBLEWEED_FRAMES, light), mode)}\x1b[39m`);
 }
 
 /** How long the header waits for the terminal's colors before a late reply is applied as it arrives. */
