@@ -20,6 +20,7 @@
     "dist/receipt.js",
     "dist/verification/default-theme-rule.js",
     "dist/verification/pi-version-rule.js",
+    "dist/verification/verdict-rule.js",
     "src/**/*.ts",
     "!src/cli.ts",
     "!src/pi-install.ts",
@@ -55,7 +56,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun run build && vitest run",
     "lint": "oxlint --config .oxlintrc.json --deny-warnings src tests evaluation",
-    "formal:check": "lsc check --backend=dafny src/verification/check-origin-rule.ts && lsc check --backend=dafny src/verification/proof-cover-rule.ts && lsc check --backend=dafny src/verification/range-rule.ts && lsc check --backend=dafny src/verification/pi-version-rule.ts && lsc check --backend=dafny src/verification/default-theme-rule.ts && lsc check --backend=dafny src/verification/proof-outcome-rule.ts && lsc check --backend=dafny src/verification/gate-rule.ts && lsc check --backend=dafny src/verification/weakening-rule.ts && lsc check --backend=dafny src/verification/project-rule.ts && lsc check --backend=dafny src/verification/mutation-rule.ts && lsc check --backend=dafny src/verification/footer-rule.ts && lsc check --backend=dafny src/verification/test-weakening-rule.ts",
+    "formal:check": "lsc check --backend=dafny src/verification/check-origin-rule.ts && lsc check --backend=dafny src/verification/proof-cover-rule.ts && lsc check --backend=dafny src/verification/range-rule.ts && lsc check --backend=dafny src/verification/pi-version-rule.ts && lsc check --backend=dafny src/verification/default-theme-rule.ts && lsc check --backend=dafny src/verification/proof-outcome-rule.ts && lsc check --backend=dafny src/verification/gate-rule.ts && lsc check --backend=dafny src/verification/weakening-rule.ts && lsc check --backend=dafny src/verification/project-rule.ts && lsc check --backend=dafny src/verification/mutation-rule.ts && lsc check --backend=dafny src/verification/footer-rule.ts && lsc check --backend=dafny src/verification/test-weakening-rule.ts && lsc check --backend=dafny src/verification/verdict-rule.ts",
     "live:eval": "bun evaluation/live.ts",
     "check": "bun run typecheck && bun run test && bun run lint"
   },

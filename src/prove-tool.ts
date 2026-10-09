@@ -1,9 +1,10 @@
 import { type Dirent, readdirSync, readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type TObject, type TString, Type } from "typebox";
-import type { Evidence } from "./evidence.js";
+import { type Evidence, proofSummary, quietOutput } from "./evidence.js";
+import { bold, expandHint, Rows, spread, wrapUnder } from "./messages.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
 
 /**
@@ -96,8 +97,52 @@ export function proofReport(path: string, proof: Evidence, proveActive: boolean)
   return `${how}\n\n${proof.output}${next}`;
 }
 
-function text(content: string): { content: { type: "text"; text: string }[]; details: undefined } {
+/** What a proof run leaves for the operator's view of it: the file and its evidence. */
+export interface ProveDetails {
+  readonly path: string;
+  readonly evidence: Evidence;
+}
+
+function text(content: string): AgentToolResult<ProveDetails | undefined> {
   return { content: [{ type: "text", text: content }], details: undefined };
+}
+
+/** A proof's result: what the agent reads, its evidence for the operator, and an error unless the proof passed. */
+function proved(path: string, evidence: Evidence): AgentToolResult<ProveDetails | undefined> {
+  return { content: [{ type: "text", text: proofReport(path, evidence, true) }], details: { path, evidence },
+    ...evidence.outcome === "passed" ? {} : { isError: true } };
+}
+
+/** `prove` and its file, with how long the proof took at the right once it has run. */
+function renderCall(args: { path?: string }, theme: Theme, context: { readonly durationMs: number | undefined }): Rows {
+  const title = `${theme.fg("toolTitle", bold("prove"))} ${theme.fg("accent", args.path ?? "")}`;
+  return new Rows((width) => [context.durationMs === undefined ? title
+    : spread(title, theme.fg("dim", `${(context.durationMs / 1000).toFixed(1)}s`), width)]);
+}
+
+/**
+ * A proof's result in a few words: proved, or not proved with Dafny's error
+ * and the contract line it points at; Dafny's output when expanded. Pi draws
+ * it on its error background unless the proof passed.
+ */
+function renderResult(result: AgentToolResult<ProveDetails | undefined>, options: { expanded: boolean; isPartial: boolean },
+  theme: Theme): Rows {
+  return new Rows((width) => {
+    if (options.isPartial) return ["", theme.fg("accent", "◐ proving…")];
+    const evidence = result.details?.evidence;
+    if (evidence === undefined) {
+      return ["", ...result.content.flatMap((part) => part.type === "text" ? part.text.split("\n") : [])
+        .flatMap((line) => wrapUnder(theme.fg("toolOutput", line), width, 0))];
+    }
+    const summary = proofSummary(evidence);
+    const passed = evidence.outcome === "passed";
+    const head = passed ? `${theme.fg("success", "✓ Proved")}${theme.fg("muted", ` — ${summary.words}${summary.tally === undefined ? "" : ` · ${summary.tally}`}`)}`
+      : `${theme.fg("error", "✗ Not proved")}${theme.fg("muted", ` — ${summary.words}`)}`;
+    const output = quietOutput(evidence.output);
+    return ["", ...wrapUnder(head, width, 2), ...summary.at === undefined ? [] : [theme.fg("muted", `   at ${summary.at}`)],
+      ...options.expanded ? ["", ...output.flatMap((line) => wrapUnder(theme.fg("toolOutput", line), width, 2))]
+        : passed || output.length === 0 ? [] : ["", expandHint(theme, "for Dafny's output")]];
+  });
 }
 
 const parameters: TObject<{ path: TString }> = Type.Object({ path: Type.String({ description: "The TypeScript file to prove, relative to the project" }) });
@@ -107,7 +152,7 @@ const parameters: TObject<{ path: TString }> = Type.Object({ path: Type.String({
  * runs alone, since the evidence must describe the files as no other tool
  * call left them mid-proof.
  */
-export const proveTool: ToolDefinition<typeof parameters> = {
+export const proveTool: ToolDefinition<typeof parameters, ProveDetails | undefined> = {
   name: "prove", label: "Prove",
   description: "Run LemmaScript with Dafny on one TypeScript file with //@ annotations and report whether its " +
     "contracts are proved. It first regenerates the file's .dfy proof, keeping the proof lines you added, as " +
@@ -127,6 +172,8 @@ export const proveTool: ToolDefinition<typeof parameters> = {
     let source: string;
     try { source = await readFile(absolute, "utf8"); } catch { return text(`${path} does not exist.`); }
     if (annotations(source).length === 0) return text(`${path} has no //@ annotations, so there is nothing to prove.`);
-    return text(proofReport(path, await proveFile(ctx.cwd, path, signal ?? new AbortController().signal), true));
+    return proved(path, await proveFile(ctx.cwd, path, signal ?? new AbortController().signal));
   },
+  renderCall,
+  renderResult,
 };

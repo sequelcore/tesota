@@ -6,11 +6,12 @@ import { VERSION } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Evidence } from "../src/evidence.js";
 import { evidenceParts, evidenceText } from "../src/footer.js";
-import { changedFiles, type GateProgress, type GateStatus, registerGate } from "../src/gate.js";
+import { changedFiles, GateProgress, type GateStatus, registerGate } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import type { Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
+import { emptyReceipt } from "./receipts.js";
 
 /** The proofs the gate runs, scripted per file: the gate's decisions, not LemmaScript, are under test here. */
 const scripted = new Map<string, { outcome: ProofOutcome; output: string }>();
@@ -160,6 +161,9 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   expect(entry(failed).content).toContain("Tesota: src/rule.ts does not prove yet.");
   expect(entry(failed).content).toContain("This is not finished yet.");
   expect(entry(failed).content).toContain("and run prove again.");
+  // The operator's view of what went back: the proof and its evidence.
+  expect(entry(failed).details).toMatchObject({ round: "proofs",
+    proofs: [{ path: "src/rule.ts", evidence: { outcome: "failed", output: "1 verified, 1 error" } }] });
   scripted.set("src/rule.ts", { outcome: "vacuous", output: "0 verified, 0 errors" });
   expect((await run.settle())?.continue).toBe(true);
   scripted.delete("src/rule.ts");
@@ -198,6 +202,24 @@ it("publishes each step for the footer: proving, sent back, testing, measuring, 
   expect(run.progress.status).toEqual({ step: "settled", receipt });
   await run.input();
   expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_only" });
+});
+
+it("shows a resumed session's receipt again, unless the operator spoke after it", () => {
+  const progress = new GateProgress();
+  progress.ready("proofs_and_tests");
+  const receipt = { ...emptyReceipt, proofs: [] };
+  const user = { type: "message", message: { role: "user", content: "a request", timestamp: 0 } };
+  const settled = { type: "custom_message", customType: "tesota-receipt", content: "Tesota receipt", display: true, details: receipt };
+  const gate = { type: "custom_message", customType: "tesota-gate", content: "sent back", display: true };
+  progress.resume([user, gate, settled] as never);
+  expect(progress.status).toEqual({ step: "settled", receipt });
+  progress.reset();
+  progress.resume([user, settled, user] as never);
+  expect(progress.status).toEqual({ step: "ready", readiness: "proofs_and_tests" });
+  progress.resume([user, gate] as never);
+  expect(progress.status.step).toBe("ready");
+  progress.resume([user, { ...settled, details: { version: 0 } }] as never);
+  expect(progress.status.step).toBe("ready");
 });
 
 it("goes back to ready when the gate fails midway or the run changed nothing", async () => {
@@ -283,6 +305,8 @@ it("sends a weak contract back once, then lists it in the receipt", async () => 
   const sent = await run.settle();
   expect(sent?.continue).toBe(true);
   expect(entry(sent).content).toMatch(/^Tesota: the contract of f in src\/rule\.ts proves, but these changes to its code prove too, so it does not rule them out:\n {2}line 3: 0 became 1\n\nStrengthen the contract/u);
+  expect(entry(sent).details).toMatchObject({ round: "contracts",
+    contracts: [{ path: "src/rule.ts", name: "f", mutation: { survived: [{ line: 3, before: "0", after: "1" }] } }] });
   const settled = entry(await run.settle());
   expect(settled.customType).toBe("tesota-receipt");
   expect(settled.content).toContain("weak contract f in src/rule.ts");
@@ -546,6 +570,7 @@ it("sends failing tests back once when the project writes no test report, then s
   expect(failed?.continue).toBe(true);
   expect(entry(failed).customType).toBe("tesota-gate");
   expect(entry(failed).content).toContain("Tesota: `bun run test` fails with your changes.");
+  expect(entry(failed).details).toMatchObject({ round: "tests", commands: [{ command: "bun run test", evidence: { outcome: "failed" } }] });
   run.agentStart();
   const stuck = await run.settle();
   expect(stuck?.continue).toBeUndefined();

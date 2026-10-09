@@ -24,6 +24,8 @@ export default function tesota(pi: ExtensionAPI): void {
   pi.on("session_start", (_event, ctx) => {
     const contracts = hasContracts(ctx.cwd);
     progress.ready(readiness(contracts, suggestChecks(ctx.cwd).length > 0));
+    // A resumed session that settled with a receipt, and had no request since, shows that receipt again.
+    progress.resume(ctx.sessionManager.getBranch());
     // In the terminal the footer shows the session runs with Tesota; other clients have only this status.
     if (ctx.mode !== "tui") ctx.ui.setStatus("tesota", "Tesota");
     // Unless quietStartup hides it, Pi lists what it loaded beneath the header, so the tree leaves it room.

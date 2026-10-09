@@ -63,6 +63,21 @@ it("sums up the receipt, leading with whether anything in it needs the operator"
     .toBe("! receipt · 1 proved · tests pass · contracts strong · weakening not checked");
 });
 
+it("counts what the checks established and never a model's opinion, as the receipt in the conversation does", () => {
+  const judged: Receipt = { ...emptyReceipt, proofs: [proved], tests: [passing],
+    contracts: [{ ...strong, judgment: { verdict: "not_justified", explanation: "It allows a negative result." } }],
+    claimcheck: { status: "judged", restatedBy: "openai/gpt-5.5", comparedBy: "openai/gpt-5.5" } };
+  expect(words({ step: "settled", receipt: judged })).toBe("✓ receipt · 1 proved · tests pass · contracts strong");
+  const misses: Receipt = { ...judged, exercises: [{ path: "tests/clamp.test.ts", finding: "does_not_exercise",
+    reason: "it passes without the change" }] };
+  expect(words({ step: "settled", receipt: misses })).toBe("! receipt · 1 proved · tests pass · contracts strong · 1 test misses the change");
+  expect(words({ step: "settled", receipt: misses }, "short")).toBe("! receipt · 1 proved · tests ✓ · 1 test misses");
+  expect(words({ step: "settled", receipt: misses }, "glyphs")).toBe("! · ✓1 · tests ✓ · miss 1");
+  // Strength needs a change the proof caught: two changes that behave the same as the code show nothing.
+  const unmeasured: Receipt = { ...judged, contracts: [{ ...strong, mutation: { ...strong.mutation, rejected: 0, equivalent: 2 } }] };
+  expect(words({ step: "settled", receipt: unmeasured })).toBe("✓ receipt · 1 proved · tests pass");
+});
+
 it("says there was nothing to verify when the change was comments alone, and only when nothing else is listed", () => {
   const comments: Receipt = { ...emptyReceipt, commentsOnly: true };
   expect(words({ step: "settled", receipt: comments })).toBe("✓ receipt · nothing to verify, comments only");
@@ -137,9 +152,9 @@ it("narrows at 80 and 30 columns in the order the rule sets", () => {
   const { rows } = footer(progress);
   expect(rows(80)[1]).toMatch(/^ ✓ receipt · 1 proved · tests ✓ · 3 lines unproved +ctx 5%$/u);
   expect(rows(80)[2]).not.toContain("gpt-5.5");
-  expect(rows(40)[1]).toMatch(/^ ✓ · ✓1 · tests ✓ · ⚠3 +ctx 5%$/u);
+  expect(rows(40)[1]).toMatch(/^ ✓ · ✓1 · tests ✓ · ○3 +ctx 5%$/u);
   // Too narrow for even the glyphs beside it, the context % goes, and the evidence is cut.
-  expect(rows(25)[1]).toBe(" ✓ · ✓1 · tests ✓ · ⚠3");
+  expect(rows(25)[1]).toBe(" ✓ · ✓1 · tests ✓ · ○3");
 });
 
 it("keeps other extensions' statuses on a third row, and colors a full context window", () => {
