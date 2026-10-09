@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Evidence } from "../src/evidence.js";
-import { changedFiles, registerGate } from "../src/gate.js";
+import { changedFiles, type GateProgress, type GateStatus, registerGate } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import type { Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking } from "../src/verification/gate-rule.js";
@@ -18,6 +18,7 @@ vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
   ...await original<typeof import("../src/verification/lemmascript-verifier.js")>(),
   proveFile: (_root: string, path: string): Promise<Evidence> => {
     const { outcome, output } = scripted.get(path) ?? { outcome: "passed", output: "1 verified, 0 errors" };
+    if (output === "throws") return Promise.reject(new Error("the prover broke"));
     return Promise.resolve({ verifier: "lemmascript", claim: `claim of ${path}`, limits: "", outcome, output, durationMs: 1,
       files: [path, path.replace(/\.ts$/u, ".dfy")], contentHash: `hash of ${path}` });
   },
@@ -90,14 +91,17 @@ interface Settled { entries?: { customType: string; content: string; details?: u
 /** The gate's handlers on a fake Pi, run as Pi runs them in `root`. */
 function gate(root: string, active = ["read", "edit", "prove"], session: object = {}): {
   input: (source?: string, streamingBehavior?: string, text?: string) => Promise<void>; agentStart: () => void; tool: (name: string) => void;
-  settle: (outcome?: string) => Promise<Settled | undefined>;
+  settle: (outcome?: string) => Promise<Settled | undefined>; progress: GateProgress; steps: GateStatus[];
 } {
   const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
-  registerGate({ on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
+  const progress = registerGate({ on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
     registerFlag: () => undefined, getFlag: (name: string) => (session as { flags?: Record<string, string> }).flags?.[name],
     getActiveTools: () => active } as never);
+  const steps: GateStatus[] = [];
+  progress.subscribe(() => { steps.push(progress.status); });
   const ctx = { cwd: root, signal: undefined, ...session };
   return {
+    progress, steps,
     input: async (source = "interactive", streamingBehavior, text = "fix it") => {
       await handlers.get("input")?.({ type: "input", text, source, streamingBehavior }, ctx);
     },
@@ -171,6 +175,45 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   expect(receipt).toMatchObject({ version: 1, base: await headCommit(root), pi: VERSION });
   expect(receipt.model).toBeUndefined();
   expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
+});
+
+it("publishes each step for the footer: proving, sent back, testing, measuring, settled, and ready on the next request", async () => {
+  const root = project();
+  const run = gate(root);
+  run.progress.ready("proofs_only");
+  await run.input();
+  expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_only" });
+  writeFileSync(join(root, "src", "rule.ts"), contract.replace("return 0;", "return 1;"));
+  scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
+  run.steps.length = 0;
+  await run.settle();
+  expect(run.steps).toEqual([{ step: "proving", tally: { proved: 0, notProved: 0 } },
+    { step: "sent_back", tally: { proved: 0, notProved: 1 } }]);
+  scripted.delete("src/rule.ts");
+  run.steps.length = 0;
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(run.steps.map(({ step }) => step)).toEqual(["proving", "testing", "measuring", "settled"]);
+  expect(run.steps[2]).toEqual({ step: "measuring", tally: { proved: 1, notProved: 0 } });
+  expect(run.progress.status).toEqual({ step: "settled", receipt });
+  await run.input();
+  expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_only" });
+});
+
+it("goes back to ready when the gate fails midway or the run changed nothing", async () => {
+  const root = project();
+  const run = gate(root);
+  run.progress.ready("proofs_and_tests");
+  await run.input();
+  writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
+  scripted.set("src/rule.ts", { outcome: "failed", output: "throws" });
+  await expect(run.settle()).rejects.toThrow("the prover broke");
+  expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_and_tests" });
+  scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
+  await run.settle();
+  expect(run.progress.status.step).toBe("sent_back");
+  writeFileSync(join(root, "src", "rule.ts"), contract);
+  expect(await run.settle()).toBeUndefined();
+  expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_and_tests" });
 });
 
 it("lists the changed lines of a proved file that no contract covers, and not those of a contract that proved", async () => {

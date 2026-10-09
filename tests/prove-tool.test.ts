@@ -25,9 +25,11 @@ async function call(root: string, path: string): Promise<string> {
 function activeTools(root: string): string[] {
   let active = ["read", "bash"];
   const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
-  tesota({ registerTool: () => undefined, registerFlag: () => undefined, on: (name: string, handler: (event: unknown, ctx: unknown) => void) => { handlers.set(name, handler); },
+  tesota({ registerTool: () => undefined, registerFlag: () => undefined, registerMessageRenderer: () => undefined,
+    on: (name: string, handler: (event: unknown, ctx: unknown) => void) => { handlers.set(name, handler); },
     getActiveTools: () => active, getSettings: () => ({}), setActiveTools: (names: string[]) => { active = names; } } as never);
-  handlers.get("session_start")?.({}, { cwd: root, ui: { setStatus: () => undefined, setHeader: () => undefined } });
+  handlers.get("session_start")?.({}, { cwd: root, ui: { setStatus: () => undefined, setHeader: () => undefined,
+    setEditorComponent: () => undefined, setFooter: () => undefined } });
   return active;
 }
 
