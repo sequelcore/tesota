@@ -1,0 +1,50 @@
+{
+  "schemes": [
+    {
+      "name": "Tesota Dark",
+      "background": "#202020",
+      "foreground": "#f2eee6",
+      "cursorColor": "#c6a8d2",
+      "selectionBackground": "#4b3d53",
+      "black": "#2f2a35",
+      "brightBlack": "#6e6b73",
+      "red": "#d88c8c",
+      "brightRed": "#e6a3a3",
+      "green": "#9ab08f",
+      "brightGreen": "#b2c6a8",
+      "yellow": "#d5b36a",
+      "brightYellow": "#e2c78a",
+      "blue": "#8fa3c6",
+      "brightBlue": "#a9badb",
+      "purple": "#c6a8d2",
+      "brightPurple": "#d6bfe0",
+      "cyan": "#8fbfb8",
+      "brightCyan": "#a9d0ca",
+      "white": "#b9b7aa",
+      "brightWhite": "#f2eee6"
+    },
+    {
+      "name": "Tesota Light",
+      "background": "#edede5",
+      "foreground": "#24211f",
+      "cursorColor": "#6d4b78",
+      "selectionBackground": "#d3c2dc",
+      "black": "#24211f",
+      "brightBlack": "#5f6258",
+      "red": "#8e3b3b",
+      "brightRed": "#a8504f",
+      "green": "#4f624a",
+      "brightGreen": "#64795d",
+      "yellow": "#6e602c",
+      "brightYellow": "#857538",
+      "blue": "#3f5578",
+      "brightBlue": "#536b92",
+      "purple": "#6d4b78",
+      "brightPurple": "#84618f",
+      "cyan": "#3d6b66",
+      "brightCyan": "#4f827c",
+      "white": "#c9c7bd",
+      "brightWhite": "#faf7fb"
+    }
+  ]
+}

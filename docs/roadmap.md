@@ -26,20 +26,12 @@ these works.
 
 The refactor lands on `dev` in slices, one pull request each. Every slice
 passes `bun run check`, `bun run formal:check` and `git diff --check`.
-Slices 1–9 are done; the
+Slices 1–9 and 11 are done; the
 [decision record](decisions/2026-10-08-verification-layer.md#slices) links
 each one's issue and pull requests.
 
 10. **Parallel sessions.** Recommend an existing Pi package, or raise the gap
     with Pi.
-11. **Identity.** Tesota's visual identity stays: the animated palo fierro
-    tree as Pi's header through `ctx.ui.setHeader`, and Tesota's light and
-    dark palettes shipped as a Pi theme. The tree's renderer,
-    `src/welcome-mark.ts`, is already here. Restore from `d0c03f66`, `dev`
-    before the harness was removed, and adapt there: `src/tesota-shell-theme.ts`
-    and `src/verification/shell-theme-rule.ts` with its proof and the themes'
-    NOTICE entry, and the header from `WelcomeBanner` in
-    `src/tesota-shell-welcome.ts`. Git keeps the tests that went with them.
 12. **Alpha.** Publish `tesota` to npm after a week on a real project. The
     receipt's in-toto `predicateType` names
     [receipt v1](receipt-v1.md) on `main`, which resolves once `dev`

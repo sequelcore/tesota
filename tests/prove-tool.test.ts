@@ -26,8 +26,8 @@ function activeTools(root: string): string[] {
   let active = ["read", "bash"];
   const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
   tesota({ registerTool: () => undefined, registerFlag: () => undefined, on: (name: string, handler: (event: unknown, ctx: unknown) => void) => { handlers.set(name, handler); },
-    getActiveTools: () => active, setActiveTools: (names: string[]) => { active = names; } } as never);
-  handlers.get("session_start")?.({}, { cwd: root, ui: { setStatus: () => undefined } });
+    getActiveTools: () => active, getSettings: () => ({}), setActiveTools: (names: string[]) => { active = names; } } as never);
+  handlers.get("session_start")?.({}, { cwd: root, ui: { setStatus: () => undefined, setHeader: () => undefined } });
   return active;
 }
 
