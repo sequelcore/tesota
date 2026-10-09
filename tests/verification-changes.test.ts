@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { type DiffLine, changedLines } from "../src/diff-lines.js";
-import { bodilessLemmas, weakenedEvidence } from "../src/verification-changes.js";
+import { bodilessLemmas, type FileChange, weakenedEvidence } from "../src/verification-changes.js";
+import { removalCounts, testWeakens } from "../src/verification/test-weakening-rule.js";
 import { weakens } from "../src/verification/weakening-rule.js";
 
 const numbered = (...lines: string[]): DiffLine[] => lines.map((text, k) => ({ number: k + 1, text }));
@@ -17,6 +18,89 @@ it("weakens on a removed requires or ensures, a requires added to an existing fu
   expect(weakens("requires", false, true, true)).toBe(false);
   expect(weakens("assume", true, false, false)).toBe(false);
   expect(weakens("other", true, false, true)).toBe(false);
+});
+
+it("weakens tests on a deleted file, or an edit that removes a line that counts or changes how tests run", () => {
+  expect(removalCounts(false, false, false)).toBe(true);
+  expect(removalCounts(true, false, false)).toBe(false);
+  expect(removalCounts(false, true, false)).toBe(false);
+  expect(removalCounts(false, false, true)).toBe(false);
+  expect(testWeakens("deleted", false, false)).toBe(true);
+  expect(testWeakens("modified", true, false)).toBe(true);
+  expect(testWeakens("modified", false, true)).toBe(true);
+  expect(testWeakens("modified", false, false)).toBe(false);
+  expect(testWeakens("added", true, true)).toBe(false);
+});
+
+const edit = (path: string, added: string[], removed: string[] = []): FileChange =>
+  ({ path, status: "modified", added: numbered(...added), removed: numbered(...removed) });
+
+it("does not flag a test file that only gains tests, blank lines or comments, or loses blank or comment lines", () => {
+  expect(weakenedEvidence([
+    edit("tests/clamp.test.ts", ["", "it(\"clamps below\", () => {", "  expect(clamp(-1, 0, 2)).toBe(0);", "});",
+      "// it.only would focus it", "const skipped = items.filter(Boolean);"], ["", "// an old note", "  /* wrapped", "   * note */"]),
+    edit("app/test_orders.py", ["# @pytest.mark.skip later", "def test_total():", "    assert total(1) == 1",
+      "@pytest.fixture", "def order():"], ["# old note"]),
+    edit("internal/orders_test.go", ["func TestTotal(t *testing.T) {", "\tif total(1) != 1 {", "\t\tt.Fatal(\"total\")", "\t}", "}"]),
+  ])).toEqual([]);
+});
+
+it("does not count an import the change widened, and counts one it retargets, narrows or drops", () => {
+  const was = "import { clamp } from \"../src/clamp.ts\";";
+  expect(weakenedEvidence([
+    edit("tests/clamp.test.ts", ["import { clamp, inRange } from \"../src/clamp.ts\";"], [was]),
+    edit("tests/both.test.ts", ["import clamp, {  inRange ,  lo as low } from '../src/clamp'"],
+      ["import clamp, { lo as low } from '../src/clamp'"]),
+    edit("tests/test_price.py", ["from price import total, tax"], ["from price import total"]),
+  ])).toEqual([]);
+  expect(weakenedEvidence([
+    edit("tests/retarget.test.ts", ["import { clamp } from \"../src/fake.ts\";"], [was]),
+    edit("tests/narrow.test.ts", ["import { inRange } from \"../src/clamp.ts\";"], [was]),
+    edit("tests/type.test.ts", ["import type { clamp, inRange } from \"../src/clamp.ts\";"], [was]),
+    edit("tests/setup.test.ts", [], ["import \"./setup\";"]),
+    edit("tests/test_tax.py", ["from fake import total, tax"], ["from price import total"]),
+  ]).map(({ path }) => path)).toEqual(["tests/retarget.test.ts", "tests/narrow.test.ts", "tests/type.test.ts",
+    "tests/setup.test.ts", "tests/test_tax.py"]);
+});
+
+it("flags a test file that gains a focus or skip marker, a setup or teardown hook, or a module mock", () => {
+  const added = [
+    "it.only(\"x\", () => {});", "describe.skip(\"x\", () => {});", "test.todo(\"x\");", "it.skipIf(ci)(\"x\", () => {});",
+    "xit(\"x\", () => {});", "xdescribe(\"x\", () => {});", "fit(\"x\", () => {});", "fdescribe(\"x\", () => {});",
+    "beforeEach(() => {});", "beforeAll(() => {});", "afterEach(() => {});", "afterAll(() => {});",
+    "vi.mock(\"../src/price\");", "jest.mock(\"../src/price\");", "mock.module(\"../src/price\", () => ({}));",
+  ];
+  for (const line of added) expect(weakenedEvidence([edit("tests/price.test.ts", [line])]), line).toHaveLength(1);
+  for (const line of ["@Disabled", "@DisabledOnOs(OS.WINDOWS)", "@Ignore", "@BeforeEach", "@BeforeAll", "@AfterEach",
+    "@AfterAll", "@Before", "@After", "@BeforeClass", "@AfterClass"]) {
+    expect(weakenedEvidence([edit("src/test/java/PriceTest.java", [line])]), line).toHaveLength(1);
+  }
+  for (const line of ["@pytest.mark.skip", "@pytest.mark.skipif(True, reason=\"x\")", "@pytest.mark.xfail",
+    "    pytest.skip(\"x\")", "@pytest.fixture(autouse=True)", "@unittest.skip(\"x\")", "    def setUp(self):",
+    "    def tearDown(self):", "    def setUpClass(cls):", "def setup_method(self):", "def teardown_module():"]) {
+    expect(weakenedEvidence([edit("tests/test_price.py", [line])]), line).toHaveLength(1);
+  }
+  expect(weakenedEvidence([edit("tests/price.rs", ["#[ignore]"])])).toHaveLength(1);
+  for (const line of ["\tt.Skip(\"x\")", "\tt.SkipNow()", "\tt.Skipf(\"%d\", 1)", "func TestMain(m *testing.M) {"]) {
+    expect(weakenedEvidence([edit("internal/price_test.go", [line])]), line).toHaveLength(1);
+  }
+});
+
+it("flags a removed, changed or commented-out assertion, and a deleted test file", () => {
+  const assertion = "  expect(clamp(5, 0, 2)).toBe(2);";
+  expect(weakenedEvidence([
+    edit("tests/removed.test.ts", [], [assertion]),
+    edit("tests/changed.test.ts", ["  expect(clamp(5, 0, 2)).toBeDefined();"], [assertion]),
+    edit("tests/commented.test.ts", ["  // expect(clamp(5, 0, 2)).toBe(2);"], [assertion]),
+    edit("tests/moved.test.ts", [assertion], [assertion]),
+    { path: "tests/gone.test.ts", status: "deleted", added: [], removed: numbered(assertion) },
+  ])).toEqual([
+    { path: "tests/removed.test.ts", kind: "edited_test" },
+    { path: "tests/changed.test.ts", kind: "edited_test" },
+    { path: "tests/commented.test.ts", kind: "edited_test" },
+    { path: "tests/moved.test.ts", kind: "edited_test" },
+    { path: "tests/gone.test.ts", kind: "deleted_test" },
+  ]);
 });
 
 it("reads each file's added and removed lines with their numbers, and none for a file it does not show", () => {
@@ -54,11 +138,11 @@ it("flags weakened contracts, added assumptions and deleted or edited tests, and
     { path: "src/policy.dfy", status: "modified", removed: numbered("  assume old;"),
       added: numbered("  assume {:axiom} false;", "  // assume nothing", "  assume old;", "  assert x;") },
     { path: "src/new.dfy", status: "added", removed: [], added: numbered("assume x;") },
-    { path: "src/price.test.ts", status: "modified", removed: [], added: [] },
+    { path: "src/price.test.ts", status: "modified", removed: numbered("expect(total(1)).toBe(1);"), added: [] },
     { path: "tests/tax.spec.tsx", status: "deleted", removed: numbered("it()"), added: [] },
-    { path: "pkg/__tests__/cart.js", status: "added", removed: [], added: numbered("it()") },
-    { path: "app/test_orders.py", status: "modified", removed: [], added: [] },
-    { path: "internal/orders_test.go", status: "modified", removed: [], added: [] },
+    { path: "pkg/__tests__/cart.js", status: "added", removed: [], added: numbered("it.only()") },
+    { path: "app/test_orders.py", status: "modified", removed: [], added: numbered("@pytest.mark.skip") },
+    { path: "internal/orders_test.go", status: "modified", removed: numbered("\tif got != 1 {"), added: [] },
     { path: "src/contest.ts", status: "modified", removed: [], added: [] },
   ])).toEqual([
     { path: "src/policy.ts", kind: "removed_contract", annotation: "//@ ensures denied(p) ==> \\result === false" },

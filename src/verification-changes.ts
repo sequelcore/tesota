@@ -1,4 +1,5 @@
-import type { ChangedFile } from "./diff-lines.js";
+import type { ChangedFile, DiffLine } from "./diff-lines.js";
+import { removalCounts, testWeakens } from "./verification/test-weakening-rule.js";
 import { type AnnotationKind, weakens } from "./verification/weakening-rule.js";
 
 /**
@@ -6,8 +7,8 @@ import { type AnnotationKind, weakens } from "./verification/weakening-rule.js";
  * a removed or changed `requires` or `ensures`, a `requires` added to a
  * function the base had, and an added `assume`, in LemmaScript source or a
  * Dafny proof, with the line as written, which in a proof includes an
- * `{:axiom}` and a lemma left without a body; and a deleted or edited test
- * file.
+ * `{:axiom}` and a lemma left without a body; and a deleted test file, or
+ * an edit to one that may weaken its tests (`testWeakens`).
  * The operator decides whether it is legitimate.
  */
 export type Weakening =
@@ -123,9 +124,63 @@ function axiomChanges(file: FileChange): Weakening[] {
     : [{ path: file.path, kind: "added_assume", annotation: `lemma ${name} without a body` } as const]);
 }
 
+/**
+ * Lines that change how a file's existing tests run, by the conventions of
+ * the runners Tesota finds and the test files it reads: a focus or skip
+ * marker, a setup or teardown hook, and a module mock. A mock or spy one test
+ * sets up and restores is left out, as is a fixture a test asks for by name.
+ */
+const runChanges = [
+  /\.\s*(?:only|skip|skipIf|runIf|todo)\b/u,
+  /\b(?:xit|xdescribe|xtest|xcontext|fit|fdescribe|fcontext)\s*\(/u,
+  /\b(?:beforeEach|beforeAll|afterEach|afterAll)\s*\(/u,
+  /\b(?:vi|jest)\s*\.\s*mock\s*\(|\bmock\s*\.\s*module\s*\(/u,
+  /@(?:Disabled\w*|Ignore|(?:Before|After)(?:Each|All|Class)?)\b/u,
+  /#\[ignore\b/u,
+  /\.\s*Skip(?:Now|f)?\s*\(|\bfunc\s+TestMain\s*\(/u,
+  /\bpytest\s*\.\s*(?:mark\s*\.\s*(?:skip|skipif|xfail)\b|skip\s*\(|fixture\b.*\bautouse\s*=\s*True)|@unittest\s*\.\s*skip/u,
+  /\bdef\s+(?:(?:setUp|tearDown)(?:Class|Module)?|(?:setup|teardown)_(?:method|function|class|module))\s*\(/u,
+];
+
+function commentOnly(path: string, line: string): boolean {
+  return (path.endsWith(".py") ? /^#/u : /^(?:\/\/|\/\*|\*)/u).test(line.trim());
+}
+
+const namedImports = [
+  /^import\s+(type\s+)?(?:([\w$]+)\s*,\s*)?\{([^}]*)\}\s*from\s*(["'][^"']*["'])\s*;?$/u,
+  /^from\s+()()([\w.]+)\s+import\s+([^()#]+)$/u,
+];
+
+/** A one-line import of named bindings: the module and form it imports in, and the names. */
+function namedImport(line: string): { form: string; names: string[] } | undefined {
+  for (const [k, pattern] of namedImports.entries()) {
+    const match = pattern.exec(line.trim());
+    if (match === null) continue;
+    const [, type = "", fallback = "", first = "", second = ""] = match;
+    const [list, module] = k === 0 ? [first, second] : [second, first];
+    return { form: [k, type.trim(), fallback, module].join(" "),
+      names: list.split(",").map((name) => name.trim().replace(/\s+/gu, " ")).filter((name) => name !== "") };
+  }
+  return undefined;
+}
+
+/** Whether an added line imports from the same module, in the same form, every name the removed `line` did. */
+function widened(line: string, added: readonly DiffLine[]): boolean {
+  const before = namedImport(line);
+  return before !== undefined && added.some(({ text }) => {
+    const after = namedImport(text);
+    return after?.form === before.form && before.names.every((name) => after.names.includes(name));
+  });
+}
+
 function testChange(file: ChangedFile): Weakening[] {
-  if (file.status === "added" || !isTestPath(file.path)) return [];
-  return [{ path: file.path, kind: file.status === "deleted" ? "deleted_test" : "edited_test" }];
+  if (!isTestPath(file.path)) return [];
+  const removes = file.removed.some(({ text }) =>
+    removalCounts(text.trim() === "", commentOnly(file.path, text), widened(text, file.added)));
+  const changesRuns = file.added.some(({ text }) => !commentOnly(file.path, text) &&
+    runChanges.some((pattern) => pattern.test(text)));
+  return !testWeakens(file.status, removes, changesRuns) ? []
+    : [{ path: file.path, kind: file.status === "deleted" ? "deleted_test" : "edited_test" }];
 }
 
 /**

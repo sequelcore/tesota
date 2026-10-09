@@ -379,7 +379,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
       return { entries: [{ type: "custom_message", customType: "tesota-gate", content: weak, display: true }], continue: true };
     }
     const receipt: Receipt = { version: 1, repository: true, ...run, proofs: judged, ...strength, tests, exercises, weakened,
-      unverified: changed.filter((path) => !covered.has(path)), uncovered: uncovered(sources, changes, weakened),
+      unverified: changed.filter((path) => !covered.has(path) && !isTestPath(path)), uncovered: uncovered(sources, changes, weakened),
       changed: await recordedChanges(ctx.cwd, from, changed), settledAt: new Date().toISOString() };
     progress.publish({ step: "settled", receipt });
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
