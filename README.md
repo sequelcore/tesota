@@ -53,17 +53,19 @@ step works.
 ## Requirements
 
 - **Pi:** version 1.1.0 or later, installed beside Tesota or on `PATH`.
+- **Node:** version 22.19.0 or later, which Pi 1.1 requires.
 - **Dafny 4:** needed to prove contracts; `mise install` installs the
   version in [mise.toml](mise.toml). Without Dafny, a proof reports that it
   could not run.
 - **Git:** needed to tell what changed. Outside a Git repository, Tesota
   only reports that the changes were not verified.
-- **Bun and Node:** the versions in [package.json](package.json), needed
-  to build from source.
+- **Bun and Node:** to build from source, the Bun in `packageManager` and
+  the Node in `devEngines` of [package.json](package.json).
 
 ## Install and run
 
-Tesota is not published yet. Install it from a source checkout:
+Tesota 0.1.0 is an alpha and is not published yet. Install it from a
+source checkout:
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts

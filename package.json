@@ -1,6 +1,6 @@
 {
   "name": "tesota",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Makes your coding agent show evidence that its change does what you asked",
   "license": "Apache-2.0",
@@ -11,6 +11,23 @@
   "bin": {
     "tesota": "dist/cli.js"
   },
+  "files": [
+    "dist/cli.js",
+    "dist/evidence.js",
+    "dist/git.js",
+    "dist/pi-install.js",
+    "dist/pull-request-receipt.js",
+    "dist/receipt.js",
+    "dist/verification/pi-version-rule.js",
+    "src/**/*.ts",
+    "!src/cli.ts",
+    "!src/pi-install.ts",
+    "!src/pull-request-receipt.ts",
+    "!src/verification/pi-version-rule.ts",
+    "themes",
+    "terminal-schemes",
+    "NOTICE"
+  ],
   "pi": {
     "extensions": [
       "./src/extension.ts"
@@ -21,11 +38,18 @@
   },
   "packageManager": "bun@1.4.2",
   "engines": {
-    "node": "24.15.0"
+    "node": ">=22.19.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.15.0"
+    }
   },
   "trustedDependencies": [],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepack": "bun run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun run build && vitest run",
     "lint": "oxlint --config .oxlintrc.json --deny-warnings src tests evaluation",

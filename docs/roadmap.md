@@ -30,12 +30,13 @@ Slices 1–9 and 11 are done; the
 [decision record](decisions/2026-10-08-verification-layer.md#slices) links
 each one's issue and pull requests.
 
-10. **Parallel sessions.** Recommend an existing Pi package, or raise the gap
-    with Pi.
-12. **Alpha.** Publish `tesota` to npm after a week on a real project. The
-    receipt's in-toto `predicateType` names
-    [receipt v1](receipt-v1.md) on `main`, which resolves once `dev`
-    reaches `main`.
+- **12. Alpha.** Version 0.1.0 installs from its packed file, through
+  `pi install` and the `tesota` command. Publish it to npm after a week on
+  a real project. The receipt's in-toto `predicateType` names
+  [receipt v1](receipt-v1.md) on `main`, which resolves once `dev`
+  reaches `main`.
+- **10. Parallel sessions,** after the alpha. Recommend an existing Pi package,
+  or raise the gap with Pi.
 
 ## Open questions
 
