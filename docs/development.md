@@ -2,7 +2,8 @@
 
 ## Toolchain and checks
 
-Use the Bun and Node versions in [package.json](../package.json). Dafny, which
+Use the Bun version in `packageManager` and the Node version in `devEngines`
+of [package.json](../package.json); CI reads both from there. Dafny, which
 `bun run formal:check` needs, is declared in [mise.toml](../mise.toml) for
 `mise install`. From the repository root, install with
 `bun install --frozen-lockfile --ignore-scripts`. Dependencies come from
@@ -10,7 +11,7 @@ registry packages; lifecycle scripts are disabled.
 
 | Command | Purpose |
 | --- | --- |
-| `bun run build` | Compile the `tesota` launcher to `dist/` |
+| `bun run build` | Empty `dist/` and compile the `tesota` launcher to it; `npm pack` runs it first |
 | `bun run typecheck` | Check source and test types |
 | `bun run test` | Build and run the tests |
 | `bun run lint` | Lint source and tests without fixes; reject warnings |
@@ -44,7 +45,12 @@ uses the operator's Pi; the development copy in `devDependencies` must meet
 the minimum, which a test checks. `typebox`, which Pi supplies to extensions,
 is an optional peer for the same reason. `lemmascript` is a runtime
 dependency: `prove` and the gate run its `lsc` with the operator's Dafny in
-the project itself, as described under "Adding a capability". The
+the project itself, as described under "Adding a capability". The `files`
+list in `package.json` names what the package ships: the extension's sources
+and the compiled launcher, each with what it imports, the themes, the
+terminal schemes and the notices. A module added to either goes into that
+list too; a test packs the package and fails when a packed file imports one
+that is not packed, or when anything else is packed. The
 [verification design](design/verification.md) describes the gate, its
 rungs and the receipt, and [receipt v1](receipt-v1.md) the receipt's format.
 The tests that prove files run only where Dafny is installed; the gate's tests script the proofs and the
