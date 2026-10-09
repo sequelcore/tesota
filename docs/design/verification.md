@@ -253,12 +253,14 @@ The weakening list decides narrowing:
 - any assumption added to the file's `.dfy`, which narrows every contract in
   the file.
 
-A removed line counts at the line that now follows it, and blank lines are
-ignored. The receipt lists the remaining lines as ranges (`ranges`, proved).
+A removed line counts at the line that now follows it. Blank and
+comment-only lines are ignored, by the same check the test rule uses; a
+`//@` line is a contract, not a comment, so it still counts. The receipt lists the remaining lines as ranges (`ranges`, proved).
 A changed file that no proof's evidence covers is listed whole, unless it
-is a test file: tests are evidence, reported as exercised, passed or as
-something that may weaken the evidence. Both lists read "not proved" when the project's commands passed, and "not verified"
-otherwise.
+is a test file (tests are evidence, reported as exercised, passed or as
+something that may weaken the evidence) or every line its change added or
+removed is blank or comment-only. Both lists read "not proved" when the
+project's commands passed, and "not verified" otherwise.
 
 ## The receipt
 
@@ -308,7 +310,10 @@ Pi's footer reads it (`EvidenceFooter` in `src/footer.ts`):
 - **While a run settles:** the gate's step (proving, testing or measuring
   contracts), then whether it sent failures back, with what the round found
   so far.
-- **After the run:** the receipt in brief.
+- **After the run:** the receipt in brief. When the request changed only
+  comments or blank lines and nothing else is listed, the receipt says
+  `no code       nothing to verify: the changes are comments or blank lines
+  only`, and the footer `✓ receipt · nothing to verify, comments only`.
 
 The operator's next request returns the status to ready, as does a run that
 changed nothing or a gate that fails midway. The footer's second row holds

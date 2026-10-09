@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Evidence } from "../src/evidence.js";
+import { evidenceParts, evidenceText } from "../src/footer.js";
 import { changedFiles, type GateProgress, type GateStatus, registerGate } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import type { Receipt } from "../src/receipt.js";
@@ -149,7 +150,7 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   const run = gate(root);
   await run.input();
   expect(await run.settle()).toBeUndefined();
-  writeFileSync(join(root, "src", "rule.ts"), `${contract}// changed\n`);
+  writeFileSync(join(root, "src", "rule.ts"), `${contract}export const changed = true;\n`);
   writeFileSync(join(root, "notes.md"), "# Notes, changed\n");
   writeFileSync(join(root, "src", "rule.dfy.gen"), "// regenerated\n");
   scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
@@ -387,6 +388,30 @@ it("keeps the running request's base through a steer or follow-up sent after the
   await run.input("interactive", "steer");
   await run.input("interactive", "followUp");
   expect((entry(await run.settle()).details as Receipt).proofs.map(({ path }) => path)).toEqual(["src/rule.ts"]);
+});
+
+it("leaves out of the receipt's files those whose changed lines are all blank or comments, //@ lines aside", async () => {
+  const root = repository({ "src/rule.ts": contract, "notes.md": "# Notes\n", "src/helper.ts": "export const one = 1;\n",
+    "src/tool.py": "x = 1\n", "src/legacy.js": "export const two = 2;\n", "logo.bin": "\0\u0001" });
+  const run = gate(root);
+  await run.input();
+  write(root, { "src/helper.ts": "// One, as a constant.\n\nexport const one = 1;\n", "src/note.ts": "/* Nothing yet.\n * Later.\n */\n",
+    "src/tool.py": "# The tool's value.\nx = 1\n", "src/legacy.js": "//@ ensures true\nexport const two = 2;\n",
+    "notes.md": "# Notes, changed\n", "logo.bin": "\0\u0002" });
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.unverified).toEqual(["logo.bin", "notes.md", "src/legacy.js"]);
+  expect(receipt.commentsOnly).toBeUndefined();
+});
+
+it("settles a change of comments and blank lines alone with a receipt and footer that say nothing needed verifying", async () => {
+  const root = repository({ "src/helper.ts": "export const one = 1;\n", "src/tool.py": "x = 1\n" });
+  const run = gate(root);
+  await run.input();
+  write(root, { "src/helper.ts": "// One, as a constant.\n\nexport const one = 1;\n", "src/tool.py": "# The tool's value.\nx = 1\n" });
+  const settled = entry(await run.settle());
+  expect(settled.content).toBe("Tesota receipt\n  no code       nothing to verify: the changes are comments or blank lines only");
+  expect((settled.details as Receipt).commentsOnly).toBe(true);
+  expect(evidenceText(evidenceParts(run.progress.status), "full")).toBe("✓ receipt · nothing to verify, comments only");
 });
 
 it("lists every file in a repository whose first commit the agent made", async () => {

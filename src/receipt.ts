@@ -42,6 +42,8 @@ export interface Receipt {
   readonly weakened: readonly Weakening[] | "too_large" | "unreadable";
   /** Changed files, relative to the project, that no proof covers. */
   readonly unverified: readonly string[];
+  /** Present when every line the request added or removed is blank or only a comment, so it changed no code. */
+  readonly commentsOnly?: true;
   /**
    * The changed lines of each TypeScript file that proved that no contract's
    * proof covers (`uncoveredLines`); none when `weakened` says the change
@@ -134,8 +136,7 @@ export function renderReceipt(receipt: Receipt): string {
       "cannot tell which files changed";
   }
   const tested = receipt.tests.length > 0 && receipt.tests.every(({ verdict }) => verdict === "proved");
-  return [
-    "Tesota receipt",
+  const listed = [
     ...receipt.proofs.flatMap(({ path, verdict, evidence }) =>
       [line(path, verdict, evidence), `                content sha256 ${evidence.contentHash}`]),
     ...receipt.contracts.flatMap(mutationLines),
@@ -157,5 +158,9 @@ export function renderReceipt(receipt: Receipt): string {
     ...receipt.unverified.map((path) => tested
       ? `  not proved    ${path}: no proof covers it; the project's commands pass with it`
       : `  not verified  ${path}: no verifier covers it`),
-  ].join("\n");
+  ];
+  // A change of comments alone leaves nothing to list; the receipt says so rather than ending empty.
+  const nothing = listed.length === 0 && receipt.commentsOnly === true
+    ? ["  no code       nothing to verify: the changes are comments or blank lines only"] : [];
+  return ["Tesota receipt", ...listed, ...nothing].join("\n");
 }

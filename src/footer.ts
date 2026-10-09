@@ -66,8 +66,7 @@ function receiptParts(receipt: Receipt): EvidencePart[] {
   // Commands that pass leave the rest tested though not proved, as the receipt words it.
   const unproved = passed && receipt.tests.length > 0 ? "not proved" : "not verified";
   const clean = proved === receipt.proofs.length && passed && weak === 0 && Array.isArray(receipt.weakened) && weakening === 0;
-  return [
-    clean ? part("✓ receipt", "✓ receipt", "✓", "success") : part("! receipt", "! receipt", "!", "warning"),
+  const listed = [
     ...tallyParts({ proved, notProved: receipt.proofs.length - proved,
       ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }),
     // Narrower rows keep what needs the operator, so they leave out contracts that held.
@@ -79,6 +78,11 @@ function receiptParts(receipt: Receipt): EvidencePart[] {
     ...typeof receipt.weakened === "string" ? [part("weakening not checked", "unchecked", "unchecked", "warning")]
       : weakening > 0 ? [part(`${weakening} may weaken the evidence`, `${weakening} may weaken`, `weakens ${weakening}`, "warning")] : [],
   ];
+  // A change of comments alone leaves nothing to list, as the receipt says.
+  const nothing = listed.length === 0 && receipt.commentsOnly === true
+    ? [part("nothing to verify, comments only", "nothing to verify", "no code", "muted")] : [];
+  return [clean ? part("✓ receipt", "✓ receipt", "✓", "success") : part("! receipt", "! receipt", "!", "warning"),
+    ...listed, ...nothing];
 }
 
 /** What the footer's first row says for the gate's status. */

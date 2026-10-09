@@ -68,6 +68,7 @@ function labelColor(label: string): ThemeColor {
   if (/^(?:proved|passed|exercises|contract)$/u.test(label)) return "success";
   if (label.startsWith("NOT ")) return "error";
   if (label === "model judged" || label === "not judged") return "accent";
+  if (label === "no code") return "muted";
   return label === "" ? "customMessageText" : "warning";
 }
 
