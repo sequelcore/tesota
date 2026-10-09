@@ -101,7 +101,9 @@ Run `bun unlink` in the checkout to remove the command.
 A session opens under Tesota's palo fierro, drawn in the colors of Pi's
 active theme and lit against your terminal's background. In Pi's
 fullscreen mode, its default, a click on the resting tree plays the scene
-again.
+again. While the agent works, the scene's tumbleweed rolls where Pi shows
+its working indicator; once the agent stops, Pi hides that line, and the
+footer shows the gate's own progress.
 
 **Themes.** Tesota brings six Pi themes: `tesota-dark` and `tesota-light`,
 and `vesper`, `sequel`, `automata` and `phosphor`. Until you choose a theme,
