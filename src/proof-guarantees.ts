@@ -109,7 +109,7 @@ export async function contractStrength(ctx: Pick<ExtensionContext, "model" | "mo
     restateWith)]);
   return {
     contracts: items.map(({ contract }, index) => ({ path: contract.path, name: contract.name, lines: contractLines(contract),
-      mutation: mutations[index] ?? { rejected: 0, survived: [], inconclusive: 0 },
+      mutation: mutations[index] ?? { rejected: 0, survived: [], inconclusive: 0, equivalent: 0 },
       ...judged.status === "judged" && judged.judgments[index] !== undefined ? { judgment: judged.judgments[index] } : {} })),
     claimcheck: judged.status === "judged"
       ? { status: "judged", restatedBy: judged.restatedBy, comparedBy: judged.comparedBy } : judged,

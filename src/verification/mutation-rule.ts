@@ -16,3 +16,15 @@ export function mutantFinding(outcome: ProofOutcome): MutantFinding {
   if (outcome === "failed") return "rejected";
   return outcome === "passed" ? "survived" : "inconclusive";
 }
+
+/**
+ * Whether a surviving mutant is dropped as equivalent, by the proof that it
+ * returns the original's result for every input the contract's `requires`
+ * admits: only a proof that passed drops it. A proof that failed, verified
+ * nothing, could not run, ran past its limit or was stopped keeps it a
+ * survivor, so no mutant is dropped without a proof.
+ */
+//@ ensures \result <==> outcome === "passed"
+export function equivalentMutant(outcome: ProofOutcome): boolean {
+  return outcome === "passed";
+}

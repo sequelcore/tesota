@@ -21,3 +21,13 @@ lemma mutantFinding_ensures(outcome: ProofOutcome)
   ensures (mutantFinding(outcome).inconclusive? <==> ((!outcome.failed?) && (!outcome.passed?)))
 {
 }
+
+function equivalentMutant(outcome: ProofOutcome): bool
+{
+  outcome.passed?
+}
+
+lemma equivalentMutant_ensures(outcome: ProofOutcome)
+  ensures (equivalentMutant(outcome) <==> outcome.passed?)
+{
+}

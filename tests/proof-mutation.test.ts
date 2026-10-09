@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
 import { bodyEnd, contracts } from "../src/proof-guarantees.js";
-import { mutateContract, mutants } from "../src/proof-mutation.js";
+import { equivalenceSource, mutateContract, mutants } from "../src/proof-mutation.js";
 import { renderReceipt } from "../src/receipt.js";
 import { proveSource } from "../src/verification/lemmascript-verifier.js";
+import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
 
 const dafny = spawnSync("dafny", ["--version"], { encoding: "utf8" }).status === 0;
@@ -13,6 +14,9 @@ const body = "export function clamp(value: number, low: number, high: number): n
 const strong = "//@ requires low <= high\n//@ ensures low <= \\result && \\result <= high\n" +
   "//@ ensures low <= value && value <= high ==> \\result === value\n//@ ensures value > high ==> \\result === high\n" + body;
 const weak = "//@ requires low <= high\n//@ ensures low <= \\result && \\result <= high\n" + body;
+/** Its contract allows `return 1` in the base case, a survivor that is not equivalent. */
+const recursive = "//@ requires n >= 0\n//@ ensures \\result >= 0\nexport function sum(n: number): number {\n" +
+  "  if (n === 0) return 0;\n  return n + sum(n - 1);\n}\n";
 
 /**
  * The weak-contract cases registered on 2026-10-03, before any run, as
@@ -54,17 +58,54 @@ it("swaps a branch's result, flips comparisons, moves numbers and swaps + and -,
   expect(mutants("export function g(): void {\n  const f = (x: number) => x;\n}\n", 1, 3)).toEqual([]);
 });
 
-it("calls a contract with surviving mutants weak in the receipt, and says a survivor may behave the same as the original", () => {
+it("calls a contract with surviving mutants weak in the receipt, and only counts those proved to behave the same", () => {
   const show = (mutation: { rejected: number; survived: { line: number; operator: "result"; before: string; after: string }[];
-    inconclusive: number }): string => renderReceipt({ ...emptyReceipt, contracts: [{ path: "src/clamp.ts", name: "clamp", lines: ["//@ ensures \\result >= 0"], mutation }] });
-  expect(show({ rejected: 3, survived: [], inconclusive: 0 }))
-    .toContain("  contract      clamp in src/clamp.ts: all 3 decided changes to its code fail the proof");
-  expect(show({ rejected: 2, survived: [{ line: 6, operator: "result", before: "low", after: "high" }], inconclusive: 1 }))
-    .toContain("  weak contract clamp in src/clamp.ts: 1 of 4 changes to its code still prove, so the contract does not rule " +
-      "them out (one may behave the same as the original); 1 could not be decided\n                line 6: low became high");
-  expect(show({ rejected: 0, survived: [], inconclusive: 0 }))
+    inconclusive: number; equivalent: number }): string =>
+    renderReceipt({ ...emptyReceipt, contracts: [{ path: "src/clamp.ts", name: "clamp", lines: ["//@ ensures \\result >= 0"], mutation }] });
+  const strong = show({ rejected: 3, survived: [], inconclusive: 0, equivalent: 0 });
+  expect(strong).toContain("  contract      clamp in src/clamp.ts: all 3 decided changes to its code fail the proof");
+  expect(strong).not.toContain("behave the same");
+  expect(show({ rejected: 3, survived: [], inconclusive: 0, equivalent: 2 }))
+    .toContain("  contract      clamp in src/clamp.ts: all 3 decided changes to its code fail the proof; 2 proved to behave " +
+      "the same as the code");
+  expect(show({ rejected: 2, survived: [{ line: 6, operator: "result", before: "low", after: "high" }], inconclusive: 1, equivalent: 1 }))
+    .toContain("  weak contract clamp in src/clamp.ts: 1 of 5 changes to its code still prove, so the contract does not rule " +
+      "them out (one may behave the same as the original); 1 proved to behave the same as the code; 1 could not be decided\n" +
+      "                line 6: low became high");
+  expect(show({ rejected: 0, survived: [], inconclusive: 0, equivalent: 0 }))
     .toContain("  contract      clamp in src/clamp.ts: mutation found no change to try in its body");
 });
+
+it("builds the equivalence file with a fresh name for the mutant, and builds none for a function that calls itself", () => {
+  const mutated = strong.replace("(value > high)", "(value >= high)");
+  // 5 is the declaration's line, 9 its closing brace; `clampMutant` is taken, so the copy is `clampMutant2`.
+  const taken = `${strong}// clampMutant\n`;
+  expect(equivalenceSource(taken, 5, 9, `${mutated}// clampMutant\n`)).toBe("//@ requires low <= high\n" +
+    "export function clampMutant2(value: number, low: number, high: number): number {\n  if (value < low) return low;\n" +
+    "  if (value >= high) return high;\n  return value;\n}\n\n//@ requires low <= high\n" +
+    "//@ ensures \\result === clampMutant2(value, low, high)\n" + body + "// clampMutant\n");
+  expect(equivalenceSource(recursive, 3, 6, recursive.replace("n - 1", "n + 1"))).toBeUndefined();
+  expect(equivalenceSource("//@ ensures true\nexport function d({ a }: { a: number }): number {\n  return a;\n}\n", 2, 4, ""))
+    .toBeUndefined();
+});
+
+it.runIf(dafny)("drops a planted mutant Dafny proves equivalent and keeps a planted one that is not", async () => {
+  const proved = (mutated: string): Promise<ProofOutcome> =>
+    proveSource("clamp.ts", equivalenceSource(weak, 3, 7, mutated) ?? "", AbortSignal.timeout(300_000));
+  // `>` to `>=` returns `high` either way at `value === high`; `low` to `high` changes the result below the range.
+  expect(await proved(weak.replace("value > high", "value >= high"))).toBe("passed");
+  expect(await proved(weak.replace("return low;", "return high;"))).toBe("failed");
+  const result = await mutateOnly("weak.ts", weak);
+  expect(result.equivalent).toBeGreaterThan(0);
+  expect(result.survived.map((mutant) => [mutant.line, mutant.before, mutant.after])).toContainEqual([4, "low", "high"]);
+  expect(result.survived.map((mutant) => [mutant.line, mutant.before, mutant.after])).not.toContainEqual([5, ">", ">="]);
+}, 600_000);
+
+it.runIf(dafny)("keeps a surviving mutant of a function that calls itself, which no equivalence proof covers yet", async () => {
+  const result = await mutateOnly("sum.ts", recursive);
+  expect(result.equivalent).toBe(0);
+  expect(result.survived.length).toBeGreaterThan(0);
+}, 600_000);
 
 it.runIf(dafny)("counts a source alone that verified nothing as vacuous, never as proved", async () => {
   // Each has a `//@` line Tesota counts, but nothing LemmaScript translates: Dafny verifies 0 items and exits 0.
@@ -81,7 +122,9 @@ it.runIf(dafny)("rejects more mutants under a stronger contract", async () => {
   expect(strongResult.rejected).toBe(2);
   expect(strongResult.survived.map((mutant) => [mutant.line, mutant.before, mutant.after])).toContainEqual([6, "low", "high"]);
   expect(weakResult.rejected).toBe(0);
-  expect(weakResult.survived.length).toBe(5);
+  // `<` to `<=` and `>` to `>=` return the bound either way at the bound, so Dafny proves them equivalent under both contracts.
+  expect(weakResult.survived.length).toBe(3);
+  expect([weakResult.equivalent, strongResult.equivalent]).toEqual([2, 2]);
 }, 600_000);
 
 it.runIf(dafny)("flags the registered weak-contract cases whose bodies it can change as weak contracts", async () => {

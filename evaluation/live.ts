@@ -23,7 +23,7 @@ import { NO_CONTRACT_CASES, PROOF_CASES, type ProofCase, STRENGTHEN_CASES, type 
  * with a second model, on the contracts the runs left and on the strengthen
  * cases' weak and reference contracts, and appends its judgments.
  *
- *   bun run live:eval --out=<file> --arm=receipt|send-back|plain --set=proofs|strengthen|no-contracts
+ *   bun run live:eval --out=<file> --arm=tesota|plain --set=proofs|strengthen|no-contracts
  *     [--cases=<name>,<name>] [--runs=3] [--model=openai/gpt-6-luna]
  *   bun run live:eval --out=<file> --claimcheck [--second=openai/gpt-5.5] [--repeats=3] [--model=openai/gpt-6-luna]
  */
@@ -147,9 +147,7 @@ async function liveRun(arm: string, set: string, testCase: LiveCase, run: number
   if (pi === undefined) throw new Error("No Pi is installed in the checkout; run bun install.");
   const launcher = arm === "plain" ? [pi.cli] : [join(checkout, "dist", "cli.js")];
   const args = [...launcher, "-p", "--model", model, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files",
-    "--no-mcp", "--session-dir", sessions,
-    // Pi reads a bare extension flag's next argument as its value, which would take the request; any value turns a boolean on.
-    ...arm === "send-back" ? ["--send-back-weak-contracts=true"] : [], testCase.request];
+    "--no-mcp", "--session-dir", sessions, testCase.request];
   const started = Date.now();
   const ended = await runProcess(process.execPath, args, directory, new AbortController().signal, 30 * 60_000);
   const durationMs = Date.now() - started;
@@ -168,7 +166,7 @@ async function liveRun(arm: string, set: string, testCase: LiveCase, run: number
     receiptSummary: receipt === undefined ? undefined : {
       proofs: receipt.proofs.map(({ path, verdict }) => ({ path, verdict })),
       contracts: receipt.contracts.map(({ path, name, mutation, judgment }) => ({ path, name, survived: mutation.survived.length,
-        rejected: mutation.rejected, inconclusive: mutation.inconclusive, verdict: judgment?.verdict })),
+        rejected: mutation.rejected, inconclusive: mutation.inconclusive, equivalent: mutation.equivalent, verdict: judgment?.verdict })),
       claimcheck: receipt.claimcheck,
       tests: receipt.tests.map(({ command, evidence, verdict }) => ({ command, outcome: evidence.outcome, verdict })),
       exercises: receipt.exercises, weakened: receipt.weakened, unverified: receipt.unverified, uncovered: receipt.uncovered,
@@ -194,7 +192,7 @@ function append(record: Record<string, unknown>): void {
 
 async function live(): Promise<void> {
   const arm = option("arm") ?? "";
-  if (!["receipt", "send-back", "plain"].includes(arm)) throw new Error("Use --arm=receipt, send-back or plain.");
+  if (!["tesota", "plain"].includes(arm)) throw new Error("Use --arm=tesota or plain.");
   const set = option("set") ?? "";
   const chosen = sets[set];
   if (chosen === undefined) throw new Error("Use --set=proofs, strengthen or no-contracts.");

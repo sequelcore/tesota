@@ -21,8 +21,9 @@ vi.mock("../src/verification/lemmascript-verifier.js", async (original) => ({
     return Promise.resolve({ verifier: "lemmascript", claim: `claim of ${path}`, limits: "", outcome, output, durationMs: 1,
       files: [path, path.replace(/\.ts$/u, ".dfy")], contentHash: `hash of ${path}` });
   },
-  // Every mutant ends as scripted, failing its proof unless a test says otherwise, so strength is measured without Dafny.
-  proveSource: () => Promise.resolve(mutantOutcome),
+  // Every mutant ends as scripted, failing its proof unless a test says otherwise, so strength is measured without Dafny;
+  // a survivor's equivalence proof (`equivalenceSource`) always fails, so it stays a survivor.
+  proveSource: (_name: string, source: string) => Promise.resolve(/Mutant\d*\(/u.test(source) ? "failed" : mutantOutcome),
 }));
 
 const roots: string[] = [];
@@ -229,14 +230,11 @@ it("restates with the model the claimcheck-model flag names", async () => {
   expect(entry(await run.settle()).content).toContain("ClaimCheck its restating model other/missing is not a provider/id in Pi's model registry");
 });
 
-it("sends a weak contract back once with the experimental flag, and only lists it in the receipt without it", async () => {
+it("sends a weak contract back once, then lists it in the receipt", async () => {
   mutantOutcome = "passed";
   const root = project();
   writeFileSync(join(root, "src", "rule.ts"), "//@ ensures \\result <= 5\nexport function f(): number {\n  return 0;\n}\n");
-  const plain = gate(root);
-  await plain.input();
-  expect(entry(await plain.settle()).customType).toBe("tesota-receipt");
-  const run = gate(root, undefined, { flags: { "send-back-weak-contracts": true } });
+  const run = gate(root);
   await run.input();
   const sent = await run.settle();
   expect(sent?.continue).toBe(true);

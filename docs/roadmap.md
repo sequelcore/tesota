@@ -84,8 +84,10 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    package. On GPT-6 Luna, indicative at 5 runs a case, sending a weak
    contract back made the final contract rule out the registered bug in 15
    of 15 runs, against 2 of 15 with the receipt only, at about three times
-   the tokens; the experimental `--send-back-weak-contracts` flag stays until
-   that decides the default. With GPT-5.5 restating, ClaimCheck changed 7 of
+   the tokens. Since #352 sending back is the default, and a surviving
+   mutant Dafny proves equivalent to the code is dropped: 15 of 15 still rule
+   the bug out, at 354k tokens against 503k (indicative, 5 runs a case).
+   With GPT-5.5 restating, ClaimCheck changed 7 of
    53 verdicts, mostly between not and partially justified; neither setup
    accepted a contract that allows the bug. On code without contracts the
    test rung changed no outcome: with and without Tesota, 21 of 21 resolved.

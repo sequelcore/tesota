@@ -74,18 +74,20 @@ there when the change touches `package.json` or a lockfile
 contract is that the request added or changed in a file that proved
 (`src/proof-guarantees.ts`): `src/proof-mutation.ts` proves up to 8 small
 changes to the function's body, each alone in a temporary folder without the
-file's `.dfy` proof additions, and one that still proves makes it a weak
-contract in the receipt; `src/pi-claimcheck.ts`, through `ctx.modelRegistry`,
+file's `.dfy` proof additions. For one that still proves, it asks Dafny in
+the same way whether the changed function returns the original's result for
+every input its `requires` admits (`equivalenceSource`); the receipt only
+counts a change proved equivalent, and any other that still proves makes the
+contract weak. A function that calls itself, or whose equivalence does not
+prove, such as one with a loop, keeps its survivors. The gate sends a weak
+contract's surviving changes back to the agent until they repeat.
+`src/pi-claimcheck.ts`, through `ctx.modelRegistry`,
 asks a model to restate each contract without the request, the one Pi's
 `--claimcheck-model <provider>/<id>` flag names or else the session's, and
 the session's model to compare the restatement with the operator's request.
 The receipt labels that verdict a model's judgment, says when one model made
-both requests, or says why there is none. Neither sends
-anything back to the agent, except that the experimental
-`--send-back-weak-contracts=true` flag, kept only until slice 8's results
-decide it (#350), sends a weak contract's surviving changes back until they
-repeat. Pi reads a bare extension flag's next argument as its value, so it
-takes `=true`. A file that proved covers only its changed lines
+both requests, or says why there is none; it sends nothing back to the
+agent. A file that proved covers only its changed lines
 inside a function whose contract proved and that the change did not narrow,
 by the weakening list's reading: `src/proof-coverage.ts` applies
 `proofCovered` and the receipt lists the rest by line range. The receipt

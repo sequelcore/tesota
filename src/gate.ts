@@ -181,21 +181,12 @@ function restateWith(pi: ExtensionAPI): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
-/**
- * EXPERIMENTAL, for slice 8's evaluation (#350) only: the Pi flag that sends
- * a weak contract back to the agent instead of only listing it in the
- * receipt. If the evaluation shows it does not help, the flag and
- * `weakContractReport` are removed; if it helps, sending back becomes the
- * default and the flag goes.
- */
-const sendBackWeakFlag = "send-back-weak-contracts";
-
 /** What a weak contract's correction must change before it goes back again: the changes to its code that still prove. */
 function weakFailure({ mutation }: ContractStrength): string {
   return mutation.survived.map(({ line, before, after }) => `${line}: ${before} -> ${after}`).join("\n");
 }
 
-/** What goes back to the agent for a weak contract (`sendBackWeakFlag`): the changes to its code its proof does not rule out. */
+/** What goes back to the agent for a weak contract: the changes to its code its proof does not rule out. */
 function weakContractReport({ path, name, mutation }: ContractStrength): string {
   return `Tesota: the contract of ${name} in ${path} proves, but these changes to its code prove too, so it does not rule ` +
     `them out:\n${mutation.survived.map(({ line, before, after }) => `  line ${line}: ${before} became ${after}`).join("\n")}\n\n` +
@@ -204,12 +195,11 @@ function weakContractReport({ path, name, mutation }: ContractStrength): string 
 }
 
 /**
- * What goes back for the weak contracts (`sendBackWeakFlag`), each until its
- * surviving changes repeat ones already sent back (`gateVerdict`), recorded
- * in `sentBack`; undefined when none goes back.
+ * What goes back for the weak contracts, each until its surviving changes
+ * repeat ones already sent back (`gateVerdict`), recorded in `sentBack`;
+ * undefined when none goes back.
  */
-function sendBackWeak(enabled: boolean, strength: readonly ContractStrength[], sentBack: Map<string, string[]>): string | undefined {
-  if (!enabled) return undefined;
+function sendBackWeak(strength: readonly ContractStrength[], sentBack: Map<string, string[]>): string | undefined {
   const key = ({ path, name }: ContractStrength): string => `${path}#${name}`;
   const weak = strength.filter((item) => item.mutation.survived.length > 0
     && gateVerdict("failed", weakFailure(item), sentBack.get(key(item)) ?? []) === "send_back");
@@ -232,9 +222,8 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
  * sent back for that file (`gateVerdict`). Then the test rung runs
  * (`testRung`), and once it passes, the strength of the contracts the
  * request added or changed (`contractStrength`) and the changed lines no
- * proof covers (`uncovered`) are measured for the receipt; with the
- * experimental `sendBackWeakFlag`, a weak contract goes back first. What
- * went back lasts for the operator's request: it resets on their input, not
+ * proof covers (`uncovered`) are measured for the receipt, and a weak
+ * contract goes back first (`sendBackWeak`). What went back lasts for the operator's request: it resets on their input, not
  * on `agent_start`, which every continuation fires too. When nothing goes back, the run settles with
  * a receipt for the operator. Changes are measured against the commit `HEAD`
  * named when the operator's request started, so a commit the agent makes
@@ -246,8 +235,6 @@ const readOnlyTools = new Set(["read", "grep", "find", "ls", "prove"]);
 export function registerGate(pi: ExtensionAPI): void {
   pi.registerFlag(claimcheckModelFlag, { type: "string",
     description: "The provider/id of a second model for ClaimCheck to restate contracts with; the session's model otherwise" });
-  pi.registerFlag(sendBackWeakFlag, { type: "boolean", default: false,
-    description: "Experimental: send a contract with a change to its code that still proves back to the agent" });
   let sentBack = new Map<string, string[]>();
   let commandsSentBack = new Map<string, string[]>();
   let weakSentBack = new Map<string, string[]>();
@@ -314,7 +301,7 @@ export function registerGate(pi: ExtensionAPI): void {
       path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
     const sources = await provedSources(ctx.cwd, from, judged);
     const strength = await contractStrength(ctx, requests, sources, signal, restateWith(pi));
-    const weak = sendBackWeak(pi.getFlag(sendBackWeakFlag) === true, strength.contracts, weakSentBack);
+    const weak = sendBackWeak(strength.contracts, weakSentBack);
     if (weak !== undefined) {
       return { entries: [{ type: "custom_message", customType: "tesota-gate", content: weak, display: true }], continue: true };
     }
