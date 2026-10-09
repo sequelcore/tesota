@@ -118,6 +118,14 @@ again. While the agent works, the scene's tumbleweed rolls where Pi shows
 its working indicator; once the agent stops, Pi hides that line, and the
 footer shows the gate's own progress.
 
+**The receipt in the conversation.** The receipt's first row says whether
+anything needs you, such as `! 4 things need you`. Under it come those
+things, then what is not proved, then what holds, in one row. A model's
+opinion of the contracts is shown as a note, marked `◇`, and never counts
+toward what needs you. Press Ctrl+O to see each one's details, as for any
+tool's output; what the gate sent back to the agent, and `prove`'s results,
+open the same way.
+
 **Themes.** Tesota brings six Pi themes: `tesota-dark` and `tesota-light`,
 and `vesper`, `sequel`, `automata` and `phosphor`. Until you choose a theme,
 `tesota` opens Pi in `tesota-light` or `tesota-dark`, following your

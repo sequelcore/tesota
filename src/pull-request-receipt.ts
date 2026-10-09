@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Evidence, contentHash } from "./evidence.js";
 import { git, headCommit } from "./git.js";
-import { type Receipt, renderReceipt } from "./receipt.js";
+import { isReceipt, type Receipt, renderReceipt } from "./receipt.js";
 
 /**
  * The receipt for a pull request (`tesota receipt`): the last receipt a Pi
@@ -125,12 +125,6 @@ export async function subjectOf(root: string, receipt: Receipt, sessionId: strin
     changedAfter: await changedAfter(root, receipt, commit) };
 }
 
-/** Whether a session entry's details hold a receipt this Tesota reads. */
-export function isReceipt(value: unknown): value is Receipt {
-  return typeof value === "object" && value !== null && Reflect.get(value, "version") === 1 &&
-    Reflect.get(value, "repository") === true;
-}
-
 /** The page that describes the receipt's format, the Statement's `predicateType`. */
 const predicateType = "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v1.md";
 
@@ -218,7 +212,7 @@ export async function receiptCommand(args: readonly string[], cwd: string, sessi
     write.error("No Pi session in this folder settled with a Tesota receipt. Run tesota receipt where the session ran.\n");
     return 1;
   }
-  if (!isReceipt(found.receipt)) {
+  if (!isReceipt(found.receipt) || !found.receipt.repository) {
     write.error("The last receipt here came from an earlier Tesota, or from a run outside Git; this Tesota cannot write it " +
       "for a pull request. Run the request again.\n");
     return 1;

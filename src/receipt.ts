@@ -1,9 +1,10 @@
-import type { Evidence } from "./evidence.js";
+import { type Evidence, proofSummary } from "./evidence.js";
 import type { UncoveredLines } from "./proof-coverage.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
 import type { Weakening } from "./verification-changes.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
+import { decisions, type Standing } from "./verification/verdict-rule.js";
 
 /**
  * What a run that changed files leaves the operator when it settles: each
@@ -127,6 +128,160 @@ function weakening(change: Weakening): string {
     : change.kind === "added_assume" ? `adds ${change.annotation}`
       : change.kind === "deleted_test" ? "deletes a test file" : "edits a test file";
   return `  may weaken    ${change.path}: ${what}`;
+}
+
+/** Whether a session entry's details hold a receipt this Tesota reads. */
+export function isReceipt(value: unknown): value is Receipt {
+  return typeof value === "object" && value !== null && Reflect.get(value, "version") === 1;
+}
+
+/** Which check a finding comes from. */
+export type Check = "proof" | "tests" | "weakening" | "contract" | "exercise" | "request" | "coverage";
+
+/**
+ * One fact of the receipt for people, in plain words: what it asks of the
+ * operator (`decisions`), its label, what it is about, why, and what only the
+ * expanded view shows.
+ */
+export interface Finding {
+  readonly standing: Standing;
+  readonly check: Check;
+  /** A failure, as opposed to something weak or unproved; it only colors the finding. */
+  readonly failed?: true;
+  readonly label: string;
+  readonly subject: string;
+  readonly detail: string;
+  readonly more: readonly string[];
+}
+
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;
+const seconds = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
+const checked = (evidence: Evidence): string =>
+  `Checked ${evidence.files.join(", ")} · sha256 ${evidence.contentHash.slice(0, 12)} · ${seconds(evidence.durationMs)}`;
+
+/** What mutation found about one contract, as a finding. */
+export function contractFinding({ path, name, mutation }: ContractStrength): Finding {
+  const tried = mutation.rejected + mutation.survived.length + mutation.inconclusive + mutation.equivalent;
+  const tally = [mutation.rejected > 0 ? `${mutation.rejected} caught` : "",
+    mutation.equivalent > 0 ? `${mutation.equivalent} behave the same as the code` : "",
+    mutation.inconclusive > 0 ? `${mutation.inconclusive} undecided` : ""].filter((part) => part !== "").join(" · ");
+  const subject = `${name} · ${path}`;
+  if (tried === 0) {
+    return { standing: "gap", check: "contract", label: "Contract not measured", subject, detail: "no change to its code to try", more: [] };
+  }
+  // Strength needs a change the proof caught; changes that behave the same or stay undecided show nothing either way.
+  if (mutation.survived.length === 0 && mutation.rejected === 0) {
+    return { standing: "gap", check: "contract", label: "Contract not measured", subject,
+      detail: "no change tried both differs from the code and was decided", more: [`Of ${tried} changes tried: ${tally}.`] };
+  }
+  if (mutation.survived.length === 0) {
+    return { standing: "holds", check: "contract", label: "Contract strong", subject,
+      detail: `all ${plural(mutation.rejected, "change", "changes")} to its code break the proof`, more: [`Of ${tried} changes tried: ${tally}.`] };
+  }
+  return { standing: "decide", check: "contract", label: "Contract too weak", subject,
+    detail: `${plural(mutation.survived.length, "change", "changes")} to its code still ${mutation.survived.length === 1 ? "proves" : "prove"}`,
+    more: [...mutation.survived.map(({ line: at, before, after }) => `line ${at}: ${before} → ${after}`), `Of ${tried} changes tried: ${tally}.`] };
+}
+
+/** A command's run as a finding: passed, still failing after it went back, or the operator's because it did not run. */
+export function commandFinding({ command, verdict, evidence, failingTests }: Pick<Receipt["tests"][number],
+  "command" | "verdict" | "evidence" | "failingTests">): Finding {
+  const more = [`Ran in ${seconds(evidence.durationMs)} · sha256 ${evidence.contentHash.slice(0, 12)}`];
+  if (verdict === "proved") return { standing: "holds", check: "tests", label: "Tests pass", subject: command, detail: "", more };
+  if (verdict === "operator") {
+    return { standing: "decide", check: "tests", failed: true, label: "Tests did not run", subject: command, detail: `it ${why(evidence)}`, more };
+  }
+  return { standing: "decide", check: "tests", failed: true, label: "Tests fail", subject: command,
+    detail: failingTests === undefined || failingTests.length === 0 ? "the command fails"
+      : `${plural(failingTests.length, "test fails", "tests fail")}: ${failingTests.join("; ")}`, more };
+}
+
+/** A proof as a finding. */
+export function proofFinding({ path, verdict, evidence }: Pick<Receipt["proofs"][number], "path" | "verdict" | "evidence">): Finding {
+  const summary = proofSummary(evidence);
+  if (verdict === "proved") {
+    return { standing: "holds", check: "proof", label: "Proved", subject: path, detail: summary.words, more: [checked(evidence)] };
+  }
+  return { standing: "decide", check: "proof", failed: true, label: verdict === "operator" ? "Proof did not run" : "Proof fails",
+    subject: path, detail: summary.words, more: [...summary.at === undefined ? [] : [`at ${summary.at}`], checked(evidence)] };
+}
+
+const judgmentWords: Readonly<Record<NonNullable<ContractStrength["judgment"]>["verdict"], string>> = {
+  justified: "matches the request", partially_justified: "covers only part of the request",
+  not_justified: "does not match the request", vacuous: "proves nothing beyond its assumptions",
+};
+
+/** ClaimCheck's view of each contract: a model's opinion, never evidence, and never one of the receipt's decisions. */
+function opinionFindings(run: ClaimCheckRun | undefined, contracts: readonly ContractStrength[]): Finding[] {
+  if (run === undefined) return [];
+  if (run.status === "not_judged") {
+    return [{ standing: "opinion", check: "request", label: "Not compared", subject: "the contracts with the request",
+      detail: `ClaimCheck ${run.reason}`, more: [] }];
+  }
+  const by = run.restatedBy === run.comparedBy ? `${run.comparedBy} restated and compared`
+    : `${run.restatedBy} restated, ${run.comparedBy} compared`;
+  return contracts.flatMap(({ path, name, judgment }): Finding[] => judgment === undefined ? [] : [{ standing: "opinion",
+    check: "request", label: judgment.verdict === "justified" ? "Model: matches" : "Model: partial match",
+    subject: `${name} · ${path}`, detail: judgmentWords[judgment.verdict],
+    more: [judgment.explanation, `A model's opinion, not a proof: ${by}.`] }]);
+}
+
+/** Whether an opinion is a note for the operator: a model finding a contract short of the request. */
+export function isNote(finding: Finding): boolean {
+  return finding.standing === "opinion" && finding.label === "Model: partial match";
+}
+
+const weakeningWords: Readonly<Record<Weakening["kind"], string>> = {
+  removed_contract: "removes or changes a contract line", added_requires: "adds a precondition to a function the base had",
+  added_assume: "adds an assumption", deleted_test: "deletes a test file", edited_test: "edits a test",
+};
+
+/**
+ * The receipt's findings for people: everything it records, each with what
+ * it asks of the operator. A model's judgment is an `opinion`: shown, never
+ * counted (`decisions`).
+ */
+export function receiptFindings(receipt: Receipt): Finding[] {
+  if (!receipt.repository) {
+    return [{ standing: "decide", check: "coverage", label: "Not verified", subject: "this request's changes",
+      detail: "the project has no Git repository, so Tesota cannot tell which files changed", more: [] }];
+  }
+  const tested = receipt.tests.length > 0 && receipt.tests.every(({ verdict }) => verdict === "proved");
+  const unproved = tested ? "Not proved" : "Not verified";
+  const unread = typeof receipt.weakened === "string";
+  const found: Finding[] = [
+    ...receipt.proofs.map(proofFinding),
+    ...receipt.tests.map(commandFinding),
+    ...typeof receipt.weakened === "string"
+      ? [{ standing: "decide" as const, check: "weakening" as const, label: "Weakening not checked", subject: "the change",
+        detail: receipt.weakened === "too_large" ? "it is too large to check for weakening" : "Git could not show it", more: [] }]
+      : receipt.weakened.map((change): Finding => ({ standing: "decide", check: "weakening", label: "May weaken the evidence",
+        subject: change.path, detail: weakeningWords[change.kind], more: "annotation" in change ? [change.annotation] : [] })),
+    ...receipt.contracts.map(contractFinding),
+    ...receipt.exercises.map(({ path, finding, reason }): Finding => finding === "exercises"
+      ? { standing: "holds", check: "exercise", label: "Test catches the change", subject: path, detail: reason, more: [] }
+      : finding === "does_not_exercise"
+        ? { standing: "decide", check: "exercise", label: "Test misses the change", subject: path, detail: reason, more: [] }
+        : { standing: "gap", check: "exercise", label: "Test not checked", subject: path, detail: reason, more: [] }),
+    ...opinionFindings(receipt.claimcheck, receipt.contracts),
+    ...unread && receipt.proofs.length > 0
+      ? [{ standing: "gap" as const, check: "coverage" as const, label: "Coverage not checked", subject: "the changed lines",
+        detail: "for the same reason", more: [] }] : [],
+    ...receipt.uncovered.filter(({ lines }) => lines.length > 0).map(({ path, lines }): Finding => ({ standing: "gap",
+      check: "coverage", label: unproved, subject: `${path} ${lines.length === 1 && lines[0]?.[0] === lines[0]?.[1] ? "line" : "lines"} ` +
+        lines.map(([start, end]) => start === end ? `${start}` : `${start}–${end}`).join(", "),
+      detail: tested ? "outside any contract; the tests pass with them" : "outside any contract, and nothing checked them", more: [] })),
+    ...receipt.unverified.map((path): Finding => ({ standing: "gap", check: "coverage", label: unproved, subject: path,
+      detail: tested ? "no contract; the tests pass with it" : "nothing checked it", more: [] })),
+  ];
+  // A change of comments alone leaves nothing to list; the receipt says so rather than ending empty.
+  return found.length === 0 && receipt.commentsOnly === true ? [{ standing: "holds", check: "coverage",
+    label: "Nothing to verify", subject: "", detail: "the changes are comments or blank lines only", more: [] }] : found;
+}
+
+/** How many of the receipt's findings need the operator; none makes it clean, in the footer and the conversation alike. */
+export function receiptDecisions(receipt: Receipt): number {
+  return decisions(receiptFindings(receipt).map(({ standing }) => standing));
 }
 
 /** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */

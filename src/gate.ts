@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type AgentBeforeSettleEvent, type AgentBeforeSettleEventResult, type ExtensionAPI, type ExtensionContext, VERSION }
-  from "@earendil-works/pi-coding-agent";
+import { type AgentBeforeSettleEvent, type AgentBeforeSettleEventResult, type ExtensionAPI, type ExtensionContext, type SessionEntry,
+  VERSION } from "@earendil-works/pi-coding-agent";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
 import { git, gitOutput, headCommit } from "./git.js";
@@ -9,7 +9,7 @@ import { type ContractStrength, contractStrength } from "./proof-guarantees.js";
 import { owningProjects, suggestChecks } from "./projects.js";
 import { uncoveredLines } from "./proof-coverage.js";
 import { proofReport } from "./prove-tool.js";
-import { type Receipt, renderReceipt } from "./receipt.js";
+import { isReceipt, type Receipt, renderReceipt } from "./receipt.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
 import { blankOrComment, type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
@@ -221,17 +221,27 @@ function weakContractReport({ path, name, mutation }: ContractStrength): string 
 }
 
 /**
- * What goes back for the weak contracts, each until its surviving changes
- * repeat ones already sent back (`gateVerdict`), recorded in `sentBack`;
- * undefined when none goes back.
+ * The weak contracts that go back, each until its surviving changes repeat
+ * ones already sent back (`gateVerdict`), recorded in `sentBack`.
  */
-function sendBackWeak(strength: readonly ContractStrength[], sentBack: Map<string, string[]>): string | undefined {
+function sendBackWeak(strength: readonly ContractStrength[], sentBack: Map<string, string[]>): ContractStrength[] {
   const key = ({ path, name }: ContractStrength): string => `${path}#${name}`;
   const weak = strength.filter((item) => item.mutation.survived.length > 0
     && gateVerdict("failed", weakFailure(item), sentBack.get(key(item)) ?? []) === "send_back");
   for (const item of weak) sentBack.set(key(item), [...sentBack.get(key(item)) ?? [], weakFailure(item)]);
-  return weak.length === 0 ? undefined : weak.map(weakContractReport).join("\n\n");
+  return weak;
 }
+
+/**
+ * What one round sent back to the agent, as the `details` of its
+ * `tesota-gate` entry: the proofs that do not prove yet, the commands that
+ * fail, or the contracts too weak to trust. The entry's text is what the
+ * agent reads; these are for the operator's view of it.
+ */
+export type SentBack =
+  | { readonly round: "proofs"; readonly proofs: readonly { readonly path: string; readonly evidence: Evidence }[] }
+  | { readonly round: "tests"; readonly commands: readonly CommandRun[] }
+  | { readonly round: "contracts"; readonly contracts: readonly ContractStrength[] };
 
 /** The session's model as the receipt records it, when one is set. */
 function sessionModel(ctx: Pick<ExtensionContext, "model">): Pick<Receipt, "model"> {
@@ -286,6 +296,20 @@ export class GateProgress {
   ready(readiness: Readiness): void {
     this.#readiness = readiness;
     this.publish({ step: "ready", readiness });
+  }
+
+  /**
+   * The receipt a resumed session settled with, when no request came after
+   * it: the last `tesota-receipt` entry on the branch, unless the operator
+   * spoke later. Otherwise the status stays as it is.
+   */
+  resume(branch: readonly SessionEntry[]): void {
+    const at = branch.findLastIndex((entry) => entry.type === "custom_message" && entry.customType === "tesota-receipt");
+    const request = branch.findLastIndex((entry) => entry.type === "message" && entry.message.role === "user");
+    const entry = branch[at];
+    if (at > request && entry?.type === "custom_message" && isReceipt(entry.details)) {
+      this.publish({ step: "settled", receipt: entry.details });
+    }
   }
 
   /** Back to ready, as on the operator's next request. */
@@ -380,7 +404,8 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
       const proveActive = pi.getActiveTools().includes("prove");
       const content = back.map(({ path, evidence }) =>
         `Tesota: ${path} does not prove yet.\n\n${proofReport(path, evidence, proveActive)}`).join("\n\n");
-      return { entries: [{ type: "custom_message", customType: "tesota-gate", content, display: true }], continue: true };
+      const details: SentBack = { round: "proofs", proofs: back.map(({ path, evidence }) => ({ path, evidence })) };
+      return { entries: [{ type: "custom_message", customType: "tesota-gate", content, display: true, details }], continue: true };
     }
     progress.publish({ step: "testing", tally: tally(judged) });
     const { tests, exercises } = await testRung(ctx.cwd, from, changed, commandsSentBack, signal);
@@ -388,8 +413,10 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     if (failing.length > 0) {
       progress.publish({ step: "sent_back", tally: tally(judged, tests) });
       for (const run of failing) commandsSentBack.set(run.command, [...commandsSentBack.get(run.command) ?? [], testFailure(run)]);
+      const details: SentBack = { round: "tests", commands: failing.map(({ command, evidence, failingTests }) =>
+        ({ command, evidence, ...failingTests === undefined ? {} : { failingTests } })) };
       return { entries: [{ type: "custom_message", customType: "tesota-gate", content: failing.map(failingReport).join("\n\n"),
-        display: true }], continue: true };
+        display: true, details }], continue: true };
     }
     // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
     const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
@@ -398,9 +425,11 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     if (sources.length > 0) progress.publish({ step: "measuring", tally: tally(judged, tests) });
     const strength = await contractStrength(ctx, requests, sources, signal, restateWith(pi));
     const weak = sendBackWeak(strength.contracts, weakSentBack);
-    if (weak !== undefined) {
+    if (weak.length > 0) {
       progress.publish({ step: "sent_back", tally: tally(judged, tests, strength.contracts) });
-      return { entries: [{ type: "custom_message", customType: "tesota-gate", content: weak, display: true }], continue: true };
+      const details: SentBack = { round: "contracts", contracts: weak };
+      return { entries: [{ type: "custom_message", customType: "tesota-gate", content: weak.map(weakContractReport).join("\n\n"),
+        display: true, details }], continue: true };
     }
     const receipt: Receipt = { version: 1, repository: true, ...run, proofs: judged, ...strength, tests, exercises, weakened,
       ...unprovedFiles(changes, changed, covered), uncovered: uncovered(sources, changes, weakened),

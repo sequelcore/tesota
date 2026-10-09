@@ -32,7 +32,7 @@ nothing verified, down to changed lines.
 | Coverage | `src/proof-coverage.ts` |
 | The receipt and `tesota receipt` | `src/receipt.ts`, `src/pull-request-receipt.ts` |
 | Processes and their limits | `src/process.ts` |
-| What the operator sees of the gate | `src/gate.ts` (`GateProgress`), `src/footer.ts`, `src/editor.ts`, `src/messages.ts` |
+| What the operator sees of the gate | `src/gate.ts` (`GateProgress`), `src/receipt.ts` (`receiptFindings`), `src/footer.ts`, `src/editor.ts`, `src/messages.ts`, `src/prove-tool.ts` (its renderers) |
 
 ## Evidence
 
@@ -77,6 +77,10 @@ to the agent with `continue`, which keeps the run going:
    strength, and send back the weak ones.
 4. When nothing goes back, settle with the receipt.
 
+What goes back is a `tesota-gate` session entry. Its text is what the agent
+reads; its `details` record what went back, for the operator's view: the
+proofs with their evidence, the commands that failed, or the weak contracts.
+
 Every rung uses the same rule to decide what goes back (`gateVerdict`,
 proved). A `failed` or `vacuous` result goes back to the agent, unless its
 failure repeats one already sent back for the same file, command or contract
@@ -116,7 +120,9 @@ build and dot folders). It runs alone, so its evidence describes files no
 other tool call left half-written. Its guidance tells the agent to work
 until the proof passes, gives LemmaScript's annotation syntax, and forbids
 removing or loosening a contract or adding `//@ assume`. After a failed or
-vacuous proof, the result says what to try next.
+vacuous proof, the result says what to try next. A result whose proof did
+not pass is an error result, so Pi draws it on its error background; its
+`details` hold the file and the evidence, for the operator's view of it.
 
 ## Weakened evidence
 
@@ -244,7 +250,10 @@ The verdict for each contract is `justified`, `partially_justified`,
 `not_justified` or `vacuous`. The receipt labels it a model's judgment, says
 when one model made both requests, or says why nothing was judged: no model
 selected, an unknown restating model, a failed or missing answer, or more
-than 5 minutes for both requests. ClaimCheck never sends anything back.
+than 5 minutes for both requests. ClaimCheck never sends anything back, and
+never counts toward what needs the operator: a model's opinion is a
+candidate, not evidence
+([#375](https://github.com/sequelcore/tesota/issues/375)).
 
 ## Coverage
 
@@ -321,19 +330,48 @@ Pi's footer reads it (`EvidenceFooter` in `src/footer.ts`):
   comments or blank lines and nothing else is listed, the receipt says
   `no code       nothing to verify: the changes are comments or blank lines
   only`, and the footer `✓ receipt · nothing to verify, comments only`.
+  The row leads with `!` when anything in the receipt needs the operator,
+  by the same count as the receipt in the conversation (`decisions`,
+  proved), and with `✓` otherwise.
 
 The operator's next request returns the status to ready, as does a run that
-changed nothing or a gate that fails midway. The footer's second row holds
+changed nothing or a gate that fails midway. A resumed session that settled
+with a receipt, with no request after it, shows that receipt again. The footer's second row holds
 the folder, branch and model, and the context window's use sits at the
 right of the first. As the terminal narrows, the model goes first, then the
 evidence shortens, and the context % goes last (`footerLayout`, proved).
 
 The input (`FilledEditor` in `src/editor.ts`) is Pi's editor with its frame
 redrawn as a filled block, so autocomplete, paste, history, keybindings and
-scroll markers stay Pi's. The gate's messages and the receipt have their
-own renderers (`src/messages.ts`): a styled title in place of Pi's raw
-label, wrapping with a hanging indent. The receipt shows a content hash's
-first 12 digits, while the session entry keeps all 64.
+scroll markers stay Pi's.
+
+In the conversation, the receipt, what the gate sends back and `prove` are
+drawn from their `details`, with the footer's glyphs (`✓ ✗ ! ○ ↺`, and `◇`
+for a model's opinion). Pi applies Ctrl+O to every tool and message at
+once, and starts collapsed, so the collapsed view carries the verdict.
+
+- **The receipt** (`src/messages.ts`) is a card whose title row gives the
+  verdict: `✓ Nothing needs you`, or `! 4 things need you`. Only findings the
+  checks established count (`receiptFindings`, `decisions`); a model's
+  opinion that a contract falls short of the request is a note beside the
+  verdict, `· ◇ 1 model note`. Under the title, in order: NEEDS YOU, then
+  the model's opinion, then what is not proved, and one row of what holds.
+  Within each section, proofs and tests come first, then weakening, contract
+  strength, test exercise and coverage. A receipt with nothing to decide,
+  no gap and no note is its title and that one row. Expanded, each finding
+  shows its details (the changes that still prove, the annotation that
+  changed, the model's explanation and who judged, the files with the
+  hash's first 12 digits and the time) and what holds is listed. The session
+  entry keeps the whole hash.
+- **What the gate sends back** is a card titled with what failed, such as
+  `↺ Sent back to the agent: the tests fail`, with one row for each
+  failure. Expanded, it adds the text the agent read, as it read it.
+- **`prove`** is Pi's tool card: the file and how long the proof took, then
+  `✓ Proved` or `✗ Not proved` with Dafny's error and the contract line it
+  points at. Expanded, it adds Dafny's output without the lines that only
+  report `lsc`'s own steps.
+
+A message without `details` is left to Pi.
 
 ## Proved rules
 
@@ -353,6 +391,7 @@ The pure decisions above carry LemmaScript `//@` specifications in
 | `range-rule.ts` | How the receipt groups line numbers |
 | `pi-version-rule.ts` | Whether the Pi found meets the minimum |
 | `footer-rule.ts` | What Tesota can verify before a request, and what the footer drops as the terminal narrows |
+| `verdict-rule.ts` | How many of a receipt's findings need the operator: never a model's opinion |
 
 ## Measurements
 

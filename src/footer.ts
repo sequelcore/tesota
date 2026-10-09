@@ -3,7 +3,7 @@ import { sep } from "node:path";
 import type { ContextUsage, ReadonlyFooterDataProvider, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import type { Receipt } from "./receipt.js";
+import { type Receipt, receiptDecisions } from "./receipt.js";
 import { type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
 /** One piece of the evidence row, in its words, its shorter words and its glyph form; an empty form is left out. */
@@ -65,16 +65,22 @@ function receiptParts(receipt: Receipt): EvidencePart[] {
   const weakening = receipt.weakened.length;
   // Commands that pass leave the rest tested though not proved, as the receipt words it.
   const unproved = passed && receipt.tests.length > 0 ? "not proved" : "not verified";
-  const clean = proved === receipt.proofs.length && passed && weak === 0 && Array.isArray(receipt.weakened) && weakening === 0;
+  const misses = receipt.exercises.filter(({ finding }) => finding === "does_not_exercise").length;
+  // The same count as the receipt in the conversation: only what the checks established, never a model's opinion.
+  const clean = receiptDecisions(receipt) === 0;
   const listed = [
     ...tallyParts({ proved, notProved: receipt.proofs.length - proved,
       ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }),
     // Narrower rows keep what needs the operator, so they leave out contracts that held.
-    ...receipt.contracts.length > 0 && weak === 0 ? [part("contracts strong", "", "", "success")] : [],
+    // Strength needs a change the proof caught, as the receipt in the conversation says.
+    ...receipt.contracts.length > 0 && receipt.contracts.every(({ mutation }) => mutation.survived.length === 0 && mutation.rejected > 0)
+      ? [part("contracts strong", "", "", "success")] : [],
     ...lines > 0 ? [part(`${plural(lines, "line", "lines")} ${unproved}`, `${plural(lines, "line", "lines")} unproved`, `⚠${lines}`,
       "warning")] : [],
     ...files > 0 ? [part(`${plural(files, "file", "files")} ${unproved}`, `${plural(files, "file", "files")} unproved`, `⚠${files}f`,
       "warning")] : [],
+    ...misses > 0 ? [part(`${plural(misses, "test misses", "tests miss")} the change`, `${plural(misses, "test misses", "tests miss")}`,
+      `miss ${misses}`, "warning")] : [],
     ...typeof receipt.weakened === "string" ? [part("weakening not checked", "unchecked", "unchecked", "warning")]
       : weakening > 0 ? [part(`${weakening} may weaken the evidence`, `${weakening} may weaken`, `weakens ${weakening}`, "warning")] : [],
   ];

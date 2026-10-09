@@ -46,11 +46,12 @@ each one's issue and pull requests.
   internals, and its sessions would run without Tesota.
 - **Upstream reports** for LemmaScript and Pi
   ([#374](https://github.com/sequelcore/tesota/issues/374)).
-
-## Open questions
-
-- Whether a narrow model judge returns, with two jobs only: whether the
-  agent gamed the checks, and whether the change does what was asked. Its
-  verdict would be labelled opinion, never run on proved code and never
-  override a proof. Decided after the alpha's week of use
-  ([#375](https://github.com/sequelcore/tesota/issues/375)).
+- **Findings become evidence,** after the alpha
+  ([#375](https://github.com/sequelcore/tesota/issues/375)). A model judge
+  does not return as a verdict: a model's opinion is a candidate, not
+  evidence. Tesota instead becomes the empirical gate a finding passes
+  before the receipt states it: the agent turns the finding into a test that
+  fails on the change, and Tesota confirms it fails, then that the fix makes
+  it pass without weakening anything. It ships only if, on registered cases
+  with planted bugs, the gate removes false findings without losing real
+  ones.
