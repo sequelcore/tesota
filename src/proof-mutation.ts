@@ -1,14 +1,15 @@
 import { basename } from "node:path";
 import { proveSource } from "./verification/lemmascript-verifier.js";
-import { mutantFinding } from "./verification/mutation-rule.js";
+import { equivalentMutant, mutantFinding } from "./verification/mutation-rule.js";
 
 /**
  * Proof-based mutation: for each contract the request added or changed and
  * that proved, small fixed changes to its function's body, each proved
  * again. A mutant that still proves is behavior the contract does not rule
- * out, so the contract is too weak to trust. This is the
- * completeness metric of Lahiri (FMCAD 2024) with the prover in place of
- * tests; no model decides it.
+ * out, so the contract is too weak to trust, unless Dafny proves that it
+ * returns the same result as the code for every input the contract admits
+ * (`equivalenceSource`). This is the completeness metric of Lahiri (FMCAD
+ * 2024) with the prover in place of tests; no model decides it.
  */
 
 export type MutationOperator = "result" | "comparison" | "constant" | "arithmetic";
@@ -27,8 +28,10 @@ export interface Mutant {
 export interface MutationResult {
   /** Mutants whose proof failed: the contract ruled them out. */
   readonly rejected: number;
-  /** Mutants that still proved: behavior the contract does not rule out. */
+  /** Mutants that still proved and are not proved equivalent: behavior the contract does not rule out. */
   readonly survived: readonly Pick<Mutant, "line" | "operator" | "before" | "after">[];
+  /** Mutants that still proved and that Dafny proved return the same result as the code (`equivalentMutant`). */
+  readonly equivalent: number;
   /** Mutants whose proof timed out or could not run, which count as neither. */
   readonly inconclusive: number;
 }
@@ -108,24 +111,81 @@ export function mutants(source: string, start: number, end: number, limit: numbe
   return ordered.slice(0, limit);
 }
 
+/** The parameter names of a declaration's parameter list; undefined when one is not a plain name, such as a destructured one. */
+function parameterNames(list: string): string[] | undefined {
+  const names: string[] = [];
+  let depth = 0;
+  let current = "";
+  for (const [at, char] of [...`${list},`].entries()) {
+    if ("([{<".includes(char)) depth += 1;
+    else if (")]}".includes(char) || char === ">" && list[at - 1] !== "=") depth -= 1;
+    if (char !== "," || depth > 0) { current += char; continue; }
+    if (current.trim() === "") { current = ""; continue; }
+    const name = /^\s*([A-Za-z_$][\w$]*)\s*\??\s*(?::|$)/u.exec(current)?.[1];
+    if (name === undefined) return undefined;
+    names.push(name);
+    current = "";
+  }
+  return names;
+}
+
+/**
+ * The file that asks Dafny whether a mutant behaves exactly like the code:
+ * `source` with a copy of the function declared on line `start`, whose body
+ * closes on line `end` (both 1-based), as `mutated` changed it, renamed to a
+ * name `source` does not use and keeping only the contract's `requires`; and
+ * the original's contract replaced by its `requires` and an `ensures` that its
+ * result equals the copy's. It proves only when the two return the same
+ * result for every input the `requires` admit. Undefined, so the mutant stays
+ * a survivor, when the declaration does not fit on its line, a parameter is
+ * not a plain name, or the function calls itself: the copy would call the
+ * original, so its proof would not be about the mutant alone.
+ */
+export function equivalenceSource(source: string, start: number, end: number, mutated: string): string | undefined {
+  const lines = source.split("\n");
+  const declaration = lines[start - 1] ?? "";
+  const signature = /function\s+([A-Za-z_$][\w$]*)\s*(?:<[^>]*>)?\s*\(([^)]*)\)/u.exec(declaration);
+  const name = signature?.[1];
+  const parameters = parameterNames(signature?.[2] ?? "");
+  if (name === undefined || parameters === undefined) return undefined;
+  const call = new RegExp(`(?<![\\w$.])${name.replace(/\$/gu, "\\$")}\\s*\\(`, "u");
+  if (lines.slice(start, end).some((line) => call.test(line))) return undefined;
+  let first = start - 1;
+  while (first > 0 && (lines[first - 1] ?? "").trim().startsWith("//@")) first -= 1;
+  const requires = lines.slice(first, start - 1).filter((line) => line.trim().startsWith("//@ requires"));
+  let copy = `${name}Mutant`;
+  for (let suffix = 2; source.includes(copy); suffix += 1) copy = `${name}Mutant${suffix}`;
+  const changed = mutated.split("\n").slice(start - 1, end);
+  const indent = /^\s*/u.exec(declaration)?.[0] ?? "";
+  return [...lines.slice(0, first), ...requires, (changed[0] ?? "").replace(/function\s+[A-Za-z_$][\w$]*/u, (text) => `${text.slice(0, -name.length)}${copy}`), ...changed.slice(1), "", ...requires,
+    `${indent}//@ ensures \\result === ${copy}(${parameters.join(", ")})`, ...lines.slice(start - 1)].join("\n");
+}
+
 /**
  * Proves each mutant of the function declared on line `start` of `source`,
  * whose body closes on line `end`, as file `path` alone (`proveSource`). A
  * mutant runs without the file's `.dfy` proof additions, since they belong to
  * the original's generated code, so a rejection may also mean a proof step is
- * missing; a survivor proved without any, and is real.
+ * missing; a survivor proved without any, and is real. A survivor whose
+ * `equivalenceSource` proves the same way, under the same time limit, behaves
+ * like the code and is counted as equivalent instead (`equivalentMutant`).
  */
 export async function mutateContract(path: string, source: string, start: number, end: number, signal: AbortSignal,
   limit: number = MUTANT_LIMIT): Promise<MutationResult> {
   let rejected = 0;
   let inconclusive = 0;
+  let equivalent = 0;
   const survived: MutationResult["survived"][number][] = [];
   for (const mutant of mutants(source, start, end, limit)) {
     if (signal.aborted) break;
     const finding = mutantFinding(await proveSource(basename(path), mutant.source, signal));
     if (finding === "rejected") rejected += 1;
-    else if (finding === "survived") survived.push({ line: mutant.line, operator: mutant.operator, before: mutant.before, after: mutant.after });
-    else inconclusive += 1;
+    else if (finding === "inconclusive") inconclusive += 1;
+    else {
+      const equivalence = equivalenceSource(source, start, end, mutant.source);
+      if (equivalence !== undefined && equivalentMutant(await proveSource(basename(path), equivalence, signal))) equivalent += 1;
+      else survived.push({ line: mutant.line, operator: mutant.operator, before: mutant.before, after: mutant.after });
+    }
   }
-  return { rejected, survived, inconclusive };
+  return { rejected, survived, inconclusive, equivalent };
 }

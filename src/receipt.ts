@@ -84,12 +84,14 @@ const exerciseText: Readonly<Record<TestExercise["finding"], string>> = {
 /**
  * What mutation found about one contract. A survivor proved after the change,
  * so the contract does not rule that behavior out and is too weak to trust;
- * the survivor may still behave the same as the original, so it is never
- * called a defect.
+ * one whose equivalence did not prove may still behave the same as the
+ * original, so it is never called a defect. Survivors proved to behave the
+ * same are only counted.
  */
 function mutationLines({ path, name, mutation }: ContractStrength): string[] {
-  const tried = mutation.rejected + mutation.survived.length + mutation.inconclusive;
-  const unsettled = mutation.inconclusive === 0 ? "" : `; ${mutation.inconclusive} could not be decided`;
+  const tried = mutation.rejected + mutation.survived.length + mutation.inconclusive + mutation.equivalent;
+  const unsettled = `${mutation.equivalent === 0 ? "" : `; ${mutation.equivalent} proved to behave the same as the code`}` +
+    `${mutation.inconclusive === 0 ? "" : `; ${mutation.inconclusive} could not be decided`}`;
   if (tried === 0) return [`  contract      ${name} in ${path}: mutation found no change to try in its body`];
   if (mutation.survived.length === 0) {
     return [`  contract      ${name} in ${path}: all ${mutation.rejected} decided changes to its code fail the proof${unsettled}`];
