@@ -147,7 +147,9 @@ async function liveRun(arm: string, set: string, testCase: LiveCase, run: number
   if (pi === undefined) throw new Error("No Pi is installed in the checkout; run bun install.");
   const launcher = arm === "plain" ? [pi.cli] : [join(checkout, "dist", "cli.js")];
   const args = [...launcher, "-p", "--model", model, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files",
-    "--no-mcp", "--session-dir", sessions, ...arm === "send-back" ? ["--send-back-weak-contracts"] : [], testCase.request];
+    "--no-mcp", "--session-dir", sessions,
+    // Pi reads a bare extension flag's next argument as its value, which would take the request; any value turns a boolean on.
+    ...arm === "send-back" ? ["--send-back-weak-contracts=true"] : [], testCase.request];
   const started = Date.now();
   const ended = await runProcess(process.execPath, args, directory, new AbortController().signal, 30 * 60_000);
   const durationMs = Date.now() - started;
