@@ -11,7 +11,7 @@ import { uncoveredLines } from "./proof-coverage.js";
 import { proofReport } from "./prove-tool.js";
 import { type Receipt, renderReceipt } from "./receipt.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
-import { type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
+import { blankOrComment, type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
@@ -173,6 +173,17 @@ function uncovered(sources: readonly ProvedSource[], changes: Awaited<ReturnType
     const change = byPath.get(path);
     return change === undefined || !path.endsWith(".ts") ? [] : [uncoveredLines(change, source, baseSource, weakened)];
   });
+}
+
+/**
+ * Whether the change made `path` hold no new code: it added or removed lines,
+ * and each is blank or only a comment (`blankOrComment`). A file whose lines
+ * Git did not show, binary or with a change too large to read, may hold code.
+ */
+function onlyComments(changes: Awaited<ReturnType<typeof fileChanges>>, path: string): boolean {
+  const change = typeof changes === "string" ? undefined : changes.find((file) => file.path === path);
+  const lines = change === undefined ? [] : [...change.added, ...change.removed];
+  return lines.length > 0 && lines.every(({ text }) => blankOrComment(path, text));
 }
 
 /** The Pi flag that names ClaimCheck's second model (`claimCheck`). */
@@ -379,7 +390,8 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
       return { entries: [{ type: "custom_message", customType: "tesota-gate", content: weak, display: true }], continue: true };
     }
     const receipt: Receipt = { version: 1, repository: true, ...run, proofs: judged, ...strength, tests, exercises, weakened,
-      unverified: changed.filter((path) => !covered.has(path) && !isTestPath(path)), uncovered: uncovered(sources, changes, weakened),
+      unverified: changed.filter((path) => !covered.has(path) && !isTestPath(path) && !onlyComments(changes, path)),
+      uncovered: uncovered(sources, changes, weakened),
       changed: await recordedChanges(ctx.cwd, from, changed), settledAt: new Date().toISOString() };
     progress.publish({ step: "settled", receipt });
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),

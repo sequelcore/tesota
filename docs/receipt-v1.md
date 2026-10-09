@@ -107,7 +107,7 @@ The Statement is not signed. Only a receipt with `version` 1 and
 | `tests` | CommandRun[] | Each project command the gate ran |
 | `exercises` | TestExercise[] | Each changed or added test file run over the base |
 | `weakened` | Weakening[], or `"too_large"`, or `"unreadable"` | The changes that may weaken the evidence. `too_large` when Git's diff from the base passed 16 MiB; `unreadable` when Git could not show it |
-| `unverified` | string[] | Changed files, other than test files, no proof's evidence covers |
+| `unverified` | string[] | Changed files no proof's evidence covers, other than test files and files whose changed lines are all blank or comment-only |
 | `uncovered` | UncoveredLines[] | The changed lines of each TypeScript file that proved that no contract's proof covers. Empty when `weakened` is a string |
 | `changed` | Changed[], or `"unreadable"` | Every file changed from `base` as the run left it, sorted by path |
 

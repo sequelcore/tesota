@@ -389,6 +389,18 @@ it("keeps the running request's base through a steer or follow-up sent after the
   expect((entry(await run.settle()).details as Receipt).proofs.map(({ path }) => path)).toEqual(["src/rule.ts"]);
 });
 
+it("leaves out of the receipt's files those whose changed lines are all blank or comments, //@ lines aside", async () => {
+  const root = repository({ "src/rule.ts": contract, "notes.md": "# Notes\n", "src/helper.ts": "export const one = 1;\n",
+    "src/tool.py": "x = 1\n", "src/legacy.js": "export const two = 2;\n", "logo.bin": "\0\u0001" });
+  const run = gate(root);
+  await run.input();
+  write(root, { "src/helper.ts": "// One, as a constant.\n\nexport const one = 1;\n", "src/note.ts": "/* Nothing yet.\n * Later.\n */\n",
+    "src/tool.py": "# The tool's value.\nx = 1\n", "src/legacy.js": "//@ ensures true\nexport const two = 2;\n",
+    "notes.md": "# Notes, changed\n", "logo.bin": "\0\u0002" });
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.unverified).toEqual(["logo.bin", "notes.md", "src/legacy.js"]);
+});
+
 it("lists every file in a repository whose first commit the agent made", async () => {
   const root = mkdtempSync(join(tmpdir(), "tesota-gate-"));
   roots.push(root);

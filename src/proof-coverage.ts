@@ -1,5 +1,5 @@
 import { bodyEnd, contracts } from "./proof-guarantees.js";
-import { commentOnly, type FileChange, type Weakening } from "./verification-changes.js";
+import { blankOrComment, type FileChange, type Weakening } from "./verification-changes.js";
 import { proofCovered } from "./verification/proof-cover-rule.js";
 import { ranges } from "./verification/range-rule.js";
 
@@ -49,8 +49,7 @@ function narrowedContracts(path: string, source: string, baseSource: string | un
 export function uncoveredLines(change: FileChange, source: string, baseSource: string | undefined,
   weakened: readonly Weakening[]): UncoveredLines {
   const count = source.split(/\r?\n/u).length;
-  const changed = [...new Set([...change.added, ...change.removed].filter(({ text }) =>
-    text.trim() !== "" && !commentOnly(change.path, text))
+  const changed = [...new Set([...change.added, ...change.removed].filter(({ text }) => !blankOrComment(change.path, text))
     .map(({ number }) => Math.min(number, count)))].sort((a, b) => a - b);
   const current = spans(change.path, source);
   const starts = current.map(({ start }) => start);

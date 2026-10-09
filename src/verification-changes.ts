@@ -147,6 +147,11 @@ export function commentOnly(path: string, line: string): boolean {
   return (path.endsWith(".py") ? /^#/u : /^(?:\/\/(?!@)|\/\*|\*)/u).test(line.trim());
 }
 
+/** Whether a line of `path` holds no code: blank, or only a comment (`commentOnly`). */
+export function blankOrComment(path: string, line: string): boolean {
+  return line.trim() === "" || commentOnly(path, line);
+}
+
 const namedImports = [
   /^import\s+(type\s+)?(?:([\w$]+)\s*,\s*)?\{([^}]*)\}\s*from\s*(["'][^"']*["'])\s*;?$/u,
   /^from\s+()()([\w.]+)\s+import\s+([^()#]+)$/u,
