@@ -62,6 +62,19 @@ step works.
 - **Bun and Node:** to build from source, the Bun in `packageManager` and
   the Node in `devEngines` of [package.json](package.json).
 
+**Sharper test evidence (optional).** When your test command writes a JUnit
+XML report anywhere under the project, Tesota reads which tests failed
+instead of only whether the command did. It can then tell that a new test
+exercises your change even when other tests already fail, and send back only
+the failures that matter. Gradle and Maven write these reports by default.
+Elsewhere:
+
+- Bun: `bun test --reporter=junit --reporter-outfile=./junit.xml`, or
+  `[test.reporter] junit = "junit.xml"` in `bunfig.toml`.
+- Node's test runner: `node --test --test-reporter=junit --test-reporter-destination=junit.xml`.
+- Vitest: its `junit` reporter with an `outputFile`
+  ([reporters](https://vitest.dev/guide/reporters)).
+
 ## Install and run
 
 Tesota 0.1.0 is an alpha and is not published yet. Install it from a

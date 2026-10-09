@@ -181,7 +181,14 @@ computer's temporary folder, with the checkout's `node_modules` linked in:
 - A test that passes there is reported as not exercising the change.
 - A test that fails there while the base passes without it exercises the
   change (`checkOrigin`, proved).
-- Anything else stays unknown, with the reason.
+- When the base fails without it too, the JUnit reports both runs wrote
+  decide: the test exercises the change when tests fail with it that pass,
+  or are missing, without it (`introducedTests`, proved rules). This follows
+  SWE-bench's grading, where a test that fails, errors or does not exist
+  before a fix and passes after it is fail-to-pass, so a new test for a new
+  module counts.
+- Anything else stays unknown, with the reason; without reports, a base that
+  fails anyway can't tell which tests failed.
 
 When the change touches `package.json` or a lockfile, the base runs with the
 wrong dependencies, so no run there gives a verdict.

@@ -575,6 +575,31 @@ it("sends failing tests back until the set that fails repeats one already sent, 
   expect((entry(stuck).details as Receipt).tests.map(({ failingTests }) => failingTests)).toEqual([["test > a"]]);
 }, 60_000);
 
+/** A base whose own test already fails, a change that fixes it and adds a test for a module the base lacks. */
+async function newTestOverFailingBase(test: string): Promise<Settled | undefined> {
+  const root = testedProject(test);
+  write(root, { "test/negative.test.mjs": priceTest(-1, 0, "negative") });
+  commit(root, "a failing test");
+  const run = gate(root);
+  await run.input();
+  write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n",
+    "src/discount.mjs": "export const discount = (n) => n / 2;\n",
+    "test/discount.test.mjs": "import assert from \"node:assert\";\nimport { test } from \"node:test\";\n" +
+      "import { discount } from \"../src/discount.mjs\";\ntest(\"discount\", () => { assert.equal(discount(4), 2); });\n" });
+  return run.settle();
+}
+
+it("counts a new test as exercising the change when its tests newly fail on a base that fails anyway", async () => {
+  const settled = await newTestOverFailingBase("node --test --test-reporter=junit --test-reporter-destination=report.xml");
+  expect(entry(settled).content).toContain("  exercises     test/discount.test.mjs: fails on the base, passes with the change");
+}, 60_000);
+
+it("says a test report would tell, when the base fails with and without a new test and writes none", async () => {
+  const settled = await newTestOverFailingBase("node --test");
+  expect(entry(settled).content).toContain("  exercise?     test/discount.test.mjs: on the base it failed, but so does the " +
+    "base without it, and no test report says which tests fail");
+}, 60_000);
+
 it("gives no verdict on the base when the change touches what decides the dependencies", async () => {
   const root = testedProject();
   const run = gate(root);
