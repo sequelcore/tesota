@@ -176,14 +176,27 @@ function uncovered(sources: readonly ProvedSource[], changes: Awaited<ReturnType
 }
 
 /**
- * Whether the change made `path` hold no new code: it added or removed lines,
- * and each is blank or only a comment (`blankOrComment`). A file whose lines
- * Git did not show, binary or with a change too large to read, may hold code.
+ * Whether a file's change holds no code: it added or removed lines, and each
+ * is blank or only a comment (`blankOrComment`). A file whose lines Git did
+ * not show, binary or with a change too large to read, may hold code.
  */
-function onlyComments(changes: Awaited<ReturnType<typeof fileChanges>>, path: string): boolean {
-  const change = typeof changes === "string" ? undefined : changes.find((file) => file.path === path);
-  const lines = change === undefined ? [] : [...change.added, ...change.removed];
-  return lines.length > 0 && lines.every(({ text }) => blankOrComment(path, text));
+function onlyComments(change: FileChange | undefined): boolean {
+  if (change === undefined) return false;
+  const lines = [...change.added, ...change.removed];
+  return lines.length > 0 && lines.every(({ text }) => blankOrComment(change.path, text));
+}
+
+/**
+ * The changed files no proof covers (`covered`), other than test files and
+ * files whose change holds no code (`onlyComments`), and whether no file's
+ * change held any.
+ */
+function unprovedFiles(changes: Awaited<ReturnType<typeof fileChanges>>, changed: readonly string[],
+  covered: ReadonlySet<string>): Pick<Receipt, "unverified" | "commentsOnly"> {
+  const read = typeof changes === "string" ? [] : changes;
+  const unverified = changed.filter((path) => !covered.has(path) && !isTestPath(path) &&
+    !onlyComments(read.find((file) => file.path === path)));
+  return read.length > 0 && read.every(onlyComments) ? { unverified, commentsOnly: true } : { unverified };
 }
 
 /** The Pi flag that names ClaimCheck's second model (`claimCheck`). */
@@ -390,8 +403,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
       return { entries: [{ type: "custom_message", customType: "tesota-gate", content: weak, display: true }], continue: true };
     }
     const receipt: Receipt = { version: 1, repository: true, ...run, proofs: judged, ...strength, tests, exercises, weakened,
-      unverified: changed.filter((path) => !covered.has(path) && !isTestPath(path) && !onlyComments(changes, path)),
-      uncovered: uncovered(sources, changes, weakened),
+      ...unprovedFiles(changes, changed, covered), uncovered: uncovered(sources, changes, weakened),
       changed: await recordedChanges(ctx.cwd, from, changed), settledAt: new Date().toISOString() };
     progress.publish({ step: "settled", receipt });
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),

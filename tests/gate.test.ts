@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Evidence } from "../src/evidence.js";
+import { evidenceParts, evidenceText } from "../src/footer.js";
 import { changedFiles, type GateProgress, type GateStatus, registerGate } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import type { Receipt } from "../src/receipt.js";
@@ -399,6 +400,18 @@ it("leaves out of the receipt's files those whose changed lines are all blank or
     "notes.md": "# Notes, changed\n", "logo.bin": "\0\u0002" });
   const receipt = entry(await run.settle()).details as Receipt;
   expect(receipt.unverified).toEqual(["logo.bin", "notes.md", "src/legacy.js"]);
+  expect(receipt.commentsOnly).toBeUndefined();
+});
+
+it("settles a change of comments and blank lines alone with a receipt and footer that say nothing needed verifying", async () => {
+  const root = repository({ "src/helper.ts": "export const one = 1;\n", "src/tool.py": "x = 1\n" });
+  const run = gate(root);
+  await run.input();
+  write(root, { "src/helper.ts": "// One, as a constant.\n\nexport const one = 1;\n", "src/tool.py": "# The tool's value.\nx = 1\n" });
+  const settled = entry(await run.settle());
+  expect(settled.content).toBe("Tesota receipt\n  no code       nothing to verify: the changes are comments or blank lines only");
+  expect((settled.details as Receipt).commentsOnly).toBe(true);
+  expect(evidenceText(evidenceParts(run.progress.status), "full")).toBe("✓ receipt · nothing to verify, comments only");
 });
 
 it("lists every file in a repository whose first commit the agent made", async () => {

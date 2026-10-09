@@ -310,7 +310,10 @@ Pi's footer reads it (`EvidenceFooter` in `src/footer.ts`):
 - **While a run settles:** the gate's step (proving, testing or measuring
   contracts), then whether it sent failures back, with what the round found
   so far.
-- **After the run:** the receipt in brief.
+- **After the run:** the receipt in brief. When the request changed only
+  comments or blank lines and nothing else is listed, the receipt says
+  `no code       nothing to verify: the changes are comments or blank lines
+  only`, and the footer `✓ receipt · nothing to verify, comments only`.
 
 The operator's next request returns the status to ready, as does a run that
 changed nothing or a gate that fails midway. The footer's second row holds

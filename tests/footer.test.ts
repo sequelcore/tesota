@@ -63,6 +63,15 @@ it("sums up the receipt, leading with whether anything in it needs the operator"
     .toBe("! receipt · 1 proved · tests pass · contracts strong · weakening not checked");
 });
 
+it("says there was nothing to verify when the change was comments alone, and only when nothing else is listed", () => {
+  const comments: Receipt = { ...emptyReceipt, commentsOnly: true };
+  expect(words({ step: "settled", receipt: comments })).toBe("✓ receipt · nothing to verify, comments only");
+  expect(words({ step: "settled", receipt: comments }, "short")).toBe("✓ receipt · nothing to verify");
+  expect(words({ step: "settled", receipt: comments }, "glyphs")).toBe("✓ · no code");
+  expect(words({ step: "settled", receipt: { ...comments, proofs: [proved] } })).toBe("✓ receipt · 1 proved");
+  expect(words({ step: "settled", receipt: emptyReceipt })).toBe("✓ receipt");
+});
+
 it("drops the model first, then shortens the evidence, and drops the context % last", () => {
   // Widths: evidence 40, 30 or 10; context 6; path 40; model 15.
   expect(footerLayout(100, 40, 30, 10, 6, 40, 15)).toEqual({ level: "full", context: true, model: true });
