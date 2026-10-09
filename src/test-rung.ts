@@ -8,7 +8,7 @@ import { getShellConfig } from "@earendil-works/pi-coding-agent";
 import { type Evidence, contentHash } from "./evidence.js";
 import { type ProjectChecks, findProjects, owningProjects } from "./projects.js";
 import { runProcess } from "./process.js";
-import { readTestResults } from "./test-report.js";
+import { introducedTests, readTestResults, type TestResults } from "./test-report.js";
 import { type CheckOutcome, checkOrigin } from "./verification/check-origin-rule.js";
 
 const execFileAsync = promisify(execFile);
@@ -104,7 +104,8 @@ export async function runCommands(root: string, projects: readonly ProjectChecks
 /**
  * Whether a changed or added test exercises the change: it does not when it
  * passes on the base, the commit the request started from; it does when it
- * fails there while the base passes without it (`checkOrigin`).
+ * fails there while the base passes without it, or when the tests it adds
+ * newly fail there by the base's test reports (`exercise`, `checkOrigin`).
  */
 export interface TestExercise {
   readonly path: string;
@@ -168,17 +169,40 @@ async function atBase<T>(root: string, base: string, work: (project: string) => 
   }
 }
 
-function exercise(path: string, withTest: CommandOutcome, without: CommandOutcome | undefined): TestExercise {
-  if (withTest === "passed") {
+/** A run on the base: how its commands ended, and the tests the JUnit reports it wrote name, if it wrote any. */
+interface BaseRun {
+  readonly outcome: CommandOutcome;
+  readonly results: TestResults | undefined;
+}
+
+/** `commands` run in `project`, a worktree of the base, with the reports they wrote under the owning `folder`. */
+async function baseRun(commands: readonly string[], project: string, folder: string, signal: AbortSignal): Promise<BaseRun> {
+  const started = Date.now();
+  const outcome = await runAll(commands, project, signal);
+  return { outcome, results: readTestResults(project, reportsWritten(project, folder, started)) };
+}
+
+/**
+ * Whether a test file exercises the change, from the base's run with it and,
+ * when that fails, without it. A test that fails before the change, or is
+ * missing then, and passes after it, is a fail-to-pass test, as SWE-bench
+ * grades one; so the tests that newly fail with the file (`introducedTests`)
+ * count even when the base fails without it (`checkOrigin`).
+ */
+function exercise(path: string, withTest: BaseRun, without: BaseRun | undefined): TestExercise {
+  if (withTest.outcome === "passed") {
     return { path, finding: "does_not_exercise", reason: "it passes without the change" };
   }
-  if (without !== undefined && checkOrigin(withTest, without, 0, true) === "introduced") {
+  const ended = withTest.outcome.replace("_", " ");
+  if (without === undefined) return { path, finding: "unknown", reason: `on the base it ${ended}` };
+  const introduced = introducedTests(withTest.results, without.results).length;
+  if (checkOrigin(withTest.outcome, without.outcome, introduced, true) === "introduced") {
     return { path, finding: "exercises", reason: "fails on the base, passes with the change" };
   }
-  const ended = withTest.replace("_", " ");
-  return { path, finding: "unknown", reason: without === undefined
-    ? `on the base it ${ended}`
-    : `on the base it ${ended}, and the base also ends ${without.replace("_", " ")} without it` };
+  if (without.outcome === "passed") return { path, finding: "unknown", reason: `on the base it ${ended}` };
+  return { path, finding: "unknown", reason: withTest.results === undefined || without.results === undefined
+    ? `on the base it ${ended}, but so does the base without it, and no test report says which tests fail`
+    : `on the base it ${ended}, but so does the base without it, and no test fails there that passes without it` };
 }
 
 /**
@@ -188,7 +212,7 @@ function exercise(path: string, withTest: CommandOutcome, without: CommandOutcom
 async function againstBase(project: string, root: string, tests: readonly string[], projects: readonly ProjectChecks[],
   signal: AbortSignal): Promise<TestExercise[]> {
   const found: TestExercise[] = [];
-  const without = new Map<string, CommandOutcome>();
+  const without = new Map<string, BaseRun>();
   for (const path of tests) {
     const owning = owningProjects(projects, [path])[0];
     if (owning === undefined) {
@@ -197,11 +221,11 @@ async function againstBase(project: string, root: string, tests: readonly string
     }
     mkdirSync(dirname(join(project, path)), { recursive: true });
     writeFileSync(join(project, path), read(root, path) ?? "");
-    const withTest = await runAll(owning.commands, project, signal);
+    const withTest = await baseRun(owning.commands, project, owning.folder, signal);
     await git(project, ["reset", "--quiet", "--hard"]);
     await git(project, ["clean", "-qfdx", "-e", "node_modules"]);
-    if (withTest !== "passed" && !without.has(owning.folder)) {
-      without.set(owning.folder, await runAll(owning.commands, project, signal));
+    if (withTest.outcome !== "passed" && !without.has(owning.folder)) {
+      without.set(owning.folder, await baseRun(owning.commands, project, owning.folder, signal));
     }
     found.push(exercise(path, withTest, without.get(owning.folder)));
   }
