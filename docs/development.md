@@ -16,8 +16,11 @@ registry packages; lifecycle scripts are disabled.
 | `bun run lint` | Lint source and tests without fixes; reject warnings |
 | `bun run check` | Run the complete repository gate |
 | `bun run formal:check` | Prove the LemmaScript rules in `src/verification/`; requires Dafny |
+| `bun run live:eval` | Run the registered cases live through Pi on the operator's sign-in (`evaluation/live.ts`); uses model quota |
 
-`bun run check` never calls a live model, and its tests that prove files run
+`bun run check` never calls a live model; `bun run live:eval` does, after
+`bun run build`, and writes its results to the file `--out` names, outside
+the repository. The check's tests that prove files run
 only where Dafny is installed. CI installs Dafny from `mise.toml` on Ubuntu
 and Windows, so those tests run there, and `bun run formal:check` runs after
 the check. The launcher tests run
@@ -78,7 +81,11 @@ asks a model to restate each contract without the request, the one Pi's
 the session's model to compare the restatement with the operator's request.
 The receipt labels that verdict a model's judgment, says when one model made
 both requests, or says why there is none. Neither sends
-anything back to the agent. A file that proved covers only its changed lines
+anything back to the agent, except that the experimental
+`--send-back-weak-contracts=true` flag, kept only until slice 8's results
+decide it (#350), sends a weak contract's surviving changes back until they
+repeat. Pi reads a bare extension flag's next argument as its value, so it
+takes `=true`. A file that proved covers only its changed lines
 inside a function whose contract proved and that the change did not narrow,
 by the weakening list's reading: `src/proof-coverage.ts` applies
 `proofCovered` and the receipt lists the rest by line range. The receipt

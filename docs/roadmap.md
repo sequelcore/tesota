@@ -79,10 +79,16 @@ passes `bun run check`, `bun run formal:check` and `git diff --check`.
    The receipt lists a proved file's changed lines outside every contract
    that proved, or in one the change narrowed, as not covered, through
    `proofCovered`.
-8. **Evaluation.** The registered proof cases as a live suite that runs Pi
-   with the package. It also measures whether sending a weak contract back
-   to the agent helps, and whether a second ClaimCheck model changes its
-   verdicts.
+8. **Evaluation.** Done in #350: `bun run live:eval` runs the registered
+   proof cases, and the same cases without contracts, through Pi with the
+   package. On GPT-6 Luna, indicative at 5 runs a case, sending a weak
+   contract back made the final contract rule out the registered bug in 15
+   of 15 runs, against 2 of 15 with the receipt only, at about three times
+   the tokens; the experimental `--send-back-weak-contracts` flag stays until
+   that decides the default. With GPT-5.5 restating, ClaimCheck changed 7 of
+   53 verdicts, mostly between not and partially justified; neither setup
+   accepted a contract that allows the bug. On code without contracts the
+   test rung changed no outcome: with and without Tesota, 21 of 21 resolved.
 9. **Documentation.** README, a design page, a decision record that reverses
    the harness decisions, this roadmap, and `docs/receipt-v1.md`, the page
    the receipt's in-toto `predicateType` names, describing its format.
