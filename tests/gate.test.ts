@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { VERSION } from "@earendil-works/pi-coding-agent";
@@ -480,9 +480,9 @@ it("runs the project's tests, and runs each changed test on the request's base e
   expect(entry(settled).content).toBe([
     "Tesota receipt",
     "  passed        bun run test",
-    "  exercises     test/negative.test.mjs: it fails without the change, and the base passes without it",
+    "  exercises     test/negative.test.mjs: fails on the base, passes with the change",
     "  vacuous test  test/positive.test.mjs: it passes without the change",
-    ...changed.map((path) => `  not proved    ${path}: no proof covers it; the project's commands pass with it`),
+    "  not proved    src/price.mjs: no proof covers it; the project's commands pass with it",
   ].join("\n"));
   const receipt = entry(settled).details as Receipt;
   expect(receipt.tests.map(({ command, evidence }) => [command, evidence.verifier, evidence.files]))
@@ -491,6 +491,25 @@ it("runs the project's tests, and runs each changed test on the request's base e
   expect(spawnSync("git", ["worktree", "list", "--porcelain"], { cwd: root, encoding: "utf8" }).stdout.match(/^worktree /gmu))
     .toHaveLength(1);
   expect(existsSync(join(root, "node_modules", "dep", "index.js"))).toBe(true);
+}, 60_000);
+
+it("neither flags nor lists as not proved a test file that only gains a test", async () => {
+  const root = testedProject();
+  const run = gate(root);
+  await run.input();
+  const base = readFileSync(join(root, "test", "price.test.mjs"), "utf8");
+  write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n",
+    "test/price.test.mjs": `${base}test("negative", () => { assert.equal(total(-1), 0); });\n` });
+  const settled = entry(await run.settle());
+  expect(settled.content).toBe([
+    "Tesota receipt",
+    "  passed        bun run test",
+    "  exercises     test/price.test.mjs: fails on the base, passes with the change",
+    "  not proved    src/price.mjs: no proof covers it; the project's commands pass with it",
+  ].join("\n"));
+  const receipt = settled.details as Receipt;
+  expect(receipt.weakened).toEqual([]);
+  expect(receipt.unverified).toEqual(["src/price.mjs"]);
 }, 60_000);
 
 it("sends failing tests back once when the project writes no test report, then settles with the failure", async () => {
@@ -506,8 +525,7 @@ it("sends failing tests back once when the project writes no test report, then s
   const stuck = await run.settle();
   expect(stuck?.continue).toBeUndefined();
   expect(entry(stuck).content).toBe(["Tesota receipt",
-    "  NOT passed    bun run test: it still fails after its failure went back",
-    "  not verified  test/negative.test.mjs: no verifier covers it"].join("\n"));
+    "  NOT passed    bun run test: it still fails after its failure went back"].join("\n"));
   await run.input();
   expect((await run.settle())?.continue).toBe(true);
 }, 60_000);
@@ -552,6 +570,5 @@ it("runs only the commands of the projects that own the changed files, there and
   await run.input();
   write(root, { "a/test/y.test.mjs": passing });
   expect(entry(await run.settle()).content).toBe(["Tesota receipt", "  passed        cd a && bun run test",
-    "  vacuous test  a/test/y.test.mjs: it passes without the change",
-    "  not proved    a/test/y.test.mjs: no proof covers it; the project's commands pass with it"].join("\n"));
+    "  vacuous test  a/test/y.test.mjs: it passes without the change"].join("\n"));
 }, 60_000);

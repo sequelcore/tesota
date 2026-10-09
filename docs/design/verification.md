@@ -131,9 +131,22 @@ as unchanged (`weakens`, proved).
 - **Assumptions:** an added `//@ assume`.
 - **Dafny proofs:** an added `assume` or `{:axiom}` line in a `.dfy`, or a
   lemma left without a body, which Dafny takes as an axiom.
-- **Tests:** a deleted or edited test file, by the common runners' path
-  conventions (`tests/`, `__tests__/`, `*.test.ts`, `*_test.go`, `test_*.py`,
-  snapshots and the like). An added test is not listed.
+- **Tests:** a deleted test file, by the common runners' path conventions
+  (`tests/`, `__tests__/`, `*.test.ts`, `*_test.go`, `test_*.py`, snapshots
+  and the like), or an edit to one that may weaken its tests
+  (`testWeakens`, proved): it removes a line that is not blank,
+  comment-only or an import it widened (an added line imports from the same
+  module, in the same form, every name it had and more), even one that
+  moved, so an assertion commented out counts;
+  or it adds a line that changes how the existing tests run: a focus or
+  skip marker (`.only`, `.skip`, `xit`, `@Disabled`, `#[ignore]`, `t.Skip`,
+  `pytest.mark.skip` and the like), a setup or teardown hook (`beforeEach`,
+  `@BeforeEach`, `setUp`, an autouse fixture, `TestMain`), or a module mock
+  (`vi.mock`, `jest.mock`, `mock.module`). A new test file, or one that only
+  gains tests, is not listed. Spies and per-test patches (`vi.spyOn`,
+  `@patch`, `@Mock`) are left out, since a test usually restores them; a
+  line added inside an existing test, such as an early `return`, is not
+  caught either.
 
 When Git's output for the diff passes 16 MiB, the receipt says the change
 was not checked for weakening, and coverage is not measured either. The gate
@@ -242,8 +255,9 @@ The weakening list decides narrowing:
 
 A removed line counts at the line that now follows it, and blank lines are
 ignored. The receipt lists the remaining lines as ranges (`ranges`, proved).
-A changed file that no proof's evidence covers is listed whole. Both lists
-read "not proved" when the project's commands passed, and "not verified"
+A changed file that no proof's evidence covers is listed whole, unless it
+is a test file: tests are evidence, reported as exercised, passed or as
+something that may weaken the evidence. Both lists read "not proved" when the project's commands passed, and "not verified"
 otherwise.
 
 ## The receipt
@@ -319,6 +333,7 @@ The pure decisions above carry LemmaScript `//@` specifications in
 | `proof-outcome-rule.ts` | How a proof ended, vacuous included |
 | `gate-rule.ts` | What goes back, what is the operator's, and whether the run continues |
 | `weakening-rule.ts` | Which annotation changes may weaken the evidence |
+| `test-weakening-rule.ts` | Which changes to a test file may weaken its tests |
 | `project-rule.ts` | Which folders hold projects and which project owns a path |
 | `check-origin-rule.ts` | Whether a test failure comes from the change |
 | `mutation-rule.ts` | What a mutant's proof means, and when a survivor is equivalent |

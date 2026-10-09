@@ -173,7 +173,7 @@ function exercise(path: string, withTest: CommandOutcome, without: CommandOutcom
     return { path, finding: "does_not_exercise", reason: "it passes without the change" };
   }
   if (without !== undefined && checkOrigin(withTest, without, 0, true) === "introduced") {
-    return { path, finding: "exercises", reason: "it fails without the change, and the base passes without it" };
+    return { path, finding: "exercises", reason: "fails on the base, passes with the change" };
   }
   const ended = withTest.replace("_", " ");
   return { path, finding: "unknown", reason: without === undefined
