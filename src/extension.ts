@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerGate } from "./gate.js";
 import { hasContracts, proveTool } from "./prove-tool.js";
-import { WelcomeHeader } from "./welcome-header.js";
+import { mountWelcomeHeader, WelcomeHeader } from "./welcome-header.js";
 
 /**
  * Tesota's Pi extension: it marks the session as running with Tesota and
@@ -14,8 +14,8 @@ export default function tesota(pi: ExtensionAPI): void {
   registerGate(pi);
   pi.on("session_start", (_event, ctx) => {
     ctx.ui.setStatus("tesota", "Tesota");
-    ctx.ui.setHeader((tui, theme) => new WelcomeHeader(ctx.cwd, theme,
-      { requestRender: () => tui.requestRender(), terminalRows: () => tui.terminal.rows }));
+    ctx.ui.setHeader((tui, theme) => mountWelcomeHeader(new WelcomeHeader(ctx.cwd, theme,
+      { requestRender: () => tui.requestRender(), terminalRows: () => tui.terminal.rows })));
     if (hasContracts(ctx.cwd)) pi.setActiveTools([...new Set([...pi.getActiveTools(), proveTool.name])]);
   });
 }

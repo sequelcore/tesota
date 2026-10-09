@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DefaultResourceLoader, type Theme } from "@earendil-works/pi-coding-agent";
-import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, type TuiMouseEvent, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, expect, it } from "vitest";
-import { WELCOME_FRAME_MS, WELCOME_SCENE_MS, WELCOME_TAGLINE, WelcomeHeader, themeMarkColors, type WelcomeHeaderOptions }
-  from "../src/welcome-header.js";
+import { mountWelcomeHeader, WELCOME_FRAME_MS, WELCOME_SCENE_MS, WELCOME_TAGLINE, WelcomeHeader, themeMarkColors,
+  type WelcomeHeaderOptions } from "../src/welcome-header.js";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const braille = /[\u2801-\u28ff]/u;
@@ -42,7 +42,21 @@ function header(options: Partial<WelcomeHeaderOptions> & { name?: string } = {})
     timers.shift()?.();
     view.render(100);
   };
-  return { view, timers, tick, renders: () => renders };
+  /** Plays the scene to its end, frame by frame. */
+  const rest = (): void => { while (view.moving) tick(); };
+  return { view, region: mountWelcomeHeader(view), timers, tick, rest, renders: () => renders };
+}
+
+/** A plain left click, in the header's own coordinates, as Pi's fullscreen mode routes it. */
+function click(x: number, y: number, extra: Partial<TuiMouseEvent> = {}): TuiMouseEvent {
+  return { type: "click", button: "left", x, y, screenX: x, screenY: y, width: 100, height: 30,
+    shift: false, alt: false, ctrl: false, clickCount: 1, ...extra };
+}
+
+/** The tree's center cell. */
+function center(lines: readonly string[]): [number, number] {
+  const rows = lines.flatMap((line, index) => braille.test(line) ? [index] : []);
+  return [50, rows[Math.floor(rows.length / 2)]!];
 }
 
 function stage(lines: readonly string[]): string {
@@ -123,10 +137,67 @@ it("keeps the tree to a third of the terminal, drops it where it would not fit, 
   }
 });
 
+it("plays again with the tumbleweed when the resting tree is clicked, and comes back to rest", () => {
+  const { view, region, timers, tick, rest } = header();
+  const resting = stage(region.render(100));
+  rest();
+  const [x, y] = center(region.render(100));
+  timers.length = 0;
+  expect(region.handleMouse(click(x, y))).toEqual({ handled: true, render: true });
+  expect(view.moving).toBe(true);
+  region.render(100);
+  expect(timers).toHaveLength(1);
+  // A few seconds in, frame by frame, the tumbleweed is on the stage, where the wind alone would not put it.
+  const wind = header();
+  wind.view.render(100);
+  for (let step = 0; step < 50; step++) { tick(); wind.tick(); }
+  expect(stage(region.render(100))).not.toBe(stage(wind.view.render(100)));
+  rest();
+  timers.length = 0;
+  expect(stage(region.render(100))).toBe(resting);
+  expect(timers).toEqual([]);
+});
+
+it("does nothing new when the tree is clicked while it plays, the opening or a replay", () => {
+  const clicked = header();
+  const untouched = header();
+  for (const scene of [clicked, untouched]) scene.view.render(100);
+  const [x, y] = center(clicked.region.render(100));
+  for (let step = 0; step < 20; step++) { clicked.tick(); untouched.tick(); }
+  expect(clicked.region.handleMouse(click(x, y))).toEqual({ handled: true, render: true });
+  for (let step = 0; step < 20; step++) { clicked.tick(); untouched.tick(); }
+  expect(stage(clicked.view.render(100))).toBe(stage(untouched.view.render(100)));
+
+  for (const scene of [clicked, untouched]) {
+    scene.rest();
+    scene.region.handleMouse(click(x, y));
+  }
+  for (let step = 0; step < 30; step++) { clicked.tick(); untouched.tick(); }
+  clicked.region.handleMouse(click(x, y));
+  for (let step = 0; step < 30; step++) { clicked.tick(); untouched.tick(); }
+  expect(stage(clicked.view.render(100))).toBe(stage(untouched.view.render(100)));
+});
+
+it("leaves other gestures, and clicks beside the tree, to their usual owner", () => {
+  const { view, region, rest } = header();
+  rest();
+  const lines = region.render(100);
+  const [x, y] = center(lines);
+  const text = lines.findIndex((line) => stripTerminalSequences(line).includes("Tesota "));
+  for (const event of [click(x, y, { button: "right" }), click(x, y, { ctrl: true }), click(x, y, { type: "press" }),
+    click(1, y), click(x, text)]) {
+    expect(region.handleMouse(event)).toBeUndefined();
+  }
+  expect(view.moving).toBe(false);
+  const short = header({ terminalRows: () => 12 });
+  short.region.render(100);
+  expect(short.region.handleMouse(click(50, 0))).toBeUndefined();
+});
+
 it("stops asking for frames once disposed", () => {
-  const { view, timers } = header();
-  view.render(100);
-  view.dispose();
+  const { view, region, timers } = header();
+  region.render(100);
+  region.dispose();
   timers.length = 0;
   view.render(100);
   expect(view.moving).toBe(false);

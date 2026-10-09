@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Color, colorToRgb, foregroundAnsi, truncateToWidth, visibleWidth, type Component }
-  from "@earendil-works/pi-tui";
+import { type Color, colorToRgb, foregroundAnsi, MouseRegion, truncateToWidth, type TuiMouseEvent,
+  type TuiMouseEventResult, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLighting, renderMark, type MarkColors,
   type Rgb } from "./welcome-mark.js";
 
-/** The scene's length: the wind rising and falling once. */
+/** The scene's length: the wind rising and falling, and on a replay the tumbleweed's pass. */
 export const WELCOME_SCENE_MS = 9_000;
 export const WELCOME_FRAME_MS = 50;
 /** A frame that arrives later than this, such as after the terminal was busy, advances by this much at most. */
@@ -51,7 +51,8 @@ export interface WelcomeHeaderOptions {
 /**
  * Pi's header in a Tesota session: the palo fierro with a saguaro seedling in its shade and saguaros further off,
  * and beneath it Tesota's name, version, folder and what it does. The wind moves the crown once, then the tree rests
- * for the rest of the session. Its colors follow Pi's active theme.
+ * for the rest of the session; a click on the resting tree (`click`) plays the scene again with a tumbleweed blowing
+ * through. Its colors follow Pi's active theme.
  */
 export class WelcomeHeader implements Component {
   readonly #cwd: string;
@@ -60,6 +61,10 @@ export class WelcomeHeader implements Component {
   readonly #version = packageVersion();
   /** How much of the scene has played, in milliseconds. */
   #played = 0;
+  /** Whether the tumbleweed blows through: from the first click on, not at the opening. */
+  #visitor = false;
+  /** Where the last render drew the tree, in the header's own rows and columns. */
+  #drawnStage: { readonly left: number; readonly rows: number; readonly columns: number } | undefined;
   #lastFrame: number | undefined;
   #cancelFrame: (() => void) | undefined;
   #cached: { readonly key: string; readonly lines: readonly string[] } | undefined;
@@ -85,6 +90,25 @@ export class WelcomeHeader implements Component {
     this.#played = WELCOME_SCENE_MS;
   }
 
+  /**
+   * A plain left click on the resting tree plays the scene again, with the tumbleweed; one during a replay or the
+   * opening only keeps it playing. Other gestures, and clicks beside the tree, keep their usual owner.
+   */
+  click(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+    const stage = this.#drawnStage;
+    if (stage === undefined || event.type !== "click" || event.button !== "left" || event.shift || event.alt ||
+      event.ctrl) return undefined;
+    if (event.y < 0 || event.y >= stage.rows || event.x < stage.left || event.x >= stage.left + stage.columns) {
+      return undefined;
+    }
+    if (!this.moving) {
+      this.#played = 0;
+      this.#visitor = true;
+      this.#lastFrame = undefined;
+    }
+    return { handled: true, render: true };
+  }
+
   render(width: number): string[] {
     let columns = Math.min(MARK_MAX_COLUMNS, width - 4);
     let rows = Math.round(columns * MARK_STAGE_ROWS_PER_60_COLUMNS / MARK_MAX_COLUMNS);
@@ -95,9 +119,13 @@ export class WelcomeHeader implements Component {
     }
     const lines: string[] = [];
     if (rows >= MIN_STAGE_ROWS && rows <= MARK_MAX_ROWS && columns <= MARK_MAX_COLUMNS) {
-      const left = " ".repeat(Math.floor((width - columns) / 2));
-      lines.push(...this.#stage(columns, rows).map((line) => left + line), "");
-    } else this.#lastFrame = undefined;
+      const left = Math.floor((width - columns) / 2);
+      this.#drawnStage = { left, rows, columns };
+      lines.push(...this.#stage(columns, rows).map((line) => " ".repeat(left) + line), "");
+    } else {
+      this.#drawnStage = undefined;
+      this.#lastFrame = undefined;
+    }
     for (const line of this.#text(width)) {
       const fitted = truncateToWidth(line, width);
       lines.push(" ".repeat(Math.max(0, Math.floor((width - visibleWidth(fitted)) / 2))) + fitted);
@@ -138,9 +166,10 @@ export class WelcomeHeader implements Component {
     const appearance = theme.appearance;
     const colors = themeMarkColors(theme);
     const mode = theme.getColorMode();
-    const key = JSON.stringify([columns, rows, progress, appearance, colors, mode]);
+    const key = JSON.stringify([columns, rows, progress, this.#visitor, appearance, colors, mode]);
     if (this.#cached?.key === key) return this.#cached.lines;
-    const cells = renderMark(columns, rows, progress, markLighting(background[appearance], appearance === "light", colors));
+    const cells = renderMark(columns, rows, progress, markLighting(background[appearance], appearance === "light", colors),
+      this.#visitor);
     const lines: string[] = [];
     for (let row = 0; row < rows; row++) {
       let line = "";
@@ -155,4 +184,12 @@ export class WelcomeHeader implements Component {
     this.#cached = { key, lines };
     return lines;
   }
+}
+
+/**
+ * The header as Pi mounts it: the tree inside a `MouseRegion`, which receives clicks where Pi routes the mouse to
+ * components (its fullscreen mode); elsewhere the scene plays once.
+ */
+export function mountWelcomeHeader(header: WelcomeHeader): MouseRegion & { dispose(): void } {
+  return Object.assign(new MouseRegion(header, (event) => header.click(event)), { dispose: () => header.dispose() });
 }
