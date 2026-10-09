@@ -1,5 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { usesTesotaTheme } from "./verification/default-theme-rule.js";
 import { versionAtLeast } from "./verification/pi-version-rule.js";
 
 /** The npm package that provides Pi, which Tesota declares as an optional peer dependency. */
@@ -90,6 +92,39 @@ export function piModule(pi: InstalledPi): string {
   const entry = typeof main === "object" && main !== null ? Reflect.get(main, "import") : undefined;
   if (typeof entry !== "string") throw new Error(`The Pi at ${pi.root} exports no module Tesota can import.`);
   return join(pi.root, entry);
+}
+
+/** The part of Pi's public `SettingsManager` Tesota reads: the theme setting, global and project merged. */
+interface PiSettings {
+  create(cwd: string): { getThemeSetting(): string | undefined };
+}
+
+/**
+ * The theme setting the Pi Tesota opens would use in `cwd`, undefined when
+ * the operator never chose one, or null when its settings can't be read; Pi
+ * then reports the problem itself.
+ */
+export async function piThemeSetting(pi: InstalledPi, cwd: string): Promise<string | undefined | null> {
+  try {
+    const { SettingsManager } = await import(pathToFileURL(piModule(pi)).href) as { SettingsManager: PiSettings };
+    return SettingsManager.create(cwd).getThemeSetting();
+  } catch {
+    return null;
+  }
+}
+
+/** Tesota's themes as a Pi light/dark pair, which Pi switches between as the terminal does. */
+export const TESOTA_THEMES = "tesota-light/tesota-dark";
+
+/**
+ * The arguments the `tesota` command adds before the operator's own: Tesota's
+ * theme pair for this run when `usesTesotaTheme` allows it, which Pi applies
+ * without saving it.
+ */
+export function themeArguments(setting: string | undefined | null, args: readonly string[]): string[] {
+  const chosen = args.some((arg) => arg === "--use-theme" || arg.startsWith("--use-theme="));
+  return usesTesotaTheme(setting !== null, typeof setting === "string" && setting !== "", chosen)
+    ? ["--use-theme", TESOTA_THEMES] : [];
 }
 
 /** The minimum Pi version in Tesota's `package.json`, whose peer range has the form `>=X.Y.Z`. */
