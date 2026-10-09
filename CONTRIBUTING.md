@@ -22,8 +22,10 @@ bun run check
 ```
 
 `bun run check` builds and type-checks the project, runs the tests and
-executes Oxlint without applying fixes. The proofs are a separate command and
-are not part of the offline contribution gate.
+executes Oxlint without applying fixes. The proofs are a separate command,
+`bun run formal:check`, which needs Dafny (`mise install`). It is not part of
+the offline contribution gate, but CI runs it after the check, so a change that
+breaks a proof fails CI.
 
 ## Change expectations
 

@@ -9,7 +9,7 @@ export type TestStatus = "passed" | "failed" | "skipped" | "absent" | "unread";
 export type ReportedTest = "passed" | "failed" | "skipped" | "none";
 
 /**
- * Decision 040's status of a test on the base: its result there when a base
+ * The status of a test on the base: its result there when a base
  * report names it; `absent` when none does although the base run wrote and
  * Tesota read a report the candidate named it in (`covered`), so the test
  * truly has no result without the changes; `unread` otherwise, since a report
@@ -29,7 +29,7 @@ export function baseTestStatus(reported: ReportedTest, covered: boolean): TestSt
 }
 
 /**
- * Decision 040's origin of one test that a check's reports name: a test that
+ * The origin of one test that a check's reports name: a test that
  * fails with the changes is introduced when it passes without them or has no
  * result there at all (`baseTestStatus`), already there when it fails there
  * too, and of unknown cause when it was skipped there or its report could not
@@ -48,9 +48,10 @@ export function testOrigin(candidate: TestStatus, base: TestStatus): CheckOrigin
 }
 
 /**
- * Decision 039's origin rule for a failing check command, with decision 040's
- * tests. A command is run again on the candidate's base, in the same
- * environment, only when it failed or timed out on the candidate: the
+ * The origin rule for a failing check command, with its tests
+ * (docs/design/verification.md, "Tests"). A command is run again on the
+ * candidate's base, in the same environment, only when it failed or timed out
+ * on the candidate: the
  * candidate introduced the failure when the base passes, or when the base
  * failed or timed out too and some test the command reports is introduced
  * (`testOrigin`); the failure was already there only when the base ends the
