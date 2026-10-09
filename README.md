@@ -94,13 +94,47 @@ after the receipt, which nothing in it covers.
 
 Run `bun unlink` in the checkout to remove the command.
 
-### Themes
+### Look and feel
 
 A session opens under Tesota's palo fierro, drawn in the colors of Pi's
-active theme. Tesota also brings its own light and dark themes,
-`tesota-light` and `tesota-dark`; Pi keeps the theme you chose until you
-pick one of them. Open `/settings`, select **Theme**, and choose one, or
-choose both as a light/dark pair so Pi follows your terminal's appearance.
+active theme and lit against your terminal's background. In Pi's
+fullscreen mode, its default, a click on the resting tree plays the scene
+again.
+
+**Themes.** Tesota brings six Pi themes: `tesota-dark` and `tesota-light`,
+and `vesper`, `sequel`, `automata` and `phosphor`. Pi keeps the theme you
+chose until you pick another: open `/settings`, select **Theme**, and
+choose one, or choose a light and a dark one as a pair so Pi follows your
+terminal's appearance.
+
+**A quieter start.** Pi lists the context, skills and extensions it loaded
+beneath the header, so the tree keeps to a third of the window. To give it
+half, hide the list in Pi's settings file, `~/.pi/agent/settings.json`:
+
+```json
+{ "quietStartup": "header" }
+```
+
+Pi has no flag for this, so `tesota` leaves the setting to you;
+`tesota --verbose` shows the list again for one run.
+
+**Terminal colors.** The themes are drawn for a `#202020` canvas (light:
+`#edede5`). Tesota's terminal color schemes, in
+[`terminal-schemes`](terminal-schemes), set that canvas and an ANSI palette
+from the same colors. They are optional:
+
+- Windows Terminal: copy `windows-terminal/tesota.json` to
+  `%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\Tesota\`, restart
+  Windows Terminal, and choose **Tesota Dark** or **Tesota Light** as a
+  profile's color scheme.
+- Ghostty: copy the files in `ghostty` to `~/.config/ghostty/themes/` and
+  set `theme = light:Tesota Light,dark:Tesota Dark`.
+- WezTerm: copy the files in `wezterm` to `~/.config/wezterm/colors/` and
+  set `config.color_scheme = "Tesota Dark"`.
+
+Pi has no theme color for the input box's background, so it keeps Pi's
+border lines, and its footer keeps Pi's `dim` color; the `Tesota` status
+beneath it takes the theme's success color, sage in Tesota's themes.
 
 ## Credits
 

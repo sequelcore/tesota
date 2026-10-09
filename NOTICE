@@ -9,9 +9,12 @@ history, attribution, documentation and adapted engineering work.
 
 Terminal themes
 
-The palettes in themes/tesota-dark.json and themes/tesota-light.json adapt the
-visual direction of packages/operator-appearance/src/palettes.ts from Kiln
-commit f02c70b6c312e22f76edf912902e8efaa8aa736a (kiln-legacy-2026-09).
+The palettes in themes/tesota-dark.json, themes/tesota-light.json,
+themes/vesper.json, themes/sequel.json, themes/automata.json and
+themes/phosphor.json, and the terminal color schemes in terminal-schemes/
+derived from the first two, adapt the visual direction of
+packages/operator-appearance/src/palettes.ts from Kiln commit
+f02c70b6c312e22f76edf912902e8efaa8aa736a (kiln-legacy-2026-09).
 Kiln credited Automata, Phosphor and Vesper to the community themes at
 https://github.com/SunkenInTime/t3-themes. Tesota's themes do not copy that
 gallery's source code or theme JSON. Status colors, message backgrounds and

@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DefaultResourceLoader, type Theme } from "@earendil-works/pi-coding-agent";
-import { stripTerminalSequences, type TuiMouseEvent, visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, type TerminalColors, type TerminalColorScheme, type TuiMouseEvent, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, expect, it } from "vitest";
 import { mountWelcomeHeader, WELCOME_FRAME_MS, WELCOME_SCENE_MS, WELCOME_TAGLINE, WelcomeHeader, themeMarkColors,
   type WelcomeHeaderOptions } from "../src/welcome-header.js";
@@ -33,7 +33,7 @@ function header(options: Partial<WelcomeHeaderOptions> & { name?: string } = {})
   const timers: (() => void)[] = [];
   let renders = 0;
   const view = new WelcomeHeader("C:\\work\\tesota", theme(options.name ?? "tesota-dark"), {
-    requestRender: () => { renders++; }, terminalRows: () => 60, now: () => clock.now,
+    requestRender: () => { renders++; }, terminalRows: () => 60, stageShare: 1 / 3, now: () => clock.now,
     setTimer: (callback) => { timers.push(callback); return () => undefined; }, ...options,
   });
   /** Fires the pending frame, as Pi's render loop would, after a frame's time. */
@@ -44,7 +44,24 @@ function header(options: Partial<WelcomeHeaderOptions> & { name?: string } = {})
   };
   /** Plays the scene to its end, frame by frame. */
   const rest = (): void => { while (view.moving) tick(); };
-  return { view, region: mountWelcomeHeader(view), timers, tick, rest, renders: () => renders };
+  const terminal = fakeTerminal(() => { renders++; });
+  return { view, region: mountWelcomeHeader(view, terminal), terminal, timers, tick, rest, renders: () => renders };
+}
+
+/** A terminal that answers Pi's color queries when the test says so, on time or late, and turns light or dark. */
+function fakeTerminal(requestRender: () => void) {
+  const queries: { readonly answer: (colors: TerminalColors) => void; readonly late: (colors: TerminalColors) => void }[] =
+    [];
+  const schemeListeners = new Set<(scheme: TerminalColorScheme) => void>();
+  return {
+    queries, schemeListeners, requestRender,
+    queryTerminalColors: ({ onLateReply }: { timeoutMs: number; onLateReply?: (colors: TerminalColors) => void }) =>
+      new Promise<TerminalColors>((answer) => { queries.push({ answer, late: (colors) => onLateReply?.(colors) }); }),
+    onTerminalColorSchemeChange: (listener: (scheme: TerminalColorScheme) => void) => {
+      schemeListeners.add(listener);
+      return () => { schemeListeners.delete(listener); };
+    },
+  };
 }
 
 /** A plain left click, in the header's own coordinates, as Pi's fullscreen mode routes it. */
@@ -63,12 +80,17 @@ function stage(lines: readonly string[]): string {
   return lines.map((line) => stripTerminalSequences(line)).filter((line) => braille.test(line)).join("\n");
 }
 
-it("ships tesota-dark and tesota-light as Pi themes for their appearances", () => {
-  expect(theme("tesota-dark").appearance).toBe("dark");
-  expect(theme("tesota-light").appearance).toBe("light");
+/** Every theme the package ships, with the appearance it is drawn for. */
+const shipped = { "tesota-dark": "dark", "tesota-light": "light", vesper: "dark", sequel: "dark", automata: "light",
+  phosphor: "dark" } as const;
+
+it("ships each of its palettes, and only those, as a Pi theme for its appearance", () => {
+  expect(readdirSync(join(packageRoot, "themes")).toSorted()).toEqual(Object.keys(shipped).map((name) => `${name}.json`)
+    .toSorted());
+  for (const [name, appearance] of Object.entries(shipped)) expect(theme(name).appearance).toBe(appearance);
 });
 
-it.each(["tesota-dark", "tesota-light"])("gives %s every color Pi's theme schema requires, and nothing it does not know", (name) => {
+it.each(Object.keys(shipped))("gives %s every color Pi's theme schema requires, and nothing it does not know", (name) => {
   // Pi's command line validates themes strictly, but its loader only does so there; the schema it ships decides.
   const pi = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
   const schema = JSON.parse(readFileSync(join(pi, "modes", "interactive", "theme", "theme-schema.json"), "utf8")) as
@@ -116,7 +138,7 @@ it("colors the tree from the active theme's roles, and follows a change of theme
     return typeof value === "function" ? value.bind(active.current) : value;
   } });
   const view = new WelcomeHeader("work", following, { requestRender: () => undefined, terminalRows: () => 60,
-    setTimer: () => () => undefined });
+    stageShare: 1 / 3, setTimer: () => () => undefined });
   const art = (lines: readonly string[]): string => lines.filter((line) => braille.test(line)).join("");
   const dark = art(view.render(100));
   expect(dark).toContain("\x1b[38;2;");
@@ -126,9 +148,13 @@ it("colors the tree from the active theme's roles, and follows a change of theme
   expect(light).not.toBe(dark);
 });
 
-it("keeps the tree to a third of the terminal, drops it where it would not fit, and never draws past the width", () => {
-  const third = header({ terminalRows: () => 36 }).view.render(100);
-  expect(third.filter((line) => braille.test(line)).length).toBeLessThanOrEqual(12);
+it("keeps the tree to its share of the terminal, drops it where it would not fit, and never draws past the width", () => {
+  const rows = (lines: readonly string[]): number => lines.filter((line) => braille.test(line)).length;
+  const third = rows(header({ terminalRows: () => 36 }).view.render(100));
+  const half = rows(header({ terminalRows: () => 36, stageShare: 1 / 2 }).view.render(100));
+  expect(third).toBeLessThanOrEqual(12);
+  expect(half).toBeLessThanOrEqual(18);
+  expect(half).toBeGreaterThan(third);
   const short = header({ terminalRows: () => 12 }).view.render(100);
   expect(short.some((line) => braille.test(line))).toBe(false);
   expect(short.map((line) => stripTerminalSequences(line)).join("\n")).toContain("Tesota ");
@@ -204,11 +230,69 @@ it("stops asking for frames once disposed", () => {
   expect(timers).toEqual([]);
 });
 
+it("lights the tree against the background the terminal reports, on time, late, or after it turns light or dark", async () => {
+  const art = (lines: readonly string[]): string => lines.filter((line) => braille.test(line)).join("");
+  const { view, terminal, renders } = header();
+  expect(terminal.queries).toHaveLength(1);
+  const fallback = art(view.render(100));
+  // No reported background keeps the palette's own canvas.
+  terminal.queries[0]!.answer({});
+  await Promise.resolve();
+  expect(art(view.render(100))).toBe(fallback);
+  // A late reply, as over a slow link, still applies.
+  const before = renders();
+  terminal.queries[0]!.late({ background: { r: 12, g: 12, b: 12 } });
+  expect(renders()).toBe(before + 1);
+  const campbell = art(view.render(100));
+  expect(stripTerminalSequences(campbell)).toBe(stripTerminalSequences(fallback));
+  expect(campbell).not.toBe(fallback);
+  // The terminal turning light asks again, and its new background is used.
+  for (const listener of terminal.schemeListeners) listener("light");
+  expect(terminal.queries).toHaveLength(2);
+  terminal.queries[1]!.answer({ background: { r: 32, g: 32, b: 32 } });
+  await Promise.resolve();
+  expect(art(view.render(100))).toBe(fallback);
+});
+
+it("stops listening to the terminal once disposed", async () => {
+  const { view, region, terminal } = header();
+  const fallback = view.render(100).join("\n");
+  region.dispose();
+  expect(terminal.schemeListeners.size).toBe(0);
+  terminal.queries[0]!.answer({ background: { r: 12, g: 12, b: 12 } });
+  await Promise.resolve();
+  expect(view.render(100).join("\n")).toBe(fallback);
+});
+
 it("never writes a folder's control characters to the terminal", () => {
   const view = new WelcomeHeader("work\x1b]0;title\x07", theme("tesota-dark"), { requestRender: () => undefined,
-    terminalRows: () => 4 });
+    terminalRows: () => 4, stageShare: 1 / 3 });
   const written = view.render(100).join("\n");
   expect(written).not.toContain("\x07");
   expect(written).not.toContain("\x1b]");
   expect(stripTerminalSequences(written)).toContain("work?]0;title?");
 });
+
+it.each([["Tesota Dark", "tesota-dark"], ["Tesota Light", "tesota-light"]])(
+  "draws the %s terminal scheme in the same colors for every terminal, on its Pi theme's canvas", (scheme, name) => {
+    const schemes = join(packageRoot, "terminal-schemes");
+    const windows = (JSON.parse(readFileSync(join(schemes, "windows-terminal", "tesota.json"), "utf8")) as
+      { schemes: Record<string, string>[] }).schemes.find((entry) => entry["name"] === scheme)!;
+    const colors = ["black", "red", "green", "yellow", "blue", "purple", "cyan", "white"];
+    const sixteen = [...colors.map((color) => windows[color]), ...colors.map((color) =>
+      windows[`bright${color[0]!.toUpperCase()}${color.slice(1)}`])];
+    const ghostty = readFileSync(join(schemes, "ghostty", scheme), "utf8");
+    expect(sixteen.map((_, index) => ghostty.match(new RegExp(`^palette = ${index}=(#[0-9a-f]{6})$`, "mu"))?.[1]))
+      .toEqual(sixteen);
+    const wezterm = readFileSync(join(schemes, "wezterm", `${scheme}.toml`), "utf8");
+    const list = (key: string): string[] =>
+      JSON.parse(wezterm.match(new RegExp(String.raw`^${key} = (\[.*\])$`, "mu"))![1]!) as string[];
+    expect([...list("ansi"), ...list("brights")]).toEqual(sixteen);
+    const theme = JSON.parse(readFileSync(join(packageRoot, "themes", `${name}.json`), "utf8")) as
+      { vars: Record<string, string> };
+    for (const [key, value] of [["background", theme.vars["canvas"]], ["foreground", theme.vars["text"]]] as const) {
+      expect(windows[key]).toBe(value);
+      expect(ghostty).toContain(`${key} = ${value}\n`);
+      expect(wezterm).toContain(`${key} = "${value}"\n`);
+    }
+  });

@@ -1,0 +1,13 @@
+[colors]
+foreground = "#f2eee6"
+background = "#202020"
+cursor_bg = "#c6a8d2"
+cursor_border = "#c6a8d2"
+cursor_fg = "#202020"
+selection_bg = "#4b3d53"
+selection_fg = "#f2eee6"
+ansi = ["#2f2a35", "#d88c8c", "#9ab08f", "#d5b36a", "#8fa3c6", "#c6a8d2", "#8fbfb8", "#b9b7aa"]
+brights = ["#6e6b73", "#e6a3a3", "#b2c6a8", "#e2c78a", "#a9badb", "#d6bfe0", "#a9d0ca", "#f2eee6"]
+
+[metadata]
+name = "Tesota Dark"

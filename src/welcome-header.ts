@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Color, colorToRgb, foregroundAnsi, MouseRegion, truncateToWidth, type TuiMouseEvent,
-  type TuiMouseEventResult, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { type Color, colorToRgb, foregroundAnsi, MouseRegion, type TerminalColors, truncateToWidth, type TUI,
+  type TuiMouseEvent, type TuiMouseEventResult, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLighting, renderMark, type MarkColors,
   type Rgb } from "./welcome-mark.js";
 
@@ -13,8 +13,9 @@ const LONGEST_STEP_MS = 100;
 const MIN_STAGE_ROWS = 8;
 export const WELCOME_TAGLINE = "Shows evidence that the change does what you asked.";
 
-/** The background the tree is lit against: Pi's themes do not expose the terminal's own, so each appearance's usual one. */
-const background: Readonly<Record<"dark" | "light", Rgb>> = { dark: [32, 32, 32], light: [237, 237, 229] };
+/** The background the tree is lit against until the terminal reports its own, or when it never does: each
+ * appearance's usual one, the canvas Tesota's palettes are drawn for. */
+const fallbackBackground: Readonly<Record<"dark" | "light", Rgb>> = { dark: [32, 32, 32], light: [237, 237, 229] };
 
 function rgb(color: Color): Rgb {
   const { r, g, b } = colorToRgb(color);
@@ -42,8 +43,10 @@ function packageVersion(): string {
 export interface WelcomeHeaderOptions {
   /** Asks Pi for another render. */
   readonly requestRender: () => void;
-  /** Rows of the terminal; the tree takes at most a third of them, leaving room for what Pi shows at startup. */
+  /** Rows of the terminal; the tree takes at most `stageShare` of them. */
   readonly terminalRows: () => number;
+  /** The share of the terminal's rows the tree may take: less where Pi lists what it loaded beneath the header. */
+  readonly stageShare: number;
   readonly now?: () => number;
   readonly setTimer?: (callback: () => void, delayMs: number) => () => void;
 }
@@ -68,6 +71,8 @@ export class WelcomeHeader implements Component {
   #lastFrame: number | undefined;
   #cancelFrame: (() => void) | undefined;
   #cached: { readonly key: string; readonly lines: readonly string[] } | undefined;
+  /** The terminal's own background, once it reports one. */
+  #background: Rgb | undefined;
 
   constructor(cwd: string, theme: Theme, options: WelcomeHeaderOptions) {
     // A folder's name could hold control characters; they never reach the terminal as such.
@@ -83,6 +88,9 @@ export class WelcomeHeader implements Component {
   get moving(): boolean { return this.#played < WELCOME_SCENE_MS; }
 
   invalidate(): void { this.#cached = undefined; }
+
+  /** The terminal's own background, which the tree is lit against from now on. */
+  setBackground(background: Rgb): void { this.#background = background; }
 
   dispose(): void {
     this.#cancelFrame?.();
@@ -112,7 +120,7 @@ export class WelcomeHeader implements Component {
   render(width: number): string[] {
     let columns = Math.min(MARK_MAX_COLUMNS, width - 4);
     let rows = Math.round(columns * MARK_STAGE_ROWS_PER_60_COLUMNS / MARK_MAX_COLUMNS);
-    const most = Math.floor(this.#options.terminalRows() / 3);
+    const most = Math.floor(this.#options.terminalRows() * this.#options.stageShare);
     if (rows > most) {
       rows = most;
       columns = Math.round(rows * MARK_MAX_COLUMNS / MARK_STAGE_ROWS_PER_60_COLUMNS);
@@ -166,9 +174,10 @@ export class WelcomeHeader implements Component {
     const appearance = theme.appearance;
     const colors = themeMarkColors(theme);
     const mode = theme.getColorMode();
-    const key = JSON.stringify([columns, rows, progress, this.#visitor, appearance, colors, mode]);
+    const background = this.#background ?? fallbackBackground[appearance];
+    const key = JSON.stringify([columns, rows, progress, this.#visitor, appearance, colors, mode, background]);
     if (this.#cached?.key === key) return this.#cached.lines;
-    const cells = renderMark(columns, rows, progress, markLighting(background[appearance], appearance === "light", colors),
+    const cells = renderMark(columns, rows, progress, markLighting(background, appearance === "light", colors),
       this.#visitor);
     const lines: string[] = [];
     for (let row = 0; row < rows; row++) {
@@ -186,10 +195,32 @@ export class WelcomeHeader implements Component {
   }
 }
 
+/** How long the header waits for the terminal's colors before a late reply is applied as it arrives. */
+const COLOR_QUERY_MS = 200;
+
 /**
  * The header as Pi mounts it: the tree inside a `MouseRegion`, which receives clicks where Pi routes the mouse to
- * components (its fullscreen mode); elsewhere the scene plays once.
+ * components (its fullscreen mode); elsewhere the scene plays once. It asks the terminal for its background (OSC 11),
+ * at once and whenever the terminal turns light or dark, and lights the tree against it; a terminal that never
+ * answers leaves the tree on its appearance's usual background.
  */
-export function mountWelcomeHeader(header: WelcomeHeader): MouseRegion & { dispose(): void } {
-  return Object.assign(new MouseRegion(header, (event) => header.click(event)), { dispose: () => header.dispose() });
+export function mountWelcomeHeader(header: WelcomeHeader,
+  tui: Pick<TUI, "queryTerminalColors" | "onTerminalColorSchemeChange" | "requestRender">): MouseRegion & {
+  dispose(): void;
+} {
+  let disposed = false;
+  const apply = (colors: TerminalColors): void => {
+    if (disposed || colors.background === undefined) return;
+    const { r, g, b } = colors.background;
+    header.setBackground([r, g, b]);
+    tui.requestRender();
+  };
+  const ask = (): void => { void tui.queryTerminalColors({ timeoutMs: COLOR_QUERY_MS, onLateReply: apply }).then(apply); };
+  ask();
+  const stopListening = tui.onTerminalColorSchemeChange(ask);
+  return Object.assign(new MouseRegion(header, (event) => header.click(event)), { dispose: () => {
+    disposed = true;
+    stopListening();
+    header.dispose();
+  } });
 }
