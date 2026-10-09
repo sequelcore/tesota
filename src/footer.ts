@@ -75,9 +75,9 @@ function receiptParts(receipt: Receipt): EvidencePart[] {
     // Strength needs a change the proof caught, as the receipt in the conversation says.
     ...receipt.contracts.length > 0 && receipt.contracts.every(({ mutation }) => mutation.survived.length === 0 && mutation.rejected > 0)
       ? [part("contracts strong", "", "", "success")] : [],
-    ...lines > 0 ? [part(`${plural(lines, "line", "lines")} ${unproved}`, `${plural(lines, "line", "lines")} unproved`, `⚠${lines}`,
+    ...lines > 0 ? [part(`${plural(lines, "line", "lines")} ${unproved}`, `${plural(lines, "line", "lines")} unproved`, `○${lines}`,
       "warning")] : [],
-    ...files > 0 ? [part(`${plural(files, "file", "files")} ${unproved}`, `${plural(files, "file", "files")} unproved`, `⚠${files}f`,
+    ...files > 0 ? [part(`${plural(files, "file", "files")} ${unproved}`, `${plural(files, "file", "files")} unproved`, `○${files}f`,
       "warning")] : [],
     ...misses > 0 ? [part(`${plural(misses, "test misses", "tests miss")} the change`, `${plural(misses, "test misses", "tests miss")}`,
       `miss ${misses}`, "warning")] : [],

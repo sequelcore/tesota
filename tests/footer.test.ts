@@ -152,9 +152,9 @@ it("narrows at 80 and 30 columns in the order the rule sets", () => {
   const { rows } = footer(progress);
   expect(rows(80)[1]).toMatch(/^ ✓ receipt · 1 proved · tests ✓ · 3 lines unproved +ctx 5%$/u);
   expect(rows(80)[2]).not.toContain("gpt-5.5");
-  expect(rows(40)[1]).toMatch(/^ ✓ · ✓1 · tests ✓ · ⚠3 +ctx 5%$/u);
+  expect(rows(40)[1]).toMatch(/^ ✓ · ✓1 · tests ✓ · ○3 +ctx 5%$/u);
   // Too narrow for even the glyphs beside it, the context % goes, and the evidence is cut.
-  expect(rows(25)[1]).toBe(" ✓ · ✓1 · tests ✓ · ⚠3");
+  expect(rows(25)[1]).toBe(" ✓ · ✓1 · tests ✓ · ○3");
 });
 
 it("keeps other extensions' statuses on a third row, and colors a full context window", () => {
