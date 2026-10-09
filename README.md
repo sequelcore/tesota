@@ -94,6 +94,14 @@ after the receipt, which nothing in it covers.
 
 Run `bun unlink` in the checkout to remove the command.
 
+### Themes
+
+A session opens under Tesota's palo fierro, drawn in the colors of Pi's
+active theme. Tesota also brings its own light and dark themes,
+`tesota-light` and `tesota-dark`; Pi keeps the theme you chose until you
+pick one of them. Open `/settings`, select **Theme**, and choose one, or
+choose both as a light/dark pair so Pi follows your terminal's appearance.
+
 ## Credits
 
 Tesota proves contracts with [LemmaScript](https://github.com/midspiral/LemmaScript)
