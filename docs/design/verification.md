@@ -457,6 +457,16 @@ Luna through Pi on a ChatGPT sign-in. `bun run live:eval`
   runs per arm, 21 of 21 resolved both with and without Tesota. The cases
   were too easy to separate the arms
   ([#351](https://github.com/sequelcore/tesota/pull/351)).
+- **The note after a proof that verified nothing.** On the placement case, a
+  contract above an arrow function with a block body, 5 runs each with GPT-6
+  Luna and GPT-6 Sol: every run's first `prove` returned the note. Sol moved
+  the contract into the body then; Luna finished its turn with it still above
+  and moved it when the gate sent the note back. 10 of 10 proved and
+  resolved, at 133k and 107k tokens in all. The 6
+  runs scored as weakened rewrote the `ensures` into a stronger one, which
+  `contractWeakened`'s verbatim rule does not tell apart. There is no arm
+  without the note, so this shows the note is followed, not that it is needed
+  ([#393](https://github.com/sequelcore/tesota/pull/393)).
 
 ## Credits
 
