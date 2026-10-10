@@ -3,8 +3,11 @@
 Pre-release verification layer for coding agents, shipped as a Pi package and
 a `tesota` command that opens Pi with it: it makes the agent show evidence
 that its change does what was asked, proved where it can, tested where it
-cannot, and says what it could not verify. It verifies results, not actions,
-and owns no harness infrastructure.
+cannot, and says what it could not verify. It verifies results, not actions.
+It builds verification and composes the rest: it adds to the harness through
+Pi's public extension points and may carry or recommend existing packages,
+but does not rebuild what Pi or an existing package already provides, such
+as a sandbox, a session engine, model routes or search.
 Keep changes scoped to the active roadmap item.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;

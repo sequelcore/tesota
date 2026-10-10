@@ -44,6 +44,15 @@ the operator decide which model runs, where commands run and what the agent
 may do. Tesota has no verifier of its own; it runs existing ones and keeps
 their evidence apart from a model's judgment and from human acceptance.
 
+Clarified on 2026-10-09
+([#385](https://github.com/sequelcore/tesota/issues/385)): owning no harness
+infrastructure means not rebuilding it. Tesota builds verification and
+composes the rest. It adds to the harness through Pi's public extension
+points, as its launcher, theme, header and footer do, and it may carry or
+recommend existing Pi packages. It does not rebuild a sandbox, a session
+engine, model routes or search that Pi or an existing package provides,
+which is how the earlier harness and Kiln grew.
+
 ### Reversed
 
 These harness decisions no longer apply. Slice 1 removed what was built of
