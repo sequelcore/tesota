@@ -55,6 +55,23 @@ each one's issue and pull requests.
   it pass without weakening anything. It ships only if, on registered cases
   with planted bugs, the gate removes false findings without losing real
   ones.
+- **A workspace of several repositories**
+  ([#384](https://github.com/sequelcore/tesota/issues/384)). Opened in a
+  folder that holds several Git repositories but is not one, Tesota verifies
+  nothing today. It is to take a base per repository, verify each one the
+  request changed with its own commands, and settle with one receipt.
+- **A skill for writing and strengthening contracts**
+  ([#387](https://github.com/sequelcore/tesota/issues/387)), shipped in the
+  package, so an agent can write the first contract where there is none.
+  Measured before a release.
+- **Remote work,** after the alpha
+  ([#388](https://github.com/sequelcore/tesota/issues/388)): driving the agent
+  from a phone while it runs on a computer or a VPS, with the receipt where
+  the person is. Pi Durable (Earendil's experimental framework for
+  long-running, crash-surviving agents) can't run Pi extensions yet
+  ([pi#10386](https://github.com/earendil-works/pi/issues/10386)); community
+  hosts built on Pi's own runtime may. Every route must load Tesota in each
+  session it starts, and Tesota does not build its own remote host.
 
 ## Open questions
 
