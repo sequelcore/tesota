@@ -10,7 +10,7 @@ import { installedPi } from "../src/pi-install.js";
 import { runProcess } from "../src/process.js";
 import type { Receipt } from "../src/receipt.js";
 import { proveFile, proveSource } from "../src/verification/lemmascript-verifier.js";
-import { NO_CONTRACT_CASES, PROOF_CASES, type ProofCase, STRENGTHEN_CASES, type StrengthenCase, contractWeakened, withBuggyBody }
+import { NO_CONTRACT_CASES, PLACEMENT_CASES, PROOF_CASES, type ProofCase, STRENGTHEN_CASES, type StrengthenCase, contractWeakened, withBuggyBody }
   from "./cases.js";
 
 /**
@@ -23,7 +23,7 @@ import { NO_CONTRACT_CASES, PROOF_CASES, type ProofCase, STRENGTHEN_CASES, type 
  * with a second model, on the contracts the runs left and on the strengthen
  * cases' weak and reference contracts, and appends its judgments.
  *
- *   bun run live:eval --out=<file> --arm=tesota|plain --set=proofs|strengthen|no-contracts
+ *   bun run live:eval --out=<file> --arm=tesota|plain --set=proofs|strengthen|no-contracts|placement
  *     [--cases=<name>,<name>] [--runs=3] [--model=openai/gpt-6-luna]
  *   bun run live:eval --out=<file> --claimcheck [--second=openai/gpt-5.5] [--repeats=3] [--model=openai/gpt-6-luna]
  */
@@ -69,6 +69,7 @@ const sets: Readonly<Record<string, readonly LiveCase[]>> = {
   proofs: PROOF_CASES.map(fromProofCase),
   strengthen: STRENGTHEN_CASES.map(fromStrengthenCase),
   "no-contracts": NO_CONTRACT_CASES.map(fromProofCase),
+  placement: PLACEMENT_CASES.map(fromProofCase),
 };
 
 const manifest = JSON.stringify({ type: "module", scripts: { test: "node --test" } }, null, 2);
@@ -103,7 +104,8 @@ interface SessionEntry {
   readonly content?: unknown;
   readonly details?: unknown;
   readonly thinkingLevel?: string;
-  readonly message?: { readonly role: string; readonly content?: readonly { readonly type: string; readonly name?: string }[] | string;
+  readonly message?: { readonly role: string;
+    readonly content?: readonly { readonly type: string; readonly name?: string; readonly text?: string }[] | string;
     readonly usage?: Readonly<Record<string, number>> };
 }
 
@@ -118,6 +120,10 @@ function sessionFacts(sessions: string): Record<string, unknown> {
   const gate = entries.filter((entry) => entry.type === "custom_message" && entry.customType === "tesota-gate").map((entry) => String(entry.content));
   const receipts = entries.filter((entry) => entry.type === "custom_message" && entry.customType === "tesota-receipt");
   const sum = (key: string): number => assistant.reduce((total, message) => total + (message.usage?.[key] ?? 0), 0);
+  // The prove tool's result, or the gate's message, that carries the note on a proof that verified nothing.
+  const vacuous = (text: string): boolean => text.includes("Dafny verified nothing");
+  const results = entries.flatMap((entry) => entry.type === "message" && entry.message?.role === "toolResult" &&
+    typeof entry.message.content !== "string" ? [(entry.message.content ?? []).map((part) => part.text ?? "").join("\n")] : []);
   return {
     sessions: files.length, modelRequests: assistant.length, tokens: { input: sum("input"), output: sum("output"),
       cacheRead: sum("cacheRead"), total: sum("totalTokens") },
@@ -126,6 +132,7 @@ function sessionFacts(sessions: string): Record<string, unknown> {
     sentBack: { proof: gate.filter((text) => text.includes("does not prove yet")).length,
       tests: gate.filter((text) => text.includes("fails with your changes")).length,
       weak: gate.filter((text) => text.startsWith("Tesota: the contract of")).length },
+    vacuousProofs: { prove: results.filter(vacuous).length, gate: gate.filter(vacuous).length },
     receipt: receipts.at(-1)?.details as Receipt | undefined,
   };
 }
@@ -195,7 +202,7 @@ async function live(): Promise<void> {
   if (!["tesota", "plain"].includes(arm)) throw new Error("Use --arm=tesota or plain.");
   const set = option("set") ?? "";
   const chosen = sets[set];
-  if (chosen === undefined) throw new Error("Use --set=proofs, strengthen or no-contracts.");
+  if (chosen === undefined) throw new Error("Use --set=proofs, strengthen, no-contracts or placement.");
   const names = option("cases")?.split(",");
   const cases = names === undefined ? chosen : chosen.filter((testCase) => names.includes(testCase.name));
   if (names !== undefined && cases.length !== names.length) throw new Error(`Unknown case among ${names.join(", ")}.`);
