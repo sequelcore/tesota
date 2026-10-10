@@ -1,5 +1,5 @@
-import { bodyEnd, contracts } from "./proof-guarantees.js";
-import { blankOrComment, type FileChange, type Weakening } from "./verification-changes.js";
+import { contracts } from "./proof-guarantees.js";
+import { commentLines, type FileChange, type Weakening } from "./verification-changes.js";
 import { proofCovered } from "./verification/proof-cover-rule.js";
 import { ranges } from "./verification/range-rule.js";
 
@@ -10,9 +10,9 @@ export interface UncoveredLines {
 }
 
 
-/** Each contract's function with its lines, from its first annotation to the brace that closes it. */
+/** Each contract's function with its lines, from its first annotation to the line where it ends. */
 function spans(path: string, source: string): { name: string; start: number; end: number }[] {
-  return contracts(path, source).map(({ name, line, endLine }) => ({ name, start: line, end: bodyEnd(source, endLine) }));
+  return contracts(path, source).map(({ name, line, bodyEnd }) => ({ name, start: line, end: bodyEnd }));
 }
 
 function holds(source: string, start: number, end: number, annotation: string): boolean {
@@ -43,13 +43,16 @@ function narrowedContracts(path: string, source: string, baseSource: string | un
  * The changed lines of a TypeScript file whose proof passed that no proof
  * covers (`proofCovered`): those outside every function with a contract, and
  * those in one whose contract the change narrowed. A removed line counts at
- * the line that now follows it; blank and comment-only lines are left out,
- * though a `//@` contract line is not a comment.
+ * the line that now follows it; blank and comment-only lines, read from the
+ * parsed file on each side (`commentLines`), are left out, though a `//@`
+ * contract line is not a comment.
  */
 export function uncoveredLines(change: FileChange, source: string, baseSource: string | undefined,
   weakened: readonly Weakening[]): UncoveredLines {
   const count = source.split(/\r?\n/u).length;
-  const changed = [...new Set([...change.added, ...change.removed].filter(({ text }) => !blankOrComment(change.path, text))
+  const comments = commentLines({ ...change, content: source, baseContent: baseSource });
+  const changed = [...new Set([...change.added.filter((line) => line.text.trim() !== "" && !comments.added(line)),
+    ...change.removed.filter((line) => line.text.trim() !== "" && !comments.removed(line))]
     .map(({ number }) => Math.min(number, count)))].sort((a, b) => a - b);
   const current = spans(change.path, source);
   const starts = current.map(({ start }) => start);

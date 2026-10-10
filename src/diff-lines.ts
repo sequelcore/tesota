@@ -14,6 +14,11 @@ export interface DiffLine {
   readonly text: string;
 }
 
+/** A line the change removed, also with its number in the file before the change. */
+export interface RemovedLine extends DiffLine {
+  readonly base: number;
+}
+
 /** What a change did to one file, as its diff shows it. */
 export interface ChangedFile {
   readonly path: string;
@@ -21,35 +26,38 @@ export interface ChangedFile {
   /** The lines the change added, without the diff's marker. */
   readonly added: readonly DiffLine[];
   /** The lines the change removed, without the diff's marker. */
-  readonly removed: readonly DiffLine[];
+  readonly removed: readonly RemovedLine[];
 }
 
-const hunkHeader = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/u;
+const hunkHeader = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u;
 
 /**
  * Walk one diff's lines, reporting each hunk line with the line it shows in
  * the file as changed: its own number for an added or unchanged line, and for
- * a removed line the number the next line will have.
+ * a removed line the number the next line will have; and with the line it
+ * shows in the file before the change, likewise.
  */
-function walk(lines: readonly string[], visit: (line: string, next: number) => void): void {
+function walk(lines: readonly string[], visit: (line: string, next: number, before: number) => void): void {
   let next = 0;
+  let before = 0;
   let hunks = 0;
   for (const line of lines) {
     const header = hunkHeader.exec(line);
-    if (header !== null) { next = Number(header[1]); hunks += 1; continue; }
+    if (header !== null) { before = Number(header[1]); next = Number(header[2]); hunks += 1; continue; }
     // Before the first hunk come the file's headers; `\` marks a missing newline at the end of a file.
     if (hunks === 0 || line.startsWith("\\")) continue;
-    visit(line, next);
+    visit(line, next, before);
     if (!line.startsWith("-")) next += 1;
+    if (!line.startsWith("+")) before += 1;
   }
 }
 
 function readFile(path: string, status: ChangeStatus, lines: readonly string[]): ChangedFile {
   const added: DiffLine[] = [];
-  const removed: DiffLine[] = [];
-  walk(lines, (line, next) => {
+  const removed: RemovedLine[] = [];
+  walk(lines, (line, next, before) => {
     if (line.startsWith("+")) added.push({ number: next, text: line.slice(1) });
-    else if (line.startsWith("-")) removed.push({ number: next, text: line.slice(1) });
+    else if (line.startsWith("-")) removed.push({ number: next, base: before, text: line.slice(1) });
   });
   return { path, status, added, removed };
 }

@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { bodyEnd, changedContracts, contractStrength, contracts } from "../src/proof-guarantees.js";
+import { changedContracts, contractStrength, contracts } from "../src/proof-guarantees.js";
 import { renderReceipt } from "../src/receipt.js";
 import { emptyReceipt } from "./receipts.js";
 
@@ -31,19 +31,64 @@ const base = [
 const changed = base.replace("return 1;", "return 0;").replace("//@ ensures \\result >= 0\nexport function total",
   "//@ requires amount >= 0\n//@ ensures \\result === amount\nexport function total");
 
-it("reads each function's contract, not annotations inside bodies or unannotated functions", () => {
-  expect(contracts("src/rules.ts", base)).toEqual([
+it("reads each function's contract, not proof annotations inside bodies or unannotated functions", () => {
+  expect(contracts("src/rules.ts", base)).toMatchObject([
     { path: "src/rules.ts", name: "clamp", text: "//@ ensures \\result >= 0\nexport function clamp(value: number): number {",
-      line: 1, endLine: 2 },
+      line: 1, endLine: 2, bodyEnd: 5, annotations: [{ line: 1, text: "//@ ensures \\result >= 0" }], readsAbove: true,
+      parameters: ["value"] },
     { path: "src/rules.ts", name: "total", text: "//@ ensures \\result >= 0\nexport function total(amount: number): number {",
-      line: 11, endLine: 12 },
+      line: 11, endLine: 12, bodyEnd: 15 },
   ]);
 });
 
+it("keeps a contract across comment lines before its function, as LemmaScript does, and drops it after a code line", () => {
+  const commented = "//@ ensures \\result > 0\n// reviewed\n\n/**\n * Doc.\n */\n/* reviewed\n   again\n*/\nexport function f(): number {\n" +
+    "  return 1;\n}\n";
+  expect(contracts("src/rule.ts", commented)).toMatchObject([{ path: "src/rule.ts", name: "f",
+    text: "//@ ensures \\result > 0\nexport function f(): number {", line: 1, endLine: 10, bodyEnd: 12 }]);
+  expect(contracts("src/rule.ts", commented.replace("// reviewed", "const k = 1;"))).toEqual([]);
+});
+
+it("reads the function annotations before a body's first statement, where LemmaScript's specification places them", () => {
+  const source = ["//@ requires n > 0", "export function f(n: number): number {", "  // first the contract", "  //@ ensures \\result > n",
+    "  //@ assume n < 10", "  const k = n + 1;", "  //@ ensures \\result > 0", "  return k;", "}", "",
+    "export function g({ n }: { n: number }): number {", "  //@ ensures \\result === n", "  return n;", "}", ""].join("\n");
+  expect(contracts("src/rule.ts", source)).toMatchObject([
+    { name: "f", line: 1, endLine: 2, bodyEnd: 9, annotations: [{ line: 1, text: "//@ requires n > 0" }, { line: 4, text: "//@ ensures \\result > n" }],
+      text: "//@ requires n > 0\nexport function f(n: number): number {\n//@ ensures \\result > n", parameters: ["n"] },
+    { name: "g", line: 11, endLine: 11, bodyEnd: 14, parameters: undefined },
+  ]);
+});
+
+it("reads the contracts of default-exported functions and arrow functions, as LemmaScript extracts them", () => {
+  // An arrow function with a block body has its contract read only inside the body, so h's above it is not one.
+  const source = ["//@ ensures \\result > 0", "export default function f(): number {", "  return 1;", "}", "",
+    "//@ ensures \\result === n + 1", "export const g = (n: number): number => n + 1;", "",
+    "//@ ensures \\result >= 0", "const h = (n: number): number => {", "  return n < 0 ? 0 : n;", "};", "",
+    "const i = (n: number): number => {", "  //@ ensures \\result >= 0", "  return n < 0 ? 0 : n;", "};", "",
+    "//@ ensures \\result > 0", "const k = 1;", ""].join("\n");
+  expect(contracts("src/rule.ts", source).map(({ name, line, endLine, bodyEnd, readsAbove }) =>
+    ({ name, line, endLine, bodyEnd, readsAbove }))).toEqual([
+    { name: "f", line: 1, endLine: 2, bodyEnd: 4, readsAbove: true },
+    { name: "g", line: 6, endLine: 7, bodyEnd: 7, readsAbove: true },
+    { name: "i", line: 14, endLine: 14, bodyEnd: 17, readsAbove: false },
+  ]);
+  const g = contracts("src/rule.ts", source)[1];
+  expect(g === undefined ? "" : source.slice(...g.body)).toBe("n + 1");
+});
+
+it("measures the strength of a contract a comment separates from its function", async () => {
+  const source = "//@ ensures \\result > 0\n// reviewed\nexport function f(): number {\n  return 1;\n}\n";
+  const strength = await contractStrength({ model: undefined, modelRegistry: {} as never }, [],
+    [{ path: "src/rule.ts", source, baseSource: undefined }], new AbortController().signal);
+  expect(strength.contracts).toMatchObject([{ name: "f", lines: ["//@ ensures \\result > 0"] }]);
+  expect(strength.contracts[0]?.mutation.rejected).toBeGreaterThan(0);
+});
+
 it("finds where a function's body closes, past braces inside strings and comments", () => {
-  const source = "export function f(a: string): number {\n  const s = \"}\"; // }\n  if (a) {\n    return 1;\n  }\n  return 0;\n}\nconst x = 1;\n";
-  expect(bodyEnd(source, 1)).toBe(7);
-  expect(bodyEnd("export function g(): void;\n", 1)).toBe(1);
+  const source = "//@ ensures \\result >= 0\nexport function f(a: string): number {\n  const s = \"}\"; // }\n  if (a) {\n    return 1;\n  }\n" +
+    "  return 0;\n}\nconst x = 1;\n";
+  expect(contracts("src/rule.ts", source)[0]?.bodyEnd).toBe(8);
 });
 
 it("takes only the contracts the request added or changed, whatever their indentation", () => {

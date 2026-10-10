@@ -93,7 +93,7 @@ it.runIf(dafny)("tells the agent to check where its //@ lines sit when Dafny ver
     "//@ ensures \\result >= 0\nconst unit = 1;\nexport function one(): number {\n  return unit;\n}\n");
   const vacuous = await call(root, "detached.ts");
   expect(vacuous).toMatch(/^Not proved: Dafny verified nothing in detached\.ts, so none of its contracts was proved\./u);
-  expect(vacuous).toMatch(/anything between the \/\/@ block and the function drops its contracts\. Fix that and run prove again\.$/u);
+  expect(vacuous).toMatch(/A line of code between them and the function drops them, and an arrow function with a \{ \} body reads them only inside the body\. Fix that and run prove again\.$/u);
   expect(vacuous).not.toContain("Read the obligation that failed");
 }, 120_000);
 

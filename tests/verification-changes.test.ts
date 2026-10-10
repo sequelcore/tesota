@@ -1,10 +1,10 @@
 import { expect, it } from "vitest";
-import { type DiffLine, changedLines } from "../src/diff-lines.js";
+import { type RemovedLine, changedLines } from "../src/diff-lines.js";
 import { bodilessLemmas, type FileChange, weakenedEvidence } from "../src/verification-changes.js";
 import { removalCounts, testWeakens } from "../src/verification/test-weakening-rule.js";
 import { weakens } from "../src/verification/weakening-rule.js";
 
-const numbered = (...lines: string[]): DiffLine[] => lines.map((text, k) => ({ number: k + 1, text }));
+const numbered = (...lines: string[]): RemovedLine[] => lines.map((text, k) => ({ number: k + 1, base: k + 1, text }));
 
 it("weakens on a removed requires or ensures, a requires added to an existing function and an added assume, unless the line only moved", () => {
   expect(weakens("requires", true, false, true)).toBe(true);
@@ -36,9 +36,12 @@ const edit = (path: string, added: string[], removed: string[] = []): FileChange
   ({ path, status: "modified", added: numbered(...added), removed: numbered(...removed) });
 
 it("does not flag a test file that only gains tests, blank lines or comments, or loses blank or comment lines", () => {
+  // A JavaScript or TypeScript file's comment lines are read from its content, here only the lines the change shows.
+  const added = ["", "it(\"clamps below\", () => {", "  expect(clamp(-1, 0, 2)).toBe(0);", "});", "// it.only would focus it",
+    "const skipped = items.filter(Boolean);"];
+  const removed = ["", "// an old note", "  /* wrapped", "   * note */"];
   expect(weakenedEvidence([
-    edit("tests/clamp.test.ts", ["", "it(\"clamps below\", () => {", "  expect(clamp(-1, 0, 2)).toBe(0);", "});",
-      "// it.only would focus it", "const skipped = items.filter(Boolean);"], ["", "// an old note", "  /* wrapped", "   * note */"]),
+    { ...edit("tests/clamp.test.ts", added, removed), content: added.join("\n"), baseContent: removed.join("\n") },
     edit("app/test_orders.py", ["# @pytest.mark.skip later", "def test_total():", "    assert total(1) == 1",
       "@pytest.fixture", "def order():"], ["# old note"]),
     edit("internal/orders_test.go", ["func TestTotal(t *testing.T) {", "\tif total(1) != 1 {", "\t\tt.Fatal(\"total\")", "\t}", "}"]),
@@ -105,7 +108,7 @@ it("flags a removed, changed or commented-out assertion, and a deleted test file
   ]);
 });
 
-it("reads each file's added and removed lines with their numbers, and none for a file it does not show", () => {
+it("reads each file's added and removed lines with their numbers, a removed one's also before the change, and none for a file it does not show", () => {
   const diff = [
     "diff --git a/src/a b.ts b/src/a b.ts",
     "--- a/src/a b.ts",
@@ -115,7 +118,8 @@ it("reads each file's added and removed lines with their numbers, and none for a
     "--- removed, not a header",
     "+added\r",
     "\\ No newline at end of file",
-    "@@ -9,0 +10 @@",
+    "@@ -9 +10 @@",
+    "-earlier",
     "+later",
     "diff --git a/img.png b/img.png",
     "Binary files a/img.png and b/img.png differ",
@@ -124,7 +128,7 @@ it("reads each file's added and removed lines with their numbers, and none for a
   expect(changedLines(diff, [{ path: "src/a b.ts", status: "modified" }, { path: "img.png", status: "modified" },
     { path: "gone.ts", status: "deleted" }])).toEqual([
     { path: "src/a b.ts", status: "modified", added: [{ number: 2, text: "added" }, { number: 10, text: "later" }],
-      removed: [{ number: 2, text: "-- removed, not a header" }] },
+      removed: [{ number: 2, base: 2, text: "-- removed, not a header" }, { number: 10, base: 9, text: "earlier" }] },
     { path: "img.png", status: "modified", added: [], removed: [] },
     { path: "gone.ts", status: "deleted", added: [], removed: [] },
   ]);
@@ -197,4 +201,21 @@ it("flags a requires added to a function the base had, or one it cannot place, a
   expect(weakenedEvidence([{ path: "src/rule.ts", status: "added", removed: [], added, content }])).toEqual([]);
   expect(weakenedEvidence([{ path: "src/rule.ts", status: "modified", removed: [], added, content: undefined, baseContent }]))
     .toHaveLength(3);
+});
+
+it("reads a test file's comment lines from its parsed content, inside a block comment or a template alike", () => {
+  const removedFrom = (path: string, baseContent: string, base: number): FileChange => {
+    const lines = baseContent.split("\n");
+    return { path, status: "modified", added: [], removed: [{ number: base, base, text: lines[base - 1] ?? "" }],
+      content: [...lines.slice(0, base - 1), ...lines.slice(base)].join("\n"), baseContent };
+  };
+  // A plain middle line of a block comment holds no check; a `//` line inside a template is part of what the test compares.
+  const noted = "/* setup\n   plain notes\n*/\nit(\"adds\", () => expect(add(1, 1)).toBe(2));\n";
+  const templated = "it(\"keeps\", () => expect(`\n// keep\n`).toContain(\"keep\"));\n";
+  expect(weakenedEvidence([removedFrom("tests/noted.test.ts", noted, 2)])).toEqual([]);
+  expect(weakenedEvidence([removedFrom("tests/templated.test.ts", templated, 2)]))
+    .toEqual([{ path: "tests/templated.test.ts", kind: "edited_test" }]);
+  // Without the content, no line is taken for a comment.
+  expect(weakenedEvidence([{ ...removedFrom("tests/noted.test.ts", noted, 2), content: undefined, baseContent: undefined }]))
+    .toEqual([{ path: "tests/noted.test.ts", kind: "edited_test" }]);
 });
