@@ -150,6 +150,31 @@ export const NO_CONTRACT_CASES: readonly ProofCase[] = PROOF_CASES.map((testCase
   : { name: `${testCase.name} without contracts`, kind: "control", request: testCase.request, hiddenTest: testCase.hiddenTest,
     base: Object.fromEntries(Object.entries(testCase.base).map(([path, text]) => [path, withoutContracts(text)])), kept: [] });
 
+const discountSource = "//@ requires price >= 0\n//@ ensures \\result >= 0 && \\result <= price\n" +
+  "export const discounted = (price: number): number => {\n  if (price >= 100) return price - 110;\n  return price;\n};\n";
+
+/**
+ * A contract LemmaScript ignores, for the prove tool's note on a vacuous
+ * proof (#393), registered on 2026-10-10 before any run: the contract sits
+ * above an arrow function with a block body, where LemmaScript reads none,
+ * so every proof of the file verifies nothing until the contract moves into
+ * the body. With `lsc check` on 0.6.4, the base and its fix with the
+ * contract left above verify nothing, the fix with the contract before the
+ * body's first statement proves, and the bug with it there fails. A run is
+ * proved when the file proves, resolved when the hidden test passes, and
+ * weakened by `contractWeakened`; the note is what the agent reads after a
+ * vacuous proof, counted as `vacuousProofs`.
+ */
+export const PLACEMENT_CASES: readonly ProofCase[] = [
+  { name: "contract above an arrow function", kind: "code fix",
+    request: "discounted() in src/discount.ts returns a negative price for orders of 100 or more; they should get 10 off. Fix it.",
+    base: { "src/discount.ts": discountSource,
+      "src/discount.test.ts": test(`import { discounted } from "./discount.ts";\ntest("small", () => assert.equal(discounted(20), 20));`) },
+    hiddenTest: test(`import { discounted } from "../src/discount.ts";\ntest("discount", () => {\n` +
+      `  assert.equal(discounted(100), 90);\n  assert.equal(discounted(150), 140);\n  assert.equal(discounted(20), 20);\n});`),
+    path: "src/discount.ts", kept: ["//@ requires price >= 0", "//@ ensures \\result >= 0 && \\result <= price"] },
+];
+
 /**
  * How a run weakened a contract, by fixed rules: a kept contract line no
  * longer found verbatim, fewer `ensures` lines than before, an added
