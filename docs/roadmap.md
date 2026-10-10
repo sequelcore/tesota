@@ -72,6 +72,12 @@ each one's issue and pull requests.
   ([pi#10386](https://github.com/earendil-works/pi/issues/10386)); community
   hosts built on Pi's own runtime may. Every route must load Tesota in each
   session it starts, and Tesota does not build its own remote host.
+- **Rules in plain words for work that is not code,** after the alpha
+  ([decision record](decisions/2026-10-09-plain-language-rules.md)): budgets,
+  reports and spreadsheets done with a coding agent. The person states a
+  rule, approves its check through concrete cases, and Tesota shows the
+  check can fail before trusting it. A pilot on one real task comes before
+  any issue.
 
 ## Open questions
 

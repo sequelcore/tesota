@@ -53,6 +53,11 @@ recommend existing Pi packages. It does not rebuild a sandbox, a session
 engine, model routes or search that Pi or an existing package provides,
 which is how the earlier harness and Kiln grew.
 
+Widened on 2026-10-09
+([decision record](2026-10-09-plain-language-rules.md)): the change can be
+any work done with a coding agent, not only code. The person states the
+rules of their field in plain words, and Tesota checks the checks.
+
 ### Reversed
 
 These harness decisions no longer apply. Slice 1 removed what was built of
