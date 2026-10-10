@@ -158,3 +158,15 @@ it("leaves a message without details to Pi", () => {
   expect(renderers().get("tesota-receipt")?.({ ...message, customType: "tesota-receipt" }, { expanded: false, outputPad: 1 }, theme))
     .toBeUndefined();
 });
+
+it("names each repository's findings by its folder, the folders in none, and each repository's base when expanded", () => {
+  const base = "a".repeat(40);
+  const units: Receipt = { ...emptyReceipt, units: [{ ...attention, folder: "api", base },
+    { ...emptyReceipt, folder: "notes", repository: false }] };
+  const rows = shown("tesota-receipt", units, 120, true).join("\n");
+  expect(rows).toContain("api/src/format.ts");
+  expect(rows).toContain("cd api && bun test");
+  expect(rows).toContain("Checked api/src/range.ts, api/src/range.dfy");
+  expect(rows).toContain("notes — it is in no Git repository, so Tesota cannot tell what changed");
+  expect(rows).toContain(`From api ${base.slice(0, 12)} · Pi`);
+});

@@ -3,7 +3,7 @@ import { sep } from "node:path";
 import type { ContextUsage, ReadonlyFooterDataProvider, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import { type Receipt, receiptDecisions } from "./receipt.js";
+import { allEvidence, type Receipt, receiptDecisions } from "./receipt.js";
 import { type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
 /** One piece of the evidence row, in its words, its shorter words and its glyph form; an empty form is left out. */
@@ -53,7 +53,10 @@ function lineCount(uncovered: Receipt["uncovered"]): number {
 }
 
 /** The receipt in a row: what proved and passed, then what is weak, unproved or may weaken the evidence. */
-function receiptParts(receipt: Receipt): EvidencePart[] {
+function receiptParts(settled: Receipt): EvidencePart[] {
+  // In a folder of repositories, their evidence together, and the folders in none that may have changed.
+  const receipt = allEvidence(settled);
+  const plain = (settled.units ?? []).filter(({ repository }) => !repository).length;
   if (!receipt.repository) {
     return [part("! receipt", "! receipt", "!", "warning"), part("not verified, no Git repository", "no Git", "no Git", "warning")];
   }
@@ -67,7 +70,7 @@ function receiptParts(receipt: Receipt): EvidencePart[] {
   const unproved = passed && receipt.tests.length > 0 ? "not proved" : "not verified";
   const misses = receipt.exercises.filter(({ finding }) => finding === "does_not_exercise").length;
   // The same count as the receipt in the conversation: only what the checks established, never a model's opinion.
-  const clean = receiptDecisions(receipt) === 0;
+  const clean = receiptDecisions(settled) === 0;
   const listed = [
     ...tallyParts({ proved, notProved: receipt.proofs.length - proved,
       ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }),
@@ -83,6 +86,7 @@ function receiptParts(receipt: Receipt): EvidencePart[] {
       `miss ${misses}`, "warning")] : [],
     ...typeof receipt.weakened === "string" ? [part("weakening not checked", "unchecked", "unchecked", "warning")]
       : weakening > 0 ? [part(`${weakening} may weaken the evidence`, `${weakening} may weaken`, `weakens ${weakening}`, "warning")] : [],
+    ...plain > 0 ? [part(`${plural(plain, "folder", "folders")} not verified, no Git`, `${plain} no Git`, `no Git ${plain}`, "warning")] : [],
   ];
   // A change of comments alone leaves nothing to list, as the receipt says.
   const nothing = listed.length === 0 && receipt.commentsOnly === true

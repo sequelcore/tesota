@@ -88,7 +88,10 @@ nothing. It lists, sorted:
   one, a file the commit lacks counting as `null`.
 
 The Statement is not signed. Only a receipt with `version` 1 and
-`repository` true is written as a Statement.
+`repository` true is written as a Statement. A receipt with `units` is not:
+run in one of its repositories, `tesota receipt` writes that repository's
+unit as a receipt of its own, with the run's `version`, `startedAt`,
+`settledAt`, `pi` and `model`, and the unit's `folder` kept.
 
 ## The receipt
 
@@ -111,6 +114,23 @@ The Statement is not signed. Only a receipt with `version` 1 and
 | `commentsOnly` | `true`, optional | Present when every line the request added or removed is blank or comment-only, a `//@` line not counting as a comment. When nothing else is listed, the receipt says there was nothing to verify |
 | `uncovered` | UncoveredLines[] | The changed lines of each TypeScript file that proved that no contract's proof covers. Empty when `weakened` is a string |
 | `changed` | Changed[], or `"unreadable"` | Every file changed from `base` as the run left it, sorted by path |
+| `units` | Unit[], optional | Present when Pi ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `proofs` to `changed` are empty, `repository` is true and `base` is null |
+
+### Unit
+
+A unit is a repository the request changed, or a folder in no repository,
+in name order. A unit has the fields from `repository` to `changed` of the
+receipt, about that unit alone, with paths relative to it and commands run
+from it, and:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `folder` | string | The unit's folder, relative to the folder Pi ran in, with forward slashes. Empty for that folder's own files |
+
+A repository the request did not change has no unit. A folder in no
+repository has a unit, with `repository` false, nothing verified and `base`
+null, only when the request ran a tool that may change files; a repository
+Git could not read is listed the same way.
 
 ### Proof
 

@@ -164,3 +164,9 @@ it("keeps other extensions' statuses on a third row, and colors a full context w
   const full = footer(progress, {}, { tokens: 260_000, contextWindow: 272_000, percent: 95.6 }).view.render(120)[1] ?? "";
   expect(full).toContain(theme.fg("error", "ctx 96%"));
 });
+
+it("sums up a folder of repositories as one receipt, with the folders in none", () => {
+  const units: Receipt = { ...emptyReceipt, units: [{ ...emptyReceipt, folder: "api", proofs: [proved], tests: [passing] },
+    { ...emptyReceipt, folder: "notes", repository: false }] };
+  expect(words({ step: "settled", receipt: units })).toBe("! receipt · 1 proved · tests pass · 1 folder not verified, no Git");
+});

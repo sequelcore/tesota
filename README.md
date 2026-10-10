@@ -57,8 +57,10 @@ step works.
 - **Dafny 4:** needed to prove contracts; `mise install` installs the
   version in [mise.toml](mise.toml). Without Dafny, a proof reports that it
   could not run.
-- **Git:** needed to tell what changed. Outside a Git repository, Tesota
-  only reports that the changes were not verified.
+- **Git:** needed to tell what changed. Opened in a folder of Git
+  repositories, Tesota verifies each repository the request changed.
+  Outside any repository, it only reports that the changes were not
+  verified.
 - **Bun and Node:** to build from source, the Bun in `packageManager` and
   the Node in `devEngines` of [package.json](package.json).
 

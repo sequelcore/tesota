@@ -103,6 +103,17 @@ ran any tool other than `read`, `grep`, `find`, `ls` or `prove` ends with a
 receipt saying its changes were not verified. Otherwise the run settles with
 no receipt.
 
+A folder that is in no repository but holds Git repositories directly
+(`workspaceUnits` in `src/workspace.ts`, #384) is verified repository by
+repository. Each repository's base is its own `HEAD` when the request
+started, and the gate runs the steps above in each repository the request
+changed, from its own folder with its own commands; one it did not change
+runs nothing. Each round gathers what goes back across the repositories,
+named from the folder Pi runs in (`api/src/rule.ts`, `cd api && bun test`),
+and a repeated failure stops only itself. The run settles with one receipt
+whose `units` hold each repository's evidence, and the folders in no
+repository, listed as not verified once a tool may have changed files.
+
 ## Proofs
 
 `proveFile` runs LemmaScript's `lsc` in the project itself: `lsc regen`
@@ -313,7 +324,9 @@ starts without Pi on its module path. It describes the commit `HEAD` names and a
 It writes Markdown for a pull request, which ends by saying the receipt is
 check evidence and not a reviewer's acceptance. With `--json` it writes an
 unsigned in-toto Statement instead. It refuses a receipt from a run outside
-Git.
+Git. In a repository of a folder of repositories it writes that repository's
+part of the folder's last receipt, and in the folder itself it asks to be
+run in a repository.
 
 ## What the operator sees
 

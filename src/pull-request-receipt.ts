@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { type Evidence, contentHash } from "./evidence.js";
 import { git, headCommit } from "./git.js";
-import { isReceipt, type Receipt, renderReceipt } from "./receipt.js";
+import { isReceipt, type Receipt, renderReceipt, unitReceipt } from "./receipt.js";
 
 /**
  * The receipt for a pull request (`tesota receipt`): the last receipt a Pi
@@ -33,6 +33,17 @@ export async function lastReceipt(sessions: PiSessions, cwd: string): Promise<{ 
     if (entry !== undefined) return { receipt: entry.details, sessionId: session.getSessionId() };
   }
   return undefined;
+}
+
+/**
+ * In a repository of a folder of repositories (#384), the part of the last
+ * receipt a session in that folder settled with that covers this repository;
+ * nothing when it covers none.
+ */
+async function inWorkspace(sessions: PiSessions, cwd: string): Promise<{ receipt: unknown; sessionId: string } | undefined> {
+  const found = await lastReceipt(sessions, dirname(cwd));
+  const receipt = found !== undefined && isReceipt(found.receipt) ? unitReceipt(found.receipt, basename(cwd)) : undefined;
+  return found === undefined || receipt === undefined ? undefined : { receipt, sessionId: found.sessionId };
 }
 
 /** What the receipt is bound to beyond the session: the commit it describes, its repository, and who is accountable. */
@@ -207,9 +218,13 @@ export async function receiptCommand(args: readonly string[], cwd: string, sessi
       return 2;
     }
   }
-  const found = await lastReceipt(sessions, cwd);
+  const found = await lastReceipt(sessions, cwd) ?? await inWorkspace(sessions, cwd);
   if (found === undefined) {
     write.error("No Pi session in this folder settled with a Tesota receipt. Run tesota receipt where the session ran.\n");
+    return 1;
+  }
+  if (isReceipt(found.receipt) && found.receipt.units !== undefined) {
+    write.error("The last receipt here covers several repositories. Run tesota receipt in the repository of the pull request.\n");
     return 1;
   }
   if (!isReceipt(found.receipt) || !found.receipt.repository) {
