@@ -6,6 +6,7 @@ import { dirname, join, posix } from "node:path";
 import { promisify } from "node:util";
 import { getShellConfig } from "@earendil-works/pi-coding-agent";
 import { type Evidence, contentHash } from "./evidence.js";
+import { gitEnvironment } from "./git.js";
 import { type ProjectChecks, findProjects, owningProjects } from "./projects.js";
 import { runProcess } from "./process.js";
 import { introducedTests, readTestResults, type TestResults } from "./test-report.js";
@@ -114,7 +115,7 @@ export interface TestExercise {
 }
 
 async function git(cwd: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", [...args], { cwd, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
+  const { stdout } = await execFileAsync("git", [...args], { cwd, env: gitEnvironment(cwd), windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
   return stdout;
 }
 

@@ -164,3 +164,16 @@ it("keeps other extensions' statuses on a third row, and colors a full context w
   const full = footer(progress, {}, { tokens: 260_000, contextWindow: 272_000, percent: 95.6 }).view.render(120)[1] ?? "";
   expect(full).toContain(theme.fg("error", "ctx 96%"));
 });
+
+it("sums up a folder of repositories as one receipt, with the folders in none", () => {
+  const units: Receipt = { ...emptyReceipt, units: [{ ...emptyReceipt, folder: "api", proofs: [proved], tests: [passing] },
+    { ...emptyReceipt, folder: "notes", repository: false }] };
+  expect(words({ step: "settled", receipt: units })).toBe("! receipt · 1 proved · tests pass · 1 folder not verified, no Git");
+});
+
+it("sums up a folder Tesota snapshotted as a receipt like a repository's, and one it could not as not verified", () => {
+  const snapshotted: Receipt = { ...emptyReceipt, repository: false, snapshot: true, proofs: [proved], tests: [passing] };
+  expect(words({ step: "settled", receipt: snapshotted })).toBe("✓ receipt · 1 proved · tests pass");
+  expect(words({ step: "settled", receipt: { ...emptyReceipt, repository: false, reason: "it holds too much" } }))
+    .toBe("! receipt · not verified, no Git repository");
+});

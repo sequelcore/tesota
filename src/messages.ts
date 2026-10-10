@@ -1,8 +1,8 @@
 import { type ExtensionAPI, keyText, type MessageRenderOptions, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { SentBack } from "./gate.js";
-import { commandFinding, contractFinding, type Finding, isNote, isReceipt, proofFinding, type Receipt,
-  receiptFindings } from "./receipt.js";
+import { allEvidence, commandFinding, contractFinding, type Finding, isNote, isReceipt, plainName, proofFinding, type Receipt,
+  receiptFindings, type UnitEvidence, verified } from "./receipt.js";
 import { decisions } from "./verification/verdict-rule.js";
 
 /** `line` broken at spaces into rows of `width` columns, every row after the first indented by `indent` columns. */
@@ -147,7 +147,13 @@ function receiptCard(theme: Theme, receipt: Receipt, options: MessageRenderOptio
     : theme.fg(decide.some(({ failed }) => failed === true) ? "error" : "warning", bold(`! ${plural(count, "thing needs", "things need")} you`));
   const noted = notes.length === 0 ? "" : `${theme.fg("dim", " · ")}${theme.fg("accent", `◇ ${plural(notes.length, "model note", "model notes")}`)}`;
   const label = labelWidth(findings);
-  const unproved = receipt.tests.length > 0 && receipt.tests.every(({ verdict: v }) => v === "proved") ? "NOT PROVED" : "NOT VERIFIED";
+  const { tests } = allEvidence(receipt);
+  const unproved = tests.length > 0 && tests.every(({ verdict: v }) => v === "proved") ? "NOT PROVED" : "NOT VERIFIED";
+  // Each unit's base: a commit, or Tesota's snapshot of a folder in no repository, which no one else can fetch.
+  const based = ({ snapshot, base }: UnitEvidence, first: string): string =>
+    `${snapshot === true ? "Tesota's snapshot " : ""}${base?.slice(0, 12) ?? first}`;
+  const from = receipt.units === undefined ? based(receipt, "the first commit")
+    : receipt.units.filter(verified).map((unit) => `${plainName(unit.folder)} ${based(unit, "its first commit")}`).join(", ");
   return card(theme, options, (width) => {
     const title = spread(verdict + noted, theme.fg("customMessageLabel", bold("Tesota receipt")), width);
     if (!options.expanded && decide.length === 0 && gaps.length === 0 && opinions.every(isMatch)) {
@@ -160,7 +166,7 @@ function receiptCard(theme: Theme, receipt: Receipt, options: MessageRenderOptio
       ...section(theme, unproved, gaps, label, width, options.expanded),
       ...options.expanded ? section(theme, "VERIFIED", holds, label, width, true)
         : holds.length + matches === 0 ? [] : ["", holdsRow(theme, holds, matches)],
-      "", ...options.expanded ? wrapUnder(theme.fg("dim", `From ${receipt.base?.slice(0, 12) ?? "the first commit"} · Pi ${receipt.pi}` +
+      "", ...options.expanded ? wrapUnder(theme.fg("dim", `From ${from} · Pi ${receipt.pi}` +
         `${receipt.model === undefined ? "" : ` · ${receipt.model}`} · check evidence, not a reviewer's acceptance`), width, 0)
         : [expandHint(theme, "for details")]];
   });

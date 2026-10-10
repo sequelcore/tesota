@@ -1,12 +1,12 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Evidence } from "../src/evidence.js";
 import { evidenceParts, evidenceText } from "../src/footer.js";
-import { changedFiles, GateProgress, type GateStatus, registerGate } from "../src/gate.js";
+import { changedFiles, GateProgress, type GateStatus, registerGate, type SentBack } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
 import type { Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking } from "../src/verification/gate-rule.js";
@@ -51,10 +51,15 @@ function commit(root: string, message: string): void {
   git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message);
 }
 
-/** A repository with these files committed. */
-function repository(files: Record<string, string>): string {
+/** A new empty folder, removed after the test. */
+function folder(): string {
   const root = mkdtempSync(join(tmpdir(), "tesota-gate-"));
   roots.push(root);
+  return root;
+}
+
+/** A repository with these files committed, in `root` or a new folder. */
+function repository(files: Record<string, string>, root = folder()): string {
   write(root, files);
   git(root, "init", "-q");
   commit(root, "base");
@@ -62,21 +67,21 @@ function repository(files: Record<string, string>): string {
 }
 
 /** A repository with one committed contract file, `src/rule.ts`, and a committed plain file. */
-function project(): string {
-  return repository({ "src/rule.ts": contract, "notes.md": "# Notes\n" });
+function project(root?: string): string {
+  return repository({ "src/rule.ts": contract, "notes.md": "# Notes\n" }, root);
 }
 
 /**
  * A package whose `test` script runs Node's test runner, with a dependency
  * that only the checkout's ignored `node_modules` holds, as installed ones are.
  */
-function testedProject(test = "node --test"): string {
+function testedProject(test = "node --test", at?: string): string {
   const root = repository({
     "package.json": JSON.stringify({ type: "module", scripts: { test } }), "bun.lock": "",
     ".gitignore": "node_modules\nreport.xml\n", "src/price.mjs": "export const total = (n) => n;\n",
     "test/price.test.mjs": "import assert from \"node:assert\";\nimport { test } from \"node:test\";\nimport { one } from \"dep\";\n" +
       "import { total } from \"../src/price.mjs\";\ntest(\"one\", () => { assert.equal(total(1), one); });\n",
-  });
+  }, at);
   write(root, { "node_modules/dep/package.json": JSON.stringify({ name: "dep", type: "module", main: "index.js" }),
     "node_modules/dep/index.js": "export const one = 1;\n" });
   return root;
@@ -360,21 +365,56 @@ it("tells the agent to finish its turn instead of running prove when prove is no
   expect(entry(await run.settle()).content).toContain("Fix that and finish your turn, and Tesota will prove the file again.");
 });
 
-it("tells the operator outside Git that changes could not be verified, once a tool may have changed files", async () => {
-  const outside = mkdtempSync(join(tmpdir(), "tesota-gate-"));
-  roots.push(outside);
-  const run = gate(outside);
+/** A tested package in a folder that is in no Git repository. */
+function plainProject(): string {
+  const root = folder();
+  write(root, { "package.json": JSON.stringify({ type: "module", scripts: { test: "node --test" } }), "bun.lock": "",
+    "src/price.mjs": "export const total = (n) => n;\n", "test/price.test.mjs": priceTest(1, 1) + priceTest(2, 2, "two").split("\n").at(-2) });
+  return root;
+}
+
+it("verifies a folder in no repository against Tesota's snapshot of it, whatever changed its files, and leaves it as it was", async () => {
+  const root = plainProject();
+  const run = gate(root);
+  await run.input();
+  // No tool event: a change a shell command made is found by content all the same.
+  write(root, { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n", "test/negative.test.mjs": priceTest(-1, 0) });
+  const settled = await run.settle();
+  expect(settled?.continue).toBeUndefined();
+  expect(entry(settled).content).toBe([
+    "Tesota receipt",
+    "  passed        bun run test",
+    "  exercises     test/negative.test.mjs: fails on the base, passes with the change",
+    "  not proved    src/price.mjs: no proof covers it; the project's commands pass with it",
+  ].join("\n"));
+  const receipt = entry(settled).details as Receipt;
+  expect([receipt.repository, receipt.snapshot]).toEqual([false, true]);
+  expect(receipt.base).toMatch(/^[0-9a-f]{40}$/u);
+  expect(existsSync(join(root, ".git"))).toBe(false);
+  // The next request's snapshot holds these changes, so a run that changes nothing settles with no receipt.
+  await run.input();
+  expect(await run.settle()).toBeUndefined();
+}, 60_000);
+
+it("flags a test weakened in a folder in no repository", async () => {
+  const root = plainProject();
+  const run = gate(root);
+  await run.input();
+  write(root, { "test/price.test.mjs": priceTest(1, 1) });
+  expect(entry(await run.settle()).content).toContain("  may weaken    test/price.test.mjs: edits a test file");
+}, 60_000);
+
+it("says why a folder Tesota does not snapshot was not verified, once a tool may have changed files", async () => {
+  const home = homedir();
+  const run = gate(home);
   await run.input();
   run.tool("read");
   expect(await run.settle()).toBeUndefined();
   run.tool("edit");
   const settled = entry(await run.settle());
-  expect(settled.customType).toBe("tesota-receipt");
-  expect(settled.content).toBe("Tesota receipt\n  not verified  this request's changes: the project has no Git " +
-    "repository, so Tesota cannot tell which files changed");
+  expect(settled.content).toBe("Tesota receipt\n  not verified  this request's changes: Tesota does not snapshot a home folder " +
+    "or a drive's root");
   expect((settled.details as Receipt).repository).toBe(false);
-  await run.input();
-  expect(await run.settle()).toBeUndefined();
 });
 
 it("proves a contract file whose .dfy alone changed, and leaves runs that did not complete alone", async () => {
@@ -647,3 +687,75 @@ it("runs only the commands of the projects that own the changed files, there and
   expect(entry(await run.settle()).content).toBe(["Tesota receipt", "  passed        cd a && bun run test",
     "  vacuous test  a/test/y.test.mjs: it passes without the change"].join("\n"));
 }, 60_000);
+
+/** A folder that is no repository, holding `api`, a tested package, and `rules`, a contract, each its own repository, and plain files. */
+function workspace(): string {
+  const root = folder();
+  testedProject("node --test", join(root, "api"));
+  project(join(root, "rules"));
+  write(root, { "AGENTS.md": "# Rules\n", "notes/todo.md": "- one\n", ".hidden/x.md": "x\n", "node_modules/dep/x.js": "x\n" });
+  return root;
+}
+
+it("verifies each repository the request changed in a folder of repositories, from its own base with its own commands", async () => {
+  const root = workspace();
+  const rulesBase = await headCommit(join(root, "rules"));
+  const run = gate(root);
+  await run.input();
+  write(join(root, "api"), { "src/price.mjs": "export const total = (n) => Math.max(n, 0);\n" });
+  writeFileSync(join(root, "rules", "src", "rule.ts"), `${contract}// changed\n`);
+  commit(join(root, "rules"), "the agent's commit");
+  write(root, { "notes/todo.md": "- one\n- two\n" });
+  run.tool("edit");
+  const settled = await run.settle();
+  expect(settled?.continue).toBeUndefined();
+  // The folders in no repository are measured against Tesota's snapshot: the one changed is listed, the workspace's own files are not.
+  expect(entry(settled).content).toBe([
+    "Tesota receipt",
+    "  passed        cd api && bun run test",
+    "  not proved    api/src/price.mjs: no proof covers it; the project's commands pass with it",
+    "  not verified  notes/todo.md: no verifier covers it",
+    "  proved        rules/src/rule.ts",
+    "                content sha256 hash of src/rule.ts",
+  ].join("\n"));
+  const receipt = entry(settled).details as Receipt;
+  expect(receipt.units?.map(({ folder: at, repository, snapshot }) => [at, repository, snapshot ?? false]))
+    .toEqual([["api", true, false], ["notes", false, true], ["rules", true, false]]);
+  expect(receipt.units?.[2]?.base).toBe(rulesBase);
+  // Each repository's evidence stays in its own terms, as a pull request in it reads them.
+  expect(receipt.units?.[2]?.proofs.map(({ path }) => path)).toEqual(["src/rule.ts"]);
+  expect(receipt.units?.[0]?.tests.map(({ command }) => command)).toEqual(["bun run test"]);
+  expect(existsSync(join(root, "notes", ".git"))).toBe(false);
+}, 60_000);
+
+it("sends a repository's failure back by its path in the folder, and runs nothing in a repository the request left alone", async () => {
+  const root = folder();
+  project(join(root, "a"));
+  testedProject("node -e process.exit(1)", join(root, "b"));
+  const run = gate(root);
+  await run.input();
+  writeFileSync(join(root, "a", "src", "rule.ts"), `${contract}// changed\n`);
+  scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
+  const back = entry(await run.settle());
+  expect(back.content).toContain("Tesota: a/src/rule.ts does not prove yet.");
+  expect((back.details as SentBack).round).toBe("proofs");
+  scripted.delete("src/rule.ts");
+  const receipt = entry(await run.settle()).details as Receipt;
+  expect(receipt.units?.map(({ folder: at }) => at)).toEqual(["a"]);
+  expect(receipt.base).toBeNull();
+});
+
+it("keeps one repository's repeated failure from stopping another's from going back", async () => {
+  const root = folder();
+  project(join(root, "a"));
+  project(join(root, "b"));
+  const run = gate(root);
+  await run.input();
+  writeFileSync(join(root, "a", "src", "rule.ts"), `${contract}// changed\n`);
+  scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
+  expect(entry(await run.settle()).content).toContain("Tesota: a/src/rule.ts does not prove yet.");
+  writeFileSync(join(root, "b", "src", "rule.ts"), `${contract}// changed\n`);
+  const back = entry(await run.settle());
+  expect(back.content).not.toContain("a/src/rule.ts");
+  expect(back.content).toContain("Tesota: b/src/rule.ts does not prove yet.");
+});

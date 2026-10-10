@@ -35,7 +35,7 @@ const languages: readonly { readonly tool: string; readonly markers: readonly st
 export const PROJECT_DEPTH = 3;
 
 /** Folders that hold dependencies or build output, never a project of the repository's own; dot folders are skipped too. */
-const skipped: ReadonlySet<string> = new Set(["node_modules", "vendor", "dist", "build", "out", "target", "bin", "obj",
+export const skipped: ReadonlySet<string> = new Set(["node_modules", "vendor", "dist", "build", "out", "target", "bin", "obj",
   "venv", "__pycache__"]);
 
 /** The kinds a folder's names show, and those among them it only states a version of. */

@@ -21,11 +21,16 @@ function git(root: string, ...args: string[]): string {
 
 const rule = "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n";
 
-/** A repository with `src/rule.ts` committed, an `origin` on GitHub and an operator's email. */
-function repository(): string {
+/** A new empty folder, removed after the test. */
+function folder(): string {
   const root = mkdtempSync(join(tmpdir(), "tesota-receipt-"));
   roots.push(root);
-  mkdirSync(join(root, "src"));
+  return root;
+}
+
+/** A repository with `src/rule.ts` committed, an `origin` on GitHub and an operator's email, in `root` or a new folder. */
+function repository(root = folder()): string {
+  mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src", "rule.ts"), rule);
   git(root, "init", "-q");
   git(root, "config", "user.email", "operator@example.com");
@@ -157,4 +162,21 @@ it("reads a repository's HTTPS URL from its origin remote, however it is written
   expect(httpsRepository("ssh://git@gitlab.example.com:2222/group/sub/project.git")).toBe("https://gitlab.example.com/group/sub/project");
   expect(httpsRepository("C:/repos/project")).toBeUndefined();
   expect(httpsRepository("/srv/git/project.git")).toBeUndefined();
+});
+
+it("writes, in a repository of a folder of repositories, the part of that folder's receipt that covers it", async () => {
+  const workspace = folder();
+  const root = repository(join(workspace, "api"));
+  const base = git(root, "rev-parse", "HEAD");
+  session(workspace, { ...emptyReceipt, repository: true, base: null, units: [{ ...provedReceipt(base), folder: "api" },
+    { ...emptyReceipt, folder: "notes", repository: false }] });
+  const output: string[] = [];
+  const write = { out: (text: string) => { output.push(text); }, error: (text: string) => { output.push(text); } };
+  expect(await receiptCommand([], root, SessionManager, write)).toBe(0);
+  const markdown = output.pop() ?? "";
+  expect(markdown).toContain(`changes from \`${base.slice(0, 12)}\``);
+  expect(markdown).toContain("  proved        src/rule.ts");
+  expect(markdown).not.toContain("notes");
+  expect(await receiptCommand([], workspace, SessionManager, write)).toBe(1);
+  expect(output.pop()).toContain("The last receipt here covers several repositories.");
 });

@@ -1,4 +1,5 @@
 import { type Evidence, proofSummary } from "./evidence.js";
+import { inFolder } from "./projects.js";
 import type { UncoveredLines } from "./proof-coverage.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
@@ -20,6 +21,16 @@ export interface Receipt {
   readonly version: 1;
   /** False when the project has no Git repository, so nothing could tell which files changed or verify them. */
   readonly repository: boolean;
+  /**
+   * Present when the project is in no Git repository and Tesota measured the
+   * request against its own snapshot of it (#384): `base` is that snapshot,
+   * which no one else can fetch.
+   */
+  readonly snapshot?: true;
+  /** The files Tesota's snapshot left out for their size, so nothing verified them. */
+  readonly tooLarge?: readonly string[];
+  /** Why nothing was verified, when the project has neither a repository nor a snapshot. */
+  readonly reason?: string;
   /** The commit `HEAD` named when the operator's request started; null before the first commit and outside Git. */
   readonly base: string | null;
   /** When the operator's request started and when its run settled, in ISO 8601. */
@@ -57,6 +68,103 @@ export interface Receipt {
    * deleted; `unreadable` when Git could not tell.
    */
   readonly changed: readonly { readonly path: string; readonly blob: string | null }[] | "unreadable";
+  /**
+   * In a folder of Git repositories that is in none (#384), what each unit
+   * holds, in name order: each repository the request changed, measured from
+   * its own base, with its paths and commands relative to it; and, once a
+   * tool may have changed files, each folder in no repository, with nothing
+   * verified. The fields above then hold nothing, and `base` is null.
+   */
+  readonly units?: readonly ReceiptUnit[];
+}
+
+/** What a receipt records for one repository or folder; the receipt itself is one, for the folder Pi runs in. */
+export type UnitEvidence = Pick<Receipt, "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "proofs" | "contracts" |
+  "claimcheck" | "tests" | "exercises" | "weakened" | "unverified" | "commentsOnly" | "uncovered" | "changed">;
+
+/** Whether anything verified a unit: it is a Git repository, or Tesota snapshotted it. */
+export function verified(unit: Pick<UnitEvidence, "repository" | "snapshot">): boolean {
+  return unit.repository || unit.snapshot === true;
+}
+
+/** A unit's evidence and its folder, relative to the folder Pi runs in; empty for that folder's own files. */
+export type ReceiptUnit = UnitEvidence & { readonly folder: string };
+
+/** The evidence of a unit that verified nothing. */
+export const noEvidence: Omit<UnitEvidence, "repository" | "snapshot" | "tooLarge" | "reason" | "base" | "claimcheck" |
+  "commentsOnly"> = { proofs: [], contracts: [],
+  tests: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [] };
+
+/** A unit's path as seen from the folder Pi runs in. */
+export function inUnit(folder: string, path: string): string {
+  return folder === "" ? path : `${folder}/${path}`;
+}
+
+/**
+ * A unit's evidence as the operator and the agent read it from the folder Pi
+ * runs in: its paths below its folder and its commands run from it.
+ */
+export function fromFolder(unit: ReceiptUnit): UnitEvidence {
+  const { folder } = unit;
+  if (folder === "") return unit;
+  const at = (path: string): string => inUnit(folder, path);
+  const checked = (evidence: Evidence): Evidence => ({ ...evidence, files: evidence.files.map(at) });
+  return { ...unit,
+    proofs: unit.proofs.map((proof) => ({ ...proof, path: at(proof.path), evidence: checked(proof.evidence) })),
+    contracts: unit.contracts.map((contract) => ({ ...contract, path: at(contract.path) })),
+    tests: unit.tests.map((run) => ({ ...run, command: inFolder(folder, run.command), evidence: checked(run.evidence) })),
+    exercises: unit.exercises.map((exercise) => ({ ...exercise, path: at(exercise.path) })),
+    weakened: typeof unit.weakened === "string" ? unit.weakened : unit.weakened.map((change) => ({ ...change, path: at(change.path) })),
+    unverified: unit.unverified.map(at),
+    uncovered: unit.uncovered.map((lines) => ({ ...lines, path: at(lines.path) })),
+    changed: typeof unit.changed === "string" ? unit.changed : unit.changed.map((file) => ({ ...file, path: at(file.path) })),
+    ...unit.tooLarge === undefined ? {} : { tooLarge: unit.tooLarge.map(at) } };
+}
+
+/** The receipt's units: each unit of a folder of repositories, or the receipt as the one unit of the folder Pi runs in. */
+export function receiptUnits(receipt: Receipt): readonly ReceiptUnit[] {
+  return receipt.units ?? [{ ...receipt, folder: "" }];
+}
+
+/**
+ * The repositories' evidence together, as from the folder Pi runs in, for
+ * counts: a weakening that could not be checked in any repository marks the
+ * whole, and only changes that are all comments are comments only.
+ */
+export function allEvidence(receipt: Receipt): UnitEvidence {
+  if (receipt.units === undefined) return receipt;
+  const units = receipt.units.filter(verified).map(fromFolder);
+  const unread = units.find(({ weakened }) => typeof weakened === "string")?.weakened;
+  const changed = units.some((unit) => typeof unit.changed === "string") ? "unreadable" as const
+    : units.flatMap((unit) => typeof unit.changed === "string" ? [] : unit.changed);
+  return { repository: units.length > 0, base: null,
+    proofs: units.flatMap(({ proofs }) => proofs), contracts: units.flatMap(({ contracts }) => contracts),
+    tests: units.flatMap(({ tests }) => tests), exercises: units.flatMap(({ exercises }) => exercises),
+    weakened: typeof unread === "string" ? unread : units.flatMap(({ weakened }) => typeof weakened === "string" ? [] : weakened),
+    unverified: units.flatMap(({ unverified }) => unverified), uncovered: units.flatMap(({ uncovered }) => uncovered), changed,
+    tooLarge: units.flatMap(({ tooLarge }) => tooLarge ?? []),
+    ...units.length > 0 && units.every(({ commentsOnly }) => commentsOnly === true) ? { commentsOnly: true as const } : {} };
+}
+
+/**
+ * The repository at `folder` of a folder of repositories as a receipt of its
+ * own, for a pull request in it, with `folder` kept; nothing when the
+ * request did not change it.
+ */
+export function unitReceipt(receipt: Receipt, folder: string): Receipt | undefined {
+  const unit = receipt.units?.find((candidate) => candidate.folder === folder && candidate.repository);
+  const { version, startedAt, settledAt, pi, model } = receipt;
+  return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, pi, ...model === undefined ? {} : { model } };
+}
+
+/** How a folder in no repository is named: the folder Pi runs in holds only its own files there. */
+export function plainName(folder: string): string {
+  return folder === "" ? "the workspace's own files" : folder;
+}
+
+/** Why a folder in no repository was not verified: as Tesota recorded it, or its lack of a repository. */
+function plainReason({ folder, reason }: ReceiptUnit): string {
+  return reason ?? `${folder === "" ? "they are" : "it is"} in no Git repository, so Tesota cannot tell what changed`;
 }
 
 function why(evidence: Evidence): string {
@@ -242,9 +350,16 @@ const weakeningWords: Readonly<Record<Weakening["kind"], string>> = {
  * counted (`decisions`).
  */
 export function receiptFindings(receipt: Receipt): Finding[] {
-  if (!receipt.repository) {
+  return receipt.units === undefined ? unitFindings(receipt) : receipt.units.flatMap((unit) => verified(unit)
+    ? unitFindings(fromFolder(unit)) : [{ standing: "decide" as const, check: "coverage" as const, label: "Not verified",
+      subject: plainName(unit.folder), detail: plainReason(unit), more: [] }]);
+}
+
+/** One unit's findings, from the folder Pi runs in; each unit's tests decide how its unproved files are worded. */
+function unitFindings(receipt: UnitEvidence): Finding[] {
+  if (!verified(receipt)) {
     return [{ standing: "decide", check: "coverage", label: "Not verified", subject: "this request's changes",
-      detail: "the project has no Git repository, so Tesota cannot tell which files changed", more: [] }];
+      detail: receipt.reason ?? "the project has no Git repository, so Tesota cannot tell which files changed", more: [] }];
   }
   const tested = receipt.tests.length > 0 && receipt.tests.every(({ verdict }) => verdict === "proved");
   const unproved = tested ? "Not proved" : "Not verified";
@@ -273,6 +388,8 @@ export function receiptFindings(receipt: Receipt): Finding[] {
       detail: tested ? "outside any contract; the tests pass with them" : "outside any contract, and nothing checked them", more: [] })),
     ...receipt.unverified.map((path): Finding => ({ standing: "gap", check: "coverage", label: unproved, subject: path,
       detail: tested ? "no contract; the tests pass with it" : "nothing checked it", more: [] })),
+    ...(receipt.tooLarge ?? []).map((path): Finding => ({ standing: "gap", check: "coverage", label: "Not verified", subject: path,
+      detail: "too large for Tesota's snapshot, which left it out", more: [] })),
   ];
   // A change of comments alone leaves nothing to list; the receipt says so rather than ending empty.
   return found.length === 0 && receipt.commentsOnly === true ? [{ standing: "holds", check: "coverage",
@@ -286,9 +403,14 @@ export function receiptDecisions(receipt: Receipt): number {
 
 /** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */
 export function renderReceipt(receipt: Receipt): string {
-  if (!receipt.repository) {
-    return "Tesota receipt\n  not verified  this request's changes: the project has no Git repository, so Tesota " +
-      "cannot tell which files changed";
+  return ["Tesota receipt", ...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
+    ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`])].join("\n");
+}
+
+/** One unit's lines of the receipt, from the folder Pi runs in. */
+function unitLines(receipt: UnitEvidence): string[] {
+  if (!verified(receipt)) {
+    return [`  not verified  this request's changes: ${receipt.reason ?? "the project has no Git repository, so Tesota cannot tell which files changed"}`];
   }
   const tested = receipt.tests.length > 0 && receipt.tests.every(({ verdict }) => verdict === "proved");
   const listed = [
@@ -313,9 +435,10 @@ export function renderReceipt(receipt: Receipt): string {
     ...receipt.unverified.map((path) => tested
       ? `  not proved    ${path}: no proof covers it; the project's commands pass with it`
       : `  not verified  ${path}: no verifier covers it`),
+    ...(receipt.tooLarge ?? []).map((path) => `  not verified  ${path}: too large for Tesota's snapshot, which left it out`),
   ];
   // A change of comments alone leaves nothing to list; the receipt says so rather than ending empty.
   const nothing = listed.length === 0 && receipt.commentsOnly === true
     ? ["  no code       nothing to verify: the changes are comments or blank lines only"] : [];
-  return ["Tesota receipt", ...listed, ...nothing].join("\n");
+  return [...listed, ...nothing];
 }

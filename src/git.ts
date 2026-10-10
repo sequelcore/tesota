@@ -1,6 +1,25 @@
 import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 
 const outputLimit = 16 * 1024 * 1024;
+
+/** The Git directory of each folder in no repository that Tesota snapshots (`takeSnapshot`), by the folder's absolute path. */
+const snapshots = new Map<string, string>();
+
+/** Run Git in the folder at `root` against `gitDir`, Tesota's snapshot of it, from now on. */
+export function useSnapshotGit(root: string, gitDir: string): void {
+  snapshots.set(resolve(root), gitDir);
+}
+
+/**
+ * The environment Git runs with in `root`: a snapshot's Git directory, with
+ * the folder as its work tree, for a folder Tesota snapshots; otherwise the
+ * process's own, so a repository and a worktree find their Git as usual.
+ */
+export function gitEnvironment(root: string): NodeJS.ProcessEnv | undefined {
+  const gitDir = snapshots.get(resolve(root));
+  return gitDir === undefined ? undefined : { ...process.env, GIT_DIR: gitDir, GIT_WORK_TREE: resolve(root) };
+}
 
 /**
  * Git's output in `root`; `too_large` when it passes what the gate reads,
@@ -11,7 +30,8 @@ const outputLimit = 16 * 1024 * 1024;
  */
 export function gitOutput(root: string, args: readonly string[]): Promise<string | "too_large" | undefined> {
   return new Promise((settle) => {
-    const child = spawn("git", [...args], { cwd: root, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+    const child = spawn("git", [...args], { cwd: root, env: gitEnvironment(root), windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"] });
     const chunks: Buffer[] = [];
     let size = 0;
     child.stdout.on("data", (chunk: Buffer) => {

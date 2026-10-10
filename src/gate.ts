@@ -6,15 +6,17 @@ import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.
 import type { Evidence } from "./evidence.js";
 import { git, gitOutput, headCommit } from "./git.js";
 import { type ContractStrength, contractStrength } from "./proof-guarantees.js";
-import { owningProjects, suggestChecks } from "./projects.js";
+import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { uncoveredLines } from "./proof-coverage.js";
 import { proofReport } from "./prove-tool.js";
-import { isReceipt, type Receipt, renderReceipt } from "./receipt.js";
+import { inUnit, isReceipt, noEvidence, type Receipt, renderReceipt, type UnitEvidence } from "./receipt.js";
+import { takeSnapshot } from "./snapshot.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
 import { blankOrComment, type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
+import { type Unit, workspaceUnits } from "./workspace.js";
 
 async function gitPaths(root: string, args: readonly string[]): Promise<string[] | undefined> {
   return (await git(root, [...args, "-z"]))?.split("\0").filter((path) => path !== "");
@@ -334,22 +336,27 @@ export class GateProgress {
  * a receipt for the operator. Changes are measured against the commit `HEAD`
  * named when the operator's request started, so a commit the agent makes
  * hides nothing; a steer or follow-up sent while the agent works belongs to
- * the request already running. Outside a Git repository it cannot tell what
- * changed, so a request that ran a tool that may change files ends with a
- * receipt that says so.
+ * the request already running. Outside a Git repository the base is
+ * Tesota's snapshot of the folder (`takeSnapshot`, #384); where it takes
+ * none, a request that ran a tool that may change files ends with a receipt
+ * that says why nothing was verified. In a folder of repositories that is in
+ * none, each repository and each other folder the request changed goes
+ * through these steps from its own base and folder, each round gathering
+ * what goes back across them, and the receipt holds each one as a unit.
  */
 export function registerGate(pi: ExtensionAPI): GateProgress {
   const progress = new GateProgress();
   pi.registerFlag(claimcheckModelFlag, { type: "string",
     description: "The provider/id of a second model for ClaimCheck to restate contracts with; the session's model otherwise" });
+  /** What went back, by path or by contract as seen from the folder Pi runs in, and by command within each repository's folder. */
   let sentBack = new Map<string, string[]>();
-  let commandsSentBack = new Map<string, string[]>();
+  let commandsSentBack = new Map<string, Map<string, string[]>>();
   let weakSentBack = new Map<string, string[]>();
   let mayHaveChanged = false;
   /** What the operator asked during the request, for ClaimCheck to compare the contracts with. */
   let requests: string[] = [];
-  /** The request's base, recorded before the agent can run anything; a run no operator input started takes `HEAD` as it settles. */
-  let base: Promise<string | null> | undefined;
+  /** The request's units and bases, recorded before the agent can run anything; a run no operator input started takes them as it settles. */
+  let start: Promise<Start> | undefined;
   let startedAt: string | undefined;
   pi.on("input", async (event, ctx) => {
     if (event.source === "extension") return undefined;
@@ -361,8 +368,8 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     if (event.streamingBehavior !== undefined) { requests.push(event.text); return undefined; }
     requests = [event.text];
     startedAt = new Date().toISOString();
-    base = headCommit(ctx.cwd);
-    await base;
+    start = begin(ctx.cwd);
+    await start;
     return undefined;
   });
   pi.on("tool_execution_start", (event) => { if (!readOnlyTools.has(event.toolName)) mayHaveChanged = true; });
@@ -371,72 +378,197 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     try { return await settle(event, ctx); } catch (error) { progress.reset(); throw error; }
   });
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
-  const outsideGit = (run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">): AgentBeforeSettleEventResult | undefined => {
+  const outsideGit = (run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">, reason: string | undefined):
+    AgentBeforeSettleEventResult | undefined => {
     if (!mayHaveChanged) return undefined;
-    const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), proofs: [],
-      contracts: [], tests: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [] };
+    const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
+      ...reason === undefined ? {} : { reason } };
     progress.publish({ step: "settled", receipt });
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
   };
+  const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
+  const sendBack = (content: string, details: SentBack): AgentBeforeSettleEventResult =>
+    ({ entries: [{ type: "custom_message", customType: "tesota-gate", content, display: true, details }], continue: true });
+  /** Every changed file with contracts proved, in each repository from its own folder. */
+  const prove = async (units: readonly ChangedUnit[], signal: AbortSignal): Promise<Map<string, Receipt["proofs"][number][]>> => {
+    const proofs = new Map<string, Receipt["proofs"][number][]>(units.map(({ folder }) => [folder, []]));
+    for (const unit of units) {
+      for (const path of await contractFiles(unit.root, unit.changed)) {
+        progress.publish({ step: "proving", tally: tally([...proofs.values()].flat()) });
+        const evidence = await proveFile(unit.root, path, signal);
+        proofs.get(unit.folder)?.push({ path, evidence,
+          verdict: gateVerdict(evidence.outcome, failure(evidence), sentBack.get(inUnit(unit.folder, path)) ?? []) });
+      }
+    }
+    return proofs;
+  };
+  /** The proofs that go back, named from the folder Pi runs in. */
+  const proofsBack = (proofs: ReadonlyMap<string, Receipt["proofs"]>): AgentBeforeSettleEventResult => {
+    progress.publish({ step: "sent_back", tally: tally([...proofs.values()].flat()) });
+    const back = [...proofs].flatMap(([folder, judged]) => judged.filter(({ verdict }) => verdict === "send_back")
+      .map(({ path, evidence }) => ({ path: inUnit(folder, path), evidence })));
+    for (const { path, evidence } of back) sentBack.set(path, [...sentBack.get(path) ?? [], failure(evidence)]);
+    const proveActive = pi.getActiveTools().includes("prove");
+    return sendBack(back.map(({ path, evidence }) =>
+      `Tesota: ${path} does not prove yet.\n\n${proofReport(path, evidence, proveActive)}`).join("\n\n"), { round: "proofs", proofs: back });
+  };
+  /** The failing commands that go back, each run from its repository's folder. */
+  const testsBack = (failing: readonly { folder: string; run: CommandRun }[], tallied: Tally): AgentBeforeSettleEventResult => {
+    progress.publish({ step: "sent_back", tally: tallied });
+    for (const { folder, run } of failing) {
+      const sent = commandsSentBack.get(folder) ?? new Map<string, string[]>();
+      sent.set(run.command, [...sent.get(run.command) ?? [], testFailure(run)]);
+      commandsSentBack.set(folder, sent);
+    }
+    const shown = failing.map(({ folder, run: { command, evidence, failingTests } }): CommandRun =>
+      ({ command: inFolder(folder, command), evidence, ...failingTests === undefined ? {} : { failingTests } }));
+    return sendBack(shown.map(failingReport).join("\n\n"), { round: "tests", commands: shown });
+  };
+  /** The strength of each repository's contracts that proved, and what its proofs covered. */
+  const measure = async (ctx: ExtensionContext, units: readonly ChangedUnit[], proofs: ReadonlyMap<string, Receipt["proofs"]>,
+    tallied: Tally, signal: AbortSignal): Promise<Map<string, Measured>> => {
+    const measured = new Map<string, Measured>();
+    for (const unit of units) {
+      const judged = proofs.get(unit.folder) ?? [];
+      // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
+      const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
+        path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
+      const sources = await provedSources(unit.root, unit.base, judged);
+      if (sources.length > 0) progress.publish({ step: "measuring", tally: tallied });
+      measured.set(unit.folder, { covered, sources, strength: await contractStrength(ctx, requests, sources, signal, restateWith(pi)) });
+    }
+    return measured;
+  };
   const settle = async (event: AgentBeforeSettleEvent, ctx: ExtensionContext): Promise<AgentBeforeSettleEventResult | undefined> => {
     if (event.outcome !== "completed") return undefined;
-    const from = await (base ??= headCommit(ctx.cwd));
+    const { units, bases, tooLarge, refused } = await (start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
-    const run = { base: from, startedAt, pi: VERSION, ...sessionModel(ctx) };
-    const changed = await changedFiles(ctx.cwd, from);
-    if (changed === undefined) return outsideGit(run);
-    const changes = await fileChanges(ctx.cwd, from, changed);
-    const weakened = typeof changes === "string" ? changes : weakenedEvidence(changes);
-    if (changed.length === 0 && Array.isArray(weakened) && weakened.length === 0) { progress.reset(); return undefined; }
+    const workspace = units.some(({ folder }) => folder !== "");
+    const run = { base: workspace ? null : bases.get("") ?? null, startedAt, pi: VERSION, ...sessionModel(ctx) };
+    // Each repository and each folder Tesota snapshotted, measured from its base.
+    const measurable = units.filter(({ folder }) => bases.has(folder));
+    const read = await Promise.all(measurable.map(({ folder, repository }) =>
+      changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [])));
+    if (!workspace && read[0] === undefined) return outsideGit(run, refused.get(""));
+    const changed = read.filter((unit): unit is ChangedUnit => typeof unit === "object");
+    // A folder with no snapshot, or a repository Git could not read, is not verified; it is listed once it may have changed.
+    const plain = workspace && mayHaveChanged ? [...units.filter(({ folder }) => !bases.has(folder)),
+      ...measurable.filter((_, k) => read[k] === undefined)] : [];
+    if (changed.length === 0 && plain.length === 0) { progress.reset(); return undefined; }
     const signal = ctx.signal ?? new AbortController().signal;
-    const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
-    const judged: Receipt["proofs"][number][] = [];
-    for (const path of await contractFiles(ctx.cwd, changed)) {
-      progress.publish({ step: "proving", tally: tally(judged) });
-      const evidence = await proveFile(ctx.cwd, path, signal);
-      judged.push({ path, verdict: gateVerdict(evidence.outcome, failure(evidence), sentBack.get(path) ?? []), evidence });
+    const proofs = await prove(changed, signal);
+    const allProofs = [...proofs.values()].flat();
+    if (keepsWorking(allProofs.map(({ verdict }) => verdict))) return proofsBack(proofs);
+    progress.publish({ step: "testing", tally: tally(allProofs) });
+    const rungs = new Map<string, Pick<Receipt, "tests" | "exercises">>();
+    for (const unit of changed) {
+      rungs.set(unit.folder, await testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal));
     }
-    if (keepsWorking(judged.map(({ verdict }) => verdict))) {
-      progress.publish({ step: "sent_back", tally: tally(judged) });
-      const back = judged.filter(({ verdict }) => verdict === "send_back");
-      for (const { path, evidence } of back) sentBack.set(path, [...sentBack.get(path) ?? [], failure(evidence)]);
-      const proveActive = pi.getActiveTools().includes("prove");
-      const content = back.map(({ path, evidence }) =>
-        `Tesota: ${path} does not prove yet.\n\n${proofReport(path, evidence, proveActive)}`).join("\n\n");
-      const details: SentBack = { round: "proofs", proofs: back.map(({ path, evidence }) => ({ path, evidence })) };
-      return { entries: [{ type: "custom_message", customType: "tesota-gate", content, display: true, details }], continue: true };
-    }
-    progress.publish({ step: "testing", tally: tally(judged) });
-    const { tests, exercises } = await testRung(ctx.cwd, from, changed, commandsSentBack, signal);
-    const failing = tests.filter(({ verdict }) => verdict === "send_back");
-    if (failing.length > 0) {
-      progress.publish({ step: "sent_back", tally: tally(judged, tests) });
-      for (const run of failing) commandsSentBack.set(run.command, [...commandsSentBack.get(run.command) ?? [], testFailure(run)]);
-      const details: SentBack = { round: "tests", commands: failing.map(({ command, evidence, failingTests }) =>
-        ({ command, evidence, ...failingTests === undefined ? {} : { failingTests } })) };
-      return { entries: [{ type: "custom_message", customType: "tesota-gate", content: failing.map(failingReport).join("\n\n"),
-        display: true, details }], continue: true };
-    }
-    // A proof's `.dfy.gen` is the base `lsc regen` merges against, regenerated from the source the proof covers.
-    const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
-      path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
-    const sources = await provedSources(ctx.cwd, from, judged);
-    if (sources.length > 0) progress.publish({ step: "measuring", tally: tally(judged, tests) });
-    const strength = await contractStrength(ctx, requests, sources, signal, restateWith(pi));
-    const weak = sendBackWeak(strength.contracts, weakSentBack);
+    const allTests = [...rungs.values()].flatMap(({ tests }) => tests);
+    const failing = [...rungs].flatMap(([folder, { tests }]) =>
+      tests.filter(({ verdict }) => verdict === "send_back").map((test) => ({ folder, run: test })));
+    if (failing.length > 0) return testsBack(failing, tally(allProofs, allTests));
+    const measured = await measure(ctx, changed, proofs, tally(allProofs, allTests), signal);
+    const contracts = [...measured].flatMap(([folder, { strength }]) =>
+      strength.contracts.map((contract) => ({ ...contract, path: inUnit(folder, contract.path) })));
+    const weak = sendBackWeak(contracts, weakSentBack);
     if (weak.length > 0) {
-      progress.publish({ step: "sent_back", tally: tally(judged, tests, strength.contracts) });
-      const details: SentBack = { round: "contracts", contracts: weak };
-      return { entries: [{ type: "custom_message", customType: "tesota-gate", content: weak.map(weakContractReport).join("\n\n"),
-        display: true, details }], continue: true };
+      progress.publish({ step: "sent_back", tally: tally(allProofs, allTests, contracts) });
+      return sendBack(weak.map(weakContractReport).join("\n\n"), { round: "contracts", contracts: weak });
     }
-    const receipt: Receipt = { version: 1, repository: true, ...run, proofs: judged, ...strength, tests, exercises, weakened,
-      ...unprovedFiles(changes, changed, covered), uncovered: uncovered(sources, changes, weakened),
-      changed: await recordedChanges(ctx.cwd, from, changed), settledAt: new Date().toISOString() };
+    const evidence = await Promise.all(changed.map(async (unit) =>
+      unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder))));
+    const settledAt = new Date().toISOString();
+    const only = workspace ? undefined : evidence[0];
+    const receipt: Receipt = only !== undefined ? { version: 1, ...run, ...only, settledAt }
+      : { version: 1, repository: true, ...run, ...noEvidence, settledAt, units: [
+        ...evidence.map((unit, k) => ({ ...unit, folder: changed[k]?.folder ?? "" })),
+        ...plain.map(({ folder }) => ({ folder, repository: false, base: null, ...noEvidence,
+          reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]
+        .sort((a, b) => a.folder < b.folder ? -1 : 1) };
     progress.publish({ step: "settled", receipt });
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
   };
   return progress;
+}
+
+/**
+ * What the gate measures a request against: the units of the folder Pi runs
+ * in; each repository's commit `HEAD` named then, and for each folder in no
+ * repository, Tesota's snapshot of it then (`takeSnapshot`), with the files
+ * it left out for their size, or why there is none.
+ */
+interface Start {
+  readonly units: readonly Unit[];
+  readonly bases: ReadonlyMap<string, string | null>;
+  readonly tooLarge: ReadonlyMap<string, readonly string[]>;
+  readonly refused: ReadonlyMap<string, string>;
+}
+
+/** The request's start in `cwd`; in a folder of repositories, its own files are snapshotted without the folders below. */
+async function begin(cwd: string): Promise<Start> {
+  const units = workspaceUnits(cwd);
+  const workspace = units.some(({ folder }) => folder !== "");
+  const bases = new Map<string, string | null>();
+  const tooLarge = new Map<string, readonly string[]>();
+  const refused = new Map<string, string>();
+  for (const { folder, repository } of units) {
+    if (repository) { bases.set(folder, await headCommit(join(cwd, folder))); continue; }
+    const snapshot = await takeSnapshot(join(cwd, folder), workspace && folder === "");
+    if ("refused" in snapshot) refused.set(folder, snapshot.refused);
+    else { bases.set(folder, snapshot.base); tooLarge.set(folder, snapshot.tooLarge); }
+  }
+  return { units, bases, tooLarge, refused };
+}
+
+/**
+ * A unit the request changed: its folder and checkout, its base, and its
+ * changes as the gate reads them; for a folder Tesota snapshotted, the files
+ * the snapshot left out for their size.
+ */
+interface ChangedUnit {
+  readonly folder: string;
+  readonly root: string;
+  readonly base: string | null;
+  readonly snapshot?: { readonly tooLarge: readonly string[] };
+  readonly changed: readonly string[];
+  readonly changes: Awaited<ReturnType<typeof fileChanges>>;
+  readonly weakened: Receipt["weakened"];
+}
+
+/**
+ * The unit at `folder` as the request changed it from `base`, a commit or,
+ * given what it left out (`tooLarge`), a snapshot; `unchanged` when it
+ * changed nothing, and nothing when Git cannot read it.
+ */
+async function changedUnit(cwd: string, folder: string, base: string | null, tooLarge: readonly string[] | undefined):
+  Promise<ChangedUnit | "unchanged" | undefined> {
+  const root = join(cwd, folder);
+  const changed = await changedFiles(root, base);
+  if (changed === undefined) return undefined;
+  const changes = await fileChanges(root, base, changed);
+  const weakened = typeof changes === "string" ? changes : weakenedEvidence(changes);
+  return changed.length === 0 && Array.isArray(weakened) && weakened.length === 0 ? "unchanged"
+    : { folder, root, base, changed, changes, weakened, ...tooLarge === undefined ? {} : { snapshot: { tooLarge } } };
+}
+
+/** What `measure` found in one repository. */
+interface Measured {
+  readonly covered: ReadonlySet<string>;
+  readonly sources: readonly ProvedSource[];
+  readonly strength: Pick<Receipt, "contracts" | "claimcheck">;
+}
+
+/** One repository's evidence for the receipt, in its own terms. */
+async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: Pick<Receipt, "tests" | "exercises"> | undefined,
+  measured: Measured | undefined): Promise<UnitEvidence> {
+  const sources = measured?.sources ?? [];
+  return { repository: unit.snapshot === undefined,
+    ...unit.snapshot === undefined ? {} : { snapshot: true, ...unit.snapshot.tooLarge.length === 0 ? {} : { tooLarge: unit.snapshot.tooLarge } },
+    base: unit.base, proofs, ...measured?.strength ?? { contracts: [] },
+    tests: rung?.tests ?? [], exercises: rung?.exercises ?? [], weakened: unit.weakened,
+    ...unprovedFiles(unit.changes, unit.changed, measured?.covered ?? new Set()), uncovered: uncovered(sources, unit.changes, unit.weakened),
+    changed: await recordedChanges(unit.root, unit.base, unit.changed) };
 }
