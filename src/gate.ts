@@ -12,7 +12,7 @@ import { proofReport } from "./prove-tool.js";
 import { inUnit, isReceipt, noEvidence, type Receipt, renderReceipt, type UnitEvidence } from "./receipt.js";
 import { takeSnapshot } from "./snapshot.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
-import { blankOrComment, type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
+import { commentLines, type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
@@ -179,13 +179,15 @@ function uncovered(sources: readonly ProvedSource[], changes: Awaited<ReturnType
 
 /**
  * Whether a file's change holds no code: it added or removed lines, and each
- * is blank or only a comment (`blankOrComment`). A file whose lines Git did
+ * is blank or only a comment (`commentLines`). A file whose lines Git did
  * not show, binary or with a change too large to read, may hold code.
  */
 function onlyComments(change: FileChange | undefined): boolean {
   if (change === undefined) return false;
-  const lines = [...change.added, ...change.removed];
-  return lines.length > 0 && lines.every(({ text }) => blankOrComment(change.path, text));
+  const comments = commentLines(change);
+  const blank = ({ text }: { text: string }): boolean => text.trim() === "";
+  return change.added.length + change.removed.length > 0 && change.added.every((line) => blank(line) || comments.added(line)) &&
+    change.removed.every((line) => blank(line) || comments.removed(line));
 }
 
 /**

@@ -42,11 +42,15 @@ const retryNote = (again: string): string => "This is not finished yet. Read the
   "if you can say why it cannot pass without changing the contract, and never loosen the contract to make it pass.";
 
 /**
- * What follows a vacuous proof: LemmaScript attaches a `//@` block only to
- * the function right below it, so anything between them drops its contracts.
+ * What follows a vacuous proof: LemmaScript reads a function's annotations
+ * above it, across comments and blank lines, and before the first statement
+ * of its body (`contracts`); code in between drops them, and an arrow function
+ * with a block body has them read only inside the body.
  */
-const vacuousNote = (again: string): string => "Check that every //@ requires and //@ ensures block sits directly " +
-  `above the function it describes: anything between the //@ block and the function drops its contracts. Fix that and ${again}.`;
+const vacuousNote = (again: string): string => "Check where each //@ requires and //@ ensures sits: above the function " +
+  "it describes, with only comments or blank lines between, or before the first statement in its body. A line of code " +
+  "between them and the function drops them, and an arrow function with a { } body reads them only inside the body. " +
+  `Fix that and ${again}.`;
 
 const skippedFolders = new Set(["node_modules", ".git", "dist", "build", "out", "coverage"]);
 const scanLimit = 20_000;

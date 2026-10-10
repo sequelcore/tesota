@@ -1,6 +1,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ts as TypeScript } from "ts-morph";
 import { type ClaimCheck, type Comparison, claimCheck } from "./pi-claimcheck.js";
 import { type MutationResult, mutateContract } from "./proof-mutation.js";
+import { typescript } from "./typescript-source.js";
 
 /**
  * How strong the contracts a request added or changed are, once they proved:
@@ -12,58 +14,81 @@ import { type MutationResult, mutateContract } from "./proof-mutation.js";
 export interface Contract {
   readonly path: string;
   readonly name: string;
+  /** The annotations above the declaration, its first line, then the annotations in its body. */
   readonly text: string;
-  /** The contract's first annotation line and its declaration line. */
+  /** The contract's first line, its declaration line, and the line where its function ends (all 1-based). */
   readonly line: number;
   readonly endLine: number;
+  readonly bodyEnd: number;
+  /** Each `//@` line of the contract, trimmed, with its line. */
+  readonly annotations: readonly { readonly line: number; readonly text: string }[];
+  /** Whether LemmaScript reads the function's annotations above its declaration, or only inside its body, as for an arrow function with a block body. */
+  readonly readsAbove: boolean;
+  /** Where the function's name starts, and its body: inside its braces, or the expression an arrow function returns (source offsets). */
+  readonly nameAt: number;
+  readonly body: readonly [number, number];
+  /** Its parameters' names; undefined when one is not a plain name, such as a destructured one. */
+  readonly parameters: readonly string[] | undefined;
 }
 
-/** The `//@` blocks directly above a function declaration; annotations inside bodies belong to proofs, not contracts. */
+/** The functions a top-level statement declares as LemmaScript extracts them: a named function, or a variable set to an arrow function. */
+function declared(ts: typeof TypeScript, statement: TypeScript.Statement):
+  { name: TypeScript.Identifier; fn: TypeScript.FunctionDeclaration | TypeScript.ArrowFunction }[] {
+  if (ts.isFunctionDeclaration(statement)) return statement.name === undefined ? [] : [{ name: statement.name, fn: statement }];
+  if (!ts.isVariableStatement(statement)) return [];
+  return statement.declarationList.declarations.flatMap((declaration) =>
+    ts.isIdentifier(declaration.name) && declaration.initializer !== undefined && ts.isArrowFunction(declaration.initializer)
+      ? [{ name: declaration.name, fn: declaration.initializer }] : []);
+}
+
+/**
+ * The annotations LemmaScript's specification places before a function
+ * body's first statement (§2.1); the statement annotations allowed there too,
+ * such as `assert` and `assume`, belong to the proof.
+ */
+const functionAnnotation = /^\/\/@ (?:verify|requires|ensures|contract|decreases|type)(?:\s|$)/u;
+
+/**
+ * Each top-level function's contract, read where LemmaScript reads it: the
+ * `//@` comments leading the declaration, and the function annotations
+ * leading its body's first statement. An arrow function's leading comments
+ * are its statement's when it returns an expression, and none when it has a
+ * block body. Any comment or blank line between an annotation and what it
+ * leads keeps it attached, and code detaches it.
+ */
 export function contracts(path: string, source: string): Contract[] {
-  const found: Contract[] = [];
-  let block: string[] = [];
-  for (const [index, raw] of source.split(/\r?\n/u).entries()) {
-    const line = raw.trim();
-    if (line.startsWith("//@")) { block.push(line); continue; }
-    const declaration = /^(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/u.exec(line);
-    if (declaration !== null && block.length > 0) {
-      found.push({ path, name: declaration[1] ?? "", text: [...block, line].join("\n"), line: index + 1 - block.length,
-        endLine: index + 1 });
-    }
-    if (line.length > 0) block = [];
-  }
-  return found;
-}
-
-/** The line of the brace that closes the function declared on line `declaration` (both 1-based); the declaration line when none closes. */
-export function bodyEnd(source: string, declaration: number): number {
+  const ts = typescript();
+  const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
   const lines = source.split(/\r?\n/u);
-  let depth = 0;
-  let opened = false;
-  for (let index = declaration - 1; index < lines.length; index += 1) {
-    let quote: string | undefined;
-    const line = lines[index] ?? "";
-    for (let at = 0; at < line.length; at += 1) {
-      const char = line[at];
-      if (quote !== undefined) {
-        if (char === "\\") at += 1;
-        else if (char === quote) quote = undefined;
-        continue;
-      }
-      if (char === "/" && line[at + 1] === "/") break;
-      if (char === "\"" || char === "'" || char === "`") quote = char;
-      else if (char === "{") { depth += 1; opened = true; } else if (char === "}") {
-        depth -= 1;
-        if (opened && depth === 0) return index + 1;
-      }
-    }
-  }
-  return declaration;
+  const lineOf = (position: number): number => file.getLineAndCharacterOfPosition(position).line + 1;
+  const leading = (position: number, keep: (text: string) => boolean): { line: number; text: string }[] =>
+    (ts.getLeadingCommentRanges(source, position) ?? []).flatMap(({ kind, pos, end }) => {
+      const text = source.slice(pos, end).trim();
+      return kind === ts.SyntaxKind.SingleLineCommentTrivia && text.startsWith("//@") && keep(text) ? [{ line: lineOf(pos), text }] : [];
+    });
+  return file.statements.flatMap((statement) => declared(ts, statement).flatMap(({ name, fn }) => {
+    const block = fn.body !== undefined && ts.isBlock(fn.body) ? fn.body : undefined;
+    const readsAbove = ts.isFunctionDeclaration(fn) || block === undefined;
+    const first = block?.statements[0];
+    const above = leading(readsAbove ? statement.pos : fn.pos, () => true);
+    const inside = first === undefined ? [] : leading(first.pos, (text) => functionAnnotation.test(text));
+    const annotations = [...above, ...inside];
+    const start = annotations[0];
+    if (start === undefined) return [];
+    const endLine = lineOf(statement.getStart(file));
+    const body: [number, number] = block !== undefined ? [block.getStart(file) + 1, block.getEnd() - 1]
+      : fn.body !== undefined ? [fn.body.getStart(file), fn.body.getEnd()] : [statement.getEnd(), statement.getEnd()];
+    return [{ path, name: name.text, line: Math.min(start.line, endLine), endLine, bodyEnd: lineOf(statement.getEnd()),
+      text: [...above.map(({ text }) => text), (lines[endLine - 1] ?? "").trim(), ...inside.map(({ text }) => text)].join("\n"),
+      annotations, readsAbove, nameAt: name.getStart(file), body,
+      parameters: fn.parameters.every(({ name: parameter }) => ts.isIdentifier(parameter))
+        ? fn.parameters.map(({ name: parameter }) => parameter.getText(file)) : undefined }];
+  }));
 }
 
 /** A contract's `//@` lines, the same whatever the indentation. */
 function contractLines(contract: Contract): string[] {
-  return contract.text.split("\n").filter((line) => line.startsWith("//@"));
+  return contract.annotations.map(({ text }) => text);
 }
 
 /** The contracts of `source` that its base, `baseSource`, lacks or annotates differently; all of them when the base lacks the file. */
@@ -101,7 +126,7 @@ export async function contractStrength(ctx: Pick<ExtensionContext, "model" | "mo
   const mutate = async (): Promise<MutationResult[]> => {
     const results: MutationResult[] = [];
     for (const { contract, source } of items) {
-      results.push(await mutateContract(contract.path, source, contract.endLine, bodyEnd(source, contract.endLine), signal));
+      results.push(await mutateContract(contract, source, signal));
     }
     return results;
   };

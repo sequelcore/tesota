@@ -6,6 +6,7 @@
       "name": "tesota",
       "dependencies": {
         "lemmascript": "0.6.4",
+        "ts-morph": "25.0.1",
       },
       "devDependencies": {
         "@earendil-works/pi-coding-agent": "1.1.0",

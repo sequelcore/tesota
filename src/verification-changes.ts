@@ -1,4 +1,5 @@
-import type { ChangedFile, DiffLine } from "./diff-lines.js";
+import type { ChangedFile, DiffLine, RemovedLine } from "./diff-lines.js";
+import { commentOnlyLines, isScriptPath } from "./typescript-source.js";
 import { removalCounts, testWeakens } from "./verification/test-weakening-rule.js";
 import { type AnnotationKind, weakens } from "./verification/weakening-rule.js";
 
@@ -45,9 +46,13 @@ function kindOf(path: string, line: string): AnnotationKind | undefined {
   return word === "requires" || word === "ensures" || word === "assume" ? word : "other";
 }
 
-/** Whether the rules need `file`'s content now and at the base: for a Dafny proof, or a `//@ requires` it adds. */
+/**
+ * Whether the rules need `file`'s content now and at the base: for a Dafny
+ * proof, for JavaScript or TypeScript, whose comment-only lines are read from
+ * the parsed file (`commentLines`), or for a `//@ requires` it adds.
+ */
 export function needsContent(file: ChangedFile): boolean {
-  return file.path.endsWith(".dfy") ||
+  return file.path.endsWith(".dfy") || isScriptPath(file.path) ||
     file.status === "modified" && file.added.some(({ text }) => kindOf(file.path, text) === "requires");
 }
 
@@ -142,14 +147,25 @@ const runChanges = [
   /\bdef\s+(?:(?:setUp|tearDown)(?:Class|Module)?|(?:setup|teardown)_(?:method|function|class|module))\s*\(/u,
 ];
 
-/** Whether a line of `path` holds only a comment. A `//@` line is a LemmaScript contract, never a comment. */
-export function commentOnly(path: string, line: string): boolean {
+/** Whether a line of `path`, in a language the parser does not read, holds only a comment. A `//@` line is an annotation, never a comment. */
+function commentOnly(path: string, line: string): boolean {
   return (path.endsWith(".py") ? /^#/u : /^(?:\/\/(?!@)|\/\*|\*)/u).test(line.trim());
 }
 
-/** Whether a line of `path` holds no code: blank, or only a comment (`commentOnly`). */
-export function blankOrComment(path: string, line: string): boolean {
-  return line.trim() === "" || commentOnly(path, line);
+/**
+ * Which of a changed file's lines hold only a comment. JavaScript and
+ * TypeScript are read from the parsed file on each side (`commentOnlyLines`),
+ * since a line alone shows neither a block comment nor a template around it,
+ * and a `//@` line is an annotation; a side whose content was not read holds
+ * no comment-only line. Other languages are read line by line.
+ */
+export function commentLines(file: FileChange): { added: (line: DiffLine) => boolean; removed: (line: RemovedLine) => boolean } {
+  if (!isScriptPath(file.path)) {
+    return { added: ({ text }) => commentOnly(file.path, text), removed: ({ text }) => commentOnly(file.path, text) };
+  }
+  const now = commentOnlyLines(file.path, file.content ?? "");
+  const before = commentOnlyLines(file.path, file.baseContent ?? "");
+  return { added: ({ number }) => now.has(number), removed: ({ base }) => before.has(base) };
 }
 
 const namedImports = [
@@ -179,12 +195,13 @@ function widened(line: string, added: readonly DiffLine[]): boolean {
   });
 }
 
-function testChange(file: ChangedFile): Weakening[] {
+function testChange(file: FileChange): Weakening[] {
   if (!isTestPath(file.path)) return [];
-  const removes = file.removed.some(({ text }) =>
-    removalCounts(text.trim() === "", commentOnly(file.path, text), widened(text, file.added)));
-  const changesRuns = file.added.some(({ text }) => !commentOnly(file.path, text) &&
-    runChanges.some((pattern) => pattern.test(text)));
+  const comments = commentLines(file);
+  const removes = file.removed.some((line) =>
+    removalCounts(line.text.trim() === "", comments.removed(line), widened(line.text, file.added)));
+  const changesRuns = file.added.some((line) => !comments.added(line) &&
+    runChanges.some((pattern) => pattern.test(line.text)));
   return !testWeakens(file.status, removes, changesRuns) ? []
     : [{ path: file.path, kind: file.status === "deleted" ? "deleted_test" : "edited_test" }];
 }

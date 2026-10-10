@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
-import { bodyEnd, contracts } from "../src/proof-guarantees.js";
+import { type Contract, contracts } from "../src/proof-guarantees.js";
 import { equivalenceSource, mutateContract, mutants } from "../src/proof-mutation.js";
 import { renderReceipt } from "../src/receipt.js";
 import { proveSource } from "../src/verification/lemmascript-verifier.js";
@@ -34,28 +34,44 @@ const registeredWeak: Readonly<Record<string, string>> = {
     "export function maxQuantity(items: number[]): number {\n  return items[0];\n}\n",
 };
 
-/** Mutation of the one contract in `source`, proved as file `path`. */
-async function mutateOnly(path: string, source: string): ReturnType<typeof mutateContract> {
+/** The one contract in `source`, read as file `path`. */
+function only(source: string, path = "src/rule.ts"): Contract {
   const [contract] = contracts(path, source);
   if (contract === undefined) throw new Error(`no contract in ${path}`);
-  return mutateContract(path, source, contract.endLine, bodyEnd(source, contract.endLine), AbortSignal.timeout(500_000));
+  return contract;
 }
+
+/** Mutation of the one contract in `source`, proved as file `path`. */
+function mutateOnly(path: string, source: string): ReturnType<typeof mutateContract> {
+  return mutateContract(only(source, path), source, AbortSignal.timeout(500_000));
+}
+
+/** The offsets inside the outermost braces of a source with one function. */
+const inside = (source: string): [number, number] => [source.indexOf("{") + 1, source.lastIndexOf("}")];
 
 it("swaps a branch's result, flips comparisons, moves numbers and swaps + and -, but never touches contracts or strings", () => {
   const source = "//@ ensures \\result >= 0\nexport function f(a: number): number {\n  //@ invariant a < 10\n" +
     "  const s = \"a < b\"; // 1 < 2\n  if (a < 3) return a + 1;\n  return a - 2;\n}\n";
-  const found = mutants(source, 2, 7, 20);
+  const found = mutants(source, only(source).body, 20);
   expect(found.map((mutant) => [mutant.line, mutant.operator, mutant.before, mutant.after])).toEqual([
     [5, "result", "a + 1", "a - 2"], [5, "comparison", "<", "<="], [5, "constant", "3", "4"], [5, "arithmetic", "+", "-"],
     [6, "result", "a - 2", "a + 1"], [5, "constant", "1", "2"], [6, "arithmetic", "-", "+"], [6, "constant", "2", "3"]]);
   expect(found[0]?.source).toContain("  if (a < 3) return a - 2;\n");
   expect(found.every((mutant) => mutant.source.includes("//@ invariant a < 10") && mutant.source.includes("\"a < b\""))).toBe(true);
-  expect(mutants(source, 2, 7, 3)).toHaveLength(3);
+  expect(mutants(source, only(source).body, 3)).toHaveLength(3);
   // An escaped quote in a string keeps the columns after it in place.
-  const escaped = mutants("export function e(a: number): number {\n  const s = \"x\\\"y<\"; if (a < 3) return 0;\n  return 1;\n}\n", 1, 4)
-    .find((mutant) => mutant.operator === "comparison");
+  const escapedSource = "export function e(a: number): number {\n  const s = \"x\\\"y<\"; if (a < 3) return 0;\n  return 1;\n}\n";
+  const escaped = mutants(escapedSource, inside(escapedSource)).find((mutant) => mutant.operator === "comparison");
   expect(escaped?.source).toContain("const s = \"x\\\"y<\"; if (a <= 3) return 0;");
-  expect(mutants("export function g(): void {\n  const f = (x: number) => x;\n}\n", 1, 3)).toEqual([]);
+  const arrowInside = "export function g(): void {\n  const f = (x: number) => x;\n}\n";
+  expect(mutants(arrowInside, inside(arrowInside))).toEqual([]);
+});
+
+it("changes only the expression a one-line arrow function returns, never its signature", () => {
+  const source = "//@ ensures \\result >= 0\nexport const g = (n: number, m = 2): number => n < 0 ? 0 : n;\n";
+  expect(mutants(source, only(source).body).map((mutant) => [mutant.line, mutant.operator, mutant.before, mutant.after])).toEqual([
+    [2, "comparison", "<", "<="], [2, "constant", "0", "1"], [2, "constant", "0", "1"]]);
+  expect(mutants(source, only(source).body)[0]?.source).toContain("(n: number, m = 2): number => n <= 0 ? 0 : n;");
 });
 
 it("calls a contract with surviving mutants weak in the receipt, and only counts those proved to behave the same", () => {
@@ -80,18 +96,51 @@ it("builds the equivalence file with a fresh name for the mutant, and builds non
   const mutated = strong.replace("(value > high)", "(value >= high)");
   // 5 is the declaration's line, 9 its closing brace; `clampMutant` is taken, so the copy is `clampMutant2`.
   const taken = `${strong}// clampMutant\n`;
-  expect(equivalenceSource(taken, 5, 9, `${mutated}// clampMutant\n`)).toBe("//@ requires low <= high\n" +
+  expect(equivalenceSource(taken, only(taken), `${mutated}// clampMutant\n`)).toBe("//@ requires low <= high\n" +
     "export function clampMutant2(value: number, low: number, high: number): number {\n  if (value < low) return low;\n" +
     "  if (value >= high) return high;\n  return value;\n}\n\n//@ requires low <= high\n" +
     "//@ ensures \\result === clampMutant2(value, low, high)\n" + body + "// clampMutant\n");
-  expect(equivalenceSource(recursive, 3, 6, recursive.replace("n - 1", "n + 1"))).toBeUndefined();
-  expect(equivalenceSource("//@ ensures true\nexport function d({ a }: { a: number }): number {\n  return a;\n}\n", 2, 4, ""))
-    .toBeUndefined();
+  expect(equivalenceSource(recursive, only(recursive), recursive.replace("n - 1", "n + 1"))).toBeUndefined();
+  const destructured = "//@ ensures true\nexport function d({ a }: { a: number }): number {\n  return a;\n}\n";
+  expect(equivalenceSource(destructured, only(destructured), "")).toBeUndefined();
 });
+
+/** Its `requires` rules out the only input where `return 1` would differ, and a comment separates it from the function. */
+const commentedRequires = "//@ pure\n//@ requires n > 0\n// reviewed\n//@ ensures \\result >= 0\nexport function f(n: number): number {\n" +
+  "  if (n < 0) return 0;\n  return n;\n}\n";
+/** The same contract inside a block-bodied arrow function, the only place LemmaScript reads it. */
+const arrowRequires = "export const h = (n: number): number => {\n  //@ requires n > 0\n  //@ ensures \\result >= 0\n" +
+  "  if (n < 0) return 0;\n  return n;\n};\n";
+/** The same contract above an arrow function that returns an expression. */
+const expressionRequires = "//@ requires n > 0\n//@ ensures \\result >= 0\nexport const g = (n: number): number => n < 0 ? 0 : n;\n";
+
+it("keeps the contract but its ensures wherever it is, and places the equality where LemmaScript reads it", () => {
+  expect(equivalenceSource(commentedRequires, only(commentedRequires), commentedRequires.replace("return 0;", "return 1;")))
+    .toBe("//@ pure\n//@ requires n > 0\nexport function fMutant(n: number): number {\n  if (n < 0) return 1;\n  return n;\n}\n\n" +
+      "//@ pure\n//@ requires n > 0\n//@ ensures \\result === fMutant(n)\nexport function f(n: number): number {\n  if (n < 0) return 0;\n" +
+      "  return n;\n}\n");
+  expect(equivalenceSource(arrowRequires, only(arrowRequires), arrowRequires.replace("return 0;", "return 1;")))
+    .toBe(`export const hMutant = (n: number): number => {\n  //@ requires n > 0\n  ${" ".repeat(24)}\n` +
+      "  if (n < 0) return 1;\n  return n;\n};\n\nexport const h = (n: number): number => {\n  //@ ensures \\result === hMutant(n)\n" +
+      `  //@ requires n > 0\n  ${" ".repeat(24)}\n  if (n < 0) return 0;\n  return n;\n};\n`);
+  expect(equivalenceSource(expressionRequires, only(expressionRequires), expressionRequires.replace("? 0", "? 1")))
+    .toBe("//@ requires n > 0\nexport const gMutant = (n: number): number => n < 0 ? 1 : n;\n\n" +
+      "//@ requires n > 0\n//@ ensures \\result === gMutant(n)\nexport const g = (n: number): number => n < 0 ? 0 : n;\n");
+});
+
+it.runIf(dafny)("proves a mutant equivalent under a pure contract a comment separates, and in arrow functions", async () => {
+  for (const [path, source, mutated] of [["f.ts", commentedRequires, commentedRequires.replace("return 0;", "return 1;")],
+    ["h.ts", arrowRequires, arrowRequires.replace("return 0;", "return 1;")],
+    ["g.ts", expressionRequires, expressionRequires.replace("? 0", "? 1")]] as const) {
+    expect(await proveSource(path, mutated, AbortSignal.timeout(120_000)), path).toBe("passed");
+    expect(await proveSource(path, equivalenceSource(source, only(source, path), mutated) ?? "", AbortSignal.timeout(120_000)), path)
+      .toBe("passed");
+  }
+}, 600_000);
 
 it.runIf(dafny)("drops a planted mutant Dafny proves equivalent and keeps a planted one that is not", async () => {
   const proved = (mutated: string): Promise<ProofOutcome> =>
-    proveSource("clamp.ts", equivalenceSource(weak, 3, 7, mutated) ?? "", AbortSignal.timeout(300_000));
+    proveSource("clamp.ts", equivalenceSource(weak, only(weak), mutated) ?? "", AbortSignal.timeout(300_000));
   // `>` to `>=` returns `high` either way at `value === high`; `low` to `high` changes the result below the range.
   expect(await proved(weak.replace("value > high", "value >= high"))).toBe("passed");
   expect(await proved(weak.replace("return low;", "return high;"))).toBe("failed");

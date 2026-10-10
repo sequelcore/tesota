@@ -231,7 +231,11 @@ wrong dependencies, so no run there gives a verdict.
 
 ## Contract strength
 
-A contract is the `//@` block directly above a function declaration. Once
+A contract is a top-level function's `//@` lines where LemmaScript reads
+them (`contracts`, with LemmaScript's own parser): above the declaration,
+across comments and blank lines, and the function annotations before the
+first statement of its body (LemmaScript's specification, §2.1). An arrow
+function with a block body has them read only inside the body. Once
 the commands pass, each contract the request added or changed in a file that
 proved is measured in two ways that run at the same time.
 
@@ -258,7 +262,6 @@ cannot be built or does not prove:
 
 - the function calls itself;
 - a parameter is not a plain name;
-- the declaration spans lines;
 - the equivalence fails to prove, such as for a function with a loop, which
   becomes a Dafny `method` that a specification cannot call.
 
@@ -300,8 +303,11 @@ The weakening list decides narrowing:
   the file.
 
 A removed line counts at the line that now follows it. Blank and
-comment-only lines are ignored, by the same check the test rule uses; a
-`//@` line is a contract, not a comment, so it still counts. The receipt lists the remaining lines as ranges (`ranges`, proved).
+comment-only lines are ignored, by the same check the test rule uses
+(`commentLines`): JavaScript and TypeScript are read from the parsed file on
+each side, so a line inside a block comment is a comment whatever it starts
+with and a line inside a string or template never is, and other languages
+line by line; a `//@` line is a contract, not a comment, so it still counts. The receipt lists the remaining lines as ranges (`ranges`, proved).
 A changed file that no proof's evidence covers is listed whole, unless it
 is a test file (tests are evidence, reported as exercised, passed or as
 something that may weaken the evidence) or every line its change added or

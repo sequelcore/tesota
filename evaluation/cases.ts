@@ -1,4 +1,4 @@
-import { bodyEnd, contracts } from "../src/proof-guarantees.js";
+import { contracts } from "../src/proof-guarantees.js";
 
 /**
  * The registered cases slice 8 (#350) runs live with Tesota's package,
@@ -248,6 +248,6 @@ export function withBuggyBody(base: string, after: string, path: string, name: s
   const original = contracts(path, base).find((item) => item.name === name);
   if (contract === undefined || original === undefined) return undefined;
   const lines = base.split("\n");
-  const body = lines.slice(original.endLine - 1, bodyEnd(base, original.endLine)).join("\n");
+  const body = lines.slice(original.endLine - 1, original.bodyEnd).join("\n");
   return `${contract.text.split("\n").filter((line) => line.startsWith("//@")).join("\n")}\n${body}\n`;
 }
