@@ -26,7 +26,8 @@ function inRepository(root: string): boolean {
  * it, each of them, each other folder in it, and its own files, in name
  * order; folders below a child are not searched. Hidden folders and those
  * that hold dependencies or build output (`skipped`) are left out. A folder
- * with no repository directly in it has none, as anywhere outside Git.
+ * with no repository directly in it is one folder in none, whole; one that
+ * cannot be read has no unit.
  */
 export function workspaceUnits(root: string): Unit[] {
   if (inRepository(root)) return [{ folder: "", repository: true }];
@@ -35,6 +36,6 @@ export function workspaceUnits(root: string): Unit[] {
   const visible = entries.filter(({ name }) => !name.startsWith(".")).sort((a, b) => a.name < b.name ? -1 : 1);
   const folders = visible.filter((entry) => entry.isDirectory() && !skipped.has(entry.name))
     .map(({ name }) => ({ folder: name, repository: existsSync(join(root, name, ".git")) }));
-  if (!folders.some(({ repository }) => repository)) return [];
+  if (!folders.some(({ repository }) => repository)) return [{ folder: "", repository: false }];
   return [...visible.some((entry) => entry.isFile()) ? [{ folder: "", repository: false }] : [], ...folders];
 }

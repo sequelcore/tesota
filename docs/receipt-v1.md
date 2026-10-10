@@ -98,8 +98,11 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `version` | `1` | This format |
-| `repository` | boolean | False when the project has no Git repository. Then every list is empty, `base` is null, and nothing was verified |
-| `base` | string or null | The commit `HEAD` named when the operator's request started. Null before the first commit and outside Git |
+| `repository` | boolean | False when the project has no Git repository. Unless `snapshot` is present, every list is then empty, `base` is null, and nothing was verified |
+| `snapshot` | `true`, optional | Present when the project has no Git repository and Tesota measured the request against its own snapshot of it. `base` is then that snapshot's commit, which no one else can fetch |
+| `tooLarge` | string[], optional | With `snapshot`, the files the snapshot left out for being over 10 MB, so nothing verified them |
+| `reason` | string, optional | When nothing was verified, why: Tesota does not snapshot a home folder or a drive's root, or the folder is past a snapshot's limits |
+| `base` | string or null | The commit `HEAD` named when the operator's request started, or Tesota's snapshot then. Null before the first commit and when nothing was verified |
 | `startedAt` | timestamp | When the operator's request started |
 | `settledAt` | timestamp | When the run settled |
 | `pi` | string | The version of Pi the run used |
@@ -114,7 +117,7 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `commentsOnly` | `true`, optional | Present when every line the request added or removed is blank or comment-only, a `//@` line not counting as a comment. When nothing else is listed, the receipt says there was nothing to verify |
 | `uncovered` | UncoveredLines[] | The changed lines of each TypeScript file that proved that no contract's proof covers. Empty when `weakened` is a string |
 | `changed` | Changed[], or `"unreadable"` | Every file changed from `base` as the run left it, sorted by path |
-| `units` | Unit[], optional | Present when Pi ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `proofs` to `changed` are empty, `repository` is true and `base` is null |
+| `units` | Unit[], optional | Present when Pi ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `changed` are empty or absent, `repository` is true and `base` is null |
 
 ### Unit
 
@@ -127,10 +130,13 @@ from it, and:
 | --- | --- | --- |
 | `folder` | string | The unit's folder, relative to the folder Pi ran in, with forward slashes. Empty for that folder's own files |
 
-A repository the request did not change has no unit. A folder in no
-repository has a unit, with `repository` false, nothing verified and `base`
-null, only when the request ran a tool that may change files; a repository
-Git could not read is listed the same way.
+A unit the request did not change has none. A folder in no repository,
+and the folder's own files without the folders below (`folder` empty), are
+measured against Tesota's snapshot of each, with `snapshot` true. One that
+could not be snapshotted has a unit, with `repository` false, nothing
+verified, `base` null and its `reason`, only when the request ran a tool
+that may change files; a repository Git could not read is listed the same
+way.
 
 ### Proof
 

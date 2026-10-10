@@ -31,7 +31,7 @@ it("is each repository directly inside a folder that is none, each other folder,
     { folder: "web", repository: true }]);
 });
 
-it("is nothing in a folder that holds no repository directly, as outside Git", () => {
-  expect(workspaceUnits(folder(["notes.md", "lab/package.json", "deep/inner/.git/"]))).toEqual([]);
+it("is the whole folder, as one in no repository, when it holds no repository directly, and nothing when unreadable", () => {
+  expect(workspaceUnits(folder(["notes.md", "lab/package.json", "deep/inner/.git/"]))).toEqual([{ folder: "", repository: false }]);
   expect(workspaceUnits(join(tmpdir(), "tesota-no-such-folder"))).toEqual([]);
 });

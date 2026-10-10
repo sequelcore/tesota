@@ -3,7 +3,7 @@ import { sep } from "node:path";
 import type { ContextUsage, ReadonlyFooterDataProvider, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import { allEvidence, type Receipt, receiptDecisions } from "./receipt.js";
+import { allEvidence, type Receipt, receiptDecisions, verified } from "./receipt.js";
 import { type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
 /** One piece of the evidence row, in its words, its shorter words and its glyph form; an empty form is left out. */
@@ -54,10 +54,10 @@ function lineCount(uncovered: Receipt["uncovered"]): number {
 
 /** The receipt in a row: what proved and passed, then what is weak, unproved or may weaken the evidence. */
 function receiptParts(settled: Receipt): EvidencePart[] {
-  // In a folder of repositories, their evidence together, and the folders in none that may have changed.
+  // In a folder of repositories, the evidence of every unit verified together, and the folders nothing verified.
   const receipt = allEvidence(settled);
-  const plain = (settled.units ?? []).filter(({ repository }) => !repository).length;
-  if (!receipt.repository) {
+  const plain = (settled.units ?? []).filter((unit) => !verified(unit)).length;
+  if (!verified(receipt)) {
     return [part("! receipt", "! receipt", "!", "warning"), part("not verified, no Git repository", "no Git", "no Git", "warning")];
   }
   const proved = receipt.proofs.filter(({ verdict }) => verdict === "proved").length;

@@ -1,8 +1,8 @@
 import { type ExtensionAPI, keyText, type MessageRenderOptions, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { SentBack } from "./gate.js";
-import { allEvidence, commandFinding, contractFinding, type Finding, isNote, isReceipt, proofFinding, type Receipt,
-  receiptFindings } from "./receipt.js";
+import { allEvidence, commandFinding, contractFinding, type Finding, isNote, isReceipt, plainName, proofFinding, type Receipt,
+  receiptFindings, type UnitEvidence, verified } from "./receipt.js";
 import { decisions } from "./verification/verdict-rule.js";
 
 /** `line` broken at spaces into rows of `width` columns, every row after the first indented by `indent` columns. */
@@ -149,10 +149,11 @@ function receiptCard(theme: Theme, receipt: Receipt, options: MessageRenderOptio
   const label = labelWidth(findings);
   const { tests } = allEvidence(receipt);
   const unproved = tests.length > 0 && tests.every(({ verdict: v }) => v === "proved") ? "NOT PROVED" : "NOT VERIFIED";
-  // In a folder of repositories, each one's base.
-  const from = receipt.units === undefined ? receipt.base?.slice(0, 12) ?? "the first commit"
-    : receipt.units.filter(({ repository }) => repository)
-      .map(({ folder, base }) => `${folder} ${base?.slice(0, 12) ?? "its first commit"}`).join(", ");
+  // Each unit's base: a commit, or Tesota's snapshot of a folder in no repository, which no one else can fetch.
+  const based = ({ snapshot, base }: UnitEvidence, first: string): string =>
+    `${snapshot === true ? "Tesota's snapshot " : ""}${base?.slice(0, 12) ?? first}`;
+  const from = receipt.units === undefined ? based(receipt, "the first commit")
+    : receipt.units.filter(verified).map((unit) => `${plainName(unit.folder)} ${based(unit, "its first commit")}`).join(", ");
   return card(theme, options, (width) => {
     const title = spread(verdict + noted, theme.fg("customMessageLabel", bold("Tesota receipt")), width);
     if (!options.expanded && decide.length === 0 && gaps.length === 0 && opinions.every(isMatch)) {

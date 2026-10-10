@@ -170,3 +170,11 @@ it("names each repository's findings by its folder, the folders in none, and eac
   expect(rows).toContain("notes — it is in no Git repository, so Tesota cannot tell what changed");
   expect(rows).toContain(`From api ${base.slice(0, 12)} · Pi`);
 });
+
+it("names a snapshot as the base of a folder in no repository, and a file it left out for its size", () => {
+  const base = "b".repeat(40);
+  const snapshotted: Receipt = { ...clean, repository: false, snapshot: true, base, tooLarge: ["data/huge.csv"] };
+  const rows = shown("tesota-receipt", snapshotted, 120, true).join("\n");
+  expect(rows).toContain(`From Tesota's snapshot ${base.slice(0, 12)} · Pi`);
+  expect(rows).toContain("data/huge.csv — too large for Tesota's snapshot, which left it out");
+});

@@ -170,3 +170,10 @@ it("sums up a folder of repositories as one receipt, with the folders in none", 
     { ...emptyReceipt, folder: "notes", repository: false }] };
   expect(words({ step: "settled", receipt: units })).toBe("! receipt · 1 proved · tests pass · 1 folder not verified, no Git");
 });
+
+it("sums up a folder Tesota snapshotted as a receipt like a repository's, and one it could not as not verified", () => {
+  const snapshotted: Receipt = { ...emptyReceipt, repository: false, snapshot: true, proofs: [proved], tests: [passing] };
+  expect(words({ step: "settled", receipt: snapshotted })).toBe("✓ receipt · 1 proved · tests pass");
+  expect(words({ step: "settled", receipt: { ...emptyReceipt, repository: false, reason: "it holds too much" } }))
+    .toBe("! receipt · not verified, no Git repository");
+});

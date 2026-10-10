@@ -98,10 +98,26 @@ What counts as a repeat:
   its output varies from run to run.
 - **Weak contracts:** the list of surviving mutants.
 
-Outside a Git repository the gate cannot tell what changed. A request that
-ran any tool other than `read`, `grep`, `find`, `ls` or `prove` ends with a
-receipt saying its changes were not verified. Otherwise the run settles with
-no receipt.
+Outside a Git repository the gate measures the request against its own
+snapshot of the folder (`takeSnapshot` in `src/snapshot.ts`, #384), taken
+when the request starts: Git, run with a Git directory under Pi's agent
+directory (`state/tesota/snapshots`) and the folder as its work tree,
+commits the folder as it is, and the folder gains nothing. Every step above
+then runs as in a repository, so a change any tool made, a shell command's
+included, is found by its content. Secrets (`.env`, `.env.*`), Git's and
+Jujutsu's folders, dependencies, build output and what the folder's
+`.gitignore` names are left out. As pi-workspace-history bounds its history,
+a file over 10 MB is left out and listed as not verified, and a folder with
+more than 20,000 files or 3,000 folders, or that takes more than 5 s to
+read, is not snapshotted. The snapshots of the ten most recently used
+folders are kept, and any used in the last day. The receipt marks the base
+as a snapshot, which no one else can fetch, and `tesota receipt` writes no
+pull request receipt from it.
+
+A home folder or a drive's root is never snapshotted. There, or past a
+limit, a request that ran any tool other than `read`, `grep`, `find`, `ls`
+or `prove` ends with a receipt saying why its changes were not verified;
+otherwise the run settles with no receipt.
 
 A folder that is in no repository but holds Git repositories directly
 (`workspaceUnits` in `src/workspace.ts`, #384) is verified repository by
@@ -110,9 +126,12 @@ started, and the gate runs the steps above in each repository the request
 changed, from its own folder with its own commands; one it did not change
 runs nothing. Each round gathers what goes back across the repositories,
 named from the folder Pi runs in (`api/src/rule.ts`, `cd api && bun test`),
-and a repeated failure stops only itself. The run settles with one receipt
-whose `units` hold each repository's evidence, and the folders in no
-repository, listed as not verified once a tool may have changed files.
+and a repeated failure stops only itself. The folders in no repository,
+and the folder's own files without the folders below, are measured against
+Tesota's snapshot of each, as outside Git. The run settles with one receipt
+whose `units` hold each changed unit's evidence; a folder that could not be
+snapshotted is listed as not verified, with why, once a tool may have
+changed files.
 
 ## Proofs
 

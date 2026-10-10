@@ -10,6 +10,7 @@ import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { uncoveredLines } from "./proof-coverage.js";
 import { proofReport } from "./prove-tool.js";
 import { inUnit, isReceipt, noEvidence, type Receipt, renderReceipt, type UnitEvidence } from "./receipt.js";
+import { takeSnapshot } from "./snapshot.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
 import { blankOrComment, type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
@@ -335,12 +336,13 @@ export class GateProgress {
  * a receipt for the operator. Changes are measured against the commit `HEAD`
  * named when the operator's request started, so a commit the agent makes
  * hides nothing; a steer or follow-up sent while the agent works belongs to
- * the request already running. Outside a Git repository it cannot tell what
- * changed, so a request that ran a tool that may change files ends with a
- * receipt that says so. In a folder of repositories that is in none (#384),
- * each repository the request changed goes through these steps from its own
- * base and folder, each round gathering what goes back across them, and the
- * receipt holds each one as a unit.
+ * the request already running. Outside a Git repository the base is
+ * Tesota's snapshot of the folder (`takeSnapshot`, #384); where it takes
+ * none, a request that ran a tool that may change files ends with a receipt
+ * that says why nothing was verified. In a folder of repositories that is in
+ * none, each repository and each other folder the request changed goes
+ * through these steps from its own base and folder, each round gathering
+ * what goes back across them, and the receipt holds each one as a unit.
  */
 export function registerGate(pi: ExtensionAPI): GateProgress {
   const progress = new GateProgress();
@@ -376,9 +378,11 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     try { return await settle(event, ctx); } catch (error) { progress.reset(); throw error; }
   });
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
-  const outsideGit = (run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">): AgentBeforeSettleEventResult | undefined => {
+  const outsideGit = (run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">, reason: string | undefined):
+    AgentBeforeSettleEventResult | undefined => {
     if (!mayHaveChanged) return undefined;
-    const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence };
+    const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
+      ...reason === undefined ? {} : { reason } };
     progress.publish({ step: "settled", receipt });
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
       display: true, details: receipt }] };
@@ -438,17 +442,19 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
   };
   const settle = async (event: AgentBeforeSettleEvent, ctx: ExtensionContext): Promise<AgentBeforeSettleEventResult | undefined> => {
     if (event.outcome !== "completed") return undefined;
-    const { units, bases } = await (start ??= begin(ctx.cwd));
+    const { units, bases, tooLarge, refused } = await (start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
     const workspace = units.some(({ folder }) => folder !== "");
     const run = { base: workspace ? null : bases.get("") ?? null, startedAt, pi: VERSION, ...sessionModel(ctx) };
-    const repositories = units.filter(({ repository }) => repository);
-    const read = await Promise.all(repositories.map(({ folder }) => changedUnit(ctx.cwd, folder, bases.get(folder) ?? null)));
-    if (!workspace && read[0] === undefined) return outsideGit(run);
+    // Each repository and each folder Tesota snapshotted, measured from its base.
+    const measurable = units.filter(({ folder }) => bases.has(folder));
+    const read = await Promise.all(measurable.map(({ folder, repository }) =>
+      changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [])));
+    if (!workspace && read[0] === undefined) return outsideGit(run, refused.get(""));
     const changed = read.filter((unit): unit is ChangedUnit => typeof unit === "object");
-    // A repository Git could not read is no more verified than a folder in none.
-    const plain = workspace && mayHaveChanged
-      ? [...units.filter(({ repository }) => !repository), ...repositories.filter((_, k) => read[k] === undefined)] : [];
+    // A folder with no snapshot, or a repository Git could not read, is not verified; it is listed once it may have changed.
+    const plain = workspace && mayHaveChanged ? [...units.filter(({ folder }) => !bases.has(folder)),
+      ...measurable.filter((_, k) => read[k] === undefined)] : [];
     if (changed.length === 0 && plain.length === 0) { progress.reset(); return undefined; }
     const signal = ctx.signal ?? new AbortController().signal;
     const proofs = await prove(changed, signal);
@@ -478,7 +484,8 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     const receipt: Receipt = only !== undefined ? { version: 1, ...run, ...only, settledAt }
       : { version: 1, repository: true, ...run, ...noEvidence, settledAt, units: [
         ...evidence.map((unit, k) => ({ ...unit, folder: changed[k]?.folder ?? "" })),
-        ...plain.map(({ folder }) => ({ folder, repository: false, base: null, ...noEvidence }))]
+        ...plain.map(({ folder }) => ({ folder, repository: false, base: null, ...noEvidence,
+          reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]
         .sort((a, b) => a.folder < b.folder ? -1 : 1) };
     progress.publish({ step: "settled", receipt });
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
@@ -487,37 +494,64 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
   return progress;
 }
 
-/** What the gate measures a request against: the units of the folder Pi runs in, and each repository's commit `HEAD` named then. */
+/**
+ * What the gate measures a request against: the units of the folder Pi runs
+ * in; each repository's commit `HEAD` named then, and for each folder in no
+ * repository, Tesota's snapshot of it then (`takeSnapshot`), with the files
+ * it left out for their size, or why there is none.
+ */
 interface Start {
   readonly units: readonly Unit[];
   readonly bases: ReadonlyMap<string, string | null>;
+  readonly tooLarge: ReadonlyMap<string, readonly string[]>;
+  readonly refused: ReadonlyMap<string, string>;
 }
 
+/** The request's start in `cwd`; in a folder of repositories, its own files are snapshotted without the folders below. */
 async function begin(cwd: string): Promise<Start> {
   const units = workspaceUnits(cwd);
-  return { units, bases: new Map(await Promise.all(units.filter(({ repository }) => repository)
-    .map(async ({ folder }) => [folder, await headCommit(join(cwd, folder))] as const))) };
+  const workspace = units.some(({ folder }) => folder !== "");
+  const bases = new Map<string, string | null>();
+  const tooLarge = new Map<string, readonly string[]>();
+  const refused = new Map<string, string>();
+  for (const { folder, repository } of units) {
+    if (repository) { bases.set(folder, await headCommit(join(cwd, folder))); continue; }
+    const snapshot = await takeSnapshot(join(cwd, folder), workspace && folder === "");
+    if ("refused" in snapshot) refused.set(folder, snapshot.refused);
+    else { bases.set(folder, snapshot.base); tooLarge.set(folder, snapshot.tooLarge); }
+  }
+  return { units, bases, tooLarge, refused };
 }
 
-/** A repository the request changed: its folder and checkout, its base, and its changes as the gate reads them. */
+/**
+ * A unit the request changed: its folder and checkout, its base, and its
+ * changes as the gate reads them; for a folder Tesota snapshotted, the files
+ * the snapshot left out for their size.
+ */
 interface ChangedUnit {
   readonly folder: string;
   readonly root: string;
   readonly base: string | null;
+  readonly snapshot?: { readonly tooLarge: readonly string[] };
   readonly changed: readonly string[];
   readonly changes: Awaited<ReturnType<typeof fileChanges>>;
   readonly weakened: Receipt["weakened"];
 }
 
-/** The repository at `folder` as the request changed it from `base`; `unchanged` when it changed nothing, and nothing outside Git. */
-async function changedUnit(cwd: string, folder: string, base: string | null): Promise<ChangedUnit | "unchanged" | undefined> {
+/**
+ * The unit at `folder` as the request changed it from `base`, a commit or,
+ * given what it left out (`tooLarge`), a snapshot; `unchanged` when it
+ * changed nothing, and nothing when Git cannot read it.
+ */
+async function changedUnit(cwd: string, folder: string, base: string | null, tooLarge: readonly string[] | undefined):
+  Promise<ChangedUnit | "unchanged" | undefined> {
   const root = join(cwd, folder);
   const changed = await changedFiles(root, base);
   if (changed === undefined) return undefined;
   const changes = await fileChanges(root, base, changed);
   const weakened = typeof changes === "string" ? changes : weakenedEvidence(changes);
   return changed.length === 0 && Array.isArray(weakened) && weakened.length === 0 ? "unchanged"
-    : { folder, root, base, changed, changes, weakened };
+    : { folder, root, base, changed, changes, weakened, ...tooLarge === undefined ? {} : { snapshot: { tooLarge } } };
 }
 
 /** What `measure` found in one repository. */
@@ -531,7 +565,9 @@ interface Measured {
 async function unitEvidence(unit: ChangedUnit, proofs: Receipt["proofs"], rung: Pick<Receipt, "tests" | "exercises"> | undefined,
   measured: Measured | undefined): Promise<UnitEvidence> {
   const sources = measured?.sources ?? [];
-  return { repository: true, base: unit.base, proofs, ...measured?.strength ?? { contracts: [] },
+  return { repository: unit.snapshot === undefined,
+    ...unit.snapshot === undefined ? {} : { snapshot: true, ...unit.snapshot.tooLarge.length === 0 ? {} : { tooLarge: unit.snapshot.tooLarge } },
+    base: unit.base, proofs, ...measured?.strength ?? { contracts: [] },
     tests: rung?.tests ?? [], exercises: rung?.exercises ?? [], weakened: unit.weakened,
     ...unprovedFiles(unit.changes, unit.changed, measured?.covered ?? new Set()), uncovered: uncovered(sources, unit.changes, unit.weakened),
     changed: await recordedChanges(unit.root, unit.base, unit.changed) };
