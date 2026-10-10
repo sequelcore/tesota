@@ -55,3 +55,14 @@ each one's issue and pull requests.
   it pass without weakening anything. It ships only if, on registered cases
   with planted bugs, the gate removes false findings without losing real
   ones.
+
+## Open questions
+
+- **Which existing Pi packages Tesota carries or recommends,** such as
+  sub-agents or permissions, beside the verification it builds
+  ([#385](https://github.com/sequelcore/tesota/issues/385)). Each must keep
+  Tesota's extension active in the sessions it starts, as parallel sessions
+  must ([#373](https://github.com/sequelcore/tesota/issues/373)), and a user
+  can turn it off with `pi config`. Decided after the alpha's week of use
+  ([#372](https://github.com/sequelcore/tesota/issues/372)), including
+  whether Tesota installs them or only recommends them.
