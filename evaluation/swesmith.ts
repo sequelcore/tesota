@@ -39,6 +39,8 @@ import { JEV_SKIP_BELOW, diffFiles, git, jevSkips, jevTriage, option, parseFindi
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=gate [--model=openai/gpt-6-luna]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=rerun [--model=openai/gpt-6-luna]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=fix [--model=openai/gpt-6-luna] [--gate-model=<model>]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=cases [--model=openai/gpt-6-sol]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=export-cases --file=<cases.json>
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=score [--model=<gate model>] [--table=<file>]
  *
  * `--work` holds the repositories and the runs, outside the repository; the
@@ -401,6 +403,95 @@ async function fix(): Promise<void> {
   });
 }
 
+/**
+ * Cases the operator approves (the plain-language rules decision, step 4), registered on 2026-10-11 before any run.
+ * A separate session that sees the request, the finding's claim and the code at the change, but neither the
+ * reviewer's reason nor any fix, writes one or two cases in plain words and a test for each, without running
+ * anything. The findings are every one on the controls and, for each bug, the finding first in the order of a SHA-256
+ * of the seed and its key. A case's expectation is right when its test passes on the correct code, which the operator
+ * never sees; it would confirm a finding when it also fails on the change.
+ */
+const casePrompt = (requested: string, finding: Finding): string =>
+  `A reviewer claims this about the uncommitted change in this repository (\`git diff\` shows it), made for this ` +
+  `request:\n\n${requested}\n\nClaim: ${where(finding)}: ${finding.statement}\n\n` +
+  "Write one or two concrete cases that pin down the behavior the claim says is expected. State each in plain words a " +
+  "person who knows the request can judge without reading code: what is called or given, and what result is expected. " +
+  "Then add one new test file whose name contains `tesota-case`, where the repository's test command runs it, written " +
+  "like the repository's other tests, with one test per case named `tesota case 1`, `tesota case 2`, each asserting " +
+  "exactly that case's expected result. Do not run anything and do not change any other file. End your reply with a " +
+  "JSON array in a ```json block: [{\"case\": 1, \"text\": \"the case in plain words\"}].";
+
+function caseFindings(): Reviewed[] {
+  const seed = option("seed") ?? "375";
+  const all = allFindings();
+  const bugs = [...new Set(all.filter((item) => item.arm === "bug").map((item) => item.instance.instance_id))].flatMap((id) =>
+    all.filter((item) => item.arm === "bug" && item.instance.instance_id === id)
+      .sort((a, b) => hash(`${seed}|${a.key}`).localeCompare(hash(`${seed}|${b.key}`))).slice(0, 1));
+  return [...all.filter((item) => item.arm === "control"), ...bugs];
+}
+
+/** How a numbered case's tests ended in a run: passed only when each of its tests ran and passed. */
+function caseOutcome(run: Record<string, any>, number: number): "pass" | "fail" | "missing" {
+  const statuses = Object.entries((run["statuses"] ?? {}) as Record<string, string>)
+    .filter(([name]) => name.toLowerCase().includes(`tesota case ${number}`));
+  if (statuses.length === 0) return "missing";
+  return statuses.every(([, status]) => status === "PASSED") ? "pass" : "fail";
+}
+
+async function cases(): Promise<void> {
+  const model = option("model") ?? "openai/gpt-6-sol";
+  const done = new Set(records().filter((record) => record["kind"] === "cases" && record["model"] === model).map((record) => record["key"]));
+  await pool(caseFindings().filter((item) => !done.has(item.key)).slice(0, Number(option("limit") ?? Infinity)), parallel, async (item) => {
+    const directory = changed(item.instance, item.arm);
+    const session = await pi(model, directory, ["read", "grep", "find", "ls", "write"], casePrompt(request(item.instance, item.arm), item.finding));
+    const block = [...String(session["output"]).matchAll(/```json\s*([\s\S]*?)```/gu)].at(-1)?.[1];
+    let written: { readonly case: number; readonly text: string }[] = [];
+    try {
+      written = (JSON.parse(block ?? "[]") as { case?: unknown; text?: unknown }[]).flatMap((entry) =>
+        typeof entry.case === "number" && typeof entry.text === "string" ? [{ case: entry.case, text: entry.text }] : []);
+    } catch { /* recorded with no cases */ }
+    const tests = git(directory, "status", "--porcelain", "--untracked-files=all").split("\n").filter((line) => line.length > 3)
+      .map((line) => line.slice(3).trim()).filter((path) => path.includes("tesota-case"));
+    let outcome: Record<string, unknown> = { cases: written.map((entry) => ({ ...entry, onCorrect: "missing", onChange: "missing" })) };
+    if (tests.length > 0 && written.length > 0) {
+      git(directory, "add", "-N", "--", ...tests);
+      const testPatch = git(directory, "diff", "clean", "--", ...tests);
+      const correct = await runTests(item.instance, testPatch);
+      const change = item.arm === "control" ? correct : await runTests(item.instance, withBug(item.instance, testPatch));
+      outcome = { testPatch, cases: written.map((entry) => ({ ...entry, onCorrect: caseOutcome(correct, entry.case),
+        onChange: caseOutcome(change, entry.case) })) };
+    }
+    append({ kind: "cases", model, key: item.key, tests, ...outcome, durationMs: session["durationMs"], tokens: session["tokens"],
+      ...session["ended"] === "exited" && session["exitCode"] === 0 ? {} : { output: String(session["output"]).slice(-2000) } });
+    process.stdout.write(`cases ${item.key}: ${JSON.stringify((outcome["cases"] as { onCorrect: string }[]).map((entry) => entry.onCorrect))}\n`);
+  });
+}
+
+/**
+ * The cases for the operator, as a JSON file: each with its request, the change's diff and the case in plain words,
+ * in the order of a SHA-256 of the seed and its id, with nothing that tells how it ran or how its finding is labeled.
+ */
+function exportCases(): void {
+  const file = option("file");
+  if (file === undefined) throw new Error("Name the file with --file=<path>.");
+  const seed = option("seed") ?? "375";
+  const byKey = new Map(allFindings().map((item) => [item.key, item]));
+  const diffs = new Map<string, string>();
+  const diffOf = (item: Reviewed): string => {
+    const id = `${item.instance.instance_id}|${item.arm}`;
+    if (!diffs.has(id)) diffs.set(id, item.arm === "bug" ? item.instance.patch : git(changed(item.instance, "control"), "diff"));
+    return diffs.get(id) ?? "";
+  };
+  const shown = records().filter((record) => record["kind"] === "cases").flatMap((record) => {
+    const item = byKey.get(String(record["key"]));
+    return item === undefined ? [] : (record["cases"] as { case: number; text: string }[]).map((entry) => ({
+      id: hash(`${String(record["key"])}|${entry.case}`).slice(0, 12), request: request(item.instance, item.arm),
+      diff: diffOf(item), text: entry.text }));
+  }).sort((a, b) => hash(`${seed}|${a.id}`).localeCompare(hash(`${seed}|${b.id}`)));
+  writeFileSync(file, JSON.stringify(shown, null, 1));
+  process.stdout.write(`${shown.length} cases written to ${file}\n`);
+}
+
 const tokens = (records: readonly Record<string, any>[]): number => records.reduce((total, record) => total + Number(record["tokens"]?.["total"] ?? 0), 0);
 
 function score(): void {
@@ -482,5 +573,7 @@ else if (stage === "judge") await judge();
 else if (stage === "gate") await gate();
 else if (stage === "rerun") await rerun();
 else if (stage === "fix") await fix();
+else if (stage === "cases") await cases();
+else if (stage === "export-cases") exportCases();
 else if (stage === "score") score();
-else throw new Error("Use --stage=sample, review, triage, judge, gate, rerun, fix or score.");
+else throw new Error("Use --stage=sample, review, triage, judge, gate, rerun, fix, cases, export-cases or score.");
