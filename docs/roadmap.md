@@ -46,15 +46,15 @@ each one's issue and pull requests.
   internals, and its sessions would run without Tesota.
 - **Upstream reports** for LemmaScript and Pi
   ([#374](https://github.com/sequelcore/tesota/issues/374)).
-- **Findings become evidence,** after the alpha
+- **Findings become evidence**
   ([#375](https://github.com/sequelcore/tesota/issues/375)). A model judge
   does not return as a verdict: a model's opinion is a candidate, not
-  evidence. Tesota instead becomes the empirical gate a finding passes
-  before the receipt states it: the agent turns the finding into a test that
-  fails on the change, and Tesota confirms it fails, then that the fix makes
-  it pass without weakening anything. It ships only if, on registered cases
-  with planted bugs, the gate removes false findings without losing real
-  ones.
+  evidence. The gate as designed, a test the agent derives from the finding
+  that fails on the change and passes after its fix, was measured and does
+  not ship: it kept most false findings and lost real ones
+  ([measurements](design/verification.md#measurements)). A redesign that
+  grounds a finding's expected behavior in the request, a contract or a test
+  the operator approves is proposed on the issue.
 - **A workspace of several repositories**
   ([#384](https://github.com/sequelcore/tesota/issues/384)). Opened in a
   folder that holds several Git repositories but is not one, Tesota verifies
