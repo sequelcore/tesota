@@ -18,10 +18,16 @@ registry packages; lifecycle scripts are disabled.
 | `bun run check` | Run the complete repository gate |
 | `bun run formal:check` | Prove the LemmaScript rules in `src/verification/`; requires Dafny |
 | `bun run live:eval` | Run the registered cases live through Pi on the operator's sign-in (`evaluation/live.ts`); uses model quota |
+| `bun run findings:eval` | Measure review findings turned into reproduction tests on the registered cases (`evaluation/findings.ts`); uses model quota |
+| `bun run swesmith:eval` | The same on SWE-smith's JavaScript bugs, with the fix step (`evaluation/swesmith.ts`); uses model quota and Docker |
 
 `bun run check` never calls a live model; `bun run live:eval` does, after
 `bun run build`, and writes its results to the file `--out` names, outside
-the repository. The check's tests that prove files run
+the repository, as do the findings evaluations. `bun run swesmith:eval` runs
+each repository's tests in its SWE-smith image through the runner image
+`docker build -t tesota-swesmith:9b74ac0 evaluation/swesmith` builds, under
+4 GB a container; the dataset (`SWE-bench/SWE-smith-js`) is converted to
+JSON lines first and named with `--data`. The check's tests that prove files run
 only where Dafny is installed. CI installs Dafny from `mise.toml` on Ubuntu
 and Windows, so those tests run there, and `bun run formal:check` runs after
 the check. The launcher tests run

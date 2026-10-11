@@ -467,6 +467,29 @@ Luna through Pi on a ChatGPT sign-in. `bun run live:eval`
   `contractWeakened`'s verbatim rule does not tell apart. There is no arm
   without the note, so this shows the note is followed, not that it is needed
   ([#393](https://github.com/sequelcore/tesota/pull/393)).
+- **Findings turned into tests** ([#375](https://github.com/sequelcore/tesota/issues/375)),
+  measured before anything was built. GPT-6 Sol and Luna reviewed 20 bugs
+  from SWE-smith's JavaScript set (`bun run swesmith:eval`), each as a change
+  and beside a control, the bug's exact fix. Luna turned each finding into a
+  test that must fail on the change, then fixed the code so the test passes
+  without breaking the visible tests; the bug's own failing tests stayed
+  hidden as the oracle. Sol labeled the bug findings, unaudited.
+  - Both reviewers caught 20 of 20 bugs, at precision 0.96.
+  - A failing test alone confirmed 12 of 21 findings on the correct
+    controls; none of those tests passes on correct code.
+  - With the fix step, 10 of those 12 still passed, since their fixes changed
+    behavior no test covers. Real findings fell to 13 of 20 bugs a reviewer:
+    about half of the tests also failed on correct code, so no correct fix
+    could make them pass.
+  - Gate and fix cost 7.1M tokens, against 1.7M for the reviews.
+
+  Running code shows what the code does, not that it is wrong: a test the
+  agent derives from a finding encodes the agent's opinion. On the
+  registered review cases from `d0c03f66` (`bun run findings:eval`) the
+  reviewers reached the same ceiling and the gate confirmed all three of
+  Sol's false findings. Jev, as triage of the gate below 0.2, skipped nothing:
+  every finding described behavior. The cases are mechanical bugs, 20
+  instances, with one agent model.
 
 ## Credits
 
