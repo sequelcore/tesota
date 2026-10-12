@@ -27,3 +27,21 @@ export function decisions(standings: readonly Standing[]): number {
   }
   return count;
 }
+
+/**
+ * Whether a summary of one check's findings must say how many of them hold,
+ * as in "Contract strong (1 of 4)": some finding of that check needs the
+ * operator or is a gap, so its label alone would read as if every one held
+ * (#399). A model's opinion is never evidence either way.
+ */
+//@ ensures \result <==> exists(k: nat, k < standings.length && (standings[k] === "decide" || standings[k] === "gap"))
+export function partlyHolds(standings: readonly Standing[]): boolean {
+  let k = 0;
+  while (k < standings.length) {
+    //@ invariant 0 <= k && k <= standings.length
+    //@ invariant !exists(j: nat, j < k && (standings[j] === "decide" || standings[j] === "gap"))
+    if (standings[k] === "decide" || standings[k] === "gap") return true;
+    k = k + 1;
+  }
+  return false;
+}

@@ -63,6 +63,19 @@ it("sums up the receipt, leading with whether anything in it needs the operator"
     .toBe("! receipt · 1 proved · tests pass · contracts strong · weakening not checked");
 });
 
+it("tells a proof that holds only given what the change trusts without proof from one proved outright (#399)", () => {
+  const checked = { ...proved, evidence: { ...proved.evidence, files: ["src/clamp.ts", "src/clamp.dfy"] } };
+  const extern = (name: string) => ({ path: "src/clamp.ts", kind: "added_assume", annotation: "//@ extern", function: name }) as const;
+  const assumed: Receipt = { ...emptyReceipt, proofs: [checked, { ...checked, path: "src/parse.ts", evidence: { ...checked.evidence,
+    files: ["src/parse.ts", "src/parse.dfy"] } }], tests: [passing],
+    // An assumption in the .dfy LemmaScript keeps elsewhere counts for its proof as well.
+    weakened: [extern("lower"), extern("upper"), { path: "src/clamp.dfy", kind: "added_assume", annotation: "assume false;" }] };
+  expect(words({ step: "settled", receipt: assumed }))
+    .toBe("! receipt · 1 proved · 1 proved on trust · tests pass · 3 may weaken the evidence");
+  expect(words({ step: "settled", receipt: assumed }, "short")).toBe("! receipt · 1 proved · 1 on trust · tests ✓ · 3 may weaken");
+  expect(words({ step: "settled", receipt: assumed }, "glyphs")).toBe("! · ✓1 · trust 1 · tests ✓ · weakens 3");
+});
+
 it("counts what the checks established and never a model's opinion, as the receipt in the conversation does", () => {
   const judged: Receipt = { ...emptyReceipt, proofs: [proved], tests: [passing],
     contracts: [{ ...strong, judgment: { verdict: "not_justified", explanation: "It allows a negative result." } }],

@@ -253,13 +253,15 @@ One of:
 | `path` | string | The changed file |
 | `kind` | string | One of the kinds below |
 | `annotation` | string | For the first three kinds only: the line as written, trimmed, or `lemma <name> without a body` |
+| `function` | string, optional | For an `//@ extern`: the function it trusts without proof, when Tesota found its declaration |
 
 The kinds are:
 
 - `removed_contract`: a `//@ requires` or `//@ ensures` removed or changed;
 - `added_requires`: a `//@ requires` added to a function the base had;
-- `added_assume`: an added `//@ assume`, or, in a `.dfy`, an added `assume`,
-  `{:axiom}` or lemma without a body;
+- `added_assume`: an added `//@ assume` or `//@ extern`, or, in a `.dfy`, an
+  added `assume`, `{:axiom}` or lemma without a body written by hand: not a
+  line of the program LemmaScript generated, its `.dfy.gen`;
 - `deleted_test`: a test file deleted;
 - `edited_test`: a test file edited so that it may weaken its tests: a
   removed line that is not blank, comment-only or a widened import, or an

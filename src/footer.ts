@@ -3,7 +3,7 @@ import { sep } from "node:path";
 import type { ContextUsage, ReadonlyFooterDataProvider, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import { allEvidence, type Receipt, receiptDecisions, verified } from "./receipt.js";
+import { addedAssumptions, allEvidence, type Receipt, receiptDecisions, verified } from "./receipt.js";
 import { type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
 /** One piece of the evidence row, in its words, its shorter words and its glyph form; an empty form is left out. */
@@ -38,9 +38,12 @@ const workingHeads = {
   sent_back: part("↺ sent back", "↺ sent back", "↺", "warning"),
 } as const;
 
-function tallyParts({ proved, notProved, tests, weak }: Tally): EvidencePart[] {
+/** The tally's parts; of the proofs that passed, `assumed` hold only given parts the change trusts without proof, and are told apart. */
+function tallyParts({ proved, notProved, tests, weak }: Tally, assumed = 0): EvidencePart[] {
+  const outright = proved - assumed;
   return [
-    ...proved > 0 ? [part(`${proved} proved`, `${proved} proved`, `✓${proved}`, "success")] : [],
+    ...outright > 0 ? [part(`${outright} proved`, `${outright} proved`, `✓${outright}`, "success")] : [],
+    ...assumed > 0 ? [part(`${assumed} proved on trust`, `${assumed} on trust`, `trust ${assumed}`, "warning")] : [],
     ...notProved > 0 ? [part(`${notProved} not proved`, `${notProved} unproved`, `✗${notProved}`, "error")] : [],
     ...tests === "pass" ? [part("tests pass", "tests ✓", "tests ✓", "success")] : [],
     ...tests === "fail" ? [part("tests fail", "tests ✗", "tests ✗", "error")] : [],
@@ -60,7 +63,10 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   if (!verified(receipt)) {
     return [part("! receipt", "! receipt", "!", "warning"), part("not verified, no Git repository", "no Git", "no Git", "warning")];
   }
-  const proved = receipt.proofs.filter(({ verdict }) => verdict === "proved").length;
+  const proofs = receipt.proofs.filter(({ verdict }) => verdict === "proved");
+  const proved = proofs.length;
+  // As the receipt in the conversation says, a proof that holds only given an assumption the change added is not proved outright.
+  const assumed = proofs.filter(({ evidence }) => addedAssumptions(evidence.files, receipt.weakened) > 0).length;
   const passed = receipt.tests.every(({ verdict }) => verdict === "proved");
   const weak = receipt.contracts.filter(({ mutation }) => mutation.survived.length > 0).length;
   const lines = lineCount(receipt.uncovered);
@@ -73,7 +79,7 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   const clean = receiptDecisions(settled) === 0;
   const listed = [
     ...tallyParts({ proved, notProved: receipt.proofs.length - proved,
-      ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }),
+      ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }, assumed),
     // Narrower rows keep what needs the operator, so they leave out contracts that held.
     // Strength needs a change the proof caught, as the receipt in the conversation says.
     ...receipt.contracts.length > 0 && receipt.contracts.every(({ mutation }) => mutation.survived.length === 0 && mutation.rejected > 0)

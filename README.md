@@ -125,7 +125,10 @@ footer shows the gate's own progress.
 
 **The receipt in the conversation.** The receipt's first row says whether
 anything needs you, such as `! 4 things need you`. Under it come those
-things, then what is not proved, then what holds, in one row. A model's
+things, then what is not proved, then what holds, in one row that never
+reads stronger than the rest: `Proved, trusting 3 unproved parts` for a
+proof that holds only if what the change trusts without proof is right,
+`Contract strong (1 of 4)` when the others were not measured. A model's
 opinion of the contracts is shown as a note, marked `◇`, and never counts
 toward what needs you. Press Ctrl+O to see each one's details, as for any
 tool's output; what the gate sent back to the agent, and `prove`'s results,
