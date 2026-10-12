@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { type RemovedLine, changedLines } from "../src/diff-lines.js";
-import { bodilessLemmas, type FileChange, weakenedEvidence } from "../src/verification-changes.js";
+import { bodilessLemmas, type FileChange, provedOnTrust, weakenedEvidence } from "../src/verification-changes.js";
 import { removalCounts, testWeakens } from "../src/verification/test-weakening-rule.js";
 import { weakens } from "../src/verification/weakening-rule.js";
 
@@ -18,6 +18,10 @@ it("weakens on a removed requires or ensures, a requires added to an existing fu
   expect(weakens("requires", false, true, true)).toBe(false);
   expect(weakens("assume", true, false, false)).toBe(false);
   expect(weakens("other", true, false, true)).toBe(false);
+  expect(weakens("skip", false, false, true)).toBe(true);
+  expect(weakens("skip", false, false, false)).toBe(false);
+  expect(weakens("skip", false, true, true)).toBe(false);
+  expect(weakens("skip", true, false, true)).toBe(false);
 });
 
 it("weakens tests on a deleted file, or an edit that removes a line that counts or changes how tests run", () => {
@@ -211,6 +215,63 @@ it("counts a proof's lines that LemmaScript generated as its own, and the source
     { path: "src/rule.ts", kind: "added_assume", annotation: "//@ extern", function: "helper" },
     { path: "src/rule.ts", kind: "added_assume", annotation: "//@ extern" },
   ]);
+});
+
+it("flags a //@ skip added to what the base had, and not one on something new or one that only moved (#404)", () => {
+  const baseContent = ["//@ ensures \\result >= 0", "export function clamp(n: number): number {", "  const m = n;", "  return m;", "}", "",
+    "export const limit = (n: number): number => n;", "", "class Box {", "  //@ verify", "  get(): number { return 1; }", "}", "",
+    "//@ skip", "export function moved(): number { return 0; }", ""].join("\n");
+  const content = ["//@ skip", "//@ ensures \\result >= 0", "export function clamp(n: number): number {", "  //@ skip",
+    "  const m = n;", "  return m;", "}", "", "//@ skip", "export const limit = (n: number): number => n;", "", "class Box {",
+    "  //@ skip", "  //@ verify", "  get(): number { return 1; }", "}", "", "//@ skip", "export function fresh(): number { return 0; }", "",
+    "//@ skip", "export function moved(): number { return 0; }", ""].join("\n");
+  const at = (...numbers: number[]) => numbers.map((number) => ({ number, text: content.split("\n")[number - 1] ?? "" }));
+  const added = at(1, 4, 9, 13, 18, 19, 21);
+  const removed = [{ base: 14, number: 21, text: "//@ skip" }];
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "modified", removed, added, content, baseContent }])).toEqual([
+    { path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "clamp" },
+    { path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "clamp", statement: true },
+    { path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "limit" },
+    { path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "get" },
+  ]);
+  // A skip taken off one function and put on another leaves the other out: it did not only move.
+  const traded = baseContent.replace("//@ skip\nexport function moved", "export function moved").replace("export function clamp",
+    "//@ skip\nexport function clamp");
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "modified", removed, added: [{ number: 2, text: "//@ skip" }],
+    content: traded, baseContent }])).toEqual([{ path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "clamp" }]);
+  // A new file has nothing the base proved; a modified one that was not read counts as having it.
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "added", removed: [], added, content }])).toEqual([]);
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "modified", removed, added, content, baseContent: undefined }]))
+    .toHaveLength(6);
+});
+
+it("places a requires or extern on an arrow function, or inside a function body, as LemmaScript reads it", () => {
+  const baseContent = "export const half = (n: number): number => n / 2;\n\nexport function body(n: number): number {\n  return n;\n}\n";
+  const content = ["//@ extern", "//@ requires n >= 0", "export const half = (n: number): number => n / 2;", "",
+    "export function body(n: number): number {", "  //@ requires n > 0", "  return n;", "}", "", "//@ requires m > 0",
+    "export const fresh = (m: number): number => m;", ""].join("\n");
+  const added = [1, 2, 6, 10].map((number) => ({ number, text: content.split("\n")[number - 1] ?? "" }));
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "modified", removed: [], added, content, baseContent }])).toEqual([
+    { path: "src/rule.ts", kind: "added_assume", annotation: "//@ extern", function: "half" },
+    { path: "src/rule.ts", kind: "added_requires", annotation: "//@ requires n >= 0" },
+    { path: "src/rule.ts", kind: "added_requires", annotation: "//@ requires n > 0" },
+  ]);
+});
+
+it("lists what a whole proof takes on trust or leaves out, and not the lines LemmaScript generated (#402)", () => {
+  const source = ["//@ extern", "//@ ensures \\result >= 0", "export function helper(n: number): number {", "  return Math.abs(n);", "}", "",
+    "//@ requires n >= 0", "export function f(n: number): number {", "  //@ assume n < 10", "  return helper(n);", "}", "",
+    "//@ skip", "export function g(): number { return 0; }", ""].join("\n");
+  const generated = generatedProgram.join("\n");
+  expect(provedOnTrust([{ path: "src/rule.ts", content: source },
+    { path: "src/rule.dfy", content: `${generated}\nlemma Given()\n  ensures false\n`, generated }])).toEqual([
+    { path: "src/rule.ts", kind: "added_assume", annotation: "//@ extern", function: "helper" },
+    { path: "src/rule.ts", kind: "added_assume", annotation: "//@ assume n < 10" },
+    { path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "g" },
+    { path: "src/rule.dfy", kind: "added_assume", annotation: "lemma Given without a body" },
+  ]);
+  expect(provedOnTrust([{ path: "src/plain.ts", content: "//@ requires n >= 0\nexport function f(n: number): number { return n; }\n" }]))
+    .toEqual([]);
 });
 
 it("flags a requires added to a function the base had, or one it cannot place, and not one on a new function", () => {

@@ -71,7 +71,11 @@ gate climbs the ladder in order, and at each step it may send failures back
 to the agent with `continue`, which keeps the run going:
 
 1. Prove each changed TypeScript file with `//@` annotations, and each whose
-   `.dfy` or `.dfy.gen` changed.
+   `.dfy` or `.dfy.gen` changed. A proof maps back to its source as
+   LemmaScript maps it (`proofSources`): beside it, or mirrored under the
+   `proof-dir` any `lemmascript.json` of the project sets, which may lead
+   out of its own folder, kept only when `lsc config` places that source's
+   proof there ([#403](https://github.com/sequelcore/tesota/issues/403)).
 2. Once no proof goes back, run the project's commands.
 3. Once no command goes back, measure each new or changed contract's
    strength, and send back the weak ones.
@@ -145,14 +149,22 @@ with every process it started.
 
 `prove` gives the agent the same run on one file while it works. It is
 inactive until the session finds a TypeScript file with `//@` annotations
-(`hasContracts`, which reads at most 20,000 entries and skips dependency,
-build and dot folders). It runs alone, so its evidence describes files no
+(`hasContracts`, which reads the files `projectFiles` walks to: at most
+20,000 entries, skipping dependency, build and dot folders). It runs alone, so its evidence describes files no
 other tool call left half-written. Its guidance tells the agent to work
 until the proof passes, gives LemmaScript's annotation syntax, and forbids
 removing or loosening a contract or adding `//@ assume`. After a failed or
-vacuous proof, the result says what to try next. A result whose proof did
-not pass is an error result, so Pi draws it on its error background; its
-`details` hold the file and the evidence, for the operator's view of it.
+vacuous proof, the result says what to try next. A pass says every
+contract holds only when the files the proof checked take nothing on trust
+and leave nothing out (`provedOnTrust`): each `//@ assume`, `//@ extern`
+and `//@ skip` of the source, and each `assume`, `{:axiom}` and lemma
+without a body written into the `.dfy` by hand. Otherwise it reads
+`Proved, but not outright`, names each one in the receipt's words, and asks
+the agent to say so in its summary
+([#402](https://github.com/sequelcore/tesota/issues/402)). A result whose
+proof did not pass is an error result, so Pi draws it on its error
+background; its `details` hold the file, the evidence and what a pass took
+on trust, for the operator's view of it.
 
 ## Weakened evidence
 
@@ -164,10 +176,19 @@ as unchanged (`weakens`, proved).
 
 - **Contracts:** a removed or changed `//@ requires` or `//@ ensures`.
 - **New preconditions:** a `//@ requires` added to a function the base had.
+  The function an annotation belongs to is read with the TypeScript parser,
+  as LemmaScript's extractor reads it: the declaration its comment leads,
+  arrow functions included, or the function holding the statement it leads.
 - **Assumptions:** an added `//@ assume`, or an added `//@ extern`, which
   trusts a function's contract without proving its code; LemmaScript emits
   it as an `{:axiom}` function, whose postcondition Dafny assumes "to be
   true without proof".
+- **Left out of the proof:** an added `//@ skip` on something the base had,
+  which LemmaScript leaves out of the program it generates, so nothing
+  proves it: a top-level function, class or variable, a method, or a
+  statement inside one of them, named by the one that holds it. Every skip
+  reads the same, so a skip only moved when it leaves out the same thing on
+  both sides ([#404](https://github.com/sequelcore/tesota/issues/404)).
 - **Dafny proofs:** an added `assume` or `{:axiom}` line in a `.dfy`, or a
   lemma left without a body, which Dafny takes as an axiom, when it was
   written by hand. A line the proof's last generated program (its
@@ -314,7 +335,9 @@ candidate, not evidence
 A file that proved covers only some of its changed lines (`uncoveredLines`).
 A line is covered when it lies inside a function with a contract, from the
 first annotation to the closing brace, and the change did not narrow that
-contract (`proofCovered`, proved).
+contract (`proofCovered`, proved). A function LemmaScript skips with
+`//@ skip` has no contract (`contracts`), so none of its lines is covered,
+and mutation and ClaimCheck leave it out.
 
 The weakening list decides narrowing:
 

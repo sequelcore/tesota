@@ -53,6 +53,12 @@ it("covers a function whose contract a comment separates from it, but not one a 
   expect(uncoveredLines(arrowChange, checked, arrow, arrow, []).lines).toEqual([]);
 });
 
+it("covers nothing in a function LemmaScript skips, whatever its contract", () => {
+  const skipped = source.replace("//@ ensures \\result >= 0", "//@ skip\n//@ ensures \\result >= 0");
+  const change = { path: "src/rule.ts", status: "modified" as const, added: lines(4), removed: [] };
+  expect(uncoveredLines(change, checked, skipped, skipped, []).lines).toEqual([[4, 4]]);
+});
+
 it("lists the lines of a function whose contract the change narrowed", () => {
   const change = { path: "src/rule.ts", status: "modified" as const, added: lines(3, 10, 13), removed: [] };
   const added: Weakening = { path: "src/rule.ts", kind: "added_requires", annotation: "//@ requires n > 0" };

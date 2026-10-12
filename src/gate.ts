@@ -15,7 +15,7 @@ import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
 import { commentLines, type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
-import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
+import { annotations, proofSources, proveFile } from "./verification/lemmascript-verifier.js";
 import { type Unit, workspaceUnits } from "./workspace.js";
 
 async function gitPaths(root: string, args: readonly string[]): Promise<string[] | undefined> {
@@ -114,11 +114,15 @@ async function hasAnnotations(root: string, path: string): Promise<boolean> {
 
 /**
  * The changed TypeScript files with `//@` contracts, and those whose `.dfy`
- * proof changed, since a proof's hand-written lines are part of what it proves.
+ * proof changed, wherever LemmaScript keeps it (`proofSources`), since a
+ * proof's hand-written lines are part of what it proves.
  */
-async function contractFiles(root: string, changed: readonly string[]): Promise<string[]> {
-  const sources = new Set(changed.map((path) => path.replace(/\.dfy(\.gen)?$/u, ".ts")).filter((path) =>
-    path.endsWith(".ts") && !path.endsWith(".d.ts")));
+async function contractFiles(root: string, changed: readonly string[], signal: AbortSignal): Promise<string[]> {
+  const sources = new Set(changed.filter((path) => path.endsWith(".ts") && !path.endsWith(".d.ts")));
+  // A source found already is not asked about again (`proofSources`).
+  for (const path of changed.filter((changedPath) => /\.dfy(\.gen)?$/u.test(changedPath))) {
+    for (const source of await proofSources(root, path, signal, sources)) sources.add(source);
+  }
   const files: string[] = [];
   for (const path of [...sources].sort()) if (await hasAnnotations(root, path)) files.push(path);
   return files;
@@ -401,7 +405,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
   const prove = async (units: readonly ChangedUnit[], signal: AbortSignal): Promise<Map<string, Receipt["proofs"][number][]>> => {
     const proofs = new Map<string, Receipt["proofs"][number][]>(units.map(({ folder }) => [folder, []]));
     for (const unit of units) {
-      for (const path of await contractFiles(unit.root, unit.changed)) {
+      for (const path of await contractFiles(unit.root, unit.changed, signal)) {
         progress.publish({ step: "proving", tally: tally([...proofs.values()].flat()) });
         const evidence = await proveFile(unit.root, path, signal);
         proofs.get(unit.folder)?.push({ path, evidence,
