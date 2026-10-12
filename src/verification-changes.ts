@@ -8,22 +8,29 @@ import { type AnnotationKind, weakens } from "./verification/weakening-rule.js";
  * a removed or changed `requires` or `ensures`, a `requires` added to a
  * function the base had, and an added `assume`, in LemmaScript source or a
  * Dafny proof, with the line as written, which in a proof includes an
- * `{:axiom}` and a lemma left without a body; and a deleted test file, or
- * an edit to one that may weaken its tests (`testWeakens`).
- * The operator decides whether it is legitimate.
+ * `{:axiom}` and a lemma left without a body, and in LemmaScript source an
+ * `//@ extern`, which trusts a function without proving it (`function` names
+ * it); and a deleted test file, or an edit to one that may weaken its tests
+ * (`testWeakens`). The operator decides whether it is legitimate.
  */
 export type Weakening =
-  | { readonly path: string; readonly kind: "removed_contract" | "added_requires" | "added_assume"; readonly annotation: string }
+  | { readonly path: string; readonly kind: "removed_contract" | "added_requires" | "added_assume"; readonly annotation: string;
+    readonly function?: string }
   | { readonly path: string; readonly kind: "deleted_test" | "edited_test" };
 
 /**
  * A changed file, with its content as changed and at the base where the
  * rules need them (`needsContent`): to tell whether an added `requires`
  * annotates a new function, and which lemmas a proof leaves without a body.
+ * A `.dfy` that LemmaScript generated also has the program it generated last
+ * (`generated`, its `.dfy.gen`), so only the lines added by hand count as the
+ * change's: the rest come from the source's annotations, which count there,
+ * or from LemmaScript's own models of JavaScript, such as `split`.
  */
 export interface FileChange extends ChangedFile {
   readonly content?: string | undefined;
   readonly baseContent?: string | undefined;
+  readonly generated?: string | undefined;
 }
 
 const testPaths = [
@@ -43,6 +50,8 @@ function kindOf(path: string, line: string): AnnotationKind | undefined {
   if (path.endsWith(".dfy")) return /^\s*assume\b|\{:axiom\b/u.test(line.replace(/\/\/.*$/u, "")) ? "assume" : undefined;
   const word = /^\s*\/\/@\s*(\w+)/u.exec(line)?.[1];
   if (word === undefined) return undefined;
+  // `//@ extern` takes a function's contract as given, as an assumption does: LemmaScript emits it as an `{:axiom}`.
+  if (word === "extern") return "assume";
   return word === "requires" || word === "ensures" || word === "assume" ? word : "other";
 }
 
@@ -82,15 +91,20 @@ export function bodilessLemmas(dafny: string): string[] {
 
 const functionName = /\bfunction\s*\*?\s*([\w$]+)/u;
 
+/** The function an annotation at line `number` annotates: the first declared from that line on, if the content shows one. */
+function annotated(file: FileChange, number: number): string | undefined {
+  return file.content?.split(/\r?\n/u).slice(number - 1).map((line) => functionName.exec(line)?.[1])
+    .find((found) => found !== undefined);
+}
+
 /**
- * Whether the function a `requires` at line `number` annotates, the first
- * declared from that line on, was in the base. When either content or the
- * function cannot be found, it counts as there, so the change is listed.
+ * Whether the function a `requires` at line `number` annotates (`annotated`)
+ * was in the base. When either content or the function cannot be found, it
+ * counts as there, so the change is listed.
  */
 function existed(file: FileChange, number: number): boolean {
   if (file.status === "added") return false;
-  const name = file.content?.split(/\r?\n/u).slice(number - 1).map((line) => functionName.exec(line)?.[1])
-    .find((found) => found !== undefined);
+  const name = annotated(file, number);
   if (name === undefined || file.baseContent === undefined) return true;
   return file.baseContent.split(/\r?\n/u).some((line) => functionName.exec(line)?.[1] === name);
 }
@@ -113,10 +127,16 @@ function annotationChanges(file: FileChange): Weakening[] {
     return kind === undefined || !weakens(kind, true, matched, true) ? []
       : [{ path: file.path, kind: "removed_contract", annotation: line.text.trim() } as const];
   });
-  const added = matching(file.added, ({ text }) => text, file.removed.map(({ text }) => text)).flatMap(({ line, matched }) => {
+  // In a proof LemmaScript generated, a line its last program holds is LemmaScript's, not the change's (`generated`).
+  const written = file.generated === undefined ? file.added
+    : matching(file.added, ({ text }) => text, file.generated.split(/\r?\n/u)).flatMap(({ line, matched }) => matched ? [] : [line]);
+  const added = matching(written, ({ text }) => text, file.removed.map(({ text }) => text)).flatMap(({ line, matched }) => {
     const kind = kindOf(file.path, line.text);
-    return kind === undefined || !weakens(kind, false, matched, kind === "requires" && existed(file, line.number)) ? []
-      : [{ path: file.path, kind: kind === "requires" ? "added_requires" : "added_assume", annotation: line.text.trim() } as const];
+    if (kind === undefined || !weakens(kind, false, matched, kind === "requires" && existed(file, line.number))) return [];
+    const annotation = line.text.trim();
+    const trusted = /^\/\/@\s*extern\b/u.test(annotation) ? annotated(file, line.number) : undefined;
+    return [{ path: file.path, kind: kind === "requires" ? "added_requires" : "added_assume", annotation,
+      ...trusted === undefined ? {} : { function: trusted } } as const];
   });
   return [...removed, ...added, ...axiomChanges(file)];
 }
@@ -124,7 +144,7 @@ function annotationChanges(file: FileChange): Weakening[] {
 /** Lemmas a proof leaves without a body that the base gave one or did not have: as good as an added `assume`. */
 function axiomChanges(file: FileChange): Weakening[] {
   if (!file.path.endsWith(".dfy") || file.content === undefined) return [];
-  const before = new Set(bodilessLemmas(file.baseContent ?? ""));
+  const before = new Set([...bodilessLemmas(file.baseContent ?? ""), ...bodilessLemmas(file.generated ?? "")]);
   return bodilessLemmas(file.content).flatMap((name) => !weakens("assume", false, before.has(name), false) ? []
     : [{ path: file.path, kind: "added_assume", annotation: `lemma ${name} without a body` } as const]);
 }

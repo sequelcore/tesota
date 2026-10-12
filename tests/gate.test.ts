@@ -507,29 +507,34 @@ it("puts each change that may weaken the evidence in the receipt, committed or n
     "export function h(z: number): number { return z; }", ""].join("\n"));
   rmSync(join(root, "tests", "old.test.ts"));
   commit(root, "agent");
-  writeFileSync(join(root, "src", "rule.dfy"), "method f(x: int) returns (r: int)\n{\n  assume false;\n  r := x;\n}\n" +
+  // LemmaScript's own model of `split`, which its generated program holds, is not the change's assumption.
+  const model = "function {:axiom} StringSplit(s: string, d: string): seq<string>\n";
+  writeFileSync(join(root, "src", "rule.dfy"), `${model}method f(x: int) returns (r: int)\n{\n  assume false;\n  r := x;\n}\n` +
     "\nlemma Free()\n  ensures false\n");
+  writeFileSync(join(root, "src", "rule.dfy.gen"), `${model}method f(x: int) returns (r: int)\n{\n  r := x;\n}\n`);
   writeFileSync(join(root, "src", "extra.dfy"), "lemma {:axiom} Given()\n  ensures false\n");
   writeFileSync(join(root, "tests", "rule.test.ts"), "it.skip('f', () => {});\n");
   writeFileSync(join(root, "src", "new.ts"), "//@ assume false\nexport const a = 1;\n");
   writeFileSync(join(root, "tests", "new.test.ts"), "it('new', () => {});\n");
   const settled = entry(await run.settle());
   expect(settled.content.split("\n").filter((line) => line.startsWith("  may weaken"))).toEqual([
-    "  may weaken    src/extra.dfy: adds lemma {:axiom} Given()",
-    "  may weaken    src/extra.dfy: adds lemma Given without a body",
-    "  may weaken    src/new.ts: adds //@ assume false",
-    "  may weaken    src/rule.dfy: adds assume false;",
-    "  may weaken    src/rule.dfy: adds lemma Free without a body",
+    "  may weaken    src/extra.dfy: trusts Given without proving it (lemma {:axiom} Given())",
+    "  may weaken    src/extra.dfy: takes lemma Given as true without proving it (lemma Given without a body)",
+    "  may weaken    src/new.ts: takes false as true without proving it (//@ assume false)",
+    "  may weaken    src/rule.dfy: takes false as true without proving it (assume false;)",
+    "  may weaken    src/rule.dfy: takes lemma Free as true without proving it (lemma Free without a body)",
     "  may weaken    src/rule.ts: removes or changes //@ requires x >= 0",
     "  may weaken    src/rule.ts: removes or changes //@ ensures \\result >= 0",
     "  may weaken    src/rule.ts: adds //@ requires x >= 1 to a function the base had",
-    "  may weaken    src/rule.ts: adds //@ assume x < 10",
+    "  may weaken    src/rule.ts: takes x < 10 as true without proving it (//@ assume x < 10)",
     "  may weaken    src/rule.ts: adds //@ requires y > 0 to a function the base had",
     "  may weaken    tests/old.test.ts: deletes a test file",
     "  may weaken    tests/rule.test.ts: edits a test file",
   ]);
   expect((settled.details as Receipt).weakened).toContainEqual(
     { path: "tests/old.test.ts", kind: "deleted_test" });
+  // The proof holds only given the assumptions added to its source and its .dfy, not those of another file (#399).
+  expect(settled.content).toContain("  proved        src/rule.ts, trusting 3 unproved parts the change added\n");
 });
 
 it("settles with a receipt when the only change deletes a test", async () => {

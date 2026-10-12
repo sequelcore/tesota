@@ -94,13 +94,17 @@ async function fileChanges(root: string, base: string | null, changed: readonly 
   const diffed = base === null ? [] : await diffFromBase(root, base);
   if (typeof diffed === "string") return diffed;
   const inDiff = new Set(diffed.map(({ path }) => path));
+  // A proof's last generated program: `lsc regen` rewrites it from the source and drops from the proof what it no longer generates.
+  const generated = (path: string): Promise<string | undefined> =>
+    path.endsWith(".dfy") ? readIfPresent(join(root, `${path}.gen`)) : Promise.resolve(undefined);
   const whole = await Promise.all(changed.filter((path) => !inDiff.has(path)).map(async (path): Promise<FileChange> => {
     const content = await readIfPresent(join(root, path));
-    return { path, status: "added", removed: [], content,
+    return { path, status: "added", removed: [], content, generated: await generated(path),
       added: content?.split(/\r?\n/u).map((text, k) => ({ number: k + 1, text })) ?? [] };
   }));
   const read = await Promise.all(diffed.map(async (file): Promise<FileChange> => base === null || !needsContent(file) ? file
-    : { ...file, content: await readIfPresent(join(root, file.path)), baseContent: await git(root, ["show", `${base}:./${file.path}`]) }));
+    : { ...file, content: await readIfPresent(join(root, file.path)), baseContent: await git(root, ["show", `${base}:./${file.path}`]),
+      generated: await generated(file.path) }));
   return [...read, ...whole].sort((a, b) => a.path < b.path ? -1 : 1);
 }
 
@@ -159,21 +163,22 @@ function failingReport({ command, failingTests, evidence }: CommandRun): string 
 
 /** The files that proved, as changed and at the request's base, whose contracts and covered lines the receipt measures. */
 async function provedSources(root: string, base: string | null, proofs: Receipt["proofs"]): Promise<ProvedSource[]> {
-  return Promise.all(proofs.filter(({ verdict }) => verdict === "proved").map(async ({ path }) => ({ path,
-    source: await readIfPresent(join(root, path)) ?? "",
+  return Promise.all(proofs.filter(({ verdict }) => verdict === "proved").map(async ({ path, evidence }) => ({ path,
+    checked: evidence.files, source: await readIfPresent(join(root, path)) ?? "",
     baseSource: base === null ? undefined : await git(root, ["show", `${base}:./${path}`]) })));
 }
 
-type ProvedSource = { readonly path: string; readonly source: string; readonly baseSource: string | undefined };
+type ProvedSource = { readonly path: string; readonly checked: readonly string[]; readonly source: string;
+  readonly baseSource: string | undefined };
 
 /** The changed lines of each TypeScript file that proved that no contract's proof covers (`uncoveredLines`). */
 function uncovered(sources: readonly ProvedSource[], changes: Awaited<ReturnType<typeof fileChanges>>,
   weakened: Receipt["weakened"]): Receipt["uncovered"] {
   if (typeof changes === "string" || typeof weakened === "string") return [];
   const byPath = new Map(changes.map((change) => [change.path, change]));
-  return sources.flatMap(({ path, source, baseSource }) => {
+  return sources.flatMap(({ path, checked, source, baseSource }) => {
     const change = byPath.get(path);
-    return change === undefined || !path.endsWith(".ts") ? [] : [uncoveredLines(change, source, baseSource, weakened)];
+    return change === undefined || !path.endsWith(".ts") ? [] : [uncoveredLines(change, checked, source, baseSource, weakened)];
   });
 }
 

@@ -164,9 +164,19 @@ as unchanged (`weakens`, proved).
 
 - **Contracts:** a removed or changed `//@ requires` or `//@ ensures`.
 - **New preconditions:** a `//@ requires` added to a function the base had.
-- **Assumptions:** an added `//@ assume`.
+- **Assumptions:** an added `//@ assume`, or an added `//@ extern`, which
+  trusts a function's contract without proving its code; LemmaScript emits
+  it as an `{:axiom}` function, whose postcondition Dafny assumes "to be
+  true without proof".
 - **Dafny proofs:** an added `assume` or `{:axiom}` line in a `.dfy`, or a
-  lemma left without a body, which Dafny takes as an axiom.
+  lemma left without a body, which Dafny takes as an axiom, when it was
+  written by hand. A line the proof's last generated program (its
+  `.dfy.gen`) holds is LemmaScript's: it comes from an annotation in the
+  source, which counts there, or from LemmaScript's own model of JavaScript,
+  such as `split` or `sort`, which is part of the verifier, as Dafny is.
+  `lsc regen` rewrites that program from the source and drops from the proof
+  a line it no longer generates, so a line written into both files does not
+  survive the proof.
 - **Tests:** a deleted test file, by the common runners' path conventions
   (`tests/`, `__tests__/`, `*.test.ts`, `*_test.go`, `test_*.py`, snapshots
   and the like), or an edit to one that may weaken its tests
@@ -183,6 +193,17 @@ as unchanged (`weakens`, proved).
   `@patch`, `@Mock`) are left out, since a test usually restores them; a
   line added inside an existing test, such as an early `return`, is not
   caught either.
+
+A proof whose source or `.dfy` gained an assumption holds only if what the
+change trusts is right (`addedAssumptions`), so the receipt never calls it
+proved outright ([#399](https://github.com/sequelcore/tesota/issues/399)).
+It says so in plain words, naming what is trusted, and keeps the line as
+written in the details: `Proved, trusting 3 unproved parts` and `trusts
+lowerBound without proving it` in the conversation, `proved src/rule.ts,
+trusting 3 unproved parts the change added` in its text, and `1 proved on
+trust` in the footer. Plain words follow the GOV.UK rule to say what a
+specialist term means where it is needed; "on trust, without proof" is
+what Dafny's `{:axiom}` means.
 
 When Git's output for the diff passes 16 MiB, the receipt says the change
 was not checked for weakening, and coverage is not measured either. The gate
@@ -299,8 +320,8 @@ The weakening list decides narrowing:
 
 - an annotation added inside the function;
 - an annotation removed from the base's function of the same name;
-- any assumption added to the file's `.dfy`, which narrows every contract in
-  the file.
+- any assumption added to the file's `.dfy`, wherever LemmaScript keeps it
+  (the proof's evidence names it), which narrows every contract in the file.
 
 A removed line counts at the line that now follows it. Blank and
 comment-only lines are ignored, by the same check the test rule uses
@@ -398,7 +419,11 @@ once, and starts collapsed, so the collapsed view carries the verdict.
   checks established count (`receiptFindings`, `decisions`); a model's
   opinion that a contract falls short of the request is a note beside the
   verdict, `· ◇ 1 model note`. Under the title, in order: NEEDS YOU, then
-  the model's opinion, then what is not proved, and one row of what holds.
+  the model's opinion, then what is not proved, and one row of what holds
+  (`holdsWords`). That row never reads stronger than the sections above it:
+  a label whose check also has a finding that needs the operator or is a
+  gap says how many of that check's findings hold, as in `Contract strong
+  (1 of 4)` (`partlyHolds`, proved).
   Within each section, proofs and tests come first, then weakening, contract
   strength, test exercise and coverage. A receipt with nothing to decide,
   no gap and no note is its title and that one row. Expanded, each finding
@@ -434,7 +459,7 @@ The pure decisions above carry LemmaScript `//@` specifications in
 | `range-rule.ts` | How the receipt groups line numbers |
 | `pi-version-rule.ts` | Whether the Pi found meets the minimum |
 | `footer-rule.ts` | What Tesota can verify before a request, and what the footer drops as the terminal narrows |
-| `verdict-rule.ts` | How many of a receipt's findings need the operator: never a model's opinion |
+| `verdict-rule.ts` | How many of a receipt's findings need the operator, never a model's opinion, and when a summary must say how many of a check's findings hold |
 
 ## Measurements
 

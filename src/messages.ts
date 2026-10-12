@@ -1,7 +1,7 @@
 import { type ExtensionAPI, keyText, type MessageRenderOptions, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { SentBack } from "./gate.js";
-import { allEvidence, commandFinding, contractFinding, type Finding, isNote, isReceipt, plainName, proofFinding, type Receipt,
+import { allEvidence, commandFinding, contractFinding, type Finding, holdsWords, isNote, isReceipt, plainName, proofFinding, type Receipt,
   receiptFindings, type UnitEvidence, verified } from "./receipt.js";
 import { decisions } from "./verification/verdict-rule.js";
 
@@ -117,12 +117,9 @@ function plural(count: number, one: string, many: string): string {
 
 const isMatch = (finding: Finding): boolean => finding.standing === "opinion" && finding.label === "Model: matches";
 
-/** What holds, in one row: each label once, with how many when more than one, and the model's agreement as a note. */
-function holdsRow(theme: Theme, holds: readonly Finding[], matches: number): string {
-  const counts = new Map<string, number>();
-  for (const { label } of holds) counts.set(label, (counts.get(label) ?? 0) + 1);
-  const words = [...counts].map(([label, count]) => count === 1 ? label : `${label} (${count})`);
-  return `${theme.fg("success", "✓")}  ${theme.fg("muted", words.join(" · "))}` +
+/** What holds among `findings`, in one row (`holdsWords`), and the model's agreement as a note. */
+function holdsRow(theme: Theme, findings: readonly Finding[], matches: number): string {
+  return `${theme.fg("success", "✓")}  ${theme.fg("muted", holdsWords(findings).join(" · "))}` +
     (matches === 0 ? "" : `${theme.fg("dim", " · ")}${theme.fg("accent", `◇ model: ${matches === 1 ? "matches" : `${matches} match`} the request`)}`);
 }
 
@@ -157,7 +154,7 @@ function receiptCard(theme: Theme, receipt: Receipt, options: MessageRenderOptio
   return card(theme, options, (width) => {
     const title = spread(verdict + noted, theme.fg("customMessageLabel", bold("Tesota receipt")), width);
     if (!options.expanded && decide.length === 0 && gaps.length === 0 && opinions.every(isMatch)) {
-      return [title, spread(holdsRow(theme, holds, matches), expandHint(theme, "for details"), width)];
+      return [title, spread(holdsRow(theme, findings, matches), expandHint(theme, "for details"), width)];
     }
     const shown = options.expanded ? opinions : opinions.filter((finding) => !isMatch(finding));
     return [title,
@@ -165,7 +162,7 @@ function receiptCard(theme: Theme, receipt: Receipt, options: MessageRenderOptio
       ...section(theme, "MODEL'S OPINION, NOT A PROOF", shown, label, width, options.expanded),
       ...section(theme, unproved, gaps, label, width, options.expanded),
       ...options.expanded ? section(theme, "VERIFIED", holds, label, width, true)
-        : holds.length + matches === 0 ? [] : ["", holdsRow(theme, holds, matches)],
+        : holds.length + matches === 0 ? [] : ["", holdsRow(theme, findings, matches)],
       "", ...options.expanded ? wrapUnder(theme.fg("dim", `From ${from} · Pi ${receipt.pi}` +
         `${receipt.model === undefined ? "" : ` · ${receipt.model}`} · check evidence, not a reviewer's acceptance`), width, 0)
         : [expandHint(theme, "for details")]];

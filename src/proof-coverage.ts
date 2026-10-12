@@ -1,4 +1,5 @@
 import { contracts } from "./proof-guarantees.js";
+import { addedAssumptions } from "./receipt.js";
 import { commentLines, type FileChange, type Weakening } from "./verification-changes.js";
 import { proofCovered } from "./verification/proof-cover-rule.js";
 import { ranges } from "./verification/range-rule.js";
@@ -23,13 +24,12 @@ function holds(source: string, start: number, end: number, annotation: string): 
  * Whether the change narrowed each contract, read from the weakening list: an
  * annotation added within the contract's function, or one removed from the
  * base's function of the same name. An assumption added to the file's proof
- * may serve any of them, so it narrows them all.
+ * (`proof`, its `.dfy`) may serve any of them, so it narrows them all.
  */
-function narrowedContracts(path: string, source: string, baseSource: string | undefined,
+function narrowedContracts(path: string, proof: readonly string[], source: string, baseSource: string | undefined,
   weakened: readonly Weakening[]): boolean[] {
   const current = spans(path, source);
-  const proof = path.replace(/\.ts$/u, ".dfy");
-  if (weakened.some((change) => change.path === proof && change.kind === "added_assume")) return current.map(() => true);
+  if (addedAssumptions(proof, weakened) > 0) return current.map(() => true);
   const base = new Map(spans(path, baseSource ?? "").map((span) => [span.name, span]));
   return current.map(({ name, start, end }) => weakened.some((change) => {
     if (change.path !== path || !("annotation" in change)) return false;
@@ -45,9 +45,10 @@ function narrowedContracts(path: string, source: string, baseSource: string | un
  * those in one whose contract the change narrowed. A removed line counts at
  * the line that now follows it; blank and comment-only lines, read from the
  * parsed file on each side (`commentLines`), are left out, though a `//@`
- * contract line is not a comment.
+ * contract line is not a comment. `checked` are the files the proof checked:
+ * the source and its `.dfy`, wherever LemmaScript keeps it.
  */
-export function uncoveredLines(change: FileChange, source: string, baseSource: string | undefined,
+export function uncoveredLines(change: FileChange, checked: readonly string[], source: string, baseSource: string | undefined,
   weakened: readonly Weakening[]): UncoveredLines {
   const count = source.split(/\r?\n/u).length;
   const comments = commentLines({ ...change, content: source, baseContent: baseSource });
@@ -58,7 +59,8 @@ export function uncoveredLines(change: FileChange, source: string, baseSource: s
   const starts = current.map(({ start }) => start);
   const ends = current.map(({ end }) => end);
   const proved = current.map(() => true);
-  const narrowed = narrowedContracts(change.path, source, baseSource, weakened);
+  const proof = checked.filter((file) => file !== change.path);
+  const narrowed = narrowedContracts(change.path, proof, source, baseSource, weakened);
   return { path: change.path,
     lines: ranges(changed.filter((line) => !proofCovered(line, starts, ends, proved, narrowed))).map(({ start, end }) => [start, end] as [number, number]) };
 }

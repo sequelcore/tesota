@@ -5,7 +5,7 @@ import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
 import type { CommandRun, TestExercise } from "./test-rung.js";
 import type { Weakening } from "./verification-changes.js";
 import type { GateVerdict } from "./verification/gate-rule.js";
-import { decisions, type Standing } from "./verification/verdict-rule.js";
+import { decisions, partlyHolds, type Standing } from "./verification/verdict-rule.js";
 
 /**
  * What a run that changed files leaves the operator when it settles: each
@@ -85,6 +85,18 @@ export type UnitEvidence = Pick<Receipt, "repository" | "snapshot" | "tooLarge" 
 /** Whether anything verified a unit: it is a Git repository, or Tesota snapshotted it. */
 export function verified(unit: Pick<UnitEvidence, "repository" | "snapshot">): boolean {
   return unit.repository || unit.snapshot === true;
+}
+
+/**
+ * How many assumptions the change added to the files a proof checked
+ * (`files`, its TypeScript source and its `.dfy`): an `//@ assume` in the
+ * source, or an `assume`, `{:axiom}` or lemma without a body in the `.dfy`,
+ * such as each `//@ extern` adds. The proof holds only given them. None when
+ * the change could not be read, which the receipt reports instead.
+ */
+export function addedAssumptions(files: readonly string[], weakened: UnitEvidence["weakened"]): number {
+  return typeof weakened === "string" ? 0
+    : weakened.filter((change) => change.kind === "added_assume" && files.includes(change.path)).length;
 }
 
 /** A unit's evidence and its folder, relative to the folder Pi runs in; empty for that folder's own files. */
@@ -172,8 +184,11 @@ function why(evidence: Evidence): string {
     ? "was stopped" : `could not run: ${evidence.output.split("\n").at(-1) ?? ""}`;
 }
 
-function line(path: string, verdict: GateVerdict, evidence: Evidence): string {
-  if (verdict === "proved") return `  proved        ${path}`;
+/** A proof that holds only given what the change trusts without proving it (`addedAssumptions`), in plain words (#399). */
+const trusting = (assumed: number): string => `trusting ${plural(assumed, "unproved part", "unproved parts")}`;
+
+function line(path: string, verdict: GateVerdict, evidence: Evidence, assumed: number): string {
+  if (verdict === "proved") return `  proved        ${path}${assumed === 0 ? "" : `, ${trusting(assumed)} the change added`}`;
   if (verdict === "operator") return `  NOT proved    ${path}: the proof ${why(evidence)}`;
   const what = evidence.outcome === "vacuous" ? "Dafny verified nothing" : "an obligation fails";
   return `  NOT proved    ${path}: ${what}, repeating a failure already sent back`;
@@ -230,10 +245,28 @@ function claimcheckLines(run: ClaimCheckRun | undefined, contracts: readonly Con
       `${verdictText[judgment.verdict]}${judgment.verdict === "justified" ? "" : `: ${judgment.explanation}`}`])];
 }
 
+/**
+ * What an added assumption trusts without proof, in plain words read from
+ * the line as written: the function an `//@ extern` or `{:axiom}` trusts, a
+ * lemma left without a body, or the condition an `assume` takes as true.
+ * Dafny assumes an `{:axiom}`'s postcondition "to be true without proof"
+ * (Dafny Reference Manual, `{:axiom}`).
+ */
+function trustedWords({ annotation, function: trusted }: { readonly annotation: string; readonly function?: string }): string {
+  const named = trusted ?? /\{:axiom\}\s*([\w'?$]+)/u.exec(annotation)?.[1];
+  if (named !== undefined) return `trusts ${named} without proving it`;
+  if (/^\/\/@\s*extern\b/u.test(annotation)) return "trusts a function without proving it";
+  const lemma = /^lemma (\S+) without a body$/u.exec(annotation)?.[1];
+  if (lemma !== undefined) return `takes lemma ${lemma} as true without proving it`;
+  const condition = /^(?:\/\/@\s*)?assume\s+(.+?);?$/u.exec(annotation)?.[1]?.trim();
+  return condition === undefined || condition === "" ? "takes something as true without proving it"
+    : `takes ${condition} as true without proving it`;
+}
+
 function weakening(change: Weakening): string {
   const what = change.kind === "removed_contract" ? `removes or changes ${change.annotation}`
     : change.kind === "added_requires" ? `adds ${change.annotation} to a function the base had`
-    : change.kind === "added_assume" ? `adds ${change.annotation}`
+    : change.kind === "added_assume" ? `${trustedWords(change)} (${change.annotation})`
       : change.kind === "deleted_test" ? "deletes a test file" : "edits a test file";
   return `  may weaken    ${change.path}: ${what}`;
 }
@@ -304,11 +337,18 @@ export function commandFinding({ command, verdict, evidence, failingTests }: Pic
       : `${plural(failingTests.length, "test fails", "tests fail")}: ${failingTests.join("; ")}`, more };
 }
 
-/** A proof as a finding. */
-export function proofFinding({ path, verdict, evidence }: Pick<Receipt["proofs"][number], "path" | "verdict" | "evidence">): Finding {
+/**
+ * A proof as a finding. One that holds only given parts the change trusts
+ * without proving them (`assumed`) says how many, so it never reads as
+ * proved outright (#399).
+ */
+export function proofFinding({ path, verdict, evidence }: Pick<Receipt["proofs"][number], "path" | "verdict" | "evidence">,
+  assumed = 0): Finding {
   const summary = proofSummary(evidence);
   if (verdict === "proved") {
-    return { standing: "holds", check: "proof", label: "Proved", subject: path, detail: summary.words, more: [checked(evidence)] };
+    return { standing: "holds", check: "proof", label: assumed === 0 ? "Proved" : `Proved, ${trusting(assumed)}`,
+      subject: path, detail: assumed === 0 ? summary.words : "its contracts hold only if what the change trusts is right",
+      more: [checked(evidence)] };
   }
   return { standing: "decide", check: "proof", failed: true, label: verdict === "operator" ? "Proof did not run" : "Proof fails",
     subject: path, detail: summary.words, more: [...summary.at === undefined ? [] : [`at ${summary.at}`], checked(evidence)] };
@@ -341,7 +381,7 @@ export function isNote(finding: Finding): boolean {
 
 const weakeningWords: Readonly<Record<Weakening["kind"], string>> = {
   removed_contract: "removes or changes a contract line", added_requires: "adds a precondition to a function the base had",
-  added_assume: "adds an assumption", deleted_test: "deletes a test file", edited_test: "edits a test",
+  added_assume: "trusts something without proving it", deleted_test: "deletes a test file", edited_test: "edits a test",
 };
 
 /**
@@ -365,13 +405,14 @@ function unitFindings(receipt: UnitEvidence): Finding[] {
   const unproved = tested ? "Not proved" : "Not verified";
   const unread = typeof receipt.weakened === "string";
   const found: Finding[] = [
-    ...receipt.proofs.map(proofFinding),
+    ...receipt.proofs.map((proof) => proofFinding(proof, addedAssumptions(proof.evidence.files, receipt.weakened))),
     ...receipt.tests.map(commandFinding),
     ...typeof receipt.weakened === "string"
       ? [{ standing: "decide" as const, check: "weakening" as const, label: "Weakening not checked", subject: "the change",
         detail: receipt.weakened === "too_large" ? "it is too large to check for weakening" : "Git could not show it", more: [] }]
       : receipt.weakened.map((change): Finding => ({ standing: "decide", check: "weakening", label: "May weaken the evidence",
-        subject: change.path, detail: weakeningWords[change.kind], more: "annotation" in change ? [change.annotation] : [] })),
+        subject: change.path, detail: change.kind === "added_assume" ? trustedWords(change) : weakeningWords[change.kind],
+        more: "annotation" in change ? [change.annotation] : [] })),
     ...receipt.contracts.map(contractFinding),
     ...receipt.exercises.map(({ path, finding, reason }): Finding => finding === "exercises"
       ? { standing: "holds", check: "exercise", label: "Test catches the change", subject: path, detail: reason, more: [] }
@@ -396,6 +437,26 @@ function unitFindings(receipt: UnitEvidence): Finding[] {
     label: "Nothing to verify", subject: "", detail: "the changes are comments or blank lines only", more: [] }] : found;
 }
 
+/**
+ * What holds, in words for one row: each label once, with how many when more
+ * than one, and out of how many findings of its check when some of them do
+ * not hold (`partlyHolds`), as in "Contract strong (1 of 4)", so the row
+ * never reads stronger than the findings it sums up (#399).
+ */
+export function holdsWords(findings: readonly Finding[]): string[] {
+  const counts = new Map<string, { readonly check: Check; count: number }>();
+  for (const { standing, label, check } of findings) {
+    if (standing !== "holds") continue;
+    const counted = counts.get(label);
+    if (counted === undefined) counts.set(label, { check, count: 1 });
+    else counted.count += 1;
+  }
+  return [...counts].map(([label, { check, count }]) => {
+    const ofCheck = findings.filter((finding) => finding.check === check).map(({ standing }) => standing);
+    return partlyHolds(ofCheck) ? `${label} (${count} of ${ofCheck.length})` : count === 1 ? label : `${label} (${count})`;
+  });
+}
+
 /** How many of the receipt's findings need the operator; none makes it clean, in the footer and the conversation alike. */
 export function receiptDecisions(receipt: Receipt): number {
   return decisions(receiptFindings(receipt).map(({ standing }) => standing));
@@ -415,7 +476,7 @@ function unitLines(receipt: UnitEvidence): string[] {
   const tested = receipt.tests.length > 0 && receipt.tests.every(({ verdict }) => verdict === "proved");
   const listed = [
     ...receipt.proofs.flatMap(({ path, verdict, evidence }) =>
-      [line(path, verdict, evidence), `                content sha256 ${evidence.contentHash}`]),
+      [line(path, verdict, evidence, addedAssumptions(evidence.files, receipt.weakened)), `                content sha256 ${evidence.contentHash}`]),
     ...receipt.contracts.flatMap(mutationLines),
     ...claimcheckLines(receipt.claimcheck, receipt.contracts),
     ...receipt.tests.map(testLine),
