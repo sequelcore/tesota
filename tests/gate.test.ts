@@ -426,6 +426,19 @@ it("proves a contract file whose .dfy alone changed, and leaves runs that did no
   expect(entry(await run.settle()).content).toContain("Tesota: src/rule.ts does not prove yet.");
 });
 
+it("proves a contract file whose .dfy alone changed where LemmaScript's proof-dir keeps it, and only there (#403)", async () => {
+  const root = repository({ "lemmascript.json": JSON.stringify({ "proof-dir": "proofs" }), "src/rule.ts": contract,
+    "proofs/src/rule.dfy": "// proof\n", "notes.md": "# Notes\n" });
+  const run = gate(root);
+  scripted.set("src/rule.ts", { outcome: "failed", output: "assume false" });
+  // LemmaScript keeps this project's proofs under proofs/, so a .dfy beside the source is not its proof.
+  writeFileSync(join(root, "src", "rule.dfy"), "// stray\n");
+  writeFileSync(join(root, "notes.md"), "# Notes, changed\n");
+  expect(entry(await run.settle()).customType).toBe("tesota-receipt");
+  writeFileSync(join(root, "proofs", "src", "rule.dfy"), "// proof\n// hand-written proof line\n");
+  expect(entry(await run.settle()).content).toContain("Tesota: src/rule.ts does not prove yet.");
+}, 30_000);
+
 it("measures from the commit the request started at, so an agent's commit hides nothing", async () => {
   const root = project();
   const run = gate(root);
@@ -502,8 +515,8 @@ it("puts each change that may weaken the evidence in the receipt, committed or n
   const run = gate(root);
   await run.input();
   writeFileSync(join(root, "src", "rule.ts"), ["//@ requires x >= 1", "//@ ensures   \\result >= x", "//@ assume x < 10",
-    "export function f(x: number): number { return x; }", "", "//@ requires y > 0",
-    "export function g(y: number): number { return y; }", "", "//@ requires z > 0",
+    "export function f(x: number): number { return x; }", "", "//@ skip", "//@ requires y > 0",
+    "export function g(y: number): number { return y; }", "", "//@ skip", "//@ requires z > 0",
     "export function h(z: number): number { return z; }", ""].join("\n"));
   rmSync(join(root, "tests", "old.test.ts"));
   commit(root, "agent");
@@ -527,6 +540,7 @@ it("puts each change that may weaken the evidence in the receipt, committed or n
     "  may weaken    src/rule.ts: removes or changes //@ ensures \\result >= 0",
     "  may weaken    src/rule.ts: adds //@ requires x >= 1 to a function the base had",
     "  may weaken    src/rule.ts: takes x < 10 as true without proving it (//@ assume x < 10)",
+    "  may weaken    src/rule.ts: leaves g out of the proof (//@ skip)",
     "  may weaken    src/rule.ts: adds //@ requires y > 0 to a function the base had",
     "  may weaken    tests/old.test.ts: deletes a test file",
     "  may weaken    tests/rule.test.ts: edits a test file",

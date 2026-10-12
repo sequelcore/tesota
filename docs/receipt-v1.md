@@ -252,8 +252,9 @@ One of:
 | --- | --- | --- |
 | `path` | string | The changed file |
 | `kind` | string | One of the kinds below |
-| `annotation` | string | For the first three kinds only: the line as written, trimmed, or `lemma <name> without a body` |
-| `function` | string, optional | For an `//@ extern`: the function it trusts without proof, when Tesota found its declaration |
+| `annotation` | string | For the first four kinds only: the line as written, trimmed, or `lemma <name> without a body` |
+| `function` | string, optional | For an `//@ extern`: the function it trusts without proof; for an `//@ skip`: the function, class, variables or method it leaves out of the proof, or that holds the statement it leaves out. Present when Tesota found it |
+| `statement` | `true`, optional | For an `//@ skip`: it leaves out a statement of `function`, not all of it |
 
 The kinds are:
 
@@ -262,6 +263,8 @@ The kinds are:
 - `added_assume`: an added `//@ assume` or `//@ extern`, or, in a `.dfy`, an
   added `assume`, `{:axiom}` or lemma without a body written by hand: not a
   line of the program LemmaScript generated, its `.dfy.gen`;
+- `added_skip`: an added `//@ skip` on something the base had, which
+  LemmaScript leaves out of the proof;
 - `deleted_test`: a test file deleted;
 - `edited_test`: a test file edited so that it may weaken its tests: a
   removed line that is not blank, comment-only or a widened import, or an

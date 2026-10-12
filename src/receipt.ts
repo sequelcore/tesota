@@ -252,7 +252,7 @@ function claimcheckLines(run: ClaimCheckRun | undefined, contracts: readonly Con
  * Dafny assumes an `{:axiom}`'s postcondition "to be true without proof"
  * (Dafny Reference Manual, `{:axiom}`).
  */
-function trustedWords({ annotation, function: trusted }: { readonly annotation: string; readonly function?: string }): string {
+export function trustedWords({ annotation, function: trusted }: { readonly annotation: string; readonly function?: string }): string {
   const named = trusted ?? /\{:axiom\}\s*([\w'?$]+)/u.exec(annotation)?.[1];
   if (named !== undefined) return `trusts ${named} without proving it`;
   if (/^\/\/@\s*extern\b/u.test(annotation)) return "trusts a function without proving it";
@@ -263,10 +263,21 @@ function trustedWords({ annotation, function: trusted }: { readonly annotation: 
     : `takes ${condition} as true without proving it`;
 }
 
+/**
+ * What an added `//@ skip` leaves out of the proof, in plain words: the unit
+ * it names, or a statement of the unit that holds it. LemmaScript omits
+ * either from the program it generates, so nothing proves it.
+ */
+export function skippedWords({ function: unit, statement }: { readonly function?: string; readonly statement?: true }): string {
+  if (unit === undefined) return statement === true ? "leaves a statement out of the proof" : "leaves something out of the proof";
+  return statement === true ? `leaves a statement of ${unit} out of the proof` : `leaves ${unit} out of the proof`;
+}
+
 function weakening(change: Weakening): string {
   const what = change.kind === "removed_contract" ? `removes or changes ${change.annotation}`
     : change.kind === "added_requires" ? `adds ${change.annotation} to a function the base had`
     : change.kind === "added_assume" ? `${trustedWords(change)} (${change.annotation})`
+    : change.kind === "added_skip" ? `${skippedWords(change)} (${change.annotation})`
       : change.kind === "deleted_test" ? "deletes a test file" : "edits a test file";
   return `  may weaken    ${change.path}: ${what}`;
 }
@@ -381,7 +392,8 @@ export function isNote(finding: Finding): boolean {
 
 const weakeningWords: Readonly<Record<Weakening["kind"], string>> = {
   removed_contract: "removes or changes a contract line", added_requires: "adds a precondition to a function the base had",
-  added_assume: "trusts something without proving it", deleted_test: "deletes a test file", edited_test: "edits a test",
+  added_assume: "trusts something without proving it", added_skip: "leaves something out of the proof",
+  deleted_test: "deletes a test file", edited_test: "edits a test",
 };
 
 /**
@@ -411,7 +423,8 @@ function unitFindings(receipt: UnitEvidence): Finding[] {
       ? [{ standing: "decide" as const, check: "weakening" as const, label: "Weakening not checked", subject: "the change",
         detail: receipt.weakened === "too_large" ? "it is too large to check for weakening" : "Git could not show it", more: [] }]
       : receipt.weakened.map((change): Finding => ({ standing: "decide", check: "weakening", label: "May weaken the evidence",
-        subject: change.path, detail: change.kind === "added_assume" ? trustedWords(change) : weakeningWords[change.kind],
+        subject: change.path, detail: change.kind === "added_assume" ? trustedWords(change)
+          : change.kind === "added_skip" ? skippedWords(change) : weakeningWords[change.kind],
         more: "annotation" in change ? [change.annotation] : [] })),
     ...receipt.contracts.map(contractFinding),
     ...receipt.exercises.map(({ path, finding, reason }): Finding => finding === "exercises"

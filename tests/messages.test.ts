@@ -117,6 +117,14 @@ it("never sums up a proof that rests on assumptions the change added, or one str
   expect(expanded).toContain("//@ extern");
 });
 
+it("names what an added //@ skip leaves out of the proof (#404)", () => {
+  const skip = (more: { function: string; statement?: true }): Weakening =>
+    ({ path: "src/range.ts", kind: "added_skip", annotation: "//@ skip", ...more });
+  const rows = shown("tesota-receipt", { ...clean, weakened: [skip({ function: "clampOf" }), skip({ function: "lower", statement: true })] }, 140);
+  expect(rows.some((row) => /May weaken the evidence +src\/range\.ts — leaves clampOf out of the proof$/u.test(row))).toBe(true);
+  expect(rows.some((row) => /May weaken the evidence +src\/range\.ts — leaves a statement of lower out of the proof$/u.test(row))).toBe(true);
+});
+
 it("says how many of a check's findings hold when some do not, and only then", () => {
   const twoProofs: Receipt = { ...clean, contracts: [], exercises: [],
     proofs: [proved, { path: "src/clamp.ts", verdict: "no_progress", evidence: evidence("failed", dafnyFailure) }] };
