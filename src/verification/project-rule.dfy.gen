@@ -42,6 +42,19 @@ lemma keepsProjectKind_ensures(versionOnly: bool, descendantBuild: bool)
 {
 }
 
+function checkScript(name: string, hasCheck: bool): bool
+{
+  if hasCheck then
+    (name == "check")
+  else
+    (((name == "typecheck") || (name == "lint")) || (name == "test"))
+}
+
+lemma checkScript_ensures(name: string, hasCheck: bool)
+  ensures (checkScript(name, hasCheck) <==> (if hasCheck then (name == "check") else (((name == "typecheck") || (name == "lint")) || (name == "test"))))
+{
+}
+
 function holds(folder: string, path: string): bool
 {
   ((folder == "") || (|path| >= |(folder + "/")| && path[..|(folder + "/")|] == (folder + "/")))

@@ -256,6 +256,7 @@ One of:
 | `annotation` | string | For the first four kinds only: the line as written, trimmed, or `lemma <name> without a body` |
 | `function` | string, optional | For an `//@ extern`: the function it trusts without proof; for an `//@ skip`: the function, class, variables or method it leaves out of the proof, or that holds the statement it leaves out. Present when Tesota found it |
 | `statement` | `true`, optional | For an `//@ skip`: it leaves out a statement of `function`, not all of it |
+| `script` | string | For `changed_check_script` only: the package script selected at the request's base |
 
 The kinds are:
 
@@ -269,7 +270,11 @@ The kinds are:
 - `deleted_test`: a test file deleted;
 - `edited_test`: a test file edited so that it may weaken its tests: a
   removed line that is not blank, comment-only or a widened import, or an
-  added focus or skip marker, setup or teardown hook, or module mock.
+  added focus or skip marker, setup or teardown hook, or module mock;
+- `changed_check_script`: a package check script selected at the base whose
+  command changed or is no longer selected. This includes removing the
+  script or its manifest, and adding `check` so discovery no longer selects
+  `typecheck`, `lint` or `test`. It does not judge the replacement's strength.
 
 ### UncoveredLines
 

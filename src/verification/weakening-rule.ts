@@ -17,3 +17,9 @@ export function weakens(kind: AnnotationKind, removed: boolean, matched: boolean
   if (removed) return kind === "requires" || kind === "ensures";
   return kind === "assume" || (kind === "requires" || kind === "skip") && existed;
 }
+
+/** A script selected at the request's base may weaken evidence when its command changes or it is no longer selected. */
+//@ ensures \result <==> (wasSelected && (!isSelected || !sameCommand))
+export function checkScriptWeakens(wasSelected: boolean, isSelected: boolean, sameCommand: boolean): boolean {
+  return wasSelected && (!isSelected || !sameCommand);
+}
