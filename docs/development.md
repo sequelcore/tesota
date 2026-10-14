@@ -110,6 +110,7 @@ evidence matters, then mechanism, and never claims more than was exercised.
 | Content | Owner |
 | --- | --- |
 | Orientation | [README](../README.md) |
+| Remote setup and use | [Remote work](remote-work.md) |
 | Status and priorities | [Roadmap](roadmap.md) |
 | How verification works | [Verification design](design/verification.md) |
 | The receipt's format | [Receipt v1](receipt-v1.md) |
