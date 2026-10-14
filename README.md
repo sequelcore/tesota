@@ -179,8 +179,8 @@ request:
 
 - before a request, what it can verify here: `● ready · proofs and tests`,
   `● ready · tests only`, or `● ready · nothing to check with`;
-- while the gate works, its step and what the round found so far, such as
-  `◐ proving… · 1 proved · tests pass`;
+- while the gate works, its step, elapsed time and what the round found so
+  far, such as `◐ proving src/lib/rules.ts · 1m 40s · 1 proved`;
 - after the run, the receipt in brief, such as
   `✓ receipt · 1 proved · tests pass · 3 lines not proved`.
 
@@ -188,6 +188,14 @@ The context window's use sits at its right. The second row holds the folder
 and branch, with the model at its right. On a narrow terminal the model
 goes first, then the evidence shortens, and the context % goes last.
 Statuses from other extensions follow on a third row.
+
+The timer updates each second, even when the verifier prints nothing. It
+starts again for each file being proved, for the testing stage, and for each
+repository's contract measurement. It reports elapsed time, not time
+remaining or proof that the process is advancing. Narrow terminals shorten
+the proof path before dropping the timer; the step name stays visible while
+it fits. The timer stops when verification ends or work goes back to the
+agent.
 
 ## Work from your phone
 

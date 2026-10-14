@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type AgentBeforeSettleEvent, type AgentBeforeSettleEventResult, type ExtensionAPI, type ExtensionContext, type SessionEntry,
+import { type AgentBeforeSettleEventResult, type ExtensionAPI, type ExtensionContext, type SessionEntry,
   VERSION } from "@earendil-works/pi-coding-agent";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
@@ -280,7 +280,9 @@ export interface Tally {
  */
 export type GateStatus =
   | { readonly step: "ready"; readonly readiness: Readiness }
-  | { readonly step: "proving" | "testing" | "measuring" | "sent_back"; readonly tally: Tally }
+  | { readonly step: "proving"; readonly path: string; readonly startedAt: number; readonly tally: Tally }
+  | { readonly step: "testing" | "measuring"; readonly startedAt: number; readonly tally: Tally }
+  | { readonly step: "sent_back"; readonly tally: Tally }
   | { readonly step: "settled"; readonly receipt: Receipt };
 
 /** The round so far: the proofs judged, then whether every command passed, then how many contracts are weak. */
@@ -386,7 +388,11 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
   pi.on("tool_execution_start", (event) => { if (!readOnlyTools.has(event.toolName)) mayHaveChanged = true; });
   // A gate that fails midway leaves no step running in the footer.
   pi.on("agent_before_settle", async (event, ctx) => {
-    try { return await settle(event, ctx); } catch (error) { progress.reset(); throw error; }
+    if (event.outcome !== "completed") {
+      if ("startedAt" in progress.status) progress.reset();
+      return undefined;
+    }
+    try { return await settle(ctx); } catch (error) { progress.reset(); throw error; }
   });
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
   const outsideGit = (run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">, reason: string | undefined):
@@ -406,7 +412,8 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     const proofs = new Map<string, Receipt["proofs"][number][]>(units.map(({ folder }) => [folder, []]));
     for (const unit of units) {
       for (const path of await contractFiles(unit.root, unit.changed, signal)) {
-        progress.publish({ step: "proving", tally: tally([...proofs.values()].flat()) });
+        progress.publish({ step: "proving", path: inUnit(unit.folder, path), startedAt: performance.now(),
+          tally: tally([...proofs.values()].flat()) });
         const evidence = await proveFile(unit.root, path, signal);
         proofs.get(unit.folder)?.push({ path, evidence,
           verdict: gateVerdict(evidence.outcome, failure(evidence), sentBack.get(inUnit(unit.folder, path)) ?? []) });
@@ -446,13 +453,12 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
       const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
         path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
       const sources = await provedSources(unit.root, unit.base, judged);
-      if (sources.length > 0) progress.publish({ step: "measuring", tally: tallied });
+      if (sources.length > 0) progress.publish({ step: "measuring", startedAt: performance.now(), tally: tallied });
       measured.set(unit.folder, { covered, sources, strength: await contractStrength(ctx, requests, sources, signal, restateWith(pi)) });
     }
     return measured;
   };
-  const settle = async (event: AgentBeforeSettleEvent, ctx: ExtensionContext): Promise<AgentBeforeSettleEventResult | undefined> => {
-    if (event.outcome !== "completed") return undefined;
+  const settle = async (ctx: ExtensionContext): Promise<AgentBeforeSettleEventResult | undefined> => {
     const { units, bases, tooLarge, refused } = await (start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
     const workspace = units.some(({ folder }) => folder !== "");
@@ -471,7 +477,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     const proofs = await prove(changed, signal);
     const allProofs = [...proofs.values()].flat();
     if (keepsWorking(allProofs.map(({ verdict }) => verdict))) return proofsBack(proofs);
-    progress.publish({ step: "testing", tally: tally(allProofs) });
+    progress.publish({ step: "testing", startedAt: performance.now(), tally: tally(allProofs) });
     const rungs = new Map<string, Pick<Receipt, "tests" | "exercises">>();
     for (const unit of changed) {
       rungs.set(unit.folder, await testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal));

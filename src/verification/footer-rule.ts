@@ -14,6 +14,15 @@ export function readiness(contracts: boolean, tests: boolean): Readiness {
 /** How much of the evidence the footer's first row shows: its words, shorter words, or glyphs. */
 export type EvidenceLevel = "full" | "short" | "glyphs";
 
+/** Whole elapsed minutes and seconds; elapsedMs is a nonnegative integer duration, never a remaining-time estimate. */
+//@ requires elapsedMs >= 0
+//@ ensures \result.minutes >= 0 && \result.seconds >= 0 && \result.seconds < 60
+//@ ensures \result.minutes * 60000 + \result.seconds * 1000 <= elapsedMs
+//@ ensures elapsedMs < \result.minutes * 60000 + \result.seconds * 1000 + 1000
+export function elapsedTime(elapsedMs: number): { minutes: number; seconds: number } {
+  return { minutes: Math.floor(elapsedMs / 60000), seconds: Math.floor(elapsedMs / 1000) % 60 };
+}
+
 export interface FooterLayout {
   level: EvidenceLevel;
   /** Whether the context % shows at the right of the first row. */

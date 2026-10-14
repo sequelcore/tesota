@@ -197,16 +197,34 @@ it("publishes each step for the footer: proving, sent back, testing, measuring, 
   scripted.set("src/rule.ts", { outcome: "failed", output: "1 verified, 1 error" });
   run.steps.length = 0;
   await run.settle();
-  expect(run.steps).toEqual([{ step: "proving", tally: { proved: 0, notProved: 0 } },
+  expect(run.steps).toEqual([{ step: "proving", path: "src/rule.ts", startedAt: expect.any(Number), tally: { proved: 0, notProved: 0 } },
     { step: "sent_back", tally: { proved: 0, notProved: 1 } }]);
   scripted.delete("src/rule.ts");
   run.steps.length = 0;
+  const began = performance.now();
   const receipt = entry(await run.settle()).details as Receipt;
+  const ended = performance.now();
   expect(run.steps.map(({ step }) => step)).toEqual(["proving", "testing", "measuring", "settled"]);
-  expect(run.steps[2]).toEqual({ step: "measuring", tally: { proved: 1, notProved: 0 } });
+  for (const status of run.steps) {
+    if ("startedAt" in status) {
+      expect(status.startedAt).toBeGreaterThanOrEqual(began);
+      expect(status.startedAt).toBeLessThanOrEqual(ended);
+    }
+  }
+  expect(run.steps[2]).toEqual({ step: "measuring", startedAt: expect.any(Number), tally: { proved: 1, notProved: 0 } });
   expect(run.progress.status).toEqual({ step: "settled", receipt });
   await run.input();
   expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_only" });
+});
+
+it("clears a running footer operation when the run is aborted or fails", async () => {
+  const run = gate(project());
+  run.progress.ready("proofs_only");
+  for (const outcome of ["aborted", "error"]) {
+    run.progress.publish({ step: "proving", path: "src/rule.ts", startedAt: performance.now(), tally: { proved: 0, notProved: 0 } });
+    expect(await run.settle(outcome)).toBeUndefined();
+    expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_only" });
+  }
 });
 
 it("shows a resumed session's receipt again, unless the operator spoke after it", () => {

@@ -1,7 +1,7 @@
 import { join, sep } from "node:path";
 import type { ContextUsage, ReadonlyFooterDataProvider, Theme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
-import { beforeAll, expect, it } from "vitest";
+import { beforeAll, expect, it, vi } from "vitest";
 import type { Evidence } from "../src/evidence.js";
 import { EvidenceFooter, evidenceParts, evidenceText, homeRelative } from "../src/footer.js";
 import { GateProgress, type GateStatus } from "../src/gate.js";
@@ -23,7 +23,7 @@ const strong = { path: "src/clamp.ts", name: "clamp", lines: [],
   mutation: { rejected: 6, survived: [], equivalent: 0, inconclusive: 0 } };
 
 function words(status: GateStatus, level: "full" | "short" | "glyphs" = "full"): string {
-  return evidenceText(evidenceParts(status), level);
+  return evidenceText(evidenceParts(status, 0), level);
 }
 
 it("says what Tesota can verify before any request", () => {
@@ -36,10 +36,11 @@ it("says what Tesota can verify before any request", () => {
 });
 
 it("names the gate's step and what its round found so far", () => {
-  expect(words({ step: "proving", tally: { proved: 0, notProved: 0 } })).toBe("◐ proving…");
-  expect(words({ step: "testing", tally: { proved: 2, notProved: 0 } })).toBe("◐ testing… · 2 proved");
-  expect(words({ step: "measuring", tally: { proved: 1, notProved: 0, tests: "pass" } }))
-    .toBe("◐ measuring contracts… · 1 proved · tests pass");
+  expect(words({ step: "proving", path: "src/clamp.ts", startedAt: 0, tally: { proved: 0, notProved: 0 } }))
+    .toBe("◐ proving src/clamp.ts · 0s");
+  expect(words({ step: "testing", startedAt: 0, tally: { proved: 2, notProved: 0 } })).toBe("◐ testing… · 0s · 2 proved");
+  expect(words({ step: "measuring", startedAt: 0, tally: { proved: 1, notProved: 0, tests: "pass" } }))
+    .toBe("◐ measuring contracts… · 0s · 1 proved · tests pass");
   expect(words({ step: "sent_back", tally: { proved: 1, notProved: 1, tests: "fail", weak: 2 } }))
     .toBe("↺ sent back · 1 proved · 1 not proved · tests fail · 2 weak contracts");
   expect(words({ step: "sent_back", tally: { proved: 1, notProved: 0, tests: "pass", weak: 1 } }, "glyphs"))
@@ -131,6 +132,86 @@ function footer(progress: GateProgress, statuses: Record<string, string> = {}, u
   return { view, renders: () => renders, rows: (width: number) => view.render(width).map(stripTerminalSequences) };
 }
 
+it("shows the proving file and elapsed time even when the verifier produces no output", () => {
+  vi.useFakeTimers({ toFake: ["performance", "setInterval", "clearInterval"] });
+  const progress = new GateProgress();
+  const { view, rows, renders } = footer(progress);
+  try {
+    progress.publish({ step: "proving", path: "src/lib/rules.ts", startedAt: 0, tally: { proved: 0, notProved: 0 } });
+    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 0s +ctx 5%$/u);
+    vi.advanceTimersByTime(59_000);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 59s +ctx 5%$/u);
+    vi.advanceTimersByTime(1_000);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 1m 00s +ctx 5%$/u);
+    vi.advanceTimersByTime(40_000);
+    expect(rows(120)[1]).toMatch(/^ ◐ proving src\/lib\/rules.ts · 1m 40s +ctx 5%$/u);
+    expect(renders()).toBe(101);
+  } finally {
+    view.dispose();
+    vi.useRealTimers();
+  }
+});
+
+it("times each operation from the gate's start, keeps tally updates continuous, and stops outside verification", () => {
+  vi.useFakeTimers({ toFake: ["performance", "setInterval", "clearInterval", "Date"] });
+  const progress = new GateProgress();
+  progress.publish({ step: "testing", startedAt: 0, tally: { proved: 1, notProved: 0 } });
+  const { view, rows, renders } = footer(progress);
+  try {
+    vi.advanceTimersByTime(65_000);
+    vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
+    expect(rows(120)[1]).toContain("◐ testing… · 1m 05s");
+    progress.publish({ step: "testing", startedAt: 0, tally: { proved: 2, notProved: 0 } });
+    expect(rows(120)[1]).toContain("◐ testing… · 1m 05s · 2 proved");
+    progress.publish({ step: "proving", path: "src/first.ts", startedAt: performance.now(), tally: { proved: 2, notProved: 0 } });
+    vi.advanceTimersByTime(3_000);
+    expect(rows(120)[1]).toContain("◐ proving src/first.ts · 3s");
+    progress.publish({ step: "proving", path: "src/second.ts", startedAt: performance.now(), tally: { proved: 3, notProved: 0 } });
+    expect(rows(120)[1]).toContain("◐ proving src/second.ts · 0s");
+    progress.publish({ step: "measuring", startedAt: performance.now(), tally: { proved: 3, notProved: 0 } });
+    vi.advanceTimersByTime(61_000);
+    expect(rows(120)[1]).toContain("◐ measuring contracts… · 1m 01s");
+    for (const status of [
+      { step: "sent_back", tally: { proved: 3, notProved: 0, weak: 1 } },
+      { step: "settled", receipt: emptyReceipt },
+      { step: "ready", readiness: "tests_only" },
+    ] as const) {
+      progress.publish(status);
+      const count = renders();
+      vi.advanceTimersByTime(2_000);
+      expect(renders()).toBe(count);
+      expect(rows(120)[1]).not.toMatch(/\d+s/u);
+    }
+    progress.publish({ step: "testing", startedAt: performance.now(), tally: { proved: 0, notProved: 0 } });
+    const count = renders();
+    view.dispose();
+    vi.advanceTimersByTime(2_000);
+    expect(renders()).toBe(count);
+  } finally {
+    view.dispose();
+    vi.useRealTimers();
+  }
+});
+
+it("shortens a long proof path before losing time, and drops time before the step name", () => {
+  vi.useFakeTimers({ toFake: ["performance", "setInterval", "clearInterval"] });
+  const progress = new GateProgress();
+  progress.publish({ step: "proving", path: `api/${"very-long-folder/".repeat(12)}rules.ts`, startedAt: 0,
+    tally: { proved: 0, notProved: 0 } });
+  const { view, rows } = footer(progress);
+  try {
+    vi.advanceTimersByTime(100_000);
+    expect(rows(80)[1]).toContain("◐ proving rules.ts · 1m 40s");
+    expect(rows(30)[1]).toMatch(/^ ◐ proving +ctx 5%$/u);
+    for (const width of [120, 80, 60, 40, 30, 20, 12, 2, 1]) {
+      for (const row of rows(width)) expect(visibleWidth(row)).toBeLessThanOrEqual(width);
+    }
+  } finally {
+    view.dispose();
+    vi.useRealTimers();
+  }
+});
+
 it("shows the evidence over the folder, with the context % and the model at the far right", () => {
   const progress = new GateProgress();
   progress.ready("proofs_and_tests");
@@ -150,9 +231,9 @@ it("shows the evidence over the folder, with the context % and the model at the 
 it("follows the gate as it publishes, and stops when disposed", () => {
   const progress = new GateProgress();
   const { view, renders, rows } = footer(progress);
-  progress.publish({ step: "proving", tally: { proved: 1, notProved: 0 } });
+  progress.publish({ step: "proving", path: "src/clamp.ts", startedAt: performance.now(), tally: { proved: 1, notProved: 0 } });
   expect(renders()).toBe(1);
-  expect(rows(120)[1]).toMatch(/^ ◐ proving… · 1 proved +ctx 5%$/u);
+  expect(rows(120)[1]).toMatch(/^ ◐ proving src\/clamp.ts · 0s · 1 proved +ctx 5%$/u);
   view.dispose();
   progress.reset();
   expect(renders()).toBe(1);
