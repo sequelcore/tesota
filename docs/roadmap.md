@@ -44,8 +44,6 @@ each one's issue and pull requests.
   ([#373](https://github.com/sequelcore/tesota/issues/373)), on Pi's public
   APIs. `pi-parallel-sessions` was tried and rejected: it patches Pi's
   internals, and its sessions would run without Tesota.
-- **Upstream reports** for LemmaScript and Pi
-  ([#374](https://github.com/sequelcore/tesota/issues/374)).
 - **Findings become evidence**
   ([#375](https://github.com/sequelcore/tesota/issues/375)). A model judge
   does not return as a verdict: a model's opinion is a candidate, not
