@@ -410,16 +410,31 @@ async function fix(): Promise<void> {
  * anything. The findings are every one on the controls and, for each bug, the finding first in the order of a SHA-256
  * of the seed and its key. A case's expectation is right when its test passes on the correct code, which the operator
  * never sees; it would confirm a finding when it also fails on the change.
+ *
+ * Version 2, registered on 2026-10-11 before any run of it: version 1's cases often named the code's internals, which
+ * no one who knows only the request can judge (#397). A case now states what someone does and what they get, in the
+ * request's own words; a finding that cannot be stated that way is declared not judgeable, writes no case, and
+ * reaches the receipt as unverified.
  */
+const CASE_PROMPT = 2;
 const casePrompt = (requested: string, finding: Finding): string =>
   `A reviewer claims this about the uncommitted change in this repository (\`git diff\` shows it), made for this ` +
   `request:\n\n${requested}\n\nClaim: ${where(finding)}: ${finding.statement}\n\n` +
-  "Write one or two concrete cases that pin down the behavior the claim says is expected. State each in plain words a " +
-  "person who knows the request can judge without reading code: what is called or given, and what result is expected. " +
-  "Then add one new test file whose name contains `tesota-case`, where the repository's test command runs it, written " +
-  "like the repository's other tests, with one test per case named `tesota case 1`, `tesota case 2`, each asserting " +
-  "exactly that case's expected result. Do not run anything and do not change any other file. End your reply with a " +
-  "JSON array in a ```json block: [{\"case\": 1, \"text\": \"the case in plain words\"}].";
+  "Write one or two concrete cases that pin down the behavior the claim says is expected, for the person who made the " +
+  "request to approve or reject. That person knows what they asked for but does not read code. State each case in the " +
+  "request's own words: what someone does or gives, and what they get. Never name functions, variables, files, " +
+  "internal states, timing or framework details. If the claim cannot be stated that way, because judging it needs the " +
+  "code's internals, write no case and no test, and say why.\n\n" +
+  "For the cases you write, add one new test file whose name contains `tesota-case`, where the repository's test " +
+  "command runs it, written like the repository's other tests, with one test per case named `tesota case 1`, " +
+  "`tesota case 2`, each asserting exactly that case's expected result. Do not run anything and do not change any " +
+  "other file. End your reply with a JSON object in a ```json block: " +
+  "{\"cases\": [{\"case\": 1, \"text\": \"the case in the request's words\"}], \"notJudgeable\": null}, or " +
+  "{\"cases\": [], \"notJudgeable\": \"why the claim needs the code's internals\"}.";
+
+/** The case records written with the current prompt; a record without a version came from the first. */
+const currentCases = (): Record<string, any>[] =>
+  records().filter((record) => record["kind"] === "cases" && (record["prompt"] ?? 1) === CASE_PROMPT);
 
 function caseFindings(): Reviewed[] {
   const seed = option("seed") ?? "375";
@@ -440,15 +455,18 @@ function caseOutcome(run: Record<string, any>, number: number): "pass" | "fail" 
 
 async function cases(): Promise<void> {
   const model = option("model") ?? "openai/gpt-6-sol";
-  const done = new Set(records().filter((record) => record["kind"] === "cases" && record["model"] === model).map((record) => record["key"]));
+  const done = new Set(currentCases().filter((record) => record["model"] === model).map((record) => record["key"]));
   await pool(caseFindings().filter((item) => !done.has(item.key)).slice(0, Number(option("limit") ?? Infinity)), parallel, async (item) => {
     const directory = changed(item.instance, item.arm);
     const session = await pi(model, directory, ["read", "grep", "find", "ls", "write"], casePrompt(request(item.instance, item.arm), item.finding));
     const block = [...String(session["output"]).matchAll(/```json\s*([\s\S]*?)```/gu)].at(-1)?.[1];
     let written: { readonly case: number; readonly text: string }[] = [];
+    let notJudgeable: string | undefined;
     try {
-      written = (JSON.parse(block ?? "[]") as { case?: unknown; text?: unknown }[]).flatMap((entry) =>
+      const reply = JSON.parse(block ?? "{}") as { cases?: { case?: unknown; text?: unknown }[]; notJudgeable?: unknown };
+      written = (reply.cases ?? []).flatMap((entry) =>
         typeof entry.case === "number" && typeof entry.text === "string" ? [{ case: entry.case, text: entry.text }] : []);
+      if (typeof reply.notJudgeable === "string" && reply.notJudgeable.trim() !== "") notJudgeable = reply.notJudgeable;
     } catch { /* recorded with no cases */ }
     const tests = git(directory, "status", "--porcelain", "--untracked-files=all").split("\n").filter((line) => line.length > 3)
       .map((line) => line.slice(3).trim()).filter((path) => path.includes("tesota-case"));
@@ -461,7 +479,8 @@ async function cases(): Promise<void> {
       outcome = { testPatch, cases: written.map((entry) => ({ ...entry, onCorrect: caseOutcome(correct, entry.case),
         onChange: caseOutcome(change, entry.case) })) };
     }
-    append({ kind: "cases", model, key: item.key, tests, ...outcome, durationMs: session["durationMs"], tokens: session["tokens"],
+    append({ kind: "cases", prompt: CASE_PROMPT, model, key: item.key, tests, ...outcome,
+      ...notJudgeable === undefined ? {} : { notJudgeable }, durationMs: session["durationMs"], tokens: session["tokens"],
       ...session["ended"] === "exited" && session["exitCode"] === 0 ? {} : { output: String(session["output"]).slice(-2000) } });
     process.stdout.write(`cases ${item.key}: ${JSON.stringify((outcome["cases"] as { onCorrect: string }[]).map((entry) => entry.onCorrect))}\n`);
   });
@@ -482,7 +501,7 @@ function exportCases(): void {
     if (!diffs.has(id)) diffs.set(id, item.arm === "bug" ? item.instance.patch : git(changed(item.instance, "control"), "diff"));
     return diffs.get(id) ?? "";
   };
-  const shown = records().filter((record) => record["kind"] === "cases").flatMap((record) => {
+  const shown = currentCases().flatMap((record) => {
     const item = byKey.get(String(record["key"]));
     return item === undefined ? [] : (record["cases"] as { case: number; text: string }[]).map((entry) => ({
       id: hash(`${String(record["key"])}|${entry.case}`).slice(0, 12), request: request(item.instance, item.arm),
