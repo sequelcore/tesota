@@ -17,3 +17,13 @@ lemma weakens_ensures(kind: AnnotationKind, removed: bool, matched: bool, existe
   ensures (weakens(kind, removed, matched, existed) <==> (!(matched) && ((removed && (kind.requires_? || kind.ensures_?)) || (!(removed) && (kind.assume_? || ((kind.requires_? || kind.skip?) && existed))))))
 {
 }
+
+function checkScriptWeakens(wasSelected: bool, isSelected: bool, sameCommand: bool): bool
+{
+  (wasSelected && (!(isSelected) || !(sameCommand)))
+}
+
+lemma checkScriptWeakens_ensures(wasSelected: bool, isSelected: bool, sameCommand: bool)
+  ensures (checkScriptWeakens(wasSelected, isSelected, sameCommand) <==> (wasSelected && (!(isSelected) || !(sameCommand))))
+{
+}

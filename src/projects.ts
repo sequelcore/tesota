@@ -1,6 +1,6 @@
 import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { below, builtIn, keepsProjectKind, owner, pinnedIn } from "./verification/project-rule.js";
+import { below, builtIn, checkScript, keepsProjectKind, owner, pinnedIn } from "./verification/project-rule.js";
 
 /**
  * The projects a repository holds, at its root or in folders below it to a
@@ -96,20 +96,29 @@ function packageRunner(directory: string): string {
   return "npm run";
 }
 
-function packageScripts(directory: string): string[] {
+/** The check scripts discovery selects from a manifest, in execution order; a non-string command is undefined. */
+export function packageCheckScripts(content: string | undefined): ReadonlyMap<string, string | undefined> {
   try {
-    const manifest: unknown = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
+    const manifest: unknown = JSON.parse(content ?? "");
     const scripts: unknown = typeof manifest === "object" && manifest !== null ? Reflect.get(manifest, "scripts") : undefined;
-    return typeof scripts === "object" && scripts !== null ? Object.keys(scripts) : [];
-  } catch { return []; }
+    if (typeof scripts !== "object" || scripts === null) return new Map();
+    const names = Object.keys(scripts);
+    const hasCheck = names.includes("check");
+    return new Map(["check", "typecheck", "lint", "test"].filter((name) =>
+      names.includes(name) && checkScript(name, hasCheck)).map((name) => {
+      const command: unknown = Reflect.get(scripts, name);
+      return [name, typeof command === "string" ? command : undefined];
+    }));
+  } catch { return new Map(); }
 }
 
 /** A package's `check` script, or its `typecheck`, `lint` and `test` scripts, with the package manager its lockfile names. */
 function packageChecks(directory: string): string[] {
-  const scripts = packageScripts(directory);
   const runner = packageRunner(directory);
-  if (scripts.includes("check")) return [`${runner} check`];
-  return ["typecheck", "lint", "test"].filter((name) => scripts.includes(name)).map((name) => `${runner} ${name}`);
+  try {
+    const scripts = packageCheckScripts(readFileSync(join(directory, "package.json"), "utf8"));
+    return [...scripts.keys()].map((name) => `${runner} ${name}`);
+  } catch { return []; }
 }
 
 /** The build's own lifecycle task that runs every verification it declares: Gradle's `check`, Maven's `verify`, through the wrapper when there is one. */

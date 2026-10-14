@@ -214,6 +214,15 @@ as unchanged (`weakens`, proved).
   `@patch`, `@Mock`) are left out, since a test usually restores them; a
   line added inside an existing test, such as an early `return`, is not
   caught either.
+- **Package check scripts:** a script selected at the request's base whose
+  command changes or is no longer selected (`checkScriptWeakens`, proved).
+  Discovery selects `check` alone when present; otherwise it selects
+  `typecheck`, `lint` and `test` when present (`checkScript`, proved).
+  Removing the script or its manifest counts, as does adding a `check` that
+  displaces previously selected scripts. JSON formatting, dependencies and
+  unselected scripts do not count. The warning names the manifest and script;
+  it does not decide whether the new command checks less. Scripts invoked
+  indirectly by those commands and test-runner configuration are not traced.
 
 A proof whose source or `.dfy` gained an assumption holds only if what the
 change trusts is right (`addedAssumptions`), so the receipt never calls it

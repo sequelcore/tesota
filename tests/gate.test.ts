@@ -8,7 +8,7 @@ import type { Evidence } from "../src/evidence.js";
 import { evidenceParts, evidenceText } from "../src/footer.js";
 import { changedFiles, GateProgress, type GateStatus, registerGate, type SentBack } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
-import type { Receipt } from "../src/receipt.js";
+import { receiptFindings, type Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
 import { emptyReceipt } from "./receipts.js";
@@ -124,6 +124,33 @@ function entry(settled: Settled | undefined): { customType: string; content: str
   expect(settled?.entries).toHaveLength(1);
   return (settled?.entries ?? [])[0] ?? { customType: "", content: "" };
 }
+
+it("discloses a check script narrowed after its failing test went back, even when the remaining tests pass", async () => {
+  const root = repository({
+    "package.json": JSON.stringify({ type: "module", scripts: { check: "node --test test/positive.test.mjs test/negative.test.mjs" } }),
+    "bun.lock": "", "src/price.mjs": "export const total = (n) => n;\n",
+    "test/positive.test.mjs": priceTest(1, 1, "positive"), "test/negative.test.mjs": priceTest(-1, -1, "negative"),
+  });
+  const run = gate(root);
+  await run.input("interactive", undefined, "Keep totals unchanged, including negative values.");
+  write(root, { "src/price.mjs": "export const total = (n) => Math.max(0, n);\n" });
+  expect((await run.settle())?.continue).toBe(true);
+  write(root, { "package.json": JSON.stringify({ type: "module", scripts: { check: "node --test test/positive.test.mjs" } }) });
+  const settled = entry(await run.settle());
+  expect(settled.customType).toBe("tesota-receipt");
+  expect((settled.details as Receipt).tests).toMatchObject([{ evidence: { outcome: "passed" } }]);
+  expect((settled.details as Receipt).weakened).toEqual([
+    { path: "package.json", kind: "changed_check_script", script: "check" },
+  ]);
+  expect(settled.content).toContain("changes the command or selection of check script check");
+  expect(receiptFindings(settled.details as Receipt)).toContainEqual({
+    standing: "decide", check: "weakening", label: "May weaken the evidence", subject: "package.json",
+    detail: "changes the command or selection of check script check", more: [],
+  });
+  const excluded = spawnSync(process.execPath, ["--test", "test/negative.test.mjs"], { cwd: root, encoding: "utf8" });
+  expect(excluded.status, excluded.stderr).toBe(1);
+  expect(excluded.stdout).toContain("ERR_ASSERTION");
+}, 30_000);
 
 it("sends a failed or vacuous proof back, and lets the operator resolve one that could not run", () => {
   expect(gateVerdict("passed", "", [])).toBe("proved");

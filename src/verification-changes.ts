@@ -1,8 +1,10 @@
 import type { ts as TypeScript } from "ts-morph";
+import { posix } from "node:path";
 import type { ChangedFile, DiffLine, RemovedLine } from "./diff-lines.js";
+import { packageCheckScripts } from "./projects.js";
 import { commentOnlyLines, isScriptPath, typescript } from "./typescript-source.js";
 import { removalCounts, testWeakens } from "./verification/test-weakening-rule.js";
-import { type AnnotationKind, weakens } from "./verification/weakening-rule.js";
+import { type AnnotationKind, checkScriptWeakens, weakens } from "./verification/weakening-rule.js";
 
 /**
  * A change, against the request's base, to the evidence its result rests on:
@@ -14,18 +16,21 @@ import { type AnnotationKind, weakens } from "./verification/weakening-rule.js";
  * it); an added `//@ skip` on something the base had, which leaves it out of
  * the proof (`function` names the unit it leaves out, or the one holding the
  * statement it leaves out, which `statement` marks); and a deleted test file,
- * or an edit to one that may weaken its tests (`testWeakens`). The operator
- * decides whether it is legitimate.
+ * or an edit to one that may weaken its tests (`testWeakens`); and a command
+ * or selection changed for a package check script the base selected
+ * (`checkScriptWeakens`). The operator decides whether it is legitimate.
  */
 export type Weakening =
   | { readonly path: string; readonly kind: "removed_contract" | "added_requires" | "added_assume" | "added_skip";
     readonly annotation: string; readonly function?: string; readonly statement?: true }
-  | { readonly path: string; readonly kind: "deleted_test" | "edited_test" };
+  | { readonly path: string; readonly kind: "deleted_test" | "edited_test" }
+  | { readonly path: string; readonly kind: "changed_check_script"; readonly script: string };
 
 /**
  * A changed file, with its content as changed and at the base where the
  * rules need them (`needsContent`): to tell whether an added `requires`
- * annotates a new function, and which lemmas a proof leaves without a body.
+ * annotates a new function, which lemmas a proof leaves without a body, and
+ * which check scripts a package manifest selected.
  * A `.dfy` that LemmaScript generated also has the program it generated last
  * (`generated`, its `.dfy.gen`), so only the lines added by hand count as the
  * change's: the rest come from the source's annotations, which count there,
@@ -62,10 +67,11 @@ function kindOf(path: string, line: string): AnnotationKind | undefined {
 /**
  * Whether the rules need `file`'s content now and at the base: for a Dafny
  * proof, for JavaScript or TypeScript, whose comment-only lines are read from
- * the parsed file (`commentLines`), or for a `//@ requires` it adds.
+ * the parsed file (`commentLines`), for a package manifest's check scripts,
+ * or for a `//@ requires` it adds.
  */
 export function needsContent(file: ChangedFile): boolean {
-  return file.path.endsWith(".dfy") || isScriptPath(file.path) ||
+  return file.path.endsWith(".dfy") || isScriptPath(file.path) || posix.basename(file.path) === "package.json" ||
     file.status === "modified" && file.added.some(({ text }) => kindOf(file.path, text) === "requires");
 }
 
@@ -299,6 +305,16 @@ function testChange(file: FileChange): Weakening[] {
     : [{ path: file.path, kind: file.status === "deleted" ? "deleted_test" : "edited_test" }];
 }
 
+/** Manifest edits that alter the commands discovery selected at the request's base, including replacing them with `check`. */
+function checkScriptChanges(file: FileChange): Weakening[] {
+  if (posix.basename(file.path) !== "package.json") return [];
+  const before = packageCheckScripts(file.baseContent);
+  const after = packageCheckScripts(file.content);
+  return [...before].flatMap(([script, command]) =>
+    checkScriptWeakens(true, after.has(script), command === after.get(script))
+      ? [{ path: file.path, kind: "changed_check_script" as const, script }] : []);
+}
+
 /**
  * What a proof of these files, whole, takes on trust or leaves out, by the
  * same rules as a change's (`weakenedEvidence`): each `//@ assume`,
@@ -322,5 +338,5 @@ export type OnTrust = Extract<Weakening, { readonly annotation: string }> & { re
  * agent cannot argue a change out of the list.
  */
 export function weakenedEvidence(changes: readonly FileChange[]): Weakening[] {
-  return changes.flatMap((file) => [...annotationChanges(file), ...testChange(file)]);
+  return changes.flatMap((file) => [...annotationChanges(file), ...testChange(file), ...checkScriptChanges(file)]);
 }

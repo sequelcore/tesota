@@ -39,6 +39,41 @@ it("weakens tests on a deleted file, or an edit that removes a line that counts 
 const edit = (path: string, added: string[], removed: string[] = []): FileChange =>
   ({ path, status: "modified", added: numbered(...added), removed: numbered(...removed) });
 
+const manifestEdit = (path: string, baseContent: string, content: string | undefined): FileChange =>
+  ({ ...edit(path, content === undefined ? [] : [content], [baseContent]), baseContent, content });
+
+it("flags a removed discovered script, and scripts displaced by a new check even when their commands did not change", () => {
+  const before = JSON.stringify({ scripts: { lint: "eslint .", test: "node --test" } });
+  expect(weakenedEvidence([manifestEdit("web/package.json", before, JSON.stringify({ scripts: { lint: "eslint ." } }))]))
+    .toEqual([{ path: "web/package.json", kind: "changed_check_script", script: "test" }]);
+  expect(weakenedEvidence([manifestEdit("package.json", before,
+    JSON.stringify({ scripts: { check: "node --test test/smoke.test.mjs", lint: "eslint .", test: "node --test" } }))]))
+    .toEqual([
+      { path: "package.json", kind: "changed_check_script", script: "lint" },
+      { path: "package.json", kind: "changed_check_script", script: "test" },
+    ]);
+});
+
+it("does not flag manifest formatting, dependencies, unrelated scripts or a newly added check without previous checks", () => {
+  const before = JSON.stringify({ scripts: { check: "node --test", dev: "vite" }, dependencies: { lib: "1" } });
+  expect(weakenedEvidence([manifestEdit("package.json", before,
+    JSON.stringify({ dependencies: { lib: "2" }, scripts: { dev: "vite --host", check: "node --test" } }, null, 2)),
+  manifestEdit("web/package.json", JSON.stringify({ scripts: { dev: "vite" } }),
+    JSON.stringify({ scripts: { check: "node --test", dev: "vite" } })),
+  { ...manifestEdit("new/package.json", "", JSON.stringify({ scripts: { check: "node --test" } })), status: "added" },
+  ])).toEqual([]);
+});
+
+it("keeps a warning when a manifest with checks is deleted, invalidated or loses its scripts object", () => {
+  const before = JSON.stringify({ scripts: { check: "node --test" } });
+  for (const content of [undefined, "{", JSON.stringify({ scripts: null }), JSON.stringify({ scripts: { check: false } })]) {
+    expect(weakenedEvidence([{ ...manifestEdit("package.json", before, content),
+      status: content === undefined ? "deleted" : "modified" }])).toEqual([
+      { path: "package.json", kind: "changed_check_script", script: "check" },
+    ]);
+  }
+});
+
 it("does not flag a test file that only gains tests, blank lines or comments, or loses blank or comment lines", () => {
   // A JavaScript or TypeScript file's comment lines are read from its content, here only the lines the change shows.
   const added = ["", "it(\"clamps below\", () => {", "  expect(clamp(-1, 0, 2)).toBe(0);", "});", "// it.only would focus it",

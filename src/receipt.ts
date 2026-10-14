@@ -278,6 +278,7 @@ function weakening(change: Weakening): string {
     : change.kind === "added_requires" ? `adds ${change.annotation} to a function the base had`
     : change.kind === "added_assume" ? `${trustedWords(change)} (${change.annotation})`
     : change.kind === "added_skip" ? `${skippedWords(change)} (${change.annotation})`
+    : change.kind === "changed_check_script" ? `${weakeningWords[change.kind]} ${change.script}`
       : change.kind === "deleted_test" ? "deletes a test file" : "edits a test file";
   return `  may weaken    ${change.path}: ${what}`;
 }
@@ -394,6 +395,7 @@ const weakeningWords: Readonly<Record<Weakening["kind"], string>> = {
   removed_contract: "removes or changes a contract line", added_requires: "adds a precondition to a function the base had",
   added_assume: "trusts something without proving it", added_skip: "leaves something out of the proof",
   deleted_test: "deletes a test file", edited_test: "edits a test",
+  changed_check_script: "changes the command or selection of check script",
 };
 
 /**
@@ -424,7 +426,8 @@ function unitFindings(receipt: UnitEvidence): Finding[] {
         detail: receipt.weakened === "too_large" ? "it is too large to check for weakening" : "Git could not show it", more: [] }]
       : receipt.weakened.map((change): Finding => ({ standing: "decide", check: "weakening", label: "May weaken the evidence",
         subject: change.path, detail: change.kind === "added_assume" ? trustedWords(change)
-          : change.kind === "added_skip" ? skippedWords(change) : weakeningWords[change.kind],
+          : change.kind === "added_skip" ? skippedWords(change)
+          : change.kind === "changed_check_script" ? `${weakeningWords[change.kind]} ${change.script}` : weakeningWords[change.kind],
         more: "annotation" in change ? [change.annotation] : [] })),
     ...receipt.contracts.map(contractFinding),
     ...receipt.exercises.map(({ path, finding, reason }): Finding => finding === "exercises"
