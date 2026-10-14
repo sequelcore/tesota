@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { contentHash } from "../src/evidence.js";
-import { annotations, proveFile } from "../src/verification/lemmascript-verifier.js";
+import { annotations, proofSources, proveFile } from "../src/verification/lemmascript-verifier.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -29,6 +29,28 @@ it("reads the properties a LemmaScript file claims", () => {
   expect(annotations("//@ ensures \\result >= 0\nexport function f(): number {\n  //@ invariant i >= 0\n  return 1;\n}")).toEqual(
     ["//@ ensures \\result >= 0", "//@ invariant i >= 0"]);
 });
+
+it("maps a proof to its source as lsc config does, beside it or mirrored under any proof-dir of the project (#403)", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-lemmascript-"));
+  roots.push(root);
+  const files = { "lemmascript.json": JSON.stringify({ "proof-dir": "proofs" }), "src/a/rule.ts": "export const a = 1;\n",
+    "lib/lemmascript.json": "{}", "lib/near.ts": "export const b = 1;\n",
+    "app/lemmascript.json": JSON.stringify({ "proof-dir": "../app-proofs" }), "app/x/main.ts": "export const c = 1;\n" };
+  for (const [path, content] of Object.entries(files)) {
+    mkdirSync(join(root, path, ".."), { recursive: true });
+    writeFileSync(join(root, path), content);
+  }
+  const sources = (proof: string) => proofSources(root, proof, new AbortController().signal);
+  expect(await sources("proofs/src/a/rule.dfy")).toEqual(["src/a/rule.ts"]);
+  expect(await sources("proofs/src/a/rule.dfy.gen")).toEqual(["src/a/rule.ts"]);
+  // The root's proof-dir moves src/'s proofs away, and lib/'s nearer configuration keeps its own beside it.
+  expect(await sources("src/a/rule.dfy")).toEqual([]);
+  expect(await sources("proofs/lib/near.dfy")).toEqual([]);
+  expect(await sources("lib/near.dfy")).toEqual(["lib/near.ts"]);
+  expect(await sources("proofs/src/a/missing.dfy")).toEqual([]);
+  // A proof-dir may lead out of its configuration's folder, so no folder above the proof holds the configuration.
+  expect(await sources("app-proofs/x/main.dfy")).toEqual(["app/x/main.ts"]);
+}, 60_000);
 
 it.runIf(dafny)("refutes the registered clamp base and proves its fix, bound to the source and its proof", async () => {
   const root = project({ "clamp.ts": clampBase });

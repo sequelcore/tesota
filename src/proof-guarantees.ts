@@ -54,7 +54,8 @@ const functionAnnotation = /^\/\/@ (?:verify|requires|ensures|contract|decreases
  * leading its body's first statement. An arrow function's leading comments
  * are its statement's when it returns an expression, and none when it has a
  * block body. Any comment or blank line between an annotation and what it
- * leads keeps it attached, and code detaches it.
+ * leads keeps it attached, and code detaches it. A function LemmaScript
+ * skips (`//@ skip`) has no contract, since nothing proves it.
  */
 export function contracts(path: string, source: string): Contract[] {
   const ts = typescript();
@@ -66,7 +67,11 @@ export function contracts(path: string, source: string): Contract[] {
       const text = source.slice(pos, end).trim();
       return kind === ts.SyntaxKind.SingleLineCommentTrivia && text.startsWith("//@") && keep(text) ? [{ line: lineOf(pos), text }] : [];
     });
+  // LemmaScript's `hasSkip`: a `//@ skip` leading the statement, or an arrow function itself, leaves the function out of the proof.
+  const skips = (position: number): boolean => (ts.getLeadingCommentRanges(source, position) ?? [])
+    .some(({ pos, end }) => /^[ \t]*\/\/@ skip\b/mu.test(source.slice(pos, end)));
   return file.statements.flatMap((statement) => declared(ts, statement).flatMap(({ name, fn }) => {
+    if (skips(statement.pos) || skips(fn.pos)) return [];
     const block = fn.body !== undefined && ts.isBlock(fn.body) ? fn.body : undefined;
     const readsAbove = ts.isFunctionDeclaration(fn) || block === undefined;
     const first = block?.statements[0];

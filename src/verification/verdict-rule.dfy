@@ -23,3 +23,20 @@ method decisions(standings: seq<Standing>) returns (res: int)
   }
   return count;
 }
+
+method partlyHolds(standings: seq<Standing>) returns (res: bool)
+  ensures (res <==> exists k: nat :: ((k < |standings|) && (standings[k].decide? || standings[k].gap?)))
+{
+  var k := 0;
+  while (k < |standings|)
+    invariant (0 <= k)
+    invariant (k <= |standings|)
+    invariant !(exists j: nat :: ((j < k) && (standings[j].decide? || standings[j].gap?)))
+  {
+    if (standings[k].decide? || standings[k].gap?) {
+      return true;
+    }
+    k := (k + 1);
+  }
+  return false;
+}

@@ -8,6 +8,7 @@ import { afterEach, beforeAll, expect, it } from "vitest";
 import type { Evidence } from "../src/evidence.js";
 import tesota from "../src/extension.js";
 import { hasContracts, proveTool } from "../src/prove-tool.js";
+import type { OnTrust } from "../src/verification-changes.js";
 import { loadThemes, themeIn } from "./pi-themes.js";
 
 let theme: Theme;
@@ -87,6 +88,19 @@ it.runIf(dafny)("reports a proved contract and a failing obligation, then asks t
   expect(fail.details).toMatchObject({ path: "bad.ts", evidence: { outcome: "failed" } });
 }, 120_000);
 
+it.runIf(dafny)("names the function a passing proof trusts with //@ extern, and never says every contract holds (#402)", async () => {
+  const root = folder();
+  writeFileSync(join(root, "trusting.ts"), "//@ extern\n//@ ensures \\result >= 0\nexport function magnitude(n: number): number {\n" +
+    "  return Math.abs(n);\n}\n\n//@ ensures \\result >= 0\nexport function twice(n: number): number {\n  return magnitude(n);\n}\n");
+  const result = await run(root, "trusting.ts");
+  expect(result.isError).toBeUndefined();
+  const text = await call(root, "trusting.ts");
+  expect(text).toMatch(/^Proved, but not outright: the \/\/@ contracts in trusting\.ts hold only if what it trusts is right/u);
+  expect(text).toContain("- trusting.ts: trusts magnitude without proving it (//@ extern)");
+  expect(text).not.toContain("every //@ contract");
+  expect(result.details).toMatchObject({ trusted: [{ path: "trusting.ts", kind: "added_assume", function: "magnitude" }] });
+}, 120_000);
+
 it.runIf(dafny)("tells the agent to check where its //@ lines sit when Dafny verified nothing", async () => {
   const root = folder();
   writeFileSync(join(root, "detached.ts"),
@@ -117,12 +131,13 @@ function evidence(outcome: Evidence["outcome"], output: string): Evidence {
 }
 
 /** What Pi's shell shows for a `prove` call and its result, without escape sequences. */
-function drawn(result: { outcome: Evidence["outcome"]; output: string } | string, expanded = false, isPartial = false): string[] {
+function drawn(result: { outcome: Evidence["outcome"]; output: string; trusted?: OnTrust[] } | string, expanded = false,
+  isPartial = false): string[] {
   const context = { durationMs: isPartial ? undefined : 2118 } as never;
   const call = proveTool.renderCall?.({ path: "src/range.ts" }, theme, context).render(80) ?? [];
   const shown = typeof result === "string" ? { content: [{ type: "text" as const, text: result }], details: undefined }
     : { content: [{ type: "text" as const, text: "what the agent reads" }],
-      details: { path: "src/range.ts", evidence: evidence(result.outcome, result.output) } };
+      details: { path: "src/range.ts", evidence: evidence(result.outcome, result.output), trusted: result.trusted ?? [] } };
   const rows = proveTool.renderResult?.(shown, { expanded, isPartial }, theme, context).render(80) ?? [];
   return [...call, ...rows].map((row) => stripTerminalSequences(row).trimEnd());
 }
@@ -137,6 +152,11 @@ it("shows a proof's result in a few words, and Dafny's output only when expanded
   expect(drawn({ outcome: "passed", output: "Dafny program verifier finished with 2 verified, 0 errors" })).toEqual([
     "prove src/range.ts                                                          2.1s", "",
     "✓ Proved — every contract holds · 2 verified, 0 errors"]);
+  // #402: a pass that rests on trust says so, and names each line.
+  const trusted: OnTrust[] = [{ path: "src/range.ts", kind: "added_assume", annotation: "//@ extern", function: "lower" }];
+  expect(drawn({ outcome: "passed", output: "Dafny program verifier finished with 2 verified, 0 errors", trusted }).slice(2)).toEqual([
+    "✓ Proved, not outright — its contracts hold only if what it trusts is right · 2", "  verified, 0 errors",
+    "  - src/range.ts: trusts lower without proving it (//@ extern)"]);
   const failed = drawn({ outcome: "failed", output: failure });
   expect(failed.slice(1)).toEqual(["", "✗ Not proved — a postcondition could not be proved on this return path",
     "   at ensures (inRange(x, lo, hi) <= hi)", "", "ctrl+o for Dafny's output"]);

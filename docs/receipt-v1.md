@@ -12,7 +12,8 @@ A receipt exists in two places:
 
 - **In the Pi session:** the `details` of a `custom_message` entry whose
   `customType` is `tesota-receipt`. Its `content` is the text the operator
-  reads.
+  reads, as Markdown for chat hosts. Pi's terminal renderer reads `details`;
+  the presentation does not change the structured receipt or its version.
 - **In a Statement:** inside an unsigned
   [in-toto Statement v1](https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md)
   about a commit. The Statement uses the predicate fields of the agentic
@@ -252,18 +253,28 @@ One of:
 | --- | --- | --- |
 | `path` | string | The changed file |
 | `kind` | string | One of the kinds below |
-| `annotation` | string | For the first three kinds only: the line as written, trimmed, or `lemma <name> without a body` |
+| `annotation` | string | For the first four kinds only: the line as written, trimmed, or `lemma <name> without a body` |
+| `function` | string, optional | For an `//@ extern`: the function it trusts without proof; for an `//@ skip`: the function, class, variables or method it leaves out of the proof, or that holds the statement it leaves out. Present when Tesota found it |
+| `statement` | `true`, optional | For an `//@ skip`: it leaves out a statement of `function`, not all of it |
+| `script` | string | For `changed_check_script` only: the package script selected at the request's base |
 
 The kinds are:
 
 - `removed_contract`: a `//@ requires` or `//@ ensures` removed or changed;
 - `added_requires`: a `//@ requires` added to a function the base had;
-- `added_assume`: an added `//@ assume`, or, in a `.dfy`, an added `assume`,
-  `{:axiom}` or lemma without a body;
+- `added_assume`: an added `//@ assume` or `//@ extern`, or, in a `.dfy`, an
+  added `assume`, `{:axiom}` or lemma without a body written by hand: not a
+  line of the program LemmaScript generated, its `.dfy.gen`;
+- `added_skip`: an added `//@ skip` on something the base had, which
+  LemmaScript leaves out of the proof;
 - `deleted_test`: a test file deleted;
 - `edited_test`: a test file edited so that it may weaken its tests: a
   removed line that is not blank, comment-only or a widened import, or an
-  added focus or skip marker, setup or teardown hook, or module mock.
+  added focus or skip marker, setup or teardown hook, or module mock;
+- `changed_check_script`: a package check script selected at the base whose
+  command changed or is no longer selected. This includes removing the
+  script or its manifest, and adding `check` so discovery no longer selects
+  `typecheck`, `lint` or `test`. It does not judge the replacement's strength.
 
 ### UncoveredLines
 

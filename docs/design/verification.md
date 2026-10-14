@@ -71,7 +71,11 @@ gate climbs the ladder in order, and at each step it may send failures back
 to the agent with `continue`, which keeps the run going:
 
 1. Prove each changed TypeScript file with `//@` annotations, and each whose
-   `.dfy` or `.dfy.gen` changed.
+   `.dfy` or `.dfy.gen` changed. A proof maps back to its source as
+   LemmaScript maps it (`proofSources`): beside it, or mirrored under the
+   `proof-dir` any `lemmascript.json` of the project sets, which may lead
+   out of its own folder, kept only when `lsc config` places that source's
+   proof there ([#403](https://github.com/sequelcore/tesota/issues/403)).
 2. Once no proof goes back, run the project's commands.
 3. Once no command goes back, measure each new or changed contract's
    strength, and send back the weak ones.
@@ -145,14 +149,22 @@ with every process it started.
 
 `prove` gives the agent the same run on one file while it works. It is
 inactive until the session finds a TypeScript file with `//@` annotations
-(`hasContracts`, which reads at most 20,000 entries and skips dependency,
-build and dot folders). It runs alone, so its evidence describes files no
+(`hasContracts`, which reads the files `projectFiles` walks to: at most
+20,000 entries, skipping dependency, build and dot folders). It runs alone, so its evidence describes files no
 other tool call left half-written. Its guidance tells the agent to work
 until the proof passes, gives LemmaScript's annotation syntax, and forbids
 removing or loosening a contract or adding `//@ assume`. After a failed or
-vacuous proof, the result says what to try next. A result whose proof did
-not pass is an error result, so Pi draws it on its error background; its
-`details` hold the file and the evidence, for the operator's view of it.
+vacuous proof, the result says what to try next. A pass says every
+contract holds only when the files the proof checked take nothing on trust
+and leave nothing out (`provedOnTrust`): each `//@ assume`, `//@ extern`
+and `//@ skip` of the source, and each `assume`, `{:axiom}` and lemma
+without a body written into the `.dfy` by hand. Otherwise it reads
+`Proved, but not outright`, names each one in the receipt's words, and asks
+the agent to say so in its summary
+([#402](https://github.com/sequelcore/tesota/issues/402)). A result whose
+proof did not pass is an error result, so Pi draws it on its error
+background; its `details` hold the file, the evidence and what a pass took
+on trust, for the operator's view of it.
 
 ## Weakened evidence
 
@@ -164,9 +176,28 @@ as unchanged (`weakens`, proved).
 
 - **Contracts:** a removed or changed `//@ requires` or `//@ ensures`.
 - **New preconditions:** a `//@ requires` added to a function the base had.
-- **Assumptions:** an added `//@ assume`.
+  The function an annotation belongs to is read with the TypeScript parser,
+  as LemmaScript's extractor reads it: the declaration its comment leads,
+  arrow functions included, or the function holding the statement it leads.
+- **Assumptions:** an added `//@ assume`, or an added `//@ extern`, which
+  trusts a function's contract without proving its code; LemmaScript emits
+  it as an `{:axiom}` function, whose postcondition Dafny assumes "to be
+  true without proof".
+- **Left out of the proof:** an added `//@ skip` on something the base had,
+  which LemmaScript leaves out of the program it generates, so nothing
+  proves it: a top-level function, class or variable, a method, or a
+  statement inside one of them, named by the one that holds it. Every skip
+  reads the same, so a skip only moved when it leaves out the same thing on
+  both sides ([#404](https://github.com/sequelcore/tesota/issues/404)).
 - **Dafny proofs:** an added `assume` or `{:axiom}` line in a `.dfy`, or a
-  lemma left without a body, which Dafny takes as an axiom.
+  lemma left without a body, which Dafny takes as an axiom, when it was
+  written by hand. A line the proof's last generated program (its
+  `.dfy.gen`) holds is LemmaScript's: it comes from an annotation in the
+  source, which counts there, or from LemmaScript's own model of JavaScript,
+  such as `split` or `sort`, which is part of the verifier, as Dafny is.
+  `lsc regen` rewrites that program from the source and drops from the proof
+  a line it no longer generates, so a line written into both files does not
+  survive the proof.
 - **Tests:** a deleted test file, by the common runners' path conventions
   (`tests/`, `__tests__/`, `*.test.ts`, `*_test.go`, `test_*.py`, snapshots
   and the like), or an edit to one that may weaken its tests
@@ -183,6 +214,26 @@ as unchanged (`weakens`, proved).
   `@patch`, `@Mock`) are left out, since a test usually restores them; a
   line added inside an existing test, such as an early `return`, is not
   caught either.
+- **Package check scripts:** a script selected at the request's base whose
+  command changes or is no longer selected (`checkScriptWeakens`, proved).
+  Discovery selects `check` alone when present; otherwise it selects
+  `typecheck`, `lint` and `test` when present (`checkScript`, proved).
+  Removing the script or its manifest counts, as does adding a `check` that
+  displaces previously selected scripts. JSON formatting, dependencies and
+  unselected scripts do not count. The warning names the manifest and script;
+  it does not decide whether the new command checks less. Scripts invoked
+  indirectly by those commands and test-runner configuration are not traced.
+
+A proof whose source or `.dfy` gained an assumption holds only if what the
+change trusts is right (`addedAssumptions`), so the receipt never calls it
+proved outright ([#399](https://github.com/sequelcore/tesota/issues/399)).
+It says so in plain words, naming what is trusted, and keeps the line as
+written in the details: `Proved, trusting 3 unproved parts` and `trusts
+lowerBound without proving it` in the conversation, `proved src/rule.ts,
+trusting 3 unproved parts the change added` in its text, and `1 proved on
+trust` in the footer. Plain words follow the GOV.UK rule to say what a
+specialist term means where it is needed; "on trust, without proof" is
+what Dafny's `{:axiom}` means.
 
 When Git's output for the diff passes 16 MiB, the receipt says the change
 was not checked for weakening, and coverage is not measured either. The gate
@@ -293,26 +344,32 @@ candidate, not evidence
 A file that proved covers only some of its changed lines (`uncoveredLines`).
 A line is covered when it lies inside a function with a contract, from the
 first annotation to the closing brace, and the change did not narrow that
-contract (`proofCovered`, proved).
+contract (`proofCovered`, proved). A function LemmaScript skips with
+`//@ skip` has no contract (`contracts`), so none of its lines is covered,
+and mutation and ClaimCheck leave it out.
 
 The weakening list decides narrowing:
 
 - an annotation added inside the function;
 - an annotation removed from the base's function of the same name;
-- any assumption added to the file's `.dfy`, which narrows every contract in
-  the file.
+- any assumption added to the file's `.dfy`, wherever LemmaScript keeps it
+  (the proof's evidence names it), which narrows every contract in the file.
 
 A removed line counts at the line that now follows it. Blank and
 comment-only lines are ignored, by the same check the test rule uses
-(`commentLines`): JavaScript and TypeScript are read from the parsed file on
-each side, so a line inside a block comment is a comment whatever it starts
-with and a line inside a string or template never is, and other languages
-line by line; a `//@` line is a contract, not a comment, so it still counts.
-Read line by line, a line inside a string that starts like a comment, such
-as `#` in a Python triple-quoted string or `//` in a Go raw string, counts
-as a comment, so removing it from a test file is not counted, and a block
-comment's middle line that does not start with `*` counts as code. Parsing
-Python with its own `tokenize` waits for a Python project to verify (#394). The receipt lists the remaining lines as ranges (`ranges`, proved).
+(`commentLines`), which reads each side of a change from the parsed file,
+since a line alone shows neither a block comment nor a string around it.
+JavaScript and TypeScript are read by their parser, where a `//@` line is a
+contract, not a comment, so it still counts. Other languages are read by a
+tree-sitter grammar Tesota ships (`grammarCommentLines`), today Python and
+Go: a line is comment-only when it has a non-blank character and each lies
+inside a comment (`commentOnly`, proved), so a `#` line in a Python
+triple-quoted string or a Go `*p = 2` is code. A file whose parse has
+errors, and a file in a language no grammar reads, has no comment-only
+line, so its comment changes count as code: more files listed, none
+missed. Each grammar is copied from its package at the version
+`package.json` pins, which a test checks; a language is added when a
+project Tesota verifies needs it. The receipt lists the remaining lines as ranges (`ranges`, proved).
 A changed file that no proof's evidence covers is listed whole, unless it
 is a test file (tests are evidence, reported as exercised, passed or as
 something that may weaken the evidence) or every line its change added or
@@ -398,7 +455,11 @@ once, and starts collapsed, so the collapsed view carries the verdict.
   checks established count (`receiptFindings`, `decisions`); a model's
   opinion that a contract falls short of the request is a note beside the
   verdict, `· ◇ 1 model note`. Under the title, in order: NEEDS YOU, then
-  the model's opinion, then what is not proved, and one row of what holds.
+  the model's opinion, then what is not proved, and one row of what holds
+  (`holdsWords`). That row never reads stronger than the sections above it:
+  a label whose check also has a finding that needs the operator or is a
+  gap says how many of that check's findings hold, as in `Contract strong
+  (1 of 4)` (`partlyHolds`, proved).
   Within each section, proofs and tests come first, then weakening, contract
   strength, test exercise and coverage. A receipt with nothing to decide,
   no gap and no note is its title and that one row. Expanded, each finding
@@ -434,7 +495,7 @@ The pure decisions above carry LemmaScript `//@` specifications in
 | `range-rule.ts` | How the receipt groups line numbers |
 | `pi-version-rule.ts` | Whether the Pi found meets the minimum |
 | `footer-rule.ts` | What Tesota can verify before a request, and what the footer drops as the terminal narrows |
-| `verdict-rule.ts` | How many of a receipt's findings need the operator: never a model's opinion |
+| `verdict-rule.ts` | How many of a receipt's findings need the operator, never a model's opinion, and when a summary must say how many of a check's findings hold |
 
 ## Measurements
 

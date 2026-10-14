@@ -24,6 +24,12 @@ export function keepsProjectKind(versionOnly: boolean, descendantBuild: boolean)
   return !versionOnly || !descendantBuild;
 }
 
+/** A package with `check` runs it alone; otherwise discovery runs typecheck, lint and test when present. */
+//@ ensures \result <==> (hasCheck ? name === "check" : (name === "typecheck" || name === "lint" || name === "test"))
+export function checkScript(name: string, hasCheck: boolean): boolean {
+  return hasCheck ? name === "check" : name === "typecheck" || name === "lint" || name === "test";
+}
+
 /** A path, relative to the repository, lies in a project's folder; the root holds every path. */
 //@ ensures \result <==> (folder === "" || path.startsWith(folder + "/"))
 export function holds(folder: string, path: string): boolean {

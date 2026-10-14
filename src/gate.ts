@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type AgentBeforeSettleEvent, type AgentBeforeSettleEventResult, type ExtensionAPI, type ExtensionContext, type SessionEntry,
+import { type AgentBeforeSettleEventResult, type ExtensionAPI, type ExtensionContext, type SessionEntry,
   VERSION } from "@earendil-works/pi-coding-agent";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
@@ -9,13 +9,13 @@ import { type ContractStrength, contractStrength } from "./proof-guarantees.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { uncoveredLines } from "./proof-coverage.js";
 import { proofReport } from "./prove-tool.js";
-import { inUnit, isReceipt, noEvidence, type Receipt, renderReceipt, type UnitEvidence } from "./receipt.js";
+import { inUnit, isReceipt, noEvidence, type Receipt, renderReceiptMessage, type UnitEvidence } from "./receipt.js";
 import { takeSnapshot } from "./snapshot.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
-import { commentLines, type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
+import { commentLines, type FileChange, isTestPath, needsContent, weakenedEvidence, withGrammarComments } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
-import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
+import { annotations, proofSources, proveFile } from "./verification/lemmascript-verifier.js";
 import { type Unit, workspaceUnits } from "./workspace.js";
 
 async function gitPaths(root: string, args: readonly string[]): Promise<string[] | undefined> {
@@ -85,7 +85,8 @@ async function diffFromBase(root: string, base: string): Promise<ChangedFile[] |
 
 /**
  * Each changed file's lines from `base`, with its content where the
- * weakening rules need it (`needsContent`), or why the change could not be
+ * weakening rules need it (`needsContent`) and the comment-only lines a
+ * grammar reads in it (`withGrammarComments`), or why the change could not be
  * read. A changed file the base lacks, untracked or before the first commit,
  * counts as added whole.
  */
@@ -94,14 +95,18 @@ async function fileChanges(root: string, base: string | null, changed: readonly 
   const diffed = base === null ? [] : await diffFromBase(root, base);
   if (typeof diffed === "string") return diffed;
   const inDiff = new Set(diffed.map(({ path }) => path));
+  // A proof's last generated program: `lsc regen` rewrites it from the source and drops from the proof what it no longer generates.
+  const generated = (path: string): Promise<string | undefined> =>
+    path.endsWith(".dfy") ? readIfPresent(join(root, `${path}.gen`)) : Promise.resolve(undefined);
   const whole = await Promise.all(changed.filter((path) => !inDiff.has(path)).map(async (path): Promise<FileChange> => {
     const content = await readIfPresent(join(root, path));
-    return { path, status: "added", removed: [], content,
+    return { path, status: "added", removed: [], content, generated: await generated(path),
       added: content?.split(/\r?\n/u).map((text, k) => ({ number: k + 1, text })) ?? [] };
   }));
   const read = await Promise.all(diffed.map(async (file): Promise<FileChange> => base === null || !needsContent(file) ? file
-    : { ...file, content: await readIfPresent(join(root, file.path)), baseContent: await git(root, ["show", `${base}:./${file.path}`]) }));
-  return [...read, ...whole].sort((a, b) => a.path < b.path ? -1 : 1);
+    : { ...file, content: await readIfPresent(join(root, file.path)), baseContent: await git(root, ["show", `${base}:./${file.path}`]),
+      generated: await generated(file.path) }));
+  return (await Promise.all([...read, ...whole].map(withGrammarComments))).sort((a, b) => a.path < b.path ? -1 : 1);
 }
 
 async function hasAnnotations(root: string, path: string): Promise<boolean> {
@@ -110,11 +115,15 @@ async function hasAnnotations(root: string, path: string): Promise<boolean> {
 
 /**
  * The changed TypeScript files with `//@` contracts, and those whose `.dfy`
- * proof changed, since a proof's hand-written lines are part of what it proves.
+ * proof changed, wherever LemmaScript keeps it (`proofSources`), since a
+ * proof's hand-written lines are part of what it proves.
  */
-async function contractFiles(root: string, changed: readonly string[]): Promise<string[]> {
-  const sources = new Set(changed.map((path) => path.replace(/\.dfy(\.gen)?$/u, ".ts")).filter((path) =>
-    path.endsWith(".ts") && !path.endsWith(".d.ts")));
+async function contractFiles(root: string, changed: readonly string[], signal: AbortSignal): Promise<string[]> {
+  const sources = new Set(changed.filter((path) => path.endsWith(".ts") && !path.endsWith(".d.ts")));
+  // A source found already is not asked about again (`proofSources`).
+  for (const path of changed.filter((changedPath) => /\.dfy(\.gen)?$/u.test(changedPath))) {
+    for (const source of await proofSources(root, path, signal, sources)) sources.add(source);
+  }
   const files: string[] = [];
   for (const path of [...sources].sort()) if (await hasAnnotations(root, path)) files.push(path);
   return files;
@@ -159,21 +168,22 @@ function failingReport({ command, failingTests, evidence }: CommandRun): string 
 
 /** The files that proved, as changed and at the request's base, whose contracts and covered lines the receipt measures. */
 async function provedSources(root: string, base: string | null, proofs: Receipt["proofs"]): Promise<ProvedSource[]> {
-  return Promise.all(proofs.filter(({ verdict }) => verdict === "proved").map(async ({ path }) => ({ path,
-    source: await readIfPresent(join(root, path)) ?? "",
+  return Promise.all(proofs.filter(({ verdict }) => verdict === "proved").map(async ({ path, evidence }) => ({ path,
+    checked: evidence.files, source: await readIfPresent(join(root, path)) ?? "",
     baseSource: base === null ? undefined : await git(root, ["show", `${base}:./${path}`]) })));
 }
 
-type ProvedSource = { readonly path: string; readonly source: string; readonly baseSource: string | undefined };
+type ProvedSource = { readonly path: string; readonly checked: readonly string[]; readonly source: string;
+  readonly baseSource: string | undefined };
 
 /** The changed lines of each TypeScript file that proved that no contract's proof covers (`uncoveredLines`). */
 function uncovered(sources: readonly ProvedSource[], changes: Awaited<ReturnType<typeof fileChanges>>,
   weakened: Receipt["weakened"]): Receipt["uncovered"] {
   if (typeof changes === "string" || typeof weakened === "string") return [];
   const byPath = new Map(changes.map((change) => [change.path, change]));
-  return sources.flatMap(({ path, source, baseSource }) => {
+  return sources.flatMap(({ path, checked, source, baseSource }) => {
     const change = byPath.get(path);
-    return change === undefined || !path.endsWith(".ts") ? [] : [uncoveredLines(change, source, baseSource, weakened)];
+    return change === undefined || !path.endsWith(".ts") ? [] : [uncoveredLines(change, checked, source, baseSource, weakened)];
   });
 }
 
@@ -271,7 +281,9 @@ export interface Tally {
  */
 export type GateStatus =
   | { readonly step: "ready"; readonly readiness: Readiness }
-  | { readonly step: "proving" | "testing" | "measuring" | "sent_back"; readonly tally: Tally }
+  | { readonly step: "proving"; readonly path: string; readonly startedAt: number; readonly tally: Tally }
+  | { readonly step: "testing" | "measuring"; readonly startedAt: number; readonly tally: Tally }
+  | { readonly step: "sent_back"; readonly tally: Tally }
   | { readonly step: "settled"; readonly receipt: Receipt };
 
 /** The round so far: the proofs judged, then whether every command passed, then how many contracts are weak. */
@@ -377,7 +389,11 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
   pi.on("tool_execution_start", (event) => { if (!readOnlyTools.has(event.toolName)) mayHaveChanged = true; });
   // A gate that fails midway leaves no step running in the footer.
   pi.on("agent_before_settle", async (event, ctx) => {
-    try { return await settle(event, ctx); } catch (error) { progress.reset(); throw error; }
+    if (event.outcome !== "completed") {
+      if ("startedAt" in progress.status) progress.reset();
+      return undefined;
+    }
+    try { return await settle(ctx); } catch (error) { progress.reset(); throw error; }
   });
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
   const outsideGit = (run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">, reason: string | undefined):
@@ -386,7 +402,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
       ...reason === undefined ? {} : { reason } };
     progress.publish({ step: "settled", receipt });
-    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
+    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceiptMessage(receipt),
       display: true, details: receipt }] };
   };
   const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
@@ -396,8 +412,9 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
   const prove = async (units: readonly ChangedUnit[], signal: AbortSignal): Promise<Map<string, Receipt["proofs"][number][]>> => {
     const proofs = new Map<string, Receipt["proofs"][number][]>(units.map(({ folder }) => [folder, []]));
     for (const unit of units) {
-      for (const path of await contractFiles(unit.root, unit.changed)) {
-        progress.publish({ step: "proving", tally: tally([...proofs.values()].flat()) });
+      for (const path of await contractFiles(unit.root, unit.changed, signal)) {
+        progress.publish({ step: "proving", path: inUnit(unit.folder, path), startedAt: performance.now(),
+          tally: tally([...proofs.values()].flat()) });
         const evidence = await proveFile(unit.root, path, signal);
         proofs.get(unit.folder)?.push({ path, evidence,
           verdict: gateVerdict(evidence.outcome, failure(evidence), sentBack.get(inUnit(unit.folder, path)) ?? []) });
@@ -437,13 +454,12 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
       const covered = new Set(judged.flatMap(({ evidence }) => evidence.files.flatMap((path) =>
         path.endsWith(".dfy") ? [path, `${path}.gen`] : [path])));
       const sources = await provedSources(unit.root, unit.base, judged);
-      if (sources.length > 0) progress.publish({ step: "measuring", tally: tallied });
+      if (sources.length > 0) progress.publish({ step: "measuring", startedAt: performance.now(), tally: tallied });
       measured.set(unit.folder, { covered, sources, strength: await contractStrength(ctx, requests, sources, signal, restateWith(pi)) });
     }
     return measured;
   };
-  const settle = async (event: AgentBeforeSettleEvent, ctx: ExtensionContext): Promise<AgentBeforeSettleEventResult | undefined> => {
-    if (event.outcome !== "completed") return undefined;
+  const settle = async (ctx: ExtensionContext): Promise<AgentBeforeSettleEventResult | undefined> => {
     const { units, bases, tooLarge, refused } = await (start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
     const workspace = units.some(({ folder }) => folder !== "");
@@ -462,7 +478,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     const proofs = await prove(changed, signal);
     const allProofs = [...proofs.values()].flat();
     if (keepsWorking(allProofs.map(({ verdict }) => verdict))) return proofsBack(proofs);
-    progress.publish({ step: "testing", tally: tally(allProofs) });
+    progress.publish({ step: "testing", startedAt: performance.now(), tally: tally(allProofs) });
     const rungs = new Map<string, Pick<Receipt, "tests" | "exercises">>();
     for (const unit of changed) {
       rungs.set(unit.folder, await testRung(unit.root, unit.base, unit.changed, commandsSentBack.get(unit.folder) ?? new Map(), signal));
@@ -490,7 +506,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
           reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]
         .sort((a, b) => a.folder < b.folder ? -1 : 1) };
     progress.publish({ step: "settled", receipt });
-    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
+    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceiptMessage(receipt),
       display: true, details: receipt }] };
   };
   return progress;

@@ -1,10 +1,10 @@
 import { homedir } from "node:os";
-import { sep } from "node:path";
+import { posix, sep } from "node:path";
 import type { ContextUsage, ReadonlyFooterDataProvider, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
-import { allEvidence, type Receipt, receiptDecisions, verified } from "./receipt.js";
-import { type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
+import { addedAssumptions, allEvidence, type Receipt, receiptDecisions, verified } from "./receipt.js";
+import { elapsedTime, type EvidenceLevel, footerLayout } from "./verification/footer-rule.js";
 
 /** One piece of the evidence row, in its words, its shorter words and its glyph form; an empty form is left out. */
 export interface EvidencePart {
@@ -32,15 +32,17 @@ const readinessWords = {
 } as const;
 
 const workingHeads = {
-  proving: part("◐ proving…", "◐ proving…", "◐", "accent"),
-  testing: part("◐ testing…", "◐ testing…", "◐", "accent"),
-  measuring: part("◐ measuring contracts…", "◐ measuring…", "◐", "accent"),
+  testing: part("◐ testing…", "◐ testing…", "◐ testing", "accent"),
+  measuring: part("◐ measuring contracts…", "◐ measuring…", "◐ measuring", "accent"),
   sent_back: part("↺ sent back", "↺ sent back", "↺", "warning"),
 } as const;
 
-function tallyParts({ proved, notProved, tests, weak }: Tally): EvidencePart[] {
+/** The tally's parts; of the proofs that passed, `assumed` hold only given parts the change trusts without proof, and are told apart. */
+function tallyParts({ proved, notProved, tests, weak }: Tally, assumed = 0): EvidencePart[] {
+  const outright = proved - assumed;
   return [
-    ...proved > 0 ? [part(`${proved} proved`, `${proved} proved`, `✓${proved}`, "success")] : [],
+    ...outright > 0 ? [part(`${outright} proved`, `${outright} proved`, `✓${outright}`, "success")] : [],
+    ...assumed > 0 ? [part(`${assumed} proved on trust`, `${assumed} on trust`, `trust ${assumed}`, "warning")] : [],
     ...notProved > 0 ? [part(`${notProved} not proved`, `${notProved} unproved`, `✗${notProved}`, "error")] : [],
     ...tests === "pass" ? [part("tests pass", "tests ✓", "tests ✓", "success")] : [],
     ...tests === "fail" ? [part("tests fail", "tests ✗", "tests ✗", "error")] : [],
@@ -60,7 +62,10 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   if (!verified(receipt)) {
     return [part("! receipt", "! receipt", "!", "warning"), part("not verified, no Git repository", "no Git", "no Git", "warning")];
   }
-  const proved = receipt.proofs.filter(({ verdict }) => verdict === "proved").length;
+  const proofs = receipt.proofs.filter(({ verdict }) => verdict === "proved");
+  const proved = proofs.length;
+  // As the receipt in the conversation says, a proof that holds only given an assumption the change added is not proved outright.
+  const assumed = proofs.filter(({ evidence }) => addedAssumptions(evidence.files, receipt.weakened) > 0).length;
   const passed = receipt.tests.every(({ verdict }) => verdict === "proved");
   const weak = receipt.contracts.filter(({ mutation }) => mutation.survived.length > 0).length;
   const lines = lineCount(receipt.uncovered);
@@ -73,7 +78,7 @@ function receiptParts(settled: Receipt): EvidencePart[] {
   const clean = receiptDecisions(settled) === 0;
   const listed = [
     ...tallyParts({ proved, notProved: receipt.proofs.length - proved,
-      ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }),
+      ...receipt.tests.length === 0 ? {} : { tests: passed ? "pass" : "fail" }, weak }, assumed),
     // Narrower rows keep what needs the operator, so they leave out contracts that held.
     // Strength needs a change the proof caught, as the receipt in the conversation says.
     ...receipt.contracts.length > 0 && receipt.contracts.every(({ mutation }) => mutation.survived.length === 0 && mutation.rejected > 0)
@@ -96,13 +101,20 @@ function receiptParts(settled: Receipt): EvidencePart[] {
 }
 
 /** What the footer's first row says for the gate's status. */
-export function evidenceParts(status: GateStatus): EvidencePart[] {
+export function evidenceParts(status: GateStatus, now: number = performance.now()): EvidencePart[] {
   if (status.step === "ready") {
     const words = readinessWords[status.readiness];
     return [part("● ready", "● ready", "●", status.readiness === "nothing" ? "warning" : "success"), words];
   }
   if (status.step === "settled") return receiptParts(status.receipt);
-  return [workingHeads[status.step], ...tallyParts(status.tally)];
+  if (status.step === "sent_back") return [workingHeads.sent_back, ...tallyParts(status.tally)];
+  const { minutes, seconds } = elapsedTime(Math.max(0, Math.floor(now - status.startedAt)));
+  const elapsed = minutes === 0 ? `${seconds}s` : `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+  const head = status.step === "proving"
+    ? part(`◐ proving ${status.path}`, `◐ proving ${posix.basename(status.path)}`, "◐ proving", "accent")
+    : workingHeads[status.step];
+  return [part(`${head.full}${SEPARATOR}${elapsed}`, `${head.short}${SEPARATOR}${elapsed}`, head.glyphs, head.color),
+    ...tallyParts(status.tally)];
 }
 
 /** The parts at one level, joined as the row shows them, without color. */
@@ -155,6 +167,7 @@ export class EvidenceFooter implements Component {
   readonly #session: FooterSession;
   readonly #unsubscribe: () => void;
   readonly #unwatchBranch: () => void;
+  #timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(theme: Theme, data: ReadonlyFooterDataProvider, progress: GateProgress, session: FooterSession,
     requestRender: () => void) {
@@ -162,12 +175,22 @@ export class EvidenceFooter implements Component {
     this.#data = data;
     this.#progress = progress;
     this.#session = session;
-    this.#unsubscribe = progress.subscribe(requestRender);
+    const update = (): void => {
+      if ("startedAt" in progress.status) {
+        this.#timer ??= setInterval(requestRender, 1000);
+      } else {
+        clearInterval(this.#timer);
+        this.#timer = undefined;
+      }
+      requestRender();
+    };
+    this.#unsubscribe = progress.subscribe(update);
     this.#unwatchBranch = data.onBranchChange(requestRender);
+    if ("startedAt" in progress.status) this.#timer = setInterval(requestRender, 1000);
   }
 
   render(width: number): string[] {
-    const inner = Math.max(1, width - 2);
+    const inner = Math.max(0, width - 2);
     const parts = evidenceParts(this.#progress.status);
     const context = contextText(this.#theme, this.#session.context());
     const branch = this.#data.getGitBranch();
@@ -186,6 +209,7 @@ export class EvidenceFooter implements Component {
   invalidate(): void {}
 
   dispose(): void {
+    clearInterval(this.#timer);
     this.#unsubscribe();
     this.#unwatchBranch();
   }

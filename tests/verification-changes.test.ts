@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { type RemovedLine, changedLines } from "../src/diff-lines.js";
-import { bodilessLemmas, type FileChange, weakenedEvidence } from "../src/verification-changes.js";
+import { bodilessLemmas, commentLines, type FileChange, provedOnTrust, weakenedEvidence, withGrammarComments }
+  from "../src/verification-changes.js";
 import { removalCounts, testWeakens } from "../src/verification/test-weakening-rule.js";
 import { weakens } from "../src/verification/weakening-rule.js";
 
@@ -18,6 +19,10 @@ it("weakens on a removed requires or ensures, a requires added to an existing fu
   expect(weakens("requires", false, true, true)).toBe(false);
   expect(weakens("assume", true, false, false)).toBe(false);
   expect(weakens("other", true, false, true)).toBe(false);
+  expect(weakens("skip", false, false, true)).toBe(true);
+  expect(weakens("skip", false, false, false)).toBe(false);
+  expect(weakens("skip", false, true, true)).toBe(false);
+  expect(weakens("skip", true, false, true)).toBe(false);
 });
 
 it("weakens tests on a deleted file, or an edit that removes a line that counts or changes how tests run", () => {
@@ -35,15 +40,51 @@ it("weakens tests on a deleted file, or an edit that removes a line that counts 
 const edit = (path: string, added: string[], removed: string[] = []): FileChange =>
   ({ path, status: "modified", added: numbered(...added), removed: numbered(...removed) });
 
-it("does not flag a test file that only gains tests, blank lines or comments, or loses blank or comment lines", () => {
-  // A JavaScript or TypeScript file's comment lines are read from its content, here only the lines the change shows.
+const manifestEdit = (path: string, baseContent: string, content: string | undefined): FileChange =>
+  ({ ...edit(path, content === undefined ? [] : [content], [baseContent]), baseContent, content });
+
+it("flags a removed discovered script, and scripts displaced by a new check even when their commands did not change", () => {
+  const before = JSON.stringify({ scripts: { lint: "eslint .", test: "node --test" } });
+  expect(weakenedEvidence([manifestEdit("web/package.json", before, JSON.stringify({ scripts: { lint: "eslint ." } }))]))
+    .toEqual([{ path: "web/package.json", kind: "changed_check_script", script: "test" }]);
+  expect(weakenedEvidence([manifestEdit("package.json", before,
+    JSON.stringify({ scripts: { check: "node --test test/smoke.test.mjs", lint: "eslint .", test: "node --test" } }))]))
+    .toEqual([
+      { path: "package.json", kind: "changed_check_script", script: "lint" },
+      { path: "package.json", kind: "changed_check_script", script: "test" },
+    ]);
+});
+
+it("does not flag manifest formatting, dependencies, unrelated scripts or a newly added check without previous checks", () => {
+  const before = JSON.stringify({ scripts: { check: "node --test", dev: "vite" }, dependencies: { lib: "1" } });
+  expect(weakenedEvidence([manifestEdit("package.json", before,
+    JSON.stringify({ dependencies: { lib: "2" }, scripts: { dev: "vite --host", check: "node --test" } }, null, 2)),
+  manifestEdit("web/package.json", JSON.stringify({ scripts: { dev: "vite" } }),
+    JSON.stringify({ scripts: { check: "node --test", dev: "vite" } })),
+  { ...manifestEdit("new/package.json", "", JSON.stringify({ scripts: { check: "node --test" } })), status: "added" },
+  ])).toEqual([]);
+});
+
+it("keeps a warning when a manifest with checks is deleted, invalidated or loses its scripts object", () => {
+  const before = JSON.stringify({ scripts: { check: "node --test" } });
+  for (const content of [undefined, "{", JSON.stringify({ scripts: null }), JSON.stringify({ scripts: { check: false } })]) {
+    expect(weakenedEvidence([{ ...manifestEdit("package.json", before, content),
+      status: content === undefined ? "deleted" : "modified" }])).toEqual([
+      { path: "package.json", kind: "changed_check_script", script: "check" },
+    ]);
+  }
+});
+
+it("does not flag a test file that only gains tests, blank lines or comments, or loses blank or comment lines", async () => {
+  // A file's comment lines are read from its content, here only the lines the change shows.
   const added = ["", "it(\"clamps below\", () => {", "  expect(clamp(-1, 0, 2)).toBe(0);", "});", "// it.only would focus it",
     "const skipped = items.filter(Boolean);"];
   const removed = ["", "// an old note", "  /* wrapped", "   * note */"];
+  const python = ["# @pytest.mark.skip later", "def test_total():", "    assert total(1) == 1", "@pytest.fixture", "def order():"];
   expect(weakenedEvidence([
     { ...edit("tests/clamp.test.ts", added, removed), content: added.join("\n"), baseContent: removed.join("\n") },
-    edit("app/test_orders.py", ["# @pytest.mark.skip later", "def test_total():", "    assert total(1) == 1",
-      "@pytest.fixture", "def order():"], ["# old note"]),
+    await withGrammarComments({ ...edit("app/test_orders.py", python, ["# old note"]), content: python.join("\n"),
+      baseContent: "# old note" }),
     edit("internal/orders_test.go", ["func TestTotal(t *testing.T) {", "\tif total(1) != 1 {", "\t\tt.Fatal(\"total\")", "\t}", "}"]),
   ])).toEqual([]);
 });
@@ -188,6 +229,88 @@ it("flags an {:axiom} and a lemma left without a body in a proof, unless the bas
   ]);
 });
 
+// The shape `lsc gen` 0.6.4 emits for a `//@ extern` function and a `split` call: both are `{:axiom}` functions.
+const generatedProgram = ["// Generated by lsc from rule.ts", "", "function {:axiom} StringSplit(s: string, d: string): seq<string>",
+  "  requires |d| > 0", "  ensures |StringSplit(s, d)| >= 1", "", "function {:axiom} helper(n: int): int", "  ensures (helper(n) >= 0)", "",
+  "lemma f_ensures(n: int)", "  ensures (f(n) >= 0)", "{", "}", ""];
+
+it("counts a proof's lines that LemmaScript generated as its own, and the source's //@ extern as the change's (#399)", () => {
+  const lines = [...generatedProgram.slice(0, -1), "lemma Given()", "  ensures false", "", "method g()", "{", "  assume false;", "}", ""];
+  const added = lines.map((text, k) => ({ number: k + 1, text }));
+  const content = lines.join("\n");
+  expect(weakenedEvidence([{ path: "src/rule.dfy", status: "added", removed: [], added, content, generated: generatedProgram.join("\n") }]))
+    .toEqual([
+      { path: "src/rule.dfy", kind: "added_assume", annotation: "assume false;" },
+      { path: "src/rule.dfy", kind: "added_assume", annotation: "lemma Given without a body" },
+    ]);
+  // Without the program LemmaScript generated, every line of the proof counts as written by hand.
+  expect(weakenedEvidence([{ path: "src/rule.dfy", status: "added", removed: [], added, content }])).toHaveLength(4);
+  const source = ["//@ extern", "//@ ensures \\result >= 0", "export function helper(n: number): number {", "  return Math.abs(n);", "}",
+    "", "//@ extern", ""].join("\n");
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "modified", removed: [],
+    added: [{ number: 1, text: "//@ extern" }, { number: 7, text: "//@ extern" }], content: source, baseContent: source }])).toEqual([
+    { path: "src/rule.ts", kind: "added_assume", annotation: "//@ extern", function: "helper" },
+    { path: "src/rule.ts", kind: "added_assume", annotation: "//@ extern" },
+  ]);
+});
+
+it("flags a //@ skip added to what the base had, and not one on something new or one that only moved (#404)", () => {
+  const baseContent = ["//@ ensures \\result >= 0", "export function clamp(n: number): number {", "  const m = n;", "  return m;", "}", "",
+    "export const limit = (n: number): number => n;", "", "class Box {", "  //@ verify", "  get(): number { return 1; }", "}", "",
+    "//@ skip", "export function moved(): number { return 0; }", ""].join("\n");
+  const content = ["//@ skip", "//@ ensures \\result >= 0", "export function clamp(n: number): number {", "  //@ skip",
+    "  const m = n;", "  return m;", "}", "", "//@ skip", "export const limit = (n: number): number => n;", "", "class Box {",
+    "  //@ skip", "  //@ verify", "  get(): number { return 1; }", "}", "", "//@ skip", "export function fresh(): number { return 0; }", "",
+    "//@ skip", "export function moved(): number { return 0; }", ""].join("\n");
+  const at = (...numbers: number[]) => numbers.map((number) => ({ number, text: content.split("\n")[number - 1] ?? "" }));
+  const added = at(1, 4, 9, 13, 18, 19, 21);
+  const removed = [{ base: 14, number: 21, text: "//@ skip" }];
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "modified", removed, added, content, baseContent }])).toEqual([
+    { path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "clamp" },
+    { path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "clamp", statement: true },
+    { path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "limit" },
+    { path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "get" },
+  ]);
+  // A skip taken off one function and put on another leaves the other out: it did not only move.
+  const traded = baseContent.replace("//@ skip\nexport function moved", "export function moved").replace("export function clamp",
+    "//@ skip\nexport function clamp");
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "modified", removed, added: [{ number: 2, text: "//@ skip" }],
+    content: traded, baseContent }])).toEqual([{ path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "clamp" }]);
+  // A new file has nothing the base proved; a modified one that was not read counts as having it.
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "added", removed: [], added, content }])).toEqual([]);
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "modified", removed, added, content, baseContent: undefined }]))
+    .toHaveLength(6);
+});
+
+it("places a requires or extern on an arrow function, or inside a function body, as LemmaScript reads it", () => {
+  const baseContent = "export const half = (n: number): number => n / 2;\n\nexport function body(n: number): number {\n  return n;\n}\n";
+  const content = ["//@ extern", "//@ requires n >= 0", "export const half = (n: number): number => n / 2;", "",
+    "export function body(n: number): number {", "  //@ requires n > 0", "  return n;", "}", "", "//@ requires m > 0",
+    "export const fresh = (m: number): number => m;", ""].join("\n");
+  const added = [1, 2, 6, 10].map((number) => ({ number, text: content.split("\n")[number - 1] ?? "" }));
+  expect(weakenedEvidence([{ path: "src/rule.ts", status: "modified", removed: [], added, content, baseContent }])).toEqual([
+    { path: "src/rule.ts", kind: "added_assume", annotation: "//@ extern", function: "half" },
+    { path: "src/rule.ts", kind: "added_requires", annotation: "//@ requires n >= 0" },
+    { path: "src/rule.ts", kind: "added_requires", annotation: "//@ requires n > 0" },
+  ]);
+});
+
+it("lists what a whole proof takes on trust or leaves out, and not the lines LemmaScript generated (#402)", () => {
+  const source = ["//@ extern", "//@ ensures \\result >= 0", "export function helper(n: number): number {", "  return Math.abs(n);", "}", "",
+    "//@ requires n >= 0", "export function f(n: number): number {", "  //@ assume n < 10", "  return helper(n);", "}", "",
+    "//@ skip", "export function g(): number { return 0; }", ""].join("\n");
+  const generated = generatedProgram.join("\n");
+  expect(provedOnTrust([{ path: "src/rule.ts", content: source },
+    { path: "src/rule.dfy", content: `${generated}\nlemma Given()\n  ensures false\n`, generated }])).toEqual([
+    { path: "src/rule.ts", kind: "added_assume", annotation: "//@ extern", function: "helper" },
+    { path: "src/rule.ts", kind: "added_assume", annotation: "//@ assume n < 10" },
+    { path: "src/rule.ts", kind: "added_skip", annotation: "//@ skip", function: "g" },
+    { path: "src/rule.dfy", kind: "added_assume", annotation: "lemma Given without a body" },
+  ]);
+  expect(provedOnTrust([{ path: "src/plain.ts", content: "//@ requires n >= 0\nexport function f(n: number): number { return n; }\n" }]))
+    .toEqual([]);
+});
+
 it("flags a requires added to a function the base had, or one it cannot place, and not one on a new function", () => {
   const content = ["//@ requires x > 0", "export function old(x: number): number { return x; }", "",
     "//@ requires y > 0", "export function fresh(y: number): number { return y; }", "", "//@ requires z > 0", ""].join("\n");
@@ -203,12 +326,14 @@ it("flags a requires added to a function the base had, or one it cannot place, a
     .toHaveLength(3);
 });
 
+/** A change that removes line `base` of `baseContent` from `path`, with its content on both sides. */
+const removedFrom = (path: string, baseContent: string, base: number): FileChange => {
+  const lines = baseContent.split("\n");
+  return { path, status: "modified", added: [], removed: [{ number: base, base, text: lines[base - 1] ?? "" }],
+    content: [...lines.slice(0, base - 1), ...lines.slice(base)].join("\n"), baseContent };
+};
+
 it("reads a test file's comment lines from its parsed content, inside a block comment or a template alike", () => {
-  const removedFrom = (path: string, baseContent: string, base: number): FileChange => {
-    const lines = baseContent.split("\n");
-    return { path, status: "modified", added: [], removed: [{ number: base, base, text: lines[base - 1] ?? "" }],
-      content: [...lines.slice(0, base - 1), ...lines.slice(base)].join("\n"), baseContent };
-  };
   // A plain middle line of a block comment holds no check; a `//` line inside a template is part of what the test compares.
   const noted = "/* setup\n   plain notes\n*/\nit(\"adds\", () => expect(add(1, 1)).toBe(2));\n";
   const templated = "it(\"keeps\", () => expect(`\n// keep\n`).toContain(\"keep\"));\n";
@@ -218,4 +343,30 @@ it("reads a test file's comment lines from its parsed content, inside a block co
   // Without the content, no line is taken for a comment.
   expect(weakenedEvidence([{ ...removedFrom("tests/noted.test.ts", noted, 2), content: undefined, baseContent: undefined }]))
     .toEqual([{ path: "tests/noted.test.ts", kind: "edited_test" }]);
+});
+
+it("reads Python and Go test files' comment lines with their grammars, never a line inside a string", async () => {
+  const removing = (path: string, baseContent: string, base: number): Promise<FileChange> =>
+    withGrammarComments(removedFrom(path, baseContent, base));
+  // A `#` line inside a triple-quoted string is part of what the test compares; a `*p = 2` line is a Go statement.
+  const python = "def test_title():\n    # the heading must stay\n    assert render() == \"\"\"\n# Heading\n\"\"\"\n";
+  const go = "package price\n\n// Total adds.\n/* plain\n   notes\n*/\nfunc TestSet(t *testing.T) {\n\tp := new(int)\n\t*p = 2\n}\n";
+  expect(weakenedEvidence(await Promise.all([removing("tests/test_title.py", python, 2), removing("price_test.go", go, 3),
+    removing("price_test.go", go, 5)]))).toEqual([]);
+  expect(weakenedEvidence(await Promise.all([removing("tests/test_title.py", python, 4), removing("price_test.go", go, 9)])))
+    .toEqual([{ path: "tests/test_title.py", kind: "edited_test" }, { path: "price_test.go", kind: "edited_test" }]);
+});
+
+it("takes no line for a comment in a file that does not parse, or in a language no grammar reads", async () => {
+  // An unterminated string: tree-sitter would recover and guess, so nothing counts as a comment.
+  expect(weakenedEvidence([await withGrammarComments(removedFrom("tests/test_open.py", "x = \"\"\"\n# open\n", 2)),
+    await withGrammarComments(removedFrom("tests/price.rs", "// a note\n#[test]\nfn total() {}\n", 1))]))
+    .toEqual([{ path: "tests/test_open.py", kind: "edited_test" }, { path: "tests/price.rs", kind: "edited_test" }]);
+});
+
+it("does not take a docstring for a comment", async () => {
+  const content = "def total():\n    \"\"\"The total, in cents.\"\"\"\n    return 1\n";
+  const change = await withGrammarComments({ path: "src/price.py", status: "modified", removed: [],
+    added: [{ number: 2, text: "    \"\"\"The total, in cents.\"\"\"" }], content, baseContent: "def total():\n    return 1\n" });
+  expect(change.added.map((line) => commentLines(change).added(line))).toEqual([false]);
 });

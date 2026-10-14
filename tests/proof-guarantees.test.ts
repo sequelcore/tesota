@@ -49,6 +49,13 @@ it("keeps a contract across comment lines before its function, as LemmaScript do
   expect(contracts("src/rule.ts", commented.replace("// reviewed", "const k = 1;"))).toEqual([]);
 });
 
+it("leaves out a function LemmaScript skips, since nothing proves its contract", () => {
+  const source = "//@ skip\n//@ ensures \\result > 0\nexport function f(): number {\n  return 1;\n}\n\n//@ skip\n" +
+    "//@ ensures \\result > 0\nexport const g = (): number => 1;\n\n//@ ensures \\result > 0\nexport function h(): number {\n" +
+    "  //@ skip\n  const k = 1;\n  return 1;\n}\n";
+  expect(contracts("src/rule.ts", source).map(({ name }) => name)).toEqual(["h"]);
+});
+
 it("reads the function annotations before a body's first statement, where LemmaScript's specification places them", () => {
   const source = ["//@ requires n > 0", "export function f(n: number): number {", "  // first the contract", "  //@ ensures \\result > n",
     "  //@ assume n < 10", "  const k = n + 1;", "  //@ ensures \\result > 0", "  return k;", "}", "",

@@ -20,6 +20,14 @@ slices 1–9 and 11, and the first part of 12, are on `dev`, as version
   prover shows equivalent, and by ClaimCheck;
 - sends failures and weak contracts back to the agent.
 
+It tells a comment-only change from code by parsing each side of a file:
+JavaScript and TypeScript with their parser, Python and Go with tree-sitter
+grammars, and any other language as code. This was planned for when a
+Python project first went through Tesota; measurements showed the
+line-by-line reading it replaced also hid changes in Go, so it was
+reprioritized and done on 2026-10-14
+([#394](https://github.com/sequelcore/tesota/issues/394)).
+
 The run ends with a receipt that `tesota receipt` writes for a pull request,
 and the footer shows the gate's progress and the receipt's summary. The
 `tesota` command opens Pi under the palo fierro, in Tesota's theme until
@@ -44,8 +52,6 @@ each one's issue and pull requests.
   ([#373](https://github.com/sequelcore/tesota/issues/373)), on Pi's public
   APIs. `pi-parallel-sessions` was tried and rejected: it patches Pi's
   internals, and its sessions would run without Tesota.
-- **Upstream reports** for LemmaScript and Pi
-  ([#374](https://github.com/sequelcore/tesota/issues/374)).
 - **Findings become evidence**
   ([#375](https://github.com/sequelcore/tesota/issues/375)). A model judge
   does not return as a verdict: a model's opinion is a candidate, not
@@ -64,14 +70,16 @@ each one's issue and pull requests.
   ([#387](https://github.com/sequelcore/tesota/issues/387)), shipped in the
   package, so an agent can write the first contract where there is none.
   Measured before a release.
-- **Remote work,** after the alpha
-  ([#388](https://github.com/sequelcore/tesota/issues/388)): driving the agent
-  from a phone while it runs on a computer or a VPS, with the receipt where
-  the person is. Pi Durable (Earendil's experimental framework for
-  long-running, crash-surviving agents) can't run Pi extensions yet
-  ([pi#10386](https://github.com/earendil-works/pi/issues/10386)); community
-  hosts built on Pi's own runtime may. Every route must load Tesota in each
-  session it starts, and Tesota does not build its own remote host.
+- **Remote work: Happier recommended**
+  ([#388](https://github.com/sequelcore/tesota/issues/388)). The owner accepts
+  Happier for Android session use. Tesota remains a Pi extension; Happier is
+  an optional host, not a bundled dependency. The [user guide](remote-work.md)
+  covers setup and receipts. The pilot uses local host corrections for
+  settlement, receipt delivery and CLI waiting; upstream publication and
+  remaining phone-workflow qualification are open. Conversation recovery
+  does not recover interrupted execution. The
+  [decision](decisions/2026-10-13-remote-session-host.md) records evidence and
+  limits. Release follows the alpha.
 - **Rules in plain words for work that is not code,** after the alpha
   ([decision record](decisions/2026-10-09-plain-language-rules.md)): budgets,
   reports and spreadsheets done with a coding agent. The person states a

@@ -5,6 +5,7 @@ import type { Evidence } from "../src/evidence.js";
 import type { SentBack } from "../src/gate.js";
 import { hang, registerMessages } from "../src/messages.js";
 import type { Receipt } from "../src/receipt.js";
+import type { Weakening } from "../src/verification-changes.js";
 import { loadThemes, themeIn } from "./pi-themes.js";
 import { emptyReceipt } from "./receipts.js";
 
@@ -93,6 +94,43 @@ it("leads with what needs the operator and keeps the model's opinion out of the 
   expect(rows.at(-2)).toBe(" ctrl+o for details");
   // Collapsed, no hash and no detail lines.
   expect(rows.join("\n")).not.toContain("x > hi → x >= hi");
+});
+
+// #399: three functions marked `//@ extern` are trusted without proof, so the file proved only given them.
+const extern = (name: string): Weakening => ({ path: "src/range.ts", kind: "added_assume", annotation: "//@ extern", function: name });
+const unmeasured = (name: string): Receipt["contracts"][number] =>
+  ({ ...contract, name, mutation: { rejected: 0, survived: [], equivalent: 0, inconclusive: 0 } });
+const assumed: Receipt = { ...clean, contracts: [contract, unmeasured("lower"), unmeasured("upper"), unmeasured("clampOf")],
+  weakened: [extern("lower"), extern("upper"), extern("clampOf")],
+  exercises: [...clean.exercises, { path: "tests/clamp.test.ts", finding: "exercises", reason: "fails on the base, passes with the change" }] };
+
+it("never sums up a proof that rests on assumptions the change added, or one strong contract of several, as plainly proved or strong", () => {
+  const rows = shown("tesota-receipt", assumed, 140);
+  expect(rows[1]).toMatch(/^ ! 3 things need you +Tesota receipt$/u);
+  // Each in plain words, naming what it trusts; the line as written is in the details.
+  expect(rows.filter((row) => /May weaken the evidence +src\/range\.ts — trusts (lower|upper|clampOf) without proving it$/u.test(row)))
+    .toHaveLength(3);
+  expect(rows.filter((row) => row.includes("Contract not measured"))).toHaveLength(3);
+  expect(rows.at(-4)).toMatch(/^ ✓ {2}Proved, trusting 3 unproved parts · Tests pass · Contract strong \(1 of 4\) · Test catches the change \(2\)$/u);
+  const expanded = shown("tesota-receipt", assumed, 140, true).join("\n");
+  expect(expanded).toMatch(/Proved, trusting 3 unproved parts +src\/range\.ts — its contracts hold only if what the change trusts is right/u);
+  expect(expanded).toContain("//@ extern");
+});
+
+it("names what an added //@ skip leaves out of the proof (#404)", () => {
+  const skip = (more: { function: string; statement?: true }): Weakening =>
+    ({ path: "src/range.ts", kind: "added_skip", annotation: "//@ skip", ...more });
+  const rows = shown("tesota-receipt", { ...clean, weakened: [skip({ function: "clampOf" }), skip({ function: "lower", statement: true })] }, 140);
+  expect(rows.some((row) => /May weaken the evidence +src\/range\.ts — leaves clampOf out of the proof$/u.test(row))).toBe(true);
+  expect(rows.some((row) => /May weaken the evidence +src\/range\.ts — leaves a statement of lower out of the proof$/u.test(row))).toBe(true);
+});
+
+it("says how many of a check's findings hold when some do not, and only then", () => {
+  const twoProofs: Receipt = { ...clean, contracts: [], exercises: [],
+    proofs: [proved, { path: "src/clamp.ts", verdict: "no_progress", evidence: evidence("failed", dafnyFailure) }] };
+  expect(shown("tesota-receipt", twoProofs, 120).at(-4)).toMatch(/^ ✓ {2}Proved \(1 of 2\) · Tests pass$/u);
+  const bothProved: Receipt = { ...twoProofs, proofs: [proved, { ...proved, path: "src/clamp.ts" }] };
+  expect(shown("tesota-receipt", bothProved, 120)[2]).toMatch(/^ ✓ {2}Proved \(2\) · Tests pass +ctrl\+o for details$/u);
 });
 
 it("counts a failure the agent repeated, and colors the verdict as one", () => {

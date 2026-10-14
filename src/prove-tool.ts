@@ -1,11 +1,13 @@
-import { type Dirent, readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AgentToolResult, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { type TObject, type TString, Type } from "typebox";
 import { type Evidence, proofSummary, quietOutput } from "./evidence.js";
 import { bold, expandHint, Rows, spread, wrapUnder } from "./messages.js";
-import { annotations, proveFile } from "./verification/lemmascript-verifier.js";
+import { skippedWords, trustedWords } from "./receipt.js";
+import { type OnTrust, provedOnTrust } from "./verification-changes.js";
+import { annotations, projectFiles, proveFile } from "./verification/lemmascript-verifier.js";
 
 /**
  * The working agent's own proof run (#294): LemmaScript with Dafny on one
@@ -52,36 +54,50 @@ const vacuousNote = (again: string): string => "Check where each //@ requires an
   "between them and the function drops them, and an arrow function with a { } body reads them only inside the body. " +
   `Fix that and ${again}.`;
 
-const skippedFolders = new Set(["node_modules", ".git", "dist", "build", "out", "coverage"]);
-const scanLimit = 20_000;
 const fileLimit = 1024 * 1024;
 
 /**
  * Whether the project has a TypeScript file with `//@` annotations, which
- * turns on `prove` and its guidance (#294). It walks at most `scanLimit`
- * entries, skipping dependency, build and hidden folders, and reads only
- * TypeScript files under a megabyte; a project it cannot read has none.
+ * turns on `prove` and its guidance (#294). It reads only the project's
+ * files `projectFiles` walks to, and only TypeScript files under a megabyte;
+ * a project it cannot read has none.
  */
 export function hasContracts(root: string): boolean {
-  const folders = [root];
-  let seen = 0;
-  while (folders.length > 0 && seen < scanLimit) {
-    const folder = folders.pop() ?? root;
-    let entries: Dirent[];
-    try { entries = readdirSync(folder, { withFileTypes: true }); } catch { continue; }
-    for (const entry of entries) {
-      seen += 1;
-      const path = join(folder, entry.name);
-      if (entry.isDirectory()) {
-        if (!skippedFolders.has(entry.name) && !entry.name.startsWith(".")) folders.push(path);
-      } else if (entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) {
-        try {
-          if (statSync(path).size <= fileLimit && annotations(readFileSync(path, "utf8")).length > 0) return true;
-        } catch { /* An unreadable file has no annotations Tesota could prove. */ }
-      }
-    }
+  for (const file of projectFiles(root)) {
+    if (!file.endsWith(".ts") || file.endsWith(".d.ts")) continue;
+    const path = join(root, file);
+    try {
+      if (statSync(path).size <= fileLimit && annotations(readFileSync(path, "utf8")).length > 0) return true;
+    } catch { /* An unreadable file has no annotations Tesota could prove. */ }
   }
   return false;
+}
+
+/** What a proof takes on trust or leaves out (`provedOnTrust`), in the receipt's plain words, with the line as written. */
+function trustLine(change: OnTrust): string {
+  return `- ${change.path}: ${change.kind === "added_skip" ? skippedWords(change) : trustedWords(change)} (${change.annotation})`;
+}
+
+/**
+ * A pass, in words that claim no more than the proof: every contract holds
+ * only when the files it checked trust nothing and leave nothing out (#402);
+ * otherwise each such line is named, as the receipt names them (#399).
+ */
+function passedWords(path: string, trusted: readonly OnTrust[]): string {
+  if (trusted.length === 0) return `Proved: every //@ contract in ${path} holds.`;
+  return `Proved, but not outright: the //@ contracts in ${path} hold only if what it trusts is right, and nothing ` +
+    `proves what it leaves out:\n${trusted.map(trustLine).join("\n")}\nSay so in your summary.`;
+}
+
+/** What the files a proof checked take on trust or leave out (`provedOnTrust`), read as the proof left them. */
+async function trustedIn(root: string, files: readonly string[]): Promise<OnTrust[]> {
+  const read = async (path: string): Promise<string | undefined> => {
+    try { return await readFile(join(root, path), "utf8"); } catch { return undefined; }
+  };
+  const found = await Promise.all(files.map(async (path) => ({ path, content: await read(path),
+    generated: path.endsWith(".dfy") ? await read(`${path}.gen`) : undefined })));
+  return provedOnTrust(found.flatMap(({ path, content, generated }) => content === undefined ? []
+    : [{ path, content, ...generated === undefined ? {} : { generated } }]));
 }
 
 /**
@@ -89,9 +105,9 @@ export function hasContracts(root: string): boolean {
  * what LemmaScript printed and what to do next, which names `prove` only
  * when the agent has it (`proveActive`); otherwise the gate proves again.
  */
-export function proofReport(path: string, proof: Evidence, proveActive: boolean): string {
+export function proofReport(path: string, proof: Evidence, proveActive: boolean, trusted: readonly OnTrust[] = []): string {
   const again = proveActive ? "run prove again" : "finish your turn, and Tesota will prove the file again";
-  const how = proof.outcome === "passed" ? `Proved: every //@ contract in ${path} holds.`
+  const how = proof.outcome === "passed" ? passedWords(path, trusted)
     : proof.outcome === "failed" ? `Not proved: an obligation in ${path} failed.`
     : proof.outcome === "timed_out" ? `The proof of ${path} ran past its time limit; that is not a pass.`
     : proof.outcome === "cancelled" ? `The proof of ${path} was stopped.`
@@ -101,10 +117,11 @@ export function proofReport(path: string, proof: Evidence, proveActive: boolean)
   return `${how}\n\n${proof.output}${next}`;
 }
 
-/** What a proof run leaves for the operator's view of it: the file and its evidence. */
+/** What a proof run leaves for the operator's view of it: the file, its evidence, and what a pass takes on trust or leaves out. */
 export interface ProveDetails {
   readonly path: string;
   readonly evidence: Evidence;
+  readonly trusted: readonly OnTrust[];
 }
 
 function text(content: string): AgentToolResult<ProveDetails | undefined> {
@@ -112,8 +129,8 @@ function text(content: string): AgentToolResult<ProveDetails | undefined> {
 }
 
 /** A proof's result: what the agent reads, its evidence for the operator, and an error unless the proof passed. */
-function proved(path: string, evidence: Evidence): AgentToolResult<ProveDetails | undefined> {
-  return { content: [{ type: "text", text: proofReport(path, evidence, true) }], details: { path, evidence },
+function proved(path: string, evidence: Evidence, trusted: readonly OnTrust[]): AgentToolResult<ProveDetails | undefined> {
+  return { content: [{ type: "text", text: proofReport(path, evidence, true, trusted) }], details: { path, evidence, trusted },
     ...evidence.outcome === "passed" ? {} : { isError: true } };
 }
 
@@ -140,10 +157,14 @@ function renderResult(result: AgentToolResult<ProveDetails | undefined>, options
     }
     const summary = proofSummary(evidence);
     const passed = evidence.outcome === "passed";
-    const head = passed ? `${theme.fg("success", "✓ Proved")}${theme.fg("muted", ` — ${summary.words}${summary.tally === undefined ? "" : ` · ${summary.tally}`}`)}`
+    const trusted = result.details?.trusted ?? [];
+    const words = trusted.length === 0 ? summary.words : "its contracts hold only if what it trusts is right";
+    const head = passed ? `${theme.fg("success", trusted.length === 0 ? "✓ Proved" : "✓ Proved, not outright")}` +
+      theme.fg("muted", ` — ${words}${summary.tally === undefined ? "" : ` · ${summary.tally}`}`)
       : `${theme.fg("error", "✗ Not proved")}${theme.fg("muted", ` — ${summary.words}`)}`;
     const output = quietOutput(evidence.output);
     return ["", ...wrapUnder(head, width, 2), ...summary.at === undefined ? [] : [theme.fg("muted", `   at ${summary.at}`)],
+      ...trusted.flatMap((change) => wrapUnder(theme.fg("warning", `  ${trustLine(change)}`), width, 4)),
       ...options.expanded ? ["", ...output.flatMap((line) => wrapUnder(theme.fg("toolOutput", line), width, 2))]
         : passed || output.length === 0 ? [] : ["", expandHint(theme, "for Dafny's output")]];
   });
@@ -176,7 +197,8 @@ export const proveTool: ToolDefinition<typeof parameters, ProveDetails | undefin
     let source: string;
     try { source = await readFile(absolute, "utf8"); } catch { return text(`${path} does not exist.`); }
     if (annotations(source).length === 0) return text(`${path} has no //@ annotations, so there is nothing to prove.`);
-    return proved(path, await proveFile(ctx.cwd, path, signal ?? new AbortController().signal));
+    const evidence = await proveFile(ctx.cwd, path, signal ?? new AbortController().signal);
+    return proved(path, evidence, evidence.outcome === "passed" ? await trustedIn(ctx.cwd, evidence.files) : []);
   },
   renderCall,
   renderResult,
