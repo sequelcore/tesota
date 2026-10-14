@@ -20,6 +20,14 @@ slices 1–9 and 11, and the first part of 12, are on `dev`, as version
   prover shows equivalent, and by ClaimCheck;
 - sends failures and weak contracts back to the agent.
 
+It tells a comment-only change from code by parsing each side of a file:
+JavaScript and TypeScript with their parser, Python and Go with tree-sitter
+grammars, and any other language as code. This was planned for when a
+Python project first went through Tesota; measurements showed the
+line-by-line reading it replaced also hid changes in Go, so it was
+reprioritized and done on 2026-10-14
+([#394](https://github.com/sequelcore/tesota/issues/394)).
+
 The run ends with a receipt that `tesota receipt` writes for a pull request,
 and the footer shows the gate's progress and the receipt's summary. The
 `tesota` command opens Pi under the palo fierro, in Tesota's theme until
