@@ -12,7 +12,7 @@ import { proofReport } from "./prove-tool.js";
 import { inUnit, isReceipt, noEvidence, type Receipt, renderReceiptMessage, type UnitEvidence } from "./receipt.js";
 import { takeSnapshot } from "./snapshot.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
-import { commentLines, type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
+import { commentLines, type FileChange, isTestPath, needsContent, weakenedEvidence, withGrammarComments } from "./verification-changes.js";
 import type { Readiness } from "./verification/footer-rule.js";
 import { gateVerdict, keepsWorking } from "./verification/gate-rule.js";
 import { annotations, proofSources, proveFile } from "./verification/lemmascript-verifier.js";
@@ -85,7 +85,8 @@ async function diffFromBase(root: string, base: string): Promise<ChangedFile[] |
 
 /**
  * Each changed file's lines from `base`, with its content where the
- * weakening rules need it (`needsContent`), or why the change could not be
+ * weakening rules need it (`needsContent`) and the comment-only lines a
+ * grammar reads in it (`withGrammarComments`), or why the change could not be
  * read. A changed file the base lacks, untracked or before the first commit,
  * counts as added whole.
  */
@@ -105,7 +106,7 @@ async function fileChanges(root: string, base: string | null, changed: readonly 
   const read = await Promise.all(diffed.map(async (file): Promise<FileChange> => base === null || !needsContent(file) ? file
     : { ...file, content: await readIfPresent(join(root, file.path)), baseContent: await git(root, ["show", `${base}:./${file.path}`]),
       generated: await generated(file.path) }));
-  return [...read, ...whole].sort((a, b) => a.path < b.path ? -1 : 1);
+  return (await Promise.all([...read, ...whole].map(withGrammarComments))).sort((a, b) => a.path < b.path ? -1 : 1);
 }
 
 async function hasAnnotations(root: string, path: string): Promise<boolean> {

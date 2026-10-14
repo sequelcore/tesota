@@ -51,10 +51,15 @@ uses the operator's Pi; the development copy in `devDependencies` must meet
 the minimum, which a test checks. `typebox`, which Pi supplies to extensions,
 is an optional peer for the same reason. `lemmascript` is a runtime
 dependency: `prove` and the gate run its `lsc` with the operator's Dafny in
-the project itself, as described under "Adding a capability". The `files`
+the project itself, as described under "Adding a capability".
+`web-tree-sitter` is a runtime dependency that reads the languages Tesota
+has a grammar for. The grammars themselves are development dependencies,
+pinned exactly; the package ships only each one's `.wasm`, in `grammars/`,
+not the native add-on and install script its package carries, and a test
+fails when a shipped file differs from the pinned package's. The `files`
 list in `package.json` names what the package ships: the extension's sources
-and the compiled launcher, each with what it imports, the themes, the
-terminal schemes and the notices. A module added to either goes into that
+and the compiled launcher, each with what it imports, the grammars, the
+themes, the terminal schemes and the notices. A module added to either goes into that
 list too; a test packs the package and fails when a packed file imports one
 that is not packed, or when anything else is packed. The
 [verification design](design/verification.md) describes the gate, its

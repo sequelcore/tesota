@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { type RemovedLine, changedLines } from "../src/diff-lines.js";
-import { bodilessLemmas, type FileChange, provedOnTrust, weakenedEvidence } from "../src/verification-changes.js";
+import { bodilessLemmas, commentLines, type FileChange, provedOnTrust, weakenedEvidence, withGrammarComments }
+  from "../src/verification-changes.js";
 import { removalCounts, testWeakens } from "../src/verification/test-weakening-rule.js";
 import { weakens } from "../src/verification/weakening-rule.js";
 
@@ -74,15 +75,16 @@ it("keeps a warning when a manifest with checks is deleted, invalidated or loses
   }
 });
 
-it("does not flag a test file that only gains tests, blank lines or comments, or loses blank or comment lines", () => {
-  // A JavaScript or TypeScript file's comment lines are read from its content, here only the lines the change shows.
+it("does not flag a test file that only gains tests, blank lines or comments, or loses blank or comment lines", async () => {
+  // A file's comment lines are read from its content, here only the lines the change shows.
   const added = ["", "it(\"clamps below\", () => {", "  expect(clamp(-1, 0, 2)).toBe(0);", "});", "// it.only would focus it",
     "const skipped = items.filter(Boolean);"];
   const removed = ["", "// an old note", "  /* wrapped", "   * note */"];
+  const python = ["# @pytest.mark.skip later", "def test_total():", "    assert total(1) == 1", "@pytest.fixture", "def order():"];
   expect(weakenedEvidence([
     { ...edit("tests/clamp.test.ts", added, removed), content: added.join("\n"), baseContent: removed.join("\n") },
-    edit("app/test_orders.py", ["# @pytest.mark.skip later", "def test_total():", "    assert total(1) == 1",
-      "@pytest.fixture", "def order():"], ["# old note"]),
+    await withGrammarComments({ ...edit("app/test_orders.py", python, ["# old note"]), content: python.join("\n"),
+      baseContent: "# old note" }),
     edit("internal/orders_test.go", ["func TestTotal(t *testing.T) {", "\tif total(1) != 1 {", "\t\tt.Fatal(\"total\")", "\t}", "}"]),
   ])).toEqual([]);
 });
@@ -324,12 +326,14 @@ it("flags a requires added to a function the base had, or one it cannot place, a
     .toHaveLength(3);
 });
 
+/** A change that removes line `base` of `baseContent` from `path`, with its content on both sides. */
+const removedFrom = (path: string, baseContent: string, base: number): FileChange => {
+  const lines = baseContent.split("\n");
+  return { path, status: "modified", added: [], removed: [{ number: base, base, text: lines[base - 1] ?? "" }],
+    content: [...lines.slice(0, base - 1), ...lines.slice(base)].join("\n"), baseContent };
+};
+
 it("reads a test file's comment lines from its parsed content, inside a block comment or a template alike", () => {
-  const removedFrom = (path: string, baseContent: string, base: number): FileChange => {
-    const lines = baseContent.split("\n");
-    return { path, status: "modified", added: [], removed: [{ number: base, base, text: lines[base - 1] ?? "" }],
-      content: [...lines.slice(0, base - 1), ...lines.slice(base)].join("\n"), baseContent };
-  };
   // A plain middle line of a block comment holds no check; a `//` line inside a template is part of what the test compares.
   const noted = "/* setup\n   plain notes\n*/\nit(\"adds\", () => expect(add(1, 1)).toBe(2));\n";
   const templated = "it(\"keeps\", () => expect(`\n// keep\n`).toContain(\"keep\"));\n";
@@ -339,4 +343,30 @@ it("reads a test file's comment lines from its parsed content, inside a block co
   // Without the content, no line is taken for a comment.
   expect(weakenedEvidence([{ ...removedFrom("tests/noted.test.ts", noted, 2), content: undefined, baseContent: undefined }]))
     .toEqual([{ path: "tests/noted.test.ts", kind: "edited_test" }]);
+});
+
+it("reads Python and Go test files' comment lines with their grammars, never a line inside a string", async () => {
+  const removing = (path: string, baseContent: string, base: number): Promise<FileChange> =>
+    withGrammarComments(removedFrom(path, baseContent, base));
+  // A `#` line inside a triple-quoted string is part of what the test compares; a `*p = 2` line is a Go statement.
+  const python = "def test_title():\n    # the heading must stay\n    assert render() == \"\"\"\n# Heading\n\"\"\"\n";
+  const go = "package price\n\n// Total adds.\n/* plain\n   notes\n*/\nfunc TestSet(t *testing.T) {\n\tp := new(int)\n\t*p = 2\n}\n";
+  expect(weakenedEvidence(await Promise.all([removing("tests/test_title.py", python, 2), removing("price_test.go", go, 3),
+    removing("price_test.go", go, 5)]))).toEqual([]);
+  expect(weakenedEvidence(await Promise.all([removing("tests/test_title.py", python, 4), removing("price_test.go", go, 9)])))
+    .toEqual([{ path: "tests/test_title.py", kind: "edited_test" }, { path: "price_test.go", kind: "edited_test" }]);
+});
+
+it("takes no line for a comment in a file that does not parse, or in a language no grammar reads", async () => {
+  // An unterminated string: tree-sitter would recover and guess, so nothing counts as a comment.
+  expect(weakenedEvidence([await withGrammarComments(removedFrom("tests/test_open.py", "x = \"\"\"\n# open\n", 2)),
+    await withGrammarComments(removedFrom("tests/price.rs", "// a note\n#[test]\nfn total() {}\n", 1))]))
+    .toEqual([{ path: "tests/test_open.py", kind: "edited_test" }, { path: "tests/price.rs", kind: "edited_test" }]);
+});
+
+it("does not take a docstring for a comment", async () => {
+  const content = "def total():\n    \"\"\"The total, in cents.\"\"\"\n    return 1\n";
+  const change = await withGrammarComments({ path: "src/price.py", status: "modified", removed: [],
+    added: [{ number: 2, text: "    \"\"\"The total, in cents.\"\"\"" }], content, baseContent: "def total():\n    return 1\n" });
+  expect(change.added.map((line) => commentLines(change).added(line))).toEqual([false]);
 });

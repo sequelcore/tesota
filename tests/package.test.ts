@@ -27,13 +27,13 @@ function reached(entry: string, packed: ReadonlySet<string>, found = new Set<str
   return found;
 }
 
-it("packs the extension, the launcher and what they import, the themes and the notices, and nothing else", () => {
+it("packs the extension, the launcher and what they import, the grammars, the themes and the notices, and nothing else", () => {
   const packed = packedFiles();
   const manifest = JSON.parse(readFileSync("package.json", "utf8")) as { pi: { extensions: string[] }; bin: { tesota: string } };
   const code = new Set([...manifest.pi.extensions, manifest.bin.tesota].flatMap((entry) => [...reached(posix.normalize(entry), packed)]));
   const rest = [...packed].filter((file) => !code.has(file));
   expect(rest.filter((file) => !/^(themes|terminal-schemes)\//u.test(file)).sort())
-    .toEqual(["LICENSE", "NOTICE", "README.md", "package.json"]);
+    .toEqual(["LICENSE", "NOTICE", "README.md", "grammars/tree-sitter-go.wasm", "grammars/tree-sitter-python.wasm", "package.json"]);
   expect(rest.filter((file) => file.startsWith("themes/")).length).toBeGreaterThan(0);
   expect(rest.filter((file) => file.startsWith("terminal-schemes/")).length).toBeGreaterThan(0);
 }, 60_000);
