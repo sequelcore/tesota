@@ -1,6 +1,7 @@
 import type { ts as TypeScript } from "ts-morph";
 import { posix } from "node:path";
 import type { ChangedFile, DiffLine, RemovedLine } from "./diff-lines.js";
+import { grammarCommentLines, hasGrammar } from "./grammar-source.js";
 import { packageCheckScripts } from "./projects.js";
 import { commentOnlyLines, isScriptPath, typescript } from "./typescript-source.js";
 import { removalCounts, testWeakens } from "./verification/test-weakening-rule.js";
@@ -30,7 +31,8 @@ export type Weakening =
  * A changed file, with its content as changed and at the base where the
  * rules need them (`needsContent`): to tell whether an added `requires`
  * annotates a new function, which lemmas a proof leaves without a body, and
- * which check scripts a package manifest selected.
+ * which check scripts a package manifest selected. A file a grammar reads
+ * also has the comment-only lines of each side (`withGrammarComments`).
  * A `.dfy` that LemmaScript generated also has the program it generated last
  * (`generated`, its `.dfy.gen`), so only the lines added by hand count as the
  * change's: the rest come from the source's annotations, which count there,
@@ -40,6 +42,7 @@ export interface FileChange extends ChangedFile {
   readonly content?: string | undefined;
   readonly baseContent?: string | undefined;
   readonly generated?: string | undefined;
+  readonly comments?: { readonly now: ReadonlySet<number>; readonly before: ReadonlySet<number> };
 }
 
 const testPaths = [
@@ -66,12 +69,12 @@ function kindOf(path: string, line: string): AnnotationKind | undefined {
 
 /**
  * Whether the rules need `file`'s content now and at the base: for a Dafny
- * proof, for JavaScript or TypeScript, whose comment-only lines are read from
- * the parsed file (`commentLines`), for a package manifest's check scripts,
- * or for a `//@ requires` it adds.
+ * proof, for source whose comment-only lines are read from the parsed file
+ * (`commentLines`), for a package manifest's check scripts, or for a
+ * `//@ requires` it adds.
  */
 export function needsContent(file: ChangedFile): boolean {
-  return file.path.endsWith(".dfy") || isScriptPath(file.path) || posix.basename(file.path) === "package.json" ||
+  return file.path.endsWith(".dfy") || isScriptPath(file.path) || hasGrammar(file.path) || posix.basename(file.path) === "package.json" ||
     file.status === "modified" && file.added.some(({ text }) => kindOf(file.path, text) === "requires");
 }
 
@@ -246,24 +249,29 @@ const runChanges = [
   /\bdef\s+(?:(?:setUp|tearDown)(?:Class|Module)?|(?:setup|teardown)_(?:method|function|class|module))\s*\(/u,
 ];
 
-/** Whether a line of `path`, in a language the parser does not read, holds only a comment. A `//@` line is an annotation, never a comment. */
-function commentOnly(path: string, line: string): boolean {
-  return (path.endsWith(".py") ? /^#/u : /^(?:\/\/(?!@)|\/\*|\*)/u).test(line.trim());
+/**
+ * `file` with the comment-only lines of each side its grammar reads
+ * (`grammarCommentLines`, `comments`), when a grammar reads it; a side whose
+ * content was not read holds none.
+ */
+export async function withGrammarComments(file: FileChange): Promise<FileChange> {
+  if (!hasGrammar(file.path)) return file;
+  const read = (content: string | undefined): Promise<Set<number>> =>
+    content === undefined ? Promise.resolve(new Set()) : grammarCommentLines(file.path, content);
+  return { ...file, comments: { now: await read(file.content), before: await read(file.baseContent) } };
 }
 
 /**
- * Which of a changed file's lines hold only a comment. JavaScript and
- * TypeScript are read from the parsed file on each side (`commentOnlyLines`),
- * since a line alone shows neither a block comment nor a template around it,
- * and a `//@` line is an annotation; a side whose content was not read holds
- * no comment-only line. Other languages are read line by line.
+ * Which of a changed file's lines hold only a comment, read from the parsed
+ * file on each side, since a line alone shows neither a block comment nor a
+ * string around it: JavaScript and TypeScript by their parser
+ * (`commentOnlyLines`), where a `//@` line is an annotation, and other
+ * languages by their grammar (`comments`). A side whose content was not read,
+ * or in a language no grammar reads, holds no comment-only line.
  */
 export function commentLines(file: FileChange): { added: (line: DiffLine) => boolean; removed: (line: RemovedLine) => boolean } {
-  if (!isScriptPath(file.path)) {
-    return { added: ({ text }) => commentOnly(file.path, text), removed: ({ text }) => commentOnly(file.path, text) };
-  }
-  const now = commentOnlyLines(file.path, file.content ?? "");
-  const before = commentOnlyLines(file.path, file.baseContent ?? "");
+  const now = isScriptPath(file.path) ? commentOnlyLines(file.path, file.content ?? "") : file.comments?.now ?? new Set();
+  const before = isScriptPath(file.path) ? commentOnlyLines(file.path, file.baseContent ?? "") : file.comments?.before ?? new Set();
   return { added: ({ number }) => now.has(number), removed: ({ base }) => before.has(base) };
 }
 
