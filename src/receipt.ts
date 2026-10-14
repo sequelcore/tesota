@@ -477,8 +477,23 @@ export function receiptDecisions(receipt: Receipt): number {
 
 /** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */
 export function renderReceipt(receipt: Receipt): string {
-  return ["Tesota receipt", ...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
-    ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`])].join("\n");
+  return ["Tesota receipt", ...receiptLines(receipt)].join("\n");
+}
+
+/** The same evidence as wrapping Markdown for chat hosts; the TUI reads structured details. */
+export function renderReceiptMessage(receipt: Receipt): string {
+  const rows = receiptLines(receipt).map((row) => {
+    const label = row.slice(2, 16).trim();
+    const text = row.slice(16).replace(/[\\`*_{}[\]()#+!|<>~-]/gu, "\\$&").replace(/\n/gu, "\n  ");
+    return label === "" ? `  - ${text}` : `- **${label}** — ${text}`;
+  });
+  return ["## Tesota receipt", rows.join("\n"), "This is check evidence, not your acceptance."].join("\n\n");
+}
+
+/** Shared evidence wording for terminal text and chat Markdown. */
+function receiptLines(receipt: Receipt): string[] {
+  return receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
+    ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`]);
 }
 
 /** One unit's lines of the receipt, from the folder Pi runs in. */

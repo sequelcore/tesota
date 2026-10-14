@@ -189,6 +189,15 @@ and branch, with the model at its right. On a narrow terminal the model
 goes first, then the evidence shortens, and the context % goes last.
 Statuses from other extensions follow on a third row.
 
+## Work from your phone
+
+[Happier](https://happier.dev) is the recommended remote host for Tesota's
+Pi sessions. Pi and Tesota run on your computer; Happier lets you send
+requests and read receipts from your phone. It is optional and is not
+installed by Tesota. The Pi integration remains experimental, and the
+verified pilot uses local host corrections that are not yet published.
+See [remote work](docs/remote-work.md) for setup and current limits.
+
 ## Credits
 
 Tesota proves contracts with [LemmaScript](https://github.com/midspiral/LemmaScript)
@@ -209,6 +218,7 @@ stands for a durable foundation that supports growth.
 | Need | Read |
 | --- | --- |
 | Current status and next work | [Roadmap](docs/roadmap.md) |
+| Use Tesota from a phone | [Remote work](docs/remote-work.md) |
 | How verification works | [Verification design](docs/design/verification.md) |
 | The receipt's format | [Receipt v1](docs/receipt-v1.md) |
 | Why Tesota is a verification layer | [Decision record](docs/decisions/2026-10-08-verification-layer.md) |

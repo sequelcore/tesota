@@ -9,7 +9,7 @@ import { type ContractStrength, contractStrength } from "./proof-guarantees.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { uncoveredLines } from "./proof-coverage.js";
 import { proofReport } from "./prove-tool.js";
-import { inUnit, isReceipt, noEvidence, type Receipt, renderReceipt, type UnitEvidence } from "./receipt.js";
+import { inUnit, isReceipt, noEvidence, type Receipt, renderReceiptMessage, type UnitEvidence } from "./receipt.js";
 import { takeSnapshot } from "./snapshot.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
 import { commentLines, type FileChange, isTestPath, needsContent, weakenedEvidence } from "./verification-changes.js";
@@ -395,7 +395,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
       ...reason === undefined ? {} : { reason } };
     progress.publish({ step: "settled", receipt });
-    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
+    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceiptMessage(receipt),
       display: true, details: receipt }] };
   };
   const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
@@ -499,7 +499,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
           reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]
         .sort((a, b) => a.folder < b.folder ? -1 : 1) };
     progress.publish({ step: "settled", receipt });
-    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceipt(receipt),
+    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceiptMessage(receipt),
       display: true, details: receipt }] };
   };
   return progress;

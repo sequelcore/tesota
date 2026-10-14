@@ -12,7 +12,8 @@ A receipt exists in two places:
 
 - **In the Pi session:** the `details` of a `custom_message` entry whose
   `customType` is `tesota-receipt`. Its `content` is the text the operator
-  reads.
+  reads, as Markdown for chat hosts. Pi's terminal renderer reads `details`;
+  the presentation does not change the structured receipt or its version.
 - **In a Statement:** inside an unsigned
   [in-toto Statement v1](https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md)
   about a commit. The Statement uses the predicate fields of the agentic
