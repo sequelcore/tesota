@@ -52,5 +52,9 @@ export function sessionFacts(sessions: string): Record<string, unknown> {
       weak: gate.filter((text) => text.startsWith("Tesota: the contract of")).length },
     vacuousProofs: { prove: results.filter(vacuous).length, gate: gate.filter(vacuous).length },
     receipt: receipts.at(-1)?.details as Receipt | undefined,
+    // What the agent said last: the text of its last message that has any.
+    finalText: assistant.flatMap((message) => typeof message.content === "string" ? [message.content]
+      : [(message.content ?? []).filter((part) => part.type === "text").map((part) => part.text ?? "").join("\n")])
+      .filter((text) => text.trim() !== "").at(-1),
   };
 }

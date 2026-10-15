@@ -10,8 +10,8 @@ import { installedPi } from "../src/pi-install.js";
 import { runProcess } from "../src/process.js";
 import type { Receipt } from "../src/receipt.js";
 import { proveFile, proveSource } from "../src/verification/lemmascript-verifier.js";
-import { FIRST_CONTRACT_CASES, FIRST_PROOF_CASES, NO_CONTRACT_CASES, PLACEMENT_CASES, PROOF_CASES, type ProofCase, STRENGTHEN_CASES, type StrengthenCase,
-  contractWeakened, withBuggyBody } from "./cases.js";
+import { FIRST_CONTRACT_CASES, FIRST_PROOF_CASES, NO_CONTRACT_CASES, OPEN_CASES, type OpenCase, PLACEMENT_CASES, PROOF_CASES,
+  type ProofCase, STRENGTHEN_CASES, type StrengthenCase, contractWeakened, withBuggyBody } from "./cases.js";
 import { manifest, read, sessionFacts, write } from "./sessions.js";
 
 /**
@@ -28,7 +28,7 @@ import { manifest, read, sessionFacts, write } from "./sessions.js";
  * cases' weak and reference contracts, and appends its judgments.
  *
  *   bun run live:eval --out=<file> --arm=tesota|plain|extension
- *     --set=proofs|strengthen|no-contracts|placement|first-contract|first-proof
+ *     --set=proofs|strengthen|no-contracts|placement|first-contract|first-proof|open-case
  *     [--skills=<dir>,<dir>] [--cases=<name>,<name>] [--runs=3] [--model=openai/gpt-6-luna]
  *   bun run live:eval --out=<file> --claimcheck [--second=openai/gpt-5.5] [--repeats=3] [--model=openai/gpt-6-luna]
  */
@@ -78,6 +78,13 @@ function fromFirstContractCase(testCase: ProofCase | StrengthenCase): LiveCase {
     ...buggy === undefined ? {} : { buggy }, kept: [] };
 }
 
+/** An open case (#387): its base is committed, and its own `buggy` locates the bug under a contract of the stated behavior. */
+function fromOpenCase(testCase: OpenCase): LiveCase {
+  const name = contracts(testCase.path, testCase.buggy)[0]?.name;
+  return { name: testCase.name, request: testCase.request, committed: testCase.base, untracked: {}, hiddenTest: testCase.hiddenTest,
+    path: testCase.path, ...name === undefined ? {} : { function: name }, buggy: testCase.buggy, kept: [] };
+}
+
 function fromStrengthenCase(testCase: StrengthenCase): LiveCase {
   const buggy = testCase.base[testCase.path] ?? "";
   const committed = Object.fromEntries(Object.entries(testCase.base).filter(([path]) => path !== testCase.path));
@@ -92,6 +99,7 @@ const sets: Readonly<Record<string, readonly LiveCase[]>> = {
   placement: PLACEMENT_CASES.map(fromProofCase),
   "first-contract": FIRST_CONTRACT_CASES.map(fromFirstContractCase),
   "first-proof": FIRST_PROOF_CASES.map(fromFirstContractCase),
+  "open-case": OPEN_CASES.map(fromOpenCase),
 };
 
 /** The skill folders `--skills` names, each with the commit it was at when a Git checkout. */
@@ -185,7 +193,7 @@ async function live(): Promise<void> {
   if (skills.length > 0 && arm !== "extension") throw new Error("Only the extension arm loads --skills.");
   const set = option("set") ?? "";
   const chosen = sets[set];
-  if (chosen === undefined) throw new Error("Use --set=proofs, strengthen, no-contracts, placement, first-contract or first-proof.");
+  if (chosen === undefined) throw new Error("Use --set=proofs, strengthen, no-contracts, placement, first-contract, first-proof or open-case.");
   const names = option("cases")?.split(",");
   const cases = names === undefined ? chosen : chosen.filter((testCase) => names.includes(testCase.name));
   if (names !== undefined && cases.length !== names.length) throw new Error(`Unknown case among ${names.join(", ")}.`);
