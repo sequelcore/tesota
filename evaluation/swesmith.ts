@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -39,7 +39,12 @@ import { JEV_SKIP_BELOW, diffFiles, git, jevSkips, jevTriage, option, parseFindi
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=gate [--model=openai/gpt-6-luna]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=rerun [--model=openai/gpt-6-luna]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=fix [--model=openai/gpt-6-luna] [--gate-model=<model>]
- *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=cases [--model=openai/gpt-6-sol]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=cases [--model=openai/gpt-6-sol] [--source=<reviewer>] [--per-bug=1|all]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=checks [--model=claude-bridge/claude-sonnet-5-5]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=code-review [--model=claude-sonnet-5-5] [--effort=high]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=ultrareview --instance=<id> --arm=bug|control
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=approve --source=<reviewer|checks:model> [--arm=bug|control] [--model=claude-bridge/claude-opus-5-5] [--limit=<n>]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=score-checks [--model=<approver>]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=export-cases --file=<cases.json>
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=score [--model=<gate model>] [--table=<file>]
  *
@@ -417,6 +422,9 @@ async function fix(): Promise<void> {
  * reaches the receipt as unverified.
  */
 const CASE_PROMPT = 2;
+const CASE_TESTS = "add one new test file whose name contains `tesota-case`, where the repository's test command runs it, " +
+  "written like the repository's other tests, with one test per case named `tesota case 1`, `tesota case 2`, each " +
+  "asserting exactly that case's expected result. Do not run anything and do not change any other file. ";
 const casePrompt = (requested: string, finding: Finding): string =>
   `A reviewer claims this about the uncommitted change in this repository (\`git diff\` shows it), made for this ` +
   `request:\n\n${requested}\n\nClaim: ${where(finding)}: ${finding.statement}\n\n` +
@@ -425,10 +433,7 @@ const casePrompt = (requested: string, finding: Finding): string =>
   "request's own words: what someone does or gives, and what they get. Never name functions, variables, files, " +
   "internal states, timing or framework details. If the claim cannot be stated that way, because judging it needs the " +
   "code's internals, write no case and no test, and say why.\n\n" +
-  "For the cases you write, add one new test file whose name contains `tesota-case`, where the repository's test " +
-  "command runs it, written like the repository's other tests, with one test per case named `tesota case 1`, " +
-  "`tesota case 2`, each asserting exactly that case's expected result. Do not run anything and do not change any " +
-  "other file. End your reply with a JSON object in a ```json block: " +
+  `For the cases you write, ${CASE_TESTS}End your reply with a JSON object in a \`\`\`json block: ` +
   "{\"cases\": [{\"case\": 1, \"text\": \"the case in the request's words\"}], \"notJudgeable\": null}, or " +
   "{\"cases\": [], \"notJudgeable\": \"why the claim needs the code's internals\"}.";
 
@@ -436,13 +441,49 @@ const casePrompt = (requested: string, finding: Finding): string =>
 const currentCases = (): Record<string, any>[] =>
   records().filter((record) => record["kind"] === "cases" && (record["prompt"] ?? 1) === CASE_PROMPT);
 
+/**
+ * The findings cases are written for: every one on the controls and, for each bug, the first `--per-bug` (one, or
+ * `all`) in the order of a SHA-256 of the seed and its key; `--source` keeps one reviewer's.
+ */
 function caseFindings(): Reviewed[] {
   const seed = option("seed") ?? "375";
-  const all = allFindings();
+  const perBug = option("per-bug") === "all" ? Infinity : Number(option("per-bug") ?? "1");
+  const source = option("source");
+  const all = allFindings().filter((item) => source === undefined || item.model === source);
   const bugs = [...new Set(all.filter((item) => item.arm === "bug").map((item) => item.instance.instance_id))].flatMap((id) =>
     all.filter((item) => item.arm === "bug" && item.instance.instance_id === id)
-      .sort((a, b) => hash(`${seed}|${a.key}`).localeCompare(hash(`${seed}|${b.key}`))).slice(0, 1));
+      .sort((a, b) => hash(`${seed}|${a.key}`).localeCompare(hash(`${seed}|${b.key}`))).slice(0, perBug));
   return [...all.filter((item) => item.arm === "control"), ...bugs];
+}
+
+interface Written { readonly case: number; readonly text: string }
+
+/** The cases a session's reply lists in its last JSON block, with the rest of that object. */
+function writtenCases(output: string): { readonly written: Written[]; readonly reply: Record<string, unknown> } {
+  const block = [...output.matchAll(/```json\s*([\s\S]*?)```/gu)].at(-1)?.[1];
+  try {
+    const reply = JSON.parse(block ?? "{}") as Record<string, unknown>;
+    const listed = Array.isArray(reply["cases"]) ? reply["cases"] as { case?: unknown; text?: unknown }[] : [];
+    return { reply, written: listed.flatMap((entry) =>
+      typeof entry.case === "number" && typeof entry.text === "string" ? [{ case: entry.case, text: entry.text }] : []) };
+  } catch {
+    return { reply: {}, written: [] };
+  }
+}
+
+/** The session's `tesota-case` test files, run on the correct code and on the change, and each written case's outcome. */
+async function runCases(instance: Instance, arm: Arm, directory: string, written: readonly Written[]): Promise<Record<string, unknown>> {
+  const tests = git(directory, "status", "--porcelain", "--untracked-files=all").split("\n").filter((line) => line.length > 3)
+    .map((line) => line.slice(3).trim()).filter((path) => path.includes("tesota-case"));
+  if (tests.length === 0 || written.length === 0) {
+    return { tests, cases: written.map((entry) => ({ ...entry, onCorrect: "missing", onChange: "missing" })) };
+  }
+  git(directory, "add", "-N", "--", ...tests);
+  const testPatch = git(directory, "diff", "clean", "--", ...tests);
+  const correct = await runTests(instance, testPatch);
+  const change = arm === "control" ? correct : await runTests(instance, withBug(instance, testPatch));
+  return { tests, testPatch, cases: written.map((entry) => ({ ...entry, onCorrect: caseOutcome(correct, entry.case),
+    onChange: caseOutcome(change, entry.case) })) };
 }
 
 /** How a numbered case's tests ended in a run: passed only when each of its tests ran and passed. */
@@ -459,27 +500,10 @@ async function cases(): Promise<void> {
   await pool(caseFindings().filter((item) => !done.has(item.key)).slice(0, Number(option("limit") ?? Infinity)), parallel, async (item) => {
     const directory = changed(item.instance, item.arm);
     const session = await pi(model, directory, ["read", "grep", "find", "ls", "write"], casePrompt(request(item.instance, item.arm), item.finding));
-    const block = [...String(session["output"]).matchAll(/```json\s*([\s\S]*?)```/gu)].at(-1)?.[1];
-    let written: { readonly case: number; readonly text: string }[] = [];
-    let notJudgeable: string | undefined;
-    try {
-      const reply = JSON.parse(block ?? "{}") as { cases?: { case?: unknown; text?: unknown }[]; notJudgeable?: unknown };
-      written = (reply.cases ?? []).flatMap((entry) =>
-        typeof entry.case === "number" && typeof entry.text === "string" ? [{ case: entry.case, text: entry.text }] : []);
-      if (typeof reply.notJudgeable === "string" && reply.notJudgeable.trim() !== "") notJudgeable = reply.notJudgeable;
-    } catch { /* recorded with no cases */ }
-    const tests = git(directory, "status", "--porcelain", "--untracked-files=all").split("\n").filter((line) => line.length > 3)
-      .map((line) => line.slice(3).trim()).filter((path) => path.includes("tesota-case"));
-    let outcome: Record<string, unknown> = { cases: written.map((entry) => ({ ...entry, onCorrect: "missing", onChange: "missing" })) };
-    if (tests.length > 0 && written.length > 0) {
-      git(directory, "add", "-N", "--", ...tests);
-      const testPatch = git(directory, "diff", "clean", "--", ...tests);
-      const correct = await runTests(item.instance, testPatch);
-      const change = item.arm === "control" ? correct : await runTests(item.instance, withBug(item.instance, testPatch));
-      outcome = { testPatch, cases: written.map((entry) => ({ ...entry, onCorrect: caseOutcome(correct, entry.case),
-        onChange: caseOutcome(change, entry.case) })) };
-    }
-    append({ kind: "cases", prompt: CASE_PROMPT, model, key: item.key, tests, ...outcome,
+    const { written, reply } = writtenCases(String(session["output"]));
+    const notJudgeable = typeof reply["notJudgeable"] === "string" && reply["notJudgeable"].trim() !== "" ? reply["notJudgeable"] : undefined;
+    const outcome = await runCases(item.instance, item.arm, directory, written);
+    append({ kind: "cases", prompt: CASE_PROMPT, model, key: item.key, ...outcome,
       ...notJudgeable === undefined ? {} : { notJudgeable }, durationMs: session["durationMs"], tokens: session["tokens"],
       ...session["ended"] === "exited" && session["exitCode"] === 0 ? {} : { output: String(session["output"]).slice(-2000) } });
     process.stdout.write(`cases ${item.key}: ${JSON.stringify((outcome["cases"] as { onCorrect: string }[]).map((entry) => entry.onCorrect))}\n`);
@@ -509,6 +533,227 @@ function exportCases(): void {
   }).sort((a, b) => hash(`${seed}|${a.id}`).localeCompare(hash(`${seed}|${b.id}`)));
   writeFileSync(file, JSON.stringify(shown, null, 1));
   process.stdout.write(`${shown.length} cases written to ${file}\n`);
+}
+
+/**
+ * A reviewer that proposes checks, not verdicts (#397), registered on 2026-10-15 before any run. It reads the request
+ * and the change and, for each defect it suspects, writes a case in the request's words with a test, or lists a gap
+ * when the suspicion needs the code's internals. It never reports a bare finding; the harness runs each case's test on
+ * the correct code and on the change, as for the cases stage.
+ */
+const CHECKS_PROMPT = 1;
+const checksPrompt = (requested: string, diff: string): string =>
+  `Review the uncommitted change in this repository (\`git diff\` shows it) against this request:\n\n${requested}\n\n` +
+  "Do not report opinions. For each place where you suspect the change fails the request or breaks behavior, write a " +
+  "concrete case that would show it, for the person who made the request to approve or reject. That person knows what " +
+  "they asked for but does not read code. State each case in the request's own words: what someone does or gives, and " +
+  "what they get when the change is right. Never name functions, variables, files, internal states, timing or framework " +
+  "details. A suspicion that cannot be stated that way is a gap: list it with why, and write no case for it. Write no " +
+  "case for behavior you do not suspect; you may read files.\n\n" +
+  `For the cases you write, ${CASE_TESTS}End your reply with a JSON object in a \`\`\`json block: ` +
+  "{\"cases\": [{\"case\": 1, \"text\": \"the case in the request's words\"}], \"gaps\": [{\"statement\": \"what you " +
+  "suspect\", \"why\": \"why it needs the code's internals\"}]}, with empty lists when you suspect nothing.\n\n" +
+  `The change, as \`git diff\` shows it:\n\n\`\`\`diff\n${diff}\n\`\`\`\n`;
+
+async function checks(): Promise<void> {
+  const model = option("model") ?? "claude-bridge/claude-sonnet-5-5";
+  const done = new Set(records().filter((record) => record["kind"] === "checks" && record["model"] === model).map((record) => record["key"]));
+  const items = sampled().flatMap((instance) => ARMS.map((arm) => ({ instance, arm, key: `${model}|${instance.instance_id}|${arm}|checks` })))
+    .filter((item) => !done.has(item.key)).slice(0, Number(option("limit") ?? Infinity));
+  await pool(items, parallel, async ({ instance, arm, key }) => {
+    const directory = changed(instance, arm);
+    const session = await pi(model, directory, ["read", "grep", "find", "ls", "write"], checksPrompt(request(instance, arm), git(directory, "diff")));
+    const { written, reply } = writtenCases(String(session["output"]));
+    const gaps = Array.isArray(reply["gaps"]) ? reply["gaps"] : [];
+    const outcome = await runCases(instance, arm, directory, written);
+    append({ kind: "checks", prompt: CHECKS_PROMPT, model, key, instance: instance.instance_id, arm, ...outcome, gaps,
+      parsed: Object.keys(reply).length > 0, durationMs: session["durationMs"], tokens: session["tokens"],
+      ...session["ended"] === "exited" && session["exitCode"] === 0 ? {} : { output: String(session["output"]).slice(-2000) } });
+    process.stdout.write(`checks ${key}: ${JSON.stringify((outcome["cases"] as { onCorrect: string; onChange: string }[])
+      .map((entry) => `${entry.onCorrect}/${entry.onChange}`))}, gaps ${gaps.length}\n`);
+  });
+}
+
+/** A command's stdout, kept apart from its stderr, and how it ended. */
+function capture(command: string, args: readonly string[], cwd: string, timeoutMs: number):
+  Promise<{ readonly stdout: string; readonly stderr: string; readonly code: number | null }> {
+  return new Promise((settle) => {
+    const child = spawn(command, [...args], { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
+    child.stderr.on("data", (chunk: Buffer) => { stderr = (stderr + chunk.toString("utf8")).slice(-20_000); });
+    child.on("close", (code) => settle({ stdout, stderr, code }));
+  });
+}
+
+/** An external review's text as findings, in the reviewer's format, read by a model with no tools. */
+async function asFindings(review: string): Promise<{ readonly findings: Finding[] | undefined; readonly tokens: unknown }> {
+  const directory = join(mkdtempSync(join(work, "parse-")), "empty");
+  mkdirSync(directory);
+  const session = await pi(option("parse-model") ?? "claude-bridge/claude-sonnet-5-5", directory, [],
+    "Below is a code review. List each defect it reports, and nothing it does not report, as a JSON array in a ```json " +
+    "block, one object per defect: {\"path\": \"src/file.js\", \"line\": 3, \"statement\": \"what is wrong\", \"reason\": " +
+    `"why it is wrong"}. Use [] when it reports none.\n\n${review}`);
+  return { findings: parseFindings(String(session["output"])), tokens: session["tokens"] };
+}
+
+/**
+ * Claude Code's local `/code-review` as a source of findings, registered on 2026-10-15 before any run: run with
+ * `claude -p` in each change's copy, at an explicit effort, its text then read into findings. Its findings go through
+ * the cases stage like any reviewer's.
+ */
+async function codeReview(): Promise<void> {
+  const model = option("model") ?? "claude-sonnet-5-5";
+  const effort = option("effort") ?? "high";
+  const label = `claude-code-review/${model}/${effort}`;
+  const done = new Set(records().filter((record) => record["kind"] === "review" && record["model"] === label)
+    .map((record) => `${record["instance"]}|${record["arm"]}`));
+  const items = sampled().flatMap((instance) => ARMS.map((arm) => ({ instance, arm })))
+    .filter(({ instance, arm }) => !done.has(`${instance.instance_id}|${arm}`)).slice(0, Number(option("limit") ?? Infinity));
+  await pool(items, parallel, async ({ instance, arm }) => {
+    const directory = changed(instance, arm);
+    const started = Date.now();
+    const ran = await capture("claude", ["-p", `/code-review ${effort}`, "--model", model, "--output-format", "json",
+      "--allowedTools", "Read,Grep,Glob,Bash(git:*)"], directory, 30 * 60_000);
+    let result: Record<string, any> = {};
+    try { result = JSON.parse(ran.stdout) as Record<string, any>; } catch { /* recorded unparsed */ }
+    const text = String(result["result"] ?? "");
+    const read = text === "" ? { findings: undefined, tokens: undefined } : await asFindings(text);
+    const usage = result["usage"] ?? {};
+    append({ kind: "review", model: label, instance: instance.instance_id, arm, findings: read.findings ?? [],
+      parsed: read.findings !== undefined, durationMs: Date.now() - started, costUsd: result["total_cost_usd"],
+      tokens: { input: usage["input_tokens"], output: usage["output_tokens"], cacheRead: usage["cache_read_input_tokens"],
+        total: ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
+          .reduce((total, name) => total + Number(usage[name] ?? 0), 0) }, parseTokens: read.tokens,
+      output: text.slice(-3000), ...ran.code === 0 ? {} : { code: ran.code, stderr: ran.stderr.slice(-2000) } });
+    process.stdout.write(`code-review ${instance.instance_id} ${arm}: ${read.findings === undefined ? "unparsed" : read.findings.length}\n`);
+  });
+}
+
+/**
+ * One ultrareview run (`claude ultrareview --json`) on one change the operator allotted, against the clean commit;
+ * its findings go through the cases stage like any reviewer's.
+ */
+async function ultrareview(): Promise<void> {
+  const instance = instances.get(option("instance") ?? "");
+  const arm = option("arm") as Arm | undefined;
+  if (instance === undefined || arm === undefined || !ARMS.includes(arm)) throw new Error("Name --instance=<id> and --arm=bug|control.");
+  if (records().some((record) => record["kind"] === "review" && record["model"] === "claude-ultrareview")) {
+    throw new Error("The one ultrareview run is already recorded.");
+  }
+  const directory = changed(instance, arm);
+  const started = Date.now();
+  const ran = await capture("claude", ["ultrareview", "--json", "--timeout", "45", git(directory, "rev-parse", "HEAD").trim()],
+    directory, 50 * 60_000);
+  const read = ran.code === 0 && ran.stdout.trim() !== "" ? await asFindings(ran.stdout) : { findings: undefined, tokens: undefined };
+  append({ kind: "review", model: "claude-ultrareview", instance: instance.instance_id, arm, findings: read.findings ?? [],
+    parsed: read.findings !== undefined, durationMs: Date.now() - started, raw: ran.stdout.slice(-20_000), parseTokens: read.tokens,
+    code: ran.code, stderr: ran.stderr.slice(-4000) });
+  process.stdout.write(`ultrareview ${instance.instance_id} ${arm}: ${read.findings === undefined ? `failed: ${ran.stderr.slice(-500)}` : read.findings.length}\n`);
+}
+
+/** A written case, wherever it came from: the cases stage, by the reviewer whose finding it pins, or the checks stage. */
+interface ProposedCase {
+  readonly id: string; readonly source: string; readonly instance: Instance; readonly arm: Arm; readonly text: string;
+  readonly onCorrect: string; readonly onChange: string;
+}
+
+function proposedCases(): ProposedCase[] {
+  return [...currentCases(), ...records().filter((record) => record["kind"] === "checks" && record["prompt"] === CHECKS_PROMPT)]
+    .flatMap((record) => {
+      const [reviewer, id, arm] = String(record["key"]).split("|");
+      const instance = instances.get(id ?? "");
+      const source = record["kind"] === "checks" ? `checks:${String(record["model"])}` : String(reviewer);
+      return instance === undefined ? [] : (record["cases"] as (Written & { onCorrect: string; onChange: string })[]).map((entry) => ({
+        id: `${String(record["key"])}|${entry.case}`, source, instance, arm: arm as Arm, text: entry.text, onCorrect: entry.onCorrect,
+        onChange: entry.onChange }));
+    });
+}
+
+/**
+ * A model standing in for the operator (#397), registered on 2026-10-15 before any run: it sees the request, the
+ * change's diff and one case, not the repository or how the case's test ran, and says whether the expectation is right.
+ * `--source` names whose cases, `--arm` keeps one arm's, `--limit` caps how many, in the order of a SHA-256 of the seed
+ * and the case's id.
+ */
+const approvePrompt = (requested: string, diff: string, text: string): string =>
+  `Someone asked for this change to a project:\n\n${requested}\n\nThe change, as a diff:\n\n\`\`\`diff\n${diff}\n\`\`\`\n\n` +
+  `A reviewer says that, when the change is right, the project behaves like this:\n\n${text}\n\nYou stand in for the ` +
+  "person who made the request. Judging only from the request and the change, is this expected behavior right, wrong, " +
+  "or can you not tell? Answer only with a JSON object in a ```json block: {\"verdict\": \"right\" or \"wrong\" or " +
+  "\"unsure\", \"why\": \"one sentence\"}.";
+
+async function approve(): Promise<void> {
+  const model = option("model") ?? "claude-bridge/claude-opus-5-5";
+  const source = option("source");
+  if (source === undefined) throw new Error("Name whose cases with --source=<reviewer model or checks:model>.");
+  const seed = option("seed") ?? "375";
+  // A case with no verdict, such as one asked while the model's quota was spent, is asked again.
+  const done = new Set(records().filter((record) => record["kind"] === "approve" && record["model"] === model && record["verdict"] !== null)
+    .map((record) => record["case"]));
+  const diffs = new Map<string, string>();
+  const diffOf = (item: ProposedCase): string => {
+    const id = `${item.instance.instance_id}|${item.arm}`;
+    if (!diffs.has(id)) diffs.set(id, item.arm === "bug" ? item.instance.patch : git(changed(item.instance, "control"), "diff"));
+    return diffs.get(id) ?? "";
+  };
+  const arm = option("arm");
+  const items = proposedCases().filter((item) => item.source === source && (arm === undefined || item.arm === arm) && !done.has(item.id))
+    .sort((a, b) => hash(`${seed}|${a.id}`).localeCompare(hash(`${seed}|${b.id}`))).slice(0, Number(option("limit") ?? Infinity));
+  await pool(items, parallel, async (item) => {
+    const directory = join(mkdtempSync(join(work, "approve-")), "empty");
+    mkdirSync(directory);
+    const session = await pi(model, directory, [], approvePrompt(request(item.instance, item.arm), diffOf(item), item.text));
+    const block = [...String(session["output"]).matchAll(/```json\s*([\s\S]*?)```/gu)].at(-1)?.[1];
+    let verdict: string | null = null;
+    let why = "";
+    try {
+      const parsed = JSON.parse(block ?? "") as { verdict?: unknown; why?: unknown };
+      verdict = parsed.verdict === "right" || parsed.verdict === "wrong" || parsed.verdict === "unsure" ? parsed.verdict : null;
+      why = String(parsed.why ?? "");
+    } catch { /* recorded as unanswered */ }
+    append({ kind: "approve", model, case: item.id, source, verdict, why, tokens: session["tokens"], durationMs: session["durationMs"] });
+    process.stdout.write(`approve ${item.id}: ${String(verdict)}\n`);
+  });
+}
+
+/**
+ * Checks as evidence, per source and arm: a case becomes evidence when it is approved and fails on the change. The
+ * perfect approver approves exactly the cases whose test passes on the correct code; the model approver is `--model`'s
+ * verdicts, over the cases it judged. On a control every evidence is false.
+ */
+function scoreChecks(): void {
+  const all = records();
+  const model = option("model") ?? "claude-bridge/claude-opus-5-5";
+  const verdicts = new Map(all.filter((record) => record["kind"] === "approve" && record["model"] === model && record["verdict"] !== null)
+    .map((record) => [record["case"], record["verdict"]]));
+  const proposed = proposedCases();
+  const lines: string[] = [];
+  for (const source of [...new Set(proposed.map((item) => item.source))].sort()) {
+    for (const arm of ARMS) {
+      const mine = proposed.filter((item) => item.source === source && item.arm === arm);
+      const evidence = (kept: readonly ProposedCase[]): number => new Set(kept.filter((item) => item.onChange === "fail")
+        .map((item) => item.instance.instance_id)).size;
+      const judged = mine.filter((item) => verdicts.has(item.id));
+      lines.push(`| ${source} | ${arm} | ${mine.length} | ${mine.filter((item) => item.onCorrect === "pass").length} | ` +
+        `${mine.filter((item) => item.onChange === "fail").length} | ${evidence(mine.filter((item) => item.onCorrect === "pass"))} | ` +
+        `${judged.length} | ${judged.filter((item) => verdicts.get(item.id) === "right").length} | ` +
+        `${evidence(judged.filter((item) => verdicts.get(item.id) === "right"))} |`);
+    }
+  }
+  const checked = all.filter((record) => record["kind"] === "checks");
+  const spent = (kind: string, test: (record: Record<string, any>) => boolean = () => true): string =>
+    [...new Set(all.filter((record) => record["kind"] === kind && test(record)).map((record) => String(record["model"])))]
+      .map((name) => `${name} ${tokens(all.filter((record) => record["kind"] === kind && record["model"] === name))}`).join(", ");
+  process.stdout.write(["| Source | Arm | Cases | Right (test passes on correct) | Fail on change | Instances with evidence, " +
+    "perfect approver | Judged | Approved | Instances with evidence, model approver |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...lines, "", `Gaps listed by checks: ${checked.reduce((total, record) => total + (record["gaps"] as unknown[]).length, 0)} over ` +
+    `${checked.length} changes; unparsed ${checked.filter((record) => record["parsed"] !== true).length}.`,
+    `Tokens: checks ${spent("checks")}; cases ${spent("cases", (record) => record["prompt"] === CASE_PROMPT)}; review ${spent("review")}; ` +
+    `approve ${spent("approve")}; /code-review in dollars, as it reports no tokens: ${all.filter((record) => record["kind"] === "review" &&
+      String(record["model"]).startsWith("claude-code-review/")).reduce((total, record) => total + Number(record["costUsd"] ?? 0), 0).toFixed(2)}.`,
+    ""].join("\n"));
 }
 
 const tokens = (records: readonly Record<string, any>[]): number => records.reduce((total, record) => total + Number(record["tokens"]?.["total"] ?? 0), 0);
@@ -595,4 +840,10 @@ else if (stage === "fix") await fix();
 else if (stage === "cases") await cases();
 else if (stage === "export-cases") exportCases();
 else if (stage === "score") score();
-else throw new Error("Use --stage=sample, review, triage, judge, gate, rerun, fix, cases, export-cases or score.");
+else if (stage === "checks") await checks();
+else if (stage === "code-review") await codeReview();
+else if (stage === "ultrareview") await ultrareview();
+else if (stage === "approve") await approve();
+else if (stage === "score-checks") scoreChecks();
+else throw new Error("Use --stage=sample, review, triage, judge, gate, rerun, fix, cases, export-cases, score, checks, code-review, " +
+  "ultrareview, approve or score-checks.");

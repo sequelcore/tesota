@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { installedPi } from "../src/pi-install.js";
@@ -83,7 +84,9 @@ export async function pi(model: string, directory: string, tools: readonly strin
   const installed = installedPi(checkout);
   if (installed === undefined) throw new Error("No Pi is installed in the checkout; run bun install.");
   const sessions = join(dirname(directory), "sessions");
-  const args = [installed.cli, "-p", "--model", model, "--no-extensions", "--no-skills", "--no-prompt-templates",
+  // Claude models come through the operator's pi-claude-bridge, the one extension loaded, on their Claude sign-in.
+  const bridge = model.startsWith("claude-bridge/") ? ["-e", join(homedir(), ".pi", "agent", "npm", "node_modules", "pi-claude-bridge")] : [];
+  const args = [installed.cli, "-p", "--model", model, "--no-extensions", ...bridge, "--no-skills", "--no-prompt-templates",
     "--no-context-files", "--no-mcp", ...tools === undefined ? [] : tools.length === 0 ? ["--no-tools"] : ["--tools", tools.join(",")],
     "--session-dir", sessions, prompt];
   const started = Date.now();

@@ -678,6 +678,36 @@ Luna through Pi on a ChatGPT sign-in. `bun run live:eval`
   Sol's false findings. Jev, as triage of the gate below 0.2, skipped nothing:
   every finding described behavior. The cases are mechanical bugs, 20
   instances, with one agent model.
+- **A reviewer that proposes checks** ([#397](https://github.com/sequelcore/tesota/issues/397)),
+  on the same 20 bugs and 20 controls, measured before anything is built.
+  - **Sources:**
+    - a reviewer that writes only cases in the request's words, each with a
+      test, or gaps (`--stage=checks`, Claude Sonnet 5.5);
+    - Claude Code's local `/code-review` and Sol's findings from #375, each
+      turned into such cases by Sol.
+  - **Approvers:** an approver stands in for the operator. The perfect approver
+    approves a case when its test passes on correct code. Claude Opus 5.5
+    judges blind, from the request, the diff and the case. A case approved and
+    failing on the change is evidence; on a control it is false.
+
+  | Source | Bugs caught, perfect approver | Bugs caught, Opus | Controls with false evidence, Opus |
+  |---|---|---|---|
+  | Cases reviewer | 17/20 | 18/20 | 5/20 |
+  | `/code-review`, then cases | 20/20 | 20/20 | 6/20 |
+  | Sol's findings, then cases | 16/20 | 16/20 | 6/20 |
+
+  - **With the perfect approver, no source gave false evidence.** Opus approved
+    all 11 of the cases reviewer's cases whose test fails on correct code, so a
+    model cannot stand in for the operator.
+  - **Cost:** the cases reviewer took one step, 1.8M tokens for 40 changes, and
+    wrote cases on 11 of the 20 controls. Writing cases from the other two
+    sources' findings took 10.3M tokens, and `/code-review` itself cost $4.04.
+  - **Not measured:**
+    - a person approving cases;
+    - Opus on 36 of `/code-review`'s 91 bug cases;
+    - contracts, which SWE-smith's JavaScript libraries cannot carry.
+
+  One ultrareview run, on one control, reported nothing.
 
 ## Credits
 
