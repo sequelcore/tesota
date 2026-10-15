@@ -399,6 +399,27 @@ export const HELD_OUT: Readonly<Record<string, { readonly request: string; reado
 };
 
 /**
+ * Six more requests that settle every case, for #397, registered on
+ * 2026-10-15 before any run, after `HELD_OUT`'s false alarms passed only
+ * through a ruling made once they were seen. Labelled by a rule fixed now:
+ * a listed case is a false alarm when the request's words fix its result,
+ * inputs outside a domain the request names included; it is open when a
+ * real input the request covers, by common industry practice, could
+ * reasonably be expected to give something other than the literal result,
+ * as an empty family name can; and it is an unusual input when it is of a
+ * kind the request never mentions.
+ */
+export const SETTLED: Readonly<Record<string, { readonly request: string; readonly open: readonly string[] }>> = {
+  "square": { request: "Add square(n) in src/math.ts that returns n * n.", open: [] },
+  "adult age": { request: "Add isAdult(age) in src/people.ts that returns true when age is 18 or more and false otherwise.", open: [] },
+  "kilometres to miles": { request: "Add toMiles(km) in src/units.ts that returns km * 0.621371, unrounded.", open: [] },
+  "first item": { request: "Add firstItem(items) in src/lists.ts that returns the first element of a non-empty array.", open: [] },
+  "shout": { request: "Add shout(text) in src/text.ts that returns text in upper case followed by one exclamation mark, " +
+    "so shout(\"hi\") is \"HI!\".", open: [] },
+  "larger number": { request: "Add larger(a, b) in src/math.ts that returns the larger of two numbers, or a when they are equal.", open: [] },
+};
+
+/**
  * The base's buggy function under the contract a run left: its `//@` lines
  * from `after`, then the base's declaration and body. When this fails the
  * proof, the new contract rules the bug out; undefined when the function is
