@@ -30,7 +30,6 @@
     "!src/verification/default-theme-rule.ts",
     "!src/verification/pi-version-rule.ts",
     "grammars",
-    "skills",
     "themes",
     "terminal-schemes",
     "NOTICE"
@@ -38,9 +37,6 @@
   "pi": {
     "extensions": [
       "./src/extension.ts"
-    ],
-    "skills": [
-      "./skills"
     ],
     "themes": [
       "./themes"

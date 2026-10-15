@@ -59,8 +59,7 @@ not the native add-on and install script its package carries, and a test
 fails when a shipped file differs from the pinned package's. The `files`
 list in `package.json` names what the package ships: the extension's sources
 and the compiled launcher, each with what it imports, the grammars, the
-skills in `skills/`, which `pi.skills` names, the themes, the terminal
-schemes and the notices. A module added to either goes into that
+themes, the terminal schemes and the notices. A module added to either goes into that
 list too; a test packs the package and fails when a packed file imports one
 that is not packed, or when anything else is packed. The
 [verification design](design/verification.md) describes the gate, its
