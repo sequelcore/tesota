@@ -3,6 +3,7 @@ import { posix } from "node:path";
 import type { ChangedFile, DiffLine, RemovedLine } from "./diff-lines.js";
 import { grammarCommentLines, hasGrammar } from "./grammar-source.js";
 import { packageCheckScripts } from "./projects.js";
+import { contracts, unselectedContracts } from "./proof-guarantees.js";
 import { commentOnlyLines, isScriptPath, typescript } from "./typescript-source.js";
 import { removalCounts, testWeakens } from "./verification/test-weakening-rule.js";
 import { type AnnotationKind, checkScriptWeakens, weakens } from "./verification/weakening-rule.js";
@@ -16,8 +17,9 @@ import { type AnnotationKind, checkScriptWeakens, weakens } from "./verification
  * `//@ extern`, which trusts a function without proving it (`function` names
  * it); an added `//@ skip` on something the base had, which leaves it out of
  * the proof (`function` names the unit it leaves out, or the one holding the
- * statement it leaves out, which `statement` marks); and a deleted test file,
- * or an edit to one that may weaken its tests (`testWeakens`); and a command
+ * statement it leaves out, which `statement` marks), and likewise a function
+ * the base proved that a `//@ verify` on others now leaves out; and a
+ * deleted test file, or an edit to one that may weaken its tests (`testWeakens`); and a command
  * or selection changed for a package check script the base selected
  * (`checkScriptWeakens`). The operator decides whether it is legitimate.
  */
@@ -220,7 +222,20 @@ function annotationChanges(file: FileChange): Weakening[] {
     const had = (kind === "requires" || kind === "skip") && existed(file, line.number);
     return kind === undefined || !weakens(kind, false, matched, had) ? [] : [addedWeakening(file, line, kind)];
   });
-  return [...removed, ...added, ...axiomChanges(file)];
+  return [...removed, ...added, ...axiomChanges(file), ...selectionChanges(file)];
+}
+
+/**
+ * Functions the base proved that the change leaves out of the proof by
+ * selecting others with `//@ verify` (`unselectedContracts`): as good as an
+ * added `//@ skip` on each, though no line of theirs says so. A base that was
+ * not read counts as having proved them, as for a skip (`existed`).
+ */
+function selectionChanges(file: FileChange): Weakening[] {
+  if (!file.path.endsWith(".ts") || file.status === "added" || file.content === undefined) return [];
+  const proved = file.baseContent === undefined ? undefined : new Set(contracts(file.path, file.baseContent).map(({ name }) => name));
+  return unselectedContracts(file.path, file.content).flatMap(({ name }) => !weakens("skip", false, false, proved?.has(name) ?? true) ? []
+    : [{ path: file.path, kind: "added_skip", annotation: "//@ verify", function: name } as const]);
 }
 
 /** Lemmas a proof leaves without a body that the base gave one or did not have: as good as an added `assume`. */
@@ -326,7 +341,8 @@ function checkScriptChanges(file: FileChange): Weakening[] {
 /**
  * What a proof of these files, whole, takes on trust or leaves out, by the
  * same rules as a change's (`weakenedEvidence`): each `//@ assume`,
- * `//@ extern` and `//@ skip` of the source, and each `assume`, `{:axiom}`
+ * `//@ extern` and `//@ skip` of the source, each function with a contract
+ * that a `//@ verify` on others leaves out, and each `assume`, `{:axiom}`
  * and lemma without a body written into the `.dfy` by hand, not generated
  * (`generated`). Read as if every line were added to a base that had
  * everything, since `prove` has no base to compare with.

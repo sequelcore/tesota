@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
-import { changedContracts, contractStrength, contracts } from "../src/proof-guarantees.js";
+import { changedContracts, contractStrength, contracts, unselectedContracts } from "../src/proof-guarantees.js";
+import { extracted } from "../src/verification/selection-rule.js";
 import { renderReceipt } from "../src/receipt.js";
 import { emptyReceipt } from "./receipts.js";
 
@@ -54,6 +55,40 @@ it("leaves out a function LemmaScript skips, since nothing proves its contract",
     "//@ ensures \\result > 0\nexport const g = (): number => 1;\n\n//@ ensures \\result > 0\nexport function h(): number {\n" +
     "  //@ skip\n  const k = 1;\n  return 1;\n}\n";
   expect(contracts("src/rule.ts", source).map(({ name }) => name)).toEqual(["h"]);
+});
+
+it("extracts a function unless it is skipped, or the file selects others with //@ verify and it is neither selected nor trusted", () => {
+  expect(extracted(false, false, false, false)).toBe(true);
+  expect(extracted(false, false, true, true)).toBe(true);
+  expect(extracted(false, true, true, false)).toBe(true);
+  expect(extracted(false, false, true, false)).toBe(false);
+  expect(extracted(true, true, true, true)).toBe(false);
+});
+
+it("leaves out a function a //@ verify elsewhere in its file leaves unselected, as LemmaScript does", () => {
+  const unmarked = "//@ ensures \\result > 100\nexport function wrong(x: number): number {\n  return 1;\n}\n\n" +
+    "//@ extern\n//@ ensures \\result >= 0\nexport function trusted(x: number): number {\n  return Math.abs(x);\n}\n\n" +
+    "//@ skip\n//@ ensures \\result > 0\nexport function skipped(): number {\n  return 1;\n}\n";
+  const names = (found: { name: string }[]): string[] => found.map(({ name }) => name);
+  const selecting = [
+    "//@ verify\n//@ ensures \\result >= 0\nexport function good(x: number): number {\n  return x * x;\n}\n",
+    // LemmaScript reads //@ verify anywhere in a function's text, and selects with one on an arrow function's statement too.
+    "//@ ensures \\result >= 0\nexport function good(x: number): number {\n  //@ verify\n  return x * x;\n}\n",
+    "//@ verify\n//@ ensures \\result >= 0\nexport const good = (x: number): number => x * x;\n",
+  ];
+  for (const first of selecting) {
+    expect(names(contracts("src/rule.ts", `${first}\n${unmarked}`)), first).toEqual(["good", "trusted"]);
+    expect(names(unselectedContracts("src/rule.ts", `${first}\n${unmarked}`)), first).toEqual(["wrong"]);
+  }
+  // A class method or a top-level handler with //@ verify selects as well; a skipped or trusted one does not.
+  for (const other of ["class C {\n  //@ verify\n  m(): number { return 1; }\n}\n", "app.get(\"/x\", () => {\n  //@ verify\n  return 1;\n});\n"]) {
+    expect(names(contracts("src/rule.ts", `${unmarked}\n${other}`)), other).toEqual(["trusted"]);
+  }
+  expect(names(contracts("src/rule.ts", `${unmarked}\n//@ skip\nexport function off(): number {\n  //@ verify\n  return 1;\n}\n`)))
+    .toEqual(["wrong", "trusted"]);
+  expect(names(contracts("src/rule.ts", `${unmarked}\n//@ extern\nexport function ext(): number {\n  //@ verify\n  return 1;\n}\n`)))
+    .toEqual(["wrong", "trusted", "ext"]);
+  expect(names(unselectedContracts("src/rule.ts", unmarked))).toEqual([]);
 });
 
 it("reads the function annotations before a body's first statement, where LemmaScript's specification places them", () => {

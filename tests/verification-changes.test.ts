@@ -311,6 +311,21 @@ it("lists what a whole proof takes on trust or leaves out, and not the lines Lem
     .toEqual([]);
 });
 
+it("flags a //@ verify that leaves out a function the base proved, and lists every one it leaves out of a whole proof", () => {
+  const good = "//@ ensures \\result >= 0\nexport function good(x: number): number {\n  return x * x;\n}\n";
+  const wrong = "//@ ensures \\result > 100\nexport function wrong(x: number): number {\n  return 1;\n}\n";
+  const selecting = `//@ verify\n${good}\n${wrong}`;
+  const change = (baseContent: string | undefined, status: "added" | "modified" = "modified"): FileChange =>
+    ({ path: "src/rule.ts", status, added: [{ number: 1, text: "//@ verify" }], removed: [], content: selecting, baseContent });
+  const leftOut = { path: "src/rule.ts", kind: "added_skip", annotation: "//@ verify", function: "wrong" };
+  expect(weakenedEvidence([change(`${good}\n${wrong}`)])).toEqual([leftOut]);
+  expect(weakenedEvidence([change(undefined)])).toEqual([leftOut]);
+  // Already left out at the base, or a file the base lacked: nothing the base proved is lost.
+  expect(weakenedEvidence([change(`//@ verify\n${good}\n${wrong.replace("> 100", "> 99")}`)])).toEqual([]);
+  expect(weakenedEvidence([change(undefined, "added")])).toEqual([]);
+  expect(provedOnTrust([{ path: "src/rule.ts", content: selecting }])).toEqual([leftOut]);
+});
+
 it("flags a requires added to a function the base had, or one it cannot place, and not one on a new function", () => {
   const content = ["//@ requires x > 0", "export function old(x: number): number { return x; }", "",
     "//@ requires y > 0", "export function fresh(y: number): number { return y; }", "", "//@ requires z > 0", ""].join("\n");
