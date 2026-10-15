@@ -37,7 +37,7 @@ it("stops every process a cancelled command started, not only its shell", async 
   controller.abort();
   expect((await running).outcome).toBe("cancelled");
   expect(await until(() => !alive(pid), 5_000)).toBe(true);
-}, 30_000);
+});
 
 it("stops every process a command started when it runs past its time limit", async () => {
   const root = folder();
@@ -45,4 +45,4 @@ it("stops every process a command started when it runs past its time limit", asy
   expect(run.outcome).toBe("timed_out");
   const pid = Number(readFileSync(join(root, "pid"), "utf8"));
   expect(await until(() => !alive(pid), 5_000)).toBe(true);
-}, 30_000);
+});

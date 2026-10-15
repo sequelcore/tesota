@@ -15,7 +15,7 @@ let theme: Theme;
 beforeAll(async () => {
   theme = themeIn(await loadThemes(), "tesota-dark");
   setKeybindings(new KeybindingsManager({ "app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" } } as never));
-}, 30_000);
+});
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
