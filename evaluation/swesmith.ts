@@ -43,7 +43,8 @@ import { JEV_SKIP_BELOW, diffFiles, git, jevSkips, jevTriage, option, parseFindi
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=checks [--model=claude-bridge/claude-sonnet-5-5]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=code-review [--model=claude-sonnet-5-5] [--effort=high]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=ultrareview --instance=<id> --arm=bug|control
- *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=approve --source=<reviewer|checks:model> [--arm=bug|control] [--model=claude-bridge/claude-opus-5-5] [--limit=<n>]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=approve --source=<reviewer|checks:model> [--arm=bug|control] [--model=claude-bridge/claude-opus-5-5] [--prompt=1|2] [--limit=<n>]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=faithful [--source=<source>] [--arm=bug|control] [--model=claude-bridge/claude-sonnet-5-5]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=score-checks [--model=<approver>]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=export-cases --file=<cases.json>
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=score [--model=<gate model>] [--table=<file>]
@@ -656,7 +657,7 @@ async function ultrareview(): Promise<void> {
 /** A written case, wherever it came from: the cases stage, by the reviewer whose finding it pins, or the checks stage. */
 interface ProposedCase {
   readonly id: string; readonly source: string; readonly instance: Instance; readonly arm: Arm; readonly text: string;
-  readonly onCorrect: string; readonly onChange: string;
+  readonly onCorrect: string; readonly onChange: string; readonly number: number; readonly testPatch: string;
 }
 
 function proposedCases(): ProposedCase[] {
@@ -667,7 +668,7 @@ function proposedCases(): ProposedCase[] {
       const source = record["kind"] === "checks" ? `checks:${String(record["model"])}` : String(reviewer);
       return instance === undefined ? [] : (record["cases"] as (Written & { onCorrect: string; onChange: string })[]).map((entry) => ({
         id: `${String(record["key"])}|${entry.case}`, source, instance, arm: arm as Arm, text: entry.text, onCorrect: entry.onCorrect,
-        onChange: entry.onChange }));
+        onChange: entry.onChange, number: entry.case, testPatch: String(record["testPatch"] ?? "") }));
     });
 }
 
@@ -676,6 +677,12 @@ function proposedCases(): ProposedCase[] {
  * change's diff and one case, not the repository or how the case's test ran, and says whether the expectation is right.
  * `--source` names whose cases, `--arm` keeps one arm's, `--limit` caps how many, in the order of a SHA-256 of the seed
  * and the case's id.
+ *
+ * Version 2 (`--prompt=2`), registered on 2026-10-15 before any run of it: studies find that a model shown the code
+ * writes what the code does rather than what it should do, so the judge never sees the change. It sees the request and
+ * what the request makes the specification: for a refactor that keeps behavior, the changed files as they were before
+ * the change; for a bug report, the report alone. It answers whether the case follows from that, contradicts it, or is
+ * left unsettled, with the question the operator would be asked; only a case that follows is approved.
  */
 const approvePrompt = (requested: string, diff: string, text: string): string =>
   `Someone asked for this change to a project:\n\n${requested}\n\nThe change, as a diff:\n\n\`\`\`diff\n${diff}\n\`\`\`\n\n` +
@@ -684,19 +691,44 @@ const approvePrompt = (requested: string, diff: string, text: string): string =>
   "or can you not tell? Answer only with a JSON object in a ```json block: {\"verdict\": \"right\" or \"wrong\" or " +
   "\"unsure\", \"why\": \"one sentence\"}.";
 
+const SPEC_FILE_LIMIT = 80_000;
+const approvePrompt2 = (requested: string, specification: string, text: string): string =>
+  `Someone asked for this change to a project:\n\n${requested}\n\n${specification}A reviewer says that, when the change ` +
+  `is right, the project behaves like this:\n\n${text}\n\nYou stand in for the person who made the request. You do not ` +
+  "see the change itself. Judge only from the request and what is given above: does this expected behavior follow from " +
+  "them, contradict them, or do they leave it unsettled? Answer unsettled whenever they do not decide it, and say the " +
+  "one question you would ask the person. Answer only with a JSON object in a ```json block: {\"verdict\": \"follows\" " +
+  "or \"contradicts\" or \"unsettled\", \"why\": \"one sentence\", \"question\": \"the question, or null\"}.";
+
+/** What the request makes the specification: the files a refactor changes, as they were before; nothing for a bug report. */
+function specificationOf(instance: Instance, arm: Arm): string {
+  if (arm === "control") return "";
+  const directory = cleanCopy(instance);
+  const files = [...instance.patch.matchAll(/^\+\+\+ b\/(.+)$/gmu)].map((match) => match[1] ?? "");
+  return "Since the request keeps behavior, the behavior to keep is these files' behavior before the change:\n\n" +
+    files.map((file) => `${file}:\n\n\`\`\`\n${readFileSync(join(directory, file), "utf8").slice(0, SPEC_FILE_LIMIT)}\n\`\`\`\n\n`).join("");
+}
+
+const approveVerdicts: Readonly<Record<number, readonly string[]>> = { 1: ["right", "wrong", "unsure"], 2: ["follows", "contradicts", "unsettled"] };
+const approvedAs: Readonly<Record<number, string>> = { 1: "right", 2: "follows" };
+
 async function approve(): Promise<void> {
   const model = option("model") ?? "claude-bridge/claude-opus-5-5";
   const source = option("source");
   if (source === undefined) throw new Error("Name whose cases with --source=<reviewer model or checks:model>.");
   const seed = option("seed") ?? "375";
+  const prompt = Number(option("prompt") ?? "1");
   // A case with no verdict, such as one asked while the model's quota was spent, is asked again.
-  const done = new Set(records().filter((record) => record["kind"] === "approve" && record["model"] === model && record["verdict"] !== null)
-    .map((record) => record["case"]));
-  const diffs = new Map<string, string>();
-  const diffOf = (item: ProposedCase): string => {
+  const done = new Set(records().filter((record) => record["kind"] === "approve" && record["model"] === model &&
+    (record["prompt"] ?? 1) === prompt && record["verdict"] !== null).map((record) => record["case"]));
+  const contexts = new Map<string, string>();
+  const contextOf = (item: ProposedCase): string => {
     const id = `${item.instance.instance_id}|${item.arm}`;
-    if (!diffs.has(id)) diffs.set(id, item.arm === "bug" ? item.instance.patch : git(changed(item.instance, "control"), "diff"));
-    return diffs.get(id) ?? "";
+    if (!contexts.has(id)) {
+      contexts.set(id, prompt === 2 ? specificationOf(item.instance, item.arm)
+        : item.arm === "bug" ? item.instance.patch : git(changed(item.instance, "control"), "diff"));
+    }
+    return contexts.get(id) ?? "";
   };
   const arm = option("arm");
   const items = proposedCases().filter((item) => item.source === source && (arm === undefined || item.arm === arm) && !done.has(item.id))
@@ -704,17 +736,58 @@ async function approve(): Promise<void> {
   await pool(items, parallel, async (item) => {
     const directory = join(mkdtempSync(join(work, "approve-")), "empty");
     mkdirSync(directory);
-    const session = await pi(model, directory, [], approvePrompt(request(item.instance, item.arm), diffOf(item), item.text));
-    const block = [...String(session["output"]).matchAll(/```json\s*([\s\S]*?)```/gu)].at(-1)?.[1];
-    let verdict: string | null = null;
-    let why = "";
-    try {
-      const parsed = JSON.parse(block ?? "") as { verdict?: unknown; why?: unknown };
-      verdict = parsed.verdict === "right" || parsed.verdict === "wrong" || parsed.verdict === "unsure" ? parsed.verdict : null;
-      why = String(parsed.why ?? "");
-    } catch { /* recorded as unanswered */ }
-    append({ kind: "approve", model, case: item.id, source, verdict, why, tokens: session["tokens"], durationMs: session["durationMs"] });
+    const asked = prompt === 2 ? approvePrompt2(request(item.instance, item.arm), contextOf(item), item.text)
+      : approvePrompt(request(item.instance, item.arm), contextOf(item), item.text);
+    const session = await pi(model, directory, [], asked);
+    const parsed = lastJson(String(session["output"]));
+    const verdict = typeof parsed["verdict"] === "string" && approveVerdicts[prompt]?.includes(parsed["verdict"]) ? parsed["verdict"] : null;
+    append({ kind: "approve", prompt, model, case: item.id, source, verdict, why: String(parsed["why"] ?? ""),
+      ...typeof parsed["question"] === "string" ? { question: parsed["question"] } : {}, tokens: session["tokens"],
+      durationMs: session["durationMs"] });
     process.stdout.write(`approve ${item.id}: ${String(verdict)}\n`);
+  });
+}
+
+/** The last JSON object in a fenced block of a reply; empty when there is none to read. */
+function lastJson(reply: string): Record<string, unknown> {
+  const block = [...reply.matchAll(/```json\s*([\s\S]*?)```/gu)].at(-1)?.[1];
+  try {
+    const parsed: unknown = JSON.parse(block ?? "");
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Whether a case's test checks that case (#397), registered on 2026-10-15 before any run: a case judged right can
+ * still fail on correct code when its test does not check what it says. A model sees one case and the test file that
+ * holds its test, not the code under test, and says whether that test passes exactly when the case holds.
+ */
+const faithfulPrompt = (text: string, number: number, testPatch: string): string =>
+  `A case, stated in plain words:\n\n${text}\n\nThe test meant to check it is the one named \`tesota case ${number}\` in ` +
+  `this new test file:\n\n\`\`\`diff\n${testPatch}\n\`\`\`\n\nJudge only the test against the case, not whether the case ` +
+  "is right: does that test give the same input and assert the same result, nothing more and nothing less, so that it " +
+  "passes exactly when the case holds? Answer only with a JSON object in a ```json block: {\"verdict\": \"yes\" or \"no\" " +
+  "or \"unsure\", \"why\": \"one sentence\"}.";
+
+async function faithful(): Promise<void> {
+  const model = option("model") ?? "claude-bridge/claude-sonnet-5-5";
+  const source = option("source");
+  const arm = option("arm");
+  const done = new Set(records().filter((record) => record["kind"] === "faithful" && record["model"] === model && record["verdict"] !== null)
+    .map((record) => record["case"]));
+  const items = proposedCases().filter((item) => (source === undefined || item.source === source) &&
+    (arm === undefined || item.arm === arm) && item.testPatch !== "" && !done.has(item.id)).slice(0, Number(option("limit") ?? Infinity));
+  await pool(items, parallel, async (item) => {
+    const directory = join(mkdtempSync(join(work, "faithful-")), "empty");
+    mkdirSync(directory);
+    const session = await pi(model, directory, [], faithfulPrompt(item.text, item.number, item.testPatch));
+    const parsed = lastJson(String(session["output"]));
+    const verdict = parsed["verdict"] === "yes" || parsed["verdict"] === "no" || parsed["verdict"] === "unsure" ? parsed["verdict"] : null;
+    append({ kind: "faithful", model, case: item.id, source: item.source, verdict, why: String(parsed["why"] ?? ""),
+      tokens: session["tokens"], durationMs: session["durationMs"] });
+    process.stdout.write(`faithful ${item.id}: ${String(verdict)}\n`);
   });
 }
 
@@ -726,8 +799,11 @@ async function approve(): Promise<void> {
 function scoreChecks(): void {
   const all = records();
   const model = option("model") ?? "claude-bridge/claude-opus-5-5";
-  const verdicts = new Map(all.filter((record) => record["kind"] === "approve" && record["model"] === model && record["verdict"] !== null)
-    .map((record) => [record["case"], record["verdict"]]));
+  const verdictsOf = (kind: string, test: (record: Record<string, any>) => boolean): Map<unknown, unknown> =>
+    new Map(all.filter((record) => record["kind"] === kind && record["verdict"] !== null && test(record))
+      .map((record) => [record["case"], record["verdict"]]));
+  const approvals = [1, 2].map((prompt) => verdictsOf("approve", (record) => record["model"] === model && (record["prompt"] ?? 1) === prompt));
+  const faithfulness = verdictsOf("faithful", (record) => record["model"] === (option("faithful-model") ?? "claude-bridge/claude-sonnet-5-5"));
   const proposed = proposedCases();
   const lines: string[] = [];
   for (const source of [...new Set(proposed.map((item) => item.source))].sort()) {
@@ -735,11 +811,18 @@ function scoreChecks(): void {
       const mine = proposed.filter((item) => item.source === source && item.arm === arm);
       const evidence = (kept: readonly ProposedCase[]): number => new Set(kept.filter((item) => item.onChange === "fail")
         .map((item) => item.instance.instance_id)).size;
-      const judged = mine.filter((item) => verdicts.has(item.id));
+      const approval = (prompt: number): string => {
+        const verdicts = approvals[prompt - 1] ?? new Map();
+        const judged = mine.filter((item) => verdicts.has(item.id));
+        const approved = judged.filter((item) => verdicts.get(item.id) === approvedAs[prompt]);
+        return `${judged.length} | ${approved.length} | ${evidence(approved)}`;
+      };
+      const second = approvals[1] ?? new Map();
+      const judgedBoth = mine.filter((item) => second.has(item.id) && faithfulness.has(item.id));
       lines.push(`| ${source} | ${arm} | ${mine.length} | ${mine.filter((item) => item.onCorrect === "pass").length} | ` +
         `${mine.filter((item) => item.onChange === "fail").length} | ${evidence(mine.filter((item) => item.onCorrect === "pass"))} | ` +
-        `${judged.length} | ${judged.filter((item) => verdicts.get(item.id) === "right").length} | ` +
-        `${evidence(judged.filter((item) => verdicts.get(item.id) === "right"))} |`);
+        `${approval(1)} | ${approval(2)} | ${mine.filter((item) => second.get(item.id) === "unsettled").length} | ` +
+        `${judgedBoth.length} | ${evidence(judgedBoth.filter((item) => second.get(item.id) === "follows" && faithfulness.get(item.id) === "yes"))} |`);
     }
   }
   const checked = all.filter((record) => record["kind"] === "checks");
@@ -747,11 +830,13 @@ function scoreChecks(): void {
     [...new Set(all.filter((record) => record["kind"] === kind && test(record)).map((record) => String(record["model"])))]
       .map((name) => `${name} ${tokens(all.filter((record) => record["kind"] === kind && record["model"] === name))}`).join(", ");
   process.stdout.write(["| Source | Arm | Cases | Right (test passes on correct) | Fail on change | Instances with evidence, " +
-    "perfect approver | Judged | Approved | Instances with evidence, model approver |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "perfect approver | v1 judged | v1 approved | v1 evidence | v2 judged | v2 follows | v2 evidence | v2 unsettled | " +
+    "v2 and test judged | v2 follows, test checks it: evidence |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ...lines, "", `Gaps listed by checks: ${checked.reduce((total, record) => total + (record["gaps"] as unknown[]).length, 0)} over ` +
     `${checked.length} changes; unparsed ${checked.filter((record) => record["parsed"] !== true).length}.`,
     `Tokens: checks ${spent("checks")}; cases ${spent("cases", (record) => record["prompt"] === CASE_PROMPT)}; review ${spent("review")}; ` +
-    `approve ${spent("approve")}; /code-review in dollars, as it reports no tokens: ${all.filter((record) => record["kind"] === "review" &&
+    `approve ${spent("approve")}; faithful ${spent("faithful")}; /code-review in dollars, as it reports no tokens: ${all.filter((record) => record["kind"] === "review" &&
       String(record["model"]).startsWith("claude-code-review/")).reduce((total, record) => total + Number(record["costUsd"] ?? 0), 0).toFixed(2)}.`,
     ""].join("\n"));
 }
@@ -844,6 +929,7 @@ else if (stage === "checks") await checks();
 else if (stage === "code-review") await codeReview();
 else if (stage === "ultrareview") await ultrareview();
 else if (stage === "approve") await approve();
+else if (stage === "faithful") await faithful();
 else if (stage === "score-checks") scoreChecks();
 else throw new Error("Use --stage=sample, review, triage, judge, gate, rerun, fix, cases, export-cases, score, checks, code-review, " +
-  "ultrareview, approve or score-checks.");
+  "ultrareview, approve, faithful or score-checks.");

@@ -709,6 +709,21 @@ Luna through Pi on a ChatGPT sign-in. `bun run live:eval`
 
   One ultrareview run, on one control, reported nothing.
 
+  **Two refinements of the judge,** registered after that result:
+  - **The judge never sees the change.** Models shown code tend to encode what it does, not what it should do. The judge sees the request and what the request makes the specification: for a refactor, the files before the change. It may also answer that the request leaves the case unsettled, with the question it would ask (`--prompt=2`).
+  - **A separate check that each test checks its case:** Sonnet reads the case and its test (`--stage=faithful`).
+
+  | Controls with false evidence | Cases reviewer | `/code-review` | Sol |
+  |---|---|---|---|
+  | Opus, shown the change | 5/20 | 6/20 | 6/20 |
+  | Opus, no change, may ask | 5/20 | 4/20 | 5/20 |
+  | and the test checks its case | 5/20 | 2/20 | 4/20 |
+
+  - **Asking caught about half of the wrong expectations it touched.** Opus asked 25 questions: 13 on cases whose test fails on correct code, and 12 on cases that were right.
+  - **It still approved 25 such cases as following from the request.** On the cases reviewer's bugs it kept 18 of 20, then 16 with the test check.
+  - **The test check is weak.** It flagged 16 of the 71 cases whose test fails on correct code, and 18 of 210 that pass.
+  - **The remaining false evidence needs knowledge of the project or its environment:** an exact timestamp that depends on the time zone, or how a library renders context. No judge that sees only the request has that knowledge.
+
 ## Credits
 
 Proofs run on [LemmaScript](https://github.com/midspiral/LemmaScript) by
