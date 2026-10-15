@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
-import { FIRST_CONTRACT_CASES, LEFT_OPEN, OPEN_CASES } from "./cases.js";
+import { FIRST_CONTRACT_CASES, HELD_OUT, LEFT_OPEN, OPEN_CASES, SETTLED } from "./cases.js";
 
 /**
  * Whether a model can list the cases a request leaves open, for #397,
@@ -16,8 +16,21 @@ import { FIRST_CONTRACT_CASES, LEFT_OPEN, OPEN_CASES } from "./cases.js";
  * thresholds a receipt section must meet: the listed cases cover at least
  * two thirds of the open cases `LEFT_OPEN` names, and the controls average
  * at most one false alarm a request, a listed case the request settles.
+ * That measurement, #418, used this prompt without its last sentence.
  *
- *   bun evaluation/open-cases.ts --runs=<dir> --out=<file> --context=request|change [--model=openai/gpt-6-luna]
+ * In the `held-out` context each item is a request from `HELD_OUT`, alone,
+ * five times. Registered on 2026-10-15 before any run, with the thresholds
+ * the receipt's list must meet before it ships: the listed cases cover at
+ * least two thirds of the open cases `HELD_OUT` names, the requests that
+ * settle every case average at most one false alarm, and all requests
+ * average at most half an input of a kind the request never mentions.
+ *
+ * The `settled` context does the same with `SETTLED`, registered after the
+ * held-out false alarms passed only through a ruling made once they were
+ * seen: the list passes when these requests average at most one false
+ * alarm each, labelled by the rule `SETTLED` states.
+ *
+ *   bun evaluation/open-cases.ts --runs=<dir> --out=<file> --context=request|change|held-out|settled [--model=openai/gpt-6-luna]
  */
 const option = (name: string): string | undefined =>
   process.argv.find((argument) => argument.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -26,13 +39,16 @@ const runs = option("runs");
 const context = option("context") ?? "";
 const model = option("model") ?? "openai/gpt-6-luna";
 if (out === undefined || runs === undefined) throw new Error("Name --runs=<dir> and --out=<file>, both outside the repository.");
-if (!["request", "change"].includes(context)) throw new Error("Use --context=request or change.");
+if (!["request", "change", "held-out", "settled"].includes(context)) throw new Error("Use --context=request, change, held-out or settled.");
 delete process.env["OPENAI_API_KEY"];
 
-const requests = new Map([...OPEN_CASES, ...FIRST_CONTRACT_CASES].map((testCase) => [testCase.name, testCase]));
+const fresh = context === "held-out" ? HELD_OUT : context === "settled" ? SETTLED : undefined;
+const requests = new Map<string, { request: string; path?: string }>([...OPEN_CASES, ...FIRST_CONTRACT_CASES,
+  ...Object.entries(fresh ?? {}).map(([name, { request }]) => ({ name, request, path: "" }))].map((testCase) => [testCase.name, testCase]));
 
-/** Five runs of each request in `LEFT_OPEN`, by a seeded shuffle of the results files' runs. */
+/** Five runs of each request in `LEFT_OPEN`, by a seeded shuffle of the results files' runs; each new request five times. */
 function items(): { case: string; file: string; run: number; after: string }[] {
+  if (fresh !== undefined) return Object.keys(fresh).flatMap((name) => [1, 2, 3, 4, 5].map((run) => ({ case: name, file: context, run, after: "" })));
   const all = readdirSync(runs ?? "").filter((name) => /^(oc|fc)-.*\.jsonl$/u.test(name)).flatMap((file) =>
     readFileSync(join(runs ?? "", file), "utf8").split("\n").filter((line) => line.trim() !== "")
       .map((line) => JSON.parse(line) as Record<string, any>)
@@ -52,7 +68,8 @@ function prompt(request: string, path: string, after: string): string {
     (context === "change" ? `The agent wrote this file, ${path}:\n\n${after}\n\n` : "") +
     "List each input case the request does not settle: an input for which a reasonable person who made the request could " +
     "expect more than one result. For each, give the input and the results someone could expect. Leave out cases the " +
-    "request settles, and anything about how the code or its proof is written. If the request settles every case, list none.";
+    "request settles, and anything about how the code or its proof is written. If the request settles every case, list none. " +
+    "Leave out inputs of a kind the request never mentions, such as NaN, Infinity, -0, or values that are not of the type it names.";
 }
 
 const registry = new ModelRegistry(await ModelRuntime.create());

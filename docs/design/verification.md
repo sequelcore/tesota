@@ -607,6 +607,30 @@ Luna through Pi on a ChatGPT sign-in. `bun run live:eval`
   request never mentions, such as NaN, Infinity or -0, which an operator
   would have to read past. Shown the file, Luna found fewer open cases. No
   receipt section is built from this alone.
+
+  On eight new requests (`HELD_OUT`), with a rule added to the prompt to
+  leave out inputs of a kind the request never mentions, GPT-6 Sol, 5
+  repeats, found 30 of 30 open cases and listed 0.30 unusual inputs per
+  request, against 1.3 before. By the labeller's reading it listed 1.15
+  false alarms per request that settles every case, above the threshold of
+  1; 21 of the 23 came from one request, `fullName(first, last)` "joined by
+  a single space". Twelve of those asked what an empty first or last name
+  gives. The owner had the labeller rule by industry practice: the W3C's
+  [Personal names around the world](https://www.w3.org/International/questions/qa-personal-names)
+  says not to require a family name, since many people have only one, so
+  an empty part is a real input and `"Ada"` against `"Ada "` is open. The
+  nine about spaces around a name stay settled. That ruling, made after
+  the result was seen and by the labeller, brings the false alarms to 0.55
+  per request and the list within every threshold; without it the list
+  fails.
+
+  The owner was unsure of that ruling, so six more requests that settle
+  every case (`SETTLED`) were registered before any run, with the labelling
+  rule fixed first. Over 30 answers Sol listed 19 cases, 0.63 per request
+  even if every one were a false alarm, so the list passes on them without
+  a ruling: nothing for four of the six requests; for the other two, an
+  empty array the request rules out, and how to capitalize `"hi!"`, the
+  Turkish "i" and the German "ß".
 - **Findings turned into tests** ([#375](https://github.com/sequelcore/tesota/issues/375)),
   measured before anything was built. GPT-6 Sol and Luna reviewed 20 bugs
   from SWE-smith's JavaScript set (`bun run swesmith:eval`), each as a change
