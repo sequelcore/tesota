@@ -283,6 +283,24 @@ export const FIRST_CONTRACT_CASES: readonly StrengthenCase[] = STRENGTHEN_CASES.
   base: Object.fromEntries(Object.entries(testCase.base).map(([path, text]) => [path, withoutContracts(text)])) }));
 
 /**
+ * Fixes whose proofs need loop invariants, without a contract, asking for the
+ * first one, for #387's harder measurement, registered on 2026-10-15 before
+ * any run, after every arm of `FIRST_CONTRACT_CASES` proved, resolved and
+ * ruled out the bug in 15 of 15 runs: the proof cases of kind invariant and
+ * hard proof with every `//@` line removed from their bases, which keep the
+ * buggy bodies, and their requests followed by `firstProofAsk`. The agent
+ * states the contract and finds the invariants its proof needs. The proof
+ * cases' registration checked with `lsc check` that each base fails its
+ * contract and that each fix without invariants still fails it. Scored as
+ * `FIRST_CONTRACT_CASES` are.
+ */
+export const firstProofAsk = " Give it a LemmaScript //@ contract that states what it returns, and make the contract prove.";
+
+export const FIRST_PROOF_CASES: readonly ProofCase[] = PROOF_CASES.filter(({ kind }) => kind === "invariant" || kind === "hard proof")
+  .map((testCase) => ({ ...testCase, name: `${testCase.name} (first contract)`, request: `${testCase.request}${firstProofAsk}`,
+    base: Object.fromEntries(Object.entries(testCase.base).map(([path, text]) => [path, withoutContracts(text)])), kept: [] }));
+
+/**
  * The base's buggy function under the contract a run left: its `//@` lines
  * from `after`, then the base's declaration and body. When this fails the
  * proof, the new contract rules the bug out; undefined when the function is
