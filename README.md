@@ -114,6 +114,32 @@ after the receipt, which nothing in it covers.
 
 Run `bun unlink` in the checkout to remove the command.
 
+### LemmaScript skills
+
+Midspiral publishes [skills for LemmaScript](https://github.com/midspiral/lemmascript-skills):
+its grammar, which functions are worth verifying, and its `lsc` workflow.
+Tesota does not ship or require them. In Tesota's measurement, agents asked
+for a first contract did as well without them on simple functions, and
+avoided a few unprovable contracts with them on functions whose proofs need
+loop invariants, at about twice the tokens
+([verification design](docs/design/verification.md#measurements)). They
+are not a Pi package, so `pi install` finds nothing in them; to use them,
+clone them and name the folder in Pi's settings file,
+`~/.pi/agent/settings.json`:
+
+```sh
+git clone https://github.com/midspiral/lemmascript-skills ~/lemmascript-skills
+```
+
+```json
+{ "skills": ["~/lemmascript-skills"] }
+```
+
+or pass `--skill ~/lemmascript-skills` for a single run. Their `lemmascript`
+skill asks for a `//@ backend dafny` line and a `.verify.ts` naming; Tesota
+needs neither. If you mark functions with `//@ verify`, LemmaScript proves
+only those, and Tesota reports the others as not proved.
+
 ### Look and feel
 
 A session opens under Tesota's palo fierro, drawn in the colors of Pi's

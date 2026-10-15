@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { type Contract, changedContracts, contracts } from "../src/proof-guarantees.js";
@@ -10,8 +10,8 @@ import { installedPi } from "../src/pi-install.js";
 import { runProcess } from "../src/process.js";
 import type { Receipt } from "../src/receipt.js";
 import { proveFile, proveSource } from "../src/verification/lemmascript-verifier.js";
-import { NO_CONTRACT_CASES, PLACEMENT_CASES, PROOF_CASES, type ProofCase, STRENGTHEN_CASES, type StrengthenCase, contractWeakened, withBuggyBody }
-  from "./cases.js";
+import { FIRST_CONTRACT_CASES, FIRST_PROOF_CASES, NO_CONTRACT_CASES, PLACEMENT_CASES, PROOF_CASES, type ProofCase, STRENGTHEN_CASES, type StrengthenCase,
+  contractWeakened, withBuggyBody } from "./cases.js";
 import { manifest, read, sessionFacts, write } from "./sessions.js";
 
 /**
@@ -20,12 +20,16 @@ import { manifest, read, sessionFacts, write } from "./sessions.js";
  * launcher or, in the `plain` arm, without it. The model comes from the
  * operator's Pi sign-in: `OPENAI_API_KEY` is removed and stdin is closed. Each
  * run appends one JSON line to `--out`, which a later call resumes from. The
- * `claimcheck` mode replays ClaimCheck, with the session's model alone and
+ * `extension` arm loads only Tesota's extension file, so no skill comes with
+ * the package, and each skill named in `--skills`, with the checkout's `lsc`
+ * on `PATH` so an agent a skill tells to install it finds it instead (#387).
+ * The `claimcheck` mode replays ClaimCheck, with the session's model alone and
  * with a second model, on the contracts the runs left and on the strengthen
  * cases' weak and reference contracts, and appends its judgments.
  *
- *   bun run live:eval --out=<file> --arm=tesota|plain --set=proofs|strengthen|no-contracts|placement
- *     [--cases=<name>,<name>] [--runs=3] [--model=openai/gpt-6-luna]
+ *   bun run live:eval --out=<file> --arm=tesota|plain|extension
+ *     --set=proofs|strengthen|no-contracts|placement|first-contract|first-proof
+ *     [--skills=<dir>,<dir>] [--cases=<name>,<name>] [--runs=3] [--model=openai/gpt-6-luna]
  *   bun run live:eval --out=<file> --claimcheck [--second=openai/gpt-5.5] [--repeats=3] [--model=openai/gpt-6-luna]
  */
 const option = (name: string): string | undefined =>
@@ -59,6 +63,21 @@ function fromProofCase(testCase: ProofCase): LiveCase {
     ...buggy === undefined ? {} : { buggy }, kept: testCase.kept };
 }
 
+/**
+ * A first-contract case (#387): its base, without a contract, is committed;
+ * the bug comes from the strengthen or proof case it was made from, whose
+ * contract locates the same buggy body and names its function
+ * (`withBuggyBody`).
+ */
+function fromFirstContractCase(testCase: ProofCase | StrengthenCase): LiveCase {
+  const original = [...STRENGTHEN_CASES, ...PROOF_CASES].find((made) => testCase.name.startsWith(made.name));
+  const buggy = testCase.path === undefined ? undefined : original?.base[testCase.path];
+  const name = testCase.path === undefined || buggy === undefined ? undefined : contracts(testCase.path, buggy)[0]?.name;
+  return { name: testCase.name, request: testCase.request, committed: testCase.base, untracked: {}, hiddenTest: testCase.hiddenTest,
+    ...testCase.path === undefined ? {} : { path: testCase.path }, ...name === undefined ? {} : { function: name },
+    ...buggy === undefined ? {} : { buggy }, kept: [] };
+}
+
 function fromStrengthenCase(testCase: StrengthenCase): LiveCase {
   const buggy = testCase.base[testCase.path] ?? "";
   const committed = Object.fromEntries(Object.entries(testCase.base).filter(([path]) => path !== testCase.path));
@@ -71,7 +90,16 @@ const sets: Readonly<Record<string, readonly LiveCase[]>> = {
   strengthen: STRENGTHEN_CASES.map(fromStrengthenCase),
   "no-contracts": NO_CONTRACT_CASES.map(fromProofCase),
   placement: PLACEMENT_CASES.map(fromProofCase),
+  "first-contract": FIRST_CONTRACT_CASES.map(fromFirstContractCase),
+  "first-proof": FIRST_PROOF_CASES.map(fromFirstContractCase),
 };
+
+/** The skill folders `--skills` names, each with the commit it was at when a Git checkout. */
+const skills = (option("skills")?.split(",") ?? []).filter((path) => path !== "").map((path) => resolve(path));
+const skillCommits = skills.map((path) => ({ path: basename(path),
+  commit: spawnSync("git", ["rev-parse", "HEAD"], { cwd: path, encoding: "utf8" }).stdout.trim() || undefined }));
+/** The arm as records key it: the arm, then the skills it loads. */
+const armLabel = (arm: string): string => [arm, ...skills.map((path) => basename(path))].join("+");
 
 function repository(root: string, testCase: LiveCase): string {
   const directory = join(root, "project");
@@ -102,11 +130,15 @@ async function liveRun(arm: string, set: string, testCase: LiveCase, run: number
   const sessions = join(root, "sessions");
   const pi = installedPi(checkout);
   if (pi === undefined) throw new Error("No Pi is installed in the checkout; run bun install.");
-  const launcher = arm === "plain" ? [pi.cli] : [join(checkout, "dist", "cli.js")];
+  const launcher = arm === "plain" ? [pi.cli] : arm === "extension" ? [pi.cli, "--extension", join(checkout, "src", "extension.ts")]
+    : [join(checkout, "dist", "cli.js")];
   const args = [...launcher, "-p", "--model", model, "--no-extensions", "--no-skills", "--no-prompt-templates", "--no-context-files",
-    "--no-mcp", "--session-dir", sessions, testCase.request];
+    "--no-mcp", ...skills.flatMap((path) => ["--skill", path]), "--session-dir", sessions, testCase.request];
   const started = Date.now();
-  const ended = await runProcess(process.execPath, args, directory, new AbortController().signal, 30 * 60_000);
+  const path = process.env["PATH"];
+  if (arm === "extension") process.env["PATH"] = [join(checkout, "node_modules", ".bin"), path].join(delimiter);
+  const ended = await runProcess(process.execPath, args, directory, new AbortController().signal, 30 * 60_000)
+    .finally(() => { process.env["PATH"] = path; });
   const durationMs = Date.now() - started;
   const after = testCase.path === undefined ? undefined : read(join(directory, testCase.path));
   const proof = testCase.path === undefined ? undefined : await proveFile(directory, testCase.path, AbortSignal.timeout(600_000));
@@ -117,7 +149,7 @@ async function liveRun(arm: string, set: string, testCase: LiveCase, run: number
   const baseSource = testCase.path === undefined ? undefined : testCase.committed[testCase.path];
   const judged: Contract[] = testCase.path === undefined || after === undefined ? [] : changedContracts(testCase.path, after, baseSource);
   return {
-    arm, set, case: testCase.name, run, model, ended: ended.ended, exitCode: ended.exitCode, durationMs,
+    arm: armLabel(arm), skills: skillCommits, set, case: testCase.name, run, model, ended: ended.ended, exitCode: ended.exitCode, durationMs,
     ...ended.ended === "exited" && ended.exitCode === 0 ? {} : { output: ended.output.slice(-2000) },
     ...facts, receipt: undefined,
     receiptSummary: receipt === undefined ? undefined : {
@@ -149,22 +181,23 @@ function append(record: Record<string, unknown>): void {
 
 async function live(): Promise<void> {
   const arm = option("arm") ?? "";
-  if (!["tesota", "plain"].includes(arm)) throw new Error("Use --arm=tesota or plain.");
+  if (!["tesota", "plain", "extension"].includes(arm)) throw new Error("Use --arm=tesota, plain or extension.");
+  if (skills.length > 0 && arm !== "extension") throw new Error("Only the extension arm loads --skills.");
   const set = option("set") ?? "";
   const chosen = sets[set];
-  if (chosen === undefined) throw new Error("Use --set=proofs, strengthen, no-contracts or placement.");
+  if (chosen === undefined) throw new Error("Use --set=proofs, strengthen, no-contracts, placement, first-contract or first-proof.");
   const names = option("cases")?.split(",");
   const cases = names === undefined ? chosen : chosen.filter((testCase) => names.includes(testCase.name));
   if (names !== undefined && cases.length !== names.length) throw new Error(`Unknown case among ${names.join(", ")}.`);
   const runs = Number(option("runs") ?? "3");
   if (!Number.isInteger(runs) || runs < 1) throw new Error("Use --runs=N with N at least 1.");
-  if (arm !== "plain" && !existsSync(join(checkout, "dist", "cli.js"))) throw new Error("Build the launcher first: bun run build.");
+  if (arm === "tesota" && !existsSync(join(checkout, "dist", "cli.js"))) throw new Error("Build the launcher first: bun run build.");
   const done = new Set(records().filter((record) => record["kind"] === undefined).map((record) =>
     `${record["arm"]}|${record["case"]}|${record["run"]}|${record["model"]}`));
   for (let run = 1; run <= runs; run += 1) {
     for (const testCase of cases) {
-      if (done.has(`${arm}|${testCase.name}|${run}|${model}`)) continue;
-      process.stdout.write(`${arm} ${testCase.name} run ${run}... `);
+      if (done.has(`${armLabel(arm)}|${testCase.name}|${run}|${model}`)) continue;
+      process.stdout.write(`${armLabel(arm)} ${testCase.name} run ${run}... `);
       const record = await liveRun(arm, set, testCase, run);
       append(record);
       process.stdout.write(`${String(record["ended"])}, proved ${String(record["proved"])}, resolved ${String(record["resolved"])}, ` +

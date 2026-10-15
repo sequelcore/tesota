@@ -150,7 +150,10 @@ with every process it started.
 `prove` gives the agent the same run on one file while it works. It is
 inactive until the session finds a TypeScript file with `//@` annotations
 (`hasContracts`, which reads the files `projectFiles` walks to: at most
-20,000 entries, skipping dependency, build and dot folders). It runs alone, so its evidence describes files no
+20,000 entries, skipping dependency, build and dot folders), or until the
+agent writes or edits one (`annotated`), so an agent writing the first
+contract in a project can prove it before the gate does
+([#387](https://github.com/sequelcore/tesota/issues/387)). It runs alone, so its evidence describes files no
 other tool call left half-written. Its guidance tells the agent to work
 until the proof passes, gives LemmaScript's annotation syntax, and forbids
 removing or loosening a contract or adding `//@ assume`. After a failed or
@@ -535,6 +538,27 @@ Luna through Pi on a ChatGPT sign-in. `bun run live:eval`
   `contractWeakened`'s verbatim rule does not tell apart. There is no arm
   without the note, so this shows the note is followed, not that it is needed
   ([#393](https://github.com/sequelcore/tesota/pull/393)).
+- **Skills for the first contract** ([#387](https://github.com/sequelcore/tesota/issues/387)).
+  Each request asked for the first contract in code without one, and each
+  arm loaded Tesota's extension alone, plus Midspiral's LemmaScript skills
+  at `5bf85afd`, plus those and a draft Tesota skill. Every run that loaded
+  a skill read Midspiral's `lemmascript`; the draft was read in 13 of 15
+  and 5 of 20 runs.
+  - On the strengthen cases without contracts (`first-contract`, 3 cases,
+    n = 15 per arm), every arm proved, passed the hidden test and ruled out
+    the registered bug in 15 of 15, at a median of 35k, 102k and 108k
+    tokens: a ceiling.
+  - On the cases whose fixes need loop invariants (`first-proof`, 4 cases,
+    n = 20 per arm), all three held in 17 of 20 runs without skills and 20
+    of 20 with either, at a median of 71k, 125k and 136k tokens. Two
+    misses wrote `**` or `pow` into a power contract, which LemmaScript
+    cannot prove; one wrote `//@   ensures` with extra spaces, which
+    LemmaScript 0.6.4 ignores without a word, so its proof checked no
+    postcondition.
+
+  The draft skill added nothing measurable over Midspiral's and was not
+  shipped. With no skill, `prove` was called a median of 3 and 4 times per
+  run, since it now turns on once the agent writes a contract.
 - **Findings turned into tests** ([#375](https://github.com/sequelcore/tesota/issues/375)),
   measured before anything was built. GPT-6 Sol and Luna reviewed 20 bugs
   from SWE-smith's JavaScript set (`bun run swesmith:eval`), each as a change

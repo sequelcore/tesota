@@ -35,8 +35,8 @@ async function call(root: string, path: string): Promise<string> {
   return (await run(root, path)).content.map((part) => part.type === "text" ? part.text : "").join("");
 }
 
-/** The tools the extension leaves active after a session starts in `root`. */
-function activeTools(root: string): string[] {
+/** A session started in `root`: the tools the extension leaves active, and a tool result to hand it. */
+function session(root: string): { active: () => string[]; result: (toolName: string, path: string, isError?: boolean) => void } {
   let active = ["read", "bash"];
   const handlers = new Map<string, (event: unknown, ctx: unknown) => void>();
   tesota({ registerTool: () => undefined, registerFlag: () => undefined, registerMessageRenderer: () => undefined,
@@ -44,8 +44,11 @@ function activeTools(root: string): string[] {
     getActiveTools: () => active, getSettings: () => ({}), setActiveTools: (names: string[]) => { active = names; } } as never);
   handlers.get("session_start")?.({}, { cwd: root, sessionManager: { getBranch: () => [] }, ui: { setStatus: () => undefined,
     setHeader: () => undefined, setEditorComponent: () => undefined, setFooter: () => undefined } });
-  return active;
+  return { active: () => active, result: (toolName, path, isError = false) =>
+    handlers.get("tool_result")?.({ type: "tool_result", toolName, input: { path }, isError }, { cwd: root }) };
 }
+
+const activeTools = (root: string): string[] => session(root).active();
 
 it("offers prove with its measured guidance only in a project with contracts", () => {
   expect(proveTool.defaultActive).toBe(false);
@@ -56,6 +59,25 @@ it("offers prove with its measured guidance only in a project with contracts", (
   expect(activeTools(root)).toEqual(["read", "bash"]);
   writeFileSync(join(root, "rule.ts"), "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n");
   expect(activeTools(root)).toEqual(["read", "bash", "prove"]);
+});
+
+it("offers prove once the agent writes or edits a contract into a project that had none, and not before", () => {
+  const root = folder();
+  writeFileSync(join(root, "plain.ts"), "export const a = 1;\n");
+  const started = session(root);
+  const contract = "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n";
+  // Code without a contract, a //@ line outside TypeScript, a failed write and a read leave prove off.
+  started.result("write", "plain.ts");
+  writeFileSync(join(root, "notes.md"), contract);
+  started.result("edit", "notes.md");
+  writeFileSync(join(root, "rule.ts"), contract);
+  started.result("write", "rule.ts", true);
+  started.result("read", "rule.ts");
+  expect(started.active()).toEqual(["read", "bash"]);
+  started.result("write", "rule.ts");
+  expect(started.active()).toEqual(["read", "bash", "prove"]);
+  started.result("edit", "rule.ts");
+  expect(started.active()).toEqual(["read", "bash", "prove"]);
 });
 
 it("proves only TypeScript files with annotations inside the project", async () => {
