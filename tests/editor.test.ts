@@ -6,7 +6,7 @@ import { FilledEditor, fill } from "../src/editor.js";
 import { loadThemes, themeIn } from "./pi-themes.js";
 
 let theme: Theme;
-beforeAll(async () => { theme = themeIn(await loadThemes(), "tesota-dark"); }, 30_000);
+beforeAll(async () => { theme = themeIn(await loadThemes(), "tesota-dark"); });
 
 const tui = (rows = 40) => ({ terminal: { rows }, requestRender: () => undefined }) as unknown as TUI;
 const keys = { matches: () => false } as never;

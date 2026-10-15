@@ -34,7 +34,7 @@ it("stops the processes a cancelled process started, as a verifier's Dafny", asy
   controller.abort();
   expect((await running).ended).toBe("cancelled");
   expect(await until(() => !alive(pid), 5_000)).toBe(true);
-}, 30_000);
+});
 
 it("reports how a process ended and what it printed", async () => {
   const root = mkdtempSync(join(tmpdir(), "tesota-process-"));
@@ -43,4 +43,4 @@ it("reports how a process ended and what it printed", async () => {
   expect(await runProcess(process.execPath, ["-e", "console.log('hi'); process.exit(3)"], root, signal, 60_000))
     .toEqual({ ended: "exited", exitCode: 3, output: "hi\n" });
   expect((await runProcess(join(root, "missing"), [], root, signal, 60_000)).ended).toBe("not_started");
-}, 30_000);
+});

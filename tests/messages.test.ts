@@ -14,7 +14,7 @@ beforeAll(async () => {
   theme = themeIn(await loadThemes(), "tesota-dark");
   // Pi's binding for expanding tool output, as Pi defines it when it starts.
   setKeybindings(new KeybindingsManager({ "app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" } } as never));
-}, 30_000);
+});
 
 function renderers(): Map<string, MessageRenderer> {
   const found = new Map<string, MessageRenderer>();

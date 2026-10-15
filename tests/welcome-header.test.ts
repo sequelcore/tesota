@@ -12,7 +12,7 @@ import { loadThemes, packageRoot, themeIn } from "./pi-themes.js";
 const braille = /[\u2801-\u28ff]/u;
 let themes = new Map<string, Theme>();
 
-beforeAll(async () => { themes = await loadThemes(); }, 30_000);
+beforeAll(async () => { themes = await loadThemes(); });
 
 function theme(name: string, mode: TerminalColorMode = "truecolor"): Theme {
   return themeIn(themes, name, mode);

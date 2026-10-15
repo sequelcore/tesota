@@ -11,7 +11,7 @@ import { loadThemes, themeIn } from "./pi-themes.js";
 import { emptyReceipt } from "./receipts.js";
 
 let theme: Theme;
-beforeAll(async () => { theme = themeIn(await loadThemes(), "tesota-dark"); }, 30_000);
+beforeAll(async () => { theme = themeIn(await loadThemes(), "tesota-dark"); });
 
 function evidence(outcome: Evidence["outcome"]): Evidence {
   return { verifier: "lemmascript", claim: "", limits: "", outcome, output: "", durationMs: 1, files: [], contentHash: "h" };

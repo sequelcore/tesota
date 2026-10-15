@@ -152,7 +152,7 @@ it("discloses a check script narrowed after its failing test went back, even whe
   const excluded = spawnSync(process.execPath, ["--test", "test/negative.test.mjs"], { cwd: root, encoding: "utf8" });
   expect(excluded.status, excluded.stderr).toBe(1);
   expect(excluded.stdout).toContain("ERR_ASSERTION");
-}, 30_000);
+});
 
 it("sends a failed or vacuous proof back, and lets the operator resolve one that could not run", () => {
   expect(gateVerdict("passed", "", [])).toBe("proved");
@@ -521,7 +521,7 @@ it("proves a contract file whose .dfy alone changed where LemmaScript's proof-di
   expect(entry(await run.settle()).customType).toBe("tesota-receipt");
   writeFileSync(join(root, "proofs", "src", "rule.dfy"), "// proof\n// hand-written proof line\n");
   expect(entry(await run.settle()).content).toContain("Tesota: src/rule.ts does not prove yet.");
-}, 30_000);
+});
 
 it("measures from the commit the request started at, so an agent's commit hides nothing", async () => {
   const root = project();
