@@ -353,6 +353,25 @@ export const OPEN_CASES: readonly OpenCase[] = [
 ];
 
 /**
+ * What each request leaves open, for #397's measurement of a model that
+ * lists a request's open cases (`evaluation/open-cases.ts`), registered on
+ * 2026-10-15 before any run. The open cases are `OPEN_CASES`, with the
+ * bill split's two open questions counted apart, and the clamp of
+ * `FIRST_CONTRACT_CASES`, whose request never says what a low above high
+ * gives. The controls are the two first-contract requests taken to settle
+ * every case: a listed case there is a false alarm unless the operator,
+ * who owns the intent, rules that it is open.
+ */
+export const LEFT_OPEN: Readonly<Record<string, readonly string[]>> = {
+  "equal share of a bill": ["a total that does not divide evenly", "zero or negative people"],
+  "ten percent off whole cents": ["how to round a discount that is not a whole cent"],
+  "capped late fee": ["a negative number of days late"],
+  "clamp below the minimum (first contract)": ["a low above high"],
+  "discount at exactly 100 (first contract)": [],
+  "maximum returns the first item (first contract)": [],
+};
+
+/**
  * The base's buggy function under the contract a run left: its `//@` lines
  * from `after`, then the base's declaration and body. When this fails the
  * proof, the new contract rules the bug out; undefined when the function is

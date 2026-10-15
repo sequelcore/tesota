@@ -583,6 +583,30 @@ Luna through Pi on a ChatGPT sign-in. `bun run live:eval`
   settles code against its contract, not the contract against what the
   operator meant; that is
   [#397](https://github.com/sequelcore/tesota/issues/397)'s question.
+- **A model listing the cases a request leaves open**
+  ([#397](https://github.com/sequelcore/tesota/issues/397)), measured
+  before anything is built (`evaluation/open-cases.ts`). Requirements
+  studies report that models find most ambiguities but flag about half of
+  clear requirements too, so false alarms decide it. Six requests from
+  #387's runs, four with a registered open case and two controls that
+  settle every case (`LEFT_OPEN`), 5 repeats each, given the request alone
+  or the request and the file one run wrote. Registered thresholds: at
+  least two thirds of the open cases found, and at most one false alarm, a
+  listed case the request settles, per control request. Labelled with
+  model and setup hidden, by the same labeller as #387:
+
+  | Model, context | Open cases found | False alarms per control | Cost of 30 calls |
+  |---|---|---|---|
+  | GPT-6 Luna, request | 19/25 | 2.2 | $0.003 |
+  | GPT-6 Luna, request and file | 11/25 | 0.0 | $0.002 |
+  | GPT-6 Sol, request | 25/25 | 0.2 | $0.05 |
+  | GPT-6 Sol, request and file | 25/25 | 0.8 | $0.07 |
+
+  GPT-6 Sol met both thresholds, but listed about 2.8 cases per request, of
+  which about one was a registered open case; 38 of its 85 were inputs the
+  request never mentions, such as NaN, Infinity or -0, which an operator
+  would have to read past. Shown the file, Luna found fewer open cases. No
+  receipt section is built from this alone.
 - **Findings turned into tests** ([#375](https://github.com/sequelcore/tesota/issues/375)),
   measured before anything was built. GPT-6 Sol and Luna reviewed 20 bugs
   from SWE-smith's JavaScript set (`bun run swesmith:eval`), each as a change
