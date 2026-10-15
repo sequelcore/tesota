@@ -19,7 +19,7 @@ registry packages; lifecycle scripts are disabled.
 | `bun run formal:check` | Prove the LemmaScript rules in `src/verification/`; requires Dafny |
 | `bun run live:eval` | Run the registered cases live through Pi on the operator's sign-in (`evaluation/live.ts`); uses model quota |
 | `bun run findings:eval` | Measure review findings turned into reproduction tests on the registered cases (`evaluation/findings.ts`); uses model quota |
-| `bun run swesmith:eval` | The same on SWE-smith's JavaScript bugs, with the fix step (`evaluation/swesmith.ts`); uses model quota and Docker |
+| `bun run swesmith:eval` | The same on SWE-smith's JavaScript bugs, with the fix step, operator cases and a reviewer that proposes checks (`evaluation/swesmith.ts`); uses model quota, Claude Code for its review sources, and Docker |
 
 `bun run check` never calls a live model; `bun run live:eval` does, after
 `bun run build`, and writes its results to the file `--out` names, outside
