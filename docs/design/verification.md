@@ -165,10 +165,16 @@ and `//@ skip` of the source, each function with a contract that a
 without a body written into the `.dfy` by hand. Otherwise it reads
 `Proved, but not outright`, names each one in the receipt's words, and asks
 the agent to say so in its summary
-([#402](https://github.com/sequelcore/tesota/issues/402)). A result whose
-proof did not pass is an error result, so Pi draws it on its error
-background; its `details` hold the file, the evidence and what a pass took
-on trust, for the operator's view of it.
+([#402](https://github.com/sequelcore/tesota/issues/402)). LemmaScript
+0.6.4 skips a specification line without a word unless it reads
+`//@ <keyword> <expression>`, with one space after `//@` and one after the
+keyword: `//@   ensures x`, `//@ensures x` and an empty `//@ ensures` prove
+nothing. Such a line is no part of any contract
+(`unreadSpecification`), and `prove` names it, says the file is proved but
+not all of it, and asks the agent to rewrite it. A result whose proof did
+not pass, or passed with a skipped line, is an error result, so Pi draws it
+on its error background; its `details` hold the file, the evidence and what
+a pass took on trust, for the operator's view of it.
 
 ## Weakened evidence
 
@@ -356,7 +362,8 @@ first annotation to the closing brace, and the change did not narrow that
 contract (`proofCovered`, proved). A function LemmaScript skips with
 `//@ skip`, or leaves out because the file selects others with
 `//@ verify`, has no contract (`contracts`), so none of its lines is
-covered, and mutation and ClaimCheck leave it out.
+covered, and mutation and ClaimCheck leave it out; nor does a function
+whose every specification line LemmaScript skips (`unreadSpecification`).
 
 The weakening list decides narrowing:
 

@@ -3,6 +3,7 @@ import type { ts as TypeScript } from "ts-morph";
 import { type ClaimCheck, type Comparison, claimCheck } from "./pi-claimcheck.js";
 import { type MutationResult, mutateContract } from "./proof-mutation.js";
 import { typescript } from "./typescript-source.js";
+import { unreadSpecification } from "./verification/lemmascript-verifier.js";
 import { extracted } from "./verification/selection-rule.js";
 
 /**
@@ -79,7 +80,8 @@ interface Annotated {
  * leading its body's first statement. An arrow function's leading comments
  * are its statement's when it returns an expression, and none when it has a
  * block body. Any comment or blank line between an annotation and what it
- * leads keeps it attached, and code detaches it. Each says whether
+ * leads keeps it attached, and code detaches it; a specification line
+ * LemmaScript skips (`unreadSpecification`) is no part of it. Each says whether
  * LemmaScript skips the function (`//@ skip`) and whether it extracts it
  * into the program it proves (`extracted`), which it does not for a function
  * left unselected in a file that selects others with `//@ verify`.
@@ -93,7 +95,8 @@ function annotated(path: string, source: string): Annotated[] {
   const leading = (position: number, keep: (text: string) => boolean): { line: number; text: string }[] =>
     comments(position).flatMap(({ kind, pos, end }) => {
       const text = source.slice(pos, end).trim();
-      return kind === ts.SyntaxKind.SingleLineCommentTrivia && text.startsWith("//@") && keep(text) ? [{ line: lineOf(pos), text }] : [];
+      return kind === ts.SyntaxKind.SingleLineCommentTrivia && text.startsWith("//@") && !unreadSpecification(text) && keep(text)
+        ? [{ line: lineOf(pos), text }] : [];
     });
   // LemmaScript's `hasSkip`: a `//@ skip` leading the statement, or an arrow function itself, leaves the function out of the proof.
   const skips = (position: number): boolean => comments(position).some(({ pos, end }) => directive(source.slice(pos, end), "skip"));

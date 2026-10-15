@@ -123,6 +123,21 @@ it.runIf(dafny)("names the function a passing proof trusts with //@ extern, and 
   expect(result.details).toMatchObject({ trusted: [{ path: "trusting.ts", kind: "added_assume", function: "magnitude" }] });
 }, 120_000);
 
+it.runIf(dafny)("names the //@ lines LemmaScript skips, and never calls a proof without them a clean pass", async () => {
+  const root = folder();
+  // The false ensures with extra spaces is skipped, so the proof passes on the one LemmaScript reads.
+  writeFileSync(join(root, "spaced.ts"), "//@ ensures \\result >= 0\n//@   ensures \\result > 100\nexport function one(): number {\n" +
+    "  return 1;\n}\n");
+  const result = await run(root, "spaced.ts");
+  expect(result.isError).toBe(true);
+  expect(result.details).toMatchObject({ evidence: { outcome: "passed" } });
+  const text = await call(root, "spaced.ts");
+  expect(text).toMatch(/^Proved, but not all of spaced\.ts: LemmaScript skipped some of its \/\/@ lines\./u);
+  expect(text).toContain("- line 2: //@   ensures \\result > 100");
+  expect(text).toMatch(/with one space after \/\/@ and one after the keyword, and run prove again\.$/u);
+  expect(text).not.toContain("every //@ contract");
+}, 120_000);
+
 it.runIf(dafny)("tells the agent to check where its //@ lines sit when Dafny verified nothing", async () => {
   const root = folder();
   writeFileSync(join(root, "detached.ts"),
