@@ -37,6 +37,14 @@ the README mentions them with that result
 ([#387](https://github.com/sequelcore/tesota/issues/387),
 [measurements](design/verification.md#measurements)).
 
+The receipt lists the cases the operator's request leaves open, as a
+model's notes for the operator to settle, since agents settle them silently
+with contracts that prove either way. GPT-6 Sol lists them unless the
+operator names another model or turns the list off; on held-out requests it
+found every open case with few false alarms. Done on 2026-10-15
+([#397](https://github.com/sequelcore/tesota/issues/397),
+[open cases](design/verification.md#open-cases)).
+
 The run ends with a receipt that `tesota receipt` writes for a pull request,
 and the footer shows the gate's progress and the receipt's summary. The
 `tesota` command opens Pi under the palo fierro, in Tesota's theme until
@@ -70,10 +78,8 @@ each one's issue and pull requests.
   ([measurements](design/verification.md#measurements)). A redesign that
   grounds a finding's expected behavior in the request, a contract or a test
   the operator approves is proposed on the issue, and in
-  [#397](https://github.com/sequelcore/tesota/issues/397). #387's
-  measurement adds to it: on requests that leave a case open, agents settled
-  it differently from run to run, each with a contract that proves, and
-  rarely said so.
+  [#397](https://github.com/sequelcore/tesota/issues/397), whose first part,
+  the receipt's list of open cases, is done.
 - **A workspace of several repositories**
   ([#384](https://github.com/sequelcore/tesota/issues/384)). Opened in a
   folder that holds several Git repositories but is not one, Tesota verifies
