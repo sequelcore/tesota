@@ -623,6 +623,14 @@ Luna through Pi on a ChatGPT sign-in. `bun run live:eval`
   the result was seen and by the labeller, brings the false alarms to 0.55
   per request and the list within every threshold; without it the list
   fails.
+
+  The owner was unsure of that ruling, so six more requests that settle
+  every case (`SETTLED`) were registered before any run, with the labelling
+  rule fixed first. Over 30 answers Sol listed 19 cases, 0.63 per request
+  even if every one were a false alarm, so the list passes on them without
+  a ruling: nothing for four of the six requests; for the other two, an
+  empty array the request rules out, and how to capitalize `"hi!"`, the
+  Turkish "i" and the German "ß".
 - **Findings turned into tests** ([#375](https://github.com/sequelcore/tesota/issues/375)),
   measured before anything was built. GPT-6 Sol and Luna reviewed 20 bugs
   from SWE-smith's JavaScript set (`bun run swesmith:eval`), each as a change
