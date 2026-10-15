@@ -150,7 +150,10 @@ with every process it started.
 `prove` gives the agent the same run on one file while it works. It is
 inactive until the session finds a TypeScript file with `//@` annotations
 (`hasContracts`, which reads the files `projectFiles` walks to: at most
-20,000 entries, skipping dependency, build and dot folders). It runs alone, so its evidence describes files no
+20,000 entries, skipping dependency, build and dot folders), or until the
+agent writes or edits one (`annotated`), so an agent writing the first
+contract in a project can prove it before the gate does
+([#387](https://github.com/sequelcore/tesota/issues/387)). It runs alone, so its evidence describes files no
 other tool call left half-written. Its guidance tells the agent to work
 until the proof passes, gives LemmaScript's annotation syntax, and forbids
 removing or loosening a contract or adding `//@ assume`. After a failed or

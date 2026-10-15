@@ -263,6 +263,26 @@ export const STRENGTHEN_CASES: readonly StrengthenCase[] = [
 ];
 
 /**
+ * Code without a contract whose request asks for the first one, for #387's
+ * measurement of contract-writing skills, registered on 2026-10-15 before any
+ * run: each strengthen case with every `//@` line removed from its base,
+ * which keeps the base's buggy body, and its request followed by
+ * `firstContractAsk`. The request asks for the contract explicitly, as the
+ * vericoding, AlgoVeri and SWE-Proof benchmarks do, so the measurement is of
+ * the contract's quality, not of whether an agent decides to write one. The
+ * strengthen cases' registration already checked with `lsc check` that each
+ * reference proves and that the base's buggy body fails under it. A run
+ * proves when its file does, resolves the case when the hidden test passes,
+ * and rules the bug out when the base's buggy body fails the proof under the
+ * contract the run left (`withBuggyBody`).
+ */
+export const firstContractAsk = " Give it a LemmaScript //@ contract that states this, and make the contract prove.";
+
+export const FIRST_CONTRACT_CASES: readonly StrengthenCase[] = STRENGTHEN_CASES.map((testCase) => ({
+  ...testCase, name: `${testCase.name} (first contract)`, request: `${testCase.request}${firstContractAsk}`,
+  base: Object.fromEntries(Object.entries(testCase.base).map(([path, text]) => [path, withoutContracts(text)])) }));
+
+/**
  * The base's buggy function under the contract a run left: its `//@` lines
  * from `after`, then the base's declaration and body. When this fails the
  * proof, the new contract rules the bug out; undefined when the function is

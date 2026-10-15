@@ -59,18 +59,22 @@ const fileLimit = 1024 * 1024;
 /**
  * Whether the project has a TypeScript file with `//@` annotations, which
  * turns on `prove` and its guidance (#294). It reads only the project's
- * files `projectFiles` walks to, and only TypeScript files under a megabyte;
- * a project it cannot read has none.
+ * files `projectFiles` walks to (`annotated`); a project it cannot read has
+ * none.
  */
 export function hasContracts(root: string): boolean {
   for (const file of projectFiles(root)) {
-    if (!file.endsWith(".ts") || file.endsWith(".d.ts")) continue;
-    const path = join(root, file);
-    try {
-      if (statSync(path).size <= fileLimit && annotations(readFileSync(path, "utf8")).length > 0) return true;
-    } catch { /* An unreadable file has no annotations Tesota could prove. */ }
+    if (annotated(join(root, file))) return true;
   }
   return false;
+}
+
+/** Whether `path` is a TypeScript file under a megabyte with `//@` annotations; a file Tesota cannot read has none. */
+export function annotated(path: string): boolean {
+  if (!path.endsWith(".ts") || path.endsWith(".d.ts")) return false;
+  try {
+    return statSync(path).size <= fileLimit && annotations(readFileSync(path, "utf8")).length > 0;
+  } catch { return false; }
 }
 
 /** What a proof takes on trust or leaves out (`provedOnTrust`), in the receipt's plain words, with the line as written. */
