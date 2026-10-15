@@ -1,4 +1,5 @@
 import { type Evidence, proofSummary } from "./evidence.js";
+import type { OpenCases } from "./open-cases.js";
 import { inFolder } from "./projects.js";
 import type { UncoveredLines } from "./proof-coverage.js";
 import type { ClaimCheckRun, ContractStrength } from "./proof-guarantees.js";
@@ -76,6 +77,12 @@ export interface Receipt {
    * verified. The fields above then hold nothing, and `base` is null.
    */
   readonly units?: readonly ReceiptUnit[];
+  /**
+   * The cases the operator's request leaves open, as a model listed them for
+   * the operator to settle (#397): a model's opinion, never evidence. Absent
+   * when the operator turned the list off.
+   */
+  readonly openCases?: OpenCases;
 }
 
 /** What a receipt records for one repository or folder; the receipt itself is one, for the folder Pi runs in. */
@@ -386,9 +393,33 @@ function opinionFindings(run: ClaimCheckRun | undefined, contracts: readonly Con
     more: [judgment.explanation, `A model's opinion, not a proof: ${by}.`] }]);
 }
 
-/** Whether an opinion is a note for the operator: a model finding a contract short of the request. */
+/** The results someone could expect from an open case, as one phrase: models end each with a full stop. */
+function either(outcomes: readonly string[]): string {
+  return outcomes.map((outcome) => outcome.trim().replace(/\.$/u, "")).join(" or ");
+}
+
+/** The cases a model listed as left open by the request, one opinion each, for the operator to settle. */
+function openCaseFindings(listed: OpenCases | undefined): Finding[] {
+  if (listed === undefined) return [];
+  if (listed.status === "not_listed") {
+    return [{ standing: "opinion", check: "request", label: "Not listed", subject: "the cases the request leaves open", detail: listed.reason, more: [] }];
+  }
+  return listed.cases.map(({ input, outcomes }) => ({ standing: "opinion", check: "request", label: "Model: open case", subject: input,
+    detail: either(outcomes), more: [`A model's list for you to settle, not a check: ${listed.model}.`] }));
+}
+
+/** The receipt's lines for the open cases a model listed, labelled a model's opinion. */
+function openCaseLines(listed: OpenCases | undefined): string[] {
+  if (listed === undefined) return [];
+  if (listed.status === "not_listed") return [`  not listed    the cases the request leaves open: ${listed.reason}`];
+  if (listed.cases.length === 0) return [`  model listed  no case the request leaves open, by ${listed.model}; a model's opinion, not a check`];
+  return [`  model listed  by ${listed.model}, cases the request may leave open, for you to settle; a model's opinion, not a check:`,
+    ...listed.cases.map(({ input, outcomes }) => `                ${input}: ${either(outcomes)}`)];
+}
+
+/** Whether an opinion is a note for the operator: a model finding a contract short of the request, or a case it leaves open. */
 export function isNote(finding: Finding): boolean {
-  return finding.standing === "opinion" && finding.label === "Model: partial match";
+  return finding.standing === "opinion" && (finding.label === "Model: partial match" || finding.label === "Model: open case");
 }
 
 const weakeningWords: Readonly<Record<Weakening["kind"], string>> = {
@@ -404,9 +435,9 @@ const weakeningWords: Readonly<Record<Weakening["kind"], string>> = {
  * counted (`decisions`).
  */
 export function receiptFindings(receipt: Receipt): Finding[] {
-  return receipt.units === undefined ? unitFindings(receipt) : receipt.units.flatMap((unit) => verified(unit)
+  return [...receipt.units === undefined ? unitFindings(receipt) : receipt.units.flatMap((unit) => verified(unit)
     ? unitFindings(fromFolder(unit)) : [{ standing: "decide" as const, check: "coverage" as const, label: "Not verified",
-      subject: plainName(unit.folder), detail: plainReason(unit), more: [] }]);
+      subject: plainName(unit.folder), detail: plainReason(unit), more: [] }]), ...openCaseFindings(receipt.openCases)];
 }
 
 /** One unit's findings, from the folder Pi runs in; each unit's tests decide how its unproved files are worded. */
@@ -495,8 +526,9 @@ export function renderReceiptMessage(receipt: Receipt): string {
 
 /** Shared evidence wording for terminal text and chat Markdown. */
 function receiptLines(receipt: Receipt): string[] {
-  return receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
-    ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`]);
+  return [...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
+    ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`]),
+  ...openCaseLines(receipt.openCases)];
 }
 
 /** One unit's lines of the receipt, from the folder Pi runs in. */

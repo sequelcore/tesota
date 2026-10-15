@@ -147,7 +147,8 @@ function commitDescriptor(commit: string, repository: string | undefined): objec
 /** The receipt as an in-toto Statement about the commit, with the agentic process evidence proposal's predicate fields. */
 export function receiptStatement(receipt: Receipt, subject: Subject, createdAt: string): object {
   const models = [...new Set([receipt.model, ...receipt.claimcheck?.status === "judged"
-    ? [receipt.claimcheck.restatedBy, receipt.claimcheck.comparedBy] : []].filter((model) => model !== undefined))];
+    ? [receipt.claimcheck.restatedBy, receipt.claimcheck.comparedBy] : [],
+  ...receipt.openCases?.status === "listed" ? [receipt.openCases.model] : []].filter((model) => model !== undefined))];
   return {
     _type: "https://in-toto.io/Statement/v1",
     subject: [commitDescriptor(subject.commit, subject.repository)],

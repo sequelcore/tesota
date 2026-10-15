@@ -77,6 +77,20 @@ it("shows a clean receipt as its verdict and one row of what holds", () => {
   expect(rows.join("\n")).not.toContain(hash.slice(0, 12));
 });
 
+it("shows the cases a model listed as left open as notes for the operator, outside the count", () => {
+  const listed: Receipt = { ...clean, openCases: { status: "listed", model: "openai/gpt-6-sol",
+    cases: [{ input: "lateFee(-1)", outcomes: ["0.", "-5."] }, { input: "lateFee(1.5)", outcomes: ["7.5", "5"] }] } };
+  const rows = shown("tesota-receipt", listed, 120);
+  expect(rows[1]).toMatch(/^ ✓ Nothing needs you · ◇ 2 model notes +Tesota receipt$/u);
+  expect(rows.filter((row) => /^ [A-Z' ,]+$/u.test(row)).map((row) => row.trim())).toEqual(["MODEL'S OPINION, NOT A PROOF"]);
+  expect(rows.join("\n")).toContain("◇  Model: open case");
+  expect(rows.join("\n")).toContain("lateFee(-1) — 0 or -5");
+  // Why no model listed them shows only expanded, so a session without the model keeps its two-row card.
+  const unlisted: Receipt = { ...clean, openCases: { status: "not_listed", reason: "openai/gpt-6-sol was stopped" } };
+  expect(shown("tesota-receipt", unlisted, 120)).toEqual(shown("tesota-receipt", clean, 120));
+  expect(shown("tesota-receipt", unlisted, 120, true).join("\n")).toContain("◇  Not listed");
+});
+
 it("leads with what needs the operator and keeps the model's opinion out of the count", () => {
   const rows = shown("tesota-receipt", attention, 120);
   // Four findings the checks established; the model's partial match is a note beside them.

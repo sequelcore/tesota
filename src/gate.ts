@@ -5,6 +5,7 @@ import { type AgentBeforeSettleEventResult, type ExtensionAPI, type ExtensionCon
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
 import { git, gitOutput, headCommit } from "./git.js";
+import { OPEN_CASES_MODEL, openCases } from "./open-cases.js";
 import { type ContractStrength, contractStrength } from "./proof-guarantees.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { uncoveredLines } from "./proof-coverage.js";
@@ -221,6 +222,16 @@ function restateWith(pi: ExtensionAPI): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
+/** The Pi flag that names the model listing the cases a request leaves open (`openCases`), or `off`. */
+const openCasesModelFlag = "open-cases-model";
+
+/** The model that lists open cases, `OPEN_CASES_MODEL` unless the operator names another; undefined when turned off. */
+function listWith(pi: ExtensionAPI): string | undefined {
+  const value = pi.getFlag(openCasesModelFlag);
+  if (value === "off") return undefined;
+  return typeof value === "string" && value !== "" ? value : OPEN_CASES_MODEL;
+}
+
 /** What a weak contract's correction must change before it goes back again: the changes to its code that still prove. */
 function weakFailure({ mutation }: ContractStrength): string {
   return mutation.survived.map(({ line, before, after }) => `${line}: ${before} -> ${after}`).join("\n");
@@ -362,6 +373,8 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
   const progress = new GateProgress();
   pi.registerFlag(claimcheckModelFlag, { type: "string",
     description: "The provider/id of a second model for ClaimCheck to restate contracts with; the session's model otherwise" });
+  pi.registerFlag(openCasesModelFlag, { type: "string",
+    description: `The provider/id of the model that lists the cases a request leaves open, or off; ${OPEN_CASES_MODEL} otherwise` });
   /** What went back, by path or by contract as seen from the folder Pi runs in, and by command within each repository's folder. */
   let sentBack = new Map<string, string[]>();
   let commandsSentBack = new Map<string, Map<string, string[]>>();
@@ -404,6 +417,11 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     progress.publish({ step: "settled", receipt });
     return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceiptMessage(receipt),
       display: true, details: receipt }] };
+  };
+  /** The cases the request leaves open, for the receipt; nothing when the operator turned the list off. */
+  const listOpen = async (ctx: ExtensionContext, signal: AbortSignal): Promise<Pick<Receipt, "openCases">> => {
+    const lister = listWith(pi);
+    return lister === undefined ? {} : { openCases: await openCases(ctx, requests, lister, signal) };
   };
   const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
   const sendBack = (content: string, details: SentBack): AgentBeforeSettleEventResult =>
@@ -495,12 +513,12 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
       progress.publish({ step: "sent_back", tally: tally(allProofs, allTests, contracts) });
       return sendBack(weak.map(weakContractReport).join("\n\n"), { round: "contracts", contracts: weak });
     }
-    const evidence = await Promise.all(changed.map(async (unit) =>
-      unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder))));
+    const [evidence, open] = await Promise.all([Promise.all(changed.map(async (unit) =>
+      unitEvidence(unit, proofs.get(unit.folder) ?? [], rungs.get(unit.folder), measured.get(unit.folder)))), listOpen(ctx, signal)]);
     const settledAt = new Date().toISOString();
     const only = workspace ? undefined : evidence[0];
-    const receipt: Receipt = only !== undefined ? { version: 1, ...run, ...only, settledAt }
-      : { version: 1, repository: true, ...run, ...noEvidence, settledAt, units: [
+    const receipt: Receipt = only !== undefined ? { version: 1, ...run, ...only, ...open, settledAt }
+      : { version: 1, repository: true, ...run, ...noEvidence, ...open, settledAt, units: [
         ...evidence.map((unit, k) => ({ ...unit, folder: changed[k]?.folder ?? "" })),
         ...plain.map(({ folder }) => ({ folder, repository: false, base: null, ...noEvidence,
           reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]

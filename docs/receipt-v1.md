@@ -58,7 +58,7 @@ Paths are relative to the project folder where the session ran, with `/`.
 | `_type` | Always `https://in-toto.io/Statement/v1` |
 | `subject` | One resource descriptor: the commit `HEAD` named when `tesota receipt` ran |
 | `predicateType` | This page's URL |
-| `predicate.providers` | One provider: `harness` is `pi` with the receipt's `pi` version. `languageModels` lists each distinct model as `inferenceProvider`, as `provider/id`: the receipt's `model`, plus ClaimCheck's `restatedBy` and `comparedBy` when it judged. It is absent when there are none |
+| `predicate.providers` | One provider: `harness` is `pi` with the receipt's `pi` version. `languageModels` lists each distinct model as `inferenceProvider`, as `provider/id`: the receipt's `model`, plus ClaimCheck's `restatedBy` and `comparedBy` when it judged, and the `openCases` model when it listed. It is absent when there are none |
 | `predicate.traceId` | The Pi session id the receipt came from |
 | `predicate.custom.baseCommit` | The receipt's `base` as a resource descriptor; absent when `base` is null |
 | `predicate.custom.receipt` | The receipt, specified below |
@@ -119,6 +119,7 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `uncovered` | UncoveredLines[] | The changed lines of each TypeScript file that proved that no contract's proof covers. Empty when `weakened` is a string |
 | `changed` | Changed[], or `"unreadable"` | Every file changed from `base` as the run left it, sorted by path |
 | `units` | Unit[], optional | Present when Pi ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `changed` are empty or absent, `repository` is true and `base` is null |
+| `openCases` | OpenCases, optional | The cases the operator's request leaves open, as a model listed them for the operator to settle. A model's opinion, never evidence, and never one of the receipt's decisions. Absent when the operator ran Tesota with `--open-cases-model off` |
 
 ### Unit
 
@@ -238,6 +239,19 @@ One of:
   - a request failed, ran past its 5-minute limit, was stopped, or recorded
     no answer;
   - a contract was left without a comparison.
+
+### OpenCases
+
+One of:
+
+- `{ "status": "listed", "model": "<provider/id>", "cases": [...] }`. Each
+  case is `{ "input": "<the input>", "outcomes": ["<a result someone could expect>", ...] }`;
+  `cases` is empty when the model found none. The model reads the
+  operator's messages for the request, not the change.
+- `{ "status": "not_listed", "reason": "<why>" }`. The reasons are:
+  - the model is not in Pi's model registry;
+  - its request failed, ran past its 2-minute limit, was stopped, or
+    recorded no answer.
 
 ### TestExercise
 

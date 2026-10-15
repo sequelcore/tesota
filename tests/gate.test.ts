@@ -8,6 +8,7 @@ import type { Evidence } from "../src/evidence.js";
 import { evidenceParts, evidenceText } from "../src/footer.js";
 import { changedFiles, GateProgress, type GateStatus, registerGate, type SentBack } from "../src/gate.js";
 import { headCommit } from "../src/git.js";
+import { openCasesSystemPrompt } from "../src/open-cases.js";
 import { receiptFindings, type Receipt } from "../src/receipt.js";
 import { gateVerdict, keepsWorking } from "../src/verification/gate-rule.js";
 import type { ProofOutcome } from "../src/verification/proof-outcome-rule.js";
@@ -95,14 +96,15 @@ function priceTest(input: number, expected: number, name = "total"): string {
 
 interface Settled { entries?: { customType: string; content: string; details?: unknown }[]; continue?: boolean }
 
-/** The gate's handlers on a fake Pi, run as Pi runs them in `root`. */
+/** The gate's handlers on a fake Pi, run as Pi runs them in `root`; the open-case list is off unless `session` sets its flag. */
 function gate(root: string, active = ["read", "edit", "prove"], session: object = {}): {
   input: (source?: string, streamingBehavior?: string, text?: string) => Promise<void>; agentStart: () => void; tool: (name: string) => void;
   settle: (outcome?: string) => Promise<Settled | undefined>; progress: GateProgress; steps: GateStatus[];
 } {
   const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
   const progress = registerGate({ on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
-    registerFlag: () => undefined, getFlag: (name: string) => (session as { flags?: Record<string, string> }).flags?.[name],
+    registerFlag: () => undefined,
+    getFlag: (name: string) => ({ "open-cases-model": "off", ...(session as { flags?: Record<string, string | undefined> }).flags })[name],
     getActiveTools: () => active } as never);
   const steps: GateStatus[] = [];
   progress.subscribe(() => { steps.push(progress.status); });
@@ -344,6 +346,44 @@ it("restates with the model the claimcheck-model flag names", async () => {
   await run.input();
   writeFileSync(join(root, "src", "rule.ts"), `//@ ensures true\n${contract}`);
   expect(entry(await run.settle()).content).toContain("ClaimCheck its restating model other/missing is not a provider/id in Pi's model registry");
+});
+
+it("lists the cases the request leaves open with GPT-6 Sol unless the operator names another model", async () => {
+  const asked: { model: string; text: string; system: string }[] = [];
+  const complete = (model: { provider: string; id: string }, context: { systemPrompt: string; messages: { content: { text: string }[] }[] }):
+    Promise<unknown> => {
+    asked.push({ model: `${model.provider}/${model.id}`, text: context.messages[0]?.content[0]?.text ?? "", system: context.systemPrompt });
+    return Promise.resolve({ stopReason: "toolUse", content: [{ type: "toolCall", id: "1", name: "record_open_cases",
+      arguments: { cases: [{ input: "lateFee(-1)", outcomes: ["0", "-5"] }] } }] });
+  };
+  const find = (provider: string, id: string): object => ({ provider, id });
+  for (const [named, model] of [[undefined, "openai/gpt-6-sol"], ["other/lister", "other/lister"]] as const) {
+    const root = project();
+    const run = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { complete, find },
+      flags: { "open-cases-model": named } });
+    await run.input("interactive", undefined, "lateFee charges 5 per day late, at most 50");
+    writeFileSync(join(root, "src", "notes.md"), "notes\n");
+    const settled = entry(await run.settle());
+    expect((settled.details as Receipt).openCases).toEqual({ status: "listed", model, cases: [{ input: "lateFee(-1)", outcomes: ["0", "-5"] }] });
+    expect(settled.content).toContain(`- **model listed** — by ${model.replaceAll("-", "\\-")}, cases the request may leave open`);
+    expect(asked.at(-1)).toMatchObject({ model, system: openCasesSystemPrompt });
+    expect(asked.at(-1)?.text).toContain("A person gave a coding agent this request:\n\nlateFee charges 5 per day late, at most 50\n\n");
+  }
+});
+
+it("leaves the open cases out when the operator turns the list off, and says why when no model lists them", async () => {
+  const root = project();
+  const off = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { find: () => undefined } });
+  await off.input();
+  writeFileSync(join(root, "src", "notes.md"), "notes\n");
+  expect((entry(await off.settle()).details as Receipt).openCases).toBeUndefined();
+  const missing = gate(root, undefined, { model: { provider: "provider", id: "model" }, modelRegistry: { find: () => undefined },
+    flags: { "open-cases-model": "nobody/none" } });
+  await missing.input();
+  writeFileSync(join(root, "src", "notes.md"), "more notes\n");
+  const settled = entry(await missing.settle());
+  expect((settled.details as Receipt).openCases).toEqual({ status: "not_listed", reason: "nobody/none is not a provider/id in Pi's model registry" });
+  expect(settled.content).toContain("- **not listed** — the cases the request leaves open: nobody/none is not a provider/id in Pi's model registry");
 });
 
 it("sends a weak contract back once, then lists it in the receipt", async () => {
