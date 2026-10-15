@@ -372,6 +372,33 @@ export const LEFT_OPEN: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * New requests for #397's held-out measurement of the open-case list, which
+ * must pass before the receipt shows one, registered on 2026-10-15 before
+ * any run: four that leave cases open, named in `open`, and four that settle
+ * every case. No model has seen them; they ask for code, not contracts, as an
+ * operator's request usually does. A listed case is a false alarm when the
+ * request's words fix its result, inputs outside a domain the request names
+ * included, unless the operator rules it open.
+ */
+export const HELD_OUT: Readonly<Record<string, { readonly request: string; readonly open: readonly string[] }>> = {
+  "pages for a list": { request: "Add pageCount(items, perPage) in src/pages.ts that returns how many pages it takes to show items items, perPage to a page.",
+    open: ["zero or negative perPage", "zero items: no pages or one empty page"] },
+  "initials of a name": { request: "Add initials(name) in src/names.ts that returns a person's initials in capitals.",
+    open: ["a name of more than two words: every initial or first and last", "an empty name"] },
+  "weekend day": { request: "Add isWeekend(date) in src/calendar.ts that tells whether a Date falls on a Saturday or Sunday.",
+    open: ["which time zone the day is read in"] },
+  "average score": { request: "Add average(scores) in src/grades.ts that returns the average of a list of scores.",
+    open: ["an empty list"] },
+  "even integer": { request: "Add isEven(n) in src/numbers.ts that returns true when the integer n is even and false when it is odd. " +
+    "n is always an integer.", open: [] },
+  "full name": { request: "Add fullName(first, last) in src/names.ts that returns first and last joined by a single space, " +
+    "so fullName(\"Ada\", \"Lovelace\") is \"Ada Lovelace\".", open: [] },
+  "celsius to fahrenheit": { request: "Add toFahrenheit(celsius) in src/temperature.ts that returns celsius * 9 / 5 + 32, unrounded.",
+    open: [] },
+  "last item": { request: "Add lastItem(items) in src/lists.ts that returns the last element of a non-empty array.", open: [] },
+};
+
+/**
  * The base's buggy function under the contract a run left: its `//@` lines
  * from `after`, then the base's declaration and body. When this fails the
  * proof, the new contract rules the bug out; undefined when the function is
