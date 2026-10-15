@@ -562,10 +562,27 @@ Luna through Pi on a ChatGPT sign-in. `bun run live:eval`
     cannot prove; one wrote `//@   ensures` with extra spaces, which
     LemmaScript 0.6.4 ignores without a word, so its proof checked no
     postcondition.
+  - On requests that leave one case open (`open-case`, 3 cases, n = 15 per
+    arm, with GPT-6 Luna and GPT-6 Sol): a bill split among people, which
+    leaves remainders and zero people open; 10% off whole cents, which leaves
+    rounding open; and a capped late fee, which leaves negative days open.
+    Nearly every run proved, passed the hidden test and ruled out the
+    registered bug, but the runs settled the open case differently, each with
+    a contract that proves: the split kept fractional cents in 11 of 30 runs,
+    rounded down in 15 and required an even split in 4; the late fee charged
+    0 for negative days in 16 and required `daysLate >= 0` in 10. Labelled
+    from each run's final message with the arm hidden, few said the request
+    left the case open, assumed it, or asked: Luna 0, 0 and 2 of 15, and Sol
+    1, 0 and 3 of 15, without skills, with Midspiral's and with the draft
+    skill as well, which tells the agent to ask. Most runs described their
+    choice without marking it as one.
 
   The draft skill added nothing measurable over Midspiral's and was not
   shipped. With no skill, `prove` was called a median of 3 and 4 times per
-  run, since it now turns on once the agent writes a contract.
+  run, since it now turns on once the agent writes a contract. A proof
+  settles code against its contract, not the contract against what the
+  operator meant; that is
+  [#397](https://github.com/sequelcore/tesota/issues/397)'s question.
 - **Findings turned into tests** ([#375](https://github.com/sequelcore/tesota/issues/375)),
   measured before anything was built. GPT-6 Sol and Luna reviewed 20 bugs
   from SWE-smith's JavaScript set (`bun run swesmith:eval`), each as a change
