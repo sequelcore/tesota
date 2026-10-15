@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { contentHash } from "../src/evidence.js";
-import { annotations, proofSources, proveFile } from "../src/verification/lemmascript-verifier.js";
+import { annotations, proofSources, proveFile, unreadSpecification, unreadSpecifications } from "../src/verification/lemmascript-verifier.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -28,6 +28,20 @@ const clampFixed = clampBase.replace("if (value > high) return low;", "if (value
 it("reads the properties a LemmaScript file claims", () => {
   expect(annotations("//@ ensures \\result >= 0\nexport function f(): number {\n  //@ invariant i >= 0\n  return 1;\n}")).toEqual(
     ["//@ ensures \\result >= 0", "//@ invariant i >= 0"]);
+});
+
+it("finds the specification lines LemmaScript skips without a word, as lsc check 0.6.4 skips them", () => {
+  // Read: one space after //@, the keyword, then a space and an expression, however indented or spaced after the keyword.
+  for (const line of ["//@ ensures \\result > 0", "    //@ invariant 0 <= i", "//@ ensures  \\result > 0", "//@ requires x > 0",
+    "//@ verify", "//@ skip", "//@ ensure \\result > 0", "// @ensures not an annotation"]) {
+    expect(unreadSpecification(line), line).toBe(false);
+  }
+  // Skipped: more than one space after //@, none, a tab after the keyword, or nothing after it.
+  for (const line of ["//@   ensures \\result > 0", "//@ensures \\result > 0", "//@ ensures\t\\result > 0", "//@ ensures", "  //@  requires x > 0"]) {
+    expect(unreadSpecification(line), line).toBe(true);
+  }
+  expect(unreadSpecifications("//@ ensures \\result > 0\n//@   ensures \\result < 9\nexport function f(): number { return 1; }\n"))
+    .toEqual([{ line: 2, text: "//@   ensures \\result < 9" }]);
 });
 
 it("maps a proof to its source as lsc config does, beside it or mirrored under any proof-dir of the project (#403)", async () => {

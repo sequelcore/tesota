@@ -7,7 +7,7 @@ import { type Evidence, proofSummary, quietOutput } from "./evidence.js";
 import { bold, expandHint, Rows, spread, wrapUnder } from "./messages.js";
 import { skippedWords, trustedWords } from "./receipt.js";
 import { type OnTrust, provedOnTrust } from "./verification-changes.js";
-import { annotations, projectFiles, proveFile } from "./verification/lemmascript-verifier.js";
+import { annotations, projectFiles, proveFile, unreadSpecifications } from "./verification/lemmascript-verifier.js";
 
 /**
  * The working agent's own proof run (#294): LemmaScript with Dafny on one
@@ -109,16 +109,21 @@ async function trustedIn(root: string, files: readonly string[]): Promise<OnTrus
  * what LemmaScript printed and what to do next, which names `prove` only
  * when the agent has it (`proveActive`); otherwise the gate proves again.
  */
-export function proofReport(path: string, proof: Evidence, proveActive: boolean, trusted: readonly OnTrust[] = []): string {
+export function proofReport(path: string, proof: Evidence, proveActive: boolean, trusted: readonly OnTrust[] = [],
+  unread: readonly { line: number; text: string }[] = []): string {
   const again = proveActive ? "run prove again" : "finish your turn, and Tesota will prove the file again";
-  const how = proof.outcome === "passed" ? passedWords(path, trusted)
+  const skipped = unread.length === 0 ? "" : `\n\nLemmaScript skips these //@ lines without a word, so the proof checked ` +
+    `none of them:\n${unread.map(({ line, text: written }) => `- line ${line}: ${written}`).join("\n")}\nWrite each as ` +
+    `//@ <keyword> <expression>, with one space after //@ and one after the keyword, and ${again}.`;
+  const how = proof.outcome === "passed" && unread.length > 0 ? `Proved, but not all of ${path}: LemmaScript skipped some of its //@ lines.`
+    : proof.outcome === "passed" ? passedWords(path, trusted)
     : proof.outcome === "failed" ? `Not proved: an obligation in ${path} failed.`
     : proof.outcome === "timed_out" ? `The proof of ${path} ran past its time limit; that is not a pass.`
     : proof.outcome === "cancelled" ? `The proof of ${path} was stopped.`
     : proof.outcome === "vacuous" ? `Not proved: Dafny verified nothing in ${path}, so none of its contracts was proved.`
     : `Not proved: the proof of ${path} could not run.`;
   const next = proof.outcome === "failed" ? `\n\n${retryNote(again)}` : proof.outcome === "vacuous" ? `\n\n${vacuousNote(again)}` : "";
-  return `${how}\n\n${proof.output}${next}`;
+  return `${how}\n\n${proof.output}${next}${skipped}`;
 }
 
 /** What a proof run leaves for the operator's view of it: the file, its evidence, and what a pass takes on trust or leaves out. */
@@ -132,10 +137,14 @@ function text(content: string): AgentToolResult<ProveDetails | undefined> {
   return { content: [{ type: "text", text: content }], details: undefined };
 }
 
-/** A proof's result: what the agent reads, its evidence for the operator, and an error unless the proof passed. */
-function proved(path: string, evidence: Evidence, trusted: readonly OnTrust[]): AgentToolResult<ProveDetails | undefined> {
-  return { content: [{ type: "text", text: proofReport(path, evidence, true, trusted) }], details: { path, evidence, trusted },
-    ...evidence.outcome === "passed" ? {} : { isError: true } };
+/**
+ * A proof's result: what the agent reads, its evidence for the operator, and
+ * an error unless the proof passed with every specification line read.
+ */
+function proved(path: string, evidence: Evidence, trusted: readonly OnTrust[], unread: readonly { line: number; text: string }[]):
+  AgentToolResult<ProveDetails | undefined> {
+  return { content: [{ type: "text", text: proofReport(path, evidence, true, trusted, unread) }], details: { path, evidence, trusted },
+    ...evidence.outcome === "passed" && unread.length === 0 ? {} : { isError: true } };
 }
 
 /** `prove` and its file, with how long the proof took at the right once it has run. */
@@ -202,7 +211,8 @@ export const proveTool: ToolDefinition<typeof parameters, ProveDetails | undefin
     try { source = await readFile(absolute, "utf8"); } catch { return text(`${path} does not exist.`); }
     if (annotations(source).length === 0) return text(`${path} has no //@ annotations, so there is nothing to prove.`);
     const evidence = await proveFile(ctx.cwd, path, signal ?? new AbortController().signal);
-    return proved(path, evidence, evidence.outcome === "passed" ? await trustedIn(ctx.cwd, evidence.files) : []);
+    return proved(path, evidence, evidence.outcome === "passed" ? await trustedIn(ctx.cwd, evidence.files) : [],
+      unreadSpecifications(source));
   },
   renderCall,
   renderResult,

@@ -65,6 +65,14 @@ it("extracts a function unless it is skipped, or the file selects others with //
   expect(extracted(true, true, true, true)).toBe(false);
 });
 
+it("leaves out of a contract the specification lines LemmaScript skips, and has none when every line is skipped", () => {
+  const source = "//@ requires x >= 0\n//@   ensures \\result > 100\nexport function f(x: number): number {\n  return x;\n}\n\n" +
+    "//@ensures \\result > 0\nexport function g(): number {\n  return 1;\n}\n";
+  const found = contracts("src/rule.ts", source);
+  expect(found.map(({ name }) => name)).toEqual(["f"]);
+  expect(found[0]?.annotations.map(({ text }) => text)).toEqual(["//@ requires x >= 0"]);
+});
+
 it("leaves out a function a //@ verify elsewhere in its file leaves unselected, as LemmaScript does", () => {
   const unmarked = "//@ ensures \\result > 100\nexport function wrong(x: number): number {\n  return 1;\n}\n\n" +
     "//@ extern\n//@ ensures \\result >= 0\nexport function trusted(x: number): number {\n  return Math.abs(x);\n}\n\n" +

@@ -16,6 +16,29 @@ export function annotations(source: string): string[] {
   return source.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line.startsWith("//@"));
 }
 
+/** The specification keywords LemmaScript 0.6.4 reads with an expression (`parseAnnotations` in its `extract.js`). */
+const specificationWord = "(?:requires|ensures|contract|invariant|decreases|done_with|type)";
+const specificationLine = new RegExp(String.raw`^//@\s*${specificationWord}\b`, "u");
+const readSpecification = new RegExp(String.raw`^//@ ${specificationWord} +\S`, "u");
+
+/**
+ * Whether LemmaScript skips a `//@` specification line without a word: one
+ * that names a keyword it reads with an expression, such as `ensures`, but
+ * not as `//@ <keyword> <expression>`, with a single space after `//@` and a
+ * space after the keyword. `//@   ensures x`, `//@ensures x` and an
+ * `//@ ensures` with nothing after it are all left out of the proof, which
+ * then checks less than the file says. A misspelled keyword is not caught.
+ */
+export function unreadSpecification(line: string): boolean {
+  const text = line.trim();
+  return specificationLine.test(text) && !readSpecification.test(text);
+}
+
+/** The specification lines of `source` LemmaScript skips (`unreadSpecification`), with their line numbers. */
+export function unreadSpecifications(source: string): { line: number; text: string }[] {
+  return source.split(/\r?\n/u).flatMap((text, k) => unreadSpecification(text) ? [{ line: k + 1, text: text.trim() }] : []);
+}
+
 /** LemmaScript's and Dafny's processes, run so that a timeout or a stop ends Dafny's too (`runProcess`). */
 function run(executable: string, args: readonly string[], cwd: string, signal: AbortSignal): Promise<ProcessRun> {
   return runProcess(executable, args, cwd, signal, timeoutMs);
