@@ -99,6 +99,12 @@ In a checkout, `bun install` also provides Pi.
 - `--claimcheck-model <provider>/<id>` sets a second model for the contract
   comparison to restate contracts with. Without it, the session's model
   restates them.
+- `--open-cases-model <provider>/<id>` sets the model that lists, in the
+  receipt, the cases your request leaves open for you to settle, such as
+  what a function returns for an empty list. Without it, GPT-6 Sol lists
+  them, the model that passed Tesota's measurement; when Sol is not
+  available, the receipt says they were not listed. `--open-cases-model off`
+  turns the list off. The list is a model's opinion, not a check.
 
 In the folder where the session ran:
 

@@ -117,6 +117,9 @@ function plural(count: number, one: string, many: string): string {
 
 const isMatch = (finding: Finding): boolean => finding.standing === "opinion" && finding.label === "Model: matches";
 
+/** An opinion only the expanded card shows: a model's agreement, or why no model listed open cases, which a card without OpenAI would always repeat. */
+const isQuiet = (finding: Finding): boolean => isMatch(finding) || (finding.standing === "opinion" && finding.label === "Not listed");
+
 /** What holds among `findings`, in one row (`holdsWords`), and the model's agreement as a note. */
 function holdsRow(theme: Theme, findings: readonly Finding[], matches: number): string {
   return `${theme.fg("success", "✓")}  ${theme.fg("muted", holdsWords(findings).join(" · "))}` +
@@ -153,10 +156,10 @@ function receiptCard(theme: Theme, receipt: Receipt, options: MessageRenderOptio
     : receipt.units.filter(verified).map((unit) => `${plainName(unit.folder)} ${based(unit, "its first commit")}`).join(", ");
   return card(theme, options, (width) => {
     const title = spread(verdict + noted, theme.fg("customMessageLabel", bold("Tesota receipt")), width);
-    if (!options.expanded && decide.length === 0 && gaps.length === 0 && opinions.every(isMatch)) {
+    if (!options.expanded && decide.length === 0 && gaps.length === 0 && opinions.every(isQuiet)) {
       return [title, spread(holdsRow(theme, findings, matches), expandHint(theme, "for details"), width)];
     }
-    const shown = options.expanded ? opinions : opinions.filter((finding) => !isMatch(finding));
+    const shown = options.expanded ? opinions : opinions.filter((finding) => !isQuiet(finding));
     return [title,
       ...section(theme, "NEEDS YOU", decide, label, width, options.expanded),
       ...section(theme, "MODEL'S OPINION, NOT A PROOF", shown, label, width, options.expanded),

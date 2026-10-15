@@ -30,6 +30,7 @@ nothing verified, down to changed lines.
 | Tests and exercise | `src/projects.ts`, `src/test-rung.ts`, `src/test-report.ts` |
 | Contract strength | `src/proof-guarantees.ts`, `src/proof-mutation.ts`, `src/pi-claimcheck.ts` |
 | Coverage | `src/proof-coverage.ts` |
+| The cases a request leaves open | `src/open-cases.ts` |
 | The receipt and `tesota receipt` | `src/receipt.ts`, `src/pull-request-receipt.ts` |
 | Processes and their limits | `src/process.ts` |
 | What the operator sees of the gate | `src/gate.ts` (`GateProgress`), `src/receipt.ts` (`receiptFindings`), `src/footer.ts`, `src/editor.ts`, `src/messages.ts`, `src/prove-tool.ts` (its renderers) |
@@ -354,6 +355,28 @@ never counts toward what needs the operator: a model's opinion is a
 candidate, not evidence
 ([#375](https://github.com/sequelcore/tesota/issues/375)).
 
+## Open cases
+
+A proof settles code against its contract, not the contract against what
+the operator meant, and agents settle a request's open cases silently: on
+requests that leave one open, runs settled it differently, each with a
+contract that proves, and rarely said so
+([#387](https://github.com/sequelcore/tesota/issues/387)). So when the run
+settles, a model reads the operator's messages for the request, not the
+change, and lists the inputs for which someone who made the request could
+expect more than one result, with those results (`openCases`,
+[#397](https://github.com/sequelcore/tesota/issues/397)). The receipt
+shows each as a model's note for the operator to settle. It never counts
+toward what needs the operator, and nothing goes back to the agent.
+
+The model is `--open-cases-model <provider>/<id>`, or GPT-6 Sol, the one
+that met every threshold in the measurements below; `--open-cases-model off`
+leaves the list out. The receipt says why nothing was listed when the model
+is not in Pi's registry, or its request fails, is stopped, gives no answer
+or takes more than 2 minutes; the card shows that only when expanded, so a
+session without the model keeps its short card. The list runs alongside
+the receipt's last steps, about $0.002 a request with Sol.
+
 ## Coverage
 
 A file that proved covers only some of its changed lines (`uncoveredLines`).
@@ -404,6 +427,7 @@ hold the receipt itself. The receipt records:
 - each proof with its gate verdict and evidence;
 - each measured contract;
 - ClaimCheck's run;
+- the cases the request leaves open, as a model listed them;
 - each command;
 - each exercise finding;
 - the weakened evidence;

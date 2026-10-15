@@ -100,7 +100,7 @@ export function claimcheckResult(models: Pick<Extract<ClaimCheck, { status: "jud
     judgments: judgments.flatMap((judgment) => judgment === undefined ? [] : [{ verdict: judgment.verdict, explanation: judgment.explanation }]) };
 }
 
-type ModelAccess = Pick<ExtensionContext, "model" | "modelRegistry">;
+export type ModelAccess = Pick<ExtensionContext, "model" | "modelRegistry">;
 type Reply = Awaited<ReturnType<ExtensionContext["modelRegistry"]["complete"]>>;
 
 /** Why a reply that ended without an answer ended so. */
@@ -111,13 +111,15 @@ function unanswered(reply: Pick<Reply, "stopReason" | "errorMessage">, signal: A
   return reply.stopReason === "error" ? `the model request failed: ${reply.errorMessage ?? "no reason given"}` : undefined;
 }
 
-/** One request to `model`, answered through the tool `name` with `parameters`; why it gave no answer otherwise. */
-async function recorded<T>(ctx: ModelAccess, model: NonNullable<ModelAccess["model"]>, name: string,
+const comparing = "You compare formal specifications with natural-language requirements. Answer only through the tool you are given.";
+
+/** One request to `model` with `systemPrompt`, answered through the tool `name` with `parameters`; why it gave no answer otherwise. */
+export async function recorded<T>(ctx: ModelAccess, model: NonNullable<ModelAccess["model"]>, systemPrompt: string, name: string,
   parameters: TSchema, prompt: string, signal: AbortSignal): Promise<T | string> {
   let reply: Reply;
   try {
     reply = await ctx.modelRegistry.complete(model, {
-      systemPrompt: "You compare formal specifications with natural-language requirements. Answer only through the tool you are given.",
+      systemPrompt,
       messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }],
       tools: [{ name, description: "Record your answer. Call it exactly once.", parameters }],
     }, { signal });
@@ -130,7 +132,13 @@ async function recorded<T>(ctx: ModelAccess, model: NonNullable<ModelAccess["mod
   return call?.type === "toolCall" && Value.Check(parameters, call.arguments) ? call.arguments as T : "the model did not record its answer";
 }
 
-const named = (model: NonNullable<ModelAccess["model"]>): string => `${model.provider}/${model.id}`;
+export const named = (model: NonNullable<ModelAccess["model"]>): string => `${model.provider}/${model.id}`;
+
+/** The model `name`, a `provider/id`, in Pi's model registry; undefined when it is not one. */
+export function registered(ctx: ModelAccess, name: string): ModelAccess["model"] {
+  const slash = name.indexOf("/");
+  return slash > 0 ? ctx.modelRegistry.find(name.slice(0, slash), name.slice(slash + 1)) : undefined;
+}
 
 /**
  * ClaimCheck on `items` against the operator's `requests`. The session's
@@ -144,17 +152,15 @@ export async function claimCheck(ctx: ModelAccess, requests: readonly string[], 
   signal: AbortSignal, restateWith?: string): Promise<ClaimCheck> {
   const { model } = ctx;
   if (model === undefined) return { status: "not_judged", reason: "no model is selected" };
-  const slash = restateWith?.indexOf("/") ?? -1;
-  const restater = restateWith === undefined ? model
-    : slash > 0 ? ctx.modelRegistry.find(restateWith.slice(0, slash), restateWith.slice(slash + 1)) : undefined;
+  const restater = restateWith === undefined ? model : registered(ctx, restateWith);
   if (restater === undefined) {
     return { status: "not_judged", reason: `its restating model ${restateWith ?? ""} is not a provider/id in Pi's model registry` };
   }
   const limited = AbortSignal.any([signal, AbortSignal.timeout(CLAIMCHECK_TIME_LIMIT_MS)]);
-  const first = await recorded<{ informalizations: Informalization[] }>(ctx, restater, "record_informalizations",
+  const first = await recorded<{ informalizations: Informalization[] }>(ctx, restater, comparing, "record_informalizations",
     informalizationSchema, informalizePrompt(items), limited);
   if (typeof first === "string") return { status: "not_judged", reason: first };
-  const second = await recorded<{ comparisons: Comparison[] }>(ctx, model, "record_comparisons", comparisonSchema,
+  const second = await recorded<{ comparisons: Comparison[] }>(ctx, model, comparing, "record_comparisons", comparisonSchema,
     comparePrompt(requests, items, first.informalizations), limited);
   if (typeof second === "string") return { status: "not_judged", reason: second };
   return claimcheckResult({ restatedBy: named(restater), comparedBy: named(model) }, items, second.comparisons);
