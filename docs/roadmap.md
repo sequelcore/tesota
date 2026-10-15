@@ -28,6 +28,15 @@ line-by-line reading it replaced also hid changes in Go, so it was
 reprioritized and done on 2026-10-14
 ([#394](https://github.com/sequelcore/tesota/issues/394)).
 
+`prove` turns on once the agent writes a project's first contract. A skill
+for writing contracts was measured on 2026-10-15 and does not ship: with or
+without one, agents asked for a first contract wrote one that proved and
+ruled out the bug in nearly every run, Midspiral's LemmaScript skills helped
+a little on proofs that need loop invariants at about twice the tokens, and
+the README mentions them with that result
+([#387](https://github.com/sequelcore/tesota/issues/387),
+[measurements](design/verification.md#measurements)).
+
 The run ends with a receipt that `tesota receipt` writes for a pull request,
 and the footer shows the gate's progress and the receipt's summary. The
 `tesota` command opens Pi under the palo fierro, in Tesota's theme until
@@ -60,16 +69,16 @@ each one's issue and pull requests.
   not ship: it kept most false findings and lost real ones
   ([measurements](design/verification.md#measurements)). A redesign that
   grounds a finding's expected behavior in the request, a contract or a test
-  the operator approves is proposed on the issue.
+  the operator approves is proposed on the issue, and in
+  [#397](https://github.com/sequelcore/tesota/issues/397). #387's
+  measurement adds to it: on requests that leave a case open, agents settled
+  it differently from run to run, each with a contract that proves, and
+  rarely said so.
 - **A workspace of several repositories**
   ([#384](https://github.com/sequelcore/tesota/issues/384)). Opened in a
   folder that holds several Git repositories but is not one, Tesota verifies
   nothing today. It is to take a base per repository, verify each one the
   request changed with its own commands, and settle with one receipt.
-- **A skill for writing and strengthening contracts**
-  ([#387](https://github.com/sequelcore/tesota/issues/387)), shipped in the
-  package, so an agent can write the first contract where there is none.
-  Measured before a release.
 - **Remote work: Happier recommended**
   ([#388](https://github.com/sequelcore/tesota/issues/388)). The owner accepts
   Happier for Android session use. Tesota remains a Pi extension; Happier is
