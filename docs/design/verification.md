@@ -157,7 +157,8 @@ removing or loosening a contract or adding `//@ assume`. After a failed or
 vacuous proof, the result says what to try next. A pass says every
 contract holds only when the files the proof checked take nothing on trust
 and leave nothing out (`provedOnTrust`): each `//@ assume`, `//@ extern`
-and `//@ skip` of the source, and each `assume`, `{:axiom}` and lemma
+and `//@ skip` of the source, each function with a contract that a
+`//@ verify` on others leaves out, and each `assume`, `{:axiom}` and lemma
 without a body written into the `.dfy` by hand. Otherwise it reads
 `Proved, but not outright`, names each one in the receipt's words, and asks
 the agent to say so in its summary
@@ -189,6 +190,11 @@ as unchanged (`weakens`, proved).
   statement inside one of them, named by the one that holds it. Every skip
   reads the same, so a skip only moved when it leaves out the same thing on
   both sides ([#404](https://github.com/sequelcore/tesota/issues/404)).
+  Likewise a function the base proved that a `//@ verify` leaves out: once
+  any function in a file carries one, LemmaScript extracts only those, any
+  it trusts with `//@ extern`, and none of the rest, without a word
+  (`extracted`, proved). Each such function is listed, under the
+  `//@ verify` that leaves it out.
 - **Dafny proofs:** an added `assume` or `{:axiom}` line in a `.dfy`, or a
   lemma left without a body, which Dafny takes as an axiom, when it was
   written by hand. A line the proof's last generated program (its
@@ -345,8 +351,9 @@ A file that proved covers only some of its changed lines (`uncoveredLines`).
 A line is covered when it lies inside a function with a contract, from the
 first annotation to the closing brace, and the change did not narrow that
 contract (`proofCovered`, proved). A function LemmaScript skips with
-`//@ skip` has no contract (`contracts`), so none of its lines is covered,
-and mutation and ClaimCheck leave it out.
+`//@ skip`, or leaves out because the file selects others with
+`//@ verify`, has no contract (`contracts`), so none of its lines is
+covered, and mutation and ClaimCheck leave it out.
 
 The weakening list decides narrowing:
 

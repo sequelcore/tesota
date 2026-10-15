@@ -3,6 +3,7 @@ import type { ts as TypeScript } from "ts-morph";
 import { type ClaimCheck, type Comparison, claimCheck } from "./pi-claimcheck.js";
 import { type MutationResult, mutateContract } from "./proof-mutation.js";
 import { typescript } from "./typescript-source.js";
+import { extracted } from "./verification/selection-rule.js";
 
 /**
  * How strong the contracts a request added or changed are, once they proved:
@@ -49,29 +50,61 @@ function declared(ts: typeof TypeScript, statement: TypeScript.Statement):
 const functionAnnotation = /^\/\/@ (?:verify|requires|ensures|contract|decreases|type)(?:\s|$)/u;
 
 /**
+ * The top-level functions LemmaScript considers in a statement, with or
+ * without a name: a function declaration, a variable set to an arrow
+ * function, and an arrow function passed to a top-level call, which it
+ * extracts only when it carries `//@ verify`.
+ */
+function considered(ts: typeof TypeScript, statement: TypeScript.Statement): TypeScript.Node[] {
+  if (ts.isFunctionDeclaration(statement)) return [statement];
+  if (ts.isVariableStatement(statement)) return declared(ts, statement).map(({ fn }) => fn);
+  return ts.isExpressionStatement(statement) && ts.isCallExpression(statement.expression)
+    ? statement.expression.arguments.filter((argument) => ts.isArrowFunction(argument)) : [];
+}
+
+/** Whether `text` holds a `//@ word` line, as LemmaScript's `hasLineDirective` reads it. */
+function directive(text: string, word: string): boolean {
+  return new RegExp(String.raw`^[ \t]*//@ ${word}\b`, "mu").test(text);
+}
+
+interface Annotated {
+  readonly contract: Contract;
+  readonly skipped: boolean;
+  readonly extracted: boolean;
+}
+
+/**
  * Each top-level function's contract, read where LemmaScript reads it: the
  * `//@` comments leading the declaration, and the function annotations
  * leading its body's first statement. An arrow function's leading comments
  * are its statement's when it returns an expression, and none when it has a
  * block body. Any comment or blank line between an annotation and what it
- * leads keeps it attached, and code detaches it. A function LemmaScript
- * skips (`//@ skip`) has no contract, since nothing proves it.
+ * leads keeps it attached, and code detaches it. Each says whether
+ * LemmaScript skips the function (`//@ skip`) and whether it extracts it
+ * into the program it proves (`extracted`), which it does not for a function
+ * left unselected in a file that selects others with `//@ verify`.
  */
-export function contracts(path: string, source: string): Contract[] {
+function annotated(path: string, source: string): Annotated[] {
   const ts = typescript();
   const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true);
   const lines = source.split(/\r?\n/u);
   const lineOf = (position: number): number => file.getLineAndCharacterOfPosition(position).line + 1;
+  const comments = (position: number): TypeScript.CommentRange[] => ts.getLeadingCommentRanges(source, position) ?? [];
   const leading = (position: number, keep: (text: string) => boolean): { line: number; text: string }[] =>
-    (ts.getLeadingCommentRanges(source, position) ?? []).flatMap(({ kind, pos, end }) => {
+    comments(position).flatMap(({ kind, pos, end }) => {
       const text = source.slice(pos, end).trim();
       return kind === ts.SyntaxKind.SingleLineCommentTrivia && text.startsWith("//@") && keep(text) ? [{ line: lineOf(pos), text }] : [];
     });
   // LemmaScript's `hasSkip`: a `//@ skip` leading the statement, or an arrow function itself, leaves the function out of the proof.
-  const skips = (position: number): boolean => (ts.getLeadingCommentRanges(source, position) ?? [])
-    .some(({ pos, end }) => /^[ \t]*\/\/@ skip\b/mu.test(source.slice(pos, end)));
+  const skips = (position: number): boolean => comments(position).some(({ pos, end }) => directive(source.slice(pos, end), "skip"));
+  // LemmaScript scans a function's whole text, its leading comments and body included, and its statement's leading comments.
+  const scans = (statement: TypeScript.Statement, fn: TypeScript.Node, word: string): boolean =>
+    directive(source.slice(fn.pos, fn.end), word) || comments(statement.pos).some(({ pos, end }) => directive(source.slice(pos, end), word));
+  const selective = file.statements.some((statement) => considered(ts, statement).some((fn) =>
+    !skips(statement.pos) && !skips(fn.pos) && !scans(statement, fn, "extern") && scans(statement, fn, "verify"))) ||
+    file.statements.some((statement) => ts.isClassDeclaration(statement) && !skips(statement.pos) && statement.members.some((member) =>
+      ts.isMethodDeclaration(member) && !skips(member.pos) && directive(source.slice(member.pos, member.end), "verify")));
   return file.statements.flatMap((statement) => declared(ts, statement).flatMap(({ name, fn }) => {
-    if (skips(statement.pos) || skips(fn.pos)) return [];
     const block = fn.body !== undefined && ts.isBlock(fn.body) ? fn.body : undefined;
     const readsAbove = ts.isFunctionDeclaration(fn) || block === undefined;
     const first = block?.statements[0];
@@ -83,12 +116,29 @@ export function contracts(path: string, source: string): Contract[] {
     const endLine = lineOf(statement.getStart(file));
     const body: [number, number] = block !== undefined ? [block.getStart(file) + 1, block.getEnd() - 1]
       : fn.body !== undefined ? [fn.body.getStart(file), fn.body.getEnd()] : [statement.getEnd(), statement.getEnd()];
-    return [{ path, name: name.text, line: Math.min(start.line, endLine), endLine, bodyEnd: lineOf(statement.getEnd()),
-      text: [...above.map(({ text }) => text), (lines[endLine - 1] ?? "").trim(), ...inside.map(({ text }) => text)].join("\n"),
-      annotations, readsAbove, nameAt: name.getStart(file), body,
-      parameters: fn.parameters.every(({ name: parameter }) => ts.isIdentifier(parameter))
-        ? fn.parameters.map(({ name: parameter }) => parameter.getText(file)) : undefined }];
+    const skipped = skips(statement.pos) || skips(fn.pos);
+    return [{ skipped, extracted: extracted(skipped, scans(statement, fn, "extern"), selective, scans(statement, fn, "verify")),
+      contract: { path, name: name.text, line: Math.min(start.line, endLine), endLine, bodyEnd: lineOf(statement.getEnd()),
+        text: [...above.map(({ text }) => text), (lines[endLine - 1] ?? "").trim(), ...inside.map(({ text }) => text)].join("\n"),
+        annotations, readsAbove, nameAt: name.getStart(file), body,
+        parameters: fn.parameters.every(({ name: parameter }) => ts.isIdentifier(parameter))
+          ? fn.parameters.map(({ name: parameter }) => parameter.getText(file)) : undefined } }];
   }));
+}
+
+/** The contracts LemmaScript proves (`annotated`): a function it skips or leaves unselected has none, since nothing proves it. */
+export function contracts(path: string, source: string): Contract[] {
+  return annotated(path, source).flatMap(({ contract, extracted: proved }) => proved ? [contract] : []);
+}
+
+/**
+ * The contracts LemmaScript leaves out of the proof because the file selects
+ * other functions with `//@ verify` (`annotated`): annotated, never proved,
+ * and with no line of their own that says so. A skipped function is not
+ * among them; its `//@ skip` says so.
+ */
+export function unselectedContracts(path: string, source: string): Contract[] {
+  return annotated(path, source).flatMap(({ contract, skipped, extracted: proved }) => !proved && !skipped ? [contract] : []);
 }
 
 /** A contract's `//@` lines, the same whatever the indentation. */
