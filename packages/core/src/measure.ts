@@ -68,8 +68,8 @@ const tenths = (ms: number): number => Math.round(ms * 10) / 10;
 export function measureLoop(): Promise<void> {
   let baseMs = 0;
   const syncs: number[] = [];
-  /** When settlement began and ended, and how many syncs came before it began. */
-  let settling: { started: number; syncsBefore: number; ended?: number } | undefined;
+  /** When settlement began and ended, and how many syncs came before each. */
+  let settling: { started: number; syncsBefore: number; ended?: number; syncsAtEnd?: number } | undefined;
   const captureTimed: NonNullable<SessionOptions["captureBase"]> = async (cwd) => {
     const started = performance.now();
     try { return await captureBase(cwd); } finally { baseMs += performance.now() - started; }
@@ -78,7 +78,7 @@ export function measureLoop(): Promise<void> {
     ...writer,
     append: (entry) => {
       if (entry.type === "settle" && settling === undefined) settling = { started: performance.now(), syncsBefore: syncs.length };
-      if (entry.type === "run_end" && settling !== undefined) settling.ended = performance.now();
+      if (entry.type === "run_end" && settling !== undefined) { settling.ended = performance.now(); settling.syncsAtEnd = syncs.length; }
       writer.append(entry);
     },
     sync: () => {
@@ -90,7 +90,7 @@ export function measureLoop(): Promise<void> {
     const runMs = await run();
     const syncedMs = syncs.reduce((sum, ms) => sum + ms, 0);
     const sorted = [...syncs].sort((a, b) => a - b);
-    const settleSyncs = syncs.slice(settling?.syncsBefore ?? syncs.length).reduce((sum, ms) => sum + ms, 0);
+    const settleSyncs = syncs.slice(settling?.syncsBefore ?? 0, settling?.syncsAtEnd ?? 0).reduce((sum, ms) => sum + ms, 0);
     const settleMs = settling?.ended === undefined ? 0 : settling.ended - settling.started - settleSyncs;
     return { settleMs: Math.round(settleMs * 100) / 100, loopMs: tenths(runMs - baseMs - syncedMs), baseMs: tenths(baseMs), syncMs: Math.round((sorted[Math.floor(sorted.length / 2)] ?? 0) * 100) / 100,
       syncCount: syncs.length, loopRssBytes: process.memoryUsage().rss };
