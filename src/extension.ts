@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "./contract.js";
 import { FilledEditor } from "./editor.js";
 import { EvidenceFooter } from "./footer.js";
-import { registerGate } from "./gate.js";
+import { type RecordedRequest, registerGate } from "./gate.js";
 import { registerMessages } from "./messages.js";
 import { suggestChecks } from "./projects.js";
 import { annotated, hasContracts, proveTool } from "./prove-tool.js";
@@ -18,9 +18,9 @@ import { mountWelcomeHeader, TUMBLEWEED_FRAME_MS, tumbleweedFrames, WelcomeHeade
  * while a changed file's contracts do not prove (`registerGate`), and styles
  * the gate's messages and receipt (`registerMessages`).
  */
-export default function tesota(pi: ExtensionAPI): void {
+export default function tesota(pi: ExtensionAPI, recorded?: () => RecordedRequest | undefined): void {
   pi.registerTool(proveTool);
-  const progress = registerGate(pi);
+  const progress = registerGate(pi, recorded);
   registerMessages(pi);
   pi.on("session_start", (_event, ctx) => {
     const contracts = hasContracts(ctx.cwd);

@@ -5,7 +5,7 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
-import type { Session } from "../src/contract.ts";
+import type { Session } from "../../../src/contract.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { readSessionFile, SessionFileError } from "../src/session-file.ts";
 import { SessionLockedError } from "../src/session-lock.ts";

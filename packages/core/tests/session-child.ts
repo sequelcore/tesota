@@ -2,7 +2,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "typebox";
-import type { ExtensionFactory } from "../src/contract.ts";
+import type { ExtensionFactory } from "../../../src/contract.ts";
 import { createSession, openSession } from "../src/session.ts";
 import { SessionLockedError } from "../src/session-lock.ts";
 import type { EngineTool } from "../src/tool.ts";

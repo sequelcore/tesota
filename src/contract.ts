@@ -1,12 +1,15 @@
 /**
  * What Tesota uses from its host, written down from Pi 1.3.0 (#433). Names
- * and shapes follow Pi's extension API, so Tesota's verification ports to
- * `@tesota/core` without renaming anything. Only what Tesota uses is here;
- * the terminal interface (`ctx.ui`, message renderers, themes, components)
- * moves to the shell and is not part of the contract. The conformance tests in `tests/` check
- * every engine against it, with Pi as the reference.
+ * and shapes follow Pi's extension API, so Tesota's code runs on either
+ * engine without renaming anything (#441). Only what Tesota uses is here.
+ * The terminal interface (`ctx.ui`, message renderers, themes, components)
+ * moves to the shell; until the shell exists (slice 6 of #432) the part
+ * Tesota calls is typed from Pi (`ShellUI`, `ShellAPI`), and an engine with
+ * no shell does nothing with it, as Pi's print mode. The conformance tests
+ * in `tests/` check every engine against it, with Pi as the reference.
  */
 import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { ExtensionAPI as PiExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import type { Static, TSchema } from "typebox";
 
 /** How a run ended, as settle handlers see it. */
@@ -120,8 +123,16 @@ export interface ModelRegistry {
   complete(model: Model<Api>, context: Context, options?: { signal?: AbortSignal }): Promise<AssistantMessage>;
 }
 
+/** What Tesota draws through the shell; temporary until the shell owns it (slice 6 of #432). */
+export type ShellUI = Pick<ExtensionUIContext, "setHeader" | "setFooter" | "setEditorComponent" | "setWorkingIndicator" | "setStatus"
+  | "theme">;
+
+/** How Tesota registers what the shell draws; temporary until the shell owns it (slice 6 of #432). */
+export type ShellAPI = Pick<PiExtensionAPI, "registerMessageRenderer">;
+
 /** What a handler knows about the session it runs in. */
 export interface ExtensionContext {
+  readonly ui: ShellUI;
   readonly cwd: string;
   readonly mode: string;
   readonly model: Model<Api> | undefined;
@@ -134,12 +145,22 @@ export interface ExtensionContext {
 export interface ToolResult<Details = unknown> {
   content: { type: "text"; text: string }[];
   details: Details;
+  /** The call failed, as a thrown error also says. */
+  isError?: boolean;
 }
 
 export interface ToolDefinition<Parameters extends TSchema = TSchema, Details = unknown> {
   name: string;
   label: string;
   description: string;
+  /** One line for the system prompt's list of tools while the tool is active. */
+  promptSnippet?: string;
+  /** Rules for the system prompt while the tool is active. */
+  promptGuidelines?: string[];
+  /** False keeps the tool from the model until an extension activates it. */
+  defaultActive?: boolean;
+  /** `sequential`: the call runs alone. */
+  executionMode?: "sequential" | "parallel";
   parameters: Parameters;
   execute(toolCallId: string, params: Static<Parameters>, signal: AbortSignal | undefined, onUpdate: undefined,
     ctx: ExtensionContext): Promise<ToolResult<Details>>;
@@ -152,7 +173,7 @@ export type FlagOptions =
   | { description?: string; type: "string"; default?: string };
 
 /** The API an extension receives when its session loads it. */
-export interface ExtensionAPI {
+export interface ExtensionAPI extends ShellAPI {
   on(event: "session_start", handler: Handler<SessionStartEvent, void>): void;
   on(event: "input", handler: Handler<InputEvent, InputResult | undefined>): void;
   on(event: "tool_execution_start", handler: Handler<ToolExecutionStartEvent, void>): void;

@@ -40,11 +40,16 @@ observations and human acceptance are different claims.
 
 The engine, `@tesota/core` in `packages/core`, is being built in slices
 ([#432](https://github.com/sequelcore/tesota/issues/432)).
-`packages/core/src/contract.ts` defines the contract Tesota uses from its
+`src/contract.ts` defines the contract Tesota uses from its
 host, and the conformance tests check each engine against it, with Pi as the
-reference. A guarantee Tesota needs and Pi lacks is tested as expected to
-fail on Pi; a test of a capability `@tesota/core` has not built yet is
-skipped, naming the slice that brings it. The loop and tool tests run the
+reference. `src/` takes the extension API from it, so Tesota's own
+extension compiles and runs unchanged on either engine: Pi loads it as an
+extension, `@tesota/core` as the session's verifier. Until the shell exists,
+the part of the terminal interface Tesota calls is typed from Pi, and the
+engine, with no shell, does nothing with it, as Pi's print mode. A guarantee
+Tesota needs and Pi lacks is tested as expected to fail on Pi; a test of a
+capability `@tesota/core` has not built yet is skipped, naming the slice
+that brings it. The loop and tool tests run the
 same scripts on both engines and check effects, not wording. The engine's
 shell tool is PowerShell on Windows (PowerShell 7 when installed, otherwise
 Windows PowerShell 5.1; CI runs both) and bash elsewhere; its process

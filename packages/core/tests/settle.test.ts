@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionFactory, RunOutcome, SettleEvent, SettleResult } from "../src/contract.ts";
+import type { ExtensionFactory, RunOutcome, SettleEvent, SettleResult } from "../../../src/contract.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { continuationLimit } from "../src/settle-rule.ts";
 import type { ScriptStep } from "./engine.ts";
@@ -114,7 +114,7 @@ describe("a run that does not complete is finalized once, with its reason", () =
     const models = createModels();
     models.setProvider(faux.provider);
     const throwing = Object.assign(Object.create(models) as Models,
-      { stream: () => { throw new Error("quota exhausted"); } });
+      { streamSimple: () => { throw new Error("quota exhausted"); } });
     const run = session([], { models: throwing, model: faux.getModel(), verifier: recording(seen) });
     await run.prompt("go");
     expect(seen.map(({ outcome, reason }) => [outcome, reason])).toEqual([["error", "quota exhausted"]]);

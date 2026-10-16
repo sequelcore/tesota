@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Evidence } from "../../../src/evidence.ts";
 import type { ProofOutcome } from "../../../src/verification/proof-outcome-rule.ts";
-import type { ExtensionFactory } from "../src/contract.ts";
+import type { ExtensionFactory } from "../../../src/contract.ts";
 import { createSession, type EngineSession, type SessionOptions } from "../src/session.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply } from "./scripted.ts";
@@ -90,7 +90,7 @@ describe("the gate on @tesota/core", () => {
     const session = gated(repository(), [edit(changed), "done", edit(`${changed}// fixed\n`), "fixed", "no restatement"]);
     await session.prompt("change f");
     expect(session.messages().map((message) => message.customType ?? message.role)).toEqual(
-      ["user", "assistant", "toolResult", "assistant", "tesota-gate", "assistant", "toolResult", "assistant", "tesota-receipt"]);
+      ["user", "assistant", "toolResult", "assistant", "tesota-gate", "assistant", "toolResult", "assistant"]);
     expect(session.outcome()).toBe("completed");
     expect(receiptOf(session)?.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "proved" }]);
   });
@@ -104,13 +104,17 @@ describe("the gate on @tesota/core", () => {
     expect(receiptOf(session)?.proofs).toMatchObject([{ path: "src/rule.ts", verdict: "no_progress" }]);
   });
 
-  test("in print mode the receipt stays outside the conversation", async () => {
-    const session = gated(repository(), [{ tool: "write", args: { path: "notes.md", content: "# Notes\n" } }, "done"], { mode: "print" });
-    await session.prompt("add notes");
-    expect(session.messages().some((message) => message.customType === "tesota-receipt")).toBe(false);
-    expect(entriesOf(session.file)).toContainEqual(expect.objectContaining({ type: "custom", customType: "tesota-receipt" }));
-    expect(session.lastAssistantText()).toBe("done");
-    expect(session.outcome()).toBe("completed");
+  test("with no shell the receipt stays outside the conversation, and in the shell's mode it is a message in it", async () => {
+    const write: ScriptStep = { tool: "write", args: { path: "notes.md", content: "# Notes\n" } };
+    const headless = gated(repository(), [write, "done"]);
+    await headless.prompt("add notes");
+    expect(headless.messages().some((message) => message.customType === "tesota-receipt")).toBe(false);
+    expect(entriesOf(headless.file)).toContainEqual(expect.objectContaining({ type: "custom", customType: "tesota-receipt" }));
+    expect(headless.lastAssistantText()).toBe("done");
+    expect(headless.outcome()).toBe("completed");
+    const shown = gated(repository(), [write, "done"], { mode: "tui" });
+    await shown.prompt("add notes");
+    expect(shown.messages().at(-1)?.customType).toBe("tesota-receipt");
   });
 
   test("an extension that ends settlement and drops every entry cannot silence it", async () => {

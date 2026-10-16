@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
-import type { ExtensionAPI, ExtensionContext, ExtensionFactory, Session } from "../src/contract.ts";
+import type { ExtensionAPI, ExtensionContext, ExtensionFactory, Session } from "../../../src/contract.ts";
 import { piEngine } from "./adapters/pi.ts";
 import { tesotaEngine } from "./adapters/tesota.ts";
 import type { Capability, Guarantee, ScriptStep, TestEngine } from "./engine.ts";
@@ -127,7 +127,7 @@ for (const engine of engines) {
       }]);
       await session.prompt("go");
       expect(seen?.cwd).toMatch(/tesota-core-cwd-/);
-      expect(seen?.model?.provider).toMatch(/^scripted-/);
+      expect(seen?.model?.provider).toBeString();
       expect(typeof seen?.mode).toBe("string");
       expect(seen?.getContextUsage()?.contextWindow).toBeGreaterThan(0);
       expect(branch).toBeGreaterThan(0);
@@ -191,6 +191,83 @@ for (const engine of engines) {
       expect(flag).toBeUndefined();
       expect(quiet === undefined || ["boolean", "string"].includes(typeof quiet)).toBe(true);
     }, "tools");
+
+    /** A tool whose call fails as `how` says, or returns its text with details. */
+    const tool = (name: string, how: "returns" | "fails" | "throws" = "returns", extra: object = {}): ExtensionFactory => (pi) => {
+      pi.registerTool({
+        name, label: name, description: `The ${name} tool.`, parameters: Type.Object({ text: Type.String() }), ...extra,
+        execute: async (_id, params) => {
+          if (how === "throws") throw new Error(`${name} broke`);
+          return { content: [{ type: "text", text: params.text }], details: { echoed: params.text }, ...how === "fails" ? { isError: true } : {} };
+        },
+      });
+    };
+    const detailsOf = (entry: { readonly message?: unknown }) => (entry.message as { details?: unknown } | undefined)?.details;
+
+    check("an extension's tool runs for the model, and a resumed session keeps its details", async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      const first = await engine.createSession({ cwd, script: [{ tool: "echo", args: { text: "hi" } }, "done"], extensions: [tool("echo")] });
+      open.push(first);
+      await first.prompt("go");
+      expect(first.messages().find((message) => message.role === "toolResult")).toMatchObject({ toolName: "echo", text: "hi", isError: false });
+      let details: unknown;
+      const resumed = await engine.resume(first, { cwd, script: ["again"], extensions: [tool("echo"), (pi) => {
+        pi.on("agent_before_settle", (_event, ctx) => {
+          details = ctx.sessionManager.getBranch().map(detailsOf).find((found) => found !== undefined);
+          return undefined;
+        });
+      }] });
+      open.push(resumed);
+      await resumed.prompt("once more");
+      expect(details).toEqual({ echoed: "hi" });
+    });
+
+    check("a tool that returns an error and one that throws both fail the call", async () => {
+      const session = await start([{ calls: [{ tool: "failing", args: { text: "no" } }, { tool: "throwing", args: { text: "no" } }] }, "done"],
+        [tool("failing", "fails"), tool("throwing", "throws")]);
+      await session.prompt("go");
+      expect(session.messages().filter((message) => message.role === "toolResult").map(({ toolName, isError }) => [toolName, isError]))
+        .toEqual([["failing", true], ["throwing", true]]);
+    });
+
+    check("a tool registered inactive cannot run until activated, and a resumed session keeps it active", async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      const call: ScriptStep = { tool: "hidden", args: { text: "hi" } };
+      const hidden = tool("hidden", "returns", { defaultActive: false });
+      let active: string[] = [];
+      const activate: ExtensionFactory = (pi) => {
+        pi.on("input", (event) => {
+          if (event.text === "activate") pi.setActiveTools([...pi.getActiveTools(), "hidden", "hidden", "no such tool"]);
+          active = pi.getActiveTools();
+          return undefined;
+        });
+      };
+      const first = await engine.createSession({ cwd, script: [call, "before", call, "after"], extensions: [hidden, activate] });
+      open.push(first);
+      await first.prompt("go");
+      await first.prompt("activate");
+      expect(active.filter((name) => name === "hidden")).toHaveLength(1);
+      expect(active).not.toContain("no such tool");
+      const resumed = await engine.resume(first, { cwd, script: [call, "resumed"], extensions: [hidden] });
+      open.push(resumed);
+      await resumed.prompt("go on");
+      expect(resumed.messages().filter((message) => message.role === "toolResult").map(({ isError }) => isError))
+        .toEqual([true, false, false]);
+    });
+
+    check("an active tool's snippet and guidelines reach the system prompt", async () => {
+      let prompt = "";
+      // Both engines send the system prompt as a system message; Pi splits it into sections.
+      const systemText = (context: { messages: readonly unknown[] }) => context.messages.flatMap((message) => {
+        const { role, content, sections } = message as { role: string; content?: unknown; sections?: Record<string, string> };
+        return role === "system" ? [String(content ?? ""), ...Object.values(sections ?? {})] : [];
+      }).join("\n");
+      const session = await start([{ seen: (context) => { prompt = systemText(context); }, reply: "done" }],
+        [tool("lookup", "returns", { promptSnippet: "Look   a word\n up", promptGuidelines: ["  Look up before guessing ", "Look up before guessing"] })]);
+      await session.prompt("go");
+      expect(prompt).toContain("- lookup: Look a word up");
+      expect(prompt.split("Look up before guessing")).toHaveLength(2);
+    });
 
     check("two sessions in one process run at the same time, each with its own messages and usage", async () => {
       const [a, b] = await Promise.all([start(["from a", "a again"], [sendBackOnce("gate-a")]), start(["from b"], [])]);

@@ -1,7 +1,8 @@
 import { readFileSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import type { AgentToolResult, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { AgentToolResult, Theme, ToolDefinition as PiToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ToolDefinition, ToolResult } from "./contract.js";
 import { type TObject, type TString, Type } from "typebox";
 import { type Evidence, proofSummary, quietOutput } from "./evidence.js";
 import { bold, expandHint, Rows, spread, wrapUnder } from "./messages.js";
@@ -133,7 +134,7 @@ export interface ProveDetails {
   readonly trusted: readonly OnTrust[];
 }
 
-function text(content: string): AgentToolResult<ProveDetails | undefined> {
+function text(content: string): ToolResult<ProveDetails | undefined> {
   return { content: [{ type: "text", text: content }], details: undefined };
 }
 
@@ -142,7 +143,7 @@ function text(content: string): AgentToolResult<ProveDetails | undefined> {
  * an error unless the proof passed with every specification line read.
  */
 function proved(path: string, evidence: Evidence, trusted: readonly OnTrust[], unread: readonly { line: number; text: string }[]):
-  AgentToolResult<ProveDetails | undefined> {
+  ToolResult<ProveDetails | undefined> {
   return { content: [{ type: "text", text: proofReport(path, evidence, true, trusted, unread) }], details: { path, evidence, trusted },
     ...evidence.outcome === "passed" && unread.length === 0 ? {} : { isError: true } };
 }
@@ -190,7 +191,10 @@ const parameters: TObject<{ path: TString }> = Type.Object({ path: Type.String({
  * runs alone, since the evidence must describe the files as no other tool
  * call left them mid-proof.
  */
-export const proveTool: ToolDefinition<typeof parameters, ProveDetails | undefined> = {
+/** How the shell draws a call and its result; Pi's until the shell owns them (slice 6 of #432). */
+type Drawn = Pick<PiToolDefinition<typeof parameters, ProveDetails | undefined>, "renderCall" | "renderResult">;
+
+export const proveTool: ToolDefinition<typeof parameters, ProveDetails | undefined> & Drawn = {
   name: "prove", label: "Prove",
   description: "Run LemmaScript with Dafny on one TypeScript file with //@ annotations and report whether its " +
     "contracts are proved. It first regenerates the file's .dfy proof, keeping the proof lines you added, as " +

@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "./contract.js";
 import { type TSchema, Type } from "typebox";
 import { Value } from "typebox/value";
 import type { Contract } from "./proof-guarantees.js";

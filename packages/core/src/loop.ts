@@ -1,12 +1,13 @@
 import {
-  type Api, type AssistantMessage, type Message, type Model, type Models, type ToolCall, type ToolResultMessage,
+  type Api, type AssistantMessage, type JsonValue, type Message, type Model, type Models, type ModelThinkingLevel, type ToolCall, type ToolResultMessage,
   validateToolArguments,
 } from "@earendil-works/pi-ai";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Base, captureBase } from "./base.ts";
-import type { EntryDraft, ExtensionFactory, RunOutcome, Session, SessionOutcome } from "./contract.ts";
+import type { BranchEntry, EntryDraft, ExtensionFactory, RunOutcome, Session, SessionOutcome, ToolDefinition } from "../../../src/contract.ts";
+import { contextUsage } from "./context-usage.ts";
 import { conversationMessage } from "./conversation.ts";
 import { createHost, type PhaseResult } from "./extensions.ts";
 import type { Behavior, Origin, SessionWriter, SettlePhase } from "./session-file.ts";
@@ -36,6 +37,10 @@ export interface LoopOptions {
   readonly mode?: string;
   /** The operator's flag values, by name. */
   readonly flags?: Readonly<Record<string, boolean | string>>;
+  /** How hard a reasoning model thinks; `off` when not given, and for a model that does not reason. */
+  readonly thinkingLevel?: ModelThinkingLevel;
+  /** The session's entries as Pi's branch shapes them, for extensions that read it. */
+  readonly branch: () => BranchEntry[];
 }
 
 /** A message a settle handler added: the conversation keeps it as it came, and the model reads it as the operator's. */
@@ -57,30 +62,62 @@ export interface LoopState {
   readonly amendments: number;
   readonly tokens: { readonly input: number; readonly output: number; readonly total: number };
   readonly outcome: SessionOutcome | undefined;
+  /** The tools the model could call when the session was last written, when an extension changed them. */
+  readonly activeTools?: readonly string[];
 }
 
-const defaultPrompt = (cwd: string): string =>
-  `You are a coding agent working in ${cwd}. Use the tools to read, change and run what the request needs.`;
+/**
+ * The engine's system prompt in `cwd` with the active tools: what each
+ * that has one says of itself, and their rules, trimmed and each once, in
+ * Pi's form (#441).
+ */
+export function defaultPrompt(cwd: string, active: readonly EngineTool[]): string {
+  const listed = active.flatMap(({ name, promptSnippet }) => promptSnippet === undefined || promptSnippet.trim() === "" ? []
+    : [`- ${name}: ${promptSnippet.replace(/\s+/gu, " ").trim()}`]);
+  const rules = [...new Set(active.flatMap(({ promptGuidelines }) => promptGuidelines ?? []).map((rule) => rule.trim())
+    .filter((rule) => rule !== ""))].map((rule) => `- ${rule}`);
+  return [`You are a coding agent working in ${cwd}. Use the tools to read, change and run what the request needs.`,
+    ...listed.length > 0 ? [`Available tools:\n${listed.join("\n")}`] : [],
+    ...rules.length > 0 ? [`Guidelines:\n${rules.join("\n")}`] : []].join("\n\n");
+}
 
-/** A call's result as the model sees it. */
+/** A call's result as the model sees it, with an extension tool's details. */
 export const toolResult = (call: Pick<ToolCall, "id" | "name">, output: ToolOutput, timestamp: number = Date.now()): ToolResultMessage => ({
   role: "toolResult", toolCallId: call.id, toolName: call.name, content: [{ type: "text", text: output.text }],
-  isError: output.isError, timestamp,
+  ...output.details === undefined ? {} : { details: output.details }, isError: output.isError, timestamp,
 });
 
 /** The conversation as the model reads it: a settle handler's message is context from the operator's side. */
 const modelContext = (history: readonly HistoryMessage[]): Message[] => history.map((message) =>
   message.role === "custom" ? { role: "user", content: message.content, timestamp: message.timestamp } : message);
 
-/** Runs one tool call: an unknown tool, invalid arguments or an exception become a failed call the model sees. */
+/**
+ * Runs one tool call: an unknown or inactive tool, invalid arguments or an
+ * exception become a failed call the model sees.
+ */
 async function execute(tools: readonly EngineTool[], call: ToolCall, signal: AbortSignal): Promise<ToolOutput> {
   const tool = tools.find((candidate) => candidate.name === call.name);
   if (tool === undefined) return { text: `Tool "${call.name}" not found.`, isError: true };
   try {
-    return await tool.execute(validateToolArguments(tool, call) as never, signal);
+    return await tool.execute(validateToolArguments(tool, call) as never, signal, call.id);
   } catch (error) {
     return { text: error instanceof Error ? error.message : String(error), isError: true };
   }
+}
+
+/** An extension's tool as the engine runs it: its text parts joined, its details kept, and a returned `isError` a failure (#441). */
+function extensionTool(tool: ToolDefinition, context: (signal: AbortSignal) => Parameters<ToolDefinition["execute"]>[4]): EngineTool {
+  const { name, description, parameters, promptSnippet, promptGuidelines } = tool;
+  return {
+    name, description, parameters,
+    ...promptSnippet === undefined ? {} : { promptSnippet }, ...promptGuidelines === undefined ? {} : { promptGuidelines },
+    execute: async (args, signal, callId) => {
+      const result = await tool.execute(callId, args, signal, undefined, context(signal));
+      // Details are stored as JSON, as Pi stores them.
+      return { text: result.content.map((part) => part.text).join(""), isError: result.isError === true,
+        ...result.details === undefined ? {} : { details: result.details as JsonValue } };
+    },
+  };
 }
 
 const truncatedCall = (call: ToolCall): ToolOutput => ({
@@ -91,6 +128,38 @@ const truncatedCall = (call: ToolCall): ToolOutput => ({
 const stoppedCall: ToolOutput = { text: "Not run: the operator stopped the agent.", isError: true };
 
 const stoppedReason = "the operator stopped the run";
+
+/**
+ * A session's tools and which the model may call, in the order they came
+ * (#441). An extension's tool is active unless it says otherwise; setting
+ * the active tools ignores unknown names and repeats, and is recorded, so
+ * a resumed session has the tools it had.
+ */
+function toolbox(tools: EngineTool[], writer: SessionWriter) {
+  let active = tools.map(({ name }) => name);
+  const known = (name: string): boolean => tools.some((tool) => tool.name === name);
+  return {
+    activeTools: (): EngineTool[] => active.flatMap((name) => tools.filter((tool) => tool.name === name)),
+    active: (): string[] => [...active],
+    register(tool: ToolDefinition, context: (signal: AbortSignal) => Parameters<ToolDefinition["execute"]>[4]): void {
+      if (known(tool.name)) throw new Error(`A tool named "${tool.name}" is already registered.`);
+      tools.push(extensionTool(tool, context));
+      if (tool.defaultActive !== false) active.push(tool.name);
+    },
+    setActive(names: readonly string[]): void {
+      const next = [...new Set(names)].filter(known);
+      if (next.join("\n") === active.join("\n")) return;
+      active = next;
+      writer.append({ type: "active_tools", names: next });
+    },
+    /** The tools a resumed session had, of those still registered; a session that never changed them keeps its own. */
+    restore(names: readonly string[] | undefined): void { if (names !== undefined) active = names.filter(known); },
+  };
+}
+
+/** The thinking level the provider is asked for: the session's for a model that reasons, `off` otherwise. */
+const thinkingOf = (model: Model<Api>, level: ModelThinkingLevel | undefined): ModelThinkingLevel =>
+  model.reasoning ? level ?? "off" : "off";
 
 /** An amendment waiting to enter the conversation. */
 interface Queued {
@@ -124,13 +193,19 @@ export function createLoop(options: LoopOptions): Session {
   let outcome = options.resumed?.outcome;
   let spoolFolder: string | undefined;
   const spool = (): string => (spoolFolder ??= mkdtempSync(join(tmpdir(), "tesota-core-output-")));
-  const tools = options.tools?.(spool) ?? codingTools(options.cwd, spool);
-  const declared = tools.map(({ name, description, parameters }) => ({ name, description, parameters }));
-  const systemPrompt = options.systemPrompt ?? defaultPrompt(options.cwd);
+  const tools = toolbox([...options.tools?.(spool) ?? codingTools(options.cwd, spool)], writer);
+  const thinkingLevel = thinkingOf(options.model, options.thinkingLevel);
   const base = options.captureBase ?? captureBase;
-  const host = createHost({ cwd: options.cwd, mode: options.mode ?? "tui", models: options.models, model: options.model,
-    activeTools: () => tools.map(({ name }) => name), ...options.flags === undefined ? {} : { flags: options.flags } },
-  options.extensions ?? [], options.verifier);
+  const promptFor = (): string => options.systemPrompt ?? defaultPrompt(options.cwd, tools.activeTools());
+  const host = createHost({
+    cwd: options.cwd, mode: options.mode ?? "print", models: options.models, model: options.model, thinkingLevel,
+    ...options.flags === undefined ? {} : { flags: options.flags },
+    tools: { register: (tool) => { tools.register(tool, (signal) => host.context(signal)); }, active: tools.active,
+      setActive: tools.setActive },
+    branch: options.branch,
+    contextUsage: () => contextUsage(history, promptFor(), options.model.contextWindow),
+  }, options.extensions ?? [], options.verifier);
+  tools.restore(options.resumed?.activeTools);
   const started = host.sessionStart({ type: "session_start", reason: options.resumed === undefined ? "startup" : "resume" });
   let controller: AbortController | undefined;
   let running: Promise<void> | undefined;
@@ -154,7 +229,9 @@ export function createLoop(options: LoopOptions): Session {
   async function reply(run: number, signal: AbortSignal): Promise<AssistantMessage | Ended> {
     let message: AssistantMessage;
     try {
-      const stream = options.models.stream(options.model, { systemPrompt, messages: modelContext(history), tools: declared }, { signal });
+      const declared = tools.activeTools().map(({ name, description, parameters }) => ({ name, description, parameters }));
+      const stream = options.models.streamSimple(options.model, { systemPrompt: promptFor(), messages: modelContext(history), tools: declared },
+        { signal, ...thinkingLevel === "off" ? {} : { reasoning: thinkingLevel } });
       for await (const _event of stream) { /* the shell will draw these; the loop needs only the result */ }
       message = await stream.result();
     } catch (error) {
@@ -194,7 +271,7 @@ export function createLoop(options: LoopOptions): Session {
         writer.append({ type: "call_intent", run, callId: call.id });
         writer.sync();
         await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal);
-        output = await execute(tools, call, signal);
+        output = await execute(tools.activeTools(), call, signal);
         await host.toolResult({ type: "tool_result", toolCallId: call.id, toolName: call.name, input: call.arguments,
           isError: output.isError }, signal);
       }

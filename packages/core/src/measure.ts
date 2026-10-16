@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureBase } from "./base.ts";
-import type { ExtensionFactory } from "./contract.ts";
+import type { ExtensionFactory } from "../../../src/contract.ts";
 import { createSession, type EngineSession, type SessionOptions, openSession } from "./session.ts";
 
 /** Tool rounds in the measured loop: each writes a file and reads it back. */

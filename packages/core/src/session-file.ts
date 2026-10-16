@@ -2,7 +2,7 @@ import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { closeSync, fsyncSync, ftruncateSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Base } from "./base.ts";
-import type { PromptOptions, RunOutcome, SessionOutcome } from "./contract.ts";
+import type { PromptOptions, RunOutcome, SessionOutcome } from "../../../src/contract.ts";
 
 /**
  * Tesota's session format (#437): one JSON Lines file per session, written
@@ -72,6 +72,8 @@ export type SessionEntry =
    */
   | { readonly type: "settled"; readonly run: number; readonly generation: number; readonly phase: SettlePhase;
     readonly continued: boolean; readonly errors: readonly string[]; readonly registered: boolean }
+  /** The tools the model may call from now on, as extensions set them (#441); a resumed session restores the last. */
+  | { readonly type: "active_tools"; readonly names: readonly string[] }
   /** How run `run` ended, and why when it did not complete. */
   | { readonly type: "run_end"; readonly run: number; readonly outcome: SessionOutcome; readonly reason?: string };
 
@@ -107,6 +109,7 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
   custom: (entry) => isText(entry["customType"]),
   settled: (entry) => Number.isInteger(entry["generation"]) && phases.has(entry["phase"] as string) && isFlag(entry["continued"])
     && Array.isArray(entry["errors"]) && entry["errors"].every(isText) && isFlag(entry["registered"]),
+  active_tools: (entry) => Array.isArray(entry["names"]) && entry["names"].every(isText),
   run_end: (entry) => isText(entry["outcome"]) && (entry["reason"] === undefined || isText(entry["reason"])),
 };
 
@@ -123,9 +126,11 @@ function entryAt(value: unknown, runs: number, previous: SessionEntry | undefine
   if (!isObject(value) || typeof value["type"] !== "string" || !(value["type"] in shapes)) return undefined;
   const type = value["type"] as SessionEntry["type"];
   const run = value["run"];
-  const placed = type === "request" ? run === runs + 1 : isCount(run) && (run as number) <= runs;
+  // The active tools belong to the session, not to a run: an extension sets them before the first.
+  const placed = type === "request" ? run === runs + 1
+    : type === "active_tools" ? run === undefined : isCount(run) && (run as number) <= runs;
   const completes = type === "run_end" && value["outcome"] === "completed";
-  return placed && shapes[type](value) && (!completes || (verifiedBy(previous) && previous?.run === run))
+  return placed && shapes[type](value) && (!completes || (previous?.type === "settled" && verifiedBy(previous) && previous.run === run))
     ? value as unknown as SessionEntry : undefined;
 }
 

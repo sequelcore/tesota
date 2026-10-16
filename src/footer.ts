@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { posix, sep } from "node:path";
-import type { ContextUsage, ReadonlyFooterDataProvider, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { ReadonlyFooterDataProvider, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage } from "./contract.js";
 import { type Component, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { GateProgress, GateStatus, Tally } from "./gate.js";
 import { addedAssumptions, allEvidence, type Receipt, receiptDecisions, verified } from "./receipt.js";

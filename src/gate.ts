@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type AgentBeforeSettleEventResult, type ExtensionAPI, type ExtensionContext, type SessionEntry,
-  VERSION } from "@earendil-works/pi-coding-agent";
+import { VERSION } from "@earendil-works/pi-coding-agent";
+import type { BranchEntry, ExtensionAPI, ExtensionContext, SettleResult } from "./contract.js";
 import { type ChangeStatus, type ChangedFile, changedLines } from "./diff-lines.js";
 import type { Evidence } from "./evidence.js";
 import { git, gitOutput, headCommit } from "./git.js";
@@ -330,9 +330,9 @@ export class GateProgress {
    * it: the last `tesota-receipt` entry on the branch, unless the operator
    * spoke later. Otherwise the status stays as it is.
    */
-  resume(branch: readonly SessionEntry[]): void {
+  resume(branch: readonly BranchEntry[]): void {
     const at = branch.findLastIndex((entry) => entryReceipt(entry) !== undefined);
-    const request = branch.findLastIndex((entry) => entry.type === "message" && entry.message.role === "user");
+    const request = branch.findLastIndex((entry) => entry.type === "message" && entry.message?.role === "user");
     const entry = branch[at];
     const receipt = at > request && entry !== undefined ? entryReceipt(entry) : undefined;
     if (isReceipt(receipt)) this.publish({ step: "settled", receipt });
@@ -435,7 +435,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
   });
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
   const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">,
-    reason: string | undefined): AgentBeforeSettleEventResult | undefined => {
+    reason: string | undefined): SettleResult | undefined => {
     if (!mayHaveChanged) return undefined;
     const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
       ...reason === undefined ? {} : { reason } };
@@ -448,7 +448,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return lister === undefined ? {} : { openCases: await openCases(ctx, requests, lister, signal) };
   };
   const failure = (proof: Evidence): string => `${proof.outcome}\n${proof.output}`;
-  const sendBack = (content: string, details: SentBack): AgentBeforeSettleEventResult =>
+  const sendBack = (content: string, details: SentBack): SettleResult =>
     ({ entries: [{ type: "custom_message", customType: "tesota-gate", content, display: true, details }], continue: true });
   /** Every changed file with contracts proved, in each repository from its own folder. */
   const prove = async (units: readonly ChangedUnit[], signal: AbortSignal): Promise<Map<string, Receipt["proofs"][number][]>> => {
@@ -465,7 +465,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     return proofs;
   };
   /** The proofs that go back, named from the folder Pi runs in. */
-  const proofsBack = (proofs: ReadonlyMap<string, Receipt["proofs"]>): AgentBeforeSettleEventResult => {
+  const proofsBack = (proofs: ReadonlyMap<string, Receipt["proofs"]>): SettleResult => {
     progress.publish({ step: "sent_back", tally: tally([...proofs.values()].flat()) });
     const back = [...proofs].flatMap(([folder, judged]) => judged.filter(({ verdict }) => verdict === "send_back")
       .map(({ path, evidence }) => ({ path: inUnit(folder, path), evidence })));
@@ -475,7 +475,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       `Tesota: ${path} does not prove yet.\n\n${proofReport(path, evidence, proveActive)}`).join("\n\n"), { round: "proofs", proofs: back });
   };
   /** The failing commands that go back, each run from its repository's folder. */
-  const testsBack = (failing: readonly { folder: string; run: CommandRun }[], tallied: Tally): AgentBeforeSettleEventResult => {
+  const testsBack = (failing: readonly { folder: string; run: CommandRun }[], tallied: Tally): SettleResult => {
     progress.publish({ step: "sent_back", tally: tallied });
     for (const { folder, run } of failing) {
       const sent = commandsSentBack.get(folder) ?? new Map<string, string[]>();
@@ -501,7 +501,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     }
     return measured;
   };
-  const settle = async (ctx: ExtensionContext): Promise<AgentBeforeSettleEventResult | undefined> => {
+  const settle = async (ctx: ExtensionContext): Promise<SettleResult | undefined> => {
     const { units, bases, tooLarge, refused } = await (start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
     const workspace = units.some(({ folder }) => folder !== "");

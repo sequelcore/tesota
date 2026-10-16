@@ -1,8 +1,8 @@
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import type {
-  EntryDraft, ExtensionAPI, ExtensionContext, ExtensionFactory, FlagOptions, Handler, InputEvent, RunOutcome, SessionStartEvent,
-  SettleEvent, SettleResult, ToolExecutionStartEvent, ToolResultEvent,
-} from "./contract.ts";
+  BranchEntry, ContextUsage, EntryDraft, ExtensionAPI, ExtensionContext, ExtensionFactory, FlagOptions, Handler, InputEvent,
+  RunOutcome, SessionStartEvent, SettleEvent, SettleResult, ShellUI, ToolDefinition, ToolExecutionStartEvent, ToolResultEvent,
+} from "../../../src/contract.ts";
 
 export interface HostOptions {
   readonly cwd: string;
@@ -11,8 +11,17 @@ export interface HostOptions {
   readonly model: Model<Api>;
   /** The operator's flag values, by name; a flag without one has its registered default. */
   readonly flags?: Readonly<Record<string, boolean | string>>;
-  /** The names of the tools the model may call. */
-  readonly activeTools: () => string[];
+  /** The thinking level the provider is asked for. */
+  readonly thinkingLevel: string;
+  /** The tools: registering one, and which the model may call. */
+  readonly tools: {
+    register(tool: ToolDefinition): void;
+    active(): string[];
+    setActive(names: readonly string[]): void;
+  };
+  /** The session's entries as Pi's branch shapes them. */
+  readonly branch: () => BranchEntry[];
+  readonly contextUsage: () => ContextUsage | undefined;
 }
 
 /** What one settle phase returned: its handlers' entries in order, whether any sent the run back, and what each that threw said. */
@@ -39,6 +48,8 @@ export interface ExtensionHost {
   settle(phase: "extensions" | "verifier", outcome: RunOutcome, signal: AbortSignal, reason?: string): Promise<PhaseResult>;
   /** What the handlers of other events threw since the last call; settlement counts them as failures. */
   takeErrors(): string[];
+  /** What a registered tool's call is given, as handlers are. */
+  context(signal: AbortSignal | undefined): ExtensionContext;
 }
 
 type Handlers = { [Name in keyof Events]: Handler<Events[Name][0], Events[Name][1]>[] };
@@ -54,12 +65,23 @@ const noHandlers = (): Handlers =>
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
-/** Temporary until slice 5 of #432 brings the rest of the extension API; remove with it. */
-const slice5 = (what: string) => (): never => { throw new Error(`${what} comes with the extension API in slice 5 of #432.`); };
+/**
+ * The interface with no shell, as Pi's print mode has it: setters do
+ * nothing and never call a component's factory. Temporary until the shell
+ * draws them (slice 6 of #432); its theme is the shell's.
+ */
+const headless: ShellUI = {
+  setHeader: () => undefined,
+  setFooter: () => undefined,
+  setEditorComponent: () => undefined,
+  setWorkingIndicator: () => undefined,
+  setStatus: () => undefined,
+  get theme(): never { throw new Error("The theme comes with the terminal shell, in slice 6 of #432."); },
+};
 
 /**
- * The engine's extension host (#439), with what the gate uses: events,
- * the handler context, flags and the active tools. The verifier registers
+ * The engine's extension host (#439, #441): events, the handler context,
+ * flags, tools and what the session reports. The verifier registers
  * through the same API but into handlers of its own, so no extension can
  * add to, replace or reorder them; every event reaches the extensions first.
  */
@@ -73,19 +95,21 @@ export function createHost(options: HostOptions, extensions: readonly ExtensionF
     complete: (model, context, completeOptions) => options.models.complete(model, context, completeOptions),
   };
   const context = (signal: AbortSignal | undefined): ExtensionContext => ({
-    cwd: options.cwd, mode: options.mode, model: options.model, modelRegistry, signal,
-    sessionManager: { getBranch: slice5("The session branch") },
-    getContextUsage: slice5("Context usage"),
+    cwd: options.cwd, mode: options.mode, model: options.model, modelRegistry, signal, ui: headless,
+    sessionManager: { getBranch: options.branch },
+    getContextUsage: options.contextUsage,
   });
   const api = (handlers: Handlers): ExtensionAPI => ({
     on: ((event: keyof Events, handler: never) => { handlers[event].push(handler); }) as ExtensionAPI["on"],
     registerFlag: (name, flag) => { flags.set(name, flag); },
     getFlag: (name) => options.flags?.[name] ?? flags.get(name)?.default,
-    getActiveTools: () => options.activeTools(),
-    registerTool: slice5("Registering a tool"),
-    setActiveTools: slice5("Setting the active tools"),
-    getThinkingLevel: slice5("The thinking level"),
-    getSettings: slice5("Settings"),
+    registerTool: (tool) => { options.tools.register(tool as unknown as ToolDefinition); },
+    getActiveTools: () => options.tools.active(),
+    setActiveTools: (names) => { options.tools.setActive(names); },
+    getThinkingLevel: () => options.thinkingLevel,
+    getSettings: () => ({}),
+    // The shell draws custom messages; with none there is nothing to register them with.
+    registerMessageRenderer: () => undefined,
   });
   for (const factory of extensions) factory(api(ordinary));
   verifier(api(verifying));
@@ -121,5 +145,6 @@ export function createHost(options: HostOptions, extensions: readonly ExtensionF
       return { entries, continued, errors: failed, registered: handlers.length > 0 };
     },
     takeErrors: () => errors.splice(0),
+    context,
   };
 }
