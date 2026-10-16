@@ -53,8 +53,8 @@ fails when `src/` starts using a part of Pi that is not in the contract, an
 engine export, `pi-ai`, or the shell. The budget check compiles the engine
 with code splitting, like a release, so the loop loads only when used, and
 fails a pull request when its median
-`--version` startup or its binary size exceeds the limit for its platform;
-the scripted loop's time and memory are reported until they have limits.
+`--version` startup, its binary size, or its scripted loop's median time or
+largest memory exceeds the limit for its platform.
 
 Tesota is a Pi package. Pi loads its extension from `src/extension.ts`, which
 the `pi` manifest in `package.json` names. The `tesota` command, built to
