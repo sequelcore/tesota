@@ -1,4 +1,4 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "./contract.js";
 import type { ts as TypeScript } from "ts-morph";
 import { type ClaimCheck, type Comparison, claimCheck } from "./pi-claimcheck.js";
 import { type MutationResult, mutateContract } from "./proof-mutation.js";

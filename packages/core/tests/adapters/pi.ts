@@ -11,7 +11,7 @@ import { join } from "node:path";
 import type {
   ExtensionAPI, ExtensionContext, InputEvent, InputResult, Session, SessionOutcome, SessionStartEvent, SettleEvent, SettleResult,
   ToolExecutionStartEvent, ToolResultEvent,
-} from "../../src/contract.ts";
+} from "../../../../src/contract.ts";
 import { conversationMessage } from "../../src/conversation.ts";
 import type { SessionOptions, TestEngine } from "../engine.ts";
 import { scriptedReply } from "../scripted.ts";
@@ -87,6 +87,7 @@ async function start(options: SessionOptions, agentDir: string, sessionManager: 
     cwd: options.cwd, agentDir, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
     extensionFactories: [
       ...options.extensions.map((factory) => (pi: PiExtensionAPI) => factory(asContract(pi))),
+      ...options.verifier === undefined ? [] : [(pi: PiExtensionAPI) => { options.verifier?.(asContract(pi)); }],
       (pi: PiExtensionAPI) => { pi.on("agent_settled", (event) => { settled = event.aborted; }); },
     ],
   });
@@ -94,7 +95,7 @@ async function start(options: SessionOptions, agentDir: string, sessionManager: 
   const { session } = await createAgentSession({
     cwd: options.cwd, agentDir, model, modelRuntime, resourceLoader,
     // Pi's `tools` is an allowlist that also hides tools extensions register, so it is given only without extensions.
-    ...options.extensions.length === 0 ? { tools: ["read", "write", "edit", shell] } : {},
+    ...options.extensions.length === 0 && options.verifier === undefined ? { tools: ["read", "write", "edit", shell] } : {},
     sessionManager,
     settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
   });

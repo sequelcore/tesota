@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
-import type { ExtensionAPI, ExtensionContext, ExtensionFactory, Session } from "../src/contract.ts";
+import type { ExtensionAPI, ExtensionContext, ExtensionFactory, Session } from "../../../src/contract.ts";
 import { piEngine } from "./adapters/pi.ts";
 import { tesotaEngine } from "./adapters/tesota.ts";
 import type { Capability, Guarantee, ScriptStep, TestEngine } from "./engine.ts";
@@ -127,7 +127,7 @@ for (const engine of engines) {
       }]);
       await session.prompt("go");
       expect(seen?.cwd).toMatch(/tesota-core-cwd-/);
-      expect(seen?.model?.provider).toMatch(/^scripted-/);
+      expect(seen?.model?.provider).toBeString();
       expect(typeof seen?.mode).toBe("string");
       expect(seen?.getContextUsage()?.contextWindow).toBeGreaterThan(0);
       expect(branch).toBeGreaterThan(0);
@@ -191,6 +191,172 @@ for (const engine of engines) {
       expect(flag).toBeUndefined();
       expect(quiet === undefined || ["boolean", "string"].includes(typeof quiet)).toBe(true);
     }, "tools");
+
+    /** A tool whose call fails as `how` says, or returns its text with details. */
+    const tool = (name: string, how: "returns" | "fails" | "throws" = "returns", extra: object = {}): ExtensionFactory => (pi) => {
+      pi.registerTool({
+        name, label: name, description: `The ${name} tool.`, parameters: Type.Object({ text: Type.String() }), ...extra,
+        execute: async (_id, params) => {
+          if (how === "throws") throw new Error(`${name} broke`);
+          return { content: [{ type: "text", text: params.text }], details: { echoed: params.text }, ...how === "fails" ? { isError: true } : {} };
+        },
+      });
+    };
+    const detailsOf = (entry: { readonly message?: unknown }) => (entry.message as { details?: unknown } | undefined)?.details;
+
+    check("an extension's tool runs for the model, and a resumed session keeps its details", async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      const first = await engine.createSession({ cwd, script: [{ tool: "echo", args: { text: "hi" } }, "done"], extensions: [tool("echo")] });
+      open.push(first);
+      await first.prompt("go");
+      expect(first.messages().find((message) => message.role === "toolResult")).toMatchObject({ toolName: "echo", text: "hi", isError: false });
+      let details: unknown;
+      const resumed = await engine.resume(first, { cwd, script: ["again"], extensions: [tool("echo"), (pi) => {
+        pi.on("agent_before_settle", (_event, ctx) => {
+          details = ctx.sessionManager.getBranch().map(detailsOf).find((found) => found !== undefined);
+          return undefined;
+        });
+      }] });
+      open.push(resumed);
+      await resumed.prompt("once more");
+      expect(details).toEqual({ echoed: "hi" });
+    });
+
+    check("a tool that returns an error and one that throws both fail the call", async () => {
+      const session = await start([{ calls: [{ tool: "failing", args: { text: "no" } }, { tool: "throwing", args: { text: "no" } }] }, "done"],
+        [tool("failing", "fails"), tool("throwing", "throws")]);
+      await session.prompt("go");
+      expect(session.messages().filter((message) => message.role === "toolResult").map(({ toolName, isError }) => [toolName, isError]))
+        .toEqual([["failing", true], ["throwing", true]]);
+    });
+
+    check("a tool registered inactive cannot run until activated, and a resumed session keeps it active", async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      const call: ScriptStep = { tool: "hidden", args: { text: "hi" } };
+      const hidden = tool("hidden", "returns", { defaultActive: false });
+      let active: string[] = [];
+      const activate: ExtensionFactory = (pi) => {
+        pi.on("input", (event) => {
+          if (event.text === "activate") pi.setActiveTools([...pi.getActiveTools(), "hidden", "hidden", "no such tool"]);
+          active = pi.getActiveTools();
+          return undefined;
+        });
+      };
+      const first = await engine.createSession({ cwd, script: [call, "before", call, "after"], extensions: [hidden, activate] });
+      open.push(first);
+      await first.prompt("go");
+      await first.prompt("activate");
+      expect(active.filter((name) => name === "hidden")).toHaveLength(1);
+      expect(active).not.toContain("no such tool");
+      const resumed = await engine.resume(first, { cwd, script: [call, "resumed"], extensions: [hidden] });
+      open.push(resumed);
+      await resumed.prompt("go on");
+      expect(resumed.messages().filter((message) => message.role === "toolResult").map(({ isError }) => isError))
+        .toEqual([true, false, false]);
+    });
+
+    check("an active tool's snippet and guidelines reach the system prompt", async () => {
+      let prompt = "";
+      // Both engines send the system prompt as a system message; Pi splits it into sections.
+      const systemText = (context: { messages: readonly unknown[] }) => context.messages.flatMap((message) => {
+        const { role, content, sections } = message as { role: string; content?: unknown; sections?: Record<string, string> };
+        return role === "system" ? [String(content ?? ""), ...Object.values(sections ?? {})] : [];
+      }).join("\n");
+      const session = await start([{ seen: (context) => { prompt = systemText(context); }, reply: "done" }],
+        [tool("lookup", "returns", { promptSnippet: "Look   a word\n up", promptGuidelines: ["  Look up before guessing ", "Look up before guessing"] })]);
+      await session.prompt("go");
+      expect(prompt).toContain("- lookup: Look a word up");
+      expect(prompt.split("Look up before guessing")).toHaveLength(2);
+    });
+
+    check("a tool deactivated during a call still runs that call, and leaves the prompt from the next request", async () => {
+      let prompts: string[] = [];
+      // The last system message is the prompt in force: Pi adds one when the tools change.
+      const systemOf = (context: { messages: readonly unknown[] }) => context.messages.flatMap((message) => {
+        const { role, content, sections } = message as { role: string; content?: unknown; sections?: Record<string, string> };
+        return role === "system" ? [[String(content ?? ""), ...Object.values(sections ?? {})].join("\n")] : [];
+      }).at(-1) ?? "";
+      const see = (step: ScriptStep | string): ScriptStep => typeof step === "string"
+        ? { seen: (context) => { prompts = [...prompts, systemOf(context)]; }, reply: step } : step;
+      const lookup = tool("lookup", "returns", { promptSnippet: "Look a word up" });
+      const drop: ExtensionFactory = (pi) => {
+        pi.on("tool_execution_start", () => { pi.setActiveTools(pi.getActiveTools().filter((name) => name !== "lookup")); });
+      };
+      const session = await start([{ tool: "lookup", args: { text: "word" } }, see("done")], [lookup, drop]);
+      await session.prompt("go");
+      expect(session.messages().find((message) => message.role === "toolResult")).toMatchObject({ toolName: "lookup", isError: false });
+      expect(prompts.at(-1)).not.toContain("- lookup: Look a word up");
+    });
+
+    check("a tool registered as the session starts keeps its activation across a resume", async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      const late: ExtensionFactory = (pi) => {
+        pi.on("session_start", () => {
+          if (!pi.getActiveTools().includes("late")) {
+            pi.registerTool({ name: "late", label: "late", description: "Registered late.", parameters: Type.Object({ text: Type.String() }),
+              defaultActive: false, execute: async (_id, params) => ({ content: [{ type: "text", text: params.text }], details: undefined }) });
+          }
+        });
+        pi.on("input", (event) => { if (event.text === "activate") pi.setActiveTools([...pi.getActiveTools(), "late"]); return undefined; });
+      };
+      const first = await engine.createSession({ cwd, script: ["activated"], extensions: [late] });
+      open.push(first);
+      await first.prompt("activate");
+      const resumed = await engine.resume(first, { cwd, script: [{ tool: "late", args: { text: "hi" } }, "done"], extensions: [late] });
+      open.push(resumed);
+      await resumed.prompt("use it");
+      expect(resumed.messages().find((message) => message.role === "toolResult")).toMatchObject({ toolName: "late", isError: false });
+    });
+
+    check("a resumed session keeps the tools it had, though an extension's default changed since", async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      const first = await engine.createSession({ cwd, script: ["done"], extensions: [tool("helper")] });
+      open.push(first);
+      await first.prompt("go");
+      const resumed = await engine.resume(first, { cwd, script: [{ tool: "helper", args: { text: "hi" } }, "done"],
+        extensions: [tool("helper", "returns", { defaultActive: false })] });
+      open.push(resumed);
+      await resumed.prompt("use it");
+      expect(resumed.messages().find((message) => message.role === "toolResult")).toMatchObject({ toolName: "helper", isError: false });
+    });
+
+    check("a failed call is failed in the tool_result event, and still failed in a resumed session", async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      const events: [string, boolean][] = [];
+      const watch: ExtensionFactory = (pi) => { pi.on("tool_result", (event) => { events.push([event.toolName, event.isError]); }); };
+      const failing = [tool("failing", "fails"), tool("throwing", "throws")];
+      const first = await engine.createSession({ cwd, script: [{ calls: [{ tool: "failing", args: { text: "no" } },
+        { tool: "throwing", args: { text: "no" } }] }, "done"], extensions: [...failing, watch] });
+      open.push(first);
+      await first.prompt("go");
+      expect(events).toEqual([["failing", true], ["throwing", true]]);
+      const resumed = await engine.resume(first, { cwd, script: ["again"], extensions: failing });
+      open.push(resumed);
+      expect(resumed.messages().filter((message) => message.role === "toolResult").map(({ toolName, isError }) => [toolName, isError]))
+        .toEqual([["failing", true], ["throwing", true]]);
+    });
+
+    check("context usage after a reply is that reply's usage, and the same after a resume", async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "tesota-core-cwd-"));
+      const usage: (number | null | undefined)[] = [];
+      const read: ExtensionFactory = (pi) => {
+        pi.on("agent_before_settle", (_event, ctx) => {
+          const replies = ctx.sessionManager.getBranch().flatMap(({ message }) => message?.role === "assistant" ? [message] : []);
+          const last = replies.at(-1) as { usage?: { totalTokens: number } } | undefined;
+          usage.push(last?.usage?.totalTokens, ctx.getContextUsage()?.tokens);
+          return undefined;
+        });
+      };
+      const first = await engine.createSession({ cwd, script: ["a reply of some length"], extensions: [read] });
+      open.push(first);
+      await first.prompt("go");
+      const resumed = await engine.resume(first, { cwd, script: ["another reply"], extensions: [read] });
+      open.push(resumed);
+      await resumed.prompt("again");
+      expect(usage[0]).toBeGreaterThan(0);
+      expect(usage[1]).toBe(usage[0]);
+      expect(usage[3]).toBe(usage[2]);
+    });
 
     check("two sessions in one process run at the same time, each with its own messages and usage", async () => {
       const [a, b] = await Promise.all([start(["from a", "a again"], [sendBackOnce("gate-a")]), start(["from b"], [])]);

@@ -3,23 +3,22 @@ import { join } from "node:path";
 import { type Node, Project, type PropertyAccessExpression, SyntaxKind } from "ts-morph";
 
 /**
- * Where each Pi type Tesota's `src/` uses goes once Pi is gone (#433):
- * - `contract`: the engine provides it through `src/contract.ts`;
+ * Where each Pi type Tesota's `src/` still uses goes once Pi is gone (#433).
+ * Since #441 `src/` takes the extension API from the contract itself, so
+ * what is left is Pi's own:
+ * - `contract`: the extension API as Pi declares it, where the shell's part
+ *   of it (`ShellAPI`) and a tool's drawing reach Pi's declarations;
  * - `engine`: the engine exports an equivalent (a version, a shell);
  * - `model`: `pi-ai` types, which Tesota keeps;
  * - `shell`: the terminal interface, which moves to the `tesota` shell.
  */
 const owners: Record<string, "contract" | "engine" | "model" | "shell"> = {
-  // The extension API and what handlers see.
-  ExtensionAPI: "contract", ExtensionContext: "contract", InputEvent: "contract", ToolExecutionStartEvent: "contract",
-  ToolResultEventBase: "contract", BashToolResultEvent: "contract", BoundaryState: "contract",
-  AgentBeforeSettleEventResult: "contract", ContextUsage: "contract", ModelRegistry: "contract", SessionManager: "contract",
-  SessionEntry: "contract", SessionMessageEntry: "contract", ToolDefinition: "contract", AgentToolResult: "contract",
-  TypeLiteral: "contract",
+  // The extension API, through the parts the shell draws.
+  ExtensionAPI: "contract", ToolDefinition: "contract", AgentToolResult: "contract",
   // What the engine exports beside the API.
   VERSION: "engine", getShellConfig: "engine", ShellConfig: "engine",
   // pi-ai, which stays.
-  AssistantMessage: "model", BaseModel: "model", Model: "model", TextContent: "model", ToolCall: "model", SystemMessage: "model",
+  Api: "model", AssistantMessage: "model", BaseModel: "model", Context: "model", Model: "model", TextContent: "model", ToolCall: "model",
   // The terminal interface.
   ExtensionUIContext: "shell", CustomMessage: "shell", MessageRenderOptions: "shell", Theme: "shell", ThemeColor: "shell",
   CustomEditor: "shell", Editor: "shell", EditorTheme: "shell", KeybindingsManager: "shell", keyText: "shell",
@@ -30,14 +29,11 @@ const owners: Record<string, "contract" | "engine" | "model" | "shell"> = {
 };
 
 /** Members of contract types that are interface, not contract: they move to the shell. */
-const shellMembers = new Set(["ExtensionAPI.registerMessageRenderer", "ExtensionContext.ui"]);
+const shellMembers = new Set(["ExtensionAPI.registerMessageRenderer"]);
 
 /** The contract interface each Pi type corresponds to, member for member. */
 const contractNames: Record<string, string> = {
-  ExtensionAPI: "ExtensionAPI", ExtensionContext: "ExtensionContext", InputEvent: "InputEvent",
-  ToolExecutionStartEvent: "ToolExecutionStartEvent", ToolResultEventBase: "ToolResultEvent",
-  BashToolResultEvent: "ToolResultEvent", BoundaryState: "SettleEvent", ContextUsage: "ContextUsage",
-  ModelRegistry: "ModelRegistry", ToolDefinition: "ToolDefinition", AgentToolResult: "ToolResult",
+  ExtensionAPI: "ExtensionAPI", ToolDefinition: "ToolDefinition", AgentToolResult: "ToolResult",
 };
 
 const root = join(import.meta.dir, "..", "..", "..");
@@ -83,7 +79,7 @@ function used(): Map<string, Set<string>> {
 
 /** The members each interface in `src/contract.ts` declares, with `on:<event>` for each event it accepts. */
 function contract(): Map<string, Set<string>> {
-  const file = new Project({ skipAddingFilesFromTsConfig: true }).addSourceFileAtPath(join(import.meta.dir, "..", "src", "contract.ts"));
+  const file = new Project({ skipAddingFilesFromTsConfig: true }).addSourceFileAtPath(join(root, "src", "contract.ts"));
   return new Map(file.getInterfaces().map((declaration) => [declaration.getName(), new Set(declaration.getMembers().flatMap((member) => {
     const name = member.getSymbol()?.getName() ?? "";
     const event = member.asKind(SyntaxKind.MethodSignature)?.getParameters()[0]?.getTypeNode()

@@ -18,7 +18,7 @@ const folder = (): string => {
   folders.push(created);
   return created;
 };
-const run = (tool: EngineTool, args: unknown, signal = new AbortController().signal) => tool.execute(args as never, signal);
+const run = (tool: EngineTool, args: unknown, signal = new AbortController().signal) => tool.execute(args as never, signal, "call");
 
 describe("paths", () => {
   test.if(process.platform === "win32")("a Git Bash path is refused on Windows, with its Windows spelling", () => {

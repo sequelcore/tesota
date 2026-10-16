@@ -1,4 +1,4 @@
-import type { RunOutcome } from "./contract.ts";
+import type { RunOutcome } from "../../../src/contract.ts";
 
 export type AfterExtensions = "continue" | "verify" | "finalize";
 export type AfterVerifier = "continue" | "completed" | "incomplete" | "aborted" | "error";

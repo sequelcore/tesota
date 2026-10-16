@@ -5,7 +5,7 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } 
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
-import type { Session } from "../src/contract.ts";
+import type { Session } from "../../../src/contract.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { readSessionFile, SessionFileError } from "../src/session-file.ts";
 import { SessionLockedError } from "../src/session-lock.ts";
@@ -79,7 +79,7 @@ describe("the request ledger", () => {
     const created = session([{ tool: "probe", args: {} }, "done"], { tools: () => [probe] });
     await created.prompt("the exact request", { source: "rpc" });
     const lines = seen.trimEnd().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(lines.map((line) => line["type"])).toEqual(["session", "request", "assistant", "call_intent"]);
+    expect(lines.map((line) => line["type"])).toEqual(["session", "request", "active_tools", "assistant", "call_intent"]);
     expect(lines[1]).toMatchObject({ text: "the exact request", origin: "rpc", run: 1 });
     expect(created.ledger()).toMatchObject([{ run: 1, text: "the exact request", origin: "rpc", amendments: [] }]);
   });
@@ -296,6 +296,30 @@ describe("the session file", () => {
     const file = await finished();
     appendFileSync(file, `${JSON.stringify({ type: "call_intent", run: 7, callId: "x" })}\n`);
     expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
+  });
+
+  test("the active tools belong to the session: before any request, between runs and at the end, never to a run (#441)", async () => {
+    const file = await finished();
+    const lines = readFileSync(file, "utf8").trimEnd().split("\n");
+    const tools = JSON.stringify({ type: "active_tools", names: ["read"] });
+    writeFileSync(file, `${[lines[0], tools, ...lines.slice(1), tools].join("\n")}\n`);
+    const resumed = openSession(file, scriptless());
+    open.push(resumed);
+    expect(resumed.outcome()).toBe("completed");
+    await resumed.dispose();
+    appendFileSync(file, `${JSON.stringify({ type: "active_tools", run: 1, names: ["read"] })}\n`);
+    expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
+  });
+
+  test("active tools recorded mid-run stay where they are when recovery ends the run", async () => {
+    const file = await finished();
+    const lines = readFileSync(file, "utf8").trimEnd().split("\n");
+    const ended = lines.findLastIndex((line) => line.includes("\"type\":\"settle\""));
+    writeFileSync(file, `${[...lines.slice(0, ended), JSON.stringify({ type: "active_tools", names: ["read"] })].join("\n")}\n`);
+    const resumed = openSession(file, scriptless());
+    open.push(resumed);
+    expect(resumed.outcome()).toBe("interrupted");
+    expect(entriesOf(file).slice(-2).map((entry) => entry.type)).toEqual(["active_tools", "run_end"]);
   });
 
   // Version 1 promised no verification behind "completed" (#439), so it is refused, not reinterpreted.

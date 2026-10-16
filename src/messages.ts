@@ -1,4 +1,5 @@
-import { type ExtensionAPI, keyText, type MessageRenderOptions, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import { keyText, type MessageRenderOptions, type Theme, type ThemeColor } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "./contract.js";
 import { Box, type Component, sliceByColumn, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { SentBack } from "./gate.js";
 import { allEvidence, commandFinding, contractFinding, type Finding, holdsWords, isNote, isReceipt, plainName, proofFinding, type Receipt,

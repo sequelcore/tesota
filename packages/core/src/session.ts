@@ -4,7 +4,8 @@ import { mkdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import type { Base } from "./base.ts";
-import type { ExtensionAPI, Session } from "./contract.ts";
+import type { ExtensionAPI, Session } from "../../../src/contract.ts";
+import { branchOf } from "./branch.ts";
 import { createLoop, type HistoryMessage, type LoopOptions, type LoopState, toolResult } from "./loop.ts";
 import { notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
@@ -48,7 +49,7 @@ export interface EngineSession extends Session {
  */
 export type Verifier = (pi: ExtensionAPI, request: () => LedgerRequest | undefined) => void;
 
-export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier"> & {
+export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier" | "branch"> & {
   readonly verifier: Verifier;
   /** Where the session's file goes; `~/.tesota/sessions/<project>` when not given. */
   readonly folder?: string;
@@ -67,7 +68,7 @@ export function sessionsFolder(cwd: string): string {
 const lockOf = (file: string): string => file.replace(/\.jsonl$/u, ".lock");
 
 /** What recovery tells the model about a call it repaired. */
-const repairText: Record<Repair, string> = {
+export const repairText: Record<Repair, string> = {
   outcome_unknown: "Outcome unknown: the session ended while this call was running. It may or may not have finished, "
     + "and anything it started may still be running. It was not run again.",
   not_run: "Not run: the session ended before this call started.",
@@ -194,7 +195,9 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
     tokens.total += entry.message.usage.totalTokens;
   }
   const ends = entries.flatMap((entry) => entry.type === "run_end" ? [entry.outcome] : []);
+  const tools = entries.findLast((entry) => entry.type === "active_tools");
   return {
+    ...tools === undefined ? {} : { activeTools: tools.names },
     history: conversation(entries), tokens, outcome: ends.at(-1),
     runs: entries.filter((entry) => entry.type === "request").length,
     amendments: entries.filter((entry) => entry.type === "amendment").length,
@@ -217,7 +220,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
   const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
   let loop: Session;
   try {
-    loop = createLoop({ ...options, verifier: (pi) => { options.verifier(pi, request); },
+    loop = createLoop({ ...options, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
       writer: options.writer?.(recording) ?? recording, ...opened ? { resumed: stateOf(entries) } : {} });
   } catch (error) {
     // An extension or the verifier that throws as it registers leaves nothing open.

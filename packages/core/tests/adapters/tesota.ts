@@ -1,5 +1,5 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
-import type { Session } from "../../src/contract.ts";
+import type { Session } from "../../../../src/contract.ts";
 import { createSession, type EngineSession, openSession } from "../../src/session.ts";
 import type { SessionOptions, TestEngine } from "../engine.ts";
 import { accepts, scriptedReply } from "../scripted.ts";
@@ -10,19 +10,17 @@ function scripted(options: SessionOptions) {
   faux.setResponses(options.script.map(scriptedReply));
   const models = createModels();
   models.setProvider(faux.provider);
-  return { models, model: faux.getModel(), extensions: options.extensions, verifier: accepts };
+  return { models, model: faux.getModel(), extensions: options.extensions, verifier: options.verifier ?? accepts };
 }
 
 /**
  * `@tesota/core` on Pi's scripted model, with its sessions in the test's
- * own home folder (#437). Its extensions get the events and settle (#439);
- * tests that register tools or read the branch, settings or context usage
- * wait for slice 5.
+ * own home folder (#437), and its extensions (#439, #441).
  */
 export const tesotaEngine: TestEngine = {
   name: "@tesota/core",
   lacks: new Set(),
-  pending: new Map([["tools", "slice 5 of #432"]]),
+  pending: new Map(),
   shell: process.platform === "win32" ? "powershell" : "bash",
   createSession(options: SessionOptions): Promise<Session> {
     return Promise.resolve(createSession({ cwd: options.cwd, ...scripted(options) }));

@@ -1,4 +1,4 @@
-import type { ConversationMessage } from "./contract.ts";
+import type { ConversationMessage } from "../../../src/contract.ts";
 
 /** What a message of either engine holds, as far as the conversation shows it. */
 interface MessageLike {
