@@ -15,8 +15,10 @@ registry packages; lifecycle scripts are disabled.
 | `bun run typecheck` | Check source and test types |
 | `bun run test` | Build and run the tests |
 | `bun run lint` | Lint source and tests without fixes; reject warnings |
-| `bun run check` | Run the complete repository gate |
-| `bun run formal:check` | Prove the LemmaScript rules in `src/verification/`; requires Dafny |
+| `bun run check` | Run the complete repository gate, including the engine's |
+| `bun run formal:check` | Prove the LemmaScript rules in `src/verification/` and `packages/core/src/`; requires Dafny |
+| `bun run --cwd packages/core check` | Typecheck the engine, run its tests with `bun test`, and check its performance budgets |
+| `bun run --cwd packages/core budget --report` | Measure the engine's startup and binary size without failing, to set or revise a limit in `packages/core/budgets.json` |
 | `bun run live:eval` | Run the registered cases live through Pi on the operator's sign-in (`evaluation/live.ts`); uses model quota |
 | `bun run findings:eval` | Measure review findings turned into reproduction tests on the registered cases (`evaluation/findings.ts`); uses model quota |
 | `bun run swesmith:eval` | The same on SWE-smith's JavaScript bugs, with the fix step, operator cases and a reviewer that proposes checks (`evaluation/swesmith.ts`); uses model quota, Claude Code for its review sources, and Docker |
@@ -35,6 +37,16 @@ the compiled launcher and the Pi it finds. Run `bun run check`,
 `bun run formal:check` when a proved rule changed, and `git diff --check`
 before completing a change. Report what actually ran; passing checks, live
 observations and human acceptance are different claims.
+
+The engine, `@tesota/core` in `packages/core`, is being built in slices
+([#432](https://github.com/sequelcore/tesota/issues/432)).
+`packages/core/src/contract.ts` defines the contract Tesota uses from its
+host, and the conformance tests check each engine against it, with Pi as the
+reference. A guarantee Tesota needs and Pi lacks is tested as expected to
+fail on Pi. The inventory test fails when `src/` starts using a part of Pi
+that is not in the contract, an engine export, `pi-ai`, or the shell. The
+budget check fails a pull request when the compiled engine's median
+`--version` startup or its binary size exceeds the limit for its platform.
 
 Tesota is a Pi package. Pi loads its extension from `src/extension.ts`, which
 the `pi` manifest in `package.json` names. The `tesota` command, built to

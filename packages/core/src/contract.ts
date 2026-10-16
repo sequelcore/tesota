@@ -1,0 +1,178 @@
+/**
+ * What Tesota uses from its host, written down from Pi 1.3.0 (#433). Names
+ * and shapes follow Pi's extension API, so Tesota's verification ports to
+ * `@tesota/core` without renaming anything. Only what Tesota uses is here;
+ * the terminal interface (`ctx.ui`, message renderers, themes, components)
+ * moves to the shell and is not part of the contract. The conformance tests in `tests/` check
+ * every engine against it, with Pi as the reference.
+ */
+import type { Api, AssistantMessage, Context, Model } from "@earendil-works/pi-ai";
+import type { Static, TSchema } from "typebox";
+
+/** How a run ended, as settle handlers see it. */
+export type RunOutcome = "completed" | "aborted" | "error";
+
+/**
+ * How a session's last run ended, as the session reports it. `incomplete`
+ * means a settle step failed, so the run may not say it is done; Pi has no
+ * such state, which the conformance tests mark as a guarantee it lacks.
+ */
+export type SessionOutcome = RunOutcome | "incomplete";
+
+/** A message an extension adds to the conversation at a boundary. */
+export interface CustomMessageDraft {
+  readonly type: "custom_message";
+  readonly customType: string;
+  readonly content: string;
+  readonly display: boolean;
+  readonly details?: unknown;
+}
+
+/**
+ * Data an extension records in the session outside the conversation, as the
+ * receipt does in print mode, where the final answer must stay the last message.
+ */
+export interface CustomEntryDraft {
+  readonly type: "custom";
+  readonly customType: string;
+  readonly data?: unknown;
+}
+
+export type EntryDraft = CustomMessageDraft | CustomEntryDraft;
+
+/** An entry on the session's current branch, as far as Tesota reads one: the operator's messages and its receipts. */
+export interface BranchEntry {
+  readonly type: string;
+  readonly message?: { readonly role: string };
+  readonly customType?: string;
+  readonly details?: unknown;
+  readonly data?: unknown;
+}
+
+export interface SessionStartEvent {
+  readonly type: "session_start";
+  readonly reason: "startup" | "reload" | "new" | "resume" | "fork";
+}
+
+/** The operator's input, before the agent runs; handlers finish before the agent's first step. */
+export interface InputEvent {
+  readonly type: "input";
+  readonly text: string;
+  readonly source: "interactive" | "rpc" | "extension";
+  /** Set when the input arrives while the agent is running: steering or a follow-up. */
+  readonly streamingBehavior?: "steer" | "followUp";
+}
+
+export interface ToolExecutionStartEvent {
+  readonly type: "tool_execution_start";
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly args: unknown;
+}
+
+export interface ToolResultEvent {
+  readonly type: "tool_result";
+  readonly toolCallId: string;
+  readonly toolName: string;
+  readonly input: Record<string, unknown>;
+  readonly isError: boolean;
+}
+
+/** Before a run settles: handlers may add messages and send the agent back with `continue`. */
+export interface SettleEvent {
+  readonly type: "agent_before_settle";
+  /** What earlier handlers added; Tesota does not read them. */
+  readonly entries: readonly { readonly type: string }[];
+  readonly continue: boolean;
+  readonly outcome: RunOutcome;
+}
+
+export interface SettleResult {
+  entries?: EntryDraft[];
+  continue?: boolean;
+}
+
+/** An input handler leaves the input as it is; Tesota never rewrites or swallows it. */
+export interface InputResult {
+  action: "continue";
+}
+
+export interface ContextUsage {
+  readonly tokens: number | null;
+  readonly contextWindow: number;
+  readonly percent: number | null;
+}
+
+/** Model access through the host, for verifiers that ask a model (ClaimCheck). */
+export interface ModelRegistry {
+  find(provider: string, modelId: string): Model<Api> | undefined;
+  complete(model: Model<Api>, context: Context, options?: { signal?: AbortSignal }): Promise<AssistantMessage>;
+}
+
+/** What a handler knows about the session it runs in. */
+export interface ExtensionContext {
+  readonly cwd: string;
+  readonly mode: string;
+  readonly model: Model<Api> | undefined;
+  readonly modelRegistry: ModelRegistry;
+  readonly sessionManager: { getBranch(): readonly BranchEntry[] };
+  readonly signal: AbortSignal | undefined;
+  getContextUsage(): ContextUsage | undefined;
+}
+
+export interface ToolResult<Details = unknown> {
+  content: { type: "text"; text: string }[];
+  details: Details;
+}
+
+export interface ToolDefinition<Parameters extends TSchema = TSchema, Details = unknown> {
+  name: string;
+  label: string;
+  description: string;
+  parameters: Parameters;
+  execute(toolCallId: string, params: Static<Parameters>, signal: AbortSignal | undefined, onUpdate: undefined,
+    ctx: ExtensionContext): Promise<ToolResult<Details>>;
+}
+
+export type Handler<Event, Result> = (event: Event, ctx: ExtensionContext) => Result | Promise<Result>;
+
+export type FlagOptions =
+  | { description?: string; type: "boolean"; default?: boolean }
+  | { description?: string; type: "string"; default?: string };
+
+/** The API an extension receives when its session loads it. */
+export interface ExtensionAPI {
+  on(event: "session_start", handler: Handler<SessionStartEvent, void>): void;
+  on(event: "input", handler: Handler<InputEvent, InputResult | undefined>): void;
+  on(event: "tool_execution_start", handler: Handler<ToolExecutionStartEvent, void>): void;
+  on(event: "tool_result", handler: Handler<ToolResultEvent, void>): void;
+  on(event: "agent_before_settle", handler: Handler<SettleEvent, SettleResult | undefined>): void;
+  registerTool<Parameters extends TSchema, Details>(tool: ToolDefinition<Parameters, Details>): void;
+  registerFlag(name: string, options: FlagOptions): void;
+  getFlag(name: string): boolean | string | undefined;
+  getActiveTools(): string[];
+  setActiveTools(toolNames: string[]): void;
+  getThinkingLevel(): string;
+  getSettings(): { quietStartup?: boolean | string };
+}
+
+export type ExtensionFactory = (pi: ExtensionAPI) => void;
+
+/** Token use across a session. */
+export interface SessionStats {
+  readonly tokens: { readonly input: number; readonly output: number; readonly total: number };
+}
+
+/** One conversation, its model and its extensions, as the shell drives it. */
+export interface Session {
+  /** Sends the operator's input and resolves once the run has settled. */
+  prompt(text: string): Promise<void>;
+  abort(): Promise<void>;
+  /** The conversation in order, without the system prompt: each message's role, and an extension message's custom type. */
+  messages(): readonly { readonly role: string; readonly customType?: string }[];
+  lastAssistantText(): string | undefined;
+  stats(): SessionStats;
+  /** How the last run ended; undefined before the first run settles. */
+  outcome(): SessionOutcome | undefined;
+  dispose(): void;
+}
