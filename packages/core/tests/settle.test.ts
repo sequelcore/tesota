@@ -186,6 +186,46 @@ describe("input during settlement", () => {
   });
 });
 
+describe("input at settlement's edges", () => {
+  test("input that arrives as the verifier's result is written comes after the run's end, and is refused, not lost", async () => {
+    let steer: Promise<void> | undefined;
+    const run: EngineSession = session(["done"], {
+      verifier: (pi) => { pi.on("agent_before_settle", () => undefined); },
+      writer: (writer) => ({ ...writer, append: (entry) => {
+        writer.append(entry);
+        if (entry.type === "settled" && entry.phase === "verifier") steer = run.prompt("one more thing", { streamingBehavior: "steer" });
+      } }),
+    });
+    await run.prompt("go");
+    await expect(steer).rejects.toThrow("send it as a new prompt");
+    expect(run.outcome()).toBe("completed");
+    expect(entriesOf(run.file).slice(-2).map((entry) => entry.type)).toEqual(["settled", "run_end"]);
+  });
+
+  test("settlement waits for an input handler still running when the model finishes, and counts its failure", async () => {
+    let streaming: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => { streaming = resolve; });
+    const run = session(["a reply that streams slowly enough to steer it part of the way through", "after the steer"], {
+      slow: true,
+      extensions: [(pi) => {
+        pi.on("input", async (event) => {
+          if (event.streamingBehavior === undefined) { streaming(); return undefined; }
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          throw new Error("the steer's handler failed");
+        });
+      }],
+      verifier: (pi) => { pi.on("agent_before_settle", () => undefined); },
+    });
+    const prompt = run.prompt("go");
+    await answered;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const steer = run.prompt("also check b", { streamingBehavior: "steer" });
+    await Promise.all([prompt, steer]);
+    expect(run.outcome()).toBe("incomplete");
+    expect(runEnd(run.file)?.reason).toContain("the steer's handler failed");
+  });
+});
+
 describe("a failed write during settlement", () => {
   test("rejects the prompt before the verifier runs, and nothing records the run as completed", async () => {
     let failing = false;

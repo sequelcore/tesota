@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { type Base, captureBase } from "./base.ts";
 import type { EntryDraft, ExtensionFactory, RunOutcome, Session, SessionOutcome } from "./contract.ts";
 import { conversationMessage } from "./conversation.ts";
-import { createHost } from "./extensions.ts";
+import { createHost, type PhaseResult } from "./extensions.ts";
 import type { Behavior, Origin, SessionWriter, SettlePhase } from "./session-file.ts";
 import { afterExtensions, afterVerifier, continuationLimit } from "./settle-rule.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
@@ -106,8 +106,7 @@ interface Ended {
 }
 
 /** What settlement decided: another model turn, sent back by a handler (`automatic`) or for input that came meanwhile, or the run's end. */
-type Settled = { readonly next: "continue"; readonly automatic: boolean } | { readonly next: "end"; readonly outcome: SessionOutcome;
-  readonly reason?: string };
+type Settled = { readonly next: "continue"; readonly automatic: boolean } | { readonly next: "end"; readonly outcome: SessionOutcome };
 
 /**
  * The engine's agent loop (#432), writing everything to its session (#437)
@@ -138,9 +137,12 @@ export function createLoop(options: LoopOptions): Session {
   /** Settles once the running request is in the ledger, so no amendment comes before it. */
   let recorded: Promise<void> = Promise.resolve();
   let queue: Queued[] = [];
-  /** While a run settles, input handlers wait for it, in the order their input came. */
+  /** While a run settles, input handlers wait for it, in the order their input came; settlement waits for those already running. */
   let settling = false;
   let waiting: (() => Promise<void>)[] = [];
+  const handling = new Set<Promise<void>>();
+  /** Set once the running request's end is written: input after it belongs to no run. */
+  let closed = false;
   /** Settles once the session is disposed; disposing again waits for the same. */
   let disposed: Promise<void> | undefined;
 
@@ -233,12 +235,20 @@ export function createLoop(options: LoopOptions): Session {
     }
   }
 
-  /** One phase of settlement: its start synced before its handlers run, and its entries and result synced before anything acts on them. */
+  /** A settlement phase's handlers, after its start is synced. */
   async function phase(run: number, generation: number, name: SettlePhase, told: RunOutcome, signal: AbortSignal,
-    reason: string | undefined) {
+    reason: string | undefined): Promise<PhaseResult> {
     writer.append({ type: "settle", run, generation, phase: name, outcome: told });
     writer.sync();
-    const result = await host.settle(name, told, signal, reason);
+    return host.settle(name, told, signal, reason);
+  }
+
+  /**
+   * What a phase returned, recorded and synced before anything acts on it;
+   * synchronous, so no input is recorded between it and what settlement
+   * decides from it.
+   */
+  function settled(run: number, generation: number, name: SettlePhase, result: PhaseResult): PhaseResult {
     const errors = [...host.takeErrors(), ...result.errors];
     record(run, result.entries);
     writer.append({ type: "settled", run, generation, phase: name, continued: result.continued, errors, registered: result.registered });
@@ -252,9 +262,13 @@ export function createLoop(options: LoopOptions): Session {
    * returned whether the run goes on or how it ends. The verifier finalizes
    * a run that will not complete, told why; only a verification it ran on a
    * completed run, with no failure and no input it did not see, completes it.
+   * Input handlers already running finish first. The verifier's result, the
+   * decision and the run's end are written in one synchronous step, so input
+   * either came before them and sends the run back, or comes after the end.
    */
   async function settle(run: number, generation: number, ended: Ended, continuations: number, signal: AbortSignal): Promise<Settled> {
-    const ordinary = await phase(run, generation, "extensions", ended.outcome, signal, ended.reason);
+    await Promise.all(handling);
+    const ordinary = settled(run, generation, "extensions", await phase(run, generation, "extensions", ended.outcome, signal, ended.reason));
     const first = afterExtensions(ended.outcome, signal.aborted, ordinary.errors.length > 0, ordinary.continued, continuations,
       continuationLimit);
     if (first === "continue") return { next: "continue", automatic: true };
@@ -262,7 +276,8 @@ export function createLoop(options: LoopOptions): Session {
     const why = signal.aborted ? stoppedReason : ordinary.errors.length > 0 ? `a settle handler failed: ${ordinary.errors.join("; ")}`
       : ordinary.continued ? `settlement sent the run back ${continuationLimit} times` : ended.reason;
     const told: RunOutcome = signal.aborted ? "aborted" : verifying ? "completed" : ended.outcome === "completed" ? "error" : ended.outcome;
-    const verdict = await phase(run, generation, "verifier", told, signal, verifying ? undefined : why);
+    const returned = await phase(run, generation, "verifier", told, signal, verifying ? undefined : why);
+    const verdict = settled(run, generation, "verifier", returned);
     const errors = [...ordinary.errors, ...verdict.errors];
     const next = afterVerifier(ended.outcome, verifying, signal.aborted, errors.length > 0, verdict.registered, verdict.continued,
       queue.length > 0, continuations, continuationLimit);
@@ -271,13 +286,21 @@ export function createLoop(options: LoopOptions): Session {
       : errors.length > 0 ? `a settle handler failed: ${errors.join("; ")}`
         : !verdict.registered ? "the verifier has no settle handler"
           : verdict.continued ? `settlement sent the run back ${continuationLimit} times` : why;
-    return { next: "end", outcome: next, ...reason === undefined ? {} : { reason } };
+    writer.append({ type: "run_end", run, outcome: next, ...reason === undefined ? {} : { reason } });
+    writer.sync();
+    closed = true;
+    return { next: "end", outcome: next };
   }
 
-  /** Runs the input handlers that waited for settlement, in order. */
+  /**
+   * Runs the input handlers that waited for settlement, in order. After the
+   * run's end what they throw belongs to no run and is dropped; that end
+   * did not complete, since their input would have sent the run back.
+   */
   async function release(): Promise<void> {
     settling = false;
     for (const handlers of waiting.splice(0)) await handlers();
+    if (closed) host.takeErrors();
   }
 
   /** A run: its request and base are synced into the ledger before the model hears of it, and its end before it reports. */
@@ -296,15 +319,13 @@ export function createLoop(options: LoopOptions): Session {
     for (;;) {
       const ended = await turns(run, signal);
       settling = true;
-      const settled = await settle(run, generation, ended, continuations, signal).finally(release);
-      if (settled.next === "continue") {
+      const decided = await settle(run, generation, ended, continuations, signal).finally(release);
+      if (decided.next === "continue") {
         generation += 1;
-        if (settled.automatic) continuations += 1;
+        if (decided.automatic) continuations += 1;
         continue;
       }
-      writer.append({ type: "run_end", run, outcome: settled.outcome, ...settled.reason === undefined ? {} : { reason: settled.reason } });
-      writer.sync();
-      outcome = settled.outcome;
+      outcome = decided.outcome;
       return;
     }
   }
@@ -316,13 +337,16 @@ export function createLoop(options: LoopOptions): Session {
    */
   async function amend(run: number, text: string, behavior: Behavior, origin: Origin, signal: AbortSignal | undefined): Promise<void> {
     await recorded;
+    if (closed) throw new Error("The run ended before this input arrived; send it as a new prompt.");
     const id = ++amendments;
     writer.append({ type: "amendment", run, id, behavior, origin, text, at: new Date().toISOString() });
     writer.sync();
     queue.push({ id, behavior, text });
     const handlers = () => host.input({ type: "input", text, source: origin, streamingBehavior: behavior }, signal);
-    if (settling) waiting.push(handlers);
-    else await handlers();
+    if (settling) { waiting.push(handlers); return; }
+    const running = handlers();
+    handling.add(running);
+    try { await running; } finally { handling.delete(running); }
   }
 
   return {
@@ -336,6 +360,7 @@ export function createLoop(options: LoopOptions): Session {
       controller = new AbortController();
       queue = [];
       waiting = [];
+      closed = false;
       const current = start(++runs, text, source, controller.signal);
       running = current;
       try {
