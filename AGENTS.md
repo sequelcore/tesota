@@ -1,13 +1,15 @@
 # Tesota
 
-Pre-release verification layer for coding agents, shipped as a Pi package and
-a `tesota` command that opens Pi with it: it makes the agent show evidence
-that its change does what was asked, proved where it can, tested where it
-cannot, and says what it could not verify. It verifies results, not actions.
-It builds verification and composes the rest: it adds to the harness through
-Pi's public extension points and may carry or recommend existing packages,
-but does not rebuild what Pi or an existing package already provides, such
-as a sandbox, a session engine, model routes or search.
+Pre-release verification layer for coding agents: it makes the agent show
+evidence that its change does what was asked, proved where it can, tested
+where it cannot, and says what it could not verify. It verifies results, not
+actions. It ships today as a Pi package and a `tesota` command that opens Pi
+with it. Under the [2026-10-15 decision](docs/decisions/2026-10-15-own-engine.md)
+it is building its own engine, `@tesota/core` on Bun, where verification is a
+mandatory step of the session lifecycle. The engine's scope is the contract
+Tesota uses from Pi; Pi's tests set the target. Model access stays in
+`pi-ai`; it does not build its own sandbox, verifier or surfaces beyond the
+terminal shell, and adds no capability without a consumer that exists today.
 Keep changes scoped to the active roadmap item.
 
 - Historical provenance is `4257ee9fce034cfe8e50dce3dbe3afb12f468094`;

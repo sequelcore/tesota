@@ -3,7 +3,9 @@
 Status: Accepted on 2026-10-08. Built in refactor slices 1–8 on `dev`,
 documented in slice 9 ([#355](https://github.com/sequelcore/tesota/issues/355)),
 and carried to version 0.1.0 by the later work in the table under
-[Slices](#slices).
+[Slices](#slices). Revised in part on 2026-10-15: Tesota builds its own
+engine instead of shipping as a Pi package
+([decision record](2026-10-15-own-engine.md)).
 
 ## Context
 

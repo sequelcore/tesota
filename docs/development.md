@@ -118,6 +118,7 @@ evidence matters, then mechanism, and never claims more than was exercised.
 | Remote setup and use | [Remote work](remote-work.md) |
 | Status and priorities | [Roadmap](roadmap.md) |
 | How verification works | [Verification design](design/verification.md) |
+| What the engine must avoid, from other harnesses | [Engine study](design/engine-study.md) |
 | The receipt's format | [Receipt v1](receipt-v1.md) |
 | Consequential decisions | [Decisions](decisions/), one record per decision, named by date |
 | Build, test and contribution practice | This page |
