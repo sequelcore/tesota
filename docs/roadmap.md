@@ -5,6 +5,12 @@ and the earlier agent remain in Git history.
 
 ## Status
 
+On 2026-10-15 the owner decided that Tesota builds its own engine,
+`@tesota/core` on Bun, with a terminal shell of parallel sessions, and stops
+running inside Pi ([decision record](decisions/2026-10-15-own-engine.md),
+[engine study](design/engine-study.md)). Nothing of it is built yet; until
+the engine passes its contract, the Pi package below is the working Tesota.
+
 On 2026-10-08 Tesota's direction changed: it stopped being a full coding
 agent and became an open verification layer, shipped as a Pi package and a
 `tesota` command that opens Pi with it
@@ -59,16 +65,21 @@ Slices 1–9 and 11 are done; the
 [decision record](decisions/2026-10-08-verification-layer.md#slices) links
 each one's issue and pull requests.
 
+- **Tesota's engine**
+  ([#432](https://github.com/sequelcore/tesota/issues/432),
+  [decision record](decisions/2026-10-15-own-engine.md)). `@tesota/core`
+  and the `tesota` shell, built in slices with an issue each. The first
+  slices are the contract inventory and its tests against a pinned Pi, the
+  request ledger that compaction never replaces, and the settlement
+  lifecycle with verification as its mandatory step; the
+  [engine study](design/engine-study.md) ranks the rest. Parallel sessions,
+  one worktree each, come with the shell and replace
+  [#373](https://github.com/sequelcore/tesota/issues/373).
 - **12. Alpha, part 2**
-  ([#372](https://github.com/sequelcore/tesota/issues/372)). Version 0.1.0
-  installs from its packed file, through `pi install` and the `tesota`
-  command. A week on a real project comes first; then `dev` reaches `main`,
-  where the receipt's in-toto `predicateType` names
-  [receipt v1](receipt-v1.md), and 0.1.0 is published to npm.
-- **10. Parallel sessions,** after the alpha
-  ([#373](https://github.com/sequelcore/tesota/issues/373)), on Pi's public
-  APIs. `pi-parallel-sessions` was tried and rejected: it patches Pi's
-  internals, and its sessions would run without Tesota.
+  ([#372](https://github.com/sequelcore/tesota/issues/372)) waits for the
+  engine: the alpha ships on `@tesota/core`, not as a Pi package. Then `dev`
+  reaches `main`, where the receipt's in-toto `predicateType` names
+  [receipt v1](receipt-v1.md), and it is published to npm.
 - **Findings become evidence**
   ([#375](https://github.com/sequelcore/tesota/issues/375)). A model judge
   does not return as a verdict: a model's opinion is a candidate, not
@@ -94,7 +105,7 @@ each one's issue and pull requests.
   remaining phone-workflow qualification are open. Conversation recovery
   does not recover interrupted execution. The
   [decision](decisions/2026-10-13-remote-session-host.md) records evidence and
-  limits. Release follows the alpha.
+  limits. It relies on Pi's RPC, so it is reviewed once the engine exists.
 - **Rules in plain words for work that is not code,** after the alpha
   ([decision record](decisions/2026-10-09-plain-language-rules.md)): budgets,
   reports and spreadsheets done with a coding agent. The person states a
@@ -104,11 +115,8 @@ each one's issue and pull requests.
 
 ## Open questions
 
-- **Which existing Pi packages Tesota carries or recommends,** such as
-  sub-agents or permissions, beside the verification it builds
-  ([#385](https://github.com/sequelcore/tesota/issues/385)). Each must keep
-  Tesota's extension active in the sessions it starts, as parallel sessions
-  must ([#373](https://github.com/sequelcore/tesota/issues/373)), and a user
-  can turn it off with `pi config`. Decided after the alpha's week of use
-  ([#372](https://github.com/sequelcore/tesota/issues/372)), including
-  whether Tesota installs them or only recommends them.
+- **Where Pi's packages still fit.** With its own engine, Tesota no longer
+  carries Pi packages ([#385](https://github.com/sequelcore/tesota/issues/385)).
+  `pi-ai` stays for model access until it causes a problem it does not
+  solve; whether Tesota's engine runs Pi extensions beyond the API Tesota
+  uses is decided when a real extension needs it.
