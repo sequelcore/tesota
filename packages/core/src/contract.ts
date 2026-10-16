@@ -163,13 +163,25 @@ export interface SessionStats {
   readonly tokens: { readonly input: number; readonly output: number; readonly total: number };
 }
 
+/** One message of the conversation, as the shell shows it. */
+export interface ConversationMessage {
+  readonly role: string;
+  /** An extension message's custom type. */
+  readonly customType?: string;
+  /** A tool result's tool and whether the call failed. */
+  readonly toolName?: string;
+  readonly isError?: boolean;
+  /** The message's text, its parts joined. */
+  readonly text?: string;
+}
+
 /** One conversation, its model and its extensions, as the shell drives it. */
 export interface Session {
   /** Sends the operator's input and resolves once the run has settled. */
   prompt(text: string): Promise<void>;
   abort(): Promise<void>;
-  /** The conversation in order, without the system prompt: each message's role, and an extension message's custom type. */
-  messages(): readonly { readonly role: string; readonly customType?: string }[];
+  /** The conversation in order, without the system prompt. */
+  messages(): readonly ConversationMessage[];
   lastAssistantText(): string | undefined;
   stats(): SessionStats;
   /** How the last run ended; undefined before the first run settles. */

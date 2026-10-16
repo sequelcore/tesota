@@ -4,18 +4,27 @@ import { join } from "node:path";
 import { withinBudget } from "../src/budget-rule.ts";
 
 /**
- * Performance budgets (#433), checked on every pull request like fx's: the
- * engine is compiled with `bun build --compile`, its `--version` started
- * repeatedly, and the median startup and the binary's size compared with
- * the limits in `budgets.json` for this platform. `--report` prints the
- * measurements without failing, to set or revise a limit.
+ * Performance budgets (#433, #435), checked on every pull request like
+ * fx's: the engine is compiled with `bun build --compile`, its `--version`
+ * started repeatedly, and its scripted loop run (`--measure-loop`, 50
+ * rounds of write and read). The median startup, the binary's size, the
+ * loop's median time and its largest resident memory are compared with the
+ * limits in `budgets.json` for this platform; a measurement without a limit
+ * there is reported only. `--report` prints them all without failing, to
+ * set or revise a limit.
  */
 
-export interface Measurements { readonly startupMs: number; readonly binaryBytes: number }
-export type Limits = { readonly [Name in keyof Measurements]: number | null };
+export interface Measurements {
+  readonly startupMs: number;
+  readonly binaryBytes: number;
+  readonly loopMs: number;
+  readonly loopRssBytes: number;
+}
+export type Limits = { readonly [Name in keyof Measurements]?: number | null };
 
 const warmups = 3;
 const samples = 21;
+const loopRuns = 5;
 
 /** The middle value, the statistic least moved by a slow outlier on a shared CI runner. */
 export function median(values: readonly number[]): number {
@@ -25,31 +34,46 @@ export function median(values: readonly number[]): number {
   return middle;
 }
 
-/** Each measurement over its limit, or with no limit set, described for the check's output. */
+/** Each measurement over its limit, or listed with no limit set yet, described for the check's output. */
 export function overBudget(measured: Measurements, limits: Limits): string[] {
-  return (Object.keys(measured) as (keyof Measurements)[]).flatMap((name) => {
+  return (Object.keys(limits) as (keyof Measurements)[]).flatMap((name) => {
     const limit = limits[name];
+    if (limit === undefined) return [];
     if (limit === null) return [`${name}: no limit set (measured ${measured[name]})`];
     return withinBudget(measured[name], limit) ? [] : [`${name}: ${measured[name]} is over its limit of ${limit}`];
   });
+}
+
+function started(binary: string, argument: string): string {
+  const result = Bun.spawnSync([binary, argument], { stdout: "pipe", stderr: "pipe" });
+  if (result.exitCode !== 0) throw new Error(`${binary} ${argument} failed:\n${result.stderr.toString()}`);
+  return result.stdout.toString();
 }
 
 function measure(): Measurements {
   const folder = mkdtempSync(join(tmpdir(), "tesota-core-budget-"));
   try {
     const binary = join(folder, process.platform === "win32" ? "tesota-core.exe" : "tesota-core");
-    const build = Bun.spawnSync(["bun", "build", "--compile", "--minify", join(import.meta.dir, "..", "src", "main.ts"),
+    // Splitting keeps the loop in its own chunk, loaded only when used: without it every start parsed the whole
+    // bundle, 20-25 ms more on Linux and Windows. Bytecode did the same at 3 MB more (#435).
+    const build = Bun.spawnSync(["bun", "build", "--compile", "--minify", "--format=esm", "--splitting",
+      join(import.meta.dir, "..", "src", "main.ts"),
       "--outfile", binary], { stdout: "ignore", stderr: "pipe" });
     if (build.exitCode !== 0) throw new Error(`bun build --compile failed:\n${build.stderr.toString()}`);
     const times: number[] = [];
     for (let run = 0; run < warmups + samples; run++) {
-      const started = performance.now();
-      const result = Bun.spawnSync([binary, "--version"], { stdout: "pipe", stderr: "pipe" });
-      const elapsed = performance.now() - started;
-      if (result.exitCode !== 0) throw new Error(`${binary} --version failed:\n${result.stderr.toString()}`);
-      if (run >= warmups) times.push(elapsed);
+      const begun = performance.now();
+      started(binary, "--version");
+      if (run >= warmups) times.push(performance.now() - begun);
     }
-    return { startupMs: Math.round(median(times) * 10) / 10, binaryBytes: statSync(binary).size };
+    const loops = Array.from({ length: loopRuns }, () =>
+      JSON.parse(started(binary, "--measure-loop")) as { loopMs: number; loopRssBytes: number });
+    return {
+      startupMs: Math.round(median(times) * 10) / 10,
+      binaryBytes: statSync(binary).size,
+      loopMs: median(loops.map((loop) => loop.loopMs)),
+      loopRssBytes: Math.max(...loops.map((loop) => loop.loopRssBytes)),
+    };
   } finally {
     rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
   }
@@ -60,7 +84,8 @@ if (import.meta.main) {
   const budgets = JSON.parse(readFileSync(join(import.meta.dir, "..", "budgets.json"), "utf8")) as Record<string, Limits | undefined>;
   const limits = budgets[process.platform];
   const measured = measure();
-  console.log(`Budget on ${process.platform}: startup ${measured.startupMs} ms (median of ${samples}), binary ${measured.binaryBytes} bytes`);
+  console.log(`Budget on ${process.platform}: startup ${measured.startupMs} ms (median of ${samples}), binary ${measured.binaryBytes} bytes, `
+    + `loop ${measured.loopMs} ms (median of ${loopRuns}), loop memory ${measured.loopRssBytes} bytes`);
   if (limits === undefined) {
     console.log(`No budgets for ${process.platform}; CI checks Linux and Windows.`);
   } else {

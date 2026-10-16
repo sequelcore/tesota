@@ -1,4 +1,5 @@
 [test]
 preload = ["./tests/isolated-home.ts"]
-# Sessions on a scripted model start Pi's whole runtime; the first one in a file takes a few seconds on Windows.
-timeout = 30000
+# The test timeout is the `--timeout` in package.json's test script, since Bun 1.4.2 ignores `timeout` here. Sessions
+# on a scripted model start Pi's whole runtime, and the first one in a file, like the first Windows PowerShell 5.1,
+# takes seconds on Windows.
