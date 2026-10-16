@@ -62,6 +62,16 @@ export class VirtualTerminal implements Terminal {
     const buffer = this.xterm.buffer.active;
     return Array.from({ length: this.height }, (_, row) => buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? "");
   }
+  /** What the screen shows once it shows `text`; fails naming what it showed instead. */
+  async until(text: string, timeoutMs = 5000): Promise<string> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const screen = (await this.screen()).join("\n");
+      if (screen.includes(text)) return screen;
+      if (Date.now() > deadline) throw new Error(`The screen never showed "${text}":\n${screen}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
   /** The screen and everything scrolled above it. */
   async scrollback(): Promise<string[]> {
     await new Promise<void>((resolve) => { this.xterm.write("", () => resolve()); });

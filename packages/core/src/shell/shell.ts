@@ -25,6 +25,8 @@ export interface ShellOptions {
   readonly status: () => string;
   /** Runs a `/command`; resolves false when there is no such command. */
   readonly command?: (text: string) => Promise<boolean>;
+  /** Copies selected text; the operator's clipboard when not given. Resolves true once it could be checked. */
+  readonly copy?: (text: string) => Promise<boolean>;
 }
 
 /** A line the operator types without it showing, for keys and tokens. */
@@ -38,7 +40,8 @@ class SecretInput implements Component, Focusable {
     else if (matchesKey(data, "escape")) this.onEscape?.();
     else if (matchesKey(data, "backspace")) this.value = this.value.slice(0, -1);
     // Typed and pasted text, without the terminal's paste markers.
-    else this.value += data.replace(/\x1b\[20[01]~/gu, "").replace(/[\x00-\x1f\x7f]/gu, "");
+    else this.value += [...data.replaceAll("\x1b[200~", "").replaceAll("\x1b[201~", "")].filter((char) => char >= " " && char !== "\x7f")
+      .join("");
   }
   invalidate(): void { /* nothing cached */ }
   render(): string[] { return [`> ${"•".repeat(this.value.length)}`]; }
@@ -73,7 +76,7 @@ export function startShell(options: ShellOptions): Shell {
   const { theme, terminal } = options;
   let session = options.session;
   let busy = false;
-  const copy = async (text: string) => copyToClipboard(text, (data) => terminal.write(data));
+  const copy = options.copy ?? (async (text: string) => copyToClipboard(text, (data) => terminal.write(data)));
   const altOptions: TuiAltScreenOptions = {
     searchMatchStyle: (text) => theme.underline(theme.bg("searchMatchBg", theme.fg("searchMatchText", text))),
     searchCurrentMatchStyle: (text) => theme.bold(theme.inverse(theme.bg("searchMatchBg", theme.fg("searchMatchText", text)))),

@@ -35,6 +35,13 @@ function scripted(replies: readonly string[]): { models: MutableModels; credenti
     refresh: (credential: OAuthCredential) => Promise.resolve(credential),
     toAuth: (credential: OAuthCredential) => Promise.resolve({ apiKey: credential.access }),
   } } } as never);
+  const keyed = fauxProvider();
+  models.setProvider({ ...keyed.provider, id: "scripted-key", name: "Scripted key", auth: { apiKey: {
+    name: "Scripted API key",
+    login: async (interaction: ProviderAuthInteraction) =>
+      ({ type: "api_key" as const, key: await interaction.prompt({ type: "secret", message: "Paste the key" }) }),
+    resolve: () => Promise.resolve(undefined),
+  } } } as never);
   return { models, credentials };
 }
 
@@ -45,19 +52,8 @@ async function app(replies: readonly string[] = []) {
   const settingsPath = join(folder("tesota-core-app-settings-"), "settings.json");
   const sessions = folder("tesota-core-app-sessions-");
   const running = runApp({ cwd: folder("tesota-core-app-"), terminal, models, credentials, settingsPath, sessions });
-  await until(terminal, "tesota-core");
+  await terminal.until("tesota-core");
   return { terminal, credentials, settingsPath, sessions, running };
-}
-
-/** Waits until the screen shows `text`, typing nothing. */
-async function until(terminal: VirtualTerminal, text: string, timeoutMs = 5000): Promise<string> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const screen = (await terminal.screen()).join("\n");
-    if (screen.includes(text)) return screen;
-    if (Date.now() > deadline) throw new Error(`The screen never showed "${text}":\n${screen}`);
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
 }
 
 const send = (terminal: VirtualTerminal, text: string): void => { terminal.type(text); terminal.type(enter); };
@@ -66,9 +62,9 @@ describe("tesota-core", () => {
   test("/model lists the available models, and the choice is saved and shown", async () => {
     const { terminal, settingsPath, running } = await app();
     send(terminal, "/model");
-    await until(terminal, "Model");
+    await terminal.until("Model");
     terminal.type(enter);
-    const screen = await until(terminal, "Model: ");
+    const screen = await terminal.until("Model: ");
     expect(readSettings(settingsPath).settings.model).toMatch(/^faux/u);
     expect(screen).toContain(readSettings(settingsPath).settings.model ?? "missing");
     send(terminal, "/quit");
@@ -78,20 +74,20 @@ describe("tesota-core", () => {
   test("/settings changes the thinking level and the terminal mode, saved for the next start", async () => {
     const { terminal, settingsPath, running } = await app();
     send(terminal, "/settings");
-    await until(terminal, "Thinking:");
+    await terminal.until("Thinking:");
     terminal.type("\x1b[B");
     terminal.type(enter);
-    await until(terminal, "xhigh");
+    await terminal.until("xhigh");
     for (let down = 0; down < 4; down++) terminal.type("\x1b[B");
     terminal.type(enter);
-    await until(terminal, "Thinking: high.");
+    await terminal.until("Thinking: high.");
     send(terminal, "/settings");
-    await until(terminal, "Terminal:");
+    await terminal.until("Terminal:");
     terminal.type(enter);
-    await until(terminal, "inline");
+    await terminal.until("inline");
     terminal.type("\x1b[B");
     terminal.type(enter);
-    await until(terminal, "Terminal: inline, from the next start.");
+    await terminal.until("Terminal: inline, from the next start.");
     expect(readSettings(settingsPath).settings).toMatchObject({ thinkingLevel: "high", tuiMode: "inline" });
     send(terminal, "/quit");
     await running;
@@ -100,19 +96,19 @@ describe("tesota-core", () => {
   test("/new starts another session, and /resume brings the first back with its conversation", async () => {
     const { terminal, sessions, running } = await app(["first answer"]);
     send(terminal, "/model");
-    await until(terminal, "Model");
+    await terminal.until("Model");
     terminal.type(enter);
-    await until(terminal, "Model: ");
+    await terminal.until("Model: ");
     send(terminal, "the first request");
-    await until(terminal, "first answer");
+    await terminal.until("first answer");
     send(terminal, "/new");
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect((await terminal.screen()).join("\n")).not.toContain("first answer");
     expect(readdirSync(sessions).filter((name) => name.endsWith(".jsonl")).length).toBe(2);
     send(terminal, "/resume");
-    await until(terminal, "the first request");
+    await terminal.until("the first request");
     terminal.type(enter);
-    await until(terminal, "first answer");
+    await terminal.until("first answer");
     send(terminal, "/quit");
     await running;
   });
@@ -120,19 +116,36 @@ describe("tesota-core", () => {
   test("/login runs a provider's sign-in, showing its link and asking for the code; /logout forgets it", async () => {
     const { terminal, credentials, running } = await app();
     send(terminal, "/login");
-    await until(terminal, "Scripted login");
+    await terminal.until("Scripted login");
     for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes("→ Scripted login"); down++) terminal.type("\x1b[B");
     terminal.type(enter);
-    await until(terminal, "Paste the code");
+    await terminal.until("Paste the code");
     expect((await terminal.screen()).join("\n")).toContain("https://example.test/authorize");
     send(terminal, "1234");
-    await until(terminal, "Logged in to Scripted login.");
+    await terminal.until("Logged in to Scripted login.");
     expect(await credentials.read("scripted-login")).toMatchObject({ access: "token-1234" });
     send(terminal, "/logout");
-    await until(terminal, "Log out of");
+    await terminal.until("Log out of");
     terminal.type(enter);
-    await until(terminal, "Logged out of scripted-login.");
+    await terminal.until("Logged out of scripted-login.");
     expect(await credentials.read("scripted-login")).toBeUndefined();
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("a key typed at a login prompt never shows, and is stored", async () => {
+    const { terminal, credentials, running } = await app();
+    send(terminal, "/login");
+    await terminal.until("Scripted key");
+    for (let down = 0; down < 40 && !(await terminal.screen()).join("\n").includes("→ Scripted key"); down++) terminal.type("\x1b[B");
+    terminal.type(enter);
+    await terminal.until("Paste the key");
+    terminal.type("sk-secret-123");
+    const screen = await terminal.until("•••••••••••••");
+    expect(screen).not.toContain("sk-secret");
+    terminal.type(enter);
+    await terminal.until("Logged in to Scripted key.");
+    expect(await credentials.read("scripted-key")).toEqual({ type: "api_key", key: "sk-secret-123" });
     send(terminal, "/quit");
     await running;
   });
@@ -140,7 +153,7 @@ describe("tesota-core", () => {
   test("an unknown command is named, and /quit ends the shell", async () => {
     const { terminal, running } = await app();
     send(terminal, "/nope");
-    await until(terminal, "No command /nope.");
+    await terminal.until("No command /nope.");
     send(terminal, "/quit");
     await running;
   });
