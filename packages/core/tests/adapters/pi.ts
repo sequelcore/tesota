@@ -1,4 +1,4 @@
-import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
+import { registerFauxProvider } from "@earendil-works/pi-ai/compat";
 import {
   type AgentBeforeSettleEvent, type AgentBeforeSettleEventResult, createAgentSession, DefaultResourceLoader,
   type ExtensionAPI as PiExtensionAPI, type ExtensionContext as PiExtensionContext, type InputEvent as PiInputEvent,
@@ -12,7 +12,9 @@ import type {
   ExtensionAPI, ExtensionContext, InputEvent, InputResult, Session, SessionOutcome, SessionStartEvent, SettleEvent, SettleResult,
   ToolExecutionStartEvent, ToolResultEvent,
 } from "../../src/contract.ts";
-import type { ScriptStep, SessionOptions, TestEngine } from "../engine.ts";
+import { conversationMessage } from "../../src/conversation.ts";
+import type { SessionOptions, TestEngine } from "../engine.ts";
+import { scriptedReply } from "../scripted.ts";
 
 /** Compiles only when `Actual` satisfies `Required`. */
 type Satisfies<Actual extends Required, Required> = Actual;
@@ -39,19 +41,21 @@ export type PiSatisfiesContract = [
 /** Pi's API as the contract; `PiSatisfiesContract` is what makes this sound. */
 const asContract = (pi: PiExtensionAPI): ExtensionAPI => pi as unknown as ExtensionAPI;
 
-const reply = (step: ScriptStep) =>
-  typeof step === "string" ? fauxAssistantMessage(step) : fauxAssistantMessage([fauxToolCall(step.tool, step.args)]);
-
 let sessions = 0;
+
+/** The shell tool Pi has on this platform; Pi runs `bash` through Git Bash on Windows, so the comparison uses its `powershell`. */
+const shell = process.platform === "win32" ? "powershell" : "bash";
 
 /** Pi 1.3.0 through its SDK, on Pi's scripted model, with no state outside a temporary folder. */
 export const piEngine: TestEngine = {
   name: "Pi 1.3.0",
-  lacks: new Set(["settle-results-accumulate", "settle-failure-is-incomplete", "settle-can-be-cancelled"]),
+  lacks: new Set(["settle-results-accumulate", "settle-failure-is-incomplete", "settle-can-be-cancelled", "edit-matches-exactly"]),
+  pending: new Map(),
+  shell,
   async createSession(options: SessionOptions): Promise<Session> {
     const agentDir = mkdtempSync(join(tmpdir(), "tesota-core-pi-"));
     const faux = registerFauxProvider({ provider: `scripted-${++sessions}`, ...options.slow ? { tokensPerSecond: 20 } : {} });
-    faux.setResponses(options.script.map(reply));
+    faux.setResponses(options.script.map(scriptedReply));
     const model = faux.getModel();
     const modelRuntime = await ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
     modelRuntime.registerProvider(model.provider, {
@@ -74,6 +78,8 @@ export const piEngine: TestEngine = {
     await resourceLoader.reload();
     const { session } = await createAgentSession({
       cwd: options.cwd, agentDir, model, modelRuntime, resourceLoader,
+      // Pi's `tools` is an allowlist that also hides tools extensions register, so it is given only without extensions.
+      ...options.extensions.length === 0 ? { tools: ["read", "write", "edit", shell] } : {},
       sessionManager: SessionManager.inMemory(options.cwd),
       settingsManager: SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } }),
     });
@@ -89,9 +95,7 @@ export const piEngine: TestEngine = {
           : last?.role === "assistant" && last.stopReason === "error" ? "error" : "completed";
       },
       abort: () => session.abort(),
-      messages: () => session.messages.filter((message) => message.role !== "system").map((message) =>
-        "customType" in message && typeof message.customType === "string"
-          ? { role: message.role, customType: message.customType } : { role: message.role }),
+      messages: () => session.messages.filter((message) => message.role !== "system").map(conversationMessage),
       lastAssistantText: () => session.getLastAssistantText(),
       stats: () => {
         const { tokens } = session.getSessionStats();

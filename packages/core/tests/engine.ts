@@ -1,3 +1,4 @@
+import type { JsonObject } from "@earendil-works/pi-ai";
 import type { ExtensionFactory, Session } from "../src/contract.ts";
 
 /**
@@ -11,10 +12,25 @@ export type Guarantee =
   /** A settle handler that throws ends the run as `incomplete`, never as done. */
   | "settle-failure-is-incomplete"
   /** Settle handlers get an abort signal, so the operator can stop verification (#408). */
-  | "settle-can-be-cancelled";
+  | "settle-can-be-cancelled"
+  /** An edit whose text matches only after normalizing whitespace or Unicode fails instead of applying. */
+  | "edit-matches-exactly";
 
-/** One scripted model reply: text, or a call to a tool with its arguments. */
-export type ScriptStep = string | { readonly tool: string; readonly args: Record<string, string | number | boolean> };
+/** What an engine has not built yet, with the slice of #432 that brings it. */
+export type Capability = "extensions";
+
+/** A call to a tool with its arguments. */
+export interface ToolStep { readonly tool: string; readonly args: JsonObject }
+
+/**
+ * One scripted model reply: text; a call to a tool; several calls in one
+ * reply, optionally cut off by the output limit; or a provider failure.
+ */
+export type ScriptStep =
+  | string
+  | ToolStep
+  | { readonly calls: readonly ToolStep[]; readonly cutOff?: boolean }
+  | { readonly error: string };
 
 export interface SessionOptions {
   readonly cwd: string;
@@ -25,9 +41,12 @@ export interface SessionOptions {
   readonly slow?: boolean;
 }
 
-/** An engine under test: Pi through its SDK, and later `@tesota/core`. */
+/** An engine under test: Pi through its SDK, and `@tesota/core`. */
 export interface TestEngine {
   readonly name: string;
   readonly lacks: ReadonlySet<Guarantee>;
+  readonly pending: ReadonlyMap<Capability, string>;
+  /** The name of the platform's shell tool: `powershell` on Windows, `bash` elsewhere. */
+  readonly shell: "bash" | "powershell";
   createSession(options: SessionOptions): Promise<Session>;
 }

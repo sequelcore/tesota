@@ -33,7 +33,20 @@ it("stops the processes a cancelled process started, as a verifier's Dafny", asy
   const pid = Number(readFileSync(join(root, "pid"), "utf8"));
   controller.abort();
   expect((await running).ended).toBe("cancelled");
-  expect(await until(() => !alive(pid), 5_000)).toBe(true);
+  // On Windows the run reports only after `taskkill /T` has finished; elsewhere the group's kill is delivered at once.
+  if (process.platform === "win32") expect(alive(pid)).toBe(false);
+  else expect(await until(() => !alive(pid), 1_000)).toBe(true);
+});
+
+it("passes what a process prints to its listener as it comes, and runs without a time limit when given none", async () => {
+  const root = mkdtempSync(join(tmpdir(), "tesota-process-"));
+  roots.push(root);
+  const chunks: Buffer[] = [];
+  const run = await runProcess(process.execPath, ["-e", "console.log('one'); console.error('two')"], root,
+    new AbortController().signal, undefined, (chunk) => { chunks.push(chunk); });
+  expect(run).toMatchObject({ ended: "exited", exitCode: 0 });
+  expect(Buffer.concat(chunks).toString("utf8")).toContain("one");
+  expect(Buffer.concat(chunks).toString("utf8")).toContain("two");
 });
 
 it("reports how a process ended and what it printed", async () => {
