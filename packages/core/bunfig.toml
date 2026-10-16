@@ -1,0 +1,4 @@
+[test]
+preload = ["./tests/isolated-home.ts"]
+# Sessions on a scripted model start Pi's whole runtime; the first one in a file takes a few seconds on Windows.
+timeout = 30000
