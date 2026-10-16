@@ -4,9 +4,9 @@ import { mkdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import type { Base } from "./base.ts";
-import type { ExtensionAPI, Session } from "../../../src/contract.ts";
+import type { ExtensionAPI } from "../../../src/contract.ts";
 import { branchOf } from "./branch.ts";
-import { createLoop, type HistoryMessage, type LoopOptions, type LoopState, toolResult } from "./loop.ts";
+import { createLoop, type HistoryMessage, type LoopOptions, type LoopSession, type LoopState, toolResult } from "./loop.ts";
 import { notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
   type Behavior, createSessionFile, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
@@ -35,7 +35,7 @@ export interface LedgerRequest {
 }
 
 /** A session of the engine: the contract's, plus its file and its request ledger. */
-export interface EngineSession extends Session {
+export interface EngineSession extends LoopSession {
   /** The session's file, to open it again. */
   readonly file: string;
   /** The requests, read from the session's ledger entries alone. */
@@ -218,7 +218,7 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     close: () => { written.close(); },
   };
   const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
-  let loop: Session;
+  let loop: LoopSession;
   try {
     loop = createLoop({ ...options, verifier: (pi) => { options.verifier(pi, request); }, branch: () => branchOf(entries),
       writer: options.writer?.(recording) ?? recording, ...opened ? { resumed: stateOf(entries) } : {} });
