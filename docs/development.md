@@ -62,7 +62,12 @@ before the call runs. Opening a session checks every line and repairs only
 an interrupted last one; recovery marks a call with no result as "outcome
 unknown" or "not run" (`repairs`, proved) and never runs it again. One
 writer holds a session, through a lock the operating system releases when
-its holder ends (`session-lock.ts`, `bun:ffi`). A run settles in two
+its holder ends (`session-lock.ts`, `bun:ffi`). The engine's models are
+pi-ai's built-in providers (`model-access.ts`), authorized by its own
+credentials in `~/.tesota/auth.json`, written under the same lock and whole
+or not at all, and by API keys in the environment; Pi's credentials are
+never read. The chosen model, thinking level and terminal mode are in
+`~/.tesota/settings.json`. A run settles in two
 phases (`loop.ts`): its extensions, whose results accumulate so none can
 drop another's message or cancel its send-back, then the verifier every
 session must have, which no extension can replace. The proved settle rule
