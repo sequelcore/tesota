@@ -15,7 +15,7 @@ import type { Guarantee, ScriptStep, TestEngine } from "./engine.ts";
 const engines: readonly TestEngine[] = [piEngine, tesotaEngine];
 
 const open: Session[] = [];
-afterEach(() => { for (const session of open.splice(0)) session.dispose(); });
+afterEach(async () => { await Promise.all(open.splice(0).map((session) => session.dispose())); });
 
 const results = (session: Session): ConversationMessage[] => session.messages().filter((message) => message.role === "toolResult");
 

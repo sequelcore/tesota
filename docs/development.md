@@ -48,13 +48,26 @@ skipped, naming the slice that brings it. The loop and tool tests run the
 same scripts on both engines and check effects, not wording. The engine's
 shell tool is PowerShell on Windows (PowerShell 7 when installed, otherwise
 Windows PowerShell 5.1; CI runs both) and bash elsewhere; its process
-handling is `src/process.ts`, shared with the verifiers. The inventory test
+handling is `src/process.ts`, shared with the verifiers. A session is one
+JSON Lines file in `~/.tesota/sessions/<project>/`, only appended to
+(`packages/core/src/session-file.ts`). Its request ledger, the request with
+its origin and base (`captureBase`, from the gate's units) and each
+amendment, is synced before the model hears of it, and each call's intent
+before the call runs. Opening a session checks every line and repairs only
+an interrupted last one; recovery marks a call with no result as "outcome
+unknown" or "not run" (`repairs`, proved) and never runs it again. One
+writer holds a session, through a lock the operating system releases when
+its holder ends (`session-lock.ts`, `bun:ffi`). The session tests kill a
+process running one to check recovery; that shows what survives a killed
+process, not a power cut. The inventory test
 fails when `src/` starts using a part of Pi that is not in the contract, an
 engine export, `pi-ai`, or the shell. The budget check compiles the engine
 with code splitting, like a release, so the loop loads only when used, and
 fails a pull request when its median
 `--version` startup, its binary size, or its scripted loop's median time or
-largest memory exceeds the limit for its platform.
+largest memory exceeds the limit for its platform. The request's base, the
+resume of a session of about 1,000 entries and that session's size are
+reported until they have limits.
 
 Tesota is a Pi package. Pi loads its extension from `src/extension.ts`, which
 the `pi` manifest in `package.json` names. The `tesota` command, built to

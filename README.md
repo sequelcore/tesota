@@ -60,7 +60,7 @@ step works.
 - **Git:** Tesota measures each change from where the request started. In
   a Git repository that is its commit; opened in a folder of repositories,
   each repository's own. A folder in no repository is measured against a
-  snapshot Tesota keeps in Pi's agent directory, never in the folder, and
+  snapshot Tesota keeps in `~/.tesota/snapshots`, never in the folder, and
   without its `.env` files. Tesota does not snapshot a home folder, a
   drive's root, or a folder with more than 20,000 files, and reports such
   changes as not verified.

@@ -1,0 +1,7 @@
+{"type":"session","format":"tesota-session","version":1,"id":"2026-10-16T17-04-18-098Z-19fbdd2d","cwd":"/work/project","createdAt":"2026-10-16T17:04:18.098Z"}
+{"type":"request","run":1,"text":"write a","origin":"interactive","at":"2026-10-16T17:04:18.108Z","base":{"units":[{"folder":"","kind":"snapshot","commit":"a3b6c3ff614a0cea32e658c7de9f944f8e000bb1","tooLarge":[]}]}}
+{"type":"assistant","run":1,"message":{"role":"assistant","content":[{"type":"toolCall","id":"tool:1792170258098:7vg5m106ejd","name":"write","arguments":{"path":"a.txt","content":"a"}}],"api":"faux:1792170258097:o69zs5bm4m","provider":"faux","model":"faux-1","usage":{"input":570,"output":9,"cacheRead":0,"cacheWrite":0,"totalTokens":579,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":1792170258098}}
+{"type":"call_intent","run":1,"callId":"tool:1792170258098:7vg5m106ejd"}
+{"type":"tool_result","run":1,"message":{"role":"toolResult","toolCallId":"tool:1792170258098:7vg5m106ejd","toolName":"write","content":[{"type":"text","text":"Wrote 1 bytes to a.txt."}],"isError":false,"timestamp":1792170258336}}
+{"type":"assistant","run":1,"message":{"role":"assistant","content":[{"type":"text","text":"written"}],"api":"faux:1792170258097:o69zs5bm4m","provider":"faux","model":"faux-1","usage":{"input":592,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":594,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1792170258098}}
+{"type":"run_end","run":1,"outcome":"completed"}

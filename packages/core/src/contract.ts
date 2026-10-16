@@ -16,8 +16,10 @@ export type RunOutcome = "completed" | "aborted" | "error";
  * How a session's last run ended, as the session reports it. `incomplete`
  * means a settle step failed, so the run may not say it is done; Pi has no
  * such state, which the conformance tests mark as a guarantee it lacks.
+ * `interrupted` means the process ended during the run, as a resumed
+ * session finds it.
  */
-export type SessionOutcome = RunOutcome | "incomplete";
+export type SessionOutcome = RunOutcome | "incomplete" | "interrupted";
 
 /** A message an extension adds to the conversation at a boundary. */
 export interface CustomMessageDraft {
@@ -175,10 +177,23 @@ export interface ConversationMessage {
   readonly text?: string;
 }
 
+/**
+ * How input reaches a session: while a run is going, `streamingBehavior`
+ * queues it as a steer or a follow-up, as in Pi; `source` says where it came
+ * from, as the input event does.
+ */
+export interface PromptOptions {
+  readonly streamingBehavior?: "steer" | "followUp";
+  readonly source?: InputEvent["source"];
+}
+
 /** One conversation, its model and its extensions, as the shell drives it. */
 export interface Session {
-  /** Sends the operator's input and resolves once the run has settled. */
-  prompt(text: string): Promise<void>;
+  /**
+   * Sends input and resolves once the run has settled; input queued during a
+   * run resolves once it is accepted.
+   */
+  prompt(text: string, options?: PromptOptions): Promise<void>;
   abort(): Promise<void>;
   /** The conversation in order, without the system prompt. */
   messages(): readonly ConversationMessage[];
@@ -186,5 +201,6 @@ export interface Session {
   stats(): SessionStats;
   /** How the last run ended; undefined before the first run settles. */
   outcome(): SessionOutcome | undefined;
-  dispose(): void;
+  /** Stops the run, waits for it to end, and releases what the session holds. */
+  dispose(): Promise<void>;
 }

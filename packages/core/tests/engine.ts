@@ -49,4 +49,6 @@ export interface TestEngine {
   /** The name of the platform's shell tool: `powershell` on Windows, `bash` elsewhere. */
   readonly shell: "bash" | "powershell";
   createSession(options: SessionOptions): Promise<Session>;
+  /** Disposes `session` and opens it again from what it saved, with a new script for the model. */
+  resume(session: Session, options: SessionOptions): Promise<Session>;
 }

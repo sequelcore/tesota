@@ -5,7 +5,7 @@ import { type Node, Project, type PropertyAccessExpression, SyntaxKind } from "t
 /**
  * Where each Pi type Tesota's `src/` uses goes once Pi is gone (#433):
  * - `contract`: the engine provides it through `src/contract.ts`;
- * - `engine`: the engine exports an equivalent (a state folder, a shell);
+ * - `engine`: the engine exports an equivalent (a version, a shell);
  * - `model`: `pi-ai` types, which Tesota keeps;
  * - `shell`: the terminal interface, which moves to the `tesota` shell.
  */
@@ -17,7 +17,7 @@ const owners: Record<string, "contract" | "engine" | "model" | "shell"> = {
   SessionEntry: "contract", SessionMessageEntry: "contract", ToolDefinition: "contract", AgentToolResult: "contract",
   TypeLiteral: "contract",
   // What the engine exports beside the API.
-  VERSION: "engine", getAgentDir: "engine", getShellConfig: "engine", ShellConfig: "engine",
+  VERSION: "engine", getShellConfig: "engine", ShellConfig: "engine",
   // pi-ai, which stays.
   AssistantMessage: "model", BaseModel: "model", Model: "model", TextContent: "model", ToolCall: "model", SystemMessage: "model",
   // The terminal interface.
