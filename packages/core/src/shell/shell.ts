@@ -1,6 +1,6 @@
 import {
-  type Component, Container, Editor, Loader, matchesKey, ScrollView, type Terminal, Text, TuiAltScreen, type TuiAltScreenOptions,
-  TuiMainScreen, VStack,
+  type Component, Container, Editor, type Focusable, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList, type Terminal, Text,
+  TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
 import type { SessionEvent } from "../loop.ts";
 import type { EngineSession } from "../session.ts";
@@ -27,8 +27,29 @@ export interface ShellOptions {
   readonly command?: (text: string) => Promise<boolean>;
 }
 
+/** A line the operator types without it showing, for keys and tokens. */
+class SecretInput implements Component, Focusable {
+  focused = false;
+  private value = "";
+  onSubmit?: (value: string) => void;
+  onEscape?: () => void;
+  handleInput(data: string): void {
+    if (matchesKey(data, "enter")) this.onSubmit?.(this.value);
+    else if (matchesKey(data, "escape")) this.onEscape?.();
+    else if (matchesKey(data, "backspace")) this.value = this.value.slice(0, -1);
+    // Typed and pasted text, without the terminal's paste markers.
+    else this.value += data.replace(/\x1b\[20[01]~/gu, "").replace(/[\x00-\x1f\x7f]/gu, "");
+  }
+  invalidate(): void { /* nothing cached */ }
+  render(): string[] { return [`> ${"•".repeat(this.value.length)}`]; }
+}
+
 /** A running shell: what it draws, and how it ends. */
 export interface Shell {
+  /** Asks the operator to choose one of `items`; undefined when they cancel. */
+  pick(title: string, items: readonly SelectItem[]): Promise<string | undefined>;
+  /** Asks the operator for a line of text, hidden when `secret`; undefined when they cancel. */
+  ask(message: string, options?: { readonly secret?: boolean; readonly placeholder?: string }): Promise<string | undefined>;
   /** Shows `session` instead, its conversation drawn from its history. */
   show(session: EngineSession): void;
   /** Writes a line of the shell's own into the conversation. */
@@ -161,7 +182,40 @@ export function startShell(options: ShellOptions): Shell {
   });
   tui.start();
 
+  /** Shows `body` under `title` over the shell until `settle` is called, then gives the editor back its focus. */
+  function dialog<T>(title: string, body: Component & Focusable, wire: (settle: (value: T | undefined) => void) => void): Promise<T | undefined> {
+    return new Promise((resolve) => {
+      const box = new Container();
+      box.addChild(new Text(theme.bold(theme.fg("accent", title)), 1, 0));
+      box.addChild(body);
+      const handle = tui.showOverlay(box, { width: "80%", maxHeight: "60%", anchor: "center" });
+      tui.setFocus(body);
+      wire((value) => {
+        handle.hide();
+        tui.setFocus(editor);
+        tui.requestRender();
+        resolve(value);
+      });
+      tui.requestRender();
+    });
+  }
+
   return {
+    pick: (title, items) => {
+      const list = new SelectList([...items], Math.min(items.length, 12), theme.selectList);
+      return dialog<string>(title, list as SelectList & Focusable, (settle) => {
+        list.onSelect = (item) => { settle(item.value); };
+        list.onCancel = () => { settle(undefined); };
+      });
+    },
+    ask: (message, askOptions = {}) => {
+      const input = askOptions.secret === true ? new SecretInput()
+        : new Input(askOptions.placeholder === undefined ? {} : { placeholder: askOptions.placeholder });
+      return dialog<string>(message, input, (settle) => {
+        input.onSubmit = (value) => { settle(value); };
+        input.onEscape = () => { settle(undefined); };
+      });
+    },
     show(next) {
       unsubscribe();
       session = next;
