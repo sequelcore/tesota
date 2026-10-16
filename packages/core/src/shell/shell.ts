@@ -68,8 +68,8 @@ export interface Shell {
  * the editor, a working indicator and the footer below. Fullscreen it scrolls
  * the conversation itself, with search and in-app copy; inline it prints into
  * the terminal's scrollback. Enter sends, and steers while the agent works;
- * Alt+Enter queues a follow-up; Esc stops the run; Ctrl+D on an empty editor
- * ends the shell. On ending, a fullscreen shell writes the conversation to
+ * Alt+Enter queues a follow-up; Esc stops the run; Ctrl+C clears the editor
+ * and, twice on an empty one, ends the shell, as Ctrl+D on an empty one does. On ending, a fullscreen shell writes the conversation to
  * the scrollback, as Pi does.
  */
 export function startShell(options: ShellOptions): Shell {
@@ -173,7 +173,16 @@ export function startShell(options: ShellOptions): Shell {
     }
     resolveStopped();
   };
+  /** When Ctrl+C last found the editor empty; a second press soon after ends the shell. */
+  let interruptedAt = 0;
   tui.addInputListener((data) => {
+    if (matchesKey(data, "ctrl+c")) {
+      if (editor.getText() !== "") editor.setText("");
+      else if (Date.now() - interruptedAt < 1500) stop();
+      else { interruptedAt = Date.now(); note("Press Ctrl+C again to end the shell."); }
+      tui.requestRender();
+      return { consume: true };
+    }
     if (matchesKey(data, "escape") && busy) { void session.abort(); return { consume: true }; }
     if (matchesKey(data, "alt+enter")) {
       const text = editor.getText().trim();

@@ -191,4 +191,17 @@ describe("the shell", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(copied.join("")).toContain("copy this");
   });
+
+  test("Ctrl+C clears the editor, and twice on an empty one ends the shell", async () => {
+    const { terminal, shell } = shellOn([]);
+    terminal.type("half a thought");
+    await terminal.until("half a thought");
+    terminal.type("\x1b[99;5u");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(shown(await terminal.screen())).not.toContain("half a thought");
+    terminal.type("\x1b[99;5u");
+    await terminal.until("Press Ctrl+C again");
+    terminal.type("\x1b[99;5u");
+    await shell.stopped;
+  });
 });
