@@ -13,9 +13,12 @@ import type { Static, TSchema } from "typebox";
 export type RunOutcome = "completed" | "aborted" | "error";
 
 /**
- * How a session's last run ended, as the session reports it. `incomplete`
- * means a settle step failed, so the run may not say it is done; Pi has no
- * such state, which the conformance tests mark as a guarantee it lacks.
+ * How a session's last run ended, as the session reports it. `completed`
+ * means its lifecycle finished with its verifier's settlement, not that
+ * every check passed and never human acceptance. `incomplete` means the
+ * run may not say it is done: a settle handler failed, the verifier had no
+ * settle handler, or settlement sent the run back too often (#439); Pi has
+ * no such state, which the conformance tests mark as a guarantee it lacks.
  * `interrupted` means the process ended during the run, as a resumed
  * session finds it.
  */
