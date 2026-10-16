@@ -133,11 +133,27 @@ for (const engine of engines) {
       expect(branch).toBeGreaterThan(0);
     }, "tools");
 
-    guaranteed("settle-can-be-cancelled", "settle handlers get an abort signal", async () => {
-      let signal: AbortSignal | undefined;
-      const session = await start(["done"], [(pi) => { pi.on("agent_before_settle", (_event, ctx) => { signal = ctx.signal; return undefined; }); }]);
-      await session.prompt("go");
-      expect(signal).toBeInstanceOf(AbortSignal);
+    guaranteed("settle-can-be-cancelled", "stopping the run stops a settle handler, which is awaited, and the run ends aborted", async () => {
+      let stopped = false;
+      let started: () => void = () => undefined;
+      const settling = new Promise<void>((resolve) => { started = resolve; });
+      const session = await start(["done"], [(pi) => {
+        pi.on("agent_before_settle", async (_event, ctx) => {
+          started();
+          await new Promise((resolve) => {
+            ctx.signal?.addEventListener("abort", resolve);
+            setTimeout(resolve, 2000);
+          });
+          stopped = ctx.signal?.aborted === true;
+          return undefined;
+        });
+      }]);
+      const run = session.prompt("go");
+      await settling;
+      await session.abort();
+      await run;
+      expect(stopped).toBe(true);
+      expect(session.outcome()).toBe("aborted");
     });
 
     check("a verifier asks a model through the session's model registry", async () => {

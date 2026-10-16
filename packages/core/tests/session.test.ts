@@ -193,6 +193,40 @@ describe("recovery after the process was killed", () => {
   });
 });
 
+describe("recovery after the process was killed while settling (#439)", () => {
+  test("killed during verification, the run is interrupted, nothing is invented, and recovering twice adds nothing", async () => {
+    const sessions = folder("tesota-core-sessions-");
+    const running = await child(["verify", folder(), sessions], "verifying");
+    running.kill("SIGKILL");
+    await running.exited;
+    const file = readFileSync(join(sessions, "file.txt"), "utf8");
+    const resumed = openSession(file, scriptless());
+    open.push(resumed);
+    expect(resumed.outcome()).toBe("interrupted");
+    const once = entriesOf(file);
+    expect(once.slice(-2).map((entry) => entry.type)).toEqual(["settle", "run_end"]);
+    await resumed.dispose();
+    open.push(openSession(file, scriptless()));
+    expect(entriesOf(file)).toEqual(once);
+  });
+
+  test("killed after the receipt was recorded but before the run's end, the receipt stays and the run is interrupted", async () => {
+    const sessions = folder("tesota-core-sessions-");
+    const running = Bun.spawn(["bun", join(import.meta.dir, "session-child.ts"), "receipt", folder(), sessions], { stdout: "ignore", stderr: "inherit" });
+    await running.exited;
+    const file = readFileSync(join(sessions, "file.txt"), "utf8");
+    const resumed = openSession(file, scriptless());
+    open.push(resumed);
+    expect(resumed.outcome()).toBe("interrupted");
+    const once = entriesOf(file);
+    expect(once.slice(-3)).toMatchObject([{ type: "custom", customType: "receipt" }, { type: "settled", phase: "verifier" },
+      { type: "run_end", outcome: "interrupted" }]);
+    await resumed.dispose();
+    open.push(openSession(file, scriptless()));
+    expect(entriesOf(file)).toEqual(once);
+  });
+});
+
 describe("one writer", () => {
   test("a session open in this process cannot be opened again", async () => {
     const created = session(["done"]);
