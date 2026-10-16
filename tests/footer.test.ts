@@ -64,6 +64,14 @@ it("sums up the receipt, leading with whether anything in it needs the operator"
     .toBe("! receipt · 1 proved · tests pass · contracts strong · weakening not checked");
 });
 
+it("never counts a stopped run as verified, even in a repository", () => {
+  const receipt: Receipt = { ...emptyReceipt, stopped: "quota exhausted" };
+  expect(words({ step: "settled", receipt })).toBe("! receipt · not verified, run ended before verification");
+  expect(words({ step: "settled", receipt }, "short")).toBe("! receipt · not verified");
+  expect(words({ step: "settled", receipt }, "glyphs")).toBe("! · not verified");
+  expect(evidenceParts({ step: "settled", receipt }).map(({ color }) => color)).toEqual(["warning", "warning"]);
+});
+
 it("tells a proof that holds only given what the change trusts without proof from one proved outright (#399)", () => {
   const checked = { ...proved, evidence: { ...proved.evidence, files: ["src/clamp.ts", "src/clamp.dfy"] } };
   const extern = (name: string) => ({ path: "src/clamp.ts", kind: "added_assume", annotation: "//@ extern", function: name }) as const;

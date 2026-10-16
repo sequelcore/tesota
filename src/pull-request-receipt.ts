@@ -223,6 +223,11 @@ export async function receiptCommand(args: readonly string[], cwd: string, sessi
     write.error("No Pi session in this folder settled with a Tesota receipt. Run tesota receipt where the session ran.\n");
     return 1;
   }
+  if (isReceipt(found.receipt) && found.receipt.stopped !== undefined) {
+    write.error("The last run here ended before Tesota verified it; this Tesota cannot write it " +
+      "for a pull request. Run the request again.\n");
+    return 1;
+  }
   if (isReceipt(found.receipt) && found.receipt.units !== undefined) {
     write.error("The last receipt here covers several repositories. Run tesota receipt in the repository of the pull request.\n");
     return 1;

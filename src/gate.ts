@@ -399,11 +399,24 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     return undefined;
   });
   pi.on("tool_execution_start", (event) => { if (!readOnlyTools.has(event.toolName)) mayHaveChanged = true; });
-  // A gate that fails midway leaves no step running in the footer.
+  // A run that ends before verification leaves no step running, and says why if it may have changed files.
   pi.on("agent_before_settle", async (event, ctx) => {
     if (event.outcome !== "completed") {
-      if ("startedAt" in progress.status) progress.reset();
-      return undefined;
+      if (!mayHaveChanged) {
+        if ("startedAt" in progress.status) progress.reset();
+        return undefined;
+      }
+      const begun = await start;
+      const workspace = begun?.units.some(({ folder }) => folder !== "") ?? false;
+      const reason = "reason" in event && typeof event.reason === "string" ? event.reason : undefined;
+      const receipt: Receipt = { version: 1,
+        repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
+        base: workspace ? null : begun?.bases.get("") ?? null, startedAt: startedAt ?? new Date().toISOString(),
+        settledAt: new Date().toISOString(), pi: VERSION, ...sessionModel(ctx), ...noEvidence,
+        stopped: reason ?? (event.outcome === "aborted" ? "the operator stopped the run before Tesota verified it"
+          : "the run failed before Tesota verified it") };
+      progress.publish({ step: "settled", receipt });
+      return { entries: [receiptEntry(ctx.mode, receipt)] };
     }
     try { return await settle(ctx); } catch (error) { progress.reset(); throw error; }
   });

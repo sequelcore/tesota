@@ -167,6 +167,21 @@ it("refuses without a receipt this Tesota reads, or with arguments it does not t
   expect(output.pop()).toContain("not --owner.");
 });
 
+it("refuses a receipt from a run that ended before verification", async () => {
+  const output: string[] = [];
+  const errors: string[] = [];
+  const write = { out: (text: string) => { output.push(text); }, error: (text: string) => { errors.push(text); } };
+  const sessions: PiSessions = { list: () => Promise.resolve([{ path: "stopped", modified: new Date() }]),
+    open: () => ({ getSessionId: () => "id", getBranch: () => [{ type: "custom_message", customType: "tesota-receipt",
+      details: { ...emptyReceipt, stopped: "quota exhausted" } }] }) };
+  for (const args of [[], ["--json"]]) {
+    expect(await receiptCommand(args, "here", sessions, write)).toBe(1);
+    expect(errors.pop()).toBe("The last run here ended before Tesota verified it; this Tesota cannot write it " +
+      "for a pull request. Run the request again.\n");
+  }
+  expect(output).toEqual([]);
+});
+
 it("reads a repository's HTTPS URL from its origin remote, however it is written", () => {
   expect(httpsRepository("git@github.com:sequelcore/tesota.git\n")).toBe("https://github.com/sequelcore/tesota");
   expect(httpsRepository("https://github.com/sequelcore/tesota.git")).toBe("https://github.com/sequelcore/tesota");

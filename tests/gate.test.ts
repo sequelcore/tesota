@@ -99,7 +99,7 @@ interface Settled { entries?: { customType: string; content: string; details?: u
 /** The gate's handlers on a fake Pi, run as Pi runs them in `root`; the open-case list is off unless `session` sets its flag. */
 function gate(root: string, active = ["read", "edit", "prove"], session: object = {}): {
   input: (source?: string, streamingBehavior?: string, text?: string) => Promise<void>; agentStart: () => void; tool: (name: string) => void;
-  settle: (outcome?: string) => Promise<Settled | undefined>; progress: GateProgress; steps: GateStatus[];
+  settle: (outcome?: string, reason?: string) => Promise<Settled | undefined>; progress: GateProgress; steps: GateStatus[];
 } {
   const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
   const progress = registerGate({ on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => { handlers.set(name, handler); },
@@ -116,8 +116,8 @@ function gate(root: string, active = ["read", "edit", "prove"], session: object 
     },
     agentStart: () => { handlers.get("agent_start")?.({ type: "agent_start" }, ctx); },
     tool: (toolName) => { handlers.get("tool_execution_start")?.({ type: "tool_execution_start", toolName }, ctx); },
-    settle: async (outcome = "completed") =>
-      await handlers.get("agent_before_settle")?.({ type: "agent_before_settle", outcome }, ctx) as Settled | undefined,
+    settle: async (outcome = "completed", reason) =>
+      await handlers.get("agent_before_settle")?.({ type: "agent_before_settle", outcome, reason }, ctx) as Settled | undefined,
   };
 }
 
@@ -244,6 +244,55 @@ it("publishes each step for the footer: proving, sent back, testing, measuring, 
   expect(run.progress.status).toEqual({ step: "settled", receipt });
   await run.input();
   expect(run.progress.status).toEqual({ step: "ready", readiness: "proofs_only" });
+});
+
+it("leaves a receipt verifying nothing when a run is stopped after a write starts", async () => {
+  const root = project();
+  const run = gate(root, undefined, { model: { provider: "provider", id: "model" } });
+  await run.input();
+  run.tool("write");
+  writeFileSync(join(root, "src", "rule.ts"), contract.replace("return 0;", "return 1;"));
+  scripted.set("src/rule.ts", { outcome: "failed", output: "throws" });
+  const settled = await run.settle("aborted");
+  expect(settled?.continue).toBeUndefined();
+  expect(entry(settled).customType).toBe("tesota-receipt");
+  const receipt = entry(settled).details as Receipt;
+  expect(receipt).toMatchObject({ version: 1, repository: true, base: await headCommit(root), pi: VERSION,
+    model: "provider/model", stopped: "the operator stopped the run before Tesota verified it",
+    proofs: [], tests: [], contracts: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [] });
+  expect(receipt.claimcheck).toBeUndefined();
+  expect(receipt.openCases).toBeUndefined();
+  expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
+  expect(run.progress.status).toEqual({ step: "settled", receipt });
+  expect(run.steps.map(({ step }) => step)).toEqual(["ready", "settled"]);
+});
+
+it.each([
+  ["quota exhausted", "quota exhausted"],
+  [undefined, "the run failed before Tesota verified it"],
+])("records why a run failed after a write starts: %s", async (reason, stopped) => {
+  const root = project();
+  const run = gate(root);
+  await run.input();
+  run.tool("write");
+  const settled = await run.settle("error", reason);
+  expect(settled?.continue).toBeUndefined();
+  expect(entry(settled).details).toMatchObject({ stopped, repository: true, base: await headCommit(root), proofs: [], tests: [] });
+});
+
+it("leaves no receipt when an aborted run only started a read", async () => {
+  const run = gate(project());
+  await run.input();
+  run.tool("read");
+  expect(await run.settle("aborted")).toBeUndefined();
+  expect(run.progress.status).toEqual({ step: "ready", readiness: "nothing" });
+});
+
+it("keeps unknown bases unknown when a stopped write had no request input", async () => {
+  const run = gate(folder());
+  run.tool("write");
+  expect(entry(await run.settle("aborted")).details).toMatchObject({ repository: false, base: null,
+    stopped: "the operator stopped the run before Tesota verified it", proofs: [], tests: [] });
 });
 
 it("clears a running footer operation when the run is aborted or fails", async () => {
