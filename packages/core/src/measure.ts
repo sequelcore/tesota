@@ -29,18 +29,18 @@ function scripted(rounds: number) {
 
 /** Runs `measure` with a session of `rounds` rounds in temporary folders, with no network, and removes them after. */
 async function measured(rounds: number, measure: (session: EngineSession, run: () => Promise<number>) => Promise<object>,
-  base?: SessionOptions["captureBase"]): Promise<void> {
+  timing: Pick<SessionOptions, "captureBase" | "writer"> = {}): Promise<void> {
   const cwd = mkdtempSync(join(tmpdir(), "tesota-core-measure-"));
   const sessions = mkdtempSync(join(tmpdir(), "tesota-core-measure-sessions-"));
   try {
-    const session = createSession({ cwd, folder: sessions, ...scripted(rounds), ...base === undefined ? {} : { captureBase: base } });
+    const session = createSession({ cwd, folder: sessions, ...scripted(rounds), ...timing });
     const run = async (): Promise<number> => {
       const started = performance.now();
       await session.prompt("measure");
       const ms = performance.now() - started;
       await session.dispose();
       if (session.outcome() !== "completed") throw new Error(`The measured run ended ${session.outcome() ?? "without an outcome"}.`);
-      return Math.round(ms * 10) / 10;
+      return tenths(ms);
     };
     console.log(JSON.stringify(await measure(session, run)));
   } finally {
@@ -48,24 +48,38 @@ async function measured(rounds: number, measure: (session: EngineSession, run: (
   }
 }
 
+const tenths = (ms: number): number => Math.round(ms * 10) / 10;
+
 /**
  * The loop's own cost, for the budget check (#435): a scripted model drives
  * `loopRounds` rounds of write and read in a session that records and syncs
- * it as any session does (#437). The request's base, a snapshot of the new
- * folder, is timed apart: it is paid once a request, not once a call.
- * Prints the run's milliseconds without the base, the base's, and the
- * process's resident memory as JSON.
+ * it as any session does (#437). What the system and the disk decide is
+ * timed apart: the request's base, a snapshot of the new folder, paid once
+ * a request, and each sync to the disk, which takes 0.3 ms on one machine
+ * and 10 ms on another. Prints the run's milliseconds without them, the
+ * base's, the median sync's, and the process's resident memory as JSON.
  */
 export function measureLoop(): Promise<void> {
   let baseMs = 0;
-  const timed: NonNullable<SessionOptions["captureBase"]> = async (cwd) => {
+  const syncs: number[] = [];
+  const captureTimed: NonNullable<SessionOptions["captureBase"]> = async (cwd) => {
     const started = performance.now();
     try { return await captureBase(cwd); } finally { baseMs += performance.now() - started; }
   };
+  const syncTimed: NonNullable<SessionOptions["writer"]> = (writer) => ({
+    ...writer,
+    sync: () => {
+      const started = performance.now();
+      try { writer.sync(); } finally { syncs.push(performance.now() - started); }
+    },
+  });
   return measured(loopRounds, async (_session, run) => {
     const runMs = await run();
-    return { loopMs: Math.round((runMs - baseMs) * 10) / 10, baseMs: Math.round(baseMs * 10) / 10, loopRssBytes: process.memoryUsage().rss };
-  }, timed);
+    const syncedMs = syncs.reduce((sum, ms) => sum + ms, 0);
+    const sorted = [...syncs].sort((a, b) => a - b);
+    return { loopMs: tenths(runMs - baseMs - syncedMs), baseMs: tenths(baseMs), syncMs: Math.round((sorted[Math.floor(sorted.length / 2)] ?? 0) * 100) / 100,
+      loopRssBytes: process.memoryUsage().rss };
+  }, { captureBase: captureTimed, writer: syncTimed });
 }
 
 /**
@@ -79,7 +93,7 @@ export function measureResume(): Promise<void> {
     const { models, model } = scripted(0);
     const started = performance.now();
     const resumed = openSession(session.file, { models, model });
-    const resumeMs = Math.round((performance.now() - started) * 10) / 10;
+    const resumeMs = tenths(performance.now() - started);
     await resumed.dispose();
     return { resumeMs, sessionBytes: statSync(session.file).size };
   });

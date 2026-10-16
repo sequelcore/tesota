@@ -65,9 +65,10 @@ engine export, `pi-ai`, or the shell. The budget check compiles the engine
 with code splitting, like a release, so the loop loads only when used, and
 fails a pull request when its median
 `--version` startup, its binary size, or its scripted loop's median time or
-largest memory exceeds the limit for its platform. The request's base, the
-resume of a session of about 1,000 entries and that session's size are
-reported until they have limits.
+largest memory exceeds the limit for its platform. The loop's time leaves
+out what the system and the disk decide, timed apart: the request's base
+and each sync to the disk. Those two, the resume of a session of about
+1,000 entries and that session's size are reported until they have limits.
 
 Tesota is a Pi package. Pi loads its extension from `src/extension.ts`, which
 the `pi` manifest in `package.json` names. The `tesota` command, built to
