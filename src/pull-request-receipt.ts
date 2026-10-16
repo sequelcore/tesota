@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { type Evidence, contentHash } from "./evidence.js";
 import { git, headCommit } from "./git.js";
-import { isReceipt, type Receipt, renderReceipt, unitReceipt } from "./receipt.js";
+import { entryReceipt, isReceipt, type Receipt, type ReceiptEntry, renderReceipt, unitReceipt } from "./receipt.js";
 
 /**
  * The receipt for a pull request (`tesota receipt`): the last receipt a Pi
@@ -19,7 +19,7 @@ export interface PiSessions {
   list(cwd: string): Promise<readonly { readonly path: string; readonly modified: Date }[]>;
   open(path: string): {
     getSessionId(): string;
-    getBranch(): readonly { readonly type: string; readonly customType?: string; readonly details?: unknown }[];
+    getBranch(): readonly ReceiptEntry[];
   };
 }
 
@@ -28,9 +28,8 @@ export async function lastReceipt(sessions: PiSessions, cwd: string): Promise<{ 
   const listed = [...await sessions.list(cwd)].sort((a, b) => b.modified.getTime() - a.modified.getTime());
   for (const { path } of listed) {
     const session = sessions.open(path);
-    const entry = session.getBranch().findLast(({ type, customType }) =>
-      type === "custom_message" && customType === "tesota-receipt");
-    if (entry !== undefined) return { receipt: entry.details, sessionId: session.getSessionId() };
+    const entry = session.getBranch().findLast((entry) => entryReceipt(entry) !== undefined);
+    if (entry !== undefined) return { receipt: entryReceipt(entry), sessionId: session.getSessionId() };
   }
   return undefined;
 }

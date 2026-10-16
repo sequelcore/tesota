@@ -295,6 +295,33 @@ export function isReceipt(value: unknown): value is Receipt {
   return typeof value === "object" && value !== null && Reflect.get(value, "version") === 1;
 }
 
+/** A session entry that may carry a receipt, as Pi stores messages and custom entries. */
+export interface ReceiptEntry { readonly type: string; readonly customType?: string; readonly details?: unknown; readonly data?: unknown }
+
+/**
+ * What a `tesota-receipt` entry carries, or `undefined` for any other entry:
+ * a message's details, or a custom entry's data from print mode (#427).
+ */
+export function entryReceipt(entry: ReceiptEntry): unknown {
+  if (entry.customType !== "tesota-receipt") return undefined;
+  return entry.type === "custom_message" ? entry.details : entry.type === "custom" ? entry.data : undefined;
+}
+
+/**
+ * The entry a run settles with: a message chat hosts show beside the
+ * conversation. Pi's print mode writes the final answer only when it is the
+ * session's last message, so there the receipt is a custom entry outside the
+ * conversation. Temporary (#427): remove the print branch, and the custom
+ * entry in `entryReceipt`, once Pi prints the final assistant text after
+ * extension messages.
+ */
+export function receiptEntry(mode: string | undefined, receipt: Receipt):
+  { type: "custom"; customType: "tesota-receipt"; data: Receipt } |
+  { type: "custom_message"; customType: "tesota-receipt"; content: string; display: true; details: Receipt } {
+  return mode === "print" ? { type: "custom", customType: "tesota-receipt", data: receipt }
+    : { type: "custom_message", customType: "tesota-receipt", content: renderReceiptMessage(receipt), display: true, details: receipt };
+}
+
 /** Which check a finding comes from. */
 export type Check = "proof" | "tests" | "weakening" | "contract" | "exercise" | "request" | "coverage";
 
