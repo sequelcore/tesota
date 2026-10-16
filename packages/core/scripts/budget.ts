@@ -4,14 +4,16 @@ import { join } from "node:path";
 import { withinBudget } from "../src/budget-rule.ts";
 
 /**
- * Performance budgets (#433, #435), checked on every pull request like
- * fx's: the engine is compiled with `bun build --compile`, its `--version`
- * started repeatedly, and its scripted loop run (`--measure-loop`, 50
- * rounds of write and read). The median startup, the binary's size, the
- * loop's median time and its largest resident memory are compared with the
- * limits in `budgets.json` for this platform; a measurement without a limit
- * there is reported only. `--report` prints them all without failing, to
- * set or revise a limit.
+ * Performance budgets (#433, #435, #437), checked on every pull request
+ * like fx's: the engine is compiled with `bun build --compile`, its
+ * `--version` started repeatedly, its scripted loop run (`--measure-loop`,
+ * 50 rounds of write and read, with its request's base and its syncs to the
+ * disk timed apart), and a session of about 1,000 entries resumed
+ * (`--measure-resume`). The median startup, the binary's size, the loop's
+ * median time and its largest resident memory, the median base and sync,
+ * the largest number of syncs, the median resume and the largest session
+ * file are compared with the limits in `budgets.json` for this platform; a measurement without a limit there is reported only.
+ * `--report` prints them all without failing, to set or revise a limit.
  */
 
 export interface Measurements {
@@ -19,6 +21,11 @@ export interface Measurements {
   readonly binaryBytes: number;
   readonly loopMs: number;
   readonly loopRssBytes: number;
+  readonly baseMs: number;
+  readonly syncMs: number;
+  readonly syncCount: number;
+  readonly resumeMs: number;
+  readonly sessionBytes: number;
 }
 export type Limits = { readonly [Name in keyof Measurements]?: number | null };
 
@@ -67,12 +74,19 @@ function measure(): Measurements {
       if (run >= warmups) times.push(performance.now() - begun);
     }
     const loops = Array.from({ length: loopRuns }, () =>
-      JSON.parse(started(binary, "--measure-loop")) as { loopMs: number; loopRssBytes: number });
+      JSON.parse(started(binary, "--measure-loop")) as { loopMs: number; baseMs: number; syncMs: number; syncCount: number; loopRssBytes: number });
+    const resumes = Array.from({ length: loopRuns }, () =>
+      JSON.parse(started(binary, "--measure-resume")) as { resumeMs: number; sessionBytes: number });
     return {
       startupMs: Math.round(median(times) * 10) / 10,
       binaryBytes: statSync(binary).size,
       loopMs: median(loops.map((loop) => loop.loopMs)),
       loopRssBytes: Math.max(...loops.map((loop) => loop.loopRssBytes)),
+      baseMs: median(loops.map((loop) => loop.baseMs)),
+      syncMs: median(loops.map((loop) => loop.syncMs)),
+      syncCount: Math.max(...loops.map((loop) => loop.syncCount)),
+      resumeMs: median(resumes.map((resume) => resume.resumeMs)),
+      sessionBytes: Math.max(...resumes.map((resume) => resume.sessionBytes)),
     };
   } finally {
     rmSync(folder, { recursive: true, force: true, maxRetries: 3 });
@@ -85,7 +99,9 @@ if (import.meta.main) {
   const limits = budgets[process.platform];
   const measured = measure();
   console.log(`Budget on ${process.platform}: startup ${measured.startupMs} ms (median of ${samples}), binary ${measured.binaryBytes} bytes, `
-    + `loop ${measured.loopMs} ms (median of ${loopRuns}), loop memory ${measured.loopRssBytes} bytes`);
+    + `loop ${measured.loopMs} ms (median of ${loopRuns}), loop memory ${measured.loopRssBytes} bytes, `
+    + `base ${measured.baseMs} ms (median of ${loopRuns}), sync ${measured.syncMs} ms (median), syncs ${measured.syncCount}, `
+    + `resume ${measured.resumeMs} ms (median of ${loopRuns}), session ${measured.sessionBytes} bytes`);
   if (limits === undefined) {
     console.log(`No budgets for ${process.platform}; CI checks Linux and Windows.`);
   } else {

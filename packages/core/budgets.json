@@ -1,4 +1,6 @@
 {
-  "linux": { "startupMs": 8, "binaryBytes": 85400000, "loopMs": 120, "loopRssBytes": 78000000 },
-  "win32": { "startupMs": 40, "binaryBytes": 90400000, "loopMs": 300, "loopRssBytes": 74000000 }
+  "linux": { "startupMs": 8, "binaryBytes": 85400000, "loopMs": 120, "loopRssBytes": 86000000,
+    "baseMs": 30, "syncCount": 102, "resumeMs": 11, "sessionBytes": 745000 },
+  "win32": { "startupMs": 40, "binaryBytes": 90400000, "loopMs": 300, "loopRssBytes": 74000000,
+    "baseMs": 600, "syncCount": 102, "resumeMs": 35, "sessionBytes": 745000 }
 }

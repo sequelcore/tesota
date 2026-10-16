@@ -105,8 +105,8 @@ What counts as a repeat:
 
 Outside a Git repository the gate measures the request against its own
 snapshot of the folder (`takeSnapshot` in `src/snapshot.ts`, #384), taken
-when the request starts: Git, run with a Git directory under Pi's agent
-directory (`state/tesota/snapshots`) and the folder as its work tree,
+when the request starts: Git, run with a Git directory under Tesota's own
+state folder (`~/.tesota/snapshots`) and the folder as its work tree,
 commits the folder as it is, and the folder gains nothing. Every step above
 then runs as in a repository, so a change any tool made, a shell command's
 included, is found by its content. Secrets (`.env`, `.env.*`), Git's and

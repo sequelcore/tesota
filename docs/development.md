@@ -18,7 +18,7 @@ registry packages; lifecycle scripts are disabled.
 | `bun run check` | Run the complete repository gate, including the engine's |
 | `bun run formal:check` | Prove the LemmaScript rules in `src/verification/` and `packages/core/src/`; requires Dafny |
 | `bun run --cwd packages/core check` | Typecheck the engine, run its tests with `bun test`, and check its performance budgets |
-| `bun run --cwd packages/core budget --report` | Measure the engine's startup, binary size, and scripted loop time and memory without failing, to set or revise a limit in `packages/core/budgets.json` |
+| `bun run --cwd packages/core budget --report` | Measure the engine's startup, binary size, scripted loop, syncs, and session resume without failing, to set or revise a limit in `packages/core/budgets.json` |
 | `bun run live:eval` | Run the registered cases live through Pi on the operator's sign-in (`evaluation/live.ts`); uses model quota |
 | `bun run findings:eval` | Measure review findings turned into reproduction tests on the registered cases (`evaluation/findings.ts`); uses model quota |
 | `bun run swesmith:eval` | The same on SWE-smith's JavaScript bugs, with the fix step, operator cases and a reviewer that proposes checks (`evaluation/swesmith.ts`); uses model quota, Claude Code for its review sources, and Docker |
@@ -48,13 +48,29 @@ skipped, naming the slice that brings it. The loop and tool tests run the
 same scripts on both engines and check effects, not wording. The engine's
 shell tool is PowerShell on Windows (PowerShell 7 when installed, otherwise
 Windows PowerShell 5.1; CI runs both) and bash elsewhere; its process
-handling is `src/process.ts`, shared with the verifiers. The inventory test
+handling is `src/process.ts`, shared with the verifiers. A session is one
+JSON Lines file in `~/.tesota/sessions/<project>/`, only appended to
+(`packages/core/src/session-file.ts`). Its request ledger, the request with
+its origin and base (`captureBase`, from the gate's units) and each
+amendment, is synced before the model hears of it, and each call's intent
+before the call runs. Opening a session checks every line and repairs only
+an interrupted last one; recovery marks a call with no result as "outcome
+unknown" or "not run" (`repairs`, proved) and never runs it again. One
+writer holds a session, through a lock the operating system releases when
+its holder ends (`session-lock.ts`, `bun:ffi`). The session tests kill a
+process running one to check recovery; that shows what survives a killed
+process, not a power cut. The inventory test
 fails when `src/` starts using a part of Pi that is not in the contract, an
 engine export, `pi-ai`, or the shell. The budget check compiles the engine
 with code splitting, like a release, so the loop loads only when used, and
 fails a pull request when its median
-`--version` startup, its binary size, or its scripted loop's median time or
-largest memory exceeds the limit for its platform.
+`--version` startup, its binary size, its scripted loop's median time or
+largest memory, its request's base, its number of syncs to the disk, the
+resume of a session of about 1,000 entries, or that session's size exceeds
+the limit for its platform. The loop's time leaves out the base and the
+syncs, timed apart: what they take is the system's and the disk's. A sync's
+time, 0.3 ms on one machine and 10 ms on another, is only reported; its
+number, which the code decides, has the limit.
 
 Tesota is a Pi package. Pi loads its extension from `src/extension.ts`, which
 the `pi` manifest in `package.json` names. The `tesota` command, built to

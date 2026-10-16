@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { type Dirent, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { git, useSnapshotGit } from "./git.js";
+import { tesotaHome } from "./home.js";
 
 /**
  * How much of a folder Tesota snapshots, as pi-workspace-history bounds its
@@ -81,7 +81,7 @@ function prune(snapshots: string): void {
  * A snapshot of the folder at `root`, which is in no Git repository (#384),
  * for the gate to measure a request against as it measures a repository
  * against its `HEAD`: Git run in the folder (`gitEnvironment`) uses a Git
- * directory under Pi's agent directory, and the folder gains nothing. Each
+ * directory under Tesota's own (`tesotaHome`), and the folder gains nothing. Each
  * call commits the folder as it is, so Git's index keeps later snapshots
  * quick. Secrets, dependencies, build output and what the folder's
  * `.gitignore` names are left out, and so is every folder below it when
@@ -92,7 +92,7 @@ export async function takeSnapshot(root: string, ownFiles: boolean, limits: Snap
   if (at === resolve(homedir()) || dirname(at) === at) return { refused: "Tesota does not snapshot a home folder or a drive's root" };
   const tooLarge = scan(at, ownFiles, limits);
   if (typeof tooLarge === "string") return { refused: tooLarge };
-  const snapshots = join(getAgentDir(), "state", "tesota", "snapshots");
+  const snapshots = join(tesotaHome(), "snapshots");
   const gitDir = join(snapshots, createHash("sha256").update(`${at}\0${ownFiles}`).digest("hex").slice(0, 16));
   useSnapshotGit(at, gitDir);
   if (!existsSync(join(gitDir, "HEAD"))) {
