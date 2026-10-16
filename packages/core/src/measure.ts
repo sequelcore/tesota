@@ -62,17 +62,25 @@ const tenths = (ms: number): number => Math.round(ms * 10) / 10;
  * a request, and each sync to the disk, which takes 0.3 ms on one machine
  * and 10 ms on another. Prints the run's milliseconds without them, the
  * base's, the median sync's, the number of syncs, which the code decides
- * and the disk does not, and the process's resident memory as JSON.
+ * and the disk does not, the settlement's (#439), from its first entry to
+ * the run's end without its syncs, and the process's resident memory as JSON.
  */
 export function measureLoop(): Promise<void> {
   let baseMs = 0;
   const syncs: number[] = [];
+  /** When settlement began and ended, and how many syncs came before it began. */
+  let settling: { started: number; syncsBefore: number; ended?: number } | undefined;
   const captureTimed: NonNullable<SessionOptions["captureBase"]> = async (cwd) => {
     const started = performance.now();
     try { return await captureBase(cwd); } finally { baseMs += performance.now() - started; }
   };
   const syncTimed: NonNullable<SessionOptions["writer"]> = (writer) => ({
     ...writer,
+    append: (entry) => {
+      if (entry.type === "settle" && settling === undefined) settling = { started: performance.now(), syncsBefore: syncs.length };
+      if (entry.type === "run_end" && settling !== undefined) settling.ended = performance.now();
+      writer.append(entry);
+    },
     sync: () => {
       const started = performance.now();
       try { writer.sync(); } finally { syncs.push(performance.now() - started); }
@@ -82,7 +90,9 @@ export function measureLoop(): Promise<void> {
     const runMs = await run();
     const syncedMs = syncs.reduce((sum, ms) => sum + ms, 0);
     const sorted = [...syncs].sort((a, b) => a - b);
-    return { loopMs: tenths(runMs - baseMs - syncedMs), baseMs: tenths(baseMs), syncMs: Math.round((sorted[Math.floor(sorted.length / 2)] ?? 0) * 100) / 100,
+    const settleSyncs = syncs.slice(settling?.syncsBefore ?? syncs.length).reduce((sum, ms) => sum + ms, 0);
+    const settleMs = settling?.ended === undefined ? 0 : settling.ended - settling.started - settleSyncs;
+    return { settleMs: Math.round(settleMs * 100) / 100, loopMs: tenths(runMs - baseMs - syncedMs), baseMs: tenths(baseMs), syncMs: Math.round((sorted[Math.floor(sorted.length / 2)] ?? 0) * 100) / 100,
       syncCount: syncs.length, loopRssBytes: process.memoryUsage().rss };
   }, { captureBase: captureTimed, writer: syncTimed });
 }
