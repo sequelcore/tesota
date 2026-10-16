@@ -83,7 +83,7 @@ it("ships each of its palettes, and only those, as a Pi theme for its appearance
 it.each(Object.keys(shipped))("gives %s every color Pi's theme schema requires, and nothing it does not know", (name) => {
   // Pi's command line validates themes strictly, but its loader only does so there; the schema it ships decides.
   const pi = dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent")));
-  const schema = JSON.parse(readFileSync(join(pi, "modes", "interactive", "theme", "theme-schema.json"), "utf8")) as
+  const schema = JSON.parse(readFileSync(join(pi, "..", "schemas", "theme.schema.json"), "utf8")) as
     { properties: Record<string, unknown> & { colors: { required: string[]; properties: Record<string, unknown> } } };
   const json = JSON.parse(readFileSync(join(packageRoot, "themes", `${name}.json`), "utf8")) as
     Record<string, unknown> & { colors: Record<string, unknown> };

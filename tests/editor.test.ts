@@ -1,6 +1,6 @@
 import { CustomEditor, type Theme } from "@earendil-works/pi-coding-agent";
-import { CombinedAutocompleteProvider, type EditorTheme, stripTerminalSequences, type TUI, type TuiMouseEvent, visibleWidth }
-  from "@earendil-works/pi-tui";
+import { CombinedAutocompleteProvider, CURSOR_MARKER, type EditorTheme, renderFakeCursor, stripTerminalSequences, type TUI,
+  type TuiMouseEvent, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, expect, it } from "vitest";
 import { FilledEditor, fill } from "../src/editor.js";
 import { loadThemes, themeIn } from "./pi-themes.js";
@@ -43,12 +43,13 @@ it("draws Pi's text rows on the fill, between padding rows where Pi draws its bo
   }
 });
 
-it("keeps the fill through the cursor's reset, and the bar in Pi's border color", () => {
+it("keeps the fill through the cursor and resets, and the bar in Pi's border color", () => {
   const background = theme.getBgAnsi("userMessageBg");
   const body = editor("hello").render(40)[1] ?? "";
-  expect(body.startsWith("\x1b[35m▌\x1b[39m")).toBe(true);
-  // Pi draws the cursor in reverse video and ends it with a full reset; the fill comes back right after.
-  expect(body).toContain(`\x1b[7m \x1b[0m${background}`);
+  expect(body.startsWith(`\x1b[35m▌\x1b[39m${background}`)).toBe(true);
+  // Pi marks the cursor here and later draws it with reverse video on and off, so nothing ends the fill before the row does.
+  expect(body).toContain(`hello${CURSOR_MARKER}${renderFakeCursor(" ")}`);
+  expect(body.indexOf("\x1b[0m")).toBe(body.length - "\x1b[0m".length);
   expect(fill("a\x1b[49mb\x1b[mc", "<bg>")).toBe("<bg>a\x1b[49m<bg>b\x1b[m<bg>c\x1b[0m");
 });
 
