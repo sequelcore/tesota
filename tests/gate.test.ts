@@ -272,6 +272,17 @@ it("shows a resumed session's receipt again, unless the operator spoke after it"
   expect(progress.status.step).toBe("ready");
   progress.resume([user, { ...settled, details: { version: 0 } }] as never);
   expect(progress.status.step).toBe("ready");
+  progress.resume([user, { type: "custom", customType: "tesota-receipt", data: receipt }] as never);
+  expect(progress.status).toEqual({ step: "settled", receipt });
+});
+
+it("settles a print-mode run with the receipt outside the conversation, so Pi prints the final answer (#427)", async () => {
+  const root = repository({ "notes.md": "# Notes\n" });
+  writeFileSync(join(root, "notes.md"), "# Notes, changed\n");
+  const printed = (await gate(root, undefined, { mode: "print" }).settle())?.entries ?? [];
+  expect(printed).toMatchObject([{ type: "custom", customType: "tesota-receipt", data: { version: 1 } }]);
+  const shown = (await gate(root, undefined, { mode: "tui" }).settle())?.entries ?? [];
+  expect(shown).toMatchObject([{ type: "custom_message", customType: "tesota-receipt", display: true, details: { version: 1 } }]);
 });
 
 it("goes back to ready when the gate fails midway or the run changed nothing", async () => {

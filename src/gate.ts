@@ -10,7 +10,7 @@ import { type ContractStrength, contractStrength } from "./proof-guarantees.js";
 import { inFolder, owningProjects, suggestChecks } from "./projects.js";
 import { uncoveredLines } from "./proof-coverage.js";
 import { proofReport } from "./prove-tool.js";
-import { inUnit, isReceipt, noEvidence, type Receipt, renderReceiptMessage, type UnitEvidence } from "./receipt.js";
+import { entryReceipt, inUnit, isReceipt, noEvidence, type Receipt, receiptEntry, type UnitEvidence } from "./receipt.js";
 import { takeSnapshot } from "./snapshot.js";
 import { type CommandRun, exerciseTests, runCommands } from "./test-rung.js";
 import { commentLines, type FileChange, isTestPath, needsContent, weakenedEvidence, withGrammarComments } from "./verification-changes.js";
@@ -331,12 +331,11 @@ export class GateProgress {
    * spoke later. Otherwise the status stays as it is.
    */
   resume(branch: readonly SessionEntry[]): void {
-    const at = branch.findLastIndex((entry) => entry.type === "custom_message" && entry.customType === "tesota-receipt");
+    const at = branch.findLastIndex((entry) => entryReceipt(entry) !== undefined);
     const request = branch.findLastIndex((entry) => entry.type === "message" && entry.message.role === "user");
     const entry = branch[at];
-    if (at > request && entry?.type === "custom_message" && isReceipt(entry.details)) {
-      this.publish({ step: "settled", receipt: entry.details });
-    }
+    const receipt = at > request && entry !== undefined ? entryReceipt(entry) : undefined;
+    if (isReceipt(receipt)) this.publish({ step: "settled", receipt });
   }
 
   /** Back to ready, as on the operator's next request. */
@@ -409,14 +408,13 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     try { return await settle(ctx); } catch (error) { progress.reset(); throw error; }
   });
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
-  const outsideGit = (run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">, reason: string | undefined):
-    AgentBeforeSettleEventResult | undefined => {
+  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">,
+    reason: string | undefined): AgentBeforeSettleEventResult | undefined => {
     if (!mayHaveChanged) return undefined;
     const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
       ...reason === undefined ? {} : { reason } };
     progress.publish({ step: "settled", receipt });
-    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceiptMessage(receipt),
-      display: true, details: receipt }] };
+    return { entries: [receiptEntry(ctx.mode, receipt)] };
   };
   /** The cases the request leaves open, for the receipt; nothing when the operator turned the list off. */
   const listOpen = async (ctx: ExtensionContext, signal: AbortSignal): Promise<Pick<Receipt, "openCases">> => {
@@ -486,7 +484,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     const measurable = units.filter(({ folder }) => bases.has(folder));
     const read = await Promise.all(measurable.map(({ folder, repository }) =>
       changedUnit(ctx.cwd, folder, bases.get(folder) ?? null, repository ? undefined : tooLarge.get(folder) ?? [])));
-    if (!workspace && read[0] === undefined) return outsideGit(run, refused.get(""));
+    if (!workspace && read[0] === undefined) return outsideGit(ctx, run, refused.get(""));
     const changed = read.filter((unit): unit is ChangedUnit => typeof unit === "object");
     // A folder with no snapshot, or a repository Git could not read, is not verified; it is listed once it may have changed.
     const plain = workspace && mayHaveChanged ? [...units.filter(({ folder }) => !bases.has(folder)),
@@ -524,8 +522,7 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
           reason: refused.get(folder) ?? "Git could not read it, so Tesota cannot tell what changed" }))]
         .sort((a, b) => a.folder < b.folder ? -1 : 1) };
     progress.publish({ step: "settled", receipt });
-    return { entries: [{ type: "custom_message", customType: "tesota-receipt", content: renderReceiptMessage(receipt),
-      display: true, details: receipt }] };
+    return { entries: [receiptEntry(ctx.mode, receipt)] };
   };
   return progress;
 }

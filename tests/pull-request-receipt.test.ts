@@ -106,6 +106,18 @@ it("writes the last receipt for a pull request as Markdown and as an in-toto Sta
   expect(JSON.parse(tesota(root, "--json", "--owner", "octocat").stdout)).toMatchObject({ predicate: { owner: "octocat" } });
 }, 120_000);
 
+it("writes the receipt a print-mode run kept as a custom entry (#427)", () => {
+  const root = repository();
+  const base = git(root, "rev-parse", "HEAD");
+  const manager = SessionManager.create(root);
+  manager.appendMessage({ role: "user", content: "fix it", timestamp: Date.now() });
+  manager.appendCustomEntry("tesota-receipt", { ...emptyReceipt, base });
+  const markdown = tesota(root);
+  expect(markdown.stderr).toBe("");
+  expect(markdown.status).toBe(0);
+  expect(markdown.stdout).toContain(`session \`${manager.getSessionId()}\``);
+}, 60_000);
+
 it("lists the files the commit changed after the receipt, and not an uncommitted edit", async () => {
   const root = repository();
   const base = git(root, "rev-parse", "HEAD");
