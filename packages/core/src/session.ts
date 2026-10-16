@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import type { Base } from "./base.ts";
-import type { Session } from "./contract.ts";
+import type { ExtensionAPI, Session } from "./contract.ts";
 import { createLoop, type HistoryMessage, type LoopOptions, type LoopState, toolResult } from "./loop.ts";
 import { notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
@@ -41,7 +41,15 @@ export interface EngineSession extends Session {
   ledger(): readonly LedgerRequest[];
 }
 
-export type SessionOptions = Omit<LoopOptions, "writer" | "resumed"> & {
+/**
+ * What verifies a session's runs (#439): it registers like an extension,
+ * and reads the running request from the ledger, so what it verifies is
+ * what was recorded before any tool ran, not what it captured itself.
+ */
+export type Verifier = (pi: ExtensionAPI, request: () => LedgerRequest | undefined) => void;
+
+export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier"> & {
+  readonly verifier: Verifier;
   /** Where the session's file goes; `~/.tesota/sessions/<project>` when not given. */
   readonly folder?: string;
   /** Wraps the file's writer; tests use it to fail a write. */
@@ -206,7 +214,8 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     sync: () => { written.sync(); },
     close: () => { written.close(); },
   };
-  const loop = createLoop({ ...options, writer: options.writer?.(recording) ?? recording, ...opened ? { resumed: stateOf(entries) } : {} });
+  const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
+  const loop = createLoop({ ...options, verifier: (pi) => { options.verifier(pi, request); }, writer: options.writer?.(recording) ?? recording, ...opened ? { resumed: stateOf(entries) } : {} });
   let disposed: Promise<void> | undefined;
   return {
     ...loop,

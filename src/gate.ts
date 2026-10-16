@@ -367,8 +367,13 @@ export class GateProgress {
  * none, each repository and each other folder the request changed goes
  * through these steps from its own base and folder, each round gathering
  * what goes back across them, and the receipt holds each one as a unit.
+ * On `@tesota/core` the gate is the session's verifier and reads the
+ * request, its amendments and its bases from the ledger (`recorded`, #439)
+ * instead of capturing them; on Pi it captures them on the operator's input.
+ * A run that ends before it completes, after a tool that may change files,
+ * settles with a receipt that says nothing was verified and why.
  */
-export function registerGate(pi: ExtensionAPI): GateProgress {
+export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest | undefined): GateProgress {
   const progress = new GateProgress();
   pi.registerFlag(claimcheckModelFlag, { type: "string",
     description: "The provider/id of a second model for ClaimCheck to restate contracts with; the session's model otherwise" });
@@ -391,6 +396,8 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
     weakSentBack = new Map();
     mayHaveChanged = false;
     progress.reset();
+    // On the engine the ledger holds the request and its start; the gate reads them as it settles.
+    if (recorded !== undefined) return undefined;
     if (event.streamingBehavior !== undefined) { requests.push(event.text); return undefined; }
     requests = [event.text];
     startedAt = new Date().toISOString();
@@ -401,6 +408,12 @@ export function registerGate(pi: ExtensionAPI): GateProgress {
   pi.on("tool_execution_start", (event) => { if (!readOnlyTools.has(event.toolName)) mayHaveChanged = true; });
   // A run that ends before verification leaves no step running, and says why if it may have changed files.
   pi.on("agent_before_settle", async (event, ctx) => {
+    const request = recorded?.();
+    if (request !== undefined) {
+      requests = [request.text, ...request.amendments.flatMap(({ origin, text }) => origin === "extension" ? [] : [text])];
+      startedAt = request.at;
+      start = Promise.resolve(recordedStart(request.base));
+    }
     if (event.outcome !== "completed") {
       if (!mayHaveChanged) {
         if ("startedAt" in progress.status) progress.reset();
@@ -551,6 +564,36 @@ interface Start {
   readonly bases: ReadonlyMap<string, string | null>;
   readonly tooLarge: ReadonlyMap<string, readonly string[]>;
   readonly refused: ReadonlyMap<string, string>;
+}
+
+/**
+ * A request as the engine's ledger records it (#439), before any tool ran:
+ * its text and amendments, when it started, and each unit's base, a
+ * repository's commit, a snapshot, or why there is neither.
+ */
+export interface RecordedRequest {
+  readonly text: string;
+  readonly at: string;
+  readonly amendments: readonly { readonly origin: string; readonly text: string }[];
+  readonly base: { readonly units: readonly RecordedUnit[] };
+}
+
+type RecordedUnit =
+  | { readonly folder: string; readonly kind: "commit"; readonly commit: string | null }
+  | { readonly folder: string; readonly kind: "snapshot"; readonly commit: string; readonly tooLarge: readonly string[] }
+  | { readonly folder: string; readonly kind: "refused"; readonly reason: string };
+
+/** The start `begin` would have built, from the bases the ledger recorded; a refused unit is verified by nothing, with its reason. */
+function recordedStart(base: RecordedRequest["base"]): Start {
+  const bases = new Map<string, string | null>();
+  const tooLarge = new Map<string, readonly string[]>();
+  const refused = new Map<string, string>();
+  for (const unit of base.units) {
+    if (unit.kind === "refused") refused.set(unit.folder, unit.reason);
+    else bases.set(unit.folder, unit.commit);
+    if (unit.kind === "snapshot") tooLarge.set(unit.folder, unit.tooLarge);
+  }
+  return { units: base.units.map(({ folder, kind }) => ({ folder, repository: kind === "commit" })), bases, tooLarge, refused };
 }
 
 /** The request's start in `cwd`; in a folder of repositories, its own files are snapshotted without the folders below. */
