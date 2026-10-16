@@ -1,6 +1,6 @@
 import type { Context, JsonObject, SimpleStreamOptions } from "@earendil-works/pi-ai";
-import type { ExtensionFactory, Session } from "../../../src/contract.ts";
-import type { Verifier } from "../src/session.ts";
+import type { ExtensionAPI, ExtensionFactory, Session } from "../../../src/contract.ts";
+import type { LedgerRequest } from "../src/session.ts";
 
 /**
  * Guarantees Tesota needs that go beyond Pi's behavior. An engine that lacks
@@ -46,11 +46,11 @@ export interface SessionOptions {
   readonly script: readonly ScriptStep[];
   readonly extensions: readonly ExtensionFactory[];
   /**
-   * What verifies each run: on `@tesota/core` the session's verifier, on Pi,
-   * which has none, one more extension. A verifier that settles every run
-   * when not given.
+   * What verifies each run: on `@tesota/core` the session's verifier, given
+   * the ledger's request; on Pi, which has neither, one more extension. A
+   * verifier that settles every run when not given.
    */
-  readonly verifier?: Verifier;
+  readonly verifier?: (pi: ExtensionAPI, request?: () => LedgerRequest | undefined) => void;
   /** Stream slowly enough for a test to act while the run is in progress. */
   readonly slow?: boolean;
 }

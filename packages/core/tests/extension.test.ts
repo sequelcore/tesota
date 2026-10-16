@@ -35,41 +35,54 @@ afterEach(async () => { await Promise.all(open.splice(0).map((session) => sessio
 
 const contract = "//@ ensures \\result >= 0\nexport function f(): number { return 0; }\n";
 
+function git(cwd: string, ...args: string[]): string {
+  const run = spawnSync("git", args, { cwd, encoding: "utf8" });
+  expect(run.status).toBe(0);
+  return run.stdout.trim();
+}
+
 function repository(): string {
   const cwd = mkdtempSync(join(tmpdir(), "tesota-core-extension-"));
   mkdirSync(join(cwd, "src"));
   writeFileSync(join(cwd, "notes.md"), "# Notes\n");
-  const git = (...args: string[]) => { expect(spawnSync("git", args, { cwd, encoding: "utf8" }).status).toBe(0); };
-  git("init", "-q");
-  git("add", "-A");
-  git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base");
+  git(cwd, "init", "-q");
+  git(cwd, "add", "-A");
+  git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base");
   return cwd;
 }
 
 for (const engine of [piEngine, tesotaEngine]) {
   describe(engine.name, () => {
-    test("Tesota's extension offers prove after a contract is written, and settles the run with a receipt", async () => {
+    test("Tesota's extension offers prove after a contract is written, and settles the run with one receipt from its base", async () => {
       let active: string[] = [];
-      let receipt: unknown;
+      let receipts: unknown[] = [];
       // What Tesota's extension left, as the next request's settlement reads it.
       const probe: ExtensionFactory = (pi) => {
         pi.on("agent_before_settle", (_event, ctx) => {
           active = pi.getActiveTools();
-          receipt ??= ctx.sessionManager.getBranch().map(entryReceipt).findLast((found) => found !== undefined);
+          if (receipts.length === 0) receipts = ctx.sessionManager.getBranch().map(entryReceipt).filter((found) => found !== undefined);
           return undefined;
         });
       };
-      const session = await engine.createSession({ cwd: repository(), extensions: [probe],
+      const cwd = repository();
+      const base = git(cwd, "rev-parse", "HEAD");
+      // The agent commits its change, which must hide nothing from the gate. With extensions Pi keeps its default shell, bash.
+      const commit = "git add -A; git -c user.name=t -c user.email=t@t commit -qm change";
+      const shell = engine === piEngine ? "bash" : engine.shell;
+      const session = await engine.createSession({ cwd, extensions: [probe],
         verifier: (pi, request) => { tesota(pi, request); },
-        script: [{ tool: "write", args: { path: "src/rule.ts", content: contract } }, "written", "a restatement", "a restatement",
-          "you're welcome", "you're welcome"] });
+        script: [{ tool: "write", args: { path: "src/rule.ts", content: contract } }, { tool: shell, args: { command: commit } },
+          "written", "a restatement", "a restatement", "you're welcome", "you're welcome"] });
       open.push(session);
       await session.prompt("add f");
       expect(session.outcome()).toBe("completed");
+      expect(git(cwd, "rev-parse", "HEAD")).not.toBe(base);
       await session.prompt("thanks");
       expect(active).toContain("prove");
+      expect(receipts).toHaveLength(1);
+      const [receipt] = receipts;
       expect(isReceipt(receipt)).toBe(true);
-      expect(receipt).toMatchObject({ proofs: [{ path: "src/rule.ts", verdict: "proved" }] });
+      expect(receipt).toMatchObject({ base, proofs: [{ path: "src/rule.ts", verdict: "proved" }] });
     });
   });
 }

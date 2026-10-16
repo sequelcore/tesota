@@ -87,7 +87,7 @@ async function start(options: SessionOptions, agentDir: string, sessionManager: 
     cwd: options.cwd, agentDir, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
     extensionFactories: [
       ...options.extensions.map((factory) => (pi: PiExtensionAPI) => factory(asContract(pi))),
-      ...options.verifier === undefined ? [] : [(pi: PiExtensionAPI) => { options.verifier?.(asContract(pi), () => undefined); }],
+      ...options.verifier === undefined ? [] : [(pi: PiExtensionAPI) => { options.verifier?.(asContract(pi)); }],
       (pi: PiExtensionAPI) => { pi.on("agent_settled", (event) => { settled = event.aborted; }); },
     ],
   });

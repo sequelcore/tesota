@@ -131,31 +131,54 @@ const stoppedReason = "the operator stopped the run";
 
 /**
  * A session's tools and which the model may call, in the order they came
- * (#441). An extension's tool is active unless it says otherwise; setting
- * the active tools ignores unknown names and repeats, and is recorded, so
- * a resumed session has the tools it had.
+ * (#441), as Pi keeps them. An extension's tool is active unless it says
+ * otherwise. Setting the active tools ignores unknown names and repeats and
+ * takes effect from the next model request. Each request records the tools
+ * it offers when they changed, so a resumed session restores what the model
+ * last had; a restored tool registered only later becomes active then,
+ * unless a change that dropped a tool came first.
  */
 function toolbox(tools: EngineTool[], writer: SessionWriter) {
   let active = tools.map(({ name }) => name);
+  /** Restored tools not registered yet; once restored, only these become active as they register. */
+  let pending = new Set<string>();
+  let restored = false;
+  /** The tools the last request offered, as recorded. */
+  let offered: string | undefined;
   const known = (name: string): boolean => tools.some((tool) => tool.name === name);
+  const activeTools = (): EngineTool[] => active.flatMap((name) => tools.filter((tool) => tool.name === name));
   return {
-    activeTools: (): EngineTool[] => active.flatMap((name) => tools.filter((tool) => tool.name === name)),
+    activeTools,
     active: (): string[] => [...active],
     register(tool: ToolDefinition, context: (signal: AbortSignal) => Parameters<ToolDefinition["execute"]>[4]): void {
       if (known(tool.name)) throw new Error(`A tool named "${tool.name}" is already registered.`);
       tools.push(extensionTool(tool, context));
-      if (tool.defaultActive !== false) active.push(tool.name);
+      if (restored ? pending.delete(tool.name) : tool.defaultActive !== false) active.push(tool.name);
     },
     setActive(names: readonly string[]): void {
       const next = [...new Set(names)].filter(known);
-      if (next.join("\n") === active.join("\n")) return;
+      if (active.some((name) => !next.includes(name))) pending.clear();
       active = next;
-      writer.append({ type: "active_tools", names: next });
     },
-    /** The tools a resumed session had, of those still registered; a session that never changed them keeps its own. */
-    restore(names: readonly string[] | undefined): void { if (names !== undefined) active = names.filter(known); },
+    restore(names: readonly string[] | undefined): void {
+      if (names === undefined) return;
+      restored = true;
+      offered = names.join("\n");
+      active = names.filter(known);
+      pending = new Set(names.filter((name) => !known(name)));
+    },
+    /** The tools one model request offers, which its calls run with; recorded when they changed. */
+    forRequest(): EngineTool[] {
+      const offering = active.join("\n");
+      if (offering !== offered) writer.append({ type: "active_tools", names: [...active] });
+      offered = offering;
+      return activeTools();
+    },
   };
 }
+
+/** What the model is told of a tool. */
+const declaration = ({ name, description, parameters }: EngineTool) => ({ name, description, parameters });
 
 /** The thinking level the provider is asked for: the session's for a model that reasons, `off` otherwise. */
 const thinkingOf = (model: Model<Api>, level: ModelThinkingLevel | undefined): ModelThinkingLevel =>
@@ -203,7 +226,7 @@ export function createLoop(options: LoopOptions): Session {
     tools: { register: (tool) => { tools.register(tool, (signal) => host.context(signal)); }, active: tools.active,
       setActive: tools.setActive },
     branch: options.branch,
-    contextUsage: () => contextUsage(history, promptFor(), options.model.contextWindow),
+    contextUsage: () => contextUsage(history, promptFor(), tools.activeTools().map(declaration), options.model.contextWindow),
   }, options.extensions ?? [], options.verifier);
   tools.restore(options.resumed?.activeTools);
   const started = host.sessionStart({ type: "session_start", reason: options.resumed === undefined ? "startup" : "resume" });
@@ -226,11 +249,11 @@ export function createLoop(options: LoopOptions): Session {
    * included when it failed. A provider that throws ends the turns as an
    * error, as one that returns its error does; a failed write still rejects.
    */
-  async function reply(run: number, signal: AbortSignal): Promise<AssistantMessage | Ended> {
+  async function reply(run: number, signal: AbortSignal, offered: readonly EngineTool[]): Promise<AssistantMessage | Ended> {
     let message: AssistantMessage;
     try {
-      const declared = tools.activeTools().map(({ name, description, parameters }) => ({ name, description, parameters }));
-      const stream = options.models.streamSimple(options.model, { systemPrompt: promptFor(), messages: modelContext(history), tools: declared },
+      const stream = options.models.streamSimple(options.model,
+        { systemPrompt: promptFor(), messages: modelContext(history), tools: offered.map(declaration) },
         { signal, ...thinkingLevel === "off" ? {} : { reasoning: thinkingLevel } });
       for await (const _event of stream) { /* the shell will draw these; the loop needs only the result */ }
       message = await stream.result();
@@ -262,7 +285,8 @@ export function createLoop(options: LoopOptions): Session {
    * runs, with everything appended before it, so a call that may have
    * changed files is never missing from the session.
    */
-  async function runCalls(run: number, message: AssistantMessage, calls: readonly ToolCall[], signal: AbortSignal): Promise<void> {
+  async function runCalls(run: number, message: AssistantMessage, calls: readonly ToolCall[], signal: AbortSignal,
+    offered: readonly EngineTool[]): Promise<void> {
     for (const call of calls) {
       let output: ToolOutput;
       if (message.stopReason === "length") output = truncatedCall(call);
@@ -271,7 +295,7 @@ export function createLoop(options: LoopOptions): Session {
         writer.append({ type: "call_intent", run, callId: call.id });
         writer.sync();
         await host.toolStart({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.arguments }, signal);
-        output = await execute(tools.activeTools(), call, signal);
+        output = await execute(offered, call, signal);
         await host.toolResult({ type: "tool_result", toolCallId: call.id, toolName: call.name, input: call.arguments,
           isError: output.isError }, signal);
       }
@@ -291,7 +315,9 @@ export function createLoop(options: LoopOptions): Session {
     for (;;) {
       deliver(run, boundary ? ["steer", "followUp"] : ["steer"]);
       boundary = false;
-      const message = await reply(run, signal);
+      // A reply's calls run with the tools its request offered, whatever extensions change meanwhile.
+      const offered = tools.forRequest();
+      const message = await reply(run, signal, offered);
       if (!("role" in message)) return message;
       if (message.stopReason === "error") return { outcome: "error", reason: message.errorMessage ?? "the provider failed" };
       if (message.stopReason === "aborted" || signal.aborted) return { outcome: "aborted", reason: stoppedReason };
@@ -300,7 +326,7 @@ export function createLoop(options: LoopOptions): Session {
         if (deliver(run, ["steer", "followUp"])) continue;
         return { outcome: "completed" };
       }
-      await runCalls(run, message, calls, signal);
+      await runCalls(run, message, calls, signal, offered);
       if (signal.aborted) return { outcome: "aborted", reason: stoppedReason };
     }
   }

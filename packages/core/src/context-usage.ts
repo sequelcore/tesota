@@ -27,8 +27,13 @@ function estimateTokens(message: HistoryMessage): number {
   return Math.ceil(chars / 4);
 }
 
-/** The context window's use, by Pi's token rules, before compaction (#441). */
-export function contextUsage(history: readonly HistoryMessage[], systemPrompt: string, contextWindow: number | undefined): ContextUsage | undefined {
+/**
+ * The context window's use, by Pi's token rules, before compaction (#441).
+ * Without a reply to count from, the system message is estimated with the
+ * tools it declares, as Pi estimates it.
+ */
+export function contextUsage(history: readonly HistoryMessage[], systemPrompt: string, tools: readonly object[],
+  contextWindow: number | undefined): ContextUsage | undefined {
   if (contextWindow === undefined || contextWindow <= 0) return undefined;
   let trailing = 0;
   for (let index = history.length - 1; index >= 0; index--) {
@@ -44,6 +49,6 @@ export function contextUsage(history: readonly HistoryMessage[], systemPrompt: s
     }
     trailing += estimateTokens(message);
   }
-  const tokens = Math.ceil(systemPrompt.length / 4) + trailing;
+  const tokens = Math.ceil((systemPrompt.length + (tools.length > 0 ? JSON.stringify(tools).length : 0)) / 4) + trailing;
   return { tokens, contextWindow, percent: (tokens / contextWindow) * 100 };
 }
