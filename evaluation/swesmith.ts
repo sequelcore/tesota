@@ -40,7 +40,9 @@ import { JEV_SKIP_BELOW, diffFiles, git, jevSkips, jevTriage, option, parseFindi
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=rerun [--model=openai/gpt-6-luna]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=fix [--model=openai/gpt-6-luna] [--gate-model=<model>]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=cases [--model=openai/gpt-6-sol] [--source=<reviewer>] [--per-bug=1|all]
- *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=checks [--model=claude-bridge/claude-sonnet-5-5]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=checks [--model=claude-bridge/claude-sonnet-5-5] [--prompt=1|2]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=refute --source=<checks source> [--model=claude-bridge/claude-sonnet-5-5]
+ *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=score-arms [--refuter=<model>]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=code-review [--model=claude-sonnet-5-5] [--effort=high]
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=ultrareview --instance=<id> --arm=bug|control
  *   bun run swesmith:eval --out=<file> --work=<dir> --data=<file> --stage=approve --source=<reviewer|checks:model> [--arm=bug|control] [--model=claude-bridge/claude-opus-5-5] [--prompt=1|2] [--limit=<n>]
@@ -541,11 +543,17 @@ function exportCases(): void {
  * and the change and, for each defect it suspects, writes a case in the request's words with a test, or lists a gap
  * when the suspicion needs the code's internals. It never reports a bare finding; the harness runs each case's test on
  * the correct code and on the change, as for the cases stage.
+ *
+ * Version 2 (`--prompt=2`), registered on 2026-10-16 before any run of it: reviewers flag correct changes often, and a
+ * prior stated over the whole set cut one model's false alarms without losing recall, where saying the item at hand is
+ * correct cut recall too. Version 2 adds that prior and nothing about the change at hand.
  */
 const CHECKS_PROMPT = 1;
-const checksPrompt = (requested: string, diff: string): string =>
+const CLEAN_AWARE = "Many of the changes you review are correct, and there is no quota of cases: an empty list is a normal " +
+  "answer. Write a case only when you have a concrete reason to believe this change fails the request or breaks behavior.\n\n";
+const checksPrompt = (requested: string, diff: string, prompt: number): string =>
   `Review the uncommitted change in this repository (\`git diff\` shows it) against this request:\n\n${requested}\n\n` +
-  "Do not report opinions. For each place where you suspect the change fails the request or breaks behavior, write a " +
+  (prompt === 2 ? CLEAN_AWARE : "") + "Do not report opinions. For each place where you suspect the change fails the request or breaks behavior, write a " +
   "concrete case that would show it, for the person who made the request to approve or reject. That person knows what " +
   "they asked for but does not read code. State each case in the request's own words: what someone does or gives, and " +
   "what they get when the change is right. Never name functions, variables, files, internal states, timing or framework " +
@@ -556,18 +564,25 @@ const checksPrompt = (requested: string, diff: string): string =>
   "suspect\", \"why\": \"why it needs the code's internals\"}]}, with empty lists when you suspect nothing.\n\n" +
   `The change, as \`git diff\` shows it:\n\n\`\`\`diff\n${diff}\n\`\`\`\n`;
 
+/** Whose cases a checks record holds: `checks:<model>` for the first prompt, `checks<n>:<model>` for a later one. */
+const checksSource = (record: Record<string, any>): string =>
+  `checks${(record["prompt"] ?? CHECKS_PROMPT) === CHECKS_PROMPT ? "" : String(record["prompt"])}:${String(record["model"])}`;
+
 async function checks(): Promise<void> {
   const model = option("model") ?? "claude-bridge/claude-sonnet-5-5";
+  const prompt = Number(option("prompt") ?? String(CHECKS_PROMPT));
   const done = new Set(records().filter((record) => record["kind"] === "checks" && record["model"] === model).map((record) => record["key"]));
-  const items = sampled().flatMap((instance) => ARMS.map((arm) => ({ instance, arm, key: `${model}|${instance.instance_id}|${arm}|checks` })))
+  const items = sampled().flatMap((instance) => ARMS.map((arm) => ({ instance, arm,
+    key: `${model}|${instance.instance_id}|${arm}|checks${prompt === CHECKS_PROMPT ? "" : prompt}` })))
     .filter((item) => !done.has(item.key)).slice(0, Number(option("limit") ?? Infinity));
   await pool(items, parallel, async ({ instance, arm, key }) => {
     const directory = changed(instance, arm);
-    const session = await pi(model, directory, ["read", "grep", "find", "ls", "write"], checksPrompt(request(instance, arm), git(directory, "diff")));
+    const session = await pi(model, directory, ["read", "grep", "find", "ls", "write"],
+      checksPrompt(request(instance, arm), git(directory, "diff"), prompt));
     const { written, reply } = writtenCases(String(session["output"]));
     const gaps = Array.isArray(reply["gaps"]) ? reply["gaps"] : [];
     const outcome = await runCases(instance, arm, directory, written);
-    append({ kind: "checks", prompt: CHECKS_PROMPT, model, key, instance: instance.instance_id, arm, ...outcome, gaps,
+    append({ kind: "checks", prompt, model, key, instance: instance.instance_id, arm, ...outcome, gaps,
       parsed: Object.keys(reply).length > 0, durationMs: session["durationMs"], tokens: session["tokens"],
       ...session["ended"] === "exited" && session["exitCode"] === 0 ? {} : { output: String(session["output"]).slice(-2000) } });
     process.stdout.write(`checks ${key}: ${JSON.stringify((outcome["cases"] as { onCorrect: string; onChange: string }[])
@@ -661,11 +676,11 @@ interface ProposedCase {
 }
 
 function proposedCases(): ProposedCase[] {
-  return [...currentCases(), ...records().filter((record) => record["kind"] === "checks" && record["prompt"] === CHECKS_PROMPT)]
+  return [...currentCases(), ...records().filter((record) => record["kind"] === "checks")]
     .flatMap((record) => {
       const [reviewer, id, arm] = String(record["key"]).split("|");
       const instance = instances.get(id ?? "");
-      const source = record["kind"] === "checks" ? `checks:${String(record["model"])}` : String(reviewer);
+      const source = record["kind"] === "checks" ? checksSource(record) : String(reviewer);
       return instance === undefined ? [] : (record["cases"] as (Written & { onCorrect: string; onChange: string })[]).map((entry) => ({
         id: `${String(record["key"])}|${entry.case}`, source, instance, arm: arm as Arm, text: entry.text, onCorrect: entry.onCorrect,
         onChange: entry.onChange, number: entry.case, testPatch: String(record["testPatch"] ?? "") }));
@@ -789,6 +804,77 @@ async function faithful(): Promise<void> {
       tokens: session["tokens"], durationMs: session["durationMs"] });
     process.stdout.write(`faithful ${item.id}: ${String(verdict)}\n`);
   });
+}
+
+/**
+ * A refuter between the reviewer and the operator (#397), registered on 2026-10-16 before any run: a model asked to
+ * approve a case let wrong ones through, so this one is asked to refute it, from the request and the repository, and
+ * only a case it lets stand reaches the operator. What the change currently does counts for neither side, since the
+ * case's own test settles that. No verdict lets the case stand.
+ */
+const refutePrompt = (requested: string, text: string): string =>
+  `A reviewer proposes this case about the uncommitted change in this repository (\`git diff\` shows it), made for this ` +
+  `request:\n\n${requested}\n\nCase: ${text}\n\nThe case says what should happen when the change is right. Refute it if ` +
+  "you can: look for a concrete reason the case is wrong or not required. Reasons that count: the request does not ask " +
+  "for the case's result, or settles it differently (quote the request); the situation the case describes cannot happen " +
+  "in this project (name where it is prevented). Whether the change currently gives the case's result counts for neither " +
+  "side. Do not edit any file; you may read files. If you find no such reason, the case stands. End your reply with a " +
+  "JSON object in a ```json block: {\"verdict\": \"refuted\" or \"stands\", \"reason\": \"one sentence\", \"evidence\": " +
+  "\"the quote, or the file and line\"}.";
+
+async function refute(): Promise<void> {
+  const model = option("model") ?? "claude-bridge/claude-sonnet-5-5";
+  const source = option("source");
+  if (source === undefined) throw new Error("Name whose cases with --source=<checks source>.");
+  const done = new Set(records().filter((record) => record["kind"] === "refute" && record["model"] === model && record["verdict"] !== null)
+    .map((record) => record["case"]));
+  const items = proposedCases().filter((item) => item.source === source && !done.has(item.id)).slice(0, Number(option("limit") ?? Infinity));
+  await pool(items, parallel, async (item) => {
+    const directory = changed(item.instance, item.arm);
+    const session = await pi(model, directory, ["read", "grep", "find", "ls"], refutePrompt(request(item.instance, item.arm), item.text));
+    const parsed = lastJson(String(session["output"]));
+    const verdict = parsed["verdict"] === "refuted" || parsed["verdict"] === "stands" ? parsed["verdict"] : null;
+    append({ kind: "refute", model, case: item.id, source, verdict, reason: String(parsed["reason"] ?? ""),
+      evidence: String(parsed["evidence"] ?? ""), tokens: session["tokens"], durationMs: session["durationMs"] });
+    process.stdout.write(`refute ${item.id}: ${String(verdict)}\n`);
+  });
+}
+
+/**
+ * The reviewer arms of #397 in the operator's terms: controls with at least one case shown, bugs with a shown case whose
+ * test passes on the correct code and fails on the change, and cases shown per change. A source with refuter verdicts
+ * gives a second row that shows only the cases the refuter let stand.
+ */
+function scoreArms(): void {
+  const all = records();
+  const refuter = option("refuter") ?? "claude-bridge/claude-sonnet-5-5";
+  const refutes = all.filter((record) => record["kind"] === "refute" && record["model"] === refuter);
+  const refuted = new Set(refutes.filter((record) => record["verdict"] === "refuted").map((record) => record["case"]));
+  const proposed = proposedCases();
+  const checked = all.filter((record) => record["kind"] === "checks");
+  const lines: string[] = [];
+  for (const source of [...new Set(checked.map(checksSource))].sort()) {
+    const reviewed = (arm: Arm): number => checked.filter((record) => checksSource(record) === source && record["arm"] === arm).length;
+    const mine = proposed.filter((item) => item.source === source);
+    const refutedHere = refutes.filter((record) => record["source"] === source);
+    const rows: [string, (item: ProposedCase) => boolean, number][] = [[source, () => true, 0],
+      ...refutedHere.length > 0 ? [[`${source} + refuter`, (item: ProposedCase) => !refuted.has(item.id), tokens(refutedHere)] as
+        [string, (item: ProposedCase) => boolean, number]] : []];
+    for (const [name, shown, extra] of rows) {
+      const kept = mine.filter(shown);
+      const of = (arm: Arm): ProposedCase[] => kept.filter((item) => item.arm === arm);
+      const instancesOf = (items: readonly ProposedCase[]): number => new Set(items.map((item) => item.instance.instance_id)).size;
+      const perChange = (arm: Arm): string => reviewed(arm) === 0 ? "-" : (of(arm).length / reviewed(arm)).toFixed(2);
+      lines.push(`| ${name} | ${instancesOf(of("control"))}/${reviewed("control")} | ` +
+        `${instancesOf(of("bug").filter((item) => item.onCorrect === "pass" && item.onChange === "fail"))}/${reviewed("bug")} | ` +
+        `${perChange("control")} | ${perChange("bug")} | ` +
+        `${tokens(checked.filter((record) => checksSource(record) === source)) + extra} |`);
+    }
+  }
+  process.stdout.write(["| Arm | Controls with a case shown | Bugs caught, perfect approver | Cases per control | Cases per bug | Tokens |",
+    "| --- | --- | --- | --- | --- | --- |", ...lines, "",
+    `Refuter ${refuter}: ${refutes.length} cases judged, ${refuted.size} refuted, ` +
+    `${refutes.filter((record) => record["verdict"] === null).length} without a verdict (shown).`, ""].join("\n"));
 }
 
 /**
@@ -930,6 +1016,8 @@ else if (stage === "code-review") await codeReview();
 else if (stage === "ultrareview") await ultrareview();
 else if (stage === "approve") await approve();
 else if (stage === "faithful") await faithful();
+else if (stage === "refute") await refute();
+else if (stage === "score-arms") scoreArms();
 else if (stage === "score-checks") scoreChecks();
 else throw new Error("Use --stage=sample, review, triage, judge, gate, rerun, fix, cases, export-cases, score, checks, code-review, " +
-  "ultrareview, approve, faithful or score-checks.");
+  "ultrareview, approve, faithful, refute, score-checks or score-arms.");

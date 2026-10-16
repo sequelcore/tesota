@@ -724,6 +724,23 @@ Luna through Pi on a ChatGPT sign-in. `bun run live:eval`
   - **The test check is weak.** It flagged 16 of the 71 cases whose test fails on correct code, and 18 of 210 that pass.
   - **The remaining false evidence needs knowledge of the project or its environment:** an exact timestamp that depends on the time zone, or how a library renders context. No judge that sees only the request has that knowledge.
 
+  **Fewer cases on correct changes,** registered on 2026-10-16 before any run. A false alarm never becomes evidence, because the operator rejects it, but each one costs the operator's time. Studies find reviewers flag correct code often. They also find that a prior stated over the whole set cut false alarms without losing recall, while saying the item at hand is correct cut recall too. Three arms, all on the same 20 bugs and 20 controls, on the same day:
+  - **A1:** the cases reviewer as above.
+  - **A2:** the same with that prior (`--prompt=2`): many reviewed changes are correct, there is no quota, and an empty list is a normal answer.
+  - **A3:** A2's cases, each then given to a refuter (`--stage=refute`, GPT-6.1 Sol). It reads the repository and shows a case only when it finds no reason in the request or the project to drop it.
+
+  | Arm | Controls with a case shown | Bugs caught, perfect approver | Cases per control | Cases per bug | Tokens |
+  |---|---|---|---|---|---|
+  | A1 | 9/20 | 16/20 | 1.45 | 2.95 | 1.83M |
+  | A2 | 3/20 | 17/20 | 0.60 | 2.80 | 1.32M |
+  | A3 | 3/20 | 17/20 | 0.40 | 2.80 | 2.43M |
+
+  - **The prior met the registered threshold:** at least 4 fewer controls with a case, at most 1 bug lost. It also cut tokens by a quarter. #424's run of A1's prompt showed cases on 11 of 20 controls, so run-to-run noise is near 2.
+  - **The refuter did not earn its cost.** It dropped 4 of 68 cases, all on controls and all for going beyond the request, and none on bugs. The controls with a case stayed at 3. The registered rule preferred A2 unless A3 removed at least 3 more.
+  - **The prior did not stop cases that name the code:** some of A2's cases name an error class. The pilot's judge is a person, who would have to read past them.
+
+  One run per arm, mechanical bugs in JavaScript libraries; A3 differs from A2 in both the stage and the model family.
+
 ## Credits
 
 Proofs run on [LemmaScript](https://github.com/midspiral/LemmaScript) by
