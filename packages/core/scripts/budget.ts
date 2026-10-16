@@ -11,8 +11,8 @@ import { withinBudget } from "../src/budget-rule.ts";
  * disk timed apart), and a session of about 1,000 entries resumed
  * (`--measure-resume`). The median startup, the binary's size, the loop's
  * median time and its largest resident memory, the median base and sync,
- * the median resume and the largest session file are compared with the limits in `budgets.json`
- * for this platform; a measurement without a limit there is reported only.
+ * the largest number of syncs, the median resume and the largest session
+ * file are compared with the limits in `budgets.json` for this platform; a measurement without a limit there is reported only.
  * `--report` prints them all without failing, to set or revise a limit.
  */
 
@@ -23,6 +23,7 @@ export interface Measurements {
   readonly loopRssBytes: number;
   readonly baseMs: number;
   readonly syncMs: number;
+  readonly syncCount: number;
   readonly resumeMs: number;
   readonly sessionBytes: number;
 }
@@ -73,7 +74,7 @@ function measure(): Measurements {
       if (run >= warmups) times.push(performance.now() - begun);
     }
     const loops = Array.from({ length: loopRuns }, () =>
-      JSON.parse(started(binary, "--measure-loop")) as { loopMs: number; baseMs: number; syncMs: number; loopRssBytes: number });
+      JSON.parse(started(binary, "--measure-loop")) as { loopMs: number; baseMs: number; syncMs: number; syncCount: number; loopRssBytes: number });
     const resumes = Array.from({ length: loopRuns }, () =>
       JSON.parse(started(binary, "--measure-resume")) as { resumeMs: number; sessionBytes: number });
     return {
@@ -83,6 +84,7 @@ function measure(): Measurements {
       loopRssBytes: Math.max(...loops.map((loop) => loop.loopRssBytes)),
       baseMs: median(loops.map((loop) => loop.baseMs)),
       syncMs: median(loops.map((loop) => loop.syncMs)),
+      syncCount: Math.max(...loops.map((loop) => loop.syncCount)),
       resumeMs: median(resumes.map((resume) => resume.resumeMs)),
       sessionBytes: Math.max(...resumes.map((resume) => resume.sessionBytes)),
     };
@@ -98,7 +100,7 @@ if (import.meta.main) {
   const measured = measure();
   console.log(`Budget on ${process.platform}: startup ${measured.startupMs} ms (median of ${samples}), binary ${measured.binaryBytes} bytes, `
     + `loop ${measured.loopMs} ms (median of ${loopRuns}), loop memory ${measured.loopRssBytes} bytes, `
-    + `base ${measured.baseMs} ms (median of ${loopRuns}), sync ${measured.syncMs} ms (median), `
+    + `base ${measured.baseMs} ms (median of ${loopRuns}), sync ${measured.syncMs} ms (median), syncs ${measured.syncCount}, `
     + `resume ${measured.resumeMs} ms (median of ${loopRuns}), session ${measured.sessionBytes} bytes`);
   if (limits === undefined) {
     console.log(`No budgets for ${process.platform}; CI checks Linux and Windows.`);

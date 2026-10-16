@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { type Measurements, median, overBudget } from "../scripts/budget.ts";
 
-const measured = (values: Partial<Measurements>): Measurements => ({ startupMs: 0, binaryBytes: 0, loopMs: 0, loopRssBytes: 0, baseMs: 0, syncMs: 0, resumeMs: 0, sessionBytes: 0, ...values });
+const measured = (values: Partial<Measurements>): Measurements => ({ startupMs: 0, binaryBytes: 0, loopMs: 0, loopRssBytes: 0, baseMs: 0, syncMs: 0, syncCount: 0, resumeMs: 0, sessionBytes: 0, ...values });
 
 test("the median is the middle sample, whatever order the samples came in", () => {
   expect(median([30, 10, 20])).toBe(20);

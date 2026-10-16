@@ -57,7 +57,8 @@ const tenths = (ms: number): number => Math.round(ms * 10) / 10;
  * timed apart: the request's base, a snapshot of the new folder, paid once
  * a request, and each sync to the disk, which takes 0.3 ms on one machine
  * and 10 ms on another. Prints the run's milliseconds without them, the
- * base's, the median sync's, and the process's resident memory as JSON.
+ * base's, the median sync's, the number of syncs, which the code decides
+ * and the disk does not, and the process's resident memory as JSON.
  */
 export function measureLoop(): Promise<void> {
   let baseMs = 0;
@@ -78,7 +79,7 @@ export function measureLoop(): Promise<void> {
     const syncedMs = syncs.reduce((sum, ms) => sum + ms, 0);
     const sorted = [...syncs].sort((a, b) => a - b);
     return { loopMs: tenths(runMs - baseMs - syncedMs), baseMs: tenths(baseMs), syncMs: Math.round((sorted[Math.floor(sorted.length / 2)] ?? 0) * 100) / 100,
-      loopRssBytes: process.memoryUsage().rss };
+      syncCount: syncs.length, loopRssBytes: process.memoryUsage().rss };
   }, { captureBase: captureTimed, writer: syncTimed });
 }
 
