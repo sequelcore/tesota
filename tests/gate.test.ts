@@ -268,9 +268,9 @@ it("leaves a receipt verifying nothing when a run is stopped after a write start
 });
 
 it.each([
-  ["quota exhausted", "quota exhausted"],
-  [undefined, "the run failed before Tesota verified it"],
-])("records why a run failed after a write starts: %s", async (reason, stopped) => {
+  ["the engine's reason", "quota exhausted", "quota exhausted"],
+  ["its own reason when the host gives none", undefined, "the run failed before Tesota verified it"],
+])("records why a run failed after a write starts: %s", async (_case, reason, stopped) => {
   const root = project();
   const run = gate(root);
   await run.input();
