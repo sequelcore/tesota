@@ -204,10 +204,16 @@ export function createLoop(options: LoopOptions): Session {
     }
   }
 
-  /** The model's turns, until it answers without calling a tool and no input waits, fails, or is stopped. */
-  async function turns(run: number, signal: AbortSignal): Promise<Ended> {
+  /**
+   * The model's turns, until it answers without calling a tool and no input
+   * waits, fails, or is stopped. After settlement sent the run back, the run
+   * is at the boundary where follow-ups enter, so they enter with the steers.
+   */
+  async function turns(run: number, signal: AbortSignal, settled: boolean): Promise<Ended> {
+    let boundary = settled;
     for (;;) {
-      deliver(run, ["steer"]);
+      deliver(run, boundary ? ["steer", "followUp"] : ["steer"]);
+      boundary = false;
       const message = await reply(run, signal);
       if (!("role" in message)) return message;
       if (message.stopReason === "error") return { outcome: "error", reason: message.errorMessage ?? "the provider failed" };
@@ -317,7 +323,7 @@ export function createLoop(options: LoopOptions): Session {
     let generation = 0;
     let continuations = 0;
     for (;;) {
-      const ended = await turns(run, signal);
+      const ended = await turns(run, signal, generation > 0);
       settling = true;
       const decided = await settle(run, generation, ended, continuations, signal).finally(release);
       if (decided.next === "continue") {

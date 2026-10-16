@@ -215,7 +215,15 @@ function engineSession(file: string, release: () => void, entries: SessionEntry[
     close: () => { written.close(); },
   };
   const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
-  const loop = createLoop({ ...options, verifier: (pi) => { options.verifier(pi, request); }, writer: options.writer?.(recording) ?? recording, ...opened ? { resumed: stateOf(entries) } : {} });
+  let loop: Session;
+  try {
+    loop = createLoop({ ...options, verifier: (pi) => { options.verifier(pi, request); },
+      writer: options.writer?.(recording) ?? recording, ...opened ? { resumed: stateOf(entries) } : {} });
+  } catch (error) {
+    // An extension or the verifier that throws as it registers leaves nothing open.
+    written.close();
+    throw error;
+  }
   let disposed: Promise<void> | undefined;
   return {
     ...loop,
@@ -235,11 +243,11 @@ export function createSession(options: SessionOptions): EngineSession {
   const lock = lockSession(lockOf(file));
   try {
     createSessionFile(file, { type: "session", format: sessionFormat, version: sessionVersion, id, cwd: resolve(options.cwd), createdAt });
+    return engineSession(file, () => { lock.release(); }, [], options, false);
   } catch (error) {
     lock.release();
     throw error;
   }
-  return engineSession(file, () => { lock.release(); }, [], options, false);
 }
 
 /**

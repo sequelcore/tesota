@@ -1,10 +1,10 @@
 import { createModels, fauxProvider, type Models } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionFactory, RunOutcome, SettleEvent, SettleResult } from "../src/contract.ts";
-import { createSession, type EngineSession, type SessionOptions } from "../src/session.ts";
+import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 import { continuationLimit } from "../src/settle-rule.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply } from "./scripted.ts";
@@ -187,6 +187,43 @@ describe("input during settlement", () => {
 });
 
 describe("input at settlement's edges", () => {
+  test("a follow-up that arrives during verification enters with the next model turn", async () => {
+    let release: () => void = () => undefined;
+    let started: () => void = () => undefined;
+    const verifying = new Promise<void>((resolve) => { started = resolve; });
+    let calls = 0;
+    const run = session(["first", "after the follow-up"], {
+      verifier: (pi) => {
+        pi.on("agent_before_settle", async () => {
+          calls += 1;
+          if (calls === 1) { started(); await new Promise<void>((resolve) => { release = resolve; }); }
+          return undefined;
+        });
+      },
+    });
+    const prompt = run.prompt("go");
+    await verifying;
+    const followUp = run.prompt("then check b", { streamingBehavior: "followUp" });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    release();
+    await Promise.all([prompt, followUp]);
+    expect(run.messages().map((message) => message.text)).toEqual(["go", "first", "then check b", "after the follow-up"]);
+    expect(run.outcome()).toBe("completed");
+  });
+
+  test("an extension that throws as it registers leaves the session's file unlocked", () => {
+    const sessions = folder("tesota-core-sessions-");
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    expect(() => createSession({ cwd: folder("tesota-core-settle-"), folder: sessions, models, model: faux.getModel(),
+      extensions: [() => { throw new Error("cannot load"); }], verifier: () => undefined })).toThrow("cannot load");
+    const [file] = readdirSync(sessions).filter((name) => name.endsWith(".jsonl"));
+    const reopened = openSession(join(sessions, file ?? ""), { models, model: faux.getModel(), verifier: () => undefined });
+    open.push(reopened);
+    expect(reopened.messages()).toEqual([]);
+  });
+
   test("input that arrives as the verifier's result is written comes after the run's end, and is refused, not lost", async () => {
     let steer: Promise<void> | undefined;
     const run: EngineSession = session(["done"], {
