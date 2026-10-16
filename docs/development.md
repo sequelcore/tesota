@@ -67,7 +67,13 @@ pi-ai's built-in providers (`model-access.ts`), authorized by its own
 credentials in `~/.tesota/auth.json`, written under the same lock and whole
 or not at all, and by API keys in the environment; Pi's credentials are
 never read. The chosen model, thinking level and terminal mode are in
-`~/.tesota/settings.json`. A run settles in two
+`~/.tesota/settings.json`. `tesota-core` with no argument opens the
+engine's shell (`packages/core/src/shell/`) on pi-tui: fullscreen by
+default, with search and in-app copy, writing the conversation to the
+scrollback when it ends; inline as a setting and over SSH to Windows; on
+Windows it repaints every cell, as ConPTY hosts need. Its tests draw it into
+an emulated terminal (`@xterm/headless`), as Pi's own are; flicker and stale
+fragments on a real Windows console still need a person to look. A run settles in two
 phases (`loop.ts`): its extensions, whose results accumulate so none can
 drop another's message or cancel its send-back, then the verifier every
 session must have, which no extension can replace. The proved settle rule
@@ -87,8 +93,9 @@ with code splitting, like a release, so the loop loads only when used, and
 fails a pull request when its median
 `--version` startup, its binary size, its scripted loop's median time or
 largest memory, its request's base, its number of syncs to the disk, its
-settlement's time, the resume of a session of about 1,000 entries, or that session's size exceeds
-the limit for its platform. The loop's time leaves out the base and the
+settlement's time, the resume of a session of about 1,000 entries, that session's size, the
+shell's first frame from the process's start, or its memory once it has drawn the scripted
+loop's conversation exceeds the limit for its platform. The loop's time leaves out the base and the
 syncs, timed apart: what they take is the system's and the disk's. A sync's
 time, 0.3 ms on one machine and 10 ms on another, is only reported; its
 number, which the code decides, has the limit.
