@@ -66,7 +66,8 @@ Slices 1–9 and 11 are done; the
 each one's issue and pull requests.
 
 - **Tesota's engine**
-  ([decision record](decisions/2026-10-15-own-engine.md)). `@tesota/core`
+  ([#432](https://github.com/sequelcore/tesota/issues/432),
+  [decision record](decisions/2026-10-15-own-engine.md)). `@tesota/core`
   and the `tesota` shell, built in slices with an issue each. The first
   slices are the contract inventory and its tests against a pinned Pi, the
   request ledger that compaction never replaces, and the settlement
