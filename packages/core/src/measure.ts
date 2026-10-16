@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureBase } from "./base.ts";
+import type { ExtensionFactory } from "./contract.ts";
 import { createSession, type EngineSession, type SessionOptions, openSession } from "./session.ts";
 
 /** Tool rounds in the measured loop: each writes a file and reads it back. */
@@ -11,7 +12,10 @@ const loopRounds = 50;
 /** Tool rounds in the resumed session: six entries each, about 1,000 in all. */
 const resumeRounds = 166;
 
-/** A scripted model's models and model, for `rounds` rounds of write and read, then an answer. */
+/** A verifier that settles each run at once, so the measurement times the engine's settlement and not a check (#439). */
+const settles: ExtensionFactory = (pi) => { pi.on("agent_before_settle", () => undefined); };
+
+/** A scripted model's models and model, for `rounds` rounds of write and read, then an answer, with a verifier. */
 function scripted(rounds: number) {
   const faux = fauxProvider();
   faux.setResponses([
@@ -24,7 +28,7 @@ function scripted(rounds: number) {
   ]);
   const models = createModels();
   models.setProvider(faux.provider);
-  return { models, model: faux.getModel() };
+  return { models, model: faux.getModel(), verifier: settles };
 }
 
 /** Runs `measure` with a session of `rounds` rounds in temporary folders, with no network, and removes them after. */
@@ -91,9 +95,9 @@ export function measureLoop(): Promise<void> {
 export function measureResume(): Promise<void> {
   return measured(resumeRounds, async (session, run) => {
     await run();
-    const { models, model } = scripted(0);
+    const { models, model, verifier } = scripted(0);
     const started = performance.now();
-    const resumed = openSession(session.file, { models, model });
+    const resumed = openSession(session.file, { models, model, verifier });
     const resumeMs = tenths(performance.now() - started);
     await resumed.dispose();
     return { resumeMs, sessionBytes: statSync(session.file).size };

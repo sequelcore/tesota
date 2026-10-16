@@ -1,5 +1,9 @@
 import { type AssistantMessage, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import type { ExtensionFactory } from "../src/contract.ts";
 import type { ScriptStep } from "./engine.ts";
+
+/** A verifier that settles every run without checking anything, for tests about the rest of the session. */
+export const accepts: ExtensionFactory = (pi) => { pi.on("agent_before_settle", () => undefined); };
 
 /** A scripted step as the reply Pi's scripted model gives. */
 export function scriptedReply(step: ScriptStep): AssistantMessage {

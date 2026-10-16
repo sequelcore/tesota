@@ -6,6 +6,7 @@ import { createSession, openSession } from "../src/session.ts";
 import { SessionLockedError } from "../src/session-lock.ts";
 import type { EngineTool } from "../src/tool.ts";
 import { codingTools } from "../src/tools/index.ts";
+import { accepts } from "./scripted.ts";
 
 /**
  * A session in a process of its own, for the tests to kill hard or to race
@@ -31,7 +32,7 @@ const wait: EngineTool = {
 
 if (mode === "hold") {
   try {
-    const session = openSession(first ?? "", { models: createModels(), model: fauxProvider().getModel() });
+    const session = openSession(first ?? "", { models: createModels(), model: fauxProvider().getModel(), verifier: accepts });
     console.log("opened");
     void session;
     await forever();
@@ -46,7 +47,7 @@ if (mode === "hold") {
       { stopReason: "toolUse" }), fauxAssistantMessage("done")]);
   const models = createModels();
   models.setProvider(faux.provider);
-  const session = createSession({ cwd, folder: second ?? "", models, model: faux.getModel(),
+  const session = createSession({ cwd, folder: second ?? "", models, model: faux.getModel(), verifier: accepts,
     tools: (spool) => [wait, ...codingTools(cwd, spool)] });
   writeFileSync(join(second ?? "", "file.txt"), session.file);
   await session.prompt("go");

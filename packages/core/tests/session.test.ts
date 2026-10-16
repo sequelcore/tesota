@@ -13,7 +13,7 @@ import type { EngineTool } from "../src/tool.ts";
 import { piEngine } from "./adapters/pi.ts";
 import { tesotaEngine } from "./adapters/tesota.ts";
 import type { ScriptStep } from "./engine.ts";
-import { scriptedReply } from "./scripted.ts";
+import { accepts, scriptedReply } from "./scripted.ts";
 
 /**
  * Sessions and the request ledger (#437): resuming, on both engines; then
@@ -45,12 +45,12 @@ for (const engine of [piEngine, tesotaEngine]) {
 }
 
 /** Pi's scripted model playing `script`. */
-function scripted(script: readonly ScriptStep[], slow = false): Pick<SessionOptions, "models" | "model"> {
+function scripted(script: readonly ScriptStep[], slow = false): Pick<SessionOptions, "models" | "model" | "verifier"> {
   const faux = fauxProvider(slow ? { tokensPerSecond: 20 } : {});
   faux.setResponses(script.map(scriptedReply));
   const models = createModels();
   models.setProvider(faux.provider);
-  return { models, model: faux.getModel() };
+  return { models, model: faux.getModel(), verifier: accepts };
 }
 
 /** A session of the engine, in a new folder unless `cwd` is given, with its file in a folder of its own outside it. */
@@ -264,21 +264,33 @@ describe("the session file", () => {
     expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
   });
 
-  test("a session of another version refuses to open, naming it", async () => {
-    const file = await finished();
-    const lines = readFileSync(file, "utf8").split("\n");
-    lines[0] = (lines[0] ?? "").replace("\"version\":1", "\"version\":2");
-    writeFileSync(file, lines.join("\n"));
-    expect(() => openSession(file, scriptless())).toThrow("version 2");
-  });
+  // Version 1 promised no verification behind "completed" (#439), so it is refused, not reinterpreted.
+  for (const version of [1, 3]) {
+    test(`a session of version ${version} refuses to open, naming it`, async () => {
+      const file = await finished();
+      const lines = readFileSync(file, "utf8").split("\n");
+      lines[0] = (lines[0] ?? "").replace("\"version\":2", `"version":${version}`);
+      writeFileSync(file, lines.join("\n"));
+      expect(() => openSession(file, scriptless())).toThrow(`version ${version}`);
+    });
+  }
 
-  test("version 1 as committed still reads", () => {
-    const fixture = join(import.meta.dir, "fixtures", "session-v1.jsonl");
-    const copy = join(folder(), "session-v1.jsonl");
+  test("version 2 as committed still reads, with the verifier's message in the conversation and its data outside it", () => {
+    const fixture = join(import.meta.dir, "fixtures", "session-v2.jsonl");
+    const copy = join(folder(), "session-v2.jsonl");
     writeFileSync(copy, readFileSync(fixture));
     const resumed = openSession(copy, scriptless());
     open.push(resumed);
-    expect(resumed.messages().map((message) => message.role)).toEqual(["user", "assistant", "toolResult", "assistant"]);
+    expect(resumed.messages().map((message) => message.customType ?? message.role))
+      .toEqual(["user", "assistant", "toolResult", "assistant", "gate", "assistant"]);
+    expect(resumed.outcome()).toBe("completed");
     expect(resumed.ledger()).toMatchObject([{ run: 1, text: "write a", origin: "interactive", amendments: [] }]);
+  });
+
+  test("a run that ends completed without its verifier's settlement refuses to open", async () => {
+    const file = await finished();
+    const lines = readFileSync(file, "utf8").trimEnd().split("\n");
+    writeFileSync(file, `${lines.filter((line) => !line.includes("\"phase\":\"verifier\"")).join("\n")}\n`);
+    expect(() => openSession(file, scriptless())).toThrow(SessionFileError);
   });
 });

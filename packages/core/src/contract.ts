@@ -87,6 +87,12 @@ export interface SettleEvent {
   readonly entries: readonly { readonly type: string }[];
   readonly continue: boolean;
   readonly outcome: RunOutcome;
+  /**
+   * Why the run did not complete, in plain words, when the engine knows:
+   * the operator stopped it, the provider failed, a handler threw. Pi does
+   * not say; the receipt of a run that was not verified states it (#439).
+   */
+  readonly reason?: string;
 }
 
 export interface SettleResult {
