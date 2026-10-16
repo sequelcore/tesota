@@ -1,4 +1,4 @@
 {
-  "linux": { "startupMs": null, "binaryBytes": null },
-  "win32": { "startupMs": null, "binaryBytes": null }
+  "linux": { "startupMs": 8, "binaryBytes": 85400000 },
+  "win32": { "startupMs": 40, "binaryBytes": 90400000 }
 }
