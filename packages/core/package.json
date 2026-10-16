@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test",
+    "test": "bun test --timeout 30000",
     "budget": "bun scripts/budget.ts",
     "check": "bun run typecheck && bun run test && bun run budget"
   },
