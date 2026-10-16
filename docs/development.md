@@ -51,7 +51,8 @@ Windows PowerShell 5.1; CI runs both) and bash elsewhere; its process
 handling is `src/process.ts`, shared with the verifiers. The inventory test
 fails when `src/` starts using a part of Pi that is not in the contract, an
 engine export, `pi-ai`, or the shell. The budget check compiles the engine
-with bytecode, like a release, and fails a pull request when its median
+with code splitting, like a release, so the loop loads only when used, and
+fails a pull request when its median
 `--version` startup or its binary size exceeds the limit for its platform;
 the scripted loop's time and memory are reported until they have limits.
 

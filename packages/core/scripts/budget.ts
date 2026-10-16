@@ -54,8 +54,10 @@ function measure(): Measurements {
   const folder = mkdtempSync(join(tmpdir(), "tesota-core-budget-"));
   try {
     const binary = join(folder, process.platform === "win32" ? "tesota-core.exe" : "tesota-core");
-    // Bytecode saves the time JavaScriptCore spends parsing the bundled loop at every start (about 20 ms on Windows, #435).
-    const build = Bun.spawnSync(["bun", "build", "--compile", "--minify", "--bytecode", join(import.meta.dir, "..", "src", "main.ts"),
+    // Splitting keeps the loop in its own chunk, loaded only when used: without it every start parsed the whole
+    // bundle, 20-25 ms more on Linux and Windows. Bytecode did the same at 3 MB more (#435).
+    const build = Bun.spawnSync(["bun", "build", "--compile", "--minify", "--format=esm", "--splitting",
+      join(import.meta.dir, "..", "src", "main.ts"),
       "--outfile", binary], { stdout: "ignore", stderr: "pipe" });
     if (build.exitCode !== 0) throw new Error(`bun build --compile failed:\n${build.stderr.toString()}`);
     const times: number[] = [];
