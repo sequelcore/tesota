@@ -6,7 +6,7 @@ import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext, ExtensionFactory, Session } from "../src/contract.ts";
 import { piEngine } from "./adapters/pi.ts";
 import { tesotaEngine } from "./adapters/tesota.ts";
-import type { Guarantee, ScriptStep, TestEngine } from "./engine.ts";
+import type { Capability, Guarantee, ScriptStep, TestEngine } from "./engine.ts";
 
 /** Every engine Tesota can run on: Pi as the reference, and `@tesota/core`. */
 const engines: readonly TestEngine[] = [piEngine, tesotaEngine];
@@ -29,14 +29,17 @@ const sendBackOnce = (customType: string): ExtensionFactory => (pi) => {
 };
 
 for (const engine of engines) {
-  /** Every test here needs extensions: an engine without them yet skips it, naming the slice that brings them. */
-  const waiting = engine.pending.get("extensions");
-  const check = (name: string, run: () => Promise<void>) =>
-    waiting === undefined ? test(name, run) : test.skip(`${name} (waits for ${waiting})`, run);
+  /** Every test here needs extensions' events; an engine without what a test needs yet skips it, naming the slice that brings it. */
+  const check = (name: string, run: () => Promise<void>, needs: Capability = "events") => {
+    const waiting = engine.pending.get(needs);
+    return waiting === undefined ? test(name, run) : test.skip(`${name} (waits for ${waiting})`, run);
+  };
   /** A test of a guarantee this engine lacks runs as expected to fail. */
-  const guaranteed = (guarantee: Guarantee, name: string, run: () => Promise<void>) =>
-    waiting !== undefined ? test.skip(`${name} (waits for ${waiting})`, run)
+  const guaranteed = (guarantee: Guarantee, name: string, run: () => Promise<void>) => {
+    const waiting = engine.pending.get("events");
+    return waiting !== undefined ? test.skip(`${name} (waits for ${waiting})`, run)
       : engine.lacks.has(guarantee) ? test.failing(`${name} (${engine.name} lacks it)`, run) : test(name, run);
+  };
 
   const start = async (script: readonly ScriptStep[], extensions: readonly ExtensionFactory[], slow = false) => {
     const session = await engine.createSession({ cwd: mkdtempSync(join(tmpdir(), "tesota-core-cwd-")), script, extensions, slow });
@@ -47,7 +50,7 @@ for (const engine of engines) {
   describe(engine.name, () => {
     check("events arrive in order, and input handlers finish before the agent's first step", async () => {
       const seen: string[] = [];
-      const session = await start([{ tool: "echo", args: { text: "hi" } }, "done"], [echo, (pi) => {
+      const session = await start([{ tool: "read", args: { path: "missing.txt" } }, "done"], [(pi) => {
         pi.on("session_start", (event) => { seen.push(`session_start:${event.reason}`); });
         pi.on("input", async (event) => {
           await new Promise((resolve) => setTimeout(resolve, 50));
@@ -55,12 +58,12 @@ for (const engine of engines) {
           return undefined;
         });
         pi.on("tool_execution_start", (event) => { seen.push(`tool_execution_start:${event.toolName}`); });
-        pi.on("tool_result", (event) => { seen.push(`tool_result:${event.toolName}:${String(event.input["text"])}:${event.isError}`); });
+        pi.on("tool_result", (event) => { seen.push(`tool_result:${event.toolName}:${String(event.input["path"])}:${event.isError}`); });
         pi.on("agent_before_settle", (event) => { seen.push(`agent_before_settle:${event.outcome}`); return undefined; });
       }]);
       await session.prompt("go");
-      expect(seen).toEqual(["session_start:startup", "input:go:interactive", "tool_execution_start:echo",
-        "tool_result:echo:hi:false", "agent_before_settle:completed"]);
+      expect(seen).toEqual(["session_start:startup", "input:go:interactive", "tool_execution_start:read",
+        "tool_result:read:missing.txt:true", "agent_before_settle:completed"]);
       expect(session.outcome()).toBe("completed");
     });
 
@@ -128,13 +131,29 @@ for (const engine of engines) {
       expect(typeof seen?.mode).toBe("string");
       expect(seen?.getContextUsage()?.contextWindow).toBeGreaterThan(0);
       expect(branch).toBeGreaterThan(0);
-    });
+    }, "tools");
 
-    guaranteed("settle-can-be-cancelled", "settle handlers get an abort signal", async () => {
-      let signal: AbortSignal | undefined;
-      const session = await start(["done"], [(pi) => { pi.on("agent_before_settle", (_event, ctx) => { signal = ctx.signal; return undefined; }); }]);
-      await session.prompt("go");
-      expect(signal).toBeInstanceOf(AbortSignal);
+    guaranteed("settle-can-be-cancelled", "stopping the run stops a settle handler, which is awaited, and the run ends aborted", async () => {
+      let stopped = false;
+      let started: () => void = () => undefined;
+      const settling = new Promise<void>((resolve) => { started = resolve; });
+      const session = await start(["done"], [(pi) => {
+        pi.on("agent_before_settle", async (_event, ctx) => {
+          started();
+          await new Promise((resolve) => {
+            ctx.signal?.addEventListener("abort", resolve);
+            setTimeout(resolve, 2000);
+          });
+          stopped = ctx.signal?.aborted === true;
+          return undefined;
+        });
+      }]);
+      const run = session.prompt("go");
+      await settling;
+      await session.abort();
+      await run;
+      expect(stopped).toBe(true);
+      expect(session.outcome()).toBe("aborted");
     });
 
     check("a verifier asks a model through the session's model registry", async () => {
@@ -171,7 +190,7 @@ for (const engine of engines) {
       expect(active).toContain("echo");
       expect(flag).toBeUndefined();
       expect(quiet === undefined || ["boolean", "string"].includes(typeof quiet)).toBe(true);
-    });
+    }, "tools");
 
     check("two sessions in one process run at the same time, each with its own messages and usage", async () => {
       const [a, b] = await Promise.all([start(["from a", "a again"], [sendBackOnce("gate-a")]), start(["from b"], [])]);

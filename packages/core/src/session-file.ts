@@ -2,17 +2,18 @@ import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { closeSync, fsyncSync, ftruncateSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Base } from "./base.ts";
-import type { PromptOptions, SessionOutcome } from "./contract.ts";
+import type { PromptOptions, RunOutcome, SessionOutcome } from "./contract.ts";
 
 /**
  * Tesota's session format (#437): one JSON Lines file per session, written
  * by one writer and only appended to. Its first line is the header; the
  * rest are entries, in the order they happened. The request ledger is the
  * `request` and `amendment` entries: written, and synced, before the model
- * hears of them, and never rewritten.
+ * hears of them, and never rewritten. Version 2 (#439) records each run's
+ * settlement, and a run ends `completed` only after its verifier's.
  */
 export const sessionFormat = "tesota-session";
-export const sessionVersion = 1;
+export const sessionVersion = 2;
 
 export interface SessionHeader {
   readonly type: "session";
@@ -32,6 +33,9 @@ export type Behavior = NonNullable<PromptOptions["streamingBehavior"]>;
 /** How recovery repaired a call that has no result: it may have run, or it never started. */
 export type Repair = "outcome_unknown" | "not_run";
 
+/** Who settles in a phase: the ordinary extensions, then the verifier. */
+export type SettlePhase = "extensions" | "verifier";
+
 export type SessionEntry =
   /** The operator's request, which starts run `run`, and the base it is measured against. */
   | { readonly type: "request"; readonly run: number; readonly text: string; readonly origin: Origin; readonly at: string;
@@ -49,7 +53,27 @@ export type SessionEntry =
   /** Recovery's repair of call `callId` of reply `reply` (counted from 0 in its run), which has no result. */
   | { readonly type: "reconciliation"; readonly run: number; readonly reply: number; readonly callId: string;
     readonly toolName: string; readonly repair: Repair }
-  | { readonly type: "run_end"; readonly run: number; readonly outcome: SessionOutcome };
+  /**
+   * A settlement phase of run `run` starts, in its `generation`: how many
+   * times settlement sent the run back to the model before. `outcome` is
+   * what the phase's handlers are told about the run.
+   */
+  | { readonly type: "settle"; readonly run: number; readonly generation: number; readonly phase: SettlePhase;
+    readonly outcome: RunOutcome }
+  /** A message a settle handler added: it enters the conversation as context for the model. */
+  | { readonly type: "custom_message"; readonly run: number; readonly customType: string; readonly content: string;
+    readonly display: boolean; readonly details?: unknown }
+  /** Data a settle handler recorded outside the conversation. */
+  | { readonly type: "custom"; readonly run: number; readonly customType: string; readonly data?: unknown }
+  /**
+   * The phase's result, after the entries it added: whether it sent the run
+   * back, what its handlers threw, and for the verifier whether it had a
+   * settle handler at all.
+   */
+  | { readonly type: "settled"; readonly run: number; readonly generation: number; readonly phase: SettlePhase;
+    readonly continued: boolean; readonly errors: readonly string[]; readonly registered: boolean }
+  /** How run `run` ended, and why when it did not complete. */
+  | { readonly type: "run_end"; readonly run: number; readonly outcome: SessionOutcome; readonly reason?: string };
 
 /** The file is not a session Tesota can read safely; nothing in it is skipped or guessed. */
 export class SessionFileError extends Error {
@@ -62,7 +86,9 @@ export class SessionFileError extends Error {
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 const isText = (value: unknown): boolean => typeof value === "string";
 const isCount = (value: unknown): boolean => Number.isInteger(value) && (value as number) >= 1;
+const isFlag = (value: unknown): boolean => typeof value === "boolean";
 const origins = new Set(["interactive", "rpc", "extension"]);
+const phases = new Set(["extensions", "verifier"]);
 
 /** What each entry must hold besides its run, as far as reading it back depends on. */
 const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => boolean> = {
@@ -76,19 +102,31 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
   tool_result: (entry) => isObject(entry["message"]) && entry["message"]["role"] === "toolResult",
   reconciliation: (entry) => Number.isInteger(entry["reply"]) && isText(entry["callId"]) && isText(entry["toolName"])
     && (entry["repair"] === "outcome_unknown" || entry["repair"] === "not_run"),
-  run_end: (entry) => isText(entry["outcome"]),
+  settle: (entry) => Number.isInteger(entry["generation"]) && phases.has(entry["phase"] as string) && isText(entry["outcome"]),
+  custom_message: (entry) => isText(entry["customType"]) && isText(entry["content"]) && isFlag(entry["display"]),
+  custom: (entry) => isText(entry["customType"]),
+  settled: (entry) => Number.isInteger(entry["generation"]) && phases.has(entry["phase"] as string) && isFlag(entry["continued"])
+    && Array.isArray(entry["errors"]) && entry["errors"].every(isText) && isFlag(entry["registered"]),
+  run_end: (entry) => isText(entry["outcome"]) && (entry["reason"] === undefined || isText(entry["reason"])),
 };
+
+/** Whether `entry` is a verifier's settlement that lets its run complete: it had a settle handler, which neither threw nor sent the run back. */
+const verifiedBy = (entry: SessionEntry | undefined): boolean => entry?.type === "settled" && entry.phase === "verifier"
+  && entry.registered && !entry.continued && entry.errors.length === 0;
 
 /**
  * An entry read back, checked against what came before it: a request opens
- * the next run, and every other entry belongs to a run already opened.
+ * the next run, every other entry belongs to a run already opened, and a
+ * run ends `completed` only right after its verifier's settlement allowed it.
  */
-function entryAt(value: unknown, runs: number): SessionEntry | undefined {
+function entryAt(value: unknown, runs: number, previous: SessionEntry | undefined): SessionEntry | undefined {
   if (!isObject(value) || typeof value["type"] !== "string" || !(value["type"] in shapes)) return undefined;
   const type = value["type"] as SessionEntry["type"];
   const run = value["run"];
   const placed = type === "request" ? run === runs + 1 : isCount(run) && (run as number) <= runs;
-  return placed && shapes[type](value) ? value as unknown as SessionEntry : undefined;
+  const completes = type === "run_end" && value["outcome"] === "completed";
+  return placed && shapes[type](value) && (!completes || (verifiedBy(previous) && previous?.run === run))
+    ? value as unknown as SessionEntry : undefined;
 }
 
 function headerOf(value: unknown, path: string): SessionHeader {
@@ -135,7 +173,7 @@ export function readSessionFile(path: string): ReadSession {
   let runs = 0;
   /** Takes the line as the next entry, when it is one. */
   const take = (line: string): boolean => {
-    const entry = entryAt(parsed(line), runs);
+    const entry = entryAt(parsed(line), runs, entries.at(-1));
     if (entry === undefined) return false;
     if (entry.type === "request") runs = entry.run;
     entries.push(entry);

@@ -16,8 +16,13 @@ export type Guarantee =
   /** An edit whose text matches only after normalizing whitespace or Unicode fails instead of applying. */
   | "edit-matches-exactly";
 
-/** What an engine has not built yet, with the slice of #432 that brings it. */
-export type Capability = "extensions";
+/**
+ * What an engine has not built yet, with the slice of #432 that brings it:
+ * `events`, extensions that handle events and settle; `tools`, the rest of
+ * the extension API (registering and setting tools, the branch, settings,
+ * thinking level and context usage).
+ */
+export type Capability = "events" | "tools";
 
 /** A call to a tool with its arguments. */
 export interface ToolStep { readonly tool: string; readonly args: JsonObject }

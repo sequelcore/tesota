@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureBase } from "./base.ts";
+import type { ExtensionFactory } from "./contract.ts";
 import { createSession, type EngineSession, type SessionOptions, openSession } from "./session.ts";
 
 /** Tool rounds in the measured loop: each writes a file and reads it back. */
@@ -11,7 +12,10 @@ const loopRounds = 50;
 /** Tool rounds in the resumed session: six entries each, about 1,000 in all. */
 const resumeRounds = 166;
 
-/** A scripted model's models and model, for `rounds` rounds of write and read, then an answer. */
+/** A verifier that settles each run at once, so the measurement times the engine's settlement and not a check (#439). */
+const settles: ExtensionFactory = (pi) => { pi.on("agent_before_settle", () => undefined); };
+
+/** A scripted model's models and model, for `rounds` rounds of write and read, then an answer, with a verifier. */
 function scripted(rounds: number) {
   const faux = fauxProvider();
   faux.setResponses([
@@ -24,7 +28,7 @@ function scripted(rounds: number) {
   ]);
   const models = createModels();
   models.setProvider(faux.provider);
-  return { models, model: faux.getModel() };
+  return { models, model: faux.getModel(), verifier: settles };
 }
 
 /** Runs `measure` with a session of `rounds` rounds in temporary folders, with no network, and removes them after. */
@@ -58,17 +62,25 @@ const tenths = (ms: number): number => Math.round(ms * 10) / 10;
  * a request, and each sync to the disk, which takes 0.3 ms on one machine
  * and 10 ms on another. Prints the run's milliseconds without them, the
  * base's, the median sync's, the number of syncs, which the code decides
- * and the disk does not, and the process's resident memory as JSON.
+ * and the disk does not, the settlement's (#439), from its first entry to
+ * the run's end without its syncs, and the process's resident memory as JSON.
  */
 export function measureLoop(): Promise<void> {
   let baseMs = 0;
   const syncs: number[] = [];
+  /** When settlement began and ended, and how many syncs came before each. */
+  let settling: { started: number; syncsBefore: number; ended?: number; syncsAtEnd?: number } | undefined;
   const captureTimed: NonNullable<SessionOptions["captureBase"]> = async (cwd) => {
     const started = performance.now();
     try { return await captureBase(cwd); } finally { baseMs += performance.now() - started; }
   };
   const syncTimed: NonNullable<SessionOptions["writer"]> = (writer) => ({
     ...writer,
+    append: (entry) => {
+      if (entry.type === "settle" && settling === undefined) settling = { started: performance.now(), syncsBefore: syncs.length };
+      if (entry.type === "run_end" && settling !== undefined) { settling.ended = performance.now(); settling.syncsAtEnd = syncs.length; }
+      writer.append(entry);
+    },
     sync: () => {
       const started = performance.now();
       try { writer.sync(); } finally { syncs.push(performance.now() - started); }
@@ -78,7 +90,9 @@ export function measureLoop(): Promise<void> {
     const runMs = await run();
     const syncedMs = syncs.reduce((sum, ms) => sum + ms, 0);
     const sorted = [...syncs].sort((a, b) => a - b);
-    return { loopMs: tenths(runMs - baseMs - syncedMs), baseMs: tenths(baseMs), syncMs: Math.round((sorted[Math.floor(sorted.length / 2)] ?? 0) * 100) / 100,
+    const settleSyncs = syncs.slice(settling?.syncsBefore ?? 0, settling?.syncsAtEnd ?? 0).reduce((sum, ms) => sum + ms, 0);
+    const settleMs = settling?.ended === undefined ? 0 : settling.ended - settling.started - settleSyncs;
+    return { settleMs: Math.round(settleMs * 100) / 100, loopMs: tenths(runMs - baseMs - syncedMs), baseMs: tenths(baseMs), syncMs: Math.round((sorted[Math.floor(sorted.length / 2)] ?? 0) * 100) / 100,
       syncCount: syncs.length, loopRssBytes: process.memoryUsage().rss };
   }, { captureBase: captureTimed, writer: syncTimed });
 }
@@ -91,9 +105,9 @@ export function measureLoop(): Promise<void> {
 export function measureResume(): Promise<void> {
   return measured(resumeRounds, async (session, run) => {
     await run();
-    const { models, model } = scripted(0);
+    const { models, model, verifier } = scripted(0);
     const started = performance.now();
-    const resumed = openSession(session.file, { models, model });
+    const resumed = openSession(session.file, { models, model, verifier });
     const resumeMs = tenths(performance.now() - started);
     await resumed.dispose();
     return { resumeMs, sessionBytes: statSync(session.file).size };

@@ -56,6 +56,10 @@ function lineCount(uncovered: Receipt["uncovered"]): number {
 
 /** The receipt in a row: what proved and passed, then what is weak, unproved or may weaken the evidence. */
 function receiptParts(settled: Receipt): EvidencePart[] {
+  if (settled.stopped !== undefined) {
+    return [part("! receipt", "! receipt", "!", "warning"),
+      part("not verified, run ended before verification", "not verified", "not verified", "warning")];
+  }
   // In a folder of repositories, the evidence of every unit verified together, and the folders nothing verified.
   const receipt = allEvidence(settled);
   const plain = (settled.units ?? []).filter((unit) => !verified(unit)).length;

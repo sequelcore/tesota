@@ -32,6 +32,8 @@ export interface Receipt {
   readonly tooLarge?: readonly string[];
   /** Why nothing was verified, when the project has neither a repository nor a snapshot. */
   readonly reason?: string;
+  /** Why the run ended before Tesota verified anything; present only then. */
+  readonly stopped?: string;
   /** The commit `HEAD` named when the operator's request started; null before the first commit and outside Git. */
   readonly base: string | null;
   /** When the operator's request started and when its run settled, in ISO 8601. */
@@ -462,6 +464,10 @@ const weakeningWords: Readonly<Record<Weakening["kind"], string>> = {
  * counted (`decisions`).
  */
 export function receiptFindings(receipt: Receipt): Finding[] {
+  if (receipt.stopped !== undefined) {
+    return [{ standing: "decide", check: "coverage", label: "Not verified", subject: "this request's changes",
+      detail: receipt.stopped, more: [] }];
+  }
   return [...receipt.units === undefined ? unitFindings(receipt) : receipt.units.flatMap((unit) => verified(unit)
     ? unitFindings(fromFolder(unit)) : [{ standing: "decide" as const, check: "coverage" as const, label: "Not verified",
       subject: plainName(unit.folder), detail: plainReason(unit), more: [] }]), ...openCaseFindings(receipt.openCases)];
@@ -553,6 +559,7 @@ export function renderReceiptMessage(receipt: Receipt): string {
 
 /** Shared evidence wording for terminal text and chat Markdown. */
 function receiptLines(receipt: Receipt): string[] {
+  if (receipt.stopped !== undefined) return [`  not verified  this request's changes: ${receipt.stopped}`];
   return [...receipt.units === undefined ? unitLines(receipt) : receipt.units.flatMap((unit) => verified(unit)
     ? unitLines(fromFolder(unit)) : [`  not verified  ${plainName(unit.folder)}: ${plainReason(unit)}`]),
   ...openCaseLines(receipt.openCases)];

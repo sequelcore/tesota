@@ -57,16 +57,27 @@ before the call runs. Opening a session checks every line and repairs only
 an interrupted last one; recovery marks a call with no result as "outcome
 unknown" or "not run" (`repairs`, proved) and never runs it again. One
 writer holds a session, through a lock the operating system releases when
-its holder ends (`session-lock.ts`, `bun:ffi`). The session tests kill a
-process running one to check recovery; that shows what survives a killed
+its holder ends (`session-lock.ts`, `bun:ffi`). A run settles in two
+phases (`loop.ts`): its extensions, whose results accumulate so none can
+drop another's message or cancel its send-back, then the verifier every
+session must have, which no extension can replace. The proved settle rule
+(`settle-rule.ts`) decides whether the run goes on or how it ends: it
+completes only when the verifier ran on a finished run, with no handler
+failing and no input it did not see; the operator's stop ends it aborted;
+any other end, a provider error or a failing handler, is finalized once
+with its reason; and 32 automatic send-backs end it incomplete. Each phase
+is synced before it runs and before anything acts on its result, and
+session format 2 refuses a run recorded as completed without its
+verifier's settlement. The session tests kill a process running one, also
+while it settles, to check recovery; that shows what survives a killed
 process, not a power cut. The inventory test
 fails when `src/` starts using a part of Pi that is not in the contract, an
 engine export, `pi-ai`, or the shell. The budget check compiles the engine
 with code splitting, like a release, so the loop loads only when used, and
 fails a pull request when its median
 `--version` startup, its binary size, its scripted loop's median time or
-largest memory, its request's base, its number of syncs to the disk, the
-resume of a session of about 1,000 entries, or that session's size exceeds
+largest memory, its request's base, its number of syncs to the disk, its
+settlement's time, the resume of a session of about 1,000 entries, or that session's size exceeds
 the limit for its platform. The loop's time leaves out the base and the
 syncs, timed apart: what they take is the system's and the disk's. A sync's
 time, 0.3 ms on one machine and 10 ms on another, is only reported; its

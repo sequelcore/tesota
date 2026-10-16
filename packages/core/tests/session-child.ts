@@ -2,10 +2,12 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Type } from "typebox";
+import type { ExtensionFactory } from "../src/contract.ts";
 import { createSession, openSession } from "../src/session.ts";
 import { SessionLockedError } from "../src/session-lock.ts";
 import type { EngineTool } from "../src/tool.ts";
 import { codingTools } from "../src/tools/index.ts";
+import { accepts } from "./scripted.ts";
 
 /**
  * A session in a process of its own, for the tests to kill hard or to race
@@ -16,6 +18,9 @@ import { codingTools } from "../src/tools/index.ts";
  * - `tool <cwd> <folder>`: a reply calls `wait`, which prints `waiting` and
  *   never ends, then `write`, which never starts.
  * - `stream <cwd> <folder>`: a reply streams too slowly to finish first.
+ * - `verify <cwd> <folder>`: the verifier prints `verifying` and never settles (#439).
+ * - `receipt <cwd> <folder>`: the verifier records a receipt, and the
+ *   process kills itself when the run's end is about to be written.
  * - `hold <file>`: opens the session and prints `opened`, or `locked` when
  *   another writer holds it.
  */
@@ -24,6 +29,12 @@ const [mode, first, second] = process.argv.slice(2);
 const forever = (): Promise<never> => new Promise(() => { setInterval(() => undefined, 60_000); });
 
 /** A tool that says it started, then runs until the process is killed. */
+/** What verifies the run in each mode. */
+const verifiers: Readonly<Record<string, ExtensionFactory>> = {
+  verify: (pi) => { pi.on("agent_before_settle", () => { console.log("verifying"); return forever(); }); },
+  receipt: (pi) => { pi.on("agent_before_settle", () => ({ entries: [{ type: "custom", customType: "receipt", data: { checked: true } }] })); },
+};
+
 const wait: EngineTool = {
   name: "wait", description: "Waits.", parameters: Type.Object({}),
   execute: async () => { console.log("waiting"); return forever(); },
@@ -31,7 +42,7 @@ const wait: EngineTool = {
 
 if (mode === "hold") {
   try {
-    const session = openSession(first ?? "", { models: createModels(), model: fauxProvider().getModel() });
+    const session = openSession(first ?? "", { models: createModels(), model: fauxProvider().getModel(), verifier: accepts });
     console.log("opened");
     void session;
     await forever();
@@ -42,12 +53,16 @@ if (mode === "hold") {
   const cwd = first ?? "";
   const faux = fauxProvider(mode === "stream" ? { tokensPerSecond: 5 } : {});
   faux.setResponses(mode === "stream" ? [fauxAssistantMessage("a reply that streams slowly enough to be killed midway")]
-    : [fauxAssistantMessage([fauxToolCall("wait", {}), fauxToolCall("write", { path: "never.txt", content: "x" })],
+    : mode !== undefined && mode in verifiers ? [fauxAssistantMessage("done")] : [fauxAssistantMessage([fauxToolCall("wait", {}), fauxToolCall("write", { path: "never.txt", content: "x" })],
       { stopReason: "toolUse" }), fauxAssistantMessage("done")]);
   const models = createModels();
   models.setProvider(faux.provider);
   const session = createSession({ cwd, folder: second ?? "", models, model: faux.getModel(),
-    tools: (spool) => [wait, ...codingTools(cwd, spool)] });
+    verifier: verifiers[mode ?? ""] ?? accepts, tools: (spool) => [wait, ...codingTools(cwd, spool)],
+    writer: (writer) => ({ ...writer, append: (entry) => {
+      if (mode === "receipt" && entry.type === "run_end") process.kill(process.pid, "SIGKILL");
+      writer.append(entry);
+    } }) });
   writeFileSync(join(second ?? "", "file.txt"), session.file);
   await session.prompt("go");
 }

@@ -1,11 +1,11 @@
-import type { Message, ToolCall } from "@earendil-works/pi-ai";
+import type { ToolCall } from "@earendil-works/pi-ai";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import type { Base } from "./base.ts";
-import type { Session } from "./contract.ts";
-import { createLoop, type LoopOptions, type LoopState, toolResult } from "./loop.ts";
+import type { ExtensionAPI, Session } from "./contract.ts";
+import { createLoop, type HistoryMessage, type LoopOptions, type LoopState, toolResult } from "./loop.ts";
 import { notRun, outcomeUnknown, repairs } from "./reconcile-rule.ts";
 import {
   type Behavior, createSessionFile, type Origin, readSessionFile, type Repair, type SessionEntry, sessionFormat, sessionVersion,
@@ -41,7 +41,15 @@ export interface EngineSession extends Session {
   ledger(): readonly LedgerRequest[];
 }
 
-export type SessionOptions = Omit<LoopOptions, "writer" | "resumed"> & {
+/**
+ * What verifies a session's runs (#439): it registers like an extension,
+ * and reads the running request from the ledger, so what it verifies is
+ * what was recorded before any tool ran, not what it captured itself.
+ */
+export type Verifier = (pi: ExtensionAPI, request: () => LedgerRequest | undefined) => void;
+
+export type SessionOptions = Omit<LoopOptions, "writer" | "resumed" | "verifier"> & {
+  readonly verifier: Verifier;
   /** Where the session's file goes; `~/.tesota/sessions/<project>` when not given. */
   readonly folder?: string;
   /** Wraps the file's writer; tests use it to fail a write. */
@@ -125,13 +133,14 @@ export function recovery(entries: readonly SessionEntry[]): SessionEntry[] {
 
 /**
  * The conversation the entries hold: requests and delivered amendments as
- * the operator's messages, replies, results, and each repair as a failed
- * result placed after the other results of its reply.
+ * the operator's messages, replies, results, each repair as a failed
+ * result placed after the other results of its reply, and the messages
+ * settle handlers added; their data stays outside it.
  */
-function conversation(entries: readonly SessionEntry[]): Message[] {
-  const history: Message[] = [];
+function conversation(entries: readonly SessionEntry[]): HistoryMessage[] {
+  const history: HistoryMessage[] = [];
   const amendments = new Map<number, string>();
-  const repaired = new Map<string, Message[]>();
+  const repaired = new Map<string, HistoryMessage[]>();
   const counts = new Map<number, number>();
   for (const entry of entries) {
     if (entry.type !== "reconciliation") continue;
@@ -140,7 +149,7 @@ function conversation(entries: readonly SessionEntry[]): Message[] {
       toolResult({ id: entry.callId, name: entry.toolName }, { text: repairText[entry.repair], isError: true }, 0)]);
   }
   /** Each reply's repairs follow its last result, which is where the next reply or run starts. */
-  let pending: Message[] = [];
+  let pending: HistoryMessage[] = [];
   const flush = () => { history.push(...pending); pending = []; };
   for (const entry of entries) {
     if (entry.type === "request") { flush(); history.push({ role: "user", content: entry.text, timestamp: Date.parse(entry.at) }); }
@@ -153,6 +162,11 @@ function conversation(entries: readonly SessionEntry[]): Message[] {
       history.push(entry.message);
       pending = repaired.get(`${entry.run}:${index}`) ?? [];
     } else if (entry.type === "tool_result") history.push(entry.message);
+    else if (entry.type === "custom_message") {
+      flush();
+      const { customType, content, display, details } = entry;
+      history.push({ role: "custom", customType, content, display, ...details === undefined ? {} : { details }, timestamp: 0 });
+    }
   }
   flush();
   return history;
@@ -187,16 +201,29 @@ function stateOf(entries: readonly SessionEntry[]): LoopState {
   };
 }
 
-/** The loop over a session file whose lock is held, keeping its entries for the ledger; the lock goes when it is disposed. */
-function engineSession(file: string, release: () => void, entries: SessionEntry[], options: OpenOptions & { readonly cwd: string }):
-  EngineSession {
+/**
+ * The loop over a session file whose lock is held, keeping its entries for
+ * the ledger; the lock goes when it is disposed. A session opened again
+ * resumes from its entries; a new one starts empty.
+ */
+function engineSession(file: string, release: () => void, entries: SessionEntry[], options: OpenOptions & { readonly cwd: string },
+  opened: boolean): EngineSession {
   const written = sessionWriter(file);
   const recording: SessionWriter = {
     append: (entry) => { written.append(entry); entries.push(entry); },
     sync: () => { written.sync(); },
     close: () => { written.close(); },
   };
-  const loop = createLoop({ ...options, writer: options.writer?.(recording) ?? recording, resumed: stateOf(entries) });
+  const request = (): LedgerRequest | undefined => ledgerOf(entries).at(-1);
+  let loop: Session;
+  try {
+    loop = createLoop({ ...options, verifier: (pi) => { options.verifier(pi, request); },
+      writer: options.writer?.(recording) ?? recording, ...opened ? { resumed: stateOf(entries) } : {} });
+  } catch (error) {
+    // An extension or the verifier that throws as it registers leaves nothing open.
+    written.close();
+    throw error;
+  }
   let disposed: Promise<void> | undefined;
   return {
     ...loop,
@@ -216,11 +243,11 @@ export function createSession(options: SessionOptions): EngineSession {
   const lock = lockSession(lockOf(file));
   try {
     createSessionFile(file, { type: "session", format: sessionFormat, version: sessionVersion, id, cwd: resolve(options.cwd), createdAt });
+    return engineSession(file, () => { lock.release(); }, [], options, false);
   } catch (error) {
     lock.release();
     throw error;
   }
-  return engineSession(file, () => { lock.release(); }, [], options);
 }
 
 /**
@@ -242,7 +269,7 @@ export function openSession(file: string, options: OpenOptions): EngineSession {
         writer.close();
       }
     }
-    return engineSession(file, () => { lock.release(); }, [...entries, ...added], { ...options, cwd: header.cwd });
+    return engineSession(file, () => { lock.release(); }, [...entries, ...added], { ...options, cwd: header.cwd }, true);
   } catch (error) {
     lock.release();
     throw error;

@@ -77,6 +77,17 @@ it("shows a clean receipt as its verdict and one row of what holds", () => {
   expect(rows.join("\n")).not.toContain(hash.slice(0, 12));
 });
 
+it("shows a stopped receipt as not verified in both card views", () => {
+  const receipt: Receipt = { ...emptyReceipt, stopped: "quota exhausted" };
+  for (const expanded of [false, true]) {
+    const rows = shown("tesota-receipt", receipt, 120, expanded);
+    expect(rows[1]).toMatch(/^ ! 1 thing needs you +Tesota receipt$/u);
+    expect(rows.join("\n")).toContain("Not verified");
+    expect(rows.join("\n")).toContain("this request's changes — quota exhausted");
+    expect(rows).not.toContain(" VERIFIED");
+  }
+});
+
 it("shows the cases a model listed as left open as notes for the operator, outside the count", () => {
   const listed: Receipt = { ...clean, openCases: { status: "listed", model: "openai/gpt-6-sol",
     cases: [{ input: "lateFee(-1)", outcomes: ["0.", "-5."] }, { input: "lateFee(1.5)", outcomes: ["7.5", "5"] }] } };
