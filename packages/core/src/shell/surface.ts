@@ -101,13 +101,14 @@ function branchOf(gitDir: string | undefined): string | null {
  * the current Git branch, followed as `HEAD` changes, the extensions'
  * status texts, and how many providers are logged in.
  */
-export function footerData(cwd: string, surface: Surface, providers: () => number): ReadonlyFooterDataProvider {
-  const gitDir = gitDirOf(cwd);
+export function footerData(cwd: () => string, surface: Surface, providers: () => number): ReadonlyFooterDataProvider {
+  // The shown session's folder, which changes when the shell shows another session: its worktree's branch, not the checkout's (#453).
   return {
-    getGitBranch: () => branchOf(gitDir),
+    getGitBranch: () => branchOf(gitDirOf(cwd())),
     getExtensionStatuses: () => surface.statuses,
     getAvailableProviderCount: providers,
     onBranchChange: (callback) => {
+      const gitDir = gitDirOf(cwd());
       if (gitDir === undefined || !existsSync(join(gitDir, "HEAD"))) return () => undefined;
       try {
         const watcher = watch(join(gitDir, "HEAD"), () => { callback(); });

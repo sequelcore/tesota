@@ -9,7 +9,7 @@ import { engineModels, loginOptions } from "../model-access.ts";
 import type { Mode } from "../permission-rule.ts";
 import { loadRules } from "../permissions.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
-import { readSettings, type Settings, writeSettings } from "../settings.ts";
+import { readSettings, type Settings, updateSettings } from "../settings.ts";
 import { type Shell, startShell } from "./shell.ts";
 import { createSurface, footerData, shellHost } from "./surface.ts";
 import { shellTheme } from "./theme.ts";
@@ -66,7 +66,7 @@ export async function runApp(options: AppOptions): Promise<void> {
   // Another Tesota may have saved since this one started: only what changed here is written over it (#453).
   const save = (change: Partial<Settings>): void => {
     settings = { ...settings, ...change };
-    writeSettings({ ...readSettings(options.settingsPath).settings, ...change }, options.settingsPath);
+    updateSettings(change, options.settingsPath);
   };
   const folder = options.sessions ?? sessionsFolder(options.cwd);
   // Tesota's interface takes the shell's editor, key names, version and shell, never Pi's (#446).
@@ -207,7 +207,7 @@ export async function runApp(options: AppOptions): Promise<void> {
 
   shell = startShell({ terminal: options.terminal ?? new ProcessTerminal(), mode: modeFor(settings),
     fullRepaint: process.platform === "win32", theme, session, status, surface,
-    footerData: footerData(options.cwd, surface, () => providers),
+    footerData: footerData(() => session.workspace.cwd, surface, () => providers),
     nextMode: () => {
       permissionMode = permissionMode === "ask" ? "full" : permissionMode === "full" ? "read" : "ask";
       save({ permissionMode });

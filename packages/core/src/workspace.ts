@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { tesotaHome } from "../../../src/home.ts";
 import { lockSession, SessionLockedError } from "./session-lock.ts";
@@ -20,8 +20,8 @@ export interface Workspace {
   readonly base?: string;
   /**
    * Lets go of the workspace as the session closes: the checkout for the
-   * next session, or the worktree, removed with its branch when nothing in
-   * it changed. Returns where kept work is, when there is some.
+   * next session, or the worktree, removed with its branch only when nothing
+   * in it or on its branch changed. Returns where kept work is, when there is some.
    */
   release(): string | undefined;
 }
@@ -38,7 +38,13 @@ function gitIn(folder: string, args: readonly string[]): { readonly ok: boolean;
 
 const hashOf = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 12);
 
-/** The folder holding `.git` at or above `folder`, found without running Git; `folder` itself outside Git. */
+/** A folder by its one real name: links, junctions and Windows' short names resolved, as Git names it. */
+const canonical = (folder: string): string => {
+  const at = resolve(folder);
+  try { return realpathSync.native(at); } catch { return at; }
+};
+
+/** The folder holding `.git` (a folder, or a worktree's file) at or above `folder`, found without running Git; else `folder`. */
 function checkoutRoot(folder: string): string {
   for (let at = folder; ; at = dirname(at)) {
     if (existsSync(join(at, ".git"))) return at;
@@ -47,17 +53,17 @@ function checkoutRoot(folder: string): string {
 }
 
 /**
- * The lease on a checkout, held by whoever works in it: the whole repository
- * when `checkout` is in one, so sessions opened in two of its folders do not
- * share it.
+ * The lease on a checkout, held by whoever works in it: its whole repository
+ * or worktree, by its real name, so sessions opened in two of its folders or
+ * through two names of it do not share it.
  */
-function leaseOn(checkout: string): (() => void) | undefined {
-  const folder = join(tesotaHome(), "workspaces");
-  mkdirSync(folder, { recursive: true });
-  const root = checkoutRoot(checkout);
+function leaseOn(folder: string): (() => void) | undefined {
+  const leases = join(tesotaHome(), "workspaces");
+  mkdirSync(leases, { recursive: true });
+  const root = checkoutRoot(folder);
   const key = process.platform === "win32" ? root.toLowerCase() : root;
   try {
-    const lock = lockSession(join(folder, `${basename(root) || "root"}-${hashOf(key)}.lock`));
+    const lock = lockSession(join(leases, `${basename(root) || "root"}-${hashOf(key)}.lock`));
     return () => { lock.release(); };
   } catch (error) {
     if (error instanceof SessionLockedError) return undefined;
@@ -65,30 +71,57 @@ function leaseOn(checkout: string): (() => void) | undefined {
   }
 }
 
-/** The repository `checkout` is in, and the commit it is at; nothing outside Git or before the first commit. */
+/** The repository `checkout` is in, by its real name, and the commit it is at; nothing outside Git or before the first commit. */
 function repositoryOf(checkout: string): { readonly top: string; readonly head: string } | undefined {
   const top = gitIn(checkout, ["rev-parse", "--show-toplevel"]);
   const head = gitIn(checkout, ["rev-parse", "HEAD"]);
-  return top.ok && head.ok ? { top: resolve(top.out), head: head.out } : undefined;
+  return top.ok && head.ok ? { top: canonical(top.out), head: head.out } : undefined;
 }
 
-/** A worktree's workspace: `cwd` in it, released by removing it with its branch when nothing changed. */
-function worktreeWorkspace(checkout: string, worktree: string, inside: string, branch: string, base: string): Workspace {
+/**
+ * Whether nothing in `worktree` or on `branch` differs from `base`: no
+ * change, staged or not, no file Git does not track and does not ignore,
+ * whatever the operator's status settings, and the branch and HEAD both
+ * still at `base`.
+ */
+function unchanged(worktree: string, branch: string, base: string): boolean {
+  const status = gitIn(worktree, ["status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"]);
+  const tip = gitIn(worktree, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
+  const head = gitIn(worktree, ["rev-parse", "HEAD"]);
+  return status.ok && status.out === "" && tip.ok && tip.out === base && head.ok && head.out === base;
+}
+
+/** Removes a worktree Tesota made and its branch, after a failed start; nothing in it is the operator's yet. */
+function discard(top: string, worktree: string, branch: string): void {
+  gitIn(top, ["worktree", "remove", "--force", worktree]);
+  gitIn(top, ["worktree", "prune"]);
+  gitIn(top, ["branch", "-D", branch]);
+}
+
+/** A worktree's workspace, leased like a checkout: `cwd` in it, released by removing it with its branch when unchanged. */
+function worktreeWorkspace(checkout: string, worktree: string, inside: string, branch: string, base: string,
+  leased: () => void): Workspace {
+  const cwd = join(worktree, inside);
+  // A folder the operator made and has not committed is not in the worktree yet.
+  mkdirSync(cwd, { recursive: true });
   return {
-    cwd: join(worktree, inside), checkout, worktree, branch, base,
+    cwd, checkout, worktree, branch, base,
     release() {
-      const dirty = gitIn(worktree, ["status", "--porcelain"]);
-      const commits = gitIn(worktree, ["rev-list", `${base}..HEAD`]);
-      if (dirty.ok && dirty.out === "" && commits.ok && commits.out === "") {
-        const removed = gitIn(checkout, ["worktree", "remove", worktree]);
-        if (removed.ok) {
-          gitIn(checkout, ["branch", "-D", branch]);
-          return undefined;
-        }
+      leased();
+      if (unchanged(worktree, branch, base) && gitIn(checkout, ["worktree", "remove", worktree]).ok) {
+        gitIn(checkout, ["branch", "-D", branch]);
+        return undefined;
       }
       return `The session's work is in ${worktree}, on branch ${branch}.`;
     },
   };
+}
+
+/** The lease on a worktree Tesota made or made again; another session already in it is refused. */
+function worktreeLease(worktree: string): () => void {
+  const leased = leaseOn(worktree);
+  if (leased === undefined) throw new Error(`Another session is working in ${worktree}; close it first.`);
+  return leased;
 }
 
 /**
@@ -99,7 +132,7 @@ function worktreeWorkspace(checkout: string, worktree: string, inside: string, b
  * nothing could bring its work back.
  */
 export function bindWorkspace(checkout: string, id: string): Workspace {
-  const at = resolve(checkout);
+  const at = canonical(checkout);
   const leased = leaseOn(at);
   if (leased !== undefined) return { cwd: at, checkout: at, release: () => { leased(); return undefined; } };
   const repository = repositoryOf(at);
@@ -110,8 +143,13 @@ export function bindWorkspace(checkout: string, id: string): Workspace {
   const worktree = join(tesotaHome(), "worktrees", `${basename(repository.top) || "root"}-${hashOf(repository.top)}`, id);
   const branch = `tesota/${id}`;
   const added = gitIn(repository.top, ["worktree", "add", "-b", branch, worktree, repository.head]);
-  if (!added.ok) throw new Error(`Could not make a worktree for the session: ${added.err}`);
-  return worktreeWorkspace(at, worktree, relative(repository.top, at), branch, repository.head);
+  if (!added.ok) {
+    // A hook that fails after Git made the worktree leaves it and its branch: they go with the failure.
+    discard(repository.top, worktree, branch);
+    throw new Error(`Could not make a worktree for the session: ${added.err}`);
+  }
+  const made = canonical(worktree);
+  return worktreeWorkspace(at, made, relative(repository.top, at), branch, repository.head, worktreeLease(made));
 }
 
 /**
@@ -121,7 +159,7 @@ export function bindWorkspace(checkout: string, id: string): Workspace {
  */
 export function reopenWorkspace(record: WorkspaceRecord): Workspace {
   if (record.worktree === undefined || record.branch === undefined || record.base === undefined) {
-    const leased = leaseOn(record.cwd);
+    const leased = leaseOn(canonical(record.cwd));
     if (leased === undefined) throw new Error(`Another session is working in ${record.cwd}; close it first, then resume this one.`);
     return { cwd: record.cwd, checkout: record.cwd, release: () => { leased(); return undefined; } };
   }
@@ -129,10 +167,13 @@ export function reopenWorkspace(record: WorkspaceRecord): Workspace {
   if (repository === undefined) throw new Error(`${record.checkout} is no longer a Git repository, so the session's worktree cannot be made again.`);
   const worktree = record.worktree;
   if (!existsSync(worktree)) {
+    // A worktree deleted by hand stays registered until pruned, and Git would not add it again.
+    gitIn(repository.top, ["worktree", "prune"]);
     const hasBranch = gitIn(repository.top, ["rev-parse", "--verify", "--quiet", `refs/heads/${record.branch}`]).ok;
     const added = gitIn(repository.top, hasBranch ? ["worktree", "add", worktree, record.branch]
       : ["worktree", "add", "-b", record.branch, worktree, record.base]);
     if (!added.ok) throw new Error(`Could not make the session's worktree again: ${added.err}`);
   }
-  return worktreeWorkspace(record.checkout, worktree, relative(repository.top, record.checkout), record.branch, record.base);
+  return worktreeWorkspace(record.checkout, worktree, relative(repository.top, canonical(record.checkout)), record.branch, record.base,
+    worktreeLease(worktree));
 }

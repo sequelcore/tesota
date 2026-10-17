@@ -1,7 +1,7 @@
 import { createModels, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Evidence } from "../../../src/evidence.ts";
@@ -190,6 +190,103 @@ describe("the gate on @tesota/core", () => {
     const taker = gated(cwd, []);
     expect(taker.workspace.cwd).toBe(cwd);
     expect(() => openSession(file, scriptless())).toThrow("Another session is working in");
+  });
+
+  /** A second session in `cwd` while a first holds it, disposed by the test itself. */
+  const worktreeSession = (cwd: string, at: string = cwd): EngineSession => {
+    const session = gated(at, []);
+    open.splice(open.indexOf(session), 1);
+    return session;
+  };
+
+  test("a worktree whose branch holds a commit, or a file Git is told not to list, is kept (#453)", async () => {
+    const cwd = repository();
+    gated(cwd, []);
+    const committed = worktreeSession(cwd);
+    const { worktree = "", branch = "" } = committed.workspace;
+    const base = git(worktree, "rev-parse", "HEAD");
+    writeFileSync(join(worktree, "work.md"), "# Work\n");
+    git(worktree, "add", "-A");
+    git(worktree, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "work");
+    // HEAD back at the start, the branch still ahead: the commit is the session's work.
+    git(worktree, "checkout", "-q", "--detach", base);
+    await committed.dispose();
+    expect(committed.kept()).toContain(branch);
+    expect(git(cwd, "branch", "--list", branch)).toContain(branch);
+    git(cwd, "config", "status.showUntrackedFiles", "no");
+    const untracked = worktreeSession(cwd);
+    writeFileSync(join(untracked.workspace.worktree ?? "", "draft.md"), "# Draft\n");
+    await untracked.dispose();
+    expect(untracked.kept()).toBeDefined();
+    expect(existsSync(join(untracked.workspace.worktree ?? "", "draft.md"))).toBe(true);
+  });
+
+  test("another name for the checkout, or a session's worktree, is not a free checkout (#453)", async () => {
+    const cwd = repository();
+    const alias = join(mkdtempSync(join(tmpdir(), "tesota-core-alias-")), "same");
+    symlinkSync(cwd, alias, process.platform === "win32" ? "junction" : "dir");
+    gated(cwd, []);
+    const throughAlias = worktreeSession(cwd, alias);
+    expect(throughAlias.workspace.worktree).toBeDefined();
+    // A session opened inside that worktree gets its own, not a share of it.
+    const inside = worktreeSession(throughAlias.workspace.worktree ?? "");
+    expect(inside.workspace.worktree).toBeDefined();
+    expect(inside.workspace.worktree).not.toBe(throughAlias.workspace.worktree);
+    await inside.dispose();
+    await throughAlias.dispose();
+  });
+
+  test.if(process.platform === "win32")("a checkout reached by its Windows short name is the same checkout (#453)", async () => {
+    const parent = mkdtempSync(join(tmpdir(), "tesota-core-short-"));
+    const cwd = join(parent, "a-folder-name-longer-than-eight");
+    mkdirSync(cwd);
+    git(cwd, "init", "-q");
+    writeFileSync(join(cwd, "a.md"), "a\n");
+    git(cwd, "add", "-A");
+    git(cwd, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base");
+    const short = spawnSync("powershell", ["-NoProfile", "-Command",
+      `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${cwd}').ShortPath`], { encoding: "utf8" }).stdout.trim();
+    expect(short).not.toBe(cwd);
+    expect(existsSync(short)).toBe(true);
+    gated(cwd, []);
+    const second = gated(short, [{ tool: "write", args: { path: "b.md", content: "b\n" } }, "done"]);
+    // The same checkout by another name: the second session gets a worktree, and works at its top, not beside it.
+    expect(second.workspace.worktree).toBeDefined();
+    expect(second.workspace.cwd).toBe(second.workspace.worktree ?? "");
+    await second.prompt("add b");
+    expect(receiptOf(second)?.changed).toMatchObject([{ path: "b.md" }]);
+  });
+
+  test("a session opened in a folder not yet committed works in that folder of its worktree (#453)", async () => {
+    const cwd = repository();
+    mkdirSync(join(cwd, "fresh"));
+    gated(cwd, []);
+    const session = worktreeSession(cwd, join(cwd, "fresh"));
+    expect(existsSync(session.workspace.cwd)).toBe(true);
+    expect(session.workspace.cwd).toBe(join(session.workspace.worktree ?? "", "fresh"));
+    await session.dispose();
+  });
+
+  test("a hook that fails as the worktree is made leaves no worktree or branch behind (#453)", () => {
+    const cwd = repository();
+    writeFileSync(join(cwd, ".git", "hooks", "post-checkout"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    gated(cwd, []);
+    expect(() => gated(cwd, [])).toThrow("Could not make a worktree for the session");
+    expect(git(cwd, "branch", "--list", "tesota/*")).toBe("");
+    expect(git(cwd, "worktree", "list").split("\n")).toHaveLength(1);
+  });
+
+  test("a worktree deleted by hand is made again when its session resumes (#453)", async () => {
+    const cwd = repository();
+    gated(cwd, []);
+    const kept = worktreeSession(cwd);
+    const { worktree = "" } = kept.workspace;
+    writeFileSync(join(worktree, "work.md"), "# Work\n");
+    await kept.dispose();
+    rmSync(worktree, { recursive: true, force: true });
+    const resumed = openSession(kept.file, scriptless());
+    open.push(resumed);
+    expect(existsSync(worktree)).toBe(true);
   });
 
   test("outside Git a second session at once is refused, saying why (#453)", () => {
