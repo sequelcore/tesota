@@ -2,12 +2,14 @@ import type { Api, AuthInteraction, CredentialStore, Model, ModelThinkingLevel, 
 import { getTerminalColorMode, ProcessTerminal, type Terminal } from "@earendil-works/pi-tui";
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { registerGate } from "../../../../src/gate.ts";
+import { provideHost } from "../../../../src/host.ts";
+import tesota from "../../../../src/tesota.ts";
 import { fileCredentialStore } from "../credentials.ts";
 import { engineModels, loginOptions } from "../model-access.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
 import { readSettings, type Settings, writeSettings } from "../settings.ts";
 import { type Shell, startShell } from "./shell.ts";
+import { createSurface, footerData, shellHost } from "./surface.ts";
 import { shellTheme } from "./theme.ts";
 
 export interface AppOptions {
@@ -64,9 +66,14 @@ export async function runApp(options: AppOptions): Promise<void> {
     writeSettings(settings, options.settingsPath);
   };
   const folder = options.sessions ?? sessionsFolder(options.cwd);
-  const verifier: Verifier = (pi, request) => { registerGate(pi, request); };
+  // Tesota's interface takes the shell's editor, key names, version and shell, never Pi's (#446).
+  provideHost(shellHost());
+  const theme = shellTheme("dark", getTerminalColorMode());
+  const surface = createSurface(theme);
+  const verifier: Verifier = (pi, request) => { tesota(pi, request); };
+  let providers = 0;
   let model = await chosenModel(models, settings);
-  const sessionOptions = () => ({ models, model: model ?? models.getModels()[0] as Model<Api>, verifier,
+  const sessionOptions = () => ({ models, model: model ?? models.getModels()[0] as Model<Api>, verifier, surface, mode: "tui",
     ...settings.thinkingLevel === undefined ? {} : { thinkingLevel: settings.thinkingLevel } });
   let session: EngineSession = createSession({ cwd: options.cwd, folder, ...sessionOptions() });
   const status = (): string => [model === undefined ? "no model: /login, then /model" : label(model),
@@ -79,18 +86,24 @@ export async function runApp(options: AppOptions): Promise<void> {
     session = next();
     shell.show(session);
   };
+  /** The link or code the sign-in last gave, shown with its next question so the dialog never hides it. */
+  let given: string | undefined;
   const interaction: AuthInteraction = {
     prompt: async (prompt) => {
-      const answer = prompt.type === "select" ? await shell.pick(prompt.message, prompt.options.map(({ id, label: text, description }) =>
+      const message = given === undefined ? prompt.message : `${given}\n${prompt.message}`;
+      given = undefined;
+      const answer = prompt.type === "select" ? await shell.pick(message, prompt.options.map(({ id, label: text, description }) =>
         ({ value: id, label: text, ...description === undefined ? {} : { description } })))
-        : await shell.ask(prompt.message, { secret: prompt.type === "secret", ...prompt.placeholder === undefined ? {} : { placeholder: prompt.placeholder } });
+        : await shell.ask(message, { secret: prompt.type === "secret", ...prompt.placeholder === undefined ? {} : { placeholder: prompt.placeholder } });
       if (answer === undefined) throw new Error("Login cancelled");
       return answer;
     },
     notify: (event) => {
-      if (event.type === "auth_url") shell.note(`Open ${event.url}${event.instructions === undefined ? "" : ` — ${event.instructions}`}`);
-      else if (event.type === "device_code") shell.note(`Enter ${event.userCode} at ${event.verificationUri}`);
-      else shell.note(event.message);
+      if (event.type === "auth_url" || event.type === "device_code") {
+        given = event.type === "auth_url" ? `Open ${event.url}${event.instructions === undefined ? "" : ` — ${event.instructions}`}`
+          : `Enter ${event.userCode} at ${event.verificationUri}`;
+        shell.note(given);
+      } else shell.note(event.message);
     },
   };
   const commands: Readonly<Record<string, () => Promise<void>>> = {
@@ -163,7 +176,8 @@ export async function runApp(options: AppOptions): Promise<void> {
   };
 
   shell = startShell({ terminal: options.terminal ?? new ProcessTerminal(), mode: modeFor(settings),
-    fullRepaint: process.platform === "win32", theme: shellTheme("dark", getTerminalColorMode()), session, status,
+    fullRepaint: process.platform === "win32", theme, session, status, surface,
+    footerData: footerData(options.cwd, surface, () => providers),
     command: async (text) => {
       const run = commands[text.split(/\s/u)[0] ?? ""];
       if (run === undefined) return false;
@@ -171,6 +185,7 @@ export async function runApp(options: AppOptions): Promise<void> {
       return true;
     } });
   if (read.invalid.length > 0) shell.note(`Settings left out as invalid: ${read.invalid.join(", ")}.`, "warning");
+  providers = (await credentials.list()).length;
   if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
   await shell.stopped;
   await session.dispose();

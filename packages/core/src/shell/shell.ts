@@ -1,11 +1,13 @@
+import type { ReadonlyFooterDataProvider, Theme as PiTheme } from "@earendil-works/pi-coding-agent";
 import {
-  type Component, Container, Editor, type Focusable, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList, type Terminal, Text,
-  TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
+  type Component, Container, Editor, type Focusable, getKeybindings, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
+  type Terminal, Text, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
 import type { SessionEvent } from "../loop.ts";
 import type { EngineSession } from "../session.ts";
 import type { TuiMode } from "../settings.ts";
 import { copyToClipboard } from "./clipboard.ts";
+import { expandKey, type Surface } from "./surface.ts";
 import type { ShellTheme } from "./theme.ts";
 import { Transcript } from "./transcript.ts";
 
@@ -27,6 +29,10 @@ export interface ShellOptions {
   readonly command?: (text: string) => Promise<boolean>;
   /** Copies selected text; the operator's clipboard when not given. Resolves true once it could be checked. */
   readonly copy?: (text: string) => Promise<boolean>;
+  /** What the session's extensions draw (#446): header, editor, footer, working indicator, messages and tools. */
+  readonly surface?: Surface;
+  /** What an extension's footer reads besides the session. */
+  readonly footerData?: ReadonlyFooterDataProvider;
 }
 
 /** A line the operator types without it showing, for keys and tokens. */
@@ -69,8 +75,11 @@ export interface Shell {
  * the conversation itself, with search and in-app copy; inline it prints into
  * the terminal's scrollback. Enter sends, and steers while the agent works;
  * Alt+Enter queues a follow-up; Esc stops the run; Ctrl+C clears the editor
- * and, twice on an empty one, ends the shell, as Ctrl+D on an empty one does. On ending, a fullscreen shell writes the conversation to
- * the scrollback, as Pi does.
+ * and, twice on an empty one, ends the shell, as Ctrl+D on an empty one does.
+ * On ending, a fullscreen shell writes the conversation to the scrollback,
+ * as Pi does. What the session's extensions draw (#446), its header, editor,
+ * footer and working indicator, takes the shell's own place as they set it,
+ * and Ctrl+O expands their messages and tool calls.
  */
 export function startShell(options: ShellOptions): Shell {
   const { theme, terminal } = options;
@@ -87,17 +96,24 @@ export function startShell(options: ShellOptions): Shell {
   const tui = options.mode === "inline" ? new TuiMainScreen(terminal)
     : options.fullRepaint ? new RepaintingAltScreen(terminal, false, undefined, altOptions) : new TuiAltScreen(terminal, false, undefined, altOptions);
 
+  const surface = options.surface;
+  const look = theme as unknown as PiTheme;
+  let expanded = false;
   const document = new Container();
-  const transcript = new Transcript(theme);
-  document.addChild(new Text(theme.fg("dim", `tesota-core · ${process.cwd()}`), 1, 1));
+  const transcript = new Transcript(theme, { renderers: surface?.renderers ?? new Map(), tools: surface?.tools ?? new Map(),
+    expanded: () => expanded, cwd: process.cwd() });
+  const header = new Container();
+  document.addChild(header);
   document.addChild(transcript);
   const status = new Container();
   const loader = new Loader(tui, (text) => theme.fg("accent", text), (text) => theme.fg("muted", text), "Working…");
-  const editor = new Editor(tui, theme.editor);
+  const editorSlot = new Container();
+  let editor = new Editor(tui, theme.editor);
+  const footerSlot = new Container();
   const footer = new Text("", 1, 0);
   const drawFooter = (): void => { footer.setText(theme.fg("dim", options.status())); };
   drawFooter();
-  const dock: readonly Component[] = [status, editor, footer];
+  const dock: readonly Component[] = [status, editorSlot, footerSlot];
   if (tui instanceof TuiAltScreen) {
     tui.setLayoutRoot(new VStack([
       { component: new ScrollView(document, { follow: "end", primary: true, overscroll: "chain" }), basis: 0, grow: 1, shrink: 1, minSize: 1 },
@@ -108,7 +124,46 @@ export function startShell(options: ShellOptions): Shell {
     tui.addChild(document);
     for (const component of dock) tui.addChild(component);
   }
-  tui.setFocus(editor);
+
+  /** What each slot was last built from, so a change rebuilds only what changed and the editor keeps its text otherwise. */
+  const mounted: { header?: unknown; editor?: unknown; footer?: unknown } = {};
+  let disposers: (() => void)[] = [];
+  const mountHeader = (): void => {
+    if (mounted.header === surface?.header && header.children.length > 0) return;
+    mounted.header = surface?.header;
+    header.clear();
+    header.addChild(surface?.header === undefined ? new Text(theme.fg("dim", `tesota-core · ${process.cwd()}`), 1, 1)
+      : surface.header(tui, look));
+  };
+  const mountEditor = (): void => {
+    if (mounted.editor === surface?.editor && editorSlot.children.length > 0) return;
+    mounted.editor = surface?.editor;
+    const text = editor.getText();
+    editor = surface?.editor === undefined ? new Editor(tui, theme.editor)
+      : surface.editor(tui, theme.editor, getKeybindings() as never) as unknown as Editor;
+    editor.setText(text);
+    editor.onSubmit = submit;
+    editorSlot.clear();
+    editorSlot.addChild(editor);
+    tui.setFocus(editor);
+  };
+  const mountFooter = (): void => {
+    if (mounted.footer === surface?.footer && footerSlot.children.length > 0) return;
+    mounted.footer = surface?.footer;
+    for (const dispose of disposers.splice(0)) dispose();
+    footerSlot.clear();
+    if (surface?.footer === undefined || options.footerData === undefined) { footerSlot.addChild(footer); return; }
+    const drawn = surface.footer(tui, look, options.footerData);
+    if (drawn.dispose !== undefined) disposers.push(() => { drawn.dispose?.(); });
+    footerSlot.addChild(drawn);
+  };
+  const mount = (): void => {
+    mountHeader();
+    mountEditor();
+    mountFooter();
+    loader.setIndicator(surface?.indicator);
+    tui.requestRender();
+  };
 
   const note = (text: string, tone: "muted" | "error" | "warning" = "muted"): void => {
     transcript.addChild(new Text(theme.fg(tone, text), 1, 1));
@@ -143,7 +198,7 @@ export function startShell(options: ShellOptions): Shell {
       note(error instanceof Error ? error.message : String(error), "error");
     });
   };
-  editor.onSubmit = (text) => {
+  function submit(text: string): void {
     const trimmed = text.trim();
     if (trimmed === "") return;
     editor.setText("");
@@ -152,7 +207,18 @@ export function startShell(options: ShellOptions): Shell {
       return;
     }
     send(trimmed, busy ? "steer" : undefined);
-  };
+  }
+  mount();
+  const unwatch = surface?.onChange(mount) ?? (() => undefined);
+  // Tesota's theme for the terminal's own background, light or dark, once the terminal says which.
+  if (surface !== undefined) {
+    void tui.queryTerminalColors({ timeoutMs: 200 }).then(({ background }) => {
+      if (background === undefined) return;
+      const { r, g, b } = background;
+      theme.use(0.2126 * r + 0.7152 * g + 0.0722 * b > 140 ? "light" : "dark");
+      tui.requestRender(true);
+    }).catch(() => undefined);
+  }
 
   let resolveStopped: () => void = () => undefined;
   const stopped = new Promise<void>((resolve) => { resolveStopped = resolve; });
@@ -161,6 +227,8 @@ export function startShell(options: ShellOptions): Shell {
     if (ending) return;
     ending = true;
     unsubscribe();
+    unwatch();
+    for (const dispose of disposers.splice(0)) dispose();
     loader.stop();
     tui.stop({ preserveScreen: false });
     if (tui instanceof TuiAltScreen) {
@@ -190,6 +258,12 @@ export function startShell(options: ShellOptions): Shell {
       return { consume: true };
     }
     if (matchesKey(data, "ctrl+d") && editor.getText() === "") { stop(); return { consume: true }; }
+    if (matchesKey(data, expandKey)) {
+      expanded = !expanded;
+      transcript.load(session.history());
+      tui.requestRender();
+      return { consume: true };
+    }
     return undefined;
   });
   tui.start();
