@@ -1,6 +1,8 @@
 {
-  "linux": { "startupMs": 8, "binaryBytes": 85400000, "loopMs": 120, "loopRssBytes": 86000000,
-    "baseMs": 30, "syncCount": 106, "settleMs": 1.5, "resumeMs": 18, "sessionBytes": 745000 },
-  "win32": { "startupMs": 40, "binaryBytes": 90400000, "loopMs": 300, "loopRssBytes": 74000000,
-    "baseMs": 600, "syncCount": 106, "settleMs": 1.5, "resumeMs": 35, "sessionBytes": 745000 }
+  "linux": { "startupMs": 8, "binaryBytes": 89000000, "loopMs": 120, "loopRssBytes": 86000000,
+    "baseMs": 30, "syncCount": 106, "settleMs": 1.5, "resumeMs": 18, "sessionBytes": 745000,
+    "firstFrameMs": 100, "shellRssBytes": 98000000 },
+  "win32": { "startupMs": 40, "binaryBytes": 94000000, "loopMs": 300, "loopRssBytes": 74000000,
+    "baseMs": 600, "syncCount": 106, "settleMs": 1.5, "resumeMs": 35, "sessionBytes": 745000,
+    "firstFrameMs": 160, "shellRssBytes": 82000000 }
 }
