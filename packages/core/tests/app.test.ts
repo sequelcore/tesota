@@ -101,9 +101,10 @@ describe("tesota-core", () => {
     await terminal.until("Model: ");
     send(terminal, "the first request");
     await terminal.until("first answer");
+    // The gate verifies the run before it ends, slower on some machines than others.
+    await terminal.untilGone("Verifying");
     send(terminal, "/new");
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    expect((await terminal.screen()).join("\n")).not.toContain("first answer");
+    await terminal.untilGone("first answer");
     expect(readdirSync(sessions).filter((name) => name.endsWith(".jsonl")).length).toBe(2);
     send(terminal, "/resume");
     await terminal.until("the first request");

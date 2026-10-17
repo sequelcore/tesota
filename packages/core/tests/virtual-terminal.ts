@@ -72,6 +72,16 @@ export class VirtualTerminal implements Terminal {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
   }
+  /** What the screen shows once it no longer shows `text`; fails naming what it showed instead. */
+  async untilGone(text: string, timeoutMs = 5000): Promise<string> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const screen = (await this.screen()).join("\n");
+      if (!screen.includes(text)) return screen;
+      if (Date.now() > deadline) throw new Error(`The screen still showed "${text}":\n${screen}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
   /** The screen and everything scrolled above it. */
   async scrollback(): Promise<string[]> {
     await new Promise<void>((resolve) => { this.xterm.write("", () => resolve()); });
