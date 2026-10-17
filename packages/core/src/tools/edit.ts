@@ -51,6 +51,7 @@ function problem(located: readonly Located[]): string {
 export function editTool(cwd: string): EngineTool {
   const tool: EngineTool<typeof parameters> = {
     name: "edit",
+    access: "write",
     description: "Edit a file by replacing exact text. Each oldText must occur exactly once in the file; "
       + "all edits apply together, or none do.",
     parameters,

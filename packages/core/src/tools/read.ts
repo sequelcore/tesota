@@ -24,6 +24,7 @@ export function fileLines(content: string): string[] {
 export function readTool(cwd: string): EngineTool {
   const tool: EngineTool<typeof parameters> = {
     name: "read",
+    access: "read",
     description: `Read a text file. Output stops at ${maxLines} lines or ${maxBytes / 1024} KB, whichever comes first; `
       + "use offset and limit to read the rest.",
     parameters,

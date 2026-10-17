@@ -13,6 +13,7 @@ const parameters = Type.Object({
 export function writeTool(cwd: string): EngineTool {
   const tool: EngineTool<typeof parameters> = {
     name: "write",
+    access: "write",
     description: "Write a file, creating it and its folders if needed or replacing what it held.",
     parameters,
     async execute({ path, content }) {

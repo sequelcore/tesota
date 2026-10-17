@@ -161,6 +161,8 @@ export interface ToolDefinition<Parameters extends TSchema = TSchema, Details = 
   defaultActive?: boolean;
   /** `sequential`: the call runs alone. */
   executionMode?: "sequential" | "parallel";
+  /** What a call does, for the engine's permissions (#449): only reads, writes or edits files, or runs something; runs when not said. */
+  access?: "read" | "write" | "run";
   parameters: Parameters;
   execute(toolCallId: string, params: Static<Parameters>, signal: AbortSignal | undefined, onUpdate: undefined,
     ctx: ExtensionContext): Promise<ToolResult<Details>>;

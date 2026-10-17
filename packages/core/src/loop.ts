@@ -12,6 +12,7 @@ import { conversationMessage } from "./conversation.ts";
 import { createHost, type DrawingSurface, type PhaseResult } from "./extensions.ts";
 import type { Behavior, Origin, SessionWriter, SettlePhase } from "./session-file.ts";
 import { afterExtensions, afterVerifier, continuationLimit } from "./settle-rule.ts";
+import { judge, type Mode, type Rules } from "./permissions.ts";
 import type { EngineTool, ToolOutput } from "./tool.ts";
 import { codingTools } from "./tools/index.ts";
 
@@ -43,6 +44,20 @@ export interface LoopOptions {
   readonly branch: () => BranchEntry[];
   /** The shell the session's extensions draw on; none in print mode. */
   readonly surface?: DrawingSurface;
+  /**
+   * Who may allow what (#449): the mode, the rules, and how to ask the
+   * operator; with no one to ask, a call that would ask is refused. Full
+   * access with no rules when not given; the floor holds either way.
+   */
+  readonly permissions?: Permissions;
+}
+
+/** How a session decides what its calls may do (#449). */
+export interface Permissions {
+  mode(): Mode;
+  readonly rules: Rules;
+  /** Asks the operator about `call`, saying why; absent when no one is present to answer. */
+  ask?(call: ToolCall, reason: string): Promise<"once" | "session" | "deny">;
 }
 
 /** A message a settle handler added: the conversation keeps it as it came, and the model reads it as the operator's. */
@@ -129,9 +144,9 @@ async function execute(tools: readonly EngineTool[], call: ToolCall, signal: Abo
 
 /** An extension's tool as the engine runs it: its text parts joined, its details kept, and a returned `isError` a failure (#441). */
 function extensionTool(tool: ToolDefinition, context: (signal: AbortSignal) => Parameters<ToolDefinition["execute"]>[4]): EngineTool {
-  const { name, description, parameters, promptSnippet, promptGuidelines } = tool;
+  const { name, description, parameters, promptSnippet, promptGuidelines, access } = tool;
   return {
-    name, description, parameters,
+    name, description, parameters, ...access === undefined ? {} : { access },
     ...promptSnippet === undefined ? {} : { promptSnippet }, ...promptGuidelines === undefined ? {} : { promptGuidelines },
     execute: async (args, signal, callId) => {
       const result = await tool.execute(callId, args, signal, undefined, context(signal));
@@ -314,6 +329,42 @@ export function createLoop(options: LoopOptions): LoopSession {
     return due.length > 0;
   }
 
+  /** Calls the operator allowed for the rest of the session, by tool and what they were about. */
+  const allowedForSession = new Set<string>();
+  /** Why the last call `permitted` refused was refused, by its id. */
+  const refusals = new Map<string, string>();
+  const refusedCall = (call: ToolCall): ToolOutput =>
+    ({ text: `Not run: ${refusals.get(call.id) ?? "it was not allowed."}`, isError: true });
+
+  /**
+   * Whether `call` may run (#449): the floor, the mode and the rules decide
+   * (`judge`), and the operator answers what they leave to them, once or for
+   * the session. Every decision is recorded before the call runs, or instead.
+   */
+  async function permitted(run: number, call: ToolCall, offered: readonly EngineTool[]): Promise<boolean> {
+    const permissions = options.permissions;
+    const access = offered.find((tool) => tool.name === call.name)?.access ?? "run";
+    const key = `${call.name}\n${JSON.stringify(call.arguments)}`;
+    const verdict = judge(call, access, options.cwd, permissions?.mode() ?? "full", permissions?.rules ?? [], permissions?.ask !== undefined);
+    let decision: "allow" | "deny" = verdict.decision === "deny" ? "deny" : "allow";
+    let by: "floor" | "mode" | "rule" | "operator" | "session" = verdict.by;
+    let reason = verdict.reason;
+    if (verdict.decision === "ask" && allowedForSession.has(key)) {
+      by = "session";
+      reason = "The operator allowed it for this session.";
+    } else if (verdict.decision === "ask") {
+      const answer = await permissions?.ask?.(call, verdict.reason) ?? "deny";
+      decision = answer === "deny" ? "deny" : "allow";
+      by = "operator";
+      reason = answer === "deny" ? "The operator refused it." : answer === "session" ? "The operator allowed it for this session."
+        : "The operator allowed it once.";
+      if (answer === "session") allowedForSession.add(key);
+    }
+    writer.append({ type: "permission", run, callId: call.id, decision, by, reason });
+    if (decision === "deny") refusals.set(call.id, reason);
+    return decision === "allow";
+  }
+
   /**
    * Runs the reply's calls in order. Each call's intent is synced before it
    * runs, with everything appended before it, so a call that may have
@@ -325,6 +376,7 @@ export function createLoop(options: LoopOptions): LoopSession {
       let output: ToolOutput;
       if (message.stopReason === "length") output = truncatedCall(call);
       else if (signal.aborted) output = stoppedCall;
+      else if (!await permitted(run, call, offered)) output = refusedCall(call);
       else {
         writer.append({ type: "call_intent", run, callId: call.id });
         writer.sync();
