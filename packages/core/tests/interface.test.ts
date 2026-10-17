@@ -1,6 +1,6 @@
 import { createModels, fauxProvider, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { stripTerminalSequences } from "@earendil-works/pi-tui";
-import { describe, expect, test } from "bun:test";
+import { setCapabilityOverrides, stripTerminalSequences } from "@earendil-works/pi-tui";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -55,6 +55,10 @@ const quit = async (terminal: VirtualTerminal, running: Promise<void>): Promise<
 };
 
 describe("Tesota's interface on the engine", () => {
+  // The checks read truecolor sequences, so they do not depend on whether the runner's environment says COLORTERM.
+  beforeAll(() => { setCapabilityOverrides({ trueColor: true }); });
+  afterAll(() => { setCapabilityOverrides({}); });
+
   test("the welcome header draws the palo fierro, and the filled editor and evidence footer sit below", async () => {
     const { terminal, running, branch } = await app([]);
     const screen = await terminal.screen();
