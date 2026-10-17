@@ -4,6 +4,7 @@ import type { FooterData, MessageRenderer, ShellAPI, ShellUI, ToolDrawing } from
 import type { HostParts } from "../../../../src/host.ts";
 import manifest from "../../package.json" with { type: "json" };
 import { platformShell } from "../tools/shell.ts";
+import { withLockWhile } from "../session-lock.ts";
 import type { ShellTheme } from "../../../../src/theme.ts";
 
 export type { MessageRenderer, ToolDrawing } from "../../../../src/contract.ts";
@@ -127,15 +128,17 @@ function gitBash(): string | undefined {
 
 /**
  * What the engine gives Tesota (#446): its key names, version, and the
- * shell the project's checks run in. Those are written for a POSIX shell
- * (`inFolder`), so on Windows they run in Git's bash, as Pi and Claude Code
- * run commands there (#463); the agent's own shell stays the platform's. Without
- * Git's bash, the platform's shell runs them.
+ * shell the project's checks run in, and its asynchronous OS lock. Checks
+ * are written for a POSIX shell (`inFolder`), so on Windows they run in
+ * Git's bash, as Pi and Claude Code run commands there (#463); the agent's
+ * own shell stays the platform's. Without Git's bash, the platform's shell
+ * runs them.
  */
 export function shellHost(): HostParts {
   return {
     keyText: (action) => keys[action] ?? action,
     version: manifest.version,
+    withLockWhile,
     shellConfig: () => {
       const bash = process.platform === "win32" ? gitBash() : undefined;
       if (bash !== undefined) return { shell: bash, args: ["-c"] };

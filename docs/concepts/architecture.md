@@ -72,8 +72,8 @@ The verification layer is written against `src/contract.ts`: what it may
 use of the engine, namely the session's events, tools, model access, and
 what it draws through the shell. Its names and shapes come from Pi's
 extension API, where Tesota's verification first ran. The engine gives it
-its version, key names and the shell checks run in (`src/host.ts`), so
-`src/` never imports the engine.
+its version, key names, the shell checks run in and its asynchronous OS
+lock (`src/host.ts`), so `src/` never imports the engine.
 
 ## Why its own engine
 

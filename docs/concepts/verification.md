@@ -58,7 +58,9 @@ nothing, since the comparison is with the base.
 **Outside a repository** the base is Tesota's own snapshot of the folder,
 taken as the request starts: Git, with its Git folder in
 `~/.tesota/snapshots` and your folder as its work tree, so your folder
-gains nothing. Secrets (`.env`, `.env.*`), Git's and Jujutsu's folders,
+gains nothing. An OS lock gives the snapshot store one writer across
+processes, from initialization through commit and pruning.
+Secrets (`.env`, `.env.*`), Git's and Jujutsu's folders,
 dependencies, build output and what `.gitignore` names are left out; a file
 over 10 MB is left out and listed as not verified. A folder of more than
 20,000 files or 3,000 folders, or that takes over 5 seconds to read, a home

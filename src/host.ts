@@ -10,6 +10,8 @@ export interface HostParts {
   readonly version: string;
   /** The POSIX shell the project's checks run in: its path and arguments, and whether it reads the command from its input instead. */
   readonly shellConfig: () => { shell: string; args: string[]; commandTransport?: "argv" | "stdin" };
+  /** Runs asynchronous work under an OS lock, waiting up to `waitMs` for another writer in this process or another. */
+  readonly withLockWhile: <T>(path: string, work: () => Promise<T>, waitMs: number) => Promise<T>;
 }
 
 let given: HostParts | undefined;
