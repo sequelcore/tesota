@@ -70,7 +70,9 @@ have changed files ends with a receipt saying why they weren't verified.
 **A folder of repositories** is verified repository by repository: each
 one's base is its own commit, and the gate runs in each repository the
 request changed, with its own commands. One receipt holds each one's
-evidence in its `units`.
+evidence in its `units`. In a home folder or a drive's root, only the
+repositories are units: the other folders there hold a person's files, and
+none of them is snapshotted.
 
 ## The gate
 

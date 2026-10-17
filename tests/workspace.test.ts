@@ -35,3 +35,19 @@ it("is the whole folder, as one in no repository, when it holds no repository di
   expect(workspaceUnits(folder(["notes.md", "lab/package.json", "deep/inner/.git/"]))).toEqual([{ folder: "", repository: false }]);
   expect(workspaceUnits(join(tmpdir(), "tesota-no-such-folder"))).toEqual([]);
 });
+
+it("is a home folder itself and its repositories, never its other folders, which hold a person's files (#478)", () => {
+  const home = folder(["NTUSER.DAT", "Documents/report.docx", "Downloads/setup.exe", "projects/app/.git/", "site/.git/"]);
+  const given = { HOME: process.env["HOME"], USERPROFILE: process.env["USERPROFILE"] };
+  process.env["HOME"] = home;
+  process.env["USERPROFILE"] = home;
+  try {
+    expect(workspaceUnits(home)).toEqual([{ folder: "", repository: false }, { folder: "site", repository: true }]);
+  } finally {
+    for (const [name, value] of Object.entries(given)) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  }
+  // The same folder as anyone else's is a workspace of its folders.
+  expect(workspaceUnits(home).map(({ folder }) => folder)).toEqual(["", "Documents", "Downloads", "projects", "site"]);
+});

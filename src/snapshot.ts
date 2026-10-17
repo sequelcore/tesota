@@ -79,6 +79,23 @@ function prune(snapshots: string): void {
 }
 
 /**
+ * Whether `folder` is a home folder or a drive's root, which Tesota never
+ * snapshots, nor the folders in it (`workspaceUnits`, #478): they hold a
+ * person's files, not a project. The home folder counts by any of its names:
+ * a session's folder comes by its real name, and a Windows home may be named
+ * short (#453).
+ */
+export function homeOrDriveRoot(folder: string): boolean {
+  const real = (path: string): string => {
+    let named = resolve(path);
+    try { named = realpathSync.native(path); } catch { /* as resolved */ }
+    return process.platform === "win32" ? named.toLowerCase() : named;
+  };
+  const at = resolve(folder);
+  return real(at) === real(homedir()) || dirname(at) === at;
+}
+
+/**
  * A snapshot of the folder at `root`, which is in no Git repository (#384),
  * for the gate to measure a request against as it measures a repository
  * against its `HEAD`: Git run in the folder (`gitEnvironment`) uses a Git
@@ -91,13 +108,7 @@ function prune(snapshots: string): void {
 export async function takeSnapshot(root: string, ownFiles: boolean, withLockWhile: HostParts["withLockWhile"],
   limits: SnapshotLimits = SNAPSHOT_LIMITS): Promise<Snapshot> {
   const at = resolve(root);
-  // The home folder by any of its names: a session's folder comes by its real name, and a Windows home may be named short (#453).
-  const real = (folder: string): string => {
-    let named = resolve(folder);
-    try { named = realpathSync.native(folder); } catch { /* as resolved */ }
-    return process.platform === "win32" ? named.toLowerCase() : named;
-  };
-  if (real(at) === real(homedir()) || dirname(at) === at) return { refused: "Tesota does not snapshot a home folder or a drive's root" };
+  if (homeOrDriveRoot(at)) return { refused: "Tesota does not snapshot a home folder or a drive's root" };
   const tooLarge = scan(at, ownFiles, limits);
   if (typeof tooLarge === "string") return { refused: tooLarge };
   const snapshots = join(tesotaHome(), "snapshots");
