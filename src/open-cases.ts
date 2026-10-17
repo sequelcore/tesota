@@ -9,7 +9,7 @@ import { type ModelAccess, named, recorded, registered } from "./pi-claimcheck.j
  * settle. The list is a model's opinion, never evidence and never a verdict,
  * and it does not go back to the agent. It reads the request alone: shown
  * the agent's change as well, models listed more false alarms. Measured
- * before it shipped, with this prompt (`docs/design/verification.md`).
+ * before it shipped, with this prompt (#397).
  */
 
 /** The model that lists open cases unless the operator names another: GPT-6 Sol met every threshold, GPT-6 Luna did not. */

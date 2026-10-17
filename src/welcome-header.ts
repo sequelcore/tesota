@@ -5,6 +5,7 @@ import { type Color, colorToRgb, foregroundAnsi, MouseRegion, type TerminalColor
 import { MARK_MAX_COLUMNS, MARK_MAX_ROWS, MARK_STAGE_ROWS_PER_60_COLUMNS, markLighting, renderMark,
   renderTumbleweed, type MarkCell, type MarkColors, type Rgb } from "./welcome-mark.js";
 import type { Theme } from "./contract.js";
+import { homeRelative } from "./footer.js";
 
 /** The scene's length: the wind rising and falling, and on a replay the tumbleweed's pass. */
 export const WELCOME_SCENE_MS = 9_000;
@@ -78,8 +79,9 @@ export class WelcomeHeader implements Component {
   #background: Rgb | undefined;
 
   constructor(cwd: string, theme: Theme, options: WelcomeHeaderOptions) {
-    // A folder's name could hold control characters; they never reach the terminal as such.
-    this.#cwd = Array.from(cwd, (character) => {
+    // From `~` under the home folder, as the footer shows it; a folder's name could hold control characters, which never
+    // reach the terminal as such.
+    this.#cwd = Array.from(homeRelative(cwd), (character) => {
       const code = character.codePointAt(0)!;
       return code < 0x20 || (code >= 0x7f && code < 0xa0) ? "?" : character;
     }).join("");

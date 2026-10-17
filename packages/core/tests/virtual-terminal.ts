@@ -56,6 +56,11 @@ export class VirtualTerminal implements Terminal {
     this.xterm.resize(columns, rows);
     this.onResize?.();
   }
+  /** The screen as drawn, cell by cell, once every write so far is: for drawing it as an image (`scripts/screenshots.ts`). */
+  async drawn(): Promise<xterm.IBuffer> {
+    await new Promise<void>((resolve) => { this.xterm.write("", () => resolve()); });
+    return this.xterm.buffer.active;
+  }
   /** What the screen shows, once every write so far is drawn. */
   async screen(): Promise<string[]> {
     await new Promise<void>((resolve) => { this.xterm.write("", () => resolve()); });

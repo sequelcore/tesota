@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripTerminalSequences, type TerminalColorMode, type TerminalColors, type TerminalColorScheme, type TuiMouseEvent,
@@ -81,6 +82,14 @@ it("gives both themes the same tokens, each a color the terminal can show", () =
     { colors: Record<string, unknown> }).colors).toSorted();
   expect(tokens("tesota-light")).toEqual(tokens("tesota-dark"));
   for (const name of Object.keys(shipped)) expect(Object.keys(theme(name).colors).toSorted()).toEqual(tokens(name));
+});
+
+it("shows a folder under the home folder from ~, as the footer does", () => {
+  const view = new WelcomeHeader(join(homedir(), "work", "shop"), theme("tesota-dark"), { requestRender: () => undefined,
+    terminalRows: () => 60, stageShare: 1 / 3, now: () => 0, setTimer: () => () => undefined });
+  const written = view.render(100).map((line) => stripTerminalSequences(line)).join("\n");
+  expect(written).toContain(join("~", "work", "shop"));
+  expect(written).not.toContain(homedir());
 });
 
 it("draws the tree centered above Tesota's name, folder and purpose", () => {

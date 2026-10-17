@@ -1,63 +1,51 @@
 # Contributing to Tesota
 
-Tesota is a pre-release verification layer for coding agents. Contributions
-are welcome when they advance a demonstrated user need without weakening
-evidence integrity or human acceptance.
+Tesota is pre-release. Contributions are welcome when they serve a real
+need without weakening the evidence or a person's acceptance.
 
-## Before changing code
+## Before you start
 
-Read the [roadmap](docs/roadmap.md) and the
-[development guide](docs/development.md). For a
-substantial new capability, open a focused discussion or issue first so its user,
-owner, effect boundary and qualification evidence are explicit.
+Read the [roadmap](ROADMAP.md) and [development](docs/development.md). For
+a new capability, open an [issue](https://github.com/sequelcore/tesota/issues/new)
+first, saying who needs it and how its effect will be shown.
 
-## Development setup
-
-Use the versions declared in `package.json` and the dependency resolution in
-`bun.lock`.
+## Set up
 
 ```sh
 bun install --frozen-lockfile --ignore-scripts
 bun run check
 ```
 
-`bun run check` builds and type-checks the project, runs the tests and
-executes Oxlint without applying fixes. The proofs are a separate command,
-`bun run formal:check`, which needs Dafny (`mise install`). It is not part of
-the offline contribution gate, but CI runs it after the check, so a change that
-breaks a proof fails CI.
+`bun run check` type-checks, runs the tests and lints, without fixing
+anything, and runs the engine's tests and performance budgets. The proofs
+are `bun run formal:check`, which needs Dafny (`mise install`); CI runs
+both, so a change that breaks a proof fails CI.
 
-## Change expectations
+## A good change
 
-- Keep the change focused and preserve unrelated behavior.
-- Put each behavior in one canonical owner and add abstractions only for current
-  consumers.
-- Treat public or persisted names and evidence schemas as contracts.
-- Add the smallest behavioral test that proves the change and its important
-  failure path.
-- Never make a check pass by weakening, deleting or suppressing the condition
-  that detected the defect.
-- Keep credentials, personal paths and operator state out of
-  source, fixtures, logs and documentation.
-- Update the owning documentation when behavior, support or a consequential
-  decision changes.
+- Is focused, and leaves unrelated behavior alone.
+- Puts each behavior in one owner, and adds an abstraction only for a
+  consumer that exists.
+- Treats public and saved names, such as the receipt's fields and session
+  entries, as contracts.
+- Adds the smallest test that proves it, and its important failure.
+- Never makes a check pass by weakening, deleting or silencing what found
+  the defect.
+- Keeps credentials, personal paths and your own state out of code, tests,
+  logs and docs.
+- Updates the page that owns what changed.
 
-Do not commit generated `dist/`, dependency directories or local environment
-files.
-
-## Branch workflow
+## Branches and pull requests
 
 Start from `dev` and follow the [branch rules](docs/development.md#branches).
+A pull request says what changes for the user, the decision behind it, the
+checks that ran and what's left. Keep measured evidence apart from
+inference: a passing check isn't acceptance, and a reviewer's judgment isn't
+evidence it ran.
 
-## Pull requests
+By contributing, you license your contribution under the repository's
+[Apache License 2.0](LICENSE). Preserve existing copyright, attribution and
+third-party notices.
 
-Explain the user-visible outcome, important design decision, verification run
-and remaining limitation. Separate measured evidence from inference. A passing
-check is not human acceptance, and reviewer judgment is not execution evidence.
-
-By contributing, you agree that your contribution is licensed under the
-repository's [Apache License 2.0](LICENSE). Preserve existing copyright,
-attribution and third-party notices.
-
-For security-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of
-opening a public issue with exploit or credential details.
+Report security issues as [SECURITY.md](SECURITY.md) says, never in a
+public issue.
