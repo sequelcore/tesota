@@ -39,8 +39,8 @@ export interface Receipt {
   /** When the operator's request started and when its run settled, in ISO 8601. */
   readonly startedAt: string;
   readonly settledAt: string;
-  /** The Pi version the run used, and the session's model as `provider/id` when it settled, if one was set. */
-  readonly pi: string;
+  /** The version of Tesota the run used, and the session's model as `provider/id` when it settled, if one was set. */
+  readonly engine: string;
   readonly model?: string;
   readonly proofs: readonly { readonly path: string; readonly verdict: GateVerdict; readonly evidence: Evidence }[];
   /** Each contract the request added or changed in a file that proved, with what mutation and ClaimCheck found. */
@@ -174,11 +174,11 @@ export function allEvidence(receipt: Receipt): UnitEvidence {
  */
 export function unitReceipt(receipt: Receipt, folder: string): Receipt | undefined {
   const unit = receipt.units?.find((candidate) => candidate.folder === folder && candidate.repository);
-  const { version, startedAt, settledAt, pi, model } = receipt;
-  return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, pi, ...model === undefined ? {} : { model } };
+  const { version, startedAt, settledAt, engine, model } = receipt;
+  return unit === undefined ? undefined : { ...unit, version, startedAt, settledAt, engine, ...model === undefined ? {} : { model } };
 }
 
-/** How a folder in no repository is named: the folder Pi runs in holds only its own files there. */
+/** How a folder in no repository is named: the folder the session runs in holds only its own files there. */
 export function plainName(folder: string): string {
   return folder === "" ? "the workspace's own files" : folder;
 }
@@ -294,10 +294,11 @@ function weakening(change: Weakening): string {
 
 /** Whether a session entry's details hold a receipt this Tesota reads. */
 export function isReceipt(value: unknown): value is Receipt {
-  return typeof value === "object" && value !== null && Reflect.get(value, "version") === 1;
+  // A receipt from before the engine named itself (#463) has `pi` in place of `engine`: an earlier Tesota's.
+  return typeof value === "object" && value !== null && Reflect.get(value, "version") === 1 && typeof Reflect.get(value, "engine") === "string";
 }
 
-/** A session entry that may carry a receipt, as Pi stores messages and custom entries. */
+/** A session entry that may carry a receipt: a message, or a custom entry from print mode. */
 export interface ReceiptEntry { readonly type: string; readonly customType?: string; readonly details?: unknown; readonly data?: unknown }
 
 /**

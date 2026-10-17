@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { expect, it } from "vitest";
-import { packageRoot } from "./pi-themes.js";
+
+const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 /** The modules that draw the footer, the receipt and send-back cards, and `prove`'s results, with the words they show. */
 const drawn = ["src/footer.ts", "src/messages.ts", "src/prove-tool.ts", "src/receipt.ts"];

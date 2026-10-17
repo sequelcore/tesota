@@ -19,8 +19,6 @@ function scripted(options: SessionOptions) {
  */
 export const tesotaEngine: TestEngine = {
   name: "@tesota/core",
-  lacks: new Set(),
-  pending: new Map(),
   shell: process.platform === "win32" ? "powershell" : "bash",
   createSession(options: SessionOptions): Promise<Session> {
     return Promise.resolve(createSession({ cwd: options.cwd, ...scripted(options) }));

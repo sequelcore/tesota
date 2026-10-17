@@ -433,7 +433,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
       const receipt: Receipt = { version: 1,
         repository: begun?.units.some(({ folder, repository }) => repository && begun.bases.has(folder)) ?? false,
         base: workspace ? null : begun?.bases.get("") ?? null, startedAt: startedAt ?? new Date().toISOString(),
-        settledAt: new Date().toISOString(), pi: host().version, ...sessionModel(ctx), ...noEvidence,
+        settledAt: new Date().toISOString(), engine: host().version, ...sessionModel(ctx), ...noEvidence,
         stopped: reason ?? (event.outcome === "aborted" ? "the operator stopped the run before Tesota verified it"
           : "the run failed before Tesota verified it") };
       progress.publish({ step: "settled", receipt });
@@ -442,7 +442,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     try { return await settle(ctx); } catch (error) { progress.reset(); throw error; }
   });
   /** Outside Git nothing tells which files changed: a request that may have changed some settles saying none was verified. */
-  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "pi" | "model">,
+  const outsideGit = (ctx: ExtensionContext, run: Pick<Receipt, "base" | "startedAt" | "engine" | "model">,
     reason: string | undefined): SettleResult | undefined => {
     if (!mayHaveChanged) return undefined;
     const receipt: Receipt = { version: 1, repository: false, ...run, settledAt: new Date().toISOString(), ...noEvidence,
@@ -513,7 +513,7 @@ export function registerGate(pi: ExtensionAPI, recorded?: () => RecordedRequest 
     const { units, bases, tooLarge, refused } = await (start ??= begin(ctx.cwd));
     startedAt ??= new Date().toISOString();
     const workspace = units.some(({ folder }) => folder !== "");
-    const run = { base: workspace ? null : bases.get("") ?? null, startedAt, pi: host().version, ...sessionModel(ctx) };
+    const run = { base: workspace ? null : bases.get("") ?? null, startedAt, engine: host().version, ...sessionModel(ctx) };
     // Each repository and each folder Tesota snapshotted, measured from its base.
     const measurable = units.filter(({ folder }) => bases.has(folder));
     const read = await Promise.all(measurable.map(({ folder, repository }) =>

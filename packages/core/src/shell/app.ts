@@ -7,21 +7,21 @@ import { provideHost } from "../../../../src/host.ts";
 import { isReceipt, type Receipt, receiptStanding } from "../../../../src/receipt.ts";
 import tesota from "../../../../src/tesota.ts";
 import { fileCredentialStore } from "../credentials.ts";
-import { engineModels, loginOptions } from "../model-access.ts";
+import { chosenModel, engineModels, loginOptions } from "../model-access.ts";
 import type { Mode } from "../permission-rule.ts";
 import type { HistoryMessage } from "../loop.ts";
 import type { McpServers, startMcp } from "../mcp.ts";
-import { projectServers, readMcpConfig } from "../mcp-config.ts";
+import { readMcpConfig } from "../mcp-config.ts";
 import { loadRules } from "../permissions.ts";
 import { createSession, type EngineSession, openSession, sessionsFolder, type Verifier } from "../session.ts";
-import { anyHooks, type Hooks, joinHooks, readHooks } from "../hooks.ts";
-import { trust, trusted, trustHash } from "../trust.ts";
+import { anyHooks, type Hooks, joinHooks } from "../hooks.ts";
+import { readStandards } from "../standards.ts";
+import { trust } from "../trust.ts";
 import { readSettings, type Settings, updateSettings } from "../settings.ts";
-import { checkoutRoot } from "../workspace.ts";
 import { Dashboard, type SessionRow } from "./dashboard.ts";
 import { type Shell, startShell } from "./shell.ts";
 import { createSurface, footerData, shellHost, type Surface } from "./surface.ts";
-import { shellTheme } from "./theme.ts";
+import { shellTheme } from "../../../../src/theme.ts";
 
 export interface AppOptions {
   readonly cwd: string;
@@ -34,6 +34,8 @@ export interface AppOptions {
   readonly settingsPath?: string;
   /** Where the sessions live; the project's folder under `~/.tesota/sessions` when not given. */
   readonly sessions?: string;
+  /** The verifier's flags, by name, as the command line gave them. */
+  readonly flags?: Readonly<Record<string, string>>;
 }
 
 const levels: readonly ModelThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -43,13 +45,6 @@ const label = (model: Model<Api>): string => `${model.provider}/${model.id}`;
 const modeFor = (settings: Settings): "fullscreen" | "inline" =>
   process.platform === "win32" && (process.env["SSH_CONNECTION"] ?? process.env["SSH_CLIENT"]) !== undefined ? "inline"
     : settings.tuiMode ?? "fullscreen";
-
-/** The model the operator chose, if it still exists, else the first one with a credential, else none. */
-async function chosenModel(models: MutableModels, settings: Settings): Promise<Model<Api> | undefined> {
-  const [provider, ...id] = settings.model?.split("/") ?? [];
-  const named = provider === undefined ? undefined : models.getModel(provider, id.join("/"));
-  return named ?? (await models.getAvailable())[0];
-}
 
 /** The first request of the session in `file`, to name it in `/resume`; none for a session never asked anything. */
 function firstRequest(file: string): string | undefined {
@@ -111,17 +106,14 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (waiting === 0) attached.surface.statuses.delete("sessions");
     else attached.surface.statuses.set("sessions", `${waiting} ${waiting === 1 ? "session waits" : "sessions wait"} for you: /agents`);
   };
+  const settingsPath = options.settingsPath ?? join(tesotaHome(), "settings.json");
   /**
-   * The command hooks every session's calls pass (#457): the operator's own,
-   * from their settings, and the project's once the operator trusts them.
+   * The command hooks every session's calls pass (#457) and the MCP servers
+   * they reach (#459): the operator's own, and the project's once the
+   * operator trusts them as they are now.
    */
-  const hookFiles = { own: options.settingsPath ?? join(tesotaHome(), "settings.json"),
-    project: join(checkoutRoot(resolve(options.cwd)), ".tesota", "settings.json") };
-  const readOr = (path: string): Hooks | string => {
-    try { return readHooks(path); } catch (error) { return error instanceof Error ? error.message : String(error); }
-  };
-  const own = readOr(hookFiles.own);
-  let hooks: Hooks = typeof own === "string" ? {} : own;
+  const standards = readStandards(options.cwd, settingsPath);
+  let hooks: Hooks = typeof standards.ownHooks === "string" ? {} : standards.ownHooks;
   /** The MCP servers every session reaches (#459), started once the project's are trusted or left out; none configured, none. */
   let mcp: { readonly start: typeof startMcp; readonly own: string; readonly project: string | undefined } | undefined;
   /** Each workspace's servers (#459): a session in its own worktree reaches servers that run there, never in another's. */
@@ -131,14 +123,14 @@ export async function runApp(options: AppOptions): Promise<void> {
     if (mcp === undefined) return undefined;
     if (!workspaces.has(cwd)) {
       const { servers } = readMcpConfig(mcp.own, mcp.project, cwd);
-      workspaces.set(cwd, servers.length === 0 ? undefined : mcp.start(servers, { cwd, home: dirname(hookFiles.own) }));
+      workspaces.set(cwd, servers.length === 0 ? undefined : mcp.start(servers, { cwd, home: dirname(settingsPath) }));
     }
     return workspaces.get(cwd);
   };
   /** Settles once the servers started, or were left out; `/mcp` waits for it. */
   let serversStarted: Promise<void> = Promise.resolve();
   const sessionOptions = (live: Live) => ({ models, model: model ?? models.getModels()[0] as Model<Api>, verifier, surface: live.surface,
-    hooks: () => hooks, mcp: () => serversIn(live.session.workspace.cwd),
+    hooks: () => hooks, mcp: () => serversIn(live.session.workspace.cwd), ...options.flags === undefined ? {} : { flags: options.flags },
     mode: "tui",
     // A shown session asks at once; another waits, flagged, until the operator shows it.
     permissions: { mode: () => permissionMode, rules, ask: (call: { name: string; arguments: unknown }, reason: string) => {
@@ -271,12 +263,10 @@ export async function runApp(options: AppOptions): Promise<void> {
   };
   /** A project's hooks run its own commands: they run only once the operator trusts them as they are now (#457). */
   const trustProjectHooks = async (): Promise<void> => {
-    const project = readOr(hookFiles.project);
+    const { hooks: project, hash, trusted: already } = standards.projectHooks;
     if (typeof project === "string") { shell.note(`The project's hooks were left out: ${project}`, "error"); return; }
     if (!anyHooks(project)) return;
-    const root = checkoutRoot(resolve(options.cwd));
-    const hash = trustHash(project);
-    let given = trusted(root, "hooks", hash);
+    let given = already;
     if (!given) {
       const commands = [...new Set(Object.values(project).flatMap((groups) => groups.flatMap((group) => group.hooks.map(({ command }) => command))))];
       const picked = await shell.pick(`This project's hooks would run: ${commands.join("; ")}`, [
@@ -284,7 +274,7 @@ export async function runApp(options: AppOptions): Promise<void> {
         { value: "skip", label: "Not now", description: "the project's hooks do not run in this shell" },
       ]);
       given = picked === "trust";
-      if (given) trust(root, "hooks", hash);
+      if (given) trust(standards.root, "hooks", hash);
       else shell.note("The project's hooks do not run in this shell.", "warning");
     }
     if (given) hooks = joinHooks(hooks, project);
@@ -296,22 +286,20 @@ export async function runApp(options: AppOptions): Promise<void> {
    * start. Their configuration errors are noted.
    */
   const startServers = async (): Promise<void> => {
-    const root = checkoutRoot(resolve(options.cwd));
-    const files = { own: join(dirname(hookFiles.own), "mcp.json"), project: join(root, ".tesota", "mcp.json") };
-    let config = readMcpConfig(files.own, files.project, resolve(options.cwd));
+    const { own, project, theirs, hash } = standards.mcp;
+    let { config } = standards.mcp;
+    let given = standards.mcp.trusted;
     for (const error of config.errors) shell.note(error, "error");
-    const theirs = projectServers(config, files.project);
-    // Trust goes to the file as written, so a changed entry asks again and a changed environment variable does not.
-    const hash = theirs.length === 0 ? "" : trustHash(readFileSync(files.project, "utf8"));
-    if (theirs.length > 0 && !trusted(root, "mcp", hash)) {
+    if (!given) {
       const runs = theirs.map((server) => `${server.name} (${server.transport === "stdio" ? [server.command, ...server.args].join(" ") : server.url})`);
       const picked = await shell.pick(`This project's MCP servers would start: ${runs.join("; ")}`, [
         { value: "trust", label: "Trust them", description: "kept until they change" },
         { value: "skip", label: "Not now", description: "only your own MCP servers start in this shell" },
       ]);
-      if (picked === "trust") trust(root, "mcp", hash);
+      given = picked === "trust";
+      if (given) trust(standards.root, "mcp", hash);
       else {
-        config = readMcpConfig(files.own, undefined, resolve(options.cwd));
+        config = readMcpConfig(own, undefined, resolve(options.cwd));
         shell.note("The project's MCP servers do not start in this shell.", "warning");
       }
     }
@@ -319,7 +307,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     // The MCP client loads only when a server is configured, so a shell without one starts as fast as before.
     const { startMcp } = await import("../mcp.ts");
     // Every workspace reads the same files the operator answered for: the project's only when trusted.
-    mcp = { start: startMcp, own: files.own, project: theirs.length > 0 && !trusted(root, "mcp", hash) ? undefined : files.project };
+    mcp = { start: startMcp, own, project: given ? project : undefined };
     serversIn(attached.session.workspace.cwd);
   };
   /**
@@ -470,7 +458,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     } });
   if (read.invalid.length > 0) shell.note(`Settings left out as invalid: ${read.invalid.join(", ")}.`, "warning");
   providers = (await credentials.list()).length;
-  if (typeof own === "string") shell.note(`Your hooks were left out: ${own}`, "error");
+  if (typeof standards.ownHooks === "string") shell.note(`Your hooks were left out: ${standards.ownHooks}`, "error");
   await trustProjectHooks();
   serversStarted = startServers();
   await serversStarted;

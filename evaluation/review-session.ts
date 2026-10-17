@@ -3,7 +3,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { installedPi } from "../src/pi-install.js";
+import { installedPi } from "./pi.js";
 import { runProcess } from "../src/process.js";
 import type { Finding } from "./finding-cases.js";
 import { read, sessionFacts } from "./sessions.js";

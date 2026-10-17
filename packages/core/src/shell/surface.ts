@@ -1,20 +1,12 @@
-import type {
-  ExtensionAPI as PiExtensionAPI, ReadonlyFooterDataProvider, Theme as PiTheme, ToolDefinition as PiToolDefinition,
-} from "@earendil-works/pi-coding-agent";
-import { Editor, type EditorTheme, type TUI } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, watch } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ShellAPI, ShellUI } from "../../../../src/contract.ts";
+import type { FooterData, MessageRenderer, ShellAPI, ShellUI, ToolDrawing } from "../../../../src/contract.ts";
 import type { HostParts } from "../../../../src/host.ts";
 import manifest from "../../package.json" with { type: "json" };
 import { platformShell } from "../tools/shell.ts";
-import type { ShellTheme } from "./theme.ts";
+import type { ShellTheme } from "../../../../src/theme.ts";
 
-type Factories = Parameters<ShellUI["setHeader"]>[0] | Parameters<ShellUI["setFooter"]>[0] | Parameters<ShellUI["setEditorComponent"]>[0];
-
-/** How the shell draws a message an extension added, and a call to an extension's tool. */
-export type MessageRenderer = Parameters<PiExtensionAPI["registerMessageRenderer"]>[1];
-export type ToolDrawing = Pick<PiToolDefinition, "renderCall" | "renderResult">;
+export type { MessageRenderer, ToolDrawing } from "../../../../src/contract.ts";
 
 /** The key that expands a tool's output or a message, as the shell binds it. */
 export const expandKey = "ctrl+o";
@@ -49,22 +41,21 @@ export function createSurface(theme: ShellTheme): Surface {
   const changed = (): void => { for (const listener of listeners) listener(); };
   const surface: Surface = {
     ui: {
-      setHeader: (factory: Factories) => { surface.header = factory as Surface["header"]; changed(); },
-      setFooter: (factory: Factories) => { surface.footer = factory as Surface["footer"]; changed(); },
-      setEditorComponent: (factory: Factories) => { surface.editor = factory as Surface["editor"]; changed(); },
+      setHeader: (factory) => { surface.header = factory; changed(); },
+      setFooter: (factory) => { surface.footer = factory; changed(); },
+      setEditorComponent: (factory) => { surface.editor = factory; changed(); },
       setWorkingIndicator: (options) => { surface.indicator = options; changed(); },
       setStatus: (key, text) => {
         if (text === undefined) surface.statuses.delete(key);
         else surface.statuses.set(key, text);
         changed();
       },
-      // Tesota's interface reads the shell's theme as Pi's: the members it uses are checked in `theme.test.ts`.
-      get theme() { return theme as unknown as PiTheme; },
-    } as ShellUI,
-    registerMessageRenderer: ((customType: string, renderer: MessageRenderer) => {
+      get theme() { return theme; },
+    },
+    registerMessageRenderer: (customType, renderer) => {
       surface.renderers.set(customType, renderer);
       changed();
-    }) as ShellAPI["registerMessageRenderer"],
+    },
     toolRegistered: (tool) => {
       const { name, renderCall, renderResult } = tool as ToolDrawing & { name: string };
       if (renderCall !== undefined || renderResult !== undefined) {
@@ -97,11 +88,11 @@ function branchOf(gitDir: string | undefined): string | null {
 }
 
 /**
- * What the footer reads besides the session (#446), as Pi's footer data:
- * the current Git branch, followed as `HEAD` changes, the extensions'
- * status texts, and how many providers are logged in.
+ * What the footer reads besides the session (#446): the current Git branch,
+ * followed as `HEAD` changes, the extensions' status texts, and how many
+ * providers are logged in.
  */
-export function footerData(cwd: () => string, statuses: () => ReadonlyMap<string, string>, providers: () => number): ReadonlyFooterDataProvider {
+export function footerData(cwd: () => string, statuses: () => ReadonlyMap<string, string>, providers: () => number): FooterData {
   // The shown session's folder, which changes when the shell shows another session: its worktree's branch, not the checkout's (#453).
   return {
     getGitBranch: () => branchOf(gitDirOf(cwd())),
@@ -118,23 +109,36 @@ export function footerData(cwd: () => string, statuses: () => ReadonlyMap<string
   };
 }
 
-/** pi-tui's editor, made as Pi's editor is, from a keybindings manager the shell's own keys need not. */
-class ShellEditor extends Editor {
-  constructor(tui: TUI, theme: EditorTheme, _keybindings: never, options?: { paddingX?: number }) {
-    super(tui, theme, options);
-  }
-}
-
 /** Key names for the actions Tesota names, as the shell binds them. */
 const keys: Readonly<Record<string, string>> = { "app.tools.expand": expandKey };
 
-/** What the engine's shell gives Tesota in place of Pi's editor, key names, version and shell (#446). */
+/**
+ * Git for Windows' bash, in the installation of the `git` on the PATH,
+ * which may be `…\Git\cmd\git.exe`, or `…\Git\mingw64\bin\git.exe`
+ * from Git's own bash: never a `bash` found on the PATH alone, which on
+ * Windows may be WSL's.
+ */
+function gitBash(): string | undefined {
+  const git = Bun.which("git");
+  if (git === null) return undefined;
+  const installs = [dirname(dirname(git)), dirname(dirname(dirname(git)))];
+  return installs.flatMap((install) => [join(install, "bin", "bash.exe"), join(install, "usr", "bin", "bash.exe")]).find(existsSync);
+}
+
+/**
+ * What the engine gives Tesota (#446): its key names, version, and the
+ * shell the project's checks run in. Those are written for a POSIX shell
+ * (`inFolder`), so on Windows they run in Git's bash, as Pi and Claude Code
+ * run commands there (#463); the agent's own shell stays the platform's. Without
+ * Git's bash, the platform's shell runs them.
+ */
 export function shellHost(): HostParts {
   return {
-    EditorBase: ShellEditor,
     keyText: (action) => keys[action] ?? action,
-    version: `@tesota/core ${manifest.version}`,
+    version: manifest.version,
     shellConfig: () => {
+      const bash = process.platform === "win32" ? gitBash() : undefined;
+      if (bash !== undefined) return { shell: bash, args: ["-c"] };
       const shell = platformShell();
       return { shell: shell.executable, args: shell.args("").slice(0, -1) };
     },

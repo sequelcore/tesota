@@ -20,8 +20,8 @@ export type CommandOutcome = Extract<CheckOutcome, "passed" | "failed" | "timed_
 const defaultTimeoutMs = 15 * 60_000;
 
 /**
- * Run one command in Pi's shell, the one its `bash` tool runs the agent's
- * commands in, from `cwd`, through `runProcess`.
+ * Run one of the project's checks in the shell the engine gives for them (`HostParts.shellConfig`),
+ * from `cwd`, through `runProcess`.
  */
 export async function runShell(command: string, cwd: string, signal: AbortSignal, timeoutMs: number = defaultTimeoutMs):
   Promise<{ outcome: CommandOutcome; output: string }> {

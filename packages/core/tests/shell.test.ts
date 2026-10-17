@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { TuiMode } from "../src/settings.ts";
 import { createSession, type EngineSession } from "../src/session.ts";
 import { type Shell, startShell } from "../src/shell/shell.ts";
-import { shellTheme } from "../src/shell/theme.ts";
+import { shellTheme } from "../../../src/theme.ts";
 import type { ScriptStep } from "./engine.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";

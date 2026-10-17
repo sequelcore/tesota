@@ -1,5 +1,5 @@
 import { type Component, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import type { ShellTheme, ThemeToken } from "./theme.ts";
+import type { ShellTheme, ThemeToken } from "../../../../src/theme.ts";
 
 /** A session's first request and current status, as the dashboard shows them. */
 export interface SessionRow {

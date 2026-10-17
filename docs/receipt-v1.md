@@ -10,10 +10,11 @@ means.
 
 A receipt exists in two places:
 
-- **In the Pi session:** the `details` of a `custom_message` entry whose
-  `customType` is `tesota-receipt`. Its `content` is the text the operator
-  reads, as Markdown for chat hosts. Pi's terminal renderer reads `details`;
-  the presentation does not change the structured receipt or its version.
+- **In the session:** the `details` of a `custom_message` entry whose
+  `customType` is `tesota-receipt`, or the `data` of a `custom` entry of
+  that type in print mode. A message's `content` is the text the operator
+  reads; the shell draws the receipt from `details`, and the presentation
+  does not change the structured receipt or its version.
 - **In a Statement:** inside an unsigned
   [in-toto Statement v1](https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md)
   about a commit. The Statement uses the predicate fields of the agentic
@@ -34,9 +35,9 @@ Paths are relative to the project folder where the session ran, with `/`.
   "subject": [{ "uri": "git+https://github.com/owner/repo@<commit>", "digest": { "gitCommit": "<commit>" } }],
   "predicateType": "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v1.md",
   "predicate": {
-    "providers": [{ "harness": { "name": "pi", "version": "1.1.0" },
+    "providers": [{ "harness": { "name": "tesota", "version": "0.1.0" },
       "languageModels": [{ "inferenceProvider": "openai/gpt-6-luna" }] }],
-    "traceId": "<Pi session id>",
+    "traceId": "<session id>",
     "custom": {
       "baseCommit": { "uri": "git+https://github.com/owner/repo@<base>", "digest": { "gitCommit": "<base>" } },
       "receipt": { "version": 1, "repository": true, "...": "..." },
@@ -58,8 +59,8 @@ Paths are relative to the project folder where the session ran, with `/`.
 | `_type` | Always `https://in-toto.io/Statement/v1` |
 | `subject` | One resource descriptor: the commit `HEAD` named when `tesota receipt` ran |
 | `predicateType` | This page's URL |
-| `predicate.providers` | One provider: `harness` is `pi` with the receipt's `pi` version. `languageModels` lists each distinct model as `inferenceProvider`, as `provider/id`: the receipt's `model`, plus ClaimCheck's `restatedBy` and `comparedBy` when it judged, and the `openCases` model when it listed. It is absent when there are none |
-| `predicate.traceId` | The Pi session id the receipt came from |
+| `predicate.providers` | One provider: `harness` is `tesota` with the receipt's `engine` version. `languageModels` lists each distinct model as `inferenceProvider`, as `provider/id`: the receipt's `model`, plus ClaimCheck's `restatedBy` and `comparedBy` when it judged, and the `openCases` model when it listed. It is absent when there are none |
+| `predicate.traceId` | The id of the session the receipt came from |
 | `predicate.custom.baseCommit` | The receipt's `base` as a resource descriptor; absent when `base` is null |
 | `predicate.custom.receipt` | The receipt, specified below |
 | `predicate.custom.stale` | The proofs, by `path`, and the commands, by `command`, whose evidence the commit no longer holds (see below) |
@@ -92,7 +93,7 @@ The Statement is not signed. Only a receipt with `version` 1 and
 `repository` true is written as a Statement. A receipt with `units` is not:
 run in one of its repositories, `tesota receipt` writes that repository's
 unit as a receipt of its own, with the run's `version`, `startedAt`,
-`settledAt`, `pi` and `model`, and the unit's `folder` kept.
+`settledAt`, `engine` and `model`, and the unit's `folder` kept.
 
 ## The receipt
 
@@ -106,7 +107,7 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `base` | string or null | The commit `HEAD` named when the operator's request started, or Tesota's snapshot then. Null before the first commit and when nothing was verified |
 | `startedAt` | timestamp | When the operator's request started |
 | `settledAt` | timestamp | When the run settled |
-| `pi` | string | The version of Pi the run used |
+| `engine` | string | The version of Tesota the run used |
 | `model` | string, optional | The session's model when the run settled, as `provider/id` |
 | `proofs` | Proof[] | Each changed file with contracts that was proved |
 | `contracts` | ContractStrength[] | Each contract the request added or changed in a file that proved |
@@ -118,7 +119,7 @@ unit as a receipt of its own, with the run's `version`, `startedAt`,
 | `commentsOnly` | `true`, optional | Present when every line the request added or removed is blank or comment-only, a `//@` line not counting as a comment. When nothing else is listed, the receipt says there was nothing to verify |
 | `uncovered` | UncoveredLines[] | The changed lines of each TypeScript file that proved that no contract's proof covers. Empty when `weakened` is a string |
 | `changed` | Changed[], or `"unreadable"` | Every file changed from `base` as the run left it, sorted by path |
-| `units` | Unit[], optional | Present when Pi ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `changed` are empty or absent, `repository` is true and `base` is null |
+| `units` | Unit[], optional | Present when the session ran in a folder that is in no Git repository and holds repositories directly. Then the fields from `snapshot` to `changed` are empty or absent, `repository` is true and `base` is null |
 | `openCases` | OpenCases, optional | The cases the operator's request leaves open, as a model listed them for the operator to settle. A model's opinion, never evidence, and never one of the receipt's decisions. Absent when the operator ran Tesota with `--open-cases-model off` |
 
 ### Unit
@@ -130,7 +131,7 @@ from it, and:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `folder` | string | The unit's folder, relative to the folder Pi ran in, with forward slashes. Empty for that folder's own files |
+| `folder` | string | The unit's folder, relative to the folder the session ran in, with forward slashes. Empty for that folder's own files |
 
 A unit the request did not change has none. A folder in no repository,
 and the folder's own files without the folders below (`folder` empty), are
@@ -235,7 +236,7 @@ One of:
   When the two are equal, one model made both requests.
 - `{ "status": "not_judged", "reason": "<why>" }`. The reasons are:
   - no model is selected;
-  - the restating model is not in Pi's model registry;
+  - the restating model is not among Tesota's models;
   - a request failed, ran past its 5-minute limit, was stopped, or recorded
     no answer;
   - a contract was left without a comparison.
@@ -249,7 +250,7 @@ One of:
   `cases` is empty when the model found none. The model reads the
   operator's messages for the request, not the change.
 - `{ "status": "not_listed", "reason": "<why>" }`. The reasons are:
-  - the model is not in Pi's model registry;
+  - the model is not among Tesota's models;
   - its request failed, ran past its 2-minute limit, was stopped, or
     recorded no answer.
 

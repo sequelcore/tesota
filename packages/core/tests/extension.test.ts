@@ -8,7 +8,6 @@ import type { Evidence } from "../../../src/evidence.ts";
 import type { ProofOutcome } from "../../../src/verification/proof-outcome-rule.ts";
 import type { ExtensionFactory, Session } from "../../../src/contract.ts";
 import { createSession } from "../src/session.ts";
-import { piEngine } from "./adapters/pi.ts";
 import { tesotaEngine } from "./adapters/tesota.ts";
 import { scriptedReply } from "./scripted.ts";
 
@@ -21,14 +20,16 @@ mock.module("../../../src/verification/lemmascript-verifier.ts", () => ({
     contentHash: `hash of ${path}` }),
   proveSource: () => Promise.resolve("failed" satisfies ProofOutcome),
 }));
-const { default: tesota } = await import("../../../src/extension.ts");
+const { provideHost } = await import("../../../src/host.ts");
+const { shellHost } = await import("../src/shell/surface.ts");
+provideHost(shellHost());
+const { default: tesota } = await import("../../../src/tesota.ts");
 const { entryReceipt, isReceipt } = await import("../../../src/receipt.ts");
 
 /**
- * Tesota's own extension, whole and unchanged, on both engines (#441): Pi
- * loads it as an extension, `@tesota/core` as the session's verifier, so its
- * gate is mandatory there. It offers `prove` once the agent writes a
- * contract, and settles the run with a receipt.
+ * Tesota's verification, whole, as the session's verifier (#441), so its gate
+ * is mandatory: it offers `prove` once the agent writes a contract, and
+ * settles the run with a receipt.
  */
 const open: Session[] = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((session) => session.dispose())); });
@@ -51,7 +52,7 @@ function repository(): string {
   return cwd;
 }
 
-for (const engine of [piEngine, tesotaEngine]) {
+for (const engine of [tesotaEngine]) {
   describe(engine.name, () => {
     test("Tesota's extension offers prove after a contract is written, and settles the run with one receipt from its base", async () => {
       let active: string[] = [];
@@ -66,9 +67,9 @@ for (const engine of [piEngine, tesotaEngine]) {
       };
       const cwd = repository();
       const base = git(cwd, "rev-parse", "HEAD");
-      // The agent commits its change, which must hide nothing from the gate. With extensions Pi keeps its default shell, bash.
+      // The agent commits its change, which must hide nothing from the gate.
       const commit = "git add -A; git -c user.name=t -c user.email=t@t commit -qm change";
-      const shell = engine === piEngine ? "bash" : engine.shell;
+      const shell = engine.shell;
       const session = await engine.createSession({ cwd, extensions: [probe],
         verifier: (pi, request) => { tesota(pi, request); },
         script: [{ tool: "write", args: { path: "src/rule.ts", content: contract } }, { tool: shell, args: { command: commit } },

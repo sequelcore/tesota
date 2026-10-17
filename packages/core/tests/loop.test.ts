@@ -3,16 +3,15 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ConversationMessage, Session } from "../../../src/contract.ts";
-import { piEngine } from "./adapters/pi.ts";
 import { tesotaEngine } from "./adapters/tesota.ts";
-import type { Guarantee, ScriptStep, TestEngine } from "./engine.ts";
+import type { ScriptStep, TestEngine } from "./engine.ts";
 
 /**
  * The agent loop and its tools (#435), the same on every engine: each test
  * checks what the tools did to the files, which calls failed and in what
  * order, never how an engine words its output.
  */
-const engines: readonly TestEngine[] = [piEngine, tesotaEngine];
+const engines: readonly TestEngine[] = [tesotaEngine];
 
 const open: Session[] = [];
 afterEach(async () => { await Promise.all(open.splice(0).map((session) => session.dispose())); });
@@ -20,9 +19,6 @@ afterEach(async () => { await Promise.all(open.splice(0).map((session) => sessio
 const results = (session: Session): ConversationMessage[] => session.messages().filter((message) => message.role === "toolResult");
 
 for (const engine of engines) {
-  const guaranteed = (guarantee: Guarantee, name: string, run: () => Promise<void>) =>
-    engine.lacks.has(guarantee) ? test.failing(`${name} (${engine.name} lacks it)`, run) : test(name, run);
-
   /** A session in a fresh folder, and that folder. */
   const start = async (script: readonly ScriptStep[], slow = false) => {
     const cwd = mkdtempSync(join(tmpdir(), "tesota-core-loop-"));
@@ -110,7 +106,7 @@ for (const engine of engines) {
       expect(readFileSync(join(cwd, "code.ts"), "utf8")).toBe("first\nsame\nsame\n");
     });
 
-    guaranteed("edit-matches-exactly", "an edit whose text matches only with a different quote character fails", async () => {
+    test("an edit whose text matches only with a different quote character fails", async () => {
       const { session, cwd } = await start([{ tool: "edit", args: { path: "doc.md", edits: [{ oldText: "it's", newText: "it is" }] } }, "done"]);
       writeFileSync(join(cwd, "doc.md"), "it’s here\n");
       await session.prompt("go");

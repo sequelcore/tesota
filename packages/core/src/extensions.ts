@@ -74,18 +74,14 @@ const noHandlers = (): Handlers =>
 
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
-/**
- * The interface with no shell, as Pi's print mode has it: setters do
- * nothing and never call a component's factory. Temporary until the shell
- * draws them (slice 6 of #432); its theme is the shell's.
- */
+/** The interface with no shell, in print mode: setters do nothing and never call a component's factory; there is no theme. */
 const headless: ShellUI = {
   setHeader: () => undefined,
   setFooter: () => undefined,
   setEditorComponent: () => undefined,
   setWorkingIndicator: () => undefined,
   setStatus: () => undefined,
-  get theme(): never { throw new Error("The theme comes with the terminal shell, in slice 6 of #432."); },
+  get theme(): never { throw new Error("There is no theme without the terminal shell."); },
 };
 
 /**

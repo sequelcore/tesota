@@ -2,7 +2,7 @@ import type { AssistantMessage, ToolCall, ToolResultMessage } from "@earendil-wo
 import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import type { CustomMessage, HistoryMessage } from "../loop.ts";
 import type { MessageRenderer, ToolDrawing } from "./surface.ts";
-import type { ShellTheme } from "./theme.ts";
+import type { ShellTheme } from "../../../../src/theme.ts";
 
 /** How extensions draw their messages and tool calls (#446), and whether drawings are expanded. */
 export interface Drawings {
@@ -102,16 +102,12 @@ class CallView extends Container {
   private drawn(drawing: ToolDrawing): void {
     const { call, result } = this;
     const expanded = this.drawings.expanded();
-    const context = { args: call.arguments, toolCallId: call.id, invalidate: () => undefined, lastComponent: undefined, state: {},
-      cwd: this.drawings.cwd, executionStarted: true, argsComplete: true, isPartial: result === undefined, expanded, showImages: false,
-      isError: result?.isError === true, durationMs: this.durationMs, outputPad: 1 };
-    const look = this.theme as never;
     const box = new Container();
-    if (drawing.renderCall !== undefined) box.addChild(drawing.renderCall(call.arguments as never, look, context));
+    if (drawing.renderCall !== undefined) box.addChild(drawing.renderCall(call.arguments, this.theme, { durationMs: this.durationMs }));
     if (drawing.renderResult !== undefined) {
       const shown = result === undefined ? { content: [], details: undefined } : { content: result.content, details: result.details,
         isError: result.isError };
-      box.addChild(drawing.renderResult(shown as never, { expanded, isPartial: result === undefined }, look, context));
+      box.addChild(drawing.renderResult(shown as never, { expanded, isPartial: result === undefined }, this.theme));
     }
     const state = result === undefined ? "toolPendingBg" : result.isError ? "toolErrorBg" : "toolSuccessBg";
     this.addChild(new Text("", 0, 0, (line) => this.theme.bg(state, line)));
@@ -122,7 +118,7 @@ class CallView extends Container {
 /** A message a settle handler added: as its extension draws it (#446), or as plain text when it draws none. */
 function customView(message: CustomMessage, theme: ShellTheme, drawings: Drawings): Component {
   const renderer = drawings.renderers.get(message.customType);
-  const drawn = renderer?.(message as never, { expanded: drawings.expanded(), outputPad: 1 }, theme as never);
+  const drawn = renderer?.(message, { expanded: drawings.expanded(), outputPad: 1 }, theme);
   if (drawn !== undefined) return drawn;
   return new Text(`${theme.fg("customMessageLabel", `[${message.customType}]`)} ${theme.fg("customMessageText", message.content)}`,
     1, 1, (line) => theme.bg("customMessageBg", line));

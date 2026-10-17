@@ -1,17 +1,22 @@
+import { createModels, fauxProvider } from "@earendil-works/pi-ai";
+import { afterEach, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { afterEach, expect, it } from "vitest";
-import { contentHash } from "../src/evidence.js";
-import { httpsRepository, type PiSessions, receiptCommand, subjectOf } from "../src/pull-request-receipt.js";
-import type { Receipt } from "../src/receipt.js";
-import { emptyReceipt } from "./receipts.js";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { EntryDraft } from "../../../src/contract.ts";
+import { contentHash } from "../../../src/evidence.ts";
+import { httpsRepository, receiptCommand, type SessionStore, subjectOf } from "../../../src/pull-request-receipt.ts";
+import type { Receipt } from "../../../src/receipt.ts";
+import { emptyReceipt } from "../../../tests/receipts.ts";
+import { createSession } from "../src/session.ts";
+import { sessionStore } from "../src/session-store.ts";
+import { scriptedReply } from "./scripted.ts";
 
-// The end-to-end test runs the built launcher, `dist/cli.js`; `bun run test` builds it first.
+/** `tesota receipt` (#463): the last receipt of the engine's sessions in a folder, for a pull request. */
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 3 }); });
 
 function git(root: string, ...args: string[]): string {
   const result = spawnSync("git", args, { cwd: root, encoding: "utf8" });
@@ -50,21 +55,55 @@ function provedReceipt(base: string, changed: Receipt["changed"] = []): Receipt 
   uncovered: [{ path: "src/rule.ts", lines: [[4, 6]] }] };
 }
 
-/** A Pi session in `root` whose requests settled with `receipts`, written as Pi writes one. */
-function session(root: string, ...receipts: unknown[]): string {
-  const manager = SessionManager.create(root);
-  for (const receipt of receipts) {
-    manager.appendMessage({ role: "user", content: "fix it", timestamp: Date.now() });
-    manager.appendCustomMessageEntry("tesota-receipt", "Tesota receipt", true, receipt);
-  }
-  return manager.getSessionId();
+/** A scripted model giving `replies`, for a session. */
+function scripted(replies: readonly Parameters<typeof scriptedReply>[0][]) {
+  const faux = fauxProvider();
+  faux.setResponses(replies.map(scriptedReply));
+  const models = createModels();
+  models.setProvider(faux.provider);
+  return { models, model: faux.getModel() };
 }
 
+/**
+ * An engine session in `root` with one request per receipt, each settled by
+ * a verifier that records it as Tesota does: as a message, or as a custom
+ * entry in print mode (#427). Returns the session's id.
+ */
+async function session(root: string, receipts: readonly unknown[], kept: "message" | "entry" = "message"): Promise<string> {
+  const created = createSession({ cwd: root, ...scripted(receipts.map(() => "done")), verifier: recording(receipts, kept) });
+  for (const _ of receipts) await created.prompt("fix it");
+  await created.dispose();
+  return basename(created.file, ".jsonl");
+}
+
+/** A verifier that settles each run with the next of `receipts`, as Tesota records one. */
+function recording(receipts: readonly unknown[], kept: "message" | "entry" = "message") {
+  let settled = 0;
+  return (pi: Parameters<Parameters<typeof createSession>[0]["verifier"]>[0]) => {
+    pi.on("agent_before_settle", () => {
+      const receipt = receipts[settled++];
+      const entry: EntryDraft = kept === "message"
+        ? { type: "custom_message", customType: "tesota-receipt", content: "Tesota receipt", display: true, details: receipt }
+        : { type: "custom", customType: "tesota-receipt", data: receipt };
+      return { entries: [entry] };
+    });
+  };
+}
+
+const main = fileURLToPath(new URL("../src/main.ts", import.meta.url));
+
+/**
+ * `tesota receipt` as its own process, in the home this one writes sessions
+ * to: Bun on Linux keeps the home it started with, whatever the test's
+ * isolated home says, and a new process would read the other one.
+ */
 function tesota(root: string, ...args: string[]) {
-  return spawnSync(process.execPath, [resolve("dist/cli.js"), "receipt", ...args], { cwd: root, encoding: "utf8", timeout: 60_000 });
+  const home = homedir();
+  return spawnSync(process.execPath, [main, "receipt", ...args], { cwd: root, encoding: "utf8", timeout: 60_000,
+    env: { ...process.env, HOME: home, USERPROFILE: home } });
 }
 
-it("writes the last receipt for a pull request as Markdown and as an in-toto Statement about the commit", () => {
+it("writes the last receipt for a pull request as Markdown and as an in-toto Statement about the commit", async () => {
   const root = repository();
   const base = git(root, "rev-parse", "HEAD");
   writeFileSync(join(root, "notes.md"), "# Notes\n");
@@ -72,11 +111,11 @@ it("writes the last receipt for a pull request as Markdown and as an in-toto Sta
   git(root, "commit", "-qm", "the change");
   const commit = git(root, "rev-parse", "HEAD");
   const changed = [{ path: "notes.md", blob: git(root, "hash-object", "notes.md") }];
-  const sessionId = session(root, { ...emptyReceipt, base }, provedReceipt(base, changed));
+  const sessionId = await session(root, [{ ...emptyReceipt, base }, provedReceipt(base, changed)]);
   const markdown = tesota(root);
   expect(markdown.stderr).toBe("");
   expect(markdown.status).toBe(0);
-  expect(markdown.stdout).toContain(`Commit \`${commit.slice(0, 12)}\`, changes from \`${base.slice(0, 12)}\`; Pi 1.1.0, ` +
+  expect(markdown.stdout).toContain(`Commit \`${commit.slice(0, 12)}\`, changes from \`${base.slice(0, 12)}\`; Tesota 0.1.0, ` +
     `model \`provider/model\`; session \`${sessionId}\``);
   expect(markdown.stdout).toContain("```text\nTesota receipt\n  proved        src/rule.ts\n");
   expect(markdown.stdout).toContain("  not verified  src/rule.ts lines 4-6: outside the contracts that proved");
@@ -91,7 +130,7 @@ it("writes the last receipt for a pull request as Markdown and as an in-toto Sta
     subject: [{ uri: `git+https://github.com/example/project@${commit}`, digest: { gitCommit: commit } }],
     predicateType: "https://github.com/sequelcore/tesota/blob/main/docs/receipt-v1.md",
     predicate: {
-      providers: [{ harness: { name: "pi", version: "1.1.0" }, languageModels: [{ inferenceProvider: "provider/model" }] }],
+      providers: [{ harness: { name: "tesota", version: "0.1.0" }, languageModels: [{ inferenceProvider: "provider/model" }] }],
       traceId: sessionId,
       custom: { baseCommit: { uri: `git+https://github.com/example/project@${base}`, digest: { gitCommit: base } },
         receipt: provedReceipt(base, changed), stale: [], changedAfter: [] },
@@ -106,16 +145,14 @@ it("writes the last receipt for a pull request as Markdown and as an in-toto Sta
   expect(JSON.parse(tesota(root, "--json", "--owner", "octocat").stdout)).toMatchObject({ predicate: { owner: "octocat" } });
 }, 120_000);
 
-it("writes the receipt a print-mode run kept as a custom entry (#427)", () => {
+it("writes the receipt a print-mode run kept as a custom entry (#427)", async () => {
   const root = repository();
   const base = git(root, "rev-parse", "HEAD");
-  const manager = SessionManager.create(root);
-  manager.appendMessage({ role: "user", content: "fix it", timestamp: Date.now() });
-  manager.appendCustomEntry("tesota-receipt", { ...emptyReceipt, base });
+  const sessionId = await session(root, [{ ...emptyReceipt, base }], "entry");
   const markdown = tesota(root);
   expect(markdown.stderr).toBe("");
   expect(markdown.status).toBe(0);
-  expect(markdown.stdout).toContain(`session \`${manager.getSessionId()}\``);
+  expect(markdown.stdout).toContain(`session \`${sessionId}\``);
 }, 60_000);
 
 it("lists the files the commit changed after the receipt, and not an uncommitted edit", async () => {
@@ -139,9 +176,9 @@ it("lists the files the commit changed after the receipt, and not an uncommitted
   expect(await subjectOf(root, receipt, "id", "octocat")).toMatchObject({ owner: "octocat" });
 });
 
-it("says which evidence the commit no longer holds, committed or not", () => {
+it("says which evidence the commit no longer holds, committed or not", async () => {
   const root = repository();
-  session(root, provedReceipt(git(root, "rev-parse", "HEAD")));
+  await session(root, [provedReceipt(git(root, "rev-parse", "HEAD"))]);
   writeFileSync(join(root, "src", "rule.ts"), `${rule}// edited\n`);
   const uncommitted = tesota(root);
   expect(uncommitted.stdout).toContain("**Not this commit's content:** what these checked has changed since they ran: `src/rule.ts`.");
@@ -153,10 +190,10 @@ it("says which evidence the commit no longer holds, committed or not", () => {
 it("refuses without a receipt this Tesota reads, or with arguments it does not take", async () => {
   const output: string[] = [];
   const write = { out: (text: string) => { output.push(text); }, error: (text: string) => { output.push(text); } };
-  const none: PiSessions = { list: () => Promise.resolve([]), open: () => { throw new Error("no session to open"); } };
+  const none: SessionStore = { list: () => Promise.resolve([]), open: () => { throw new Error("no session to open"); } };
   expect(await receiptCommand([], "here", none, write)).toBe(1);
-  expect(output.pop()).toContain("No Pi session in this folder settled with a Tesota receipt.");
-  const old: PiSessions = { list: () => Promise.resolve([{ path: "old", modified: new Date() }]),
+  expect(output.pop()).toContain("No session in this folder settled with a Tesota receipt.");
+  const old: SessionStore = { list: () => Promise.resolve([{ path: "old", modified: new Date() }]),
     open: () => ({ getSessionId: () => "id", getBranch: () => [{ type: "custom_message", customType: "tesota-receipt",
       details: { version: 0, repository: true } }] }) };
   expect(await receiptCommand([], "here", old, write)).toBe(1);
@@ -171,7 +208,7 @@ it("refuses a receipt from a run that ended before verification", async () => {
   const output: string[] = [];
   const errors: string[] = [];
   const write = { out: (text: string) => { output.push(text); }, error: (text: string) => { errors.push(text); } };
-  const sessions: PiSessions = { list: () => Promise.resolve([{ path: "stopped", modified: new Date() }]),
+  const sessions: SessionStore = { list: () => Promise.resolve([{ path: "stopped", modified: new Date() }]),
     open: () => ({ getSessionId: () => "id", getBranch: () => [{ type: "custom_message", customType: "tesota-receipt",
       details: { ...emptyReceipt, stopped: "quota exhausted" } }] }) };
   for (const args of [[], ["--json"]]) {
@@ -195,15 +232,65 @@ it("writes, in a repository of a folder of repositories, the part of that folder
   const workspace = folder();
   const root = repository(join(workspace, "api"));
   const base = git(root, "rev-parse", "HEAD");
-  session(workspace, { ...emptyReceipt, repository: true, base: null, units: [{ ...provedReceipt(base), folder: "api" },
-    { ...emptyReceipt, folder: "notes", repository: false }] });
+  await session(workspace, [{ ...emptyReceipt, repository: true, base: null, units: [{ ...provedReceipt(base), folder: "api" },
+    { ...emptyReceipt, folder: "notes", repository: false }] }]);
   const output: string[] = [];
   const write = { out: (text: string) => { output.push(text); }, error: (text: string) => { output.push(text); } };
-  expect(await receiptCommand([], root, SessionManager, write)).toBe(0);
+  expect(await receiptCommand([], root, sessionStore, write)).toBe(0);
   const markdown = output.pop() ?? "";
   expect(markdown).toContain(`changes from \`${base.slice(0, 12)}\``);
   expect(markdown).toContain("  proved        src/rule.ts");
   expect(markdown).not.toContain("notes");
-  expect(await receiptCommand([], workspace, SessionManager, write)).toBe(1);
+  expect(await receiptCommand([], workspace, sessionStore, write)).toBe(1);
   expect(output.pop()).toContain("The last receipt here covers several repositories.");
+});
+
+it("leaves out a receipt whose run never ended, as when Tesota was killed after recording it", async () => {
+  const root = repository();
+  await session(root, [{ ...emptyReceipt, base: git(root, "rev-parse", "HEAD") }]);
+  const [file] = await sessionStore.list(root);
+  const lines = readFileSync(file?.path ?? "", "utf8").trimEnd().split("\n");
+  writeFileSync(file?.path ?? "", `${lines.filter((line) => !line.includes('"run_end"')).join("\n")}\n`);
+  const run = tesota(root);
+  expect(run.status).toBe(1);
+  expect(run.stderr).toContain("No session in this folder settled with a Tesota receipt.");
+}, 60_000);
+
+it("refuses a receipt from before the engine named itself, which has pi in place of engine", async () => {
+  const root = repository();
+  const { engine: _, ...older } = { ...emptyReceipt, base: git(root, "rev-parse", "HEAD") };
+  await session(root, [{ ...older, pi: "1.3.0" }]);
+  const run = tesota(root);
+  expect(run.status).toBe(1);
+  expect(run.stderr).toContain("The last receipt here came from an earlier Tesota");
+}, 60_000);
+
+it("writes a worktree session's receipt from its worktree, and never from the checkout another session holds", async () => {
+  const root = repository();
+  const base = git(root, "rev-parse", "HEAD");
+  // The first session holds the checkout, so the second works in a worktree of its own (#453).
+  const holder = createSession({ cwd: root, ...scripted([]), verifier: recording([]) });
+  const other = createSession({ cwd: root, ...scripted([{ tool: "write", args: { path: "b.txt", content: "b" } }, "done"]),
+    verifier: recording([{ ...emptyReceipt, base }]) });
+  await other.prompt("add b");
+  const worktree = other.workspace.cwd;
+  expect(other.workspace.worktree).toBeDefined();
+  await other.dispose();
+  await holder.dispose();
+  roots.push(worktree);
+  git(worktree, "add", "-A");
+  git(worktree, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "b");
+  const there = tesota(worktree);
+  expect(there.stderr).toBe("");
+  expect(there.stdout).toContain(`session \`${basename(other.file, ".jsonl")}\``);
+  expect(tesota(root).stderr).toContain("No session in this folder settled with a Tesota receipt.");
+}, 120_000);
+
+it("takes the verifier's flags with -p, and still asks for a request", () => {
+  const run = spawnSync(process.execPath, [main, "-p", "--open-cases-model", "off"], { encoding: "utf8", timeout: 60_000 });
+  expect(run.status).toBe(2);
+  expect(run.stderr).toContain("Say what to do.");
+  const unknown = spawnSync(process.execPath, [main, "--colour"], { encoding: "utf8", timeout: 60_000 });
+  expect(unknown.status).toBe(2);
+  expect(unknown.stderr).toContain("--open-cases-model");
 });

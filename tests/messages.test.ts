@@ -1,4 +1,5 @@
-import type { MessageRenderer, Theme } from "@earendil-works/pi-coding-agent";
+import type { MessageRenderer, Theme } from "../src/contract.js";
+import { shellTheme } from "../src/theme.js";
 import { KeybindingsManager, setKeybindings, stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, expect, it } from "vitest";
 import type { Evidence } from "../src/evidence.js";
@@ -6,12 +7,11 @@ import type { SentBack } from "../src/gate.js";
 import { hang, registerMessages } from "../src/messages.js";
 import type { Receipt } from "../src/receipt.js";
 import type { Weakening } from "../src/verification-changes.js";
-import { loadThemes, themeIn } from "./pi-themes.js";
 import { emptyReceipt } from "./receipts.js";
 
 let theme: Theme;
 beforeAll(async () => {
-  theme = themeIn(await loadThemes(), "tesota-dark");
+  theme = shellTheme("dark", "truecolor");
   // Pi's binding for expanding tool output, as Pi defines it when it starts.
   setKeybindings(new KeybindingsManager({ "app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" } } as never));
 });
@@ -231,13 +231,13 @@ it("names each repository's findings by its folder, the folders in none, and eac
   expect(rows).toContain("cd api && bun test");
   expect(rows).toContain("Checked api/src/range.ts, api/src/range.dfy");
   expect(rows).toContain("notes — it is in no Git repository, so Tesota cannot tell what changed");
-  expect(rows).toContain(`From api ${base.slice(0, 12)} · Pi`);
+  expect(rows).toContain(`From api ${base.slice(0, 12)} · Tesota 0.1.0`);
 });
 
 it("names a snapshot as the base of a folder in no repository, and a file it left out for its size", () => {
   const base = "b".repeat(40);
   const snapshotted: Receipt = { ...clean, repository: false, snapshot: true, base, tooLarge: ["data/huge.csv"] };
   const rows = shown("tesota-receipt", snapshotted, 120, true).join("\n");
-  expect(rows).toContain(`From Tesota's snapshot ${base.slice(0, 12)} · Pi`);
+  expect(rows).toContain(`From Tesota's snapshot ${base.slice(0, 12)} · Tesota 0.1.0`);
   expect(rows).toContain("data/huge.csv — too large for Tesota's snapshot, which left it out");
 });

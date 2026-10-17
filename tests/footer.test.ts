@@ -1,5 +1,6 @@
 import { join, sep } from "node:path";
-import type { ContextUsage, ReadonlyFooterDataProvider, Theme } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage, FooterData, Theme } from "../src/contract.js";
+import { shellTheme } from "../src/theme.js";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, expect, it, vi } from "vitest";
 import type { Evidence } from "../src/evidence.js";
@@ -7,11 +8,10 @@ import { EvidenceFooter, evidenceParts, evidenceText, homeRelative } from "../sr
 import { GateProgress, type GateStatus } from "../src/gate.js";
 import type { Receipt } from "../src/receipt.js";
 import { footerLayout, readiness } from "../src/verification/footer-rule.js";
-import { loadThemes, themeIn } from "./pi-themes.js";
 import { emptyReceipt } from "./receipts.js";
 
 let theme: Theme;
-beforeAll(async () => { theme = themeIn(await loadThemes(), "tesota-dark"); });
+beforeAll(async () => { theme = shellTheme("dark", "truecolor"); });
 
 function evidence(outcome: Evidence["outcome"]): Evidence {
   return { verifier: "lemmascript", claim: "", limits: "", outcome, output: "", durationMs: 1, files: [], contentHash: "h" };
@@ -125,7 +125,7 @@ it("writes the folder from home as Pi's footer does", () => {
   expect(homeRelative(join("/srv", "work"), "")).toBe(join("/srv", "work"));
 });
 
-function data(statuses: Record<string, string> = {}): ReadonlyFooterDataProvider & { branchChanged: () => void } {
+function data(statuses: Record<string, string> = {}): FooterData & { branchChanged: () => void } {
   let listener = (): void => undefined;
   return { getGitBranch: () => "feat/range", getExtensionStatuses: () => new Map(Object.entries(statuses)),
     getAvailableProviderCount: () => 1, onBranchChange: (callback) => { listener = callback; return () => undefined; },

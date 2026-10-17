@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { tumbleweedFrames } from "../../../src/welcome-header.ts";
 import { runApp } from "../src/shell/app.ts";
-import { shellTheme } from "../src/shell/theme.ts";
+import { shellTheme } from "../../../src/theme.ts";
 import type { ScriptStep } from "./engine.ts";
 import { scriptedReply } from "./scripted.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";

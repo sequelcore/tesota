@@ -10,7 +10,6 @@ import { createSession, type EngineSession, openSession, type SessionOptions } f
 import { readSessionFile, SessionFileError } from "../src/session-file.ts";
 import { SessionLockedError } from "../src/session-lock.ts";
 import type { EngineTool } from "../src/tool.ts";
-import { piEngine } from "./adapters/pi.ts";
 import { tesotaEngine } from "./adapters/tesota.ts";
 import type { ScriptStep } from "./engine.ts";
 import { accepts, scriptedReply } from "./scripted.ts";
@@ -26,7 +25,7 @@ afterEach(async () => { await Promise.all(open.splice(0).map((session) => sessio
 
 const folder = (prefix = "tesota-core-session-"): string => mkdtempSync(join(tmpdir(), prefix));
 
-for (const engine of [piEngine, tesotaEngine]) {
+for (const engine of [tesotaEngine]) {
   describe(engine.name, () => {
     test("a resumed session has its conversation and usage, and goes on from them", async () => {
       const cwd = folder();

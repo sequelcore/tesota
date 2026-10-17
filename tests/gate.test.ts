@@ -2,7 +2,6 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { VERSION } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Evidence } from "../src/evidence.js";
 import { evidenceParts, evidenceText } from "../src/footer.js";
@@ -211,7 +210,7 @@ it("keeps the agent working while a changed contract fails, and settles with a r
   const receipt = entry(proved).details as Receipt;
   expect(receipt.proofs.map(({ path, verdict, evidence }) => [path, verdict, evidence.contentHash]))
     .toEqual([["src/rule.ts", "proved", "hash of src/rule.ts"]]);
-  expect(receipt).toMatchObject({ version: 1, base: await headCommit(root), pi: VERSION });
+  expect(receipt).toMatchObject({ version: 1, base: await headCommit(root), engine: "0.1.0" });
   expect(receipt.model).toBeUndefined();
   expect(Date.parse(receipt.settledAt)).toBeGreaterThanOrEqual(Date.parse(receipt.startedAt));
 });
@@ -257,7 +256,7 @@ it("leaves a receipt verifying nothing when a run is stopped after a write start
   expect(settled?.continue).toBeUndefined();
   expect(entry(settled).customType).toBe("tesota-receipt");
   const receipt = entry(settled).details as Receipt;
-  expect(receipt).toMatchObject({ version: 1, repository: true, base: await headCommit(root), pi: VERSION,
+  expect(receipt).toMatchObject({ version: 1, repository: true, base: await headCommit(root), engine: "0.1.0",
     model: "provider/model", stopped: "the operator stopped the run before Tesota verified it",
     proofs: [], tests: [], contracts: [], exercises: [], weakened: [], unverified: [], uncovered: [], changed: [] });
   expect(receipt.claimcheck).toBeUndefined();

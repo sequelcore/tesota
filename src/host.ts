@@ -1,33 +1,24 @@
-import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
-import type { Editor } from "@earendil-works/pi-tui";
-
-/** The editor class Tesota's filled editor extends: Pi's `CustomEditor` on Pi, which carries Pi's app keys; pi-tui's on the engine. */
-export type EditorBase = new (tui: TUI, theme: EditorTheme, keybindings: never, options?: { paddingX?: number }) => Editor;
-
 /**
- * The values Tesota's interface takes from the program that runs it, rather
- * than from Pi directly (#446): Pi's entry (`extension.ts`) gives Pi's own,
- * and the engine's shell gives its own, so on the engine Pi is never loaded.
- * Temporary until slice 11 of #432 removes Pi: then `src/` takes the shell's
- * directly and this goes.
+ * What Tesota's verification takes from the engine that runs it (#446):
+ * the engine's shell gives these once, before Tesota loads, so the
+ * verification layer in `src/` never imports the engine.
  */
 export interface HostParts {
-  readonly EditorBase: EditorBase;
   /** The keys bound to an action, as the operator would press them. */
   readonly keyText: (action: string) => string;
-  /** The host's name and version, as a receipt records what ran. */
+  /** Tesota's version, as a receipt records what ran. */
   readonly version: string;
-  /** The shell commands run in: its path and arguments, and whether it reads the command from its input instead. */
+  /** The POSIX shell the project's checks run in: its path and arguments, and whether it reads the command from its input instead. */
   readonly shellConfig: () => { shell: string; args: string[]; commandTransport?: "argv" | "stdin" };
 }
 
 let given: HostParts | undefined;
 
-/** Gives Tesota its host's parts, once, before its extension loads. */
+/** Gives Tesota its engine's parts, once, before it loads. */
 export function provideHost(parts: HostParts): void { given = parts; }
 
-/** The host's parts; a program that loads Tesota without giving them is a mistake. */
+/** The engine's parts; an engine that loads Tesota without giving them is a mistake. */
 export function host(): HostParts {
-  if (given === undefined) throw new Error("Tesota's host gave it no parts: load it through src/extension.ts on Pi, or the engine's shell.");
+  if (given === undefined) throw new Error("Tesota's engine gave it no parts: provideHost must run before Tesota loads.");
   return given;
 }
