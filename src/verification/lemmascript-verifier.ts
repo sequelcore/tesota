@@ -2,7 +2,7 @@ import { type Dirent, readdirSync, realpathSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, posix, relative } from "node:path";
+import { basename, dirname, join, posix, relative } from "node:path";
 import { type Evidence, contentHash } from "../evidence.js";
 import { type ProcessRun, runProcess } from "../process.js";
 import { parseJson } from "../json.js";
@@ -75,15 +75,24 @@ function outcomeOf(regen: ProcessRun, check: ProcessRun | undefined, signal: Abo
     regen.ended !== "not_started" && check?.ended !== "not_started", regen.exitCode === 0, check?.exitCode ?? -1, verified);
 }
 
+/** `path` by its real name: its nearest folder that exists, resolved, and the rest as given. */
+function realName(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(realName(parent), basename(path));
+  }
+}
+
 /**
  * `path` relative to `root`, with `/`, both by their real names: LemmaScript
  * prints real paths, and a project may be reached through a link, as macOS's
- * temporary folder `/var` is one to `/private/var` (#472). A path that does
- * not exist yet is taken as printed.
+ * temporary folder `/var` is one to `/private/var`, or by a short name, as
+ * Windows' `RUNNER~1` (#472).
  */
 function within(root: string, path: string): string {
-  const real = (at: string): string => { try { return realpathSync.native(at); } catch { return at; } };
-  return relative(real(root), real(path)).split("\\").join("/");
+  return relative(realName(root), realName(path)).split("\\").join("/");
 }
 
 /** The `.dfy` LemmaScript used: its configuration can keep proofs in another folder, which its "Generated:" line names. */

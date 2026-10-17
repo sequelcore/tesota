@@ -207,7 +207,9 @@ describe("tesota-core", () => {
   test("outside Git /new says why a second session cannot start, and the first stays (#455)", async () => {
     const { terminal, running } = await app();
     send(terminal, "/new");
-    await terminal.until("not a Git repository");
+    // The reason names the folder, so a long one, as macOS's temporary folders are, wraps it across lines.
+    const screen = await terminal.until("Another session is working in");
+    expect(screen.replace(/\s+/gu, " ")).toContain("which is not a Git repository with a commit");
     send(terminal, "/quit");
     await running;
   });
