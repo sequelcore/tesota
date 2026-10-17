@@ -114,8 +114,8 @@ export interface LoopState {
   readonly outcome: SessionOutcome | undefined;
   /** The tools the model could call when the session was last written, when an extension changed them. */
   readonly activeTools?: readonly string[];
-  /** The last run's request and the amendments delivered to it, as given. */
-  readonly ledger?: readonly string[];
+  /** The last run's request and the amendments delivered to it, as the messages that brought them. */
+  readonly ledger?: readonly HistoryMessage[];
   /** The last compaction (#451): its summary, the files summarized so far, and where replies count toward usage again. */
   readonly compacted?: { readonly summary: string; readonly files: FilesTouched; readonly counted: number };
 }
@@ -125,12 +125,13 @@ export interface LoopState {
  * amendments exactly as given, which no summary replaces, then the summary.
  * It is context the model reads as the operator's; the shell does not show it.
  */
-export function compactedHead(ledger: readonly string[], summary: string, files: FilesTouched,
+export function compactedHead(ledger: readonly HistoryMessage[], summary: string, files: FilesTouched,
   tail: readonly HistoryMessage[]): CustomMessage {
-  // What the tail still holds as the operator wrote it is not repeated: the ledger's texts come in order, so those
-  // left are its first ones, the request first.
-  const given = ledger.filter((text) => !tail.some((message) => message.role === "user" && message.content === text));
-  const [request, ...added] = given;
+  // What the tail still holds is not repeated: the ledger's messages come in the conversation's order, so those
+  // before the first the tail holds are what it gives, the request first.
+  const kept = ledger.findIndex((message) => tail.includes(message));
+  const [request, ...added] = (kept < 0 ? ledger : ledger.slice(0, kept))
+    .map((message) => typeof message.content === "string" ? message.content : "");
   const content = [...request === undefined ? [] : ["The operator's request, exactly as given:", request],
     ...added.flatMap((text) => ["Added while you worked:", text]), summaryMessage(summary, files)].join("\n\n");
   return { role: "custom", customType: "tesota.compaction", content, display: false, timestamp: Date.now() };
@@ -202,7 +203,7 @@ const stoppedReason = "the operator stopped the run";
 /** Compaction as a loop starts (#451): its margins, Pi's when not given, and what a resumed session last held. */
 function compactionAtStart(options: LoopOptions): {
   readonly margins: { readonly reserve: number; readonly keep: number };
-  readonly ledger: string[];
+  readonly ledger: HistoryMessage[];
   readonly compacted: LoopState["compacted"];
 } {
   return { margins: options.compaction ?? { reserve: 16_384, keep: 20_000 }, ledger: [...options.resumed?.ledger ?? []],
@@ -381,8 +382,9 @@ export function createLoop(options: LoopOptions): LoopSession {
     queue = queue.filter((amendment) => !behaviors.includes(amendment.behavior));
     for (const { id, text } of due) {
       writer.append({ type: "delivered", run, amendment: id });
-      ledger.push(text);
-      add({ role: "user", content: text, timestamp: Date.now() });
+      const delivered: HistoryMessage = { role: "user", content: text, timestamp: Date.now() };
+      ledger.push(delivered);
+      add(delivered);
     }
     return due.length > 0;
   }
@@ -485,6 +487,8 @@ export function createLoop(options: LoopOptions): LoopSession {
         tokens.input += result.usage.input;
         tokens.output += result.usage.output;
         tokens.total += result.usage.totalTokens;
+        writer.append({ type: "summary_usage", run, input: result.usage.input, output: result.usage.output,
+          total: result.usage.totalTokens });
       }
       if (signal.aborted) return stoppedReason;
       if ("error" in result) { failure = result.error; continue; }
@@ -649,8 +653,9 @@ export function createLoop(options: LoopOptions): LoopSession {
     recorded = written.catch(() => undefined);
     await written;
     await host.input({ type: "input", text, source: origin }, signal);
-    ledger = [text];
-    add({ role: "user", content: text, timestamp: Date.parse(at) });
+    const asked: HistoryMessage = { role: "user", content: text, timestamp: Date.parse(at) };
+    ledger = [asked];
+    add(asked);
     let generation = 0;
     let continuations = 0;
     for (;;) {
@@ -692,7 +697,9 @@ export function createLoop(options: LoopOptions): LoopSession {
   return {
     async prompt(text, { streamingBehavior, source = "interactive" } = {}) {
       await started;
-      await compacting?.done.catch(() => undefined);
+      // Checked again after each wait, with no wait between the last check and the run's start, so a compaction
+      // asked for meanwhile cannot start under it.
+      while (compacting !== undefined) await compacting.done.catch(() => undefined);
       if (running !== undefined) {
         if (streamingBehavior === undefined) throw new Error("A prompt is already running; steer it, queue a follow-up, abort it or wait.");
         await amend(runs, text, streamingBehavior, source, controller?.signal);

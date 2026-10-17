@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { modelContext } from "../src/loop.ts";
+import { compactedHead, type HistoryMessage, modelContext } from "../src/loop.ts";
 import { createSession, type EngineSession, openSession, type SessionOptions } from "../src/session.ts";
 
 /**
@@ -184,6 +184,40 @@ describe("compaction", () => {
     expect(resumed.history().map((message) => message.role === "toolResult" ? `result ${message.toolCallId}`
       : message.role === "assistant" ? `reply ${(message.content[0] as { id: string }).id}` : message.role))
       .toEqual(["custom", "reply first", "result first", "reply second", "result second"]);
+  });
+
+  test("a prompt and /compact asked at once do not overlap: the prompt claims the session first", async () => {
+    const model = scripted([...writes(3), { text: "done" }, { text: "next" }], ["## Goal\nby hand"], 1_000_000);
+    const created = session(model, { reserve: 1_000, keep: 600 });
+    await created.prompt(request);
+    const next = created.prompt("next");
+    await expect(created.compact()).rejects.toThrow("A run is going");
+    await next;
+    expect(entries(created.file).some(({ type }) => type === "compaction")).toBe(false);
+  });
+
+  test("the head gives the ledger by message, so a repeated text keeps its place and role", () => {
+    const asked: HistoryMessage = { role: "user", content: "Use X", timestamp: 0 };
+    const changed: HistoryMessage = { role: "user", content: "Use Y", timestamp: 0 };
+    const repeated: HistoryMessage = { role: "user", content: "Use X", timestamp: 0 };
+    const head = compactedHead([asked, changed, repeated], "## Goal\nx", { read: [], changed: [] }, [repeated]);
+    expect(head.content).toStartWith("The operator's request, exactly as given:\n\nUse X\n\nAdded while you worked:\n\nUse Y\n\n");
+    expect(head.content.match(/Use X/gu)).toHaveLength(1);
+  });
+
+  test("a summary's tokens are written down, so a resumed session counts them too", async () => {
+    const model = scripted([...writes(6), { text: "done" }], ["## Goal\nwrite notes"], 3_000);
+    const created = session(model);
+    await created.prompt(request);
+    const live = created.stats().tokens;
+    const summaries = model.seen.filter(({ summary }) => summary).length;
+    expect(entries(created.file).filter(({ type }) => type === "summary_usage")).toHaveLength(summaries);
+    const file = created.file;
+    await created.dispose();
+    open.splice(0);
+    const resumed = openSession(file, { models: model.models, model: model.model, verifier: () => undefined });
+    open.push(resumed);
+    expect(resumed.stats().tokens).toEqual(live);
   });
 
   test("a later run's request still in the tail is not repeated in the compacted head", async () => {

@@ -71,6 +71,8 @@ export type SessionEntry =
    * place of everything before the last `kept` messages, and those messages.
    * `read` and `changed` are the files the summarized messages touched.
    */
+  /** What a compaction's summary request used (#451), so the session's usage counts it after a resume. */
+  | { readonly type: "summary_usage"; readonly run: number; readonly input: number; readonly output: number; readonly total: number }
   | { readonly type: "compaction"; readonly run: number; readonly summary: string; readonly kept: number;
     readonly read: readonly string[]; readonly changed: readonly string[]; readonly tokensBefore: number;
     readonly tokensAfter: number }
@@ -122,6 +124,7 @@ const shapes: Record<SessionEntry["type"], (entry: Record<string, unknown>) => b
   settle: (entry) => Number.isInteger(entry["generation"]) && phases.has(entry["phase"] as string) && isText(entry["outcome"]),
   custom_message: (entry) => isText(entry["customType"]) && isText(entry["content"]) && isFlag(entry["display"]),
   custom: (entry) => isText(entry["customType"]),
+  summary_usage: (entry) => Number.isFinite(entry["input"]) && Number.isFinite(entry["output"]) && Number.isFinite(entry["total"]),
   compaction: (entry) => isText(entry["summary"]) && Number.isInteger(entry["kept"]) && (entry["kept"] as number) >= 0
     && Array.isArray(entry["read"]) && entry["read"].every(isText) && Array.isArray(entry["changed"]) && entry["changed"].every(isText)
     && Number.isInteger(entry["tokensBefore"]) && Number.isInteger(entry["tokensAfter"]),

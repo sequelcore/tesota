@@ -143,7 +143,7 @@ export function recovery(entries: readonly SessionEntry[]): SessionEntry[] {
  */
 function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "history" | "ledger" | "compacted"> {
   const history: HistoryMessage[] = [];
-  let ledger: string[] = [];
+  let ledger: HistoryMessage[] = [];
   let compacted: LoopState["compacted"];
   const amendments = new Map<number, string>();
   /** Each reply by its run and its place in the run, so a repair written later finds it. */
@@ -151,13 +151,14 @@ function conversation(entries: readonly SessionEntry[]): Pick<LoopState, "histor
   const counts = new Map<number, number>();
   for (const entry of entries) {
     if (entry.type === "request") {
-      ledger = [entry.text];
-      history.push({ role: "user", content: entry.text, timestamp: Date.parse(entry.at) });
+      const asked: HistoryMessage = { role: "user", content: entry.text, timestamp: Date.parse(entry.at) };
+      ledger = [asked];
+      history.push(asked);
     } else if (entry.type === "amendment") amendments.set(entry.id, entry.text);
     else if (entry.type === "delivered") {
-      const text = amendments.get(entry.amendment) ?? "";
-      ledger.push(text);
-      history.push({ role: "user", content: text, timestamp: 0 });
+      const delivered: HistoryMessage = { role: "user", content: amendments.get(entry.amendment) ?? "", timestamp: 0 };
+      ledger.push(delivered);
+      history.push(delivered);
     } else if (entry.type === "reconciliation") {
       // A repair goes after the other results of its reply, in the order repairs were written: a compaction
       // written before it kept what the session held then, and a reply it summarized takes its repair with it.
@@ -203,6 +204,11 @@ function ledgerOf(entries: readonly SessionEntry[]): LedgerRequest[] {
 function stateOf(entries: readonly SessionEntry[]): LoopState {
   const tokens = { input: 0, output: 0, total: 0 };
   for (const entry of entries) {
+    if (entry.type === "summary_usage") {
+      tokens.input += entry.input;
+      tokens.output += entry.output;
+      tokens.total += entry.total;
+    }
     if (entry.type !== "assistant") continue;
     tokens.input += entry.message.usage.input;
     tokens.output += entry.message.usage.output;
