@@ -152,6 +152,51 @@ describe("tesota-core", () => {
     await running;
   });
 
+  test("closing a session whose question waits refuses it, so the session closes and the shell ends (#455)", async () => {
+    const { terminal, cwd, running } = await app([{ tool: "write", args: { path: "refused.md", content: "x" } }, "after"],
+      { repository: true });
+    send(terminal, "/model");
+    await terminal.until("Model");
+    terminal.type(enter);
+    await terminal.until("Model: ");
+    send(terminal, "write it");
+    send(terminal, "/new");
+    await terminal.until("1 session waits for you");
+    terminal.type("\x14");
+    await terminal.until("waiting");
+    terminal.type("\x1b[A");
+    terminal.type("x");
+    await terminal.until("Stop and close this session?");
+    terminal.type("y");
+    await terminal.untilGone("waiting");
+    terminal.type("\x1b");
+    await terminal.untilGone("Sessions");
+    expect(existsSync(join(cwd, "refused.md"))).toBe(false);
+    send(terminal, "/quit");
+    await running;
+  });
+
+  test("in the dashboard Esc goes back, and each session keeps its own unsent text (#455)", async () => {
+    const { terminal, running } = await app([], { repository: true });
+    terminal.type("a draft for the first");
+    terminal.type("\x14");
+    await terminal.until("Sessions");
+    terminal.type("n");
+    await terminal.untilGone("a draft for the first");
+    terminal.type("\x14");
+    await terminal.until("Sessions");
+    terminal.type("\x1b");
+    await terminal.untilGone("Sessions");
+    terminal.type("\x14");
+    await terminal.until("Sessions");
+    terminal.type("\x1b[A");
+    terminal.type(enter);
+    await terminal.until("a draft for the first");
+    terminal.type("\x03");
+    send(terminal, "/quit");
+    await running;
+  });
+
   test("outside Git /new says why a second session cannot start, and the first stays (#455)", async () => {
     const { terminal, running } = await app();
     send(terminal, "/new");

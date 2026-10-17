@@ -111,7 +111,7 @@ export async function runApp(options: AppOptions): Promise<void> {
     permissions: { mode: () => permissionMode, rules, ask: (call: { name: string; arguments: unknown }, reason: string) => {
       if (live === attached) return answer(call, reason);
       return new Promise<"once" | "session" | "deny">((resolve) => {
-        live.waiting.push(async () => { resolve(await answer(call, reason)); });
+        live.waiting.push({ put: async () => { resolve(await answer(call, reason)); }, refuse: () => { resolve("deny"); } });
         live.state = "waiting";
         showStatuses();
         shell.redraw();
@@ -126,9 +126,19 @@ export async function runApp(options: AppOptions): Promise<void> {
     lives.push(made);
     return made;
   };
-  /** Keeps `made`'s row up to date from its events: its state, its first request and its receipt; a background end is noted. */
+  /**
+   * Keeps `made`'s row up to date from its events: its state, its first
+   * request and its receipt; a background end is noted. A session opened again
+   * starts from what it holds: its last run's end and its last receipt.
+   */
   const follow = (made: Live): void => {
     made.request = made.session.ledger()[0]?.text;
+    const ended = made.session.outcome();
+    made.state = ended === undefined ? "idle" : "ended";
+    if (ended === undefined) delete made.outcome; else made.outcome = ended;
+    const last = made.session.history().findLast((message) => message.role === "custom" && message.customType === "tesota-receipt");
+    const held = last?.role === "custom" ? last.details : undefined;
+    if (isReceipt(held)) made.verification = receiptStanding(held as Receipt); else delete made.verification;
     made.unsubscribe = made.session.subscribe((event) => {
       if (event.type === "state") made.state = made.waiting.length > 0 ? "waiting" : event.state === "settling" ? "verifying" : "working";
       else if (event.type === "ended") {
@@ -147,16 +157,27 @@ export async function runApp(options: AppOptions): Promise<void> {
     attached = next;
     showStatuses();
     shell.show(next.session, next.surface, next.state === "working" ? "working" : next.state === "verifying" ? "settling" : undefined);
-    for (const ask of next.waiting.splice(0)) await ask();
-    if (next.state === "waiting") next.state = "working";
+    for (const { put } of next.waiting.splice(0)) await put();
+    if (next.state === "waiting") {
+      // Its run goes on once answered, without an event to say so: the shell shows it working, so Esc stops it.
+      next.state = "working";
+      if (next === attached) shell.busy("working");
+    }
     showStatuses();
     shell.redraw();
   };
-  /** Closes `gone`: its file let go, its worktree removed when unchanged, or named when it holds work. */
+  /**
+   * Closes `gone`: the questions it held refused, so its run can stop, its
+   * file let go, its worktree removed when unchanged, or named when it holds
+   * work. Closing it again while it closes does nothing.
+   */
   const close = async (gone: Live): Promise<void> => {
+    const at = lives.indexOf(gone);
+    if (at < 0) return;
+    lives.splice(at, 1);
     gone.unsubscribe();
+    for (const { refuse } of gone.waiting.splice(0)) refuse();
     await gone.session.dispose();
-    lives.splice(lives.indexOf(gone), 1);
     const kept = gone.session.kept();
     if (gone === attached) await attach(lives[0] ?? live((made) => createSession({ cwd: options.cwd, folder, ...sessionOptions(made) })));
     if (kept !== undefined) shell.note(kept, "warning");
@@ -323,7 +344,10 @@ export async function runApp(options: AppOptions): Promise<void> {
   providers = (await credentials.list()).length;
   if (model === undefined) shell.note("No provider is logged in: /login, or set a provider's API key, then /model.", "warning");
   await shell.stopped;
-  for (const each of lives) each.unsubscribe();
+  for (const each of lives) {
+    each.unsubscribe();
+    for (const { refuse } of each.waiting.splice(0)) refuse();
+  }
   await Promise.all(lives.map((each) => each.session.dispose()));
   // The shell has given the terminal back: worktrees with work in them are named where the operator sees them (#453).
   for (const each of lives) {
@@ -341,7 +365,8 @@ interface Live {
   verification?: "verified" | "incomplete" | "failed";
   request?: string | undefined;
   readonly startedAt: number;
-  readonly waiting: (() => Promise<void>)[];
+  /** Questions it holds for the operator: put when it is shown, refused when it closes. */
+  readonly waiting: { readonly put: () => Promise<void>; readonly refuse: () => void }[];
   unsubscribe: () => void;
 }
 

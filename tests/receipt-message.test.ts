@@ -1,6 +1,17 @@
 import { expect, it } from "vitest";
-import { receiptFindings, renderReceipt, renderReceiptMessage } from "../src/receipt.js";
+import { noEvidence, receiptFindings, receiptStanding, renderReceipt, renderReceiptMessage } from "../src/receipt.js";
 import { emptyReceipt } from "./receipts.js";
+
+it("says a receipt in one word: verified when clean, failed when a check failed, even in a unit, incomplete otherwise (#455)", () => {
+  expect(receiptStanding(emptyReceipt)).toBe("verified");
+  expect(receiptStanding({ ...emptyReceipt, stopped: "the operator stopped the run" })).toBe("incomplete");
+  const failing = { command: "npm test", verdict: "send_back" as const, evidence: { verifier: "command" as const, claim: "the tests pass",
+    limits: "", outcome: "failed" as const, output: "1 failed", durationMs: 1, files: [], contentHash: "" } };
+  expect(receiptStanding({ ...emptyReceipt, tests: [failing] })).toBe("failed");
+  // A folder of repositories keeps its checks in its units, not at the top.
+  expect(receiptStanding({ ...emptyReceipt, repository: false, units: [{ ...noEvidence, folder: "app", repository: true, base: null,
+    tests: [failing] }] })).toBe("failed");
+});
 
 it("makes the chat receipt readable without hiding unchecked changes or interpreting their names as Markdown", () => {
   expect(renderReceiptMessage({ ...emptyReceipt, unverified: ["src/[rule]*.ts"] })).toBe(

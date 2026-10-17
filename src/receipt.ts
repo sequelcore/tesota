@@ -549,7 +549,9 @@ export function receiptDecisions(receipt: Receipt): number {
  */
 export function receiptStanding(receipt: Receipt): "verified" | "incomplete" | "failed" {
   if (receipt.stopped === undefined && receiptDecisions(receipt) === 0) return "verified";
-  return [...receipt.proofs, ...receipt.tests].some(({ verdict }) => verdict !== "proved") ? "failed" : "incomplete";
+  // A folder of repositories keeps its checks in its units, as the footer reads them too.
+  const { proofs, tests } = allEvidence(receipt);
+  return [...proofs, ...tests].some(({ verdict }) => verdict !== "proved") ? "failed" : "incomplete";
 }
 
 /** The receipt as the operator reads it; `details` of its session entry carries the receipt itself. */

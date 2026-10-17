@@ -71,6 +71,8 @@ export interface Shell {
   show(session: EngineSession, surface?: Surface, state?: "working" | "settling"): void;
   /** Shows `body` over the whole shell with the keyboard's focus; the returned function takes it away again. */
   overlay(body: Component): () => void;
+  /** Shows the shown session's run as working, verifying or idle, when it goes on without saying so (#455). */
+  busy(state: "working" | "settling" | undefined): void;
   /** Writes a line of the shell's own into the conversation. */
   note(text: string, tone?: "muted" | "error" | "warning"): void;
   /** Draws the footer again, as `status` now says it. */
@@ -141,6 +143,10 @@ export function startShell(options: ShellOptions): Shell {
     for (const component of dock) tui.addChild(component);
   }
 
+  /** What has the keyboard over the shell, a dialog or the dashboard (#455): the editor takes it back only when nothing does. */
+  let covering: Component | undefined;
+  /** Each session's unsent text, kept while another is shown (#455). */
+  const drafts = new Map<EngineSession, string>();
   /** What each slot was last built from, so a change rebuilds only what changed and the editor keeps its text otherwise. */
   let mounted: { header?: unknown; editor?: unknown; footer?: unknown } = {};
   let disposers: (() => void)[] = [];
@@ -161,7 +167,7 @@ export function startShell(options: ShellOptions): Shell {
     editor.onSubmit = submit;
     editorSlot.clear();
     editorSlot.addChild(editor);
-    tui.setFocus(editor);
+    if (covering === undefined) tui.setFocus(editor);
   };
   const mountFooter = (): void => {
     if (mounted.footer === surface?.footer && footerSlot.children.length > 0) return;
@@ -277,6 +283,8 @@ export function startShell(options: ShellOptions): Shell {
       tui.requestRender();
       return { consume: true };
     }
+    // A dialog or the dashboard has the keyboard: Esc goes back there, and the shell's own keys wait (#455).
+    if (covering !== undefined) return undefined;
     if (matchesKey(data, "escape") && busy) { void session.abort(); return { consume: true }; }
     if (matchesKey(data, "alt+enter")) {
       const text = editor.getText().trim();
@@ -303,9 +311,11 @@ export function startShell(options: ShellOptions): Shell {
       box.addChild(new Text(theme.bold(theme.fg("accent", title)), 1, 0));
       box.addChild(body);
       const handle = tui.showOverlay(box, { width: "80%", maxHeight: "60%", anchor: "center" });
+      covering = body;
       tui.setFocus(body);
       wire((value) => {
         handle.hide();
+        covering = undefined;
         tui.setFocus(editor);
         tui.requestRender();
         resolve(value);
@@ -332,6 +342,7 @@ export function startShell(options: ShellOptions): Shell {
     },
     show(next, nextSurface, state) {
       unsubscribe();
+      drafts.set(session, editor.getText());
       session = next;
       unsubscribe = session.subscribe(onEvent);
       if (nextSurface !== undefined && nextSurface !== surface) {
@@ -341,6 +352,8 @@ export function startShell(options: ShellOptions): Shell {
         unwatch = surface.onChange(mount);
         mount();
       }
+      editor.setText(drafts.get(next) ?? "");
+      drafts.delete(next);
       transcript.load(session.history());
       working(state);
       drawFooter();
@@ -348,14 +361,17 @@ export function startShell(options: ShellOptions): Shell {
     },
     overlay(body) {
       const handle = tui.showOverlay(body, { width: "100%", maxHeight: "100%", anchor: "center" });
+      covering = body;
       tui.setFocus(body);
       tui.requestRender();
       return () => {
         handle.hide();
+        covering = undefined;
         tui.setFocus(editor);
         tui.requestRender();
       };
     },
+    busy: (state) => { working(state); tui.requestRender(); },
     note,
     redraw: () => { drawFooter(); tui.requestRender(); },
     stop,
