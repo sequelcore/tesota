@@ -1,7 +1,7 @@
 import type { ReadonlyFooterDataProvider, Theme as PiTheme } from "@earendil-works/pi-coding-agent";
 import {
   type Component, Container, Editor, type Focusable, getKeybindings, Input, Loader, matchesKey, ScrollView, type SelectItem, SelectList,
-  type Terminal, Text, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
+  type Terminal, type TerminalColors, Text, TuiAltScreen, type TuiAltScreenOptions, TuiMainScreen, VStack,
 } from "@earendil-works/pi-tui";
 import type { SessionEvent } from "../loop.ts";
 import type { EngineSession } from "../session.ts";
@@ -210,14 +210,19 @@ export function startShell(options: ShellOptions): Shell {
   }
   mount();
   const unwatch = surface?.onChange(mount) ?? (() => undefined);
-  // Tesota's theme for the terminal's own background, light or dark, once the terminal says which.
+  // Tesota's theme for the terminal's own background, light or dark: when the terminal says, however late, and when it changes.
+  let unfollow = (): void => undefined;
   if (surface !== undefined) {
-    void tui.queryTerminalColors({ timeoutMs: 200 }).then(({ background }) => {
-      if (background === undefined) return;
-      const { r, g, b } = background;
-      theme.use(0.2126 * r + 0.7152 * g + 0.0722 * b > 140 ? "light" : "dark");
+    const appearance = (next: "light" | "dark"): void => {
+      if (next === theme.appearance) return;
+      theme.use(next);
       tui.requestRender(true);
-    }).catch(() => undefined);
+    };
+    const background = ({ background: color }: TerminalColors): void => {
+      if (color !== undefined) appearance(0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b > 140 ? "light" : "dark");
+    };
+    void tui.queryTerminalColors({ timeoutMs: 200, onLateReply: background }).then(background).catch(() => undefined);
+    unfollow = tui.onTerminalColorSchemeChange(appearance);
   }
 
   let resolveStopped: () => void = () => undefined;
@@ -228,6 +233,7 @@ export function startShell(options: ShellOptions): Shell {
     ending = true;
     unsubscribe();
     unwatch();
+    unfollow();
     for (const dispose of disposers.splice(0)) dispose();
     loader.stop();
     tui.stop({ preserveScreen: false });
