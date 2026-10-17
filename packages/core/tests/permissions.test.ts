@@ -124,6 +124,38 @@ describe("rules", () => {
     expect(decision("git status | tee out.txt")).toBe("ask");
   });
 
+  test("when in doubt, deny and ask rules match more and allow rules less", () => {
+    const home = folder("tesota-core-permissions-home-");
+    const cwd = folder("tesota-core-permissions-project-");
+    writeFileSync(join(home, "permissions.json"), JSON.stringify({
+      allow: ["shell(Write-Output*)", "shell(git status*)", "shell(git branch -d *)", "shell(echo*)"],
+      deny: ["shell(git push*--force*)", "shell(rm*)"],
+    }));
+    const rules = loadRules(cwd, home);
+    const decision = (command: string, mode: Mode = "ask") => judge(call(shell, { command }), "run", cwd, mode, rules, true).decision;
+    // A lone carriage return ends a command too.
+    expect(decision("Write-Output OK\rWrite-Host HIDDEN")).toBe("ask");
+    // Flags keep their case for allow rules: -D is not -d.
+    expect(decision("git branch -D topic")).toBe("ask");
+    expect(decision("git branch -d topic")).toBe("allow");
+    // A deny still reads the whole command where a split would cut it.
+    expect(decision("git push origin \"feature;tag\" --force", "full")).toBe("deny");
+    // A command run inside another, or in the background, is not what the allow rule names.
+    for (const command of ["git status $(whoami)", "git status `whoami`", "git status & whoami", "echo <(whoami)"]) {
+      expect(decision(command)).toBe("ask");
+    }
+    expect(decision("echo $(rm -rf x)", "full")).toBe("deny");
+  });
+
+  test("an empty command answers to a rule for the whole tool", () => {
+    const home = folder("tesota-core-permissions-home-");
+    const cwd = folder("tesota-core-permissions-project-");
+    writeFileSync(join(home, "permissions.json"), JSON.stringify({ deny: ["shell"] }));
+    for (const command of ["", "   "]) {
+      expect(judge(call(shell, { command }), "run", cwd, "full", loadRules(cwd, home), true).decision).toBe("deny");
+    }
+  });
+
   test("a folder glob keeps its folders: src/**/safe.ts names safe.ts in src and below, not unsafe.ts", () => {
     const home = folder("tesota-core-permissions-home-");
     const cwd = folder("tesota-core-permissions-project-");

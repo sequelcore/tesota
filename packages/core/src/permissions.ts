@@ -24,9 +24,10 @@ const shells = new Set(["bash", "powershell"]);
 /**
  * A glob as a pattern: `**` any path, `**` before a slash any folders or none, `*` anything
  * but a separator for paths and anything at all for commands. On Windows,
- * paths and commands match in any case, as Windows reads them.
+ * paths match in any case, as Windows reads them; commands do only for deny
+ * and ask rules, since a program's flags keep their case (`-d` is not `-D`).
  */
-function globPattern(glob: string, command: boolean): RegExp {
+function globPattern(glob: string, command: boolean, verdict: Rule["verdict"]): RegExp {
   let source = "";
   for (let k = 0; k < glob.length; k++) {
     const char = glob[k] ?? "";
@@ -36,16 +37,22 @@ function globPattern(glob: string, command: boolean): RegExp {
     else if (char === "?") source += command ? "." : "[^/]";
     else source += char.replace(/[.+^${}()|[\]\\]/gu, "\\$&");
   }
-  return new RegExp(`^${source}$`, `${process.platform === "win32" ? "i" : ""}su`);
+  const anyCase = process.platform === "win32" && (!command || verdict !== "allow");
+  return new RegExp(`^${source}$`, `${anyCase ? "i" : ""}su`);
 }
 
 /**
- * A command's parts, split where a shell runs one command after another:
- * lines, `;`, `&&`, `||` and `|`. Quotes are not read, so a part may split
- * where the shell would not; that only makes allow rules match less.
+ * A command's parts, split where a shell may run one command after another or
+ * inside another: line breaks, `;`, `&`, `|`, backticks and parentheses, in
+ * any run. Quotes are not read, so a part may split where the shell would not;
+ * deny and ask rules also read the whole command, so that only makes allow
+ * rules match less.
  */
 const commandParts = (command: string): string[] =>
-  command.split(/\r?\n|;|&&|\|\||\|/u).map((part) => part.trim()).filter((part) => part !== "");
+  command.split(/[\r\n;&|`()]+/u).map((part) => part.trim()).filter((part) => part !== "");
+
+/** A command that runs another inside it, `$(...)`, backticks or `<(...)`: no allow rule names what that runs. */
+const nestsCommands = (command: string): boolean => /\$\(|`|[<>]\(/u.test(command);
 
 /** One rule from its text; a text that is not one is an error, since a rule left out could be a deny. */
 function parseRule(text: string, verdict: Rule["verdict"], path: string): Rule {
@@ -53,7 +60,8 @@ function parseRule(text: string, verdict: Rule["verdict"], path: string): Rule {
   if (match === null) throw new Error(`${path}: "${text}" is not a rule; write tool(pattern) or a tool's name.`);
   const tool = match[1] ?? "";
   const glob = match[2];
-  return { tool, verdict, pattern: glob === undefined ? undefined : globPattern(glob, tool === "shell" || shells.has(tool)) };
+  return { tool, verdict,
+    pattern: glob === undefined ? undefined : globPattern(glob, tool === "shell" || shells.has(tool), verdict) };
 }
 
 /** The rules in the file at `path`, of the verdicts it may set; none when there is no file. */
@@ -176,15 +184,17 @@ export function judge(call: ToolCall, access: Access, cwd: string, mode: Mode, r
   const floor = floorReason(call, access, cwd);
   const shell = shells.has(call.name);
   const subject = shell || subjectOf(call) === "" ? subjectOf(call) : relative(cwd, resolve(cwd, subjectOf(call))).split("\\").join("/");
-  // A command's parts each answer to the rules: one part a deny or ask rule names makes the whole ask or deny,
-  // and an allow rule allows the command only when every part is allowed, so `git status && rm -rf x` is not.
+  // When in doubt, deny and ask rules match more and allow rules less: a deny or ask rule that names the whole
+  // command or any part of it counts, and an allow rule allows a command only when every part is allowed and none
+  // runs another inside it, so `git status && rm -rf x` and `git status $(rm -rf x)` are asked about.
   const parts = shell ? commandParts(subject) : [subject];
   const own = rules.filter((rule) => rule.tool === call.name || (rule.tool === "shell" && shell));
   const names = (rule: Rule, part: string): boolean => rule.pattern === undefined || rule.pattern.test(part);
-  const verdicts = own.filter((rule) => rule.verdict !== "allow" && parts.some((part) => names(rule, part)))
+  const verdicts = own.filter((rule) => rule.verdict !== "allow" && [subject, ...parts].some((part) => names(rule, part)))
     .map(({ verdict }) => verdict);
   const allows = own.filter((rule) => rule.verdict === "allow");
-  if (parts.length > 0 && parts.every((part) => allows.some((rule) => names(rule, part)))) verdicts.push("allow");
+  if (parts.length > 0 && !(shell && nestsCommands(subject))
+    && parts.every((part) => allows.some((rule) => names(rule, part)))) verdicts.push("allow");
   const rule = strongest(verdicts);
   const decision = decide(floor !== undefined, mode, access, rule, present);
   if (floor !== undefined) return { decision, by: "floor", reason: `Tesota never allows this: ${floor}.` };
