@@ -1,8 +1,15 @@
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 import type {
   BranchEntry, ContextUsage, EntryDraft, ExtensionAPI, ExtensionContext, ExtensionFactory, FlagOptions, Handler, InputEvent,
-  RunOutcome, SessionStartEvent, SettleEvent, SettleResult, ShellUI, ToolDefinition, ToolExecutionStartEvent, ToolResultEvent,
+  RunOutcome, SessionStartEvent, SettleEvent, SettleResult, ShellAPI, ShellUI, ToolDefinition, ToolExecutionStartEvent, ToolResultEvent,
 } from "../../../src/contract.ts";
+
+/** Where extensions draw (#446): the shell's interface, its message renderers, and how a registered tool is drawn. */
+export interface DrawingSurface {
+  readonly ui: ShellUI;
+  readonly registerMessageRenderer: ShellAPI["registerMessageRenderer"];
+  readonly toolRegistered: (tool: object) => void;
+}
 
 export interface HostOptions {
   readonly cwd: string;
@@ -22,6 +29,8 @@ export interface HostOptions {
   /** The session's entries as Pi's branch shapes them. */
   readonly branch: () => BranchEntry[];
   readonly contextUsage: () => ContextUsage | undefined;
+  /** The shell extensions draw on; none draws nothing, as Pi's print mode. */
+  readonly surface?: DrawingSurface;
 }
 
 /** What one settle phase returned: its handlers' entries in order, whether any sent the run back, and what each that threw said. */
@@ -95,7 +104,7 @@ export function createHost(options: HostOptions, extensions: readonly ExtensionF
     complete: (model, context, completeOptions) => options.models.complete(model, context, completeOptions),
   };
   const context = (signal: AbortSignal | undefined): ExtensionContext => ({
-    cwd: options.cwd, mode: options.mode, model: options.model, modelRegistry, signal, ui: headless,
+    cwd: options.cwd, mode: options.mode, model: options.model, modelRegistry, signal, ui: options.surface?.ui ?? headless,
     sessionManager: { getBranch: options.branch },
     getContextUsage: options.contextUsage,
   });
@@ -103,13 +112,16 @@ export function createHost(options: HostOptions, extensions: readonly ExtensionF
     on: ((event: keyof Events, handler: never) => { handlers[event].push(handler); }) as ExtensionAPI["on"],
     registerFlag: (name, flag) => { flags.set(name, flag); },
     getFlag: (name) => options.flags?.[name] ?? flags.get(name)?.default,
-    registerTool: (tool) => { options.tools.register(tool as unknown as ToolDefinition); },
+    registerTool: (tool) => {
+      options.tools.register(tool as unknown as ToolDefinition);
+      options.surface?.toolRegistered(tool);
+    },
     getActiveTools: () => options.tools.active(),
     setActiveTools: (names) => { options.tools.setActive(names); },
     getThinkingLevel: () => options.thinkingLevel,
     getSettings: () => ({}),
-    // The shell draws custom messages; with none there is nothing to register them with.
-    registerMessageRenderer: () => undefined,
+    // With no shell there is nothing to draw custom messages on.
+    registerMessageRenderer: options.surface?.registerMessageRenderer ?? (() => undefined),
   });
   for (const factory of extensions) factory(api(ordinary));
   verifier(api(verifying));

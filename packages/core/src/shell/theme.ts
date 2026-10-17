@@ -16,9 +16,20 @@ interface ThemeFile {
 /** The colors the shell draws with, by token; a token a theme lacks draws in the terminal's own color. */
 export type ThemeToken = keyof typeof dark.colors;
 
-/** How the shell styles text (#444): Tesota's theme for the terminal's appearance, in the colors the terminal can show. */
+/**
+ * How the shell styles text (#444): Tesota's theme for the terminal's
+ * appearance, in the colors the terminal can show. Tesota's own interface
+ * reads it as Pi's theme (#446): its colors, appearance and color mode, and
+ * the escape that starts a background.
+ */
 export interface ShellTheme {
   readonly name: string;
+  readonly appearance: "dark" | "light";
+  readonly colors: Readonly<Record<string, Color>>;
+  getColorMode(): TerminalColorMode;
+  getBgAnsi(token: ThemeToken): string;
+  /** Turns to the theme for a light or dark terminal; what is drawn after uses it. */
+  use(appearance: "dark" | "light"): void;
   fg(token: ThemeToken, text: string): string;
   bg(token: ThemeToken, text: string): string;
   bold(text: string): string;
@@ -45,15 +56,19 @@ function colorsOf(file: ThemeFile): Map<string, Color> {
 
 /** Tesota's theme for a dark or light terminal, drawn in `mode`'s colors. */
 export function shellTheme(appearance: "dark" | "light", mode: TerminalColorMode): ShellTheme {
-  const file: ThemeFile = appearance === "dark" ? dark : light;
-  const colors = colorsOf(file);
+  let file: ThemeFile = appearance === "dark" ? dark : light;
+  let colors = colorsOf(file);
   const fg = (token: ThemeToken, text: string): string => {
     const color = colors.get(token);
     return color === undefined ? text : `${foregroundAnsi(color, mode)}${text}\x1b[39m`;
   };
-  const bg = (token: ThemeToken, text: string): string => {
+  const bgAnsi = (token: ThemeToken): string => {
     const color = colors.get(token);
-    return color === undefined ? text : `${backgroundAnsi(color, mode)}${text}\x1b[49m`;
+    return color === undefined ? "" : backgroundAnsi(color, mode);
+  };
+  const bg = (token: ThemeToken, text: string): string => {
+    const start = bgAnsi(token);
+    return start === "" ? text : `${start}${text}\x1b[49m`;
   };
   const bold = wrap("1", "22");
   const italic = wrap("3", "23");
@@ -64,7 +79,16 @@ export function shellTheme(appearance: "dark" | "light", mode: TerminalColorMode
     description: (text) => fg("muted", text), scrollInfo: (text) => fg("dim", text), noMatch: (text) => fg("muted", text),
   };
   return {
-    name: file.name, fg, bg, bold, italic, underline, inverse: wrap("7", "27"), strikethrough,
+    get name() { return file.name; },
+    get appearance() { return file.appearance === "light" ? "light" : "dark"; },
+    get colors() { return Object.fromEntries(colors); },
+    getColorMode: () => mode,
+    getBgAnsi: bgAnsi,
+    use: (next) => {
+      file = next === "dark" ? dark : light;
+      colors = colorsOf(file);
+    },
+    fg, bg, bold, italic, underline, inverse: wrap("7", "27"), strikethrough,
     markdown: {
       heading: (text) => fg("mdHeading", bold(text)), link: (text) => fg("mdLink", underline(text)), linkUrl: (text) => fg("mdLinkUrl", text),
       code: (text) => fg("mdCode", text), codeBlock: (text) => fg("mdCodeBlock", text), codeBlockBorder: (text) => fg("mdCodeBlockBorder", text),

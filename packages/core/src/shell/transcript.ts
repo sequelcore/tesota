@@ -1,7 +1,18 @@
 import type { AssistantMessage, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import type { CustomMessage, HistoryMessage } from "../loop.ts";
+import type { MessageRenderer, ToolDrawing } from "./surface.ts";
 import type { ShellTheme } from "./theme.ts";
+
+/** How extensions draw their messages and tool calls (#446), and whether drawings are expanded. */
+export interface Drawings {
+  readonly renderers: ReadonlyMap<string, MessageRenderer>;
+  readonly tools: ReadonlyMap<string, ToolDrawing>;
+  readonly expanded: () => boolean;
+  readonly cwd: string;
+}
+
+const noDrawings: Drawings = { renderers: new Map(), tools: new Map(), expanded: () => false, cwd: "" };
 
 /** How many lines of a call's output the conversation shows before it says how many more there are. */
 const outputLines = 12;
@@ -57,19 +68,26 @@ class CallView extends Container {
   private result: ToolResultMessage | undefined;
   private readonly call: ToolCall;
   private readonly theme: ShellTheme;
-  constructor(call: ToolCall, theme: ShellTheme) {
+  private readonly drawings: Drawings;
+  private readonly startedAt = Date.now();
+  private durationMs: number | undefined;
+  constructor(call: ToolCall, theme: ShellTheme, drawings: Drawings) {
     super();
     this.call = call;
     this.theme = theme;
+    this.drawings = drawings;
     this.draw();
   }
   finish(result: ToolResultMessage): void {
     this.result = result;
+    this.durationMs = Date.now() - this.startedAt;
     this.draw();
   }
   private draw(): void {
     this.clear();
     const { theme, call, result } = this;
+    const drawing = this.drawings.tools.get(call.name);
+    if (drawing !== undefined) { this.drawn(drawing); return; }
     const state = result === undefined ? "toolPendingBg" : result.isError ? "toolErrorBg" : "toolSuccessBg";
     const lines = [`${theme.bold(theme.fg("toolTitle", call.name))} ${theme.fg("muted", summary(call))}`];
     if (call.name === "edit" && result?.isError !== true) lines.push(...diffLines(call, theme));
@@ -80,10 +98,32 @@ class CallView extends Container {
     }
     this.addChild(new Text(lines.join("\n"), 1, 1, (line) => theme.bg(state, line)));
   }
+  /** A call drawn as its extension's tool says, Pi's way: its call, then its result once there is one. */
+  private drawn(drawing: ToolDrawing): void {
+    const { call, result } = this;
+    const expanded = this.drawings.expanded();
+    const context = { args: call.arguments, toolCallId: call.id, invalidate: () => undefined, lastComponent: undefined, state: {},
+      cwd: this.drawings.cwd, executionStarted: true, argsComplete: true, isPartial: result === undefined, expanded, showImages: false,
+      isError: result?.isError === true, durationMs: this.durationMs, outputPad: 1 };
+    const look = this.theme as never;
+    const box = new Container();
+    if (drawing.renderCall !== undefined) box.addChild(drawing.renderCall(call.arguments as never, look, context));
+    if (drawing.renderResult !== undefined) {
+      const shown = result === undefined ? { content: [], details: undefined } : { content: result.content, details: result.details,
+        isError: result.isError };
+      box.addChild(drawing.renderResult(shown as never, { expanded, isPartial: result === undefined }, look, context));
+    }
+    const state = result === undefined ? "toolPendingBg" : result.isError ? "toolErrorBg" : "toolSuccessBg";
+    this.addChild(new Text("", 0, 0, (line) => this.theme.bg(state, line)));
+    this.addChild(box);
+  }
 }
 
-/** A message a settle handler added, as plain text until the shell draws Tesota's (#446). */
-function customView(message: CustomMessage, theme: ShellTheme): Component {
+/** A message a settle handler added: as its extension draws it (#446), or as plain text when it draws none. */
+function customView(message: CustomMessage, theme: ShellTheme, drawings: Drawings): Component {
+  const renderer = drawings.renderers.get(message.customType);
+  const drawn = renderer?.(message as never, { expanded: drawings.expanded(), outputPad: 1 }, theme as never);
+  if (drawn !== undefined) return drawn;
   return new Text(`${theme.fg("customMessageLabel", `[${message.customType}]`)} ${theme.fg("customMessageText", message.content)}`,
     1, 1, (line) => theme.bg("customMessageBg", line));
 }
@@ -97,9 +137,11 @@ export class Transcript extends Container {
   private streaming: ReplyView | undefined;
   private readonly calls = new Map<string, CallView>();
   private readonly theme: ShellTheme;
-  constructor(theme: ShellTheme) {
+  private readonly drawings: Drawings;
+  constructor(theme: ShellTheme, drawings: Drawings = noDrawings) {
     super();
     this.theme = theme;
+    this.drawings = drawings;
   }
 
   /** Draws `history` from the start, as a resumed session has it. */
@@ -122,7 +164,7 @@ export class Transcript extends Container {
   /** A call that started. */
   start(call: ToolCall): void {
     if (this.calls.has(call.id)) return;
-    const view = new CallView(call, this.theme);
+    const view = new CallView(call, this.theme, this.drawings);
     this.calls.set(call.id, view);
     this.append(view);
   }
@@ -142,7 +184,7 @@ export class Transcript extends Container {
         this.start(call);
       }
       this.calls.get(message.toolCallId)?.finish(message);
-    } else if (message.role === "custom") this.append(customView(message, this.theme));
+    } else if (message.role === "custom" && message.display) this.append(customView(message, this.theme, this.drawings));
   }
 
   private append(component: Component): void {
